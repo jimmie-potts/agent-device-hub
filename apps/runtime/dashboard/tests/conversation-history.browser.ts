@@ -27,10 +27,10 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     for (let number = 1; number <= 19; number += 1) {
       await draft.fill(`Synthetic history fixture ${String(number)}`);
       await send.click();
-      await panel.getByText('Task status: waiting', {exact: true}).waitFor();
+      await panel.getByText('Needs your answer', {exact: true}).waitFor();
       if (number < 19) {
         await cancel.click();
-        await panel.getByText('Task status: cancelled', {exact: true}).waitFor();
+        await panel.getByText('Task cancelled', {exact: true}).waitFor();
       }
     }
     const initialPageReads: string[] = [];
@@ -154,20 +154,20 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
       await panel.getByRole('button', {name: 'Load earlier', exact: true}).click();
       await heldEarlier;
       await panel.getByRole('button', {name: 'Cancel task', exact: true}).click();
-      await panel.getByText('Task status: cancelled', {exact: true}).waitFor();
+      await panel.getByText('Task cancelled', {exact: true}).waitFor();
     } finally {releaseEarlier();}
     await transcript.getByText('Synthetic history fixture 10', {exact: true}).waitFor({timeout: 5000});
     const restoredAnchor = await reading.evaluate(node => node.getBoundingClientRect().top - (node.closest('.conversation-transcript')?.getBoundingClientRect().top ?? 0));
     assert.ok(Math.abs(restoredAnchor - heldAnchor) <= 2, 'a live revision preserves the deliberate earlier read and its reading anchor');
     await draft.fill('合成🙂 ' + 'unbroken'.repeat(70));
     await draft.dispatchEvent('keydown', {key: 'Enter', isComposing: true});
-    assert.equal(await panel.getByText('Task status: cancelled', {exact: true}).count(), 1);
+    assert.equal(await panel.getByText('Task cancelled', {exact: true}).count(), 1);
     await draft.press('Shift+Enter');
     assert.match(await draft.inputValue(), /\n$/);
     await scroller.evaluate(node => {node.scrollTop = 0;});
     await page.waitForFunction(() => document.querySelector('.conversation-transcript')?.scrollTop === 0);
     await draft.press('Enter');
-    await panel.getByText('Task status: waiting', {exact: true}).waitFor();
+    await panel.getByText('Needs your answer', {exact: true}).waitFor();
     const signalNew = panel.getByRole('button', {name: 'New messages', exact: true});
     await signalNew.waitFor();
     assert.ok(await scroller.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop > 24), 'a new message does not move a reader to the tail');
@@ -176,7 +176,7 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     assert.ok(await scroller.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop < 24), 'New messages moves to the newest saved exchange');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
     await panel.getByRole('button', {name: 'Cancel task', exact: true}).click();
-    await panel.getByText('Task status: cancelled', {exact: true}).waitFor();
+    await panel.getByText('Task cancelled', {exact: true}).waitFor();
     const uploads = '**/api/v2/modules/companions/upload?**';
     const sent = changes(page);
     await page.route(uploads, route => route.fulfill({status: 403, json: {error: {code: 'forbidden', retryable: false}}}), {times: 1});
@@ -189,7 +189,7 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     await panel.getByRole('status').filter({hasText: 'Uncertain result. The command may have taken effect; it was not sent again.'}).waitFor();
     assert.equal(await draft.inputValue(), 'Synthetic draft retained through refusal and lost reply');
     assert.equal(await send.isDisabled(), true);
-    await panel.locator('details.conversation-details summary').click();
+    await panel.locator('details.conversation-details > summary').click();
     await panel.getByRole('status').filter({hasText: 'Uncertain result.'}).waitFor();
     assert.deepEqual(sent.filter(path => path.endsWith('/upload')), ['/api/v2/modules/companions/upload', '/api/v2/modules/companions/upload']);
     const denied = await fetch(`${world.url}${route}?profile=bunny&view=recent`);

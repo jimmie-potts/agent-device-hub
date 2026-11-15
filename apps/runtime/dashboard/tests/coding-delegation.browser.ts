@@ -16,7 +16,8 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     await page.goto(`${world.url}/#/module/companions/assistant`); await feed(page, 'connected');
     const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
     const details = assistant.locator('details.conversation-details');
-    await details.locator('summary').click();
+    await details.locator(':scope > summary').click();
+    await details.getByText('Capabilities', {exact: true}).click();
     await assistant.getByText('read_sessions, set_mode, delegate_coding', {exact: true}).waitFor();
     await assistant.getByText('Not connected', {exact: true}).waitFor();
     // The worker declares its endpoint through the real gateway: only its three families are granted.
@@ -26,10 +27,10 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     assert.equal(enabled.status, 'accepted');
     await assistant.getByText('Connected and idle', {exact: true}).waitFor();
     const enableAssistant = assistant.getByRole('button', {name: 'Enable conversation', exact: true}); await enableAssistant.focus(); await enableAssistant.press('Enter');
-    await assistant.getByRole('button', {name: 'Disable conversation', exact: true}).waitFor();
+    await details.getByText('Conversation settings', {exact: true}).click();
+    await details.getByRole('button', {name: 'Disable conversation', exact: true}).waitFor();
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('Please delegate: add a unit test for the readout generator.');
     const send = assistant.getByRole('button', {name: 'Send message', exact: true}); await send.focus(); await send.press('Enter');
-    await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
     const proposal = assistant.getByRole('article', {name: 'Proposed command', exact: true});
     await proposal.getByText(/Delegation to the coding worker in repository/).waitFor();
     await proposal.getByText('agent-device-hub', {exact: true}).waitFor();
@@ -46,9 +47,12 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data: {operationId: started.operationId, status: 'completed',
       result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: ['scripts/tests/readout.test.mjs'], checks: [{name: 'node --test', status: 'passed'}],
         findings: [], limitations: ['No browser check applies.'], summary: 'Added the test; it passes.', sessionId: null, usage: {turns: 7, costUsd: 0.21, durationMs: 90000}}}});
-    await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
+    await assistant.getByText('Task completed', {exact: true}).waitFor();
     const messages = assistant.getByRole('list', {name: 'Saved conversation messages', exact: true});
-    await messages.getByRole('article', {name: 'tool message', exact: true}).getByText(/^completed \(tested-candidate\): Added the test; it passes\./).waitFor();
+    const resultText = /^completed \(tested-candidate\): Added the test; it passes\./;
+    const tool = messages.getByRole('article', {name: 'tool message', exact: true}).filter({has: page.locator('p', {hasText: resultText})});
+    await tool.locator('summary').click();
+    await tool.getByText(resultText).waitFor();
     await messages.getByText(/coding worker: completed/).waitFor();
     await assistant.getByText('Connected and idle', {exact: true}).waitFor();
     assert.equal(JSON.stringify(world.logs).includes('readout generator'), false, 'briefs reach no diagnostic record');

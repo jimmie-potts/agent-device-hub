@@ -237,9 +237,33 @@ starting another one.
 Questions, approvals, worker waits and task controls appear above the composer.
 An approval shows the full scope and the revision it applies to. A command
 receipt reports what happened to the request separately from task completion.
-Disconnected or stale copies retain loaded history and lock mutations. Open
-**Details** for the provider, tool list, worker status, task IDs, usage and the
-conversation disable control. **Stop speaking** controls audio only.
+Disconnected or stale copies retain loaded history and lock mutations.
+**Stop speaking** controls audio only.
+
+### Inspect conversation details
+
+On a wide screen, **Details** opens beside the transcript and composer. Close
+**Details** to give the transcript more room. On a narrow screen, **Details**
+sits below the composer. Choose a section label to open it, then choose the
+same label again to close it.
+
+- **Capabilities** lists the provider, model, allowed and unavailable tools,
+  and coding worker availability.
+- **Task activity** shows the task, conversation and run IDs, status, counters,
+  bounds, diagnostic code, saved question and answer, and settled successful
+  control receipt. Pending and failed receipts stay beside the controls.
+- **Usage** shows reported usage and the reservation against the task limit.
+  A synthetic task may show **Unknown** usage alongside `0 / 65536 units`
+  reserved. Hosted tasks use reported tokens and leave billed cost unknown.
+- **Conversation settings** explains where submitted text goes and links to
+  **Preferences** and **Companion knowledge**. An unfinished task prevents
+  disabling the conversation.
+
+In a synthetic session, ask about recent coding activity and answer the
+clarification. Open **Tool result** in the transcript to read the saved result,
+for example, `No coding agent session is known to the core right now.` Choose
+**Tool result** again to collapse it. While a result is open, **Load earlier**
+keeps the result expanded and preserves your reading position.
 
 ```mermaid
 flowchart LR

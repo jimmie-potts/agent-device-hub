@@ -137,7 +137,7 @@ The core SHALL answer an `assistant-dispatch` command only from `bunny/modules/c
 
 ### Requirement: Conversation panel
 
-The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assistant` page: the provider and model, allowed and unavailable tools, the coding worker's availability, usage in tokens or unknown, the saved conversation with owner, assistant and tool messages, and explicit send, answer, approve, decline, resume and cancel controls. It SHALL carry the speech endpoint controls as spoken replies (enable in this tab, mute, stop speaking, playback and tracked operation) and a Speak control beside each saved assistant message within the spoken bound, stating that enabling makes the tab the one speaker and that stopping speech does not cancel the task. A delegation proposal SHALL show its repository, brief and bound revision; a waiting delegation SHALL say it waits for the worker and offer cancel, not an answer box. It SHALL label the synthetic provider as making no paid calls, preserve written context and saved questions on reload, and distinguish control receipts from task state. Disconnection SHALL be visible and prevent mutation against stale state. Assistant activation SHALL default off without affecting fixed-text Reachy or coding-session lifecycle ownership.
+The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assistant` page: the provider and model, allowed and unavailable tools, the coding worker's availability, reported usage in hosted tokens or synthetic units, and unknown when usage is unreported, the saved conversation with owner, assistant and tool messages, and explicit send, answer, approve, decline, resume and cancel controls. It SHALL carry the speech endpoint controls as spoken replies (enable in this tab, mute, stop speaking, playback and tracked operation) and a Speak control beside each saved assistant message within the spoken bound, stating that enabling makes the tab the one speaker and that stopping speech does not cancel the task. A delegation proposal SHALL show its repository, brief and bound revision; a waiting delegation SHALL say it waits for the worker and offer cancel, not an answer box. It SHALL label the synthetic provider as making no paid calls, preserve written context and saved questions on reload, and distinguish control receipts from task state. Disconnection SHALL be visible and prevent mutation against stale state. Assistant activation SHALL default off without affecting fixed-text Reachy or coding-session lifecycle ownership.
 
 #### Scenario: Approval by keyboard
 - **WHEN** a task waits for approval and the owner reloads the page and operates it by keyboard
@@ -181,6 +181,25 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 - **WHEN** the assistant copy is removed or the current saved question is missing or refers to another question
 - **THEN** loaded messages remain readable and answer and approval actions remain unavailable
 - **AND** Refresh history makes one deliberate latest read when the current saved question or proposal is unavailable
+
+#### Scenario: Inspect labelled Details
+- **WHEN** a reader opens Details in Conversation
+- **THEN** Capabilities, Task activity, Usage and Conversation settings start collapsed, and each can expand independently without changing the selected profile, draft or transcript position
+- **AND** closing Details gives the wide transcript its space back and resizing preserves the viewed saved row
+- **AND** provider and tool facts, worker availability, task identifiers and bounds, saved question and answer, diagnostic codes, successful control receipts and usage retain their meaning
+- **AND** retained assistant facts read as Last known, a missing worker copy reads as unknown, and usage distinguishes unknown, zero, synthetic units and hosted tokens without estimating billed cost
+- **AND** active decisions, task result cues, blockers, and unresolved or negative control outcomes remain visible by the relevant controls
+
+#### Scenario: Use existing conversation settings
+- **WHEN** the owner opens Conversation settings
+- **THEN** the section explains saved input and offers the current enable or disable action through the same guarded command
+- **AND** a reader or stale copy cannot mutate, and an unfinished task prevents disabling the conversation
+
+#### Scenario: Expand saved tool text
+- **WHEN** the owner or reader opens a tool result on a saved transcript row
+- **THEN** the full inert text can be read without horizontal page overflow, and the row retains its original task association and message order
+- **AND** opening or closing the result does not fetch, send a command, or replay text or audio
+- **AND** loading earlier saved messages keeps the result open and preserves the current reading position within it
 
 ### Requirement: Spoken replies to typed requests
 

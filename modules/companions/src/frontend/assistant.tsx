@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import type {AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
+import type {AssistantProfile, AssistantState, AssistantStatus} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk';
@@ -8,16 +8,16 @@ import {SpeechControls, useCompanionSpeechCopy} from './speech.js';
 
 import type {SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
+import {ConversationDetails} from './conversation-details.js';
 import {ConversationTranscript} from './conversation-transcript.js';
 import './conversation.css';
 
 const profiles: Readonly<Record<AssistantProfile, string>> = {bunny: 'B.U.N.N.Y.', reachy: 'Reachy', microduck: 'MicroDuck'};
-/** The engine's per-task bounds, shown beside each counter, from the module's shared constants. */
-const BOUNDS = {modelCalls: LIMITS.modelCalls, toolCalls: LIMITS.toolCalls, questions: LIMITS.questions, activeSeconds: LIMITS.activeMs / 1000, units: LIMITS.units};
-/** Every tool the section may allow; a name missing from the state's `tools` is shown as unavailable. */
-const CATALOG = ['read_sessions', 'set_mode', 'delegate_coding'];
 const finished = (status: string): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
-const providerLabel = (state: AssistantState): string => state.provider === 'synthetic' ? 'Synthetic (no paid calls)' : `Anthropic · ${state.model}`;
+const taskCue: Readonly<Record<AssistantStatus, string>> = {
+  running: 'Working', waiting: 'Task waiting', paused: 'Paused', succeeded: 'Task completed', failed: 'Task failed',
+  cancelled: 'Task cancelled', uncertain: 'Uncertain outcome',
+};
 
 function SavedQuestionContext({question}: {question: SavedQuestion}): React.JSX.Element {
   return <article aria-label="Saved question" className="conversation-question">
@@ -235,13 +235,19 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const visibleHistory = history?.profile === profile ? history : undefined;
   const savedTask = visibleHistory?.currentTask;
   const currentQuestion = task !== undefined && savedTask?.taskId === task.taskId && savedTask.question?.id === task.questionId ? savedTask.question : undefined;
-  const synthetic = state === undefined || state.provider === 'synthetic' || profile !== 'bunny';
-  const allowed = state?.tools ?? [];
-  const unavailableTools = CATALOG.filter(name => !allowed.includes(name)).join(', ');
+  const pendingQuestion = task !== undefined && task.questionId !== null && !task.hasAnswer && ['waiting', 'paused'].includes(task.status);
+  const activeClarification = pendingQuestion && currentQuestion?.kind === 'clarification' ? currentQuestion : undefined;
+  let cue = task === undefined ? undefined : taskCue[task.status];
+  if (task?.status === 'waiting' && pendingQuestion) cue = activeClarification && 'Needs your answer';
   const {Command, Facts, Select} = context.ui;
   return <section aria-label="B.U.N.N.Y. conversation" className="panel conversation-page">
     <Command context={context} target="assistant">{command => {
       const locked = command.locked || !live || !context.control || !context.operationsLive;
+      const speakReceipt = speakRequest !== undefined && command.requestId === speakRequest;
+      const operation = context.operations.find(value => value.target === 'assistant' && value.requestId === command.requestId);
+      const routineReceipt = !speakReceipt && !command.locked && (command.requestId === undefined || (
+        context.operationsLive && operation?.status === 'completed' && operation.result === 'succeeded'
+      ));
       const present = (action: 'enable' | 'disable'): void => {
         if (state === undefined || locked || (action === 'disable' && unfinished !== undefined)) return;
         void command.run({family: 'assistant-control', target: 'assistant', requestId: crypto.randomUUID(),
@@ -268,7 +274,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           <ConversationTranscript key={profile} history={visibleHistory} status={historyStatus} readLocked={!connected || historyStatus === 'loading'}
             loadEarlier={before => {readHistory(before);}} retry={() => {readHistory(failedCursor.current);}}
             renderMessage={message => <article aria-label={`${message.role} message`}>
-              <strong>{message.role === 'owner' ? 'You' : message.role === 'tool' ? 'Tool result' : profiles[profile]}</strong>
+              <strong>{message.role === 'owner' ? 'You' : profiles[profile]}</strong>
               <p>{message.text}</p>
               {message.role === 'assistant' && state !== undefined && <button type="button" aria-label={`Speak message ${message.seq}`}
                 className="secondary" disabled={locked || message.text.length > LIMITS.spokenChars}
@@ -283,50 +289,23 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             {state !== undefined && !state.enabled && <p>Conversation is off. <button type="button" disabled={locked} onClick={() => {present('enable');}}>Enable conversation</button></p>}
             {unfinished !== undefined && unfinished.profile !== profile && <p>One task is still unfinished. <button type="button"
               onClick={() => {pickProfile(unfinished.profile);}}>Go to {profiles[unfinished.profile]} task</button></p>}
-            {task !== undefined && <p role="status">Task status: {task.status === 'uncertain' ? 'Uncertain outcome' : task.status}{!live ? ' (Last known)' : ''}</p>}
-            {task?.status === 'running' && <p>Working</p>}
-            {task?.status === 'paused' && <p>Paused</p>}
-            {currentQuestion?.kind === 'clarification' && task?.questionId !== null && task?.hasAnswer === false && !finished(task.status) && <p>Needs your answer</p>}
+            {cue !== undefined && <p role="status">{cue}{!live ? ' (Last known)' : ''}</p>}
             {task?.code != null && <p>Task code: {task.code}</p>}
             {state?.enabled === true && unfinished !== undefined && !['waiting', 'paused'].includes(task?.status ?? '') && <p>Finish or cancel the unfinished task before sending another message.</p>}
-            {currentQuestion?.kind === 'clarification' && <SavedQuestionContext question={currentQuestion}/>}
+            {activeClarification !== undefined && <SavedQuestionContext question={activeClarification}/>}
             {state !== undefined && <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion}
               drafts={drafts} setDraft={(key, value) => {setDrafts(prior => ({...prior, [key]: value}));}}
               refreshHistory={() => {readHistory();}} historyBusy={historyStatus === 'loading'}/>}
-            <p role="status">{speakRequest !== undefined && command.requestId === speakRequest ? 'Speak receipt' : 'Command receipt'}: {command.text}</p>
+            {!routineReceipt && <p role="status">{speakReceipt ? 'Speak receipt' : 'Command receipt'}: {command.text}</p>}
           </div>
         </div>
-        <details className="conversation-details">
-          <summary>Details</summary>
-          <p>Reads need no approval. Proposed changes need your approval here. Reachy and MicroDuck use the synthetic provider.</p>
-          {!live && state !== undefined && <p>Last known provider and task details.</p>}
-          {state !== undefined && <Facts items={[
-            ['Provider', profile === 'bunny' ? providerLabel(state) : 'Synthetic (no paid calls)'],
-            ['Allowed tools', allowed.length === 0 ? 'None' : allowed.join(', ')],
-            ['Unavailable tools', unavailableTools === '' ? 'None' : unavailableTools],
-            ['Coding worker', !connected || coding === undefined ? 'Unknown' : coding.availability === 'available' ? (coding.active === null ? 'Connected and idle' : `Running task ${coding.active.taskId.slice(0, 8)} (${coding.active.status})`) : coding.availability === 'unavailable' ? 'Lost; start it again on your computer' : 'Not connected'],
-          ]}/>}
-          <h3>Current task</h3>
-          {task === undefined ? <p>No task saved for {profiles[profile]}.</p> : <>
-            <Facts items={[
-              ['Task', task.taskId], ['Conversation', task.conversationId], ['Run', task.runId ?? 'Not active'],
-              ['Model calls', `${task.modelCalls} / ${BOUNDS.modelCalls}`], ['Tool calls', `${task.toolCalls} / ${BOUNDS.toolCalls}`], ['Questions', `${task.questions} / ${BOUNDS.questions}`],
-              ['Active time', `${(task.activeMs / 1000).toFixed(1)} / ${BOUNDS.activeSeconds} seconds`],
-              [synthetic ? 'Fake-model usage' : 'Model usage', task.usageUnits === null ? 'Unknown' : `${task.usageUnits} ${synthetic ? 'units' : 'tokens'}`],
-              ['Reserved usage', `${task.reservedUnits} / ${BOUNDS.units} ${synthetic ? 'units' : 'tokens'}`],
-              ['Paid cost', synthetic ? '0 (synthetic calls)' : 'Unknown here; billed by the provider'],
-            ]}/>
-          </>}
-          {currentQuestion !== undefined && currentQuestion.kind !== 'clarification' && (currentQuestion.answer !== null || task !== undefined && finished(task.status))
-            && <SavedQuestionContext question={currentQuestion}/>}
-          {state?.enabled === true && <button type="button" disabled={locked || unfinished !== undefined} onClick={() => {present('disable');}}>Disable conversation</button>}
-          <p>Drafts stay in this page until reload. Review saved history before submitting retained text again.</p>
-          <p>A successful command receipt confirms that the control was saved. Task completion and playback are reported separately.</p>
-          <p>The tab with spoken replies enabled speaks each eligible reply, question or refusal once through the qualified voice it shares with Reachy alerts.
-            Replies longer than {LIMITS.spokenChars} characters stay written only. Quiet keeps replies silent. Stop speaking stops audio only.</p>
-        </details>
+        <ConversationDetails Facts={Facts} profile={profile} profileName={profiles[profile]} state={state} task={task}
+          coding={connected ? coding : undefined} live={live}
+          savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}
+          receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished !== undefined} setEnabled={present}/>
       </div>;
     }}</Command>
     <SpeechControls context={context} companion={speech.copy} compact purpose="replies"/>
+    <p>The selected voice reads each eligible reply, question or refusal once. Replies longer than {LIMITS.spokenChars} characters stay written only.</p>
   </section>;
 }
