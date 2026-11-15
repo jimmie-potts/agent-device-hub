@@ -90,16 +90,20 @@ Each observation SHALL start a new sampled trace, carried in the message and in 
 - **WHEN** the script runs 25 hooks through a session, 5 against a stopped runtime and 3 against one that never answers
 - **THEN** it prints each run and a summary with the median and worst of each case and the count the core accepted, and removes its runtime and state
 
-### Requirement: Metadata-only local Codex hook
-The local Mac Codex wrapper SHALL reuse the existing bounded SDK hook for SessionStart except compact, UserPromptSubmit, Stop, Interrupt and SessionEnd. It SHALL discard any input with an own agent_id property and forward only hook_event_name, session_id and optional turn_id. It SHALL never open supplied paths, enrich from local indexes, retain or publish raw private fields, change notify, decide permissions or command devices. A metadata-only producer check SHALL refuse lifecycle enrichment before consuming input. Delivery SHALL remain silent and fail open under the existing deadline without retries.
+### Requirement: Local Codex hook with version-selected titles
+The local Mac Codex wrapper SHALL reuse the existing bounded SDK hook for SessionStart except compact, UserPromptSubmit, Stop, Interrupt and SessionEnd. It SHALL discard any input with an own agent_id property and forward only hook_event_name, session_id and optional turn_id. It SHALL never open supplied paths, retain or publish raw private fields, change notify, decide permissions or command devices. A producer without lifecycleVersion SHALL publish without title lookup. A producer explicitly selecting lifecycleVersion 1.1 or 1.2 SHALL reuse the existing bounded title reader over session_index.jsonl in the hook process's Codex home, preserving title validation, truncation and lookup limits. No supplied cwd, transcript, prompt or response SHALL reach enrichment. Producer and receipt validation SHALL precede input consumption. Delivery SHALL remain silent and fail open under the existing deadline without retries.
 
 #### Scenario: Private or child input
 - **WHEN** a hook includes prompt, reply, cwd, transcript path or agent_id
 - **THEN** private fields are discarded without path reads, and a child input produces no parent observation
 
-#### Scenario: Misconfigured enriched producer
-- **WHEN** the wrapper selects a producer with lifecycleVersion configured
-- **THEN** it refuses before reading hook input or attempting network/file enrichment
+#### Scenario: Version-selected title and rename
+- **WHEN** a qualified producer selects lifecycleVersion 1.1 or 1.2 and its local title index contains the session's title
+- **THEN** a selected hook publishes the bounded validated title with its existing local identity and lifecycle observation; a later hook carries a changed index title without project or transcript fields
+
+#### Scenario: Title unavailable or not selected
+- **WHEN** the producer omits lifecycleVersion, or a selected lookup has no usable matching title
+- **THEN** activity still publishes without a title, allowing the display's existing neutral fallback; no missing title invents activity or read evidence
 
 #### Scenario: Installed local coverage
 - **WHEN** the approved local Desktop and native CLI each run a controlled ordinary session
@@ -120,7 +124,7 @@ directory, endpoint, qualification, lifecycle version, source configuration and
 `input.transport` match. An absent transport SHALL retain the existing local
 loopback rule and optional-receipt compatibility. A URL change alone SHALL NOT
 inherit local qualification. All existing file, size, permission, normalizer,
-metadata-only wrapper, trace, no-retry and 2.9-second fail-open rules SHALL remain.
+wrapper sanitization, trace, no-retry and 2.9-second fail-open rules SHALL remain.
 
 #### Scenario: Explicit remote qualification
 - **WHEN** a private enabled qualified HTTPS producer selects `private-https` with its matching installed receipt
