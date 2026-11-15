@@ -9,7 +9,7 @@ widen an existing schema or export destination.
 
 The artifact `@jimmie-potts/bunny-observability` version 1.12.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
-1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10 and 1.11 are independent of the pinned OpenTelemetry semantic
+1.0 through 1.12 are independent of the pinned OpenTelemetry semantic
 conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
 compatibility profile; 1.1 adds optional `bunny.queue.depth`. This is not a
 claim that an older artifact was deployed. Profile 1.2 registers the B.U.N.N.Y.
@@ -31,9 +31,10 @@ adds the [art provider call](#art-provider-call-profile-18) span
 ([#680](https://github.com/jimmie-potts/agent-device-hub/issues/680)). Profile 1.9 adds the
 [hourly history warning](#hourly-history-warning-profile-19). Profile 1.10 adds
 [Nanoleaf HTTP read timing](#nanoleaf-http-read-timing-profile-110). Profile 1.11 adds
-[Nanoleaf read rejection classification](#nanoleaf-read-rejection-classification-profile-111). The default
-producer profile stays 1.1: existing producers keep it, and a producer selects 1.2
-to 1.11 explicitly.
+[Nanoleaf read rejection classification](#nanoleaf-read-rejection-classification-profile-111).
+Profile 1.12 adds [Music capture freshness checkpoints](#music-capture-freshness-checkpoints-profile-112).
+The default producer profile remains 1.1. Producers select profiles 1.2 through
+1.12 explicitly.
 
 The machine-readable dictionary is `src/record.schema.json` and the registered
 vocabulary is `src/catalog.json` in the artifact. These files and this document
