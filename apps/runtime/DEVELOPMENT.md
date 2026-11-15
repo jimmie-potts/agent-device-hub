@@ -1009,6 +1009,17 @@ The permanent `#/habitat` page is covered by `test:runtime-dashboard:built`, the
 
 ### Furnished apartment checks
 
+Anonymous reported presence (#1837) uses the public Presence Pro contract and
+the existing dashboard SDK copies. After `npm run build`, run
+`node --test apps/runtime/dashboard/tests/apartment-presence.test.ts apps/runtime/dashboard/tests/runtime-feeds.test.ts`
+and `node apps/runtime/dashboard/tests/room-models.browser.ts`. Existing dashboard
+unit discovery and App verification's room-model journey include these checks.
+The synthetic real-owner journey covers room-only reports, separate sensors,
+held/unknown points, receipt-time limitations, loss/reconnect, desktop/phone and
+zero commands. Use a private outside-checkout `TMPDIR`; it contacts no hardware.
+Run the normal shared build/type/lint/contract/workflow and dashboard suites.
+Physical enrollment, manual placement checks and usefulness belong to #1842.
+
 After `npm run build`, run `node --test apps/runtime/dist/tests/apartment*.test.js`
 and the existing `node apps/runtime/dashboard/tests/room-models.browser.ts` journey.
 The Runtime unit tests glob and the existing App verification room-model step

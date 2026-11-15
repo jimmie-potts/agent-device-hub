@@ -4,6 +4,7 @@ import {SdkError} from '@jimmie-potts/sdk/remote';
 import {parseRoomCatalog,parseRoomModel,type RoomAnchor,type RoomModel,type RoomModelCatalog} from '../../src/room-model.ts';
 import type {DashboardConnection} from './connection.ts';
 import type {LightingDevice} from './lighting.ts';
+import type {RuntimeCopy} from './runtime-feeds.ts';
 import {ApartmentView} from './apartment-view.tsx';
 import {roomBinding,roomObservation,type RoomFixtureAlias} from './room-bindings.ts';
 import {createRoomRenderer,type RoomRenderer} from './room-renderer.ts';
@@ -45,10 +46,10 @@ function RoomCanvas({model,selected,powers,onSelect}:{model:RoomModel;selected:R
   </div>;
 }
 
-type Props={connection:DashboardConnection;connected:boolean;layout:LightingLayout;layoutLive:boolean;devices:readonly LightingDevice[];
+type Props={connection:DashboardConnection;connected:boolean;layout:LightingLayout;layoutLive:boolean;devices:readonly LightingDevice[];copies:readonly RuntimeCopy[];
   renderLight:(anchor:RoomFixtureAlias,roomId:string,currentObservationsOnly?:boolean)=>React.ReactNode};
 /** Private model content is read on entry/selection/explicit refresh, never polled. Live evidence uses existing copies. */
-export function RoomModels({connection,connected,layout,layoutLive,devices,renderLight}:Props):React.JSX.Element {
+export function RoomModels({connection,connected,layout,layoutLive,devices,copies,renderLight}:Props):React.JSX.Element {
   const scope=useMemo(()=>connection.openModule('core'),[connection]);
   useEffect(()=>()=>{void scope.close();},[scope]);
   const [catalog,setCatalog]=useState<RoomModelCatalog|undefined>(),[model,setModel]=useState<RoomModel|undefined>(),[selected,setSelected]=useState<string|undefined>();
@@ -72,7 +73,7 @@ export function RoomModels({connection,connected,layout,layoutLive,devices,rende
   const observations=model?.anchors.map(anchor=>({anchor,observation:roomObservation(roomBinding(anchor,model.roomId,layout,devices,layoutLive))}))??[];
   const powers=new Map(observations.map(({anchor,observation})=>[anchor.group,observation.power]));
   return <div className="room-models">
-    <ApartmentView {...{connection,connected,layout,layoutLive,devices,renderLight}} refresh={refresh}/>
+    <ApartmentView {...{connection,connected,layout,layoutLive,devices,copies,renderLight}} refresh={refresh}/>
     <div className="actions"><button type="button" disabled={!connected} onClick={()=>{pending.current++;setLoading(false);setModel(undefined);setRefresh(n=>n+1);}}>Refresh 3D models</button>
       {catalog?.models.map(entry=>{const room=layout.rooms.find(room=>room.id===entry.roomId);return room===undefined?null:<button type="button" key={entry.id} disabled={!connected} aria-label={'Open 3D model for '+room.name} onClick={()=>{void open(entry.id,entry.roomId);}}>{room.name} · 3D</button>;})}
     </div>
