@@ -6,6 +6,14 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+Presence Pro uses `npm run test:presence-pro:built` and
+`node --test apps/runtime/dist/tests/presence-pro.test.js` after the root build.
+The latter is a disposable authenticated state/SDK/history exercise. Existing
+`test:runtime:built` discovery and aggregation run both in CI. Container profile
+admission remains covered by `node --test deploy/container/tests/entrypoint.test.mjs`.
+See the [module guide](../../modules/presence-pro/README.md) for the stock report
+and real loopback Native API checks. No household target is used by these tests.
+
 For local Codex title lookup, after `npm run build` run
 `node --test apps/runtime/tests/mac-codex-hook.test.mjs` and the built runtime
 `hook` and `remote-hooks` suites. The wrapper tests cover explicitly selected

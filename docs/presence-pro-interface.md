@@ -1,11 +1,12 @@
 # Presence Pro stock-interface pilot
 
-**Proposed definition, revision 2.** The owner's 2026-11-14 scope decision
+**Accepted definition, revision 2.** The owner's 2026-11-14 scope decision
 (America/New_York; research continued on November 15 UTC) selects a small stock
 ESPHome pilot: show the latest device-reported occupancy/zones and approximate
 anonymous positions. This supersedes revision 1's continuously fresh/atomic-frame
 prerequisite. Firmware telemetry is deferred until the pilot demonstrates a need.
-This definition implements nothing and authorizes no installation or device contact.
+The [source module](../modules/presence-pro/README.md) implements this record and
+acquisition path. This definition authorizes no installation or device contact.
 
 Use one fixed module in the current Mac Mini Linux ARM64 runtime, SDK/profile 2.0,
 existing room IDs and authenticated consumers. The module owns acquisition;
@@ -41,9 +42,14 @@ found; this is a known limitation, not a prerequisite for the selected pilot.
 Connect directly using each selected device's configured authentication; keep
 credentials private and never downgrade after a key/authentication failure.
 Do not add a Noise-provisioning prerequisite or change firmware/network settings.
-The evaluated Node 24 candidate is
+The originally evaluated Node 24 candidate was
 [`esphome-client` v2.1.0](https://github.com/hjdhjd/esphome-client/tree/9cd3d024af9ace1876b31e3365a3907208fa58e9).
-Pin/test it during implementation. Use one module reconnect owner; disable nested
+Source implementation instead pins `@2colors/esphome-native-api` 1.3.7: it supports
+configured passwords and selects an exclusive Noise/plaintext transport without
+the candidate's opportunistic fallback. Its loopback tests cover successful
+plaintext/password and Noise reports, defaults, refusals and bounded teardown;
+actual unit compatibility remains unverified. See the module's pinned-client
+compatibility notes. Use one module reconnect owner; disable nested
 library reconnect and construction retries, with bounded connect/discovery attempts
 and capped backoff (e.g. 5 s attempts, delays up to 30 s). One device's failure
 must not stop the other. An incompatible API or missing required entity is a
@@ -60,8 +66,8 @@ range and assumed-presence settings; do not guess meaning from display names.
 
 Reserve module family `presence-observation/2.0`, publisher
 `bunny/modules/presence-pro`, type `org.bunny.presence-observation.updated`, route
-`bunny.state.presence-observation.<id>`. This is a prose agreement; schema/runtime
-registration belongs to source implementation. Reuse existing SDK envelopes,
+`bunny.state.presence-observation.<id>`. The module exports the versioned schema
+and browser-safe `@jimmie-potts/presence-pro/contracts`. Reuse existing SDK envelopes,
 revision/sync/deduplication and tagged unknown values rather than defining them again.
 One complete current record per sensor is enough:
 

@@ -1,5 +1,15 @@
 # Development setup
 
+## Presence Pro source checks
+
+The stock Native API module uses the existing build/type checks and
+`npm run test:presence-pro:built` after `npm run build`. The runtime CI suite
+also runs that focused suite through `test:runtime:built`. It covers the two
+independent sources, unknown/reset behavior, calibration, actual loopback Native
+API packets and authenticated state/history reads. Run `npm run typecheck`,
+`npm run lint:js`, `npm run check:workflow` and `npm run test:workflow` too.
+Synthetic reports do not qualify physical devices; #1842 owns that pilot.
+
 Use Node 24 from `.nvmrc` and run `npm ci` at the repository root. Read the
 [delivery workflow](sdlc.md) before implementation. For current product work,
 start with [runtime development](../apps/runtime/DEVELOPMENT.md); use the owning

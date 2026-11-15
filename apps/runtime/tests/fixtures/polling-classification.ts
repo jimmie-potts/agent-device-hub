@@ -22,5 +22,5 @@ export const POLLING: Readonly<Record<string, Readonly<Record<string, number>>>>
   // reachability check, playback's 2 s speaker read and Tidbyt's tile loop publish only on a change or a transmission;
   // Volcano's device record follows availability; Codex Desktop's observations are not kept in history.
   'art': {}, 'codex-desktop': {}, 'companions': {}, 'lifx': {}, 'microduck': {}, 'nanoleaf': {}, 'playback': {}, 'reachy-mini': {},
-  'tidbyt': {}, 'volcano': {}, 'wispr': {},
+  'presence-pro': {}, 'tidbyt': {}, 'volcano': {}, 'wispr': {},
 };

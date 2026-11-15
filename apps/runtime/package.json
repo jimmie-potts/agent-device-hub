@@ -53,7 +53,8 @@
     "@jimmie-potts/companions": "0.1.0",
     "@jimmie-potts/weather": "0.1.0",
     "@jimmie-potts/wemo": "0.1.0",
-    "@jimmie-potts/volcano": "0.1.0"
+    "@jimmie-potts/volcano": "0.1.0",
+    "@jimmie-potts/presence-pro": "0.1.0"
   },
   "devDependencies": {
     "@jimmie-potts/wispr-contracts": "1.0.0"

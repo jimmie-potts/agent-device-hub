@@ -73,6 +73,11 @@ The [weather module](../../modules/weather/README.md) reads one privately
 configured location from the National Weather Service and publishes synced
 `weather-state` for art. It names no place and takes no command.
 
+The [Presence Pro module](../../modules/presence-pro/README.md) subscribes to one
+or two explicitly configured stock ESPHome sensors and publishes reported
+occupancy/zones and approximate anonymous positions. Cached/held reports and
+receipt times retain their limitations; no device setting is written.
+
 ## Hosting profiles
 
 The [hosting decision](../../docs/decisions/0008-runtime-hosting.md) selects the Mac

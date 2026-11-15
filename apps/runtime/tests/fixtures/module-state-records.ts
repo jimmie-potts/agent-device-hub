@@ -8,7 +8,15 @@ const CONSUMABLE_KEYS = ['mainBrushSeconds', 'sideBrushSeconds', 'filterSeconds'
   'cleaningBrushCycles'];
 export const monitor = {filter: {q: 'build'}, cadenceMs: 10_000, connection: 'current', sessions: 4, matched: 3, attention: 1, page: 1, pages: 2};
 const player = {state: 'playing', intent: 'active', playlistId: null, itemId: null, renditionId: null, lastError: null};
-export const RECORDS: Readonly<Record<string, {type: string; data: Record<string, unknown>}>> = {
+export const RECORDS: Readonly<Record<string, {type: string; source?: string; data: Record<string, unknown>}>> = {
+  'presence-observation/2.0': {type: 'org.bunny.presence-observation.updated', source: 'bunny/modules/presence-pro', data: {
+    id: 'presence-a', sensorId: 'presence-a', revision: 1, roomId: 'synthetic-room', mappingRevision: 1, connection: 'connected', reason: 'none',
+    occupancy: {value: 'occupied', receivedAtMs: known(AT)}, held: {value: {status: 'known', value: false}, receivedAtMs: known(AT)},
+    zones: [{id: 'zone-one', roomId: 'synthetic-room', value: 'occupied', receivedAtMs: known(AT)}],
+    targets: [{slot: 1, active: {value: {status: 'known', value: true}, receivedAtMs: known(AT)},
+      rawMm: {x: known(1000), y: known(2000), xReceivedAtMs: known(AT), yReceivedAtMs: known(AT)},
+      apartmentMeters: {status: 'known', value: {x: 4, z: 2}}, calibrationRevision: known(1)}],
+  }},
   'lifx-light/2.0': {type: 'org.bunny.lifx-light.updated', data: {
     id: 'bulb', revision: 4, capabilities: {color: {supported: true}, temperature: {supported: true, minimum: 1500, maximum: 9000}},
     observed: {status: 'known', observedAtMs: AT, hue: 120, saturation: 50, brightness: 80, kelvin: 3500},

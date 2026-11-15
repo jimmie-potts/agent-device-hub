@@ -1,0 +1,26 @@
+{
+  "name": "@jimmie-potts/presence-pro",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stock Everything Presence Pro read-only Native API reports.",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./testing": {
+      "types": "./dist/src/simulated.d.ts",
+      "import": "./dist/src/simulated.js"
+    },
+    "./contracts": {
+      "types": "./dist/src/contracts.d.ts",
+      "import": "./dist/src/contracts.js"
+    }
+  },
+  "dependencies": {
+    "@jimmie-potts/event-contracts": "1.0.0",
+    "@jimmie-potts/sdk": "0.1.0",
+    "@2colors/esphome-native-api": "1.3.7"
+  }
+}
