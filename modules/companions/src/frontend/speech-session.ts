@@ -56,6 +56,26 @@ export class SpeechSession {
     } catch {if (generation === this.#generation) await this.#release('unavailable');}
     finally {if (generation === this.#generation) {this.#state.busy = false; this.#changed();}}
   }
+  async recover(operationId: string, expectedRevision: number): Promise<boolean> {
+    if (this.#closed || this.#state.busy || this.#endpoint !== undefined || !this.options.usable()) return false;
+    const generation = ++this.#generation, driver = this.options.createDriver();
+    this.#driver = driver; this.#state.busy = true; this.#changed();
+    const current = (): boolean => generation === this.#generation && !this.#closed && this.options.usable();
+    try {
+      if (driver === undefined || !driver.cancelForRecovery() || !current()) return false;
+      const endpoint = await this.options.api.open({respond: () => errorBody('unavailable'), onClosed: () => {
+        if (generation === this.#generation) void this.#release('unavailable');
+      }});
+      if (!current()) {await endpoint.close(); return false;}
+      this.#endpoint = endpoint;
+      if (!driver.idle) return false;
+      const answer = await endpoint.control({requestId: crypto.randomUUID(), action: 'recover', operationId, expectedRevision, previousPlaybackStopped: true});
+      if (!current() || answer.status !== 'accepted') return false;
+      this.#state.playback = null;
+      return true;
+    } catch {return false;}
+    finally {if (generation === this.#generation) await this.#release('off');}
+  }
   stop(): Promise<void> {return this.#control('stop');}
   mute(): Promise<void> {
     if (this.#state.availability === 'enabling' || this.#endpoint === undefined) return this.#release('off');

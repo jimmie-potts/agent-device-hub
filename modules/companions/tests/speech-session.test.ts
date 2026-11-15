@@ -150,3 +150,48 @@ void test('a saved assistant reply is spoken as its own text under the reply pol
   assert.equal(w.counts().spoken, 1); assert.equal(w.receipts.at(-1)?.status, 'not-started');
   await w.session.close();
 });
+
+void test('recovery cancels local output, sends one acknowledgement and leaves fresh enablement separate', async t => {
+  const w = setup(t); w.port.speaking = true;
+  const commands: unknown[] = [];
+  const original = w.handle.control.bind(w.handle);
+  t.mock.method(w.handle, 'control', (command: Parameters<FrontendSpeechEndpoint['control']>[0]) => {commands.push(command); return original(command);});
+  assert.equal(await w.session.recover('old-operation', 4), true);
+  assert.equal(w.counts().cancels, 1); assert.equal(w.counts().spoken, 0); assert.equal(w.counts().closed, 1);
+  assert.deepEqual(w.controls, ['recover']); assert.equal(w.session.inspect().availability, 'off');
+  assert.ok(commands[0] !== undefined);
+  await w.session.enable(); assert.deepEqual(w.controls, ['recover', 'enable']);
+  assert.equal(w.session.inspect().availability, 'available'); await w.session.close();
+});
+
+void test('recovery refuses local cancellation failures and active synthesis without opening an endpoint', async t => {
+  const w = setup(t); w.port.speaking = true;
+  t.mock.method(w.port, 'cancel', () => {});
+  assert.equal(await w.session.recover('old-operation', 4), false);
+  w.port.speaking = false; w.port.pending = true;
+  assert.equal(await w.session.recover('old-operation', 4), false);
+  w.port.pending = false;
+  t.mock.method(w.port, 'cancel', () => {throw new Error('synthetic-cancel-error');});
+  assert.equal(await w.session.recover('old-operation', 4), false);
+  assert.equal(w.counts().opened, 0); assert.deepEqual(w.controls, []);
+});
+
+void test('recovery rechecks local idle and live permission after endpoint opening', async t => {
+  const w = setup(t);
+  const open = w.api.open.bind(w.api);
+  t.mock.method(w.api, 'open', async (options: Parameters<typeof w.api.open>[0]) => {const endpoint = await open(options); w.port.pending = true; return endpoint;});
+  assert.equal(await w.session.recover('old-operation', 4), false);
+  assert.deepEqual(w.controls, []); assert.equal(w.counts().closed, 1);
+  w.port.pending = false;
+  t.mock.method(w.api, 'open', async (options: Parameters<typeof w.api.open>[0]) => {const endpoint = await open(options); w.usable(false); w.session.update(); return endpoint;});
+  assert.equal(await w.session.recover('old-operation', 4), false);
+  assert.deepEqual(w.controls, []); assert.equal(w.counts().closed, 2);
+});
+
+void test('an ambiguous recovery reply never retries or enables output', async t => {
+  const w = setup(t); let requests = 0;
+  t.mock.method(w.handle, 'control', () => {requests++; return Promise.reject(new Error('synthetic-lost-reply'));});
+  assert.equal(await w.session.recover('old-operation', 4), false);
+  w.session.update(); await flush(); assert.equal(requests, 1);
+  assert.equal(w.session.inspect().availability, 'off'); assert.equal(w.counts().spoken, 0); assert.equal(w.counts().closed, 1);
+});

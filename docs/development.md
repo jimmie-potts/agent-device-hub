@@ -3054,7 +3054,16 @@ active/one pending candidate, priority cancellation, missing receipts, delayed
 policy, full disk and restart/outbox recovery. Runtime's `companion-speech.test.js`
 checks the internal tracked adapter; `speech-live.test.js` uses the real gateway
 and two SDK browser sessions to check selected output, Quiet/mute and no catch-up.
-Both are discovered by the existing runtime CI suite. The `speech-session`,
+Both are discovered by the existing runtime CI suite.
+Recovery after restart (#1853) stays in these existing suites: the coordinator
+regression covers unchanged uncertain history, atomic acknowledgement/revision,
+stale and live refusal, subsequent restart and new uncertainty; session tests
+cover local idle, cancellation failure, connection loss and no command retry.
+The browser speech journey exercises explicit recovery, fresh enablement and a
+new utterance without replay. Run the same event, SDK, runtime gateway, dashboard,
+companions, build/type/lint, contract and workflow commands listed here. Existing
+CI discovery includes the new cases; no separate job is added.
+ The `speech-session`,
 `speech-browser`, `speech-qualification` and `speech-qualification-file` unit
 files check immediate local cancellation, ordered receipt writes, late endpoint
 registration, failed browser hints and private receipt refusal. The existing
