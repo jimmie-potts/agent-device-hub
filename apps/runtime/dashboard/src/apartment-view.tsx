@@ -7,16 +7,19 @@ import {composeApartment} from './apartment-scene.ts';
 import type {DashboardConnection} from './connection.ts';
 import type {LightingDevice} from './lighting.ts';
 import {roomBinding,roomObservation} from './room-bindings.ts';
+import type {RuntimeCopy} from './runtime-feeds.ts';
+import {apartmentPresence} from './apartment-presence.ts';
+import {ApartmentPresenceView} from './apartment-presence-view.tsx';
 import './apartment-view.css';
 
 type Content = {kind:'missing'|'loading'|'unavailable'|'invalid'}|{kind:'ready';model:ApartmentModel};
 type ArtStatus = 'ready' | 'missing';
 type FixtureView = {fixture:ApartmentFixture;roomName:string;observation:ReturnType<typeof roomObservation>;number:number};
-type Props = {connection:DashboardConnection;connected:boolean;layout:LightingLayout;layoutLive:boolean;devices:readonly LightingDevice[];
+type Props = {connection:DashboardConnection;connected:boolean;layout:LightingLayout;layoutLive:boolean;devices:readonly LightingDevice[];copies:readonly RuntimeCopy[];
   renderLight:(item:ApartmentFixture,roomId:string,currentObservationsOnly:true)=>React.ReactNode;refresh:number};
 
 /** A private content read on entry and explicit refresh. Live device evidence comes from Rooms. */
-export function ApartmentView({connection,connected,layout,layoutLive,devices,renderLight,refresh}:Props):React.JSX.Element|null {
+export function ApartmentView({connection,connected,layout,layoutLive,devices,copies,renderLight,refresh}:Props):React.JSX.Element|null {
   const [content,setContent]=useState<Content>({kind:'missing'});
   const [attempt,setAttempt]=useState(0);
   const revision=`${refresh}/${attempt}`;
@@ -38,19 +41,20 @@ export function ApartmentView({connection,connected,layout,layoutLive,devices,re
     return ()=>{active=false;void scope.close();};
   },[connection,connected,revision]);
   if(content.kind==='missing')return null;
-  if(content.kind==='ready')return <ApartmentInspection key={revision} {...{connection,layout,layoutLive,devices,renderLight}} model={content.model}/>;
+  if(content.kind==='ready')return <ApartmentInspection key={revision} {...{connection,connected,layout,layoutLive,devices,copies,renderLight}} model={content.model}/>;
   if(content.kind==='loading')return <p role="status" className="apartment-note">Loading the apartment model…</p>;
   return <div className="apartment-note" role="status"><span>{content.kind==='invalid'?'The prepared apartment model is invalid.':'The apartment model is unavailable.'} Room controls remain available.</span>
     <button type="button" disabled={!connected} onClick={()=>{setAttempt(n=>n+1);}}>Retry apartment model</button></div>;
 }
 
-function ApartmentInspection({connection,model,layout,layoutLive,devices,renderLight}:
-  Pick<Props,'connection'|'layout'|'layoutLive'|'devices'|'renderLight'>&{model:ApartmentModel}):React.JSX.Element {
+function ApartmentInspection({connection,connected,model,layout,layoutLive,devices,copies,renderLight}:
+  Pick<Props,'connection'|'connected'|'layout'|'layoutLive'|'devices'|'copies'|'renderLight'>&{model:ApartmentModel}):React.JSX.Element {
   const [room,setRoom]=useState<string|null>(null),[selected,setSelected]=useState<string|null>(null),[view,setView]=useState<CameraView>('dollhouse');
   const [cutaway,setCutaway]=useState(true),[failed,setFailed]=useState(false),[artStatus,setArtStatus]=useState<ReadonlyMap<string,ArtStatus>>(new Map());
-  const canvas=useRef<HTMLCanvasElement>(null),marks=useRef<HTMLDivElement>(null),renderer=useRef<ApartmentRenderer|undefined>(undefined);
+  const canvas=useRef<HTMLCanvasElement>(null),marks=useRef<HTMLDivElement>(null),presenceMarks=useRef<HTMLDivElement>(null),renderer=useRef<ApartmentRenderer|undefined>(undefined);
+  const presence=useMemo(()=>apartmentPresence(model,copies,connected),[model,copies,connected]);
   const roomNames=new Map(layout.rooms.map(r=>[r.id,r.name]));
-  const roomName=(id:string):string=>roomNames.get(id)??'Unlisted room '+String(model.rooms.findIndex(r=>r.id===id)+1);
+  const roomName=(id:string):string=>roomNames.get(id)??(model.rooms.some(r=>r.id===id)?'Unlisted room '+String(model.rooms.findIndex(r=>r.id===id)+1):'Unlisted room');
   const fixtures:FixtureView[]=model.objects.filter(item=>item.kind==='fixture').map((fixture,i)=>({fixture,number:i+1,roomName:roomName(fixture.roomId),
     observation:roomObservation(roomBinding(fixture,fixture.roomId,layout,devices,layoutLive))}));
   const powers=useMemo(()=>new Map(model.objects.filter(item=>item.kind==='fixture').map(item=>[item.id,
@@ -65,7 +69,13 @@ function ApartmentInspection({connection,model,layout,layoutLive,devices,renderL
     const target=canvas.current;if(target===null)return;
     let current:ApartmentRenderer;
     try{
-      current=createApartmentRenderer({canvas:target,scene:composeApartment(model),unavailable:()=>{setFailed(true);},project:points=>{
+      current=createApartmentRenderer({canvas:target,scene:composeApartment(model),unavailable:()=>{setFailed(true);},projectPresence:points=>{
+        const byId=new Map(points.map(point=>[point.id,point]));
+        for(const marker of presenceMarks.current?.querySelectorAll<HTMLElement>('[data-presence-marker]')??[]){
+          const point=byId.get(marker.dataset.presenceMarker??'');marker.hidden=point?.visible!==true;
+          if(point?.visible===true){marker.style.left=String(point.x)+'px';marker.style.top=String(point.y)+'px';}
+        }
+      },project:points=>{
         const region=marks.current;if(region===null)return;
         const byId=new Map(points.map(point=>[point.id,point]));
         for(const button of region.querySelectorAll<HTMLButtonElement>('[data-apartment-marker]')){
@@ -81,6 +91,7 @@ function ApartmentInspection({connection,model,layout,layoutLive,devices,renderL
   },[model]);
   useEffect(()=>{renderer.current?.frame(room,view,cutaway);},[model,room,view,cutaway]);
   useEffect(()=>{renderer.current?.lights(selected,powers);},[model,selected,powers]);
+  useEffect(()=>{renderer.current?.presence(presence.rooms,presence.points);},[model,presence]);
   useEffect(()=>{
     const current=renderer.current;if(failed||current===undefined||model.artwork.length===0)return;
     const scope=connection.openModule('core');let active=true;
@@ -129,10 +140,13 @@ function ApartmentInspection({connection,model,layout,layoutLive,devices,renderL
         </div>
       </div>
       <div className="apartment-viewport" hidden={failed}>
-        <canvas ref={canvas} role="img" aria-label="Furnished apartment diagram; numbered markers correspond to the light fixtures below"/>
+        <canvas ref={canvas} role="img" aria-label="Furnished apartment diagram; numbered light fixtures and reported anonymous presence are listed below"/>
         <div className="apartment-markers" ref={marks}>
           {visibleFixtures.map(({fixture,number})=><button key={fixture.id} type="button" data-apartment-marker={fixture.id} hidden
             aria-pressed={selected===fixture.id} aria-label={'Select '+fixture.label+' in apartment model'} onClick={()=>{setSelected(fixture.id);}}>{number}</button>)}
+        </div>
+        <div className="apartment-presence-markers" ref={presenceMarks} aria-hidden="true">
+          {presence.points.filter(point=>room===null||point.roomId===room).map(point=><span key={point.id} data-presence-marker={point.id} data-held={point.held===undefined?'unknown':String(point.held)} hidden>{point.label}</span>)}
         </div>
       </div>
       {failed&&<p className="apartment-fallback" role="status">3D rendering is unavailable. The fixture list and lighting controls remain available.</p>}
@@ -146,6 +160,7 @@ function ApartmentInspection({connection,model,layout,layoutLive,devices,renderL
       {loadingArt&&<p role="status">Loading artwork…</p>}
       {missingArt.length>0&&<p role="status">Artwork unavailable: {missingArt.map(item=>item.label).join(', ')}.</p>}
     </div>
+    <ApartmentPresenceView presence={presence} roomName={roomName} room={room}/>
     <div className="apartment-lights">
       <div className="apartment-fixture-list">
         <h4>Light fixtures</h4><p className="apartment-fixture-note">Reported power is shown schematically. The model does not show live scene colors or illumination.</p>

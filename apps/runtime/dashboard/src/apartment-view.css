@@ -116,6 +116,34 @@
 .apartment-fixture-list small {display: block;margin-top: 2px;font-size: var(--type-small);font-weight: normal;color: var(--muted-dense);}
 .apartment-selection {flex: 1 1 270px;min-width: 0;}
 .apartment-note {margin-block: var(--space-m);display: flex;align-items: center;flex-wrap: wrap;gap: var(--space-s);}
+.apartment-presence-markers {position: absolute;inset: 0;pointer-events: none;}
+.apartment-presence-markers [data-presence-marker] {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 28px;
+  padding: 4px;
+  border: 2px solid var(--apartment-presence-edge);
+  border-radius: 50%;
+  background: var(--apartment-presence-fill);
+  color: var(--apartment-presence-ink);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 750;
+  box-shadow: 0 0 0 3px var(--apartment-presence-halo);
+}
+.apartment-presence-markers [data-held=true] {border-style: dashed;}
+.apartment-presence-markers [data-held=unknown] {border-style: dotted;}
+.apartment-presence {padding: clamp(12px, 2vw, 22px);border-bottom: 1px solid var(--light-edge);font-size: var(--type-small);line-height: 1.5;overflow-wrap: anywhere;}
+.apartment-presence h4, .apartment-presence p {margin: 0 0 6px;}
+.apartment-presence-note {color: var(--muted-dense);max-width: 85ch;}
+.apartment-presence ul {padding-inline-start: 18px;margin-block: 5px;}
+.apartment-presence .apartment-presence-rooms {display: grid;grid-template-columns: repeat(auto-fit,minmax(min(100%,260px),1fr));gap: 12px;list-style: none;padding-inline-start: 0;}
+.apartment-presence-rooms > li {border-inline-start: 4px solid var(--light-edge);padding-inline-start: 10px;min-width: 0;}
+.apartment-presence-rooms > li[data-occupancy=occupied] {border-color: var(--apartment-presence-occupied);}
+.apartment-presence-rooms > li[data-occupancy=vacant] {border-color: var(--apartment-presence-vacant);}
+.apartment-presence-sensors {display: grid;gap: 6px;margin-top: 12px;}
+.apartment-presence-sensors details {min-width: 0;}
+.apartment-presence-sensors summary {cursor: pointer;min-height: 32px;}
 @media(max-width: 600px) {
   .apartment-viewport canvas {height: 320px;}
   .apartment-stage-footer {column-gap: 3px;}

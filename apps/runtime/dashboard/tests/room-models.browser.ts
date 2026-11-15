@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {chromium} from 'playwright';
 import {changes,feed,startWorld} from './harness.ts';
 import {apartmentJourney} from './apartment-journey.ts';
+import {apartmentPresenceJourney} from './apartment-presence-journey.ts';
 import {roomModelFixture} from '../../dist/tests/fixtures/room-model.js';
 
 const world=await startWorld({lighting:true});
@@ -83,4 +84,6 @@ try{
   assert.deepEqual(errors,[]);
   const apartmentWorld=await startWorld({lighting:true});
   try{await apartmentJourney(browser,apartmentWorld);}finally{await apartmentWorld.close();}
+  const presenceWorld=await startWorld({lighting:true,presence:true});
+  try{await apartmentPresenceJourney(browser,presenceWorld);}finally{await presenceWorld.close();}
 }finally{await browser.close();await world.close();}

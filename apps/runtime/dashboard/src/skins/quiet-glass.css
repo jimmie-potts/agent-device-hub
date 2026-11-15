@@ -104,4 +104,10 @@
   --apartment-control-active: #f1d7b1;
   --apartment-control: #2b2a26;
   --apartment-control-ink: #29221c;
+  --apartment-presence-edge: #194c54;
+  --apartment-presence-fill: #b9eeeb;
+  --apartment-presence-ink: #15373b;
+  --apartment-presence-halo: #ffffff9c;
+  --apartment-presence-occupied: #dca043;
+  --apartment-presence-vacant: #64aaa8;
 }

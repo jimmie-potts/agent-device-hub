@@ -80,6 +80,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await replaceLayout('apartment-assign-fixtures',layout);
     const view=panel(page),canvas=view.locator('canvas[data-rendered=true]'),frame=view.getByRole('combobox',{name:'Frame the apartment or a room'});
     await canvas.waitFor();
+    await view.getByText('No presence sensors configured or reports available.',{exact:true}).waitFor();
     assert.ok(Number(await canvas.getAttribute('width'))*Number(await canvas.getAttribute('height'))<=2_005_000);
     assert.equal(await canvas.getAttribute('data-frame'),'apartment');
     await view.getByText('Artwork unavailable: Reading room print.',{exact:true}).waitFor();
