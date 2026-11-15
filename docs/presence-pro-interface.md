@@ -173,8 +173,10 @@ Synthetic consumer readback: entry/exit follows explicit reported states; silenc
 during stillness preserves the last report; boundary jitter is approximate movement,
 not proven room transitions; duplicate/reordered SDK records do not duplicate
 intervals; disconnect/restart is unknown until this session's reports arrive;
-partial X/Y remains approximate; overlap is not two identified people; conflicting
-sensors stay visible. These are source-test examples, not physical qualification.
+X without Y remains unknown; NaN/inactive clears that slot; latest valid X/Y from
+separate updates in one connection is approximate. Overlap is not two identified
+people; conflicting sensors stay visible. These are source-test examples, not
+physical qualification.
 
 [#1841](https://github.com/jimmie-potts/agent-device-hub/issues/1841) can implement
 stock acquisition, this small record, approximate projection and fake consumer
