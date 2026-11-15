@@ -53,6 +53,15 @@ export class SpeechDriver {
   get enabled(): boolean {return this.#enabled;}
   get active(): boolean {return this.#attempt !== undefined;}
 
+  get idle(): boolean {
+    try {return !this.#closed && !this.active && !this.#port.speaking && !this.#port.pending;} catch {return false;}
+  }
+  cancelForRecovery(): boolean {
+    if (this.#closed || this.active) return false;
+    this.#enabled = false;
+    try {this.#port.cancel(); return this.idle;} catch {return false;}
+  }
+
   async enable(): Promise<boolean> {
     if (this.#closed || this.#uncertain || this.active) return false;
     this.#qualification?.abort(); this.#enabled = false;

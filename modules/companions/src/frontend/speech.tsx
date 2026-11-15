@@ -56,6 +56,28 @@ export function useCompanionSpeechCopy(context: FrontendContext): {copy: Readonl
   return {copy, revision};
 }
 
+function SpeechRecovery({operationId, revision, ready, session}: {
+  operationId: string; revision: number; ready: boolean; session: Readonly<RefObject<SpeechSession | undefined>>;
+}): React.JSX.Element {
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const recover = async (): Promise<void> => {
+    if (!confirmed || !ready || busy) return;
+    setBusy(true); setFailed(false);
+    const recovered = await session.current?.recover(operationId, revision);
+    setBusy(false); setConfirmed(false); setFailed(recovered !== true);
+  };
+  return <div>
+    <p>Earlier playback is uncertain. Stop playback in all earlier voice tabs or close those tabs before recovering. Its recorded result will remain uncertain.</p>
+    <label><input type="checkbox" checked={confirmed} disabled={!ready || busy} onChange={event => {setConfirmed(event.target.checked);}} />
+      I have stopped playback in all earlier voice tabs or closed them.</label>
+    <button type="button" disabled={!ready || !confirmed || busy} onClick={() => {void recover();}}>Recover voice</button>
+    <p>Recovery leaves voice off. Enable it here afterward.</p>
+    {failed && <p role="status">Recovery was not confirmed. Check that playback has stopped and the connection is current before trying again.</p>}
+  </div>;
+}
+
 export function SpeechControls({context, companion, compact = false, purpose = 'alerts'}: {
   context: FrontendContext; companion: Readonly<RefObject<CompanionSpeechCopy>>; compact?: boolean; purpose?: SpeechPurpose;
 }): React.JSX.Element {
@@ -139,14 +161,17 @@ export function SpeechControls({context, companion, compact = false, purpose = '
     : selected && remote?.availability === 'available' ? words.on
     : local.availability === 'enabling' ? 'Checking the qualified local voice.'
     : local.availability === 'unavailable' || remote?.availability === 'unavailable' ? 'Speech unavailable. Mute and enable again only after the endpoint is ready.' : words.off;
+  const recovery = remote?.recoveryOperationId === undefined ? null : <SpeechRecovery key={`${remote.recoveryOperationId}:${remote.revision}`}
+    operationId={remote.recoveryOperationId} revision={remote.revision} ready={ready && !local.busy} session={session} />;
   if (compact) return <section aria-label={words.section} className="companion-speech-compact">
     <p className="companion-small">{words.scope}</p>
     <p role="status">{ready ? availabilityText : 'Speech unavailable.'}</p>
     {context.core?.mode === 'quiet' && <p>{words.quiet}</p>}
+    {recovery}
     <div className="actions">
       {selected || local.availability === 'enabling'
         ? <button type="button" onClick={() => {void session.current?.mute();}}>{words.mute}</button>
-        : <button type="button" aria-label={words.enable} disabled={!ready || other || local.busy}
+        : <button type="button" aria-label={words.enable} disabled={!ready || other || local.busy || recovery !== null}
           onClick={() => {void session.current?.enable();}}>Enable in this tab</button>}
       <button type="button" disabled={!selected} onClick={() => {void session.current?.stop();}}>Stop speaking</button>
     </div>
@@ -164,8 +189,9 @@ export function SpeechControls({context, companion, compact = false, purpose = '
     <p>Speech starts off. Reloading, leaving this page or losing the connection requires a fresh enable action. Missed {purpose} are not replayed on their own.</p>
     <p role="status">{availabilityText}</p>
     {context.core?.mode === 'quiet' && <p>{words.quiet}</p>}
+    {recovery}
     <div className="actions">
-      <button type="button" disabled={!ready || selected || other || local.busy} onClick={() => {void session.current?.enable();}}>{words.enable}</button>
+      <button type="button" disabled={!ready || selected || other || local.busy || recovery !== null} onClick={() => {void session.current?.enable();}}>{words.enable}</button>
       <button type="button" disabled={!selected && local.availability !== 'enabling'} onClick={() => {void session.current?.mute();}}>{words.mute}</button>
       <button type="button" disabled={!selected} onClick={() => {void session.current?.stop();}}>Stop speaking</button>
     </div>

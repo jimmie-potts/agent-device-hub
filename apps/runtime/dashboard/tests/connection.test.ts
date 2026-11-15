@@ -48,13 +48,13 @@ void test('only the companions page can open a speech endpoint, and read-only ac
 
 void test('a speech page uses only its declared families and retires its endpoint on unmount', async context => {
   const {connection, script, connects} = await moduleConnection(context, true, 'companions');
-  const calls: {family: string; data: unknown}[] = [];
+  const calls: {family: string; data: unknown; schema?: string}[] = [];
   let options: RemoteEndpointOptions<SpeechOutput> | undefined, closed = 0, cancelled = 0, commands = 0;
   const endpoint: RemoteEndpoint = {id: 'endpoint-test', close: () => {closed += 1; options?.onClosed?.(); return Promise.resolve();},
     publish: (family, draft) => {calls.push({family, data: draft.data}); return Promise.resolve(buildMessage('bunny/parts/dashboard', draft.kind,
       {...draft, subject: 'endpoint-test'}, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'}, 0));},
     request: (family, draft, request) => {
-      calls.push({family, data: draft.data});
+      calls.push({family, data: draft.data, schema: draft.dataschema});
       const requestId = request.requestId ?? 'missing';
       return Promise.resolve({status: 'accepted', requestId, reply: buildMessage<{requestId: string; status: 'accepted'}>('bunny/modules/companions', 'reply', {
         type: draft.type.replace(/requested$/, 'replied'), subject: 'endpoint-test', dataschema: 'https://bunny.invalid/events/reply/2.0',
@@ -78,9 +78,12 @@ void test('a speech page uses only its declared families and retires its endpoin
   await handle.control({requestId: 'enable-test', action: 'enable', available: true});
   await handle.observe({operationId: 'speech-test', status: 'completed', started: true}, {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
   assert.deepEqual(calls.map(call => call.family), ['companion-speech-endpoint', 'companion-speech-playback']);
+  await handle.control({requestId: 'recover-test', action: 'recover', operationId: 'old-operation', expectedRevision: 4, previousPlaybackStopped: true});
+  assert.equal(calls.at(-1)?.schema, 'https://bunny.invalid/events/companion-speech-endpoint/2.1');
+  assert.equal(calls[0]?.schema, 'https://bunny.invalid/events/companion-speech-endpoint/2.0');
   await page.close(); assert.equal(cancelled, 1); assert.equal(closed, 1); assert.equal(connects(), 1);
   await assert.rejects(handle.control({requestId: 'late-test', action: 'stop'}));
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
 });
 
 void test('a speech endpoint that opens after unmount is closed without reaching the page', async context => {

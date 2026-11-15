@@ -133,6 +133,19 @@ prevent replacement. A late definitive cancellation can release the reservation,
 but requires fresh enablement. Unresolved responsibility survives restart as
 uncertain; there is no restored candidate, endpoint or automatic resend.
 Outcomes use the shared outbox, preserving their identity during republication.
+After restart, an orphaned uncertain operation offers **Recover voice**. Stop
+playback in all earlier voice tabs or close those tabs, then check the confirmation
+and recover. The page also cancels local synthesis and requires it to be idle.
+Recovery records the operator acknowledgement separately; it never changes the
+old uncertain result into completion or stop evidence. Voice stays off until a
+fresh Enable action. The old utterance never replays. A live operation or selected
+endpoint, stale recovery request or storage failure prevents recovery. Each new
+uncertain operation needs its own recovery. These controls use the existing
+connection-bound endpoint API with the 2.1 recovery action and speech state;
+2.0 messages remain supported. The additive private `companion_speech_recovery`
+table keeps the operation, request, endpoint, trace and acknowledgement time.
+Acknowledgement and state revision commit together; old speech rows are retained.
+
 Stop and mute clear pending work. Higher-priority attention waits for confirmed
 cancellation before replacing lower-priority output.
 

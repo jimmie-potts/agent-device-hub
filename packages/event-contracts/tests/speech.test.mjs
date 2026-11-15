@@ -106,3 +106,16 @@ test('speech state cannot claim availability without an endpoint or queue behind
   invalid(message(family, {...initial, endpointId: 'endpoint-1', availability: 'unavailable', pending: true,
     playback: {operationId: 'speech-request', status: 'uncertain', started: true}}));
 });
+
+test('speech recovery is explicit in minor 2.1 and cannot weaken the retained 2.0 contracts', () => {
+  const recovery = {requestId: 'recovery-request', action: 'recover', operationId: 'speech-request', expectedRevision: 4, previousPlaybackStopped: true};
+  const command = data => ({...message('companion-speech-endpoint', data), dataschema: 'https://bunny.invalid/events/companion-speech-endpoint/2.1'});
+  valid(command(recovery)); invalid(message('companion-speech-endpoint', recovery));
+  for (const field of Object.keys(recovery)) {const missing = {...recovery}; delete missing[field]; invalid(command(missing));}
+  invalid(command({...recovery, previousPlaybackStopped: false})); invalid(command({...recovery, expectedRevision: -1}));
+  invalid(command({...recovery, text: 'not allowed'}));
+  const state = {...examples['companion-speech-state'].data, availability: 'unavailable', playback: {operationId: 'speech-request', status: 'uncertain', started: true}, recoveryOperationId: 'speech-request'};
+  const stateMessage = data => ({...message('companion-speech-state', data), dataschema: 'https://bunny.invalid/events/companion-speech-state/2.1'});
+  valid(stateMessage(state)); invalid(message('companion-speech-state', state));
+  for (const changed of [{endpointId: 'endpoint-one'}, {availability: 'available'}, {pending: true}, {recoveryOperationId: 'wrong-operation'}, {playback: null}]) invalid(stateMessage({...state, ...changed}));
+});
