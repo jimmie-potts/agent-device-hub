@@ -103,7 +103,7 @@
     "test:sdk": "npm run build && npm run test:sdk:built",
     "test:sdk:built": "node --test packages/sdk/dist/tests/*.test.js",
     "test:runtime": "npm run build && npm run test:runtime:built",
-    "test:runtime:built": "node --test apps/runtime/dist/tests/*.test.js && npm run test:presence-pro:built",
+    "test:runtime:built": "node --test apps/runtime/dist/tests/*.test.js modules/presence-pro/dist/tests/*.test.js",
     "test:runtime:scenarios": "npm run build && npm run test:runtime:scenarios:built",
     "test:runtime:scenarios:built": "node --test apps/runtime/dist/tests/scenarios/*.test.js",
     "verify:runtime": "node scripts/verify-runtime.mjs",
