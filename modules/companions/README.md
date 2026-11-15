@@ -262,8 +262,8 @@ same label again to close it.
 In a synthetic session, ask about recent coding activity and answer the
 clarification. Open **Tool result** in the transcript to read the saved result,
 for example, `No coding agent session is known to the core right now.` Choose
-**Tool result** again to collapse it. Both actions keep the draft and saved
-conversation in place.
+**Tool result** again to collapse it. While a result is open, **Load earlier**
+keeps the result expanded and preserves your reading position.
 
 ```mermaid
 flowchart LR

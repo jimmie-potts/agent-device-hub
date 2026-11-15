@@ -13,6 +13,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
   const bundle = await build({stdin: {contents: `
     import React from 'react'; import {createRoot} from 'react-dom/client';
     import {AssistantPage} from '../../../../modules/companions/src/frontend/assistant.tsx';
+    import {historyCursor} from '../../../../modules/companions/src/assistant/history-contract.ts';
     import {Command} from '../src/command-control.tsx';
     import {Facts, Select} from '../src/ui.tsx';
     const fixture = window.conversationFixture = {commands: [], reads: 0};
@@ -43,15 +44,22 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
       notify({type: 'updated', message: {data: {...state}}});
     };
     const api = {
-      read: async () => {
+      read: async path => {
         fixture.reads += 1;
-        return {version: 2, profile: 'bunny', conversationId: 'saved-conversation', older: null,
+        const profile = 'bunny';
+        const conversationId = 'saved-conversation';
+        if (new URL(path, location.href).searchParams.has('before')) {
+          return {version: 2, profile, conversationId, older: null, currentTask: null, messages: [
+            {id: 'saved-earlier', seq: 1, taskId: 'earlier-task', role: 'owner', text: 'Synthetic earlier saved text', atMs: 0},
+          ]};
+        }
+        return {version: 2, profile, conversationId, older: historyCursor({profile, conversationId, seq: 3}),
           currentTask: {taskId: task.taskId, question}, messages: [
-            {id: 'saved-message', seq: 1, taskId: task.taskId, role: 'owner', text: 'Synthetic retained message', atMs: 0},
-            {id: 'saved-context', seq: 2, taskId: task.taskId, role: 'owner', atMs: 1,
+            {id: 'saved-message', seq: 3, taskId: task.taskId, role: 'owner', text: 'Synthetic retained message', atMs: 1},
+            {id: 'saved-context', seq: 4, taskId: task.taskId, role: 'owner', atMs: 2,
               text: 'Inspect the complete saved result for the conversation layout. Keep the earlier messages in place so each detail can be checked in context.'},
-            {id: 'saved-tool', seq: 3, taskId: task.taskId, role: 'tool', text: toolText, atMs: 2},
-            {id: 'saved-reply', seq: 4, taskId: task.taskId, role: 'assistant', text: 'Synthetic retained reply', atMs: 3},
+            {id: 'saved-tool', seq: 5, taskId: task.taskId, role: 'tool', text: toolText, atMs: 3},
+            {id: 'saved-reply', seq: 6, taskId: task.taskId, role: 'assistant', text: 'Synthetic retained reply', atMs: 4},
           ]};
       },
       sync: async (families, callback) => {
@@ -198,9 +206,25 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     const toolOffset = await tool.locator('summary').evaluate(node => node.getBoundingClientRect().top - (node.closest('.conversation-transcript')?.getBoundingClientRect().top ?? 0));
     await details.locator(':scope > summary').click();
     assert.equal(await tool.locator('summary').evaluate(node => node.getBoundingClientRect().top - (node.closest('.conversation-transcript')?.getBoundingClientRect().top ?? 0)), toolOffset);
+    assert.equal(await page.evaluate<number>('window.conversationFixture.reads'), readsBeforeTool, 'disclosing tool text performs no read');
+    const loadEarlier = transcript.getByRole('button', {name: 'Load earlier', exact: true});
+    await loadEarlier.focus();
+    await transcript.evaluate(node => {
+      const result = node.querySelector('[data-message="saved-tool"]');
+      if (result === null) throw new Error('Missing saved result');
+      node.scrollTop += result.getBoundingClientRect().top - node.getBoundingClientRect().top + 140;
+    });
+    await afterReflow();
+    const insideTool = await readingAnchor();
+    assert.equal(insideTool.id, 'saved-tool');
+    assert.ok(insideTool.offset < -100, 'the reader is inside the expanded tool result');
+    await page.keyboard.press('Enter');
+    await transcript.getByText('Synthetic earlier saved text', {exact: true}).waitFor({state: 'attached'});
+    assert.equal(await toolBody.isVisible(), true, 'loading earlier messages keeps the same tool result expanded');
+    assert.deepEqual(await readingAnchor(), insideTool, 'loading earlier messages preserves the reading position within the result');
+    assert.equal(await page.evaluate<number>('window.conversationFixture.reads'), readsBeforeTool + 1, 'Load earlier performs only its explicit read');
     await tool.locator('summary').press('Enter');
     assert.equal(await toolBody.isVisible(), false);
-    assert.equal(await page.evaluate<number>('window.conversationFixture.reads'), readsBeforeTool, 'disclosing tool text performs no read');
     await details.locator(':scope > summary').click();
     await page.evaluate("window.conversationFixture.update('removed')");
     await page.getByRole('status').filter({hasText: 'Stale.'}).waitFor();

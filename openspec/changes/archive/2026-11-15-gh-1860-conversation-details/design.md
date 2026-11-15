@@ -11,7 +11,7 @@ Give the same mounted conversation a side panel at wide widths and an inline Det
 - Use native disclosures for Details sections and saved tool text. CSS places the same Details view at different widths. Toggling a disclosure sends no command and performs no read.
 - Pass facts and the page's guarded settings action to the Details view. Label retained assistant facts Last known. A missing worker copy has unknown availability.
 - A completed, successful operation matching the command identity permits moving its routine receipt into Task activity. Pending or negative outcomes stay beside the controls. Keep task outcomes and playback separate from command outcomes.
-- Keep each tool disclosure inside its saved transcript row. Display the original text as React text and wrap long words so they fit the reading column. The transcript continues to own scroll position.
+- Keep each tool disclosure inside its saved transcript row. Display the original text as React text and wrap long words so they fit the reading column. Key saved rows by message within one conversation list so paging preserves open disclosures and the reading anchor.
 
 ## Risks and trade-offs
 

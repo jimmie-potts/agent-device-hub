@@ -64,3 +64,4 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 - **WHEN** the owner or reader opens a tool result on a saved transcript row
 - **THEN** the full inert text can be read without horizontal page overflow, and the row retains its original task association and message order
 - **AND** opening or closing the result does not fetch, send a command, or replay text or audio
+- **AND** loading earlier saved messages keeps the result open and preserves the current reading position within it

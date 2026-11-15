@@ -101,7 +101,7 @@
   padding: 0;
 }
 
-.conversation-transcript li {
+.conversation-transcript li[data-message] {
   min-inline-size: 0;
   max-inline-size: min(100%, 48rem);
   padding: 0.75rem 1rem;
