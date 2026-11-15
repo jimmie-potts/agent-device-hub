@@ -1,3 +1,4 @@
+import {conversationStateJourney} from './conversation-state.browser.ts';
 import {conversationHistoryJourney} from './conversation-history.browser.ts';
 import {homeSpeechLifetimeJourney, speechJourney, spokenRepliesJourney} from './speech.browser.ts';
 import {codingDelegationJourney} from './coding-delegation.browser.ts';
@@ -14,11 +15,12 @@ import {preferencesJourney} from './preferences.browser.ts';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
-import {feed, startWorld} from './harness.ts';
+import {changes, feed, startWorld} from './harness.ts';
 const world = await startWorld({companions: true});
 const browser = await chromium.launch({headless: true});
 try {
   await conversationHistoryJourney(browser);
+  await conversationStateJourney(browser);
   await companionCardsCheck(browser);
   await speechJourney(browser);
   await spokenRepliesJourney(browser);
@@ -79,11 +81,14 @@ try {
   await page.setViewportSize({width: 1280, height: 1000});
   await page.goto(`${world.url}/#/module/companions/assistant`); await feed(page, 'connected');
   const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
+  const details = assistant.locator('details.conversation-details');
+  await details.locator('summary').click();
   await assistant.getByText('Synthetic (no paid calls)', {exact: true}).waitFor();
   await assistant.getByText('read_sessions, set_mode', {exact: true}).waitFor();
   const enableAssistant = assistant.getByRole('button', {name: 'Enable conversation', exact: true});
   await enableAssistant.focus(); await enableAssistant.press('Enter');
-  await assistant.getByRole('button', {name: 'Disable conversation', exact: true}).waitFor();
+  await details.getByRole('button', {name: 'Disable conversation', exact: true}).waitFor();
+  await details.locator('summary').click();
   // An approved proposal: the synthetic provider proposes the named mode, the owner decides by keyboard after a reload.
   await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER quiet mode');
   const startTask = assistant.getByRole('button', {name: 'Send message', exact: true}); await startTask.focus(); await startTask.press('Enter');
@@ -127,10 +132,16 @@ try {
   const cancel = assistant.getByRole('button', {name: 'Cancel task', exact: true}); await cancel.focus(); await cancel.press('Enter');
   await assistant.getByText('Task status: cancelled', {exact: true}).waitFor();
   const draft = assistant.getByRole('textbox', {name: 'Message', exact: true}); await draft.fill('UNSENT-DISCONNECTION-DRAFT');
+  const reconnectSends = changes(page);
   await context.setOffline(true); world.dropDashboardStreams();
   await assistant.getByText('Disconnected.', {exact: false}).waitFor(); assert.equal(await startTask.isDisabled(), true);
   assert.equal(await draft.inputValue(), 'UNSENT-DISCONNECTION-DRAFT');
-  await context.setOffline(false); await page.reload(); await feed(page, 'connected');
+  await context.setOffline(false); await feed(page, 'connected');
+  await startTask.click({trial: true});
+  assert.equal(await draft.inputValue(), 'UNSENT-DISCONNECTION-DRAFT');
+  assert.deepEqual(reconnectSends, [], 'same-page reconnect sends no mutation');
+  await page.reload(); await feed(page, 'connected');
+  assert.equal(await draft.inputValue(), '', 'reload resets the page draft');
   await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
   await page.reload(); await feed(page, 'connected');
   await assistant.getByText('Read-only access. Controls require operator authority.', {exact: true}).waitFor();

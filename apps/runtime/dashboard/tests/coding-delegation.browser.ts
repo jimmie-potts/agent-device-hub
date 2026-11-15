@@ -15,6 +15,8 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     const page = await context.newPage(); page.setDefaultTimeout(12_000);
     await page.goto(`${world.url}/#/module/companions/assistant`); await feed(page, 'connected');
     const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
+    const details = assistant.locator('details.conversation-details');
+    await details.locator('summary').click();
     await assistant.getByText('read_sessions, set_mode, delegate_coding', {exact: true}).waitFor();
     await assistant.getByText('Not connected', {exact: true}).waitFor();
     // The worker declares its endpoint through the real gateway: only its three families are granted.
