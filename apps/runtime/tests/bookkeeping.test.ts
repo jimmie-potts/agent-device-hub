@@ -74,6 +74,7 @@ it('the classification lists every state family of the core and of every registe
   assert.deepEqual(classificationProblems(familiesOf(registrations), STATE_FAMILIES, OTHER_MODULE_FAMILIES, declaredFor(registrations)), []);
   assert.deepEqual(moduleBookkeeping(registrations), {
     'lifx-light': ['/observed/observedAtMs'], 'pixoo-display': ['/monitor/page'], 'roborock-vacuum': ['/observedAtMs/value'],
+    'presence-observation': ['/occupancy/receivedAtMs/value'],
   });
   assert.ok(registrations.some(({name}) => name === 'pixoo') && registrations.some(({name}) => name === 'roborock'));
 });
@@ -139,9 +140,9 @@ it('every leaf that is not bookkeeping, changed alone, is a change in each modul
   const declared = moduleBookkeeping(registrations), check = validator();
   const families = new Set(Object.keys(RECORDS).map(name => familyOfSchema(`${SCHEMA_BASE}${name}`)));
   assert.deepEqual([...families].sort(), Object.keys(declared).sort(), 'each declared module family has a fixture');
-  for (const [name, {type, data}] of Object.entries(RECORDS)) {
+  for (const [name, {type, data, source}] of Object.entries(RECORDS)) {
     const message: Message = {
-      specversion: '1.0', bunnyprofile: '2.0', id: randomUUID(), source: 'bunny/modules/fixture', type, subject: String(data.id), time: new Date(AT).toISOString(),
+      specversion: '1.0', bunnyprofile: '2.0', id: randomUUID(), source: source ?? 'bunny/modules/fixture', type, subject: String(data.id), time: new Date(AT).toISOString(),
       kind: 'state', datacontenttype: 'application/json', dataschema: `${SCHEMA_BASE}${name}`, traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data,
     };
     const result = check.validate(message);

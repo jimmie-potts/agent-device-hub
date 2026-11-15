@@ -53,6 +53,7 @@ export const STATE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
   'nanoleaf-shows/2.0': [],
   'volcano-status/2.0': [],
   'weather-state/2.0': [],
+  'presence-observation/2.0': ['/occupancy/receivedAtMs/value'],
 };
 
 /** Each module's own families that are not state: commands and occurrences, so that a new one is classified too. */
