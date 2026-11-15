@@ -17,7 +17,7 @@ import type {Indication} from './line-projection.js';
 import {alerting, newerChoice, NEWER_CHOICES, type Admitted, type DeviceRead} from './moments.js';
 import {colorStateOf, restoreMusicBase, sameColorOf, selectionOf, selectionRead, type MusicBase} from './music-base.js';
 import {MusicRenderer, type MusicRecipeV1} from './music-effects.js';
-import {musicBinding, MusicInput, type MusicBinding, type MusicClock, type MusicSample} from './music-input.js';
+import {musicBinding, MusicInput, type MusicInputLoss, type MusicBinding, type MusicClock, type MusicSample} from './music-input.js';
 import {readReactiveCatalog} from './music-presets.js';
 import {endSession, liveSession, markPlaying, musicSession, MUSIC_PLAY, MUSIC_STOP, saveSelection, saveStarting} from './music-store.js';
 import type {RenderConfig} from './renderer.js';
@@ -56,7 +56,7 @@ export class MusicFeeds {
 
   /** Opens a new input for an admitted session, retiring any earlier one of the device's. */
   open(device: string, generation: string, binding: MusicBinding): void {
-    this.#inputs.get(device)?.input.retire();
+    this.#inputs.get(device)?.input.retire('binding-replaced');
     this.#inputs.set(device, {generation, input: new MusicInput(binding, this.clock())});
   }
 
@@ -72,7 +72,7 @@ export class MusicFeeds {
 
   /** A gap in the features (a subscription overflow) is source loss for every session: nothing resumes on a later frame. */
   retireAll(): void {
-    for (const {input} of this.#inputs.values()) input.retire();
+    for (const {input} of this.#inputs.values()) input.retire('subscription-overflow');
   }
 }
 
@@ -191,6 +191,7 @@ export type MusicPlayback = {
   sleep: (seconds: number) => Promise<void>;
   /** The session's input, or none when no input was opened for it. */
   input: MusicInput | undefined;
+  onInputLoss?: (generation: string, loss: MusicInputLoss | undefined) => void;
   /** Recompute from the current store, including current alert/status. */
   current: () => readonly Indication[];
   /** The first frame took the device. */
@@ -380,8 +381,12 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     if (stop !== undefined) return end('stopped', await restore(stop), undefined, stop);
     if (stale()) return end('manual', 'none');
     if (alerting(current())) return end('alert', await restore(undefined));
-    const next = input?.current(clock()) ?? null;
-    if (next === null) return end('source-lost', await restore(undefined));
+    const observation = input === undefined ? undefined : clock();
+    const next = observation === undefined ? null : input?.current(observation) ?? null;
+    if (next === null) {
+      try {options.onInputLoss?.(command.capture.generation, observation === undefined ? undefined : input?.lossAt(observation));} catch { /* Diagnostics do not affect restoration. */ }
+      return end('source-lost', await restore(undefined));
+    }
     if (now() - lastCheck >= EXTERNAL_CHECK_MS) {
       lastCheck = now();
       let showing: boolean;

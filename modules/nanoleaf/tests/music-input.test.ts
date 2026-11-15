@@ -129,3 +129,21 @@ test('clock loss, source reversal and explicit retirement never reactivate on a 
   assert.throws(() => new MusicInput({...binding, endpointId: 'invalid/endpoint'}, clock()));
   assert.throws(() => new MusicInput(binding, {wallMs: at, monotonicMs: Infinity}));
 });
+
+test('first local input loss records an expired accepted sample', () => {
+  const expired = new MusicInput(binding, clock());
+  assert.equal(expired.accept(message(), clock()), 'accepted');
+  assert.equal(expired.current(clock(400)), null);
+  assert.equal(expired.accept(message(feature(5)), clock(400)), 'retired');
+  assert.deepEqual('loss' in expired ? expired.loss : undefined, {reason: 'sample-expired', sequence: 1});
+});
+
+test('first local input loss distinguishes reversed source time', () => {
+  const reversed = new MusicInput(binding, clock());
+  assert.equal(reversed.accept(message(), clock()), 'accepted');
+  assert.equal(reversed.accept(message({...feature(2), startMonotonicMs: 899900,
+    endMonotonicMs: 900000, emittedMonotonicMs: 900002}), clock(100)), 'discontinuity');
+  assert.equal(reversed.current(clock(400)), null);
+
+  assert.deepEqual('loss' in reversed ? reversed.loss : undefined, {reason: 'source-clock-reversed', sequence: 1});
+});

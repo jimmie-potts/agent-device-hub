@@ -1,5 +1,5 @@
 {
-  "artifact_version": "1.11.0",
+  "artifact_version": "1.12.0",
   "schema_versions": [
     "1.0",
     "1.1",
@@ -12,7 +12,8 @@
     "1.8",
     "1.9",
     "1.10",
-    "1.11"
+    "1.11",
+    "1.12"
   ],
   "default_schema_version": "1.1",
   "semantic_conventions": "1.44.0",
@@ -212,6 +213,40 @@
         "bunny.nanoleaf.rejection.count.decode.other",
         "bunny.nanoleaf.rejection.count.unknown.other"
       ]
+    },
+    "1.12": {
+      "services": [
+        "music-producer"
+      ],
+      "scopes": [
+        "bunny.music-producer"
+      ],
+      "events": [
+        "music.capture.producer.checkpoint",
+        "music.capture.freshness",
+        "nanoleaf.music.input.lost"
+      ],
+      "attributes": [
+        "bunny.music.capture_generation",
+        "bunny.music.checkpoint",
+        "bunny.music.input_loss",
+        "bunny.music.observation",
+        "bunny.music.loss_at_ms",
+        "bunny.music.dequeued_sequence",
+        "bunny.music.dequeued_idle_ms",
+        "bunny.music.attempted_sequence",
+        "bunny.music.attempted_idle_ms",
+        "bunny.music.acknowledged_sequence",
+        "bunny.music.acknowledged_idle_ms",
+        "bunny.music.accepted_sequence",
+        "bunny.music.accepted_idle_ms",
+        "bunny.music.dequeued_source_age_ms",
+        "bunny.music.attempted_source_age_ms",
+        "bunny.music.publication_state",
+        "bunny.music.dequeued_window_expired",
+        "bunny.music.publish_pending_overdue",
+        "bunny.music.sink_dropped_count"
+      ]
     }
   },
   "events": {
@@ -277,7 +312,10 @@
     "nanoleaf.http.read.failed": "Nanoleaf HTTP read failed",
     "nanoleaf.http.read.recovered": "Nanoleaf HTTP read recovered",
     "nanoleaf.http.read.sampled": "Nanoleaf HTTP read sampled",
-    "nanoleaf.http.read.summary": "Nanoleaf HTTP read failures summarized"
+    "nanoleaf.http.read.summary": "Nanoleaf HTTP read failures summarized",
+    "music.capture.producer.checkpoint": "Music producer capture checkpoint",
+    "music.capture.freshness": "Runtime capture freshness checkpoint",
+    "nanoleaf.music.input.lost": "Nanoleaf Music input lost"
   },
   "services": [
     "hub",
@@ -294,7 +332,8 @@
     "nanoleaf-wall-ui",
     "nanoleaf-mcp",
     "bunny-tool",
-    "runtime"
+    "runtime",
+    "music-producer"
   ],
   "scopes": [
     "bunny.host",
@@ -315,7 +354,8 @@
     "bunny.verification",
     "bunny.telemetry",
     "bunny.runtime",
-    "bunny.module"
+    "bunny.module",
+    "bunny.music-producer"
   ],
   "severities": {
     "TRACE": 1,
@@ -924,6 +964,117 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 9007199254740991
+    },
+    "bunny.music.capture_generation": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?![\\s\\S])"
+    },
+    "bunny.music.checkpoint": {
+      "type": "string",
+      "enum": [
+        "loss",
+        "recovery",
+        "summary",
+        "terminal"
+      ]
+    },
+    "bunny.music.input_loss": {
+      "type": "string",
+      "enum": [
+        "no-current-input",
+        "sample-expired",
+        "incoming-expired",
+        "receiver-clock-invalid",
+        "source-clock-reversed",
+        "binding-replaced",
+        "subscription-overflow",
+        "retired"
+      ]
+    },
+    "bunny.music.observation": {
+      "type": "string",
+      "enum": [
+        "dequeue-quiet",
+        "publish-unacknowledged",
+        "dequeue-timestamp-rejected",
+        "publication-timestamp-rejected",
+        "accepted-sample-expired",
+        "dequeued-window-expired"
+      ]
+    },
+    "bunny.music.loss_at_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "bunny.music.dequeued_sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.music.dequeued_idle_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.music.attempted_sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.music.attempted_idle_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.music.acknowledged_sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.music.acknowledged_idle_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.music.accepted_sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "bunny.music.accepted_idle_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.music.dequeued_source_age_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.music.attempted_source_age_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "bunny.music.publication_state": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "acknowledged",
+        "rejected"
+      ]
+    },
+    "bunny.music.dequeued_window_expired": {
+      "type": "boolean"
+    },
+    "bunny.music.publish_pending_overdue": {
+      "type": "boolean"
+    },
+    "bunny.music.sink_dropped_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
     }
   },
   "scope_rules": {
@@ -998,10 +1149,20 @@
         "nanoleaf.http.read.failed",
         "nanoleaf.http.read.recovered",
         "nanoleaf.http.read.sampled",
-        "nanoleaf.http.read.summary"
+        "nanoleaf.http.read.summary",
+        "nanoleaf.music.input.lost",
+        "music.capture.freshness"
       ],
       "required_attributes": [
         "bunny.module"
+      ]
+    },
+    "bunny.music-producer": {
+      "services": [
+        "music-producer"
+      ],
+      "events": [
+        "music.capture.producer.checkpoint"
       ]
     }
   }

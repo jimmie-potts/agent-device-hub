@@ -1,10 +1,11 @@
 import {randomUUID} from 'node:crypto';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {CAPTURE_WINDOW_MS, type CaptureFeatures, type CaptureProgress, type CaptureSelection, type CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
-import {Outcome, SdkError, type Command, type RemoteEndpoint, type RemoteParticipant, type Reply, type Scheduler} from '@jimmie-potts/sdk';
+import {Outcome, SdkError, type Command, type LogFields, type RemoteEndpoint, type RemoteParticipant, type Reply, type Scheduler} from '@jimmie-potts/sdk';
 import {systemClock, systemScheduler, type NativeInput, type NativeRun, type NativeSource, type NativeTermination} from './native.js';
 import {nativeFailure, type NativeFailure, type NativeFrame} from './protocol.js';
 import {CaptureClock, coreClockQualified, type ClockReading} from './timing.js';
+import {ProducerFreshness} from './freshness.js';
 import type {ConfiguredMicrophone} from './configuration.js';
 
 type Operation = {operationId: string; traceparent: string};
@@ -12,10 +13,10 @@ type Session = {
   generation: string; selection: CaptureSelection; start: Operation; stop: Operation | null;
   phase: 'qualifying' | 'starting' | 'reporting-start' | 'active' | 'stopping';
   run: NativeRun | null; clock: CaptureClock; pending: NativeFrame | null;
-  failure: NativeFailure | null; ending: boolean; cancelStartup: () => void;
+  failure: NativeFailure | null; ending: boolean; cancelStartup: () => void; freshness?: ProducerFreshness;
 };
 export type ProducerOptions = {participant: Pick<RemoteParticipant, 'openEndpoint' | 'close'>; native: NativeSource;
-  clock?: () => ClockReading; scheduler?: Scheduler; microphone?: ConfiguredMicrophone};
+  clock?: () => ClockReading; scheduler?: Scheduler; microphone?: ConfiguredMicrophone; diagnostic?: (fields: LogFields) => void};
 const schema = (family: string, version = '2.0'): string => `https://bunny.invalid/events/${family}/${version}`;
 
 /** One connection-bound endpoint and one explicitly issued capture generation. */
@@ -36,13 +37,15 @@ export class MusicProducer {
   #closing = false;
   #blocked = false;
   #terminated: {generation: string; result: NativeTermination} | undefined;
+  readonly #diagnostic: ProducerOptions['diagnostic'];
   #lastPublishedMs = -Infinity;
   #lastSequence = 0;
   #publishing = false;
   #reportingCleanup = false;
   #cancelPublication: (() => void) | undefined;
   #progressTail = Promise.resolve();
-  constructor({participant, native, clock = systemClock, scheduler = systemScheduler, microphone}: ProducerOptions) {
+  constructor({participant, native, clock = systemClock, scheduler = systemScheduler, microphone, diagnostic}: ProducerOptions) {
+    this.#diagnostic = diagnostic;
     this.#participant = participant; this.#native = native; this.#clock = clock; this.#scheduler = scheduler;
     this.#microphone = microphone === undefined ? undefined : {...microphone};
     this.closed = new Promise(resolve => {this.#resolveClosed = resolve;});
@@ -110,6 +113,7 @@ export class MusicProducer {
       const session: Session = {generation: work.generation, selection, start: {operationId: work.operationId, traceparent: command.traceparent},
         stop: null, phase: 'qualifying', run: null, clock: new CaptureClock(this.#registrationClock ?? this.#clock()), pending: null, failure: null,
         ending: false, cancelStartup: () => {}};
+      if (this.#diagnostic !== undefined) session.freshness = new ProducerFreshness(work.generation, this.#scheduler, this.#clock, this.#diagnostic);
       this.#session = session; this.#lastSequence = 0;
       session.cancelStartup = this.#scheduler.after(5000, () => this.#fail(session, nativeFailure('unavailable')));
       void this.#begin(session);
@@ -153,6 +157,7 @@ export class MusicProducer {
   }
   #current(session: Session): boolean {return this.#session === session && !this.#closed && !this.#closing;}
   #fence(session: Session): void {
+    session.freshness?.close();
     session.phase = 'stopping'; session.pending = null; session.cancelStartup();
     this.#cancelPublication?.(); this.#cancelPublication = undefined;
   }
@@ -184,14 +189,16 @@ export class MusicProducer {
   #frame(session: Session, frame: NativeFrame): void {
     if (!this.#current(session) || session.phase === 'stopping' || session.ending) return;
     const now = this.#clock();
-    if (frame.emittedMonotonicMs > now.monotonicMs) {this.#fail(session, nativeFailure('invalid-message')); return;}
+    session.freshness?.observe('dequeued', frame.sequence, now, frame.endMonotonicMs);
+    if (frame.emittedMonotonicMs > now.monotonicMs) {session.freshness?.timestamp('dequeue', true, now); this.#fail(session, nativeFailure('invalid-message')); return;}
     const timestamp = session.clock.timestamps(frame.endMonotonicMs, now);
+    session.freshness?.timestamp('dequeue', timestamp === undefined, now);
     if (timestamp === undefined) {if (!session.clock.valid) this.#fail(session, nativeFailure('unavailable')); return;}
     session.pending = frame;
     if (session.phase === 'starting') {
       session.cancelStartup(); session.phase = 'reporting-start';
       void this.#progress({operationId: session.start.operationId, generation: session.generation, status: 'started'}, session.start.traceparent).then(() => {
-        if (this.#current(session) && session.phase === 'reporting-start') {session.phase = 'active'; this.#pump(session);}
+        if (this.#current(session) && session.phase === 'reporting-start') {session.phase = 'active'; session.freshness?.start(); this.#pump(session);}
       }, () => this.#lost());
     } else if (session.phase === 'active') this.#pump(session);
   }
@@ -216,16 +223,21 @@ export class MusicProducer {
     }
     const frame = session.pending; session.pending = null;
     const times = session.clock.timestamps(frame.endMonotonicMs, now);
+    session.freshness?.timestamp('publication', times === undefined, now);
     if (times === undefined) {if (!session.clock.valid) this.#fail(session, nativeFailure('unavailable')); return;}
     const endpoint = this.#endpoint;
     if (endpoint === undefined) return;
     const data: CaptureFeatures = {...frame, ...times, generation: session.generation, ...session.selection,
       discontinuity: frame.discontinuity || frame.sequence !== this.#lastSequence + 1};
     this.#lastSequence = frame.sequence; this.#lastPublishedMs = now.monotonicMs; this.#publishing = true;
+    session.freshness?.observe('attempted', frame.sequence, now, frame.endMonotonicMs);
     void endpoint.publish('music-capture-features', {kind: 'occurrence', type: 'org.bunny.music-capture.features.observed',
       dataschema: schema('music-capture-features', session.selection.input === 'music' ? '2.0' : '2.1'), data}, {parent: {traceparent: session.start.traceparent}}).then(() => {
+      if (session.freshness !== undefined) {
+        try {session.freshness.observe('acknowledged', frame.sequence, this.#clock());} catch { /* Diagnostic clock only. */ }
+      }
       this.#publishing = false;
       if (this.#session !== undefined) this.#pump(this.#session);
-    }, () => {this.#publishing = false; this.#lost();});
+    }, () => {session.freshness?.publicationRefused(); this.#publishing = false; this.#lost();});
   }
 }

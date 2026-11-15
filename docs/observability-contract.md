@@ -7,7 +7,7 @@ current exclusions. Richer capture and durable retention require a versioned
 implementation with consumer and exporter checks; this policy decision does not
 widen an existing schema or export destination.
 
-The artifact `@jimmie-potts/bunny-observability` version 1.11.0 owns this contract,
+The artifact `@jimmie-potts/bunny-observability` version 1.12.0 owns this contract,
 its JSON Schema, catalog, fixtures and language helpers. The B.U.N.N.Y. profiles
 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 1.10 and 1.11 are independent of the pinned OpenTelemetry semantic
 conventions 1.44.0. Profiles 1.0 and 1.1 were introduced together: 1.0 is the minimal
@@ -375,7 +375,7 @@ later activations to the prior run. Calls are children of the active run. It
 uses the SDK and host adapter; a diagnostic failure cannot decide task success.
 There is no LangSmith or second content exporter.
 
-This source revision writes runtime records and spans at profile 1.11. Source
+This source revision writes runtime records and spans at profile 1.12. Source
 fixtures and disposable runs do not establish installed adoption.
 
 ## Nanoleaf HTTP read timing (profile 1.10)
@@ -464,6 +464,51 @@ stage. Existing timing, availability and deadlines stay independent.
 On explicit projection to 1.10, the helpers first validate the source record,
 then remove the optional 1.11 classification and counters. Target validation
 keeps the original timing and rejects this event below profile 1.10.
+
+## Music capture freshness checkpoints (profile 1.12)
+
+The foreground Music producer writes bounded `music.capture.producer.checkpoint`
+records to its existing stderr. Its service is `music-producer`, its scope is
+`bunny.music-producer`, and its service version is `unknown` because this CLI
+does not load build version metadata. This local operator CLI identifies its
+records with deployment environment `production`. The runtime writes
+`music.capture.freshness` as module `core` and `nanoleaf.music.input.lost`
+as module `nanoleaf` through its existing diagnostic sinks. These are separate observations joined by the
+existing validated v4 capture generation and source feature sequence.
+
+- Producer stage sequences distinguish a dequeued, attempted or acknowledged
+  feature. Idle time is time since the last observed stage on the producer's
+  own monotonic clock. Source age is the age of the source window at dequeue
+  or attempt using the qualified same-host clock. Acknowledgment is settlement
+  of the publish call. It does not establish receipt by the runtime or a device.
+- Loss observations describe a locally quiet dequeue, an already expired
+  dequeued window, an overdue outstanding publish, or timestamp rejection at
+  dequeue or publication. The publication state and simultaneous-condition
+  flags provide independent evidence when multiple conditions hold. The
+  observation time is when the producer noticed the condition.
+- Core freshness records identify expiry of the last accepted feature and a
+  later accepted feature. A fresh replacement arriving late can reveal the
+  expired interval before the scheduler's expiry callback executes.
+- The worker reports its first local retirement cause when a playing session
+  ends for source loss, with its last accepted sequence and local idle time if
+  observed. Existing subscription-drop diagnostics supply separate overflow
+  evidence. Core recovery does not reopen a retired worker input.
+
+Producer and core emit one immediate loss and optional recovery per 60-second
+window. Further losses coalesce in a saturating count and preserve the most
+recent loss snapshot. A trailing summary or termination flush retains the
+incident-time stage ages and sequence. Any terminal checkpoint reports current
+stage values separately. A backed-up producer stderr drops checkpoints rather
+than waiting, and the next record reports the skipped count if the sink
+recovers. A permanently closed sink cannot report what it lost.
+
+These records carry no media or measured feature values, addresses, endpoint or
+request identifiers, credentials, or exception text. The diagnostic observer
+does not change admission, deadlines, restoration, retries or restart behavior.
+Do not subtract monotonic readings across processes. Missing records do not
+establish continuous input. Older profiles refuse these events. Previously
+supported records retain their existing projection rules, and the legacy
+producer default remains 1.1.
 
 ## Hourly history warning (profile 1.9)
 

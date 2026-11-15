@@ -614,6 +614,12 @@ export class NanoleafRuntime {
     const running: Promise<void> = superviseWorker({
       directory: this.#directory, database: this.#context.database, device, clock, scheduler: whole, signal, request: link.request, stream: link.stream,
       musicRead: endpoint => link.read('music-session', endpoint),
+      onMusicInputLoss: (generation, loss) => recordLog(this.#context.log, 'nanoleaf.music.input.lost', {
+        'bunny.device.id': device, 'bunny.music.capture_generation': generation,
+        'bunny.music.input_loss': loss?.reason ?? 'no-current-input',
+        ...(loss?.sequence === undefined ? {} : {'bunny.music.accepted_sequence': loss.sequence}),
+        ...(loss?.acceptedIdleMs === undefined ? {} : {'bunny.music.accepted_idle_ms': loss.acceptedIdleMs}),
+      }),
       transact: this.#transact, music: this.#feeds, onFailure: (error, failed) => { this.#passFailed(failed, error); },
     }).then((end: SupervisorEnd) => {
       this.#supervisors.delete(device);

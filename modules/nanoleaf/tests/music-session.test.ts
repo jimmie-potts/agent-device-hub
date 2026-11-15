@@ -18,7 +18,7 @@ import {colorStateOf, readMusicBase, restoreMusicBase, type ColorState, type Mus
 import {initMusicSessions, lastSelection, saveSelection, SELECTION_REFRESH_MS} from '../src/music-store.js';
 import {HttpError} from '../src/transport.js';
 import type {Indication} from '../src/line-projection.js';
-import {MusicInput, type MusicClock} from '../src/music-input.js';
+import {MusicInput, type MusicClock, type MusicInputLoss} from '../src/music-input.js';
 import {initReactivePresets, saveReactivePreset} from '../src/music-presets.js';
 import {admitMusicStart, admitMusicStop, checkMusicStart, musicDeviceState, playMusic} from '../src/music-session.js';
 import {transaction} from '../src/sqlite.js';
@@ -59,6 +59,7 @@ type World = {
   failSend: boolean;
   /** Changes every later feature's measurements, as silence or a quiet passage would. */
   patch: Partial<CaptureFeatures>;
+  inputLoss: {generation: string; loss: MusicInputLoss | undefined}[];
   now: number; selected: string; brightness: number; alert: boolean; feeding: boolean; sequence: number; input: MusicInput;
   /** Whether `/state` reports the light on: the app or the light's own switch can turn it off. */
   on: boolean;
@@ -92,7 +93,7 @@ function open(target: Target = LINES_TARGET): World {
   const clock: MusicClock = {wallMs: now, monotonicMs: now};
   return {db, outcomes: [], writes: [], inFlight: 0, maxInFlight: 0, target, entryAnswer: V1_ANSWER, datagrams: [], reads: [], failSend: false, patch: {}, now, selected: 'Ocean', streaming: false, brightness: 50, on: true, alert: false, feeding: true, sequence: 0,
     input: new MusicInput(CAPTURE, clock), onWrite: () => {}, lose: undefined, refuse: undefined, onRead: () => {}, onArrive: () => {}, color: undefined, stateAnswer: undefined,
-    selectionReports: []};
+    selectionReports: [], inputLoss: []};
 }
 
 const feature = (world: World): CaptureFeatures => {
@@ -185,7 +186,9 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
   assert.ok(row);
   let fed = world.now - 100;
   await playMusic({db, device: target.device, row, config: {ip: 'synthetic', token: 'synthetic', line_groups: target.layout.elements.map(element => element.zones)},
-    transact, request, stream, input: world.input, now: () => world.now, clock: () => ({wallMs: world.now, monotonicMs: world.now}),
+    transact, request, stream, input: world.input,
+    onInputLoss: (generation, loss) => {world.inputLoss.push({generation, loss}); throw new Error('synthetic failed diagnostic sink');},
+    now: () => world.now, clock: () => ({wallMs: world.now, monotonicMs: world.now}),
     sleep: seconds => {
       world.now += seconds * 1000;
       // A bound on every run: after 200 features the source goes quiet, so a session that should have ended ends anyway.
@@ -1492,5 +1495,26 @@ test('#1777 store: the colour table is created if absent, survives a reopen, and
     again.close();
   } finally {
     rmSync(directory, {recursive: true, force: true});
+  }
+});
+
+test('playing loss reports the first local retirement while both paths restore the scene', async () => {
+  for (const overflow of [false, true]) {
+    const world = open();
+    try {
+      await run(world, current => {
+        if (current.datagrams.length < 3 || !current.feeding) return;
+        current.feeding = false;
+        if (overflow) current.input.retire('subscription-overflow');
+      });
+      assert.deepEqual(ended(world), {reason: 'source-lost', restoration: 'restored'});
+      assert.equal(world.inputLoss.length, 1);
+      assert.equal(world.inputLoss[0]?.generation, CAPTURE.generation);
+      assert.equal(world.inputLoss[0]?.loss?.reason, overflow ? 'subscription-overflow' : 'sample-expired');
+      assert.equal(world.inputLoss[0]?.loss?.sequence, world.sequence);
+      assert.equal(world.selected, 'Ocean');
+    } finally {
+      world.db.close();
+    }
   }
 });
