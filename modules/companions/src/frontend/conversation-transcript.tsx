@@ -34,6 +34,16 @@ export function ConversationTranscript({history, status, readLocked, loadEarlier
     if (node !== null) node.scrollTop = node.scrollHeight;
     remember();
   }, [remember]);
+  const restoreAnchor = useCallback((): void => {
+    const node = scroll.current;
+    const anchor = position.current.anchor;
+    if (node === null || anchor === undefined) return;
+    const row = Array.from(node.querySelectorAll<HTMLElement>('[data-message]')).find(value => value.dataset.message === anchor.id);
+    if (row === undefined) return;
+    const rect = row.getBoundingClientRect();
+    const offset = Math.max(anchor.offset, 1 - rect.height);
+    node.scrollTop += rect.top - node.getBoundingClientRect().top - offset;
+  }, []);
   useLayoutEffect(() => {
     const node = scroll.current;
     if (node === null) return;
@@ -49,22 +59,19 @@ export function ConversationTranscript({history, status, readLocked, loadEarlier
       showLatest();
       return;
     }
-    const anchor = position.current.anchor;
-    if (anchor !== undefined) {
-      const row = Array.from(node.querySelectorAll<HTMLElement>('[data-message]')).find(value => value.dataset.message === anchor.id);
-      if (row !== undefined) node.scrollTop += row.getBoundingClientRect().top - node.getBoundingClientRect().top - anchor.offset;
-    }
+    restoreAnchor();
     if (latest !== undefined && prior?.latest !== undefined && latest > prior.latest) setNewMessages(true);
-  }, [history, id, latest, showLatest]);
+  }, [history, id, latest, restoreAnchor, showLatest]);
   useLayoutEffect(() => {
     const node = scroll.current;
     if (node === null) return;
     const observer = new ResizeObserver(() => {
       if (position.current.follow) showLatest();
+      else restoreAnchor();
     });
     observer.observe(node);
     return () => {observer.disconnect();};
-  }, [showLatest]);
+  }, [restoreAnchor, showLatest]);
   const hasMessages = history?.windows.some(window => window.messages.length > 0) ?? false;
   return <div className="conversation-reading">
     <div className="conversation-transcript" ref={scroll} tabIndex={-1} onScroll={remember}>
@@ -81,7 +88,14 @@ export function ConversationTranscript({history, status, readLocked, loadEarlier
           }}>Load earlier</button>
         </div>}
         {window.messages.length > 0 && <ol aria-label="Saved conversation messages">
-          {window.messages.map(message => <li key={message.id} tabIndex={-1} data-message={message.id} data-role={message.role}>{renderMessage(message)}</li>)}
+          {window.messages.map(message => <li key={message.id} tabIndex={-1} data-message={message.id} data-role={message.role}>
+            {message.role === 'tool' ? <article aria-label="tool message">
+              <details className="conversation-tool-result" onToggle={remember}>
+                <summary>Tool result</summary>
+                <p dir="auto">{message.text}</p>
+              </details>
+            </article> : renderMessage(message)}
+          </li>)}
         </ol>}
       </Fragment>)}
       {!hasMessages && status !== 'loading' && <p>{status === 'failed' ? 'No saved text is available here.' : 'No saved messages for this profile yet.'}</p>}

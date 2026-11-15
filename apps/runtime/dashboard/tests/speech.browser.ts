@@ -188,18 +188,23 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     // The synthetic provider asks a question first: the question is spoken, then the final result after the answer.
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-PROMPT');
     const send = assistant.getByRole('button', {name: 'Send message', exact: true}); await send.focus(); await send.press('Enter');
-    await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
+    await assistant.getByText('Needs your answer', {exact: true}).waitFor();
     await page.waitForFunction(() => window.speechFixture.calls === 1);
     await page.evaluate(() => window.speechFixture.finish());
     await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
     await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-ANSWER');
     const answer = assistant.getByRole('button', {name: 'Save answer and continue', exact: true}); await answer.focus(); await answer.press('Enter');
-    await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
+    await assistant.getByText('Task completed', {exact: true}).waitFor();
     await page.waitForFunction(() => window.speechFixture.calls === 2);
     await page.evaluate(() => window.speechFixture.finish());
     await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
     // Speak replays the saved result through the same endpoint and reports its receipt separately from playback.
     const messages = assistant.getByRole('list', {name: 'Saved conversation messages', exact: true});
+    const tool = messages.getByRole('article', {name: 'tool message'}).filter({hasText: /coding agent session/});
+    await tool.locator('summary').click();
+    await tool.getByText(/coding agent session/).waitFor();
+    await tool.locator('summary').click();
+    assert.equal(await count(), 2, 'reading saved tool output never queues speech');
     const result = messages.getByRole('article', {name: 'assistant message', exact: true}).filter({hasText: 'Synthetic result:'}).last();
     const speak = result.getByRole('button', {name: /^Speak message /}); await speak.focus(); await speak.press('Enter');
     // The receipt must leave its idle text; the accepted control is the saved request, the playback report is the speech.
@@ -209,17 +214,17 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
     // Stop speaking stops the audio of a question without answering or cancelling the task.
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-SECOND');
-    await send.click(); await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
+    await send.click(); await assistant.getByText('Needs your answer', {exact: true}).waitFor();
     await page.waitForFunction(() => window.speechFixture.calls === 4);
     const stop = controls.getByRole('button', {name: 'Stop speaking', exact: true}); await stop.focus(); await stop.press('Enter');
     await controls.getByText('Playback: Playback stopped. The sentence may be incomplete.', {exact: true}).waitFor();
-    await assistant.getByText('Task status: waiting', {exact: true}).waitFor();
+    await assistant.getByText('Needs your answer', {exact: true}).waitFor();
     assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 1);
     // Quiet keeps the result written only; Work lets the next reply speak again.
     await other.goto(`${world.url}/#/`); await feed(other, 'connected'); const hub = other.locator('[data-widget="hub-mode"]');
     await hub.getByRole('button', {name: 'Quiet', exact: true}).click(); await controls.getByText('Quiet mode suppresses spoken replies.', {exact: true}).waitFor();
     await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-QUIET');
-    await answer.click(); await assistant.getByText('Task status: succeeded', {exact: true}).waitFor();
+    await answer.click(); await assistant.getByText('Task completed', {exact: true}).waitFor();
     await page.waitForTimeout(300); assert.equal(await count(), 4, 'Quiet mode speaks no reply');
     await hub.getByRole('button', {name: 'Work', exact: true}).click(); await controls.getByText('Quiet mode suppresses spoken replies.', {exact: true}).waitFor({state: 'detached'});
     const receipts = process.env.DASHBOARD_RECEIPTS;
