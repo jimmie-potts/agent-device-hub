@@ -1,0 +1,76 @@
+import React, {useId, useState} from 'react';
+import type {FrontendContext} from '@jimmie-potts/sdk/frontend';
+import {playbackLabels, SpeechRecovery, type SpeechControlsSession} from './speech.js';
+
+export function ConversationVoice({context, speech}: {context: FrontendContext; speech: SpeechControlsSession}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [recoveredOperation, setRecoveredOperation] = useState<string>();
+  const panelId = useId();
+  const {local, qualification, ready, selected, synced} = speech;
+  const remote = context.connected && synced ? speech.remote : undefined;
+  const playing = selected && local.playback?.status === 'started';
+  const canStop = selected && (playing || local.playback?.status === 'dispatching');
+  const recoveryId = remote?.recoveryOperationId;
+  const unresolvedPlayback = remote?.availability === 'unavailable' && remote.playback?.status === 'uncertain';
+  const needsAttention = recoveryId !== undefined || unresolvedPlayback;
+  const other = remote?.availability === 'available' && speech.other;
+  const selectedHere = selected && remote?.availability === 'available';
+  const locked = !context.connected ? 'Reconnect to enable voice.'
+    : !context.control ? 'Voice controls require operator access.'
+    : !context.operationsLive ? 'Tracked operations are unavailable.'
+    : qualification === undefined ? 'Voice requires qualified Google Chrome on macOS and the exact local English voice.'
+    : !ready ? 'Current companion, speech or Hub state is unavailable.'
+    : undefined;
+  const unavailable = locked !== undefined || other || remote?.availability === 'unavailable' || local.availability === 'unavailable';
+  const state = playing ? 'Speaking' : needsAttention ? 'Needs attention' : selectedHere ? 'Voice on' : unavailable ? 'Unavailable' : 'Voice off';
+  const refusal = locked ?? (other ? 'Another tab is the selected speaker.'
+    : recoveryId !== undefined ? 'Recover the earlier playback reservation before enabling voice.'
+    : unresolvedPlayback ? 'Earlier playback is unresolved. Voice stays off until recovery is available.'
+    : remote?.availability === 'unavailable' ? 'The previous endpoint is unavailable. Enable again when this tab is ready.'
+    : local.availability === 'enabling' ? 'Checking the qualified local voice.'
+    : local.availability === 'unavailable' ? 'Enable did not establish the qualified local voice or a current endpoint.'
+    : undefined);
+  const canEnable = locked === undefined && !other && !needsAttention && !local.busy;
+  const mayMute = selected || local.availability === 'enabling';
+  const playback = local.playback ?? remote?.playback;
+  const recover = async (operationId: string, revision: number): Promise<boolean> => {
+    if (locked !== undefined || !await speech.recover(operationId, revision)) return false;
+    setRecoveredOperation(operationId);
+    return true;
+  };
+
+  return <>
+    <div className="conversation-voice-actions">
+      <button type="button" className="secondary" aria-expanded={open} aria-controls={panelId}
+        onClick={() => {setOpen(value => !value);}}>
+        {state.startsWith('Voice ') ? state : `Voice · ${state}`}
+      </button>
+      {canStop && <button type="button" className="secondary" disabled={local.busy} onClick={() => {void speech.stop();}}>Stop speaking</button>}
+    </div>
+    <section id={panelId} className="conversation-voice-panel" aria-label="Spoken replies" hidden={!open}>
+      {open && <>
+        <p>This tab becomes the one speaker for B.U.N.N.Y.’s replies and eligible Reachy alerts.</p>
+        <p className="conversation-voice-note">Mute before calls or media. This browser does not detect them.</p>
+        <div className="conversation-voice-actions">
+          {mayMute
+            ? <button type="button" className="secondary" onClick={() => {void speech.mute();}}>Mute spoken replies</button>
+            : <button type="button" disabled={!canEnable} onClick={() => {if (canEnable) void speech.enable();}}>Enable spoken replies in this tab</button>}
+        </div>
+        {refusal !== undefined && <p role="status">{refusal}</p>}
+        {context.core?.mode === 'quiet' && <p>Quiet mode suppresses spoken replies.</p>}
+        {remote !== undefined && recoveryId !== undefined && <SpeechRecovery key={`${recoveryId}:${remote.revision}`}
+          operationId={recoveryId} revision={remote.revision} ready={locked === undefined && !local.busy}
+          recoverVoice={recover}/>}
+        <details>
+          <summary>Voice requirements and playback evidence</summary>
+          <p>Enable selects this connected tab. Reload or reconnect requires a fresh Enable. Missed speech is never replayed.</p>
+          {qualification !== undefined && <p>Qualified local voice: {qualification.voice.name} ({qualification.voice.lang}). Qualification recorded in Chrome {qualification.browserVersion} on {qualification.qualifiedAt.slice(0, 10)}.</p>}
+          <p>Stop speaking only stops audio. Playback reports do not establish whether anyone heard it.</p>
+          <p role="status">Playback: {playback == null ? 'No playback reported.' : playbackLabels[playback.status]}</p>
+          {recoveredOperation !== undefined && <p>Recovery acknowledged. The earlier playback remains uncertain.</p>}
+          {speech.operation !== undefined && <p>Tracked operation: {context.operationsLive ? speech.operation.result ?? speech.operation.status : 'unavailable'}.</p>}
+        </details>
+      </>}
+    </section>
+  </>;
+}

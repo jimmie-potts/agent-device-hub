@@ -243,3 +243,55 @@
     font-size: 1rem;
   }
 }
+
+.conversation-header {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.conversation-voice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.conversation-voice-actions button {
+  min-block-size: 2.5rem;
+  padding-inline: 0.7rem;
+  touch-action: manipulation;
+}
+
+.conversation-voice-panel {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: calc(100% + 0.375rem);
+  inset-inline-end: 0;
+  inline-size: min(100%, 30rem);
+  max-block-size: min(40dvh, 22rem);
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--edge-faint);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow-wrap: anywhere;
+}
+
+.conversation-voice-panel p {
+  margin: 0.35rem 0;
+}
+
+.conversation-voice-note {
+  color: var(--text);
+  font-size: 0.875em;
+}
+
+@media (max-width: 420px) {
+  .conversation-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
