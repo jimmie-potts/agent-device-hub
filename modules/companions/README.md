@@ -423,13 +423,55 @@ evidence but cannot continue the graph or undo cancellation. If SQLite cannot
 save the fence, cancellation is refused. A successful command receipt means
 that local control was saved; task completion is reported separately.
 
-The private content route is
-`/modules/companions/content/conversation?profile=bunny&after=0`; profiles are
-`bunny`, `reachy` and `microduck`. The first page includes `currentTask` with its
-saved question, its kind (`clarification` or `approval`), its proposal and its
-answer; subsequent pages use `currentTask: null`. Text is retained through
-reload and private history remains visible during a dashboard reconnect.
-Unsubmitted drafts remain in page memory only.
+### Conversation history contract
+
+The existing authenticated `GET /modules/companions/content/conversation`
+read accepts `profile=bunny`, `profile=reachy` or `profile=microduck`. With
+only `profile` and optional `after` it returns version 1, in ascending order
+after that sequence (default 0). The first page includes `currentTask`; later
+pages return `currentTask: null`. The existing panel still uses version 1.
+
+For version 2, add `view=recent` and omit `after`:
+
+| Request | Result |
+| --- | --- |
+| `profile=bunny&view=recent` | Newest saved window and latest task/question |
+| `profile=bunny&view=recent&before=<older>` | Older window, with `currentTask: null` |
+
+The response is `{version: 2, profile, conversationId, messages, currentTask,
+older}`. Messages retain the version 1 fields and full saved text. Each window
+contains at most 16 messages in ascending sequence order, chosen newest first.
+The body is at most 65,536 UTF-8 bytes, including the cursor and current task.
+If the first whole message and required metadata cannot fit, the owner returns
+the shared `capacity` error rather than skipping or shortening the message.
+
+Pass `older` back unchanged as `before`. It is a canonical base64url encoding
+of the profile, conversation ID and a positive safe integer sequence. It reads
+strictly below the oldest returned sequence and only in that profile and
+conversation. A null cursor means no older messages remain. A profile without
+a saved conversation returns a null conversation ID and an empty window.
+An invalid or mismatched cursor or mixed query returns `invalid-request`.
+Permission refusals still come from the runtime; owner read failures use
+`unavailable`.
+
+The newest response includes the latest task independent of the visible
+messages. Its saved question keeps the ID, text, answer, kind
+(`clarification`, `approval` or `delegation`), and proposal with its target,
+full data and expected revision. It omits the private call reference. Reads
+make no writes and publish no lifecycle observations. Nothing polls history.
+
+The browser reader checks the response profile and conversation before using
+it. It merges overlapping windows by sequence and leaves gaps explicit for
+one earlier read at a time. An earlier page never replaces the latest question.
+Abort old reads when changing profiles or starting a replacement read. If a
+read fails, the caller can retain the last loaded history and explicitly retry
+the read. Unsubmitted drafts stay in page memory only.
+
+The companions source checks above include history route and reader tests. The
+existing browser journey exercises the recent reader against the real private
+gateway with synthetic saved history. Run the focused journey after the root
+build with `node apps/runtime/dashboard/tests/conversation-history.browser.ts`,
+or run it as part of `npm run test:companions:browser`.
 
 Diagnostics use the SDK's log, trace, clock, scheduler and abort signal and the
 runtime's host adapter. Profile 1.6 registers assistant run/model/tool spans and

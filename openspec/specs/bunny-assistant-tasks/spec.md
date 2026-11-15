@@ -50,6 +50,19 @@ Inputs SHALL use bounded authenticated upload staging with references bound to r
 - **WHEN** committed outcomes are republished after restart
 - **THEN** their original identity and trace survive and no task is activated by republishing
 
+#### Scenario: Recent and earlier private pages
+- **WHEN** an authorized reader requests the opt-in recent view of a saved conversation
+- **THEN** version 2 identifies the profile and conversation, returns the newest window of up to 16 complete messages in chronological order and at most 65,536 UTF-8 bytes including metadata, and supplies the latest task and saved question independently of the messages
+- **AND** an exclusive earlier cursor stays bound to that profile and conversation, advances below the oldest returned message, and terminates with a null cursor when no older message remains
+- **AND** an earlier page cannot supply a different current question, and the ordinary version 1 profile/after read retains its forward behavior
+
+#### Scenario: Invalid or oversized history read
+- **WHEN** a reader mixes history modes or supplies an invalid, unsafe or mismatched earlier cursor
+- **THEN** the existing invalid-request result refuses the read
+- **AND** denied reads keep the shared authorization refusal and owner read failures use unavailable
+- **AND** if even the first complete row and metadata cannot fit, the read returns capacity without skipping the row or returning a nonadvancing cursor
+- **AND** reads change no stored data and emit no lifecycle observations
+
 ### Requirement: Configured model provider
 
 The companions module SHALL run every task through one provider behind a tool-capable turn contract: a turn receives the fixed instructions, the task's own transcript, the permitted tool definitions, the current Hub mode and the prompt context, and answers with text, a question for the owner, tool calls or a refusal, plus reported usage or unknown. The module SHALL take a companions section, as every configured module does; with an empty section or one that names no provider, the provider SHALL be the labelled synthetic one, which makes no network call. A section whose `assistant.provider` is `anthropic` SHALL name the model, the effort and, under the section's `secrets`, the API key file; the module SHALL read the key once at start, never log, publish or store it, and SHALL refuse the section without the secret or with an unsupported provider. The `bunny` profile alone SHALL use the configured provider; other profiles SHALL keep the synthetic provider. The prompt SHALL contain only the owner's typed text, tool definitions, tool results, the fixed instructions, the current Hub mode and the prompt context: the task profile's curated persona and the owner's currently active explicit preferences, read from the module's own records at each model call and rendered as owner data that grants no tool, permission or device authority. No knowledge entry, conversation history, other task, inactive or historical preference or private context document SHALL enter the prompt. When the rendered prompt context exceeds 16 KiB the model call SHALL be refused before dispatch with a capacity outcome whose transcript message names the cause; nothing SHALL be truncated silently. A provider refusal, unavailability, rate limit or malformed answer SHALL end the task failed or unavailable with a registry code and no fallback to another model; a lost answer SHALL leave the call uncertain. Public state SHALL carry the provider, model and allowed tool names.
@@ -141,6 +154,12 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 #### Scenario: Delegation on the page
 - **WHEN** the model proposes a delegation and the owner approves it by keyboard
 - **THEN** the proposal shows the repository, brief and bound revision, the page then shows the delegated work waiting for the worker with cancel available, and the worker's result appears as a tool message
+
+#### Scenario: Open, refresh and page through recent history
+- **WHEN** a dashboard consumer opens a profile with the recent reader, refreshes it as new messages arrive, or explicitly loads an earlier page
+- **THEN** it opens at the newest window, displays loaded messages in chronological order without duplication or dropping previously loaded rows, and preserves the latest saved clarification, approval or delegation separately from pagination
+- **AND** a successful refresh does not fetch earlier pages automatically, and an explicit gap separates disjoint windows until the reader joins them
+- **AND** an obsolete or wrong-profile response cannot replace the selected profile's history, and a failed read may retain prior visible history while explicit retry repeats only the read
 
 ### Requirement: Spoken replies to typed requests
 

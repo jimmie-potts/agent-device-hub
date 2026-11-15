@@ -7,7 +7,8 @@ import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contrac
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
-import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Proposal, type Question, type StagedInput, type Task} from './store.js';
+import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
+import type {Proposal} from './history-contract.js';
 import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnReply} from './provider.js';
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
@@ -264,10 +265,18 @@ export class AssistantEngine {
   }
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (ref !== 'conversation') return undefined;
-    const query = request?.query ?? {}, selected = query.profile, after = query.after === undefined ? 0 : Number(query.after);
-    if (request?.signal.aborted === true || !profile(selected) || Object.keys(query).some(key => !['profile', 'after'].includes(key)) || !Number.isSafeInteger(after) || after < 0) return errorBody('invalid-request');
-    try {return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.store.page(selected, after)))};}
-    catch {return errorBody('unavailable');}
+    const query = request?.query ?? {}, selected = query.profile;
+    if (request?.signal.aborted === true || !profile(selected)) return errorBody('invalid-request');
+    try {
+      if (query.view === 'recent') {
+        if (Object.keys(query).some(key => !['profile', 'view', 'before'].includes(key))) return errorBody('invalid-request');
+        const page = this.store.recentPage(selected, query.before);
+        return typeof page === 'string' ? errorBody(page) : {type: 'application/json', bytes: Buffer.from(JSON.stringify(page))};
+      }
+      const after = query.after === undefined ? 0 : Number(query.after);
+      if (Object.keys(query).some(key => !['profile', 'after'].includes(key)) || !Number.isSafeInteger(after) || after < 0) return errorBody('invalid-request');
+      return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.store.page(selected, after)))};
+    } catch {return errorBody('unavailable');}
   }
   #config(taskId: string) {return {configurable: {thread_id: taskId}, durability: 'sync' as const, recursionLimit: 4 * LIMITS.modelCalls + 4, callbacks: []};}
   #finishRecoveredRun(task: Task): void {
