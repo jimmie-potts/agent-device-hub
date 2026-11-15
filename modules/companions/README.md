@@ -221,6 +221,26 @@ no network call and no paid usage. Activation defaults to off. The three
 profiles keep separate conversation histories, with one unfinished task across
 all of them and one graph invocation at a time.
 
+Choose a profile at the side of Conversation, or use the **Companion profile**
+selector on a narrow screen. Conversation opens at the newest saved messages.
+**Load earlier** fills the preceding gap without moving the message you were
+reading. If replies arrive while you are reading farther up, **New messages**
+jumps to the latest exchange.
+
+Use Enter to send and Shift+Enter for a line break. Enter during text composition
+does not submit. Drafts are limited to 4,096 UTF-8 bytes and stay in the page
+after submission. Each profile and pending question has its own draft, and
+reload clears those drafts. You can browse another profile while a task is
+unfinished. Follow the link beside the composer to return to that task before
+starting another one.
+
+Questions, approvals, worker waits and task controls appear above the composer.
+An approval shows the full scope and the revision it applies to. A command
+receipt reports what happened to the request separately from task completion.
+Disconnected or stale copies retain loaded history and lock mutations. Open
+**Details** for the provider, tool list, worker status, task IDs, usage and the
+conversation disable control. **Stop speaking** controls audio only.
+
 ```mermaid
 flowchart LR
   Page[Authenticated React page] -->|bounded private upload| Gateway[Existing gateway]

@@ -180,7 +180,7 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     const count = () => page.evaluate(() => window.speechFixture.calls);
     const enableAssistant = assistant.getByRole('button', {name: 'Enable conversation', exact: true});
     await enableAssistant.focus(); await enableAssistant.press('Enter');
-    await assistant.getByRole('button', {name: 'Disable conversation', exact: true}).waitFor();
+    await assistant.getByRole('textbox', {name: 'Message', exact: true}).waitFor();
     await controls.getByText(/This tab becomes the one speaker/).waitFor();
     const enable = controls.getByRole('button', {name: 'Enable spoken replies in this tab', exact: true});
     await enable.focus(); await enable.press('Enter');

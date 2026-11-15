@@ -161,6 +161,27 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 - **AND** a successful refresh does not fetch earlier pages automatically, and an explicit gap separates disjoint windows until the reader joins them
 - **AND** an obsolete or wrong-profile response cannot replace the selected profile's history, and a failed read may retain prior visible history while explicit retry repeats only the read
 
+#### Scenario: Read at a stable scroll position
+- **WHEN** the owner loads earlier saved messages or new saved messages arrive while they are reading above the latest exchange
+- **THEN** the viewed saved row stays in position and new arrivals offer a New messages action
+- **AND** a live state revision preserves a Load earlier request already in flight for that profile
+
+#### Scenario: Draft and task decisions in the composer
+- **WHEN** the owner changes profiles, opens Details, resizes the page or reconnects in the same mounted page
+- **THEN** the profile and question drafts remain in page memory, including text retained after submission
+- **AND** the composer blocks conflicting starts but allows browsing saved history and returning to the unfinished task
+- **AND** Enter submits eligible text outside IME composition, and Shift+Enter inserts a newline
+- **AND** full approval scope and active questions and waits remain visible outside collapsed routine facts
+
+#### Scenario: Retain a draft after a refused or lost reply
+- **WHEN** a submission is refused or its reply is lost
+- **THEN** the draft and tracked receipt remain visible and the page sends no retry
+
+#### Scenario: Guard an unavailable task decision
+- **WHEN** the assistant copy is removed or the current saved question is missing or refers to another question
+- **THEN** loaded messages remain readable and answer and approval actions remain unavailable
+- **AND** Refresh history makes one deliberate latest read when the current saved question or proposal is unavailable
+
 ### Requirement: Spoken replies to typed requests
 
 When a task turn ends with a result, a question for the owner or a refusal, the companions module SHALL offer that saved message once to its speech coordinator, after the message is durable, under the message's own identity. A `speak` control naming a task and a saved assistant message SHALL offer that message again under the request's identity; it SHALL refuse owner or tool text and an unknown message, SHALL work for finished tasks, and SHALL be idempotent per request. A message longer than 512 characters SHALL stay written only. Startup reconciliation SHALL offer nothing, and a failed offer SHALL NOT change the task's outcome. The spoken voice SHALL be the installation's qualified local voice regardless of the model provider, and stopping speech SHALL NOT answer a question or cancel the task.
