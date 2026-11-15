@@ -105,6 +105,10 @@ at a time within the model's total image budget. The
 [synthetic fixture](tests/fixtures/apartment.ts) demonstrates the document.
 The existing room-model/1.0 files continue to work alongside the apartment.
 
+The [Presence Pro pilot definition](../../docs/presence-pro-interface.md) describes
+the saved sensor transform and approximate device-reported positions. It adds no
+sensor feed or physical-location qualification.
+
 ## Publish when the runtime is stopped
 
 The deployment owner selects a qualified image and the exact state volume,
