@@ -6,6 +6,15 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+For local Codex title lookup, after `npm run build` run
+`node --test apps/runtime/tests/mac-codex-hook.test.mjs` and the built runtime
+`hook` and `remote-hooks` suites. The wrapper tests cover explicitly selected
+titles and renames, unavailable titles, supplied-field exclusion and the
+unversioned activity-only path using a synthetic Codex home and loopback receiver.
+The Container and operator checks CI job already runs this wrapper suite.
+Installed producer/receipt selection and the physical Tronbyt rows require
+separate readback; passing source tests changes neither.
+
 For retired standby options and settings history modes, use the focused
 refusal cases in `deploy/container/tests/entrypoint.test.mjs`,
 `scripts/tests/bunny.test.mjs` and `apps/runtime/tests/runtime-ownership.test.ts`.

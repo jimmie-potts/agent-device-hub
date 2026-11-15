@@ -43,11 +43,23 @@ The sanitizer forwards only hook_event_name, session_id and optional turn_id
 to the existing runtime hook. The normalizer adds the configured source and
 observation time, then the SDK publishes one existing lifecycle message.
 Prompt/reply text and paths arrive transiently on client stdin but are never
-forwarded, logged or saved. No transcript or history file is opened.
+forwarded, logged or saved. No supplied path or transcript is opened.
 
-The wrapper requests `requireMetadataOnly: true`. The runtime verifies the
-private producer and refuses any configured lifecycleVersion before consuming
-input, so a configuration change cannot silently enable enrichment. Use:
+A producer without `lifecycleVersion` publishes activity without title lookup.
+To show available session titles, explicitly select `lifecycleVersion: "1.1"`
+or `"1.2"` in the private producer and its matching installed receipt. The hook
+then uses the existing bounded Codex reader over `session_index.jsonl` in its
+process's `CODEX_HOME`, or `~/.codex` when unset. It takes the latest matching
+`thread_name`, validates it before truncating to 160 Unicode scalars, and omits
+the title on a missing, unreadable or rejected entry. The reader retains its
+1 MiB tail, line bounds and 100 ms budget within the hook's 2.9-second deadline.
+The sanitizer still strips `cwd` and `transcript_path`, so this adds no project,
+transcript, prompt or response collection. Explicit labels keep precedence.
+Only later hook events refresh a title; renaming an idle session alone sends
+nothing. Desktop read/archive evidence remains separate and Desktop-only.
+
+The runtime verifies the private producer and any required receipt before
+consuming input. Keep the existing source identity:
 
 ```json
 {"provider":"codex","client":"local","hostId":"mac-mini","sourceId":"codex-local-hooks"}
@@ -95,9 +107,12 @@ After the integrated source passes its checks and review:
    secrets volumes and dedicated network. Never run the fresh-provisioning
    helper on these volumes. Verify the effective source setting, matching sole
    ingest credential, preserved mounts and localhost binding before startup.
-   Use the existing private producer format, owner-only regular files,
-   loopback endpoint and no lifecycleVersion. Keep the bearer out of evidence
-   and GitHub.
+   Use the existing private producer format and owner-only regular files.
+   For an activity-only producer omit lifecycleVersion. For title lookup select
+   lifecycleVersion 1.1 or 1.2 and match that choice in any installed receipt;
+   preserve the existing qualified endpoint and transport. Confirm that the
+   hook process resolves the intended Mac Codex home. Keep the bearer and
+   actual session titles out of evidence published to GitHub.
 4. Preserve existing Codex config.toml and its computer-use notify command.
    Merge only the five selected hook definitions into user hooks.json after
    checking for concurrent edits. Set each command handler's timeout to three
