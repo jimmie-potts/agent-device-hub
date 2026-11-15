@@ -110,10 +110,11 @@ creating a file alone does not qualify a route. Keep the receipt and its support
 audio, OS and network evidence private. It stores no availability or queued text.
 
 Missing or invalid qualification leaves speech unavailable and text companions
-usable. The authenticated page reads the receipt and checks Chrome's full version
-and macOS platform locally with a five-second bound. It sends neither hint back
-to the runtime. A changed browser version or unavailable hint requires renewed
-qualification; it never silently selects another browser or voice. The browser
+usable. The authenticated page reads the receipt and checks Google Chrome and
+macOS locally with a five-second bound. Browser identity stays local. The receipt's
+`browserVersion` records the qualification version; a Chrome update does not
+invalidate qualification. Missing browser identity or a different browser or
+platform leaves speech unavailable. The browser
 then verifies the exact local English voice on explicit enablement and before each
 utterance. No settings, microphone or default voice are changed.
 

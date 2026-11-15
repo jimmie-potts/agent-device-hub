@@ -78,7 +78,7 @@ export function SpeechControls({context, companion, compact = false, purpose = '
     let active = true;
     void api.read('/modules/companions/content/speech-qualification').then(async value => {
       const receipt = speechQualification(value);
-      if (receipt !== undefined && await qualifiedChrome(receipt) && active) setQualification(receipt);
+      if (receipt !== undefined && await qualifiedChrome() && active) setQualification(receipt);
     }).catch(() => {});
     return () => {active = false;};
   }, [api, connected, replacement]);

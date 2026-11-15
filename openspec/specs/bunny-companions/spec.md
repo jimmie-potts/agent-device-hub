@@ -108,11 +108,16 @@ Speech SHALL default to off. Enabling text companions SHALL NOT enable speech. A
 - **AND** reconnect requires explicit enablement, admits only new opportunities and never selects another tab
 
 ### Requirement: Qualified local voice and bounded playback
-Missing installation qualification, an unavailable browser identity or a different Chrome version or platform SHALL leave speech unavailable while preserving text companions. Each enable action SHALL re-enumerate voices with a five-second bound and require an exact qualified local English voice. The driver SHALL select that voice explicitly on each utterance without changing defaults or falling back to a default, remote or changed voice. It SHALL perform no microphone, recording, cloud synthesis or automatic retry. Playback SHALL have a finite deadline and SHALL report completion only after an ordered start and end callback. Callback completion SHALL NOT mean heard.
+Missing installation qualification, an unavailable browser identity or a browser other than Google Chrome on macOS SHALL leave speech unavailable while preserving text companions. The receipt's browser version SHALL remain historical qualification metadata; a different Chrome version SHALL NOT invalidate qualification. Each enable action SHALL re-enumerate voices with a five-second bound and require an exact qualified local English voice. The driver SHALL select that voice explicitly on each utterance without changing defaults or falling back to a default, remote or changed voice. It SHALL perform no microphone, recording, cloud synthesis or automatic retry. Playback SHALL have a finite deadline and SHALL report completion only after an ordered start and end callback. Callback completion SHALL NOT mean heard.
 
 #### Scenario: Browser qualification unavailable
-- **WHEN** the installation has no valid private qualification receipt or the page cannot match its qualified Chrome version on macOS
+- **WHEN** the installation has no valid private qualification receipt or the page cannot identify Google Chrome on macOS
 - **THEN** speech remains unavailable without disabling text companions or selecting a replacement route
+
+#### Scenario: Chrome updates after qualification
+- **WHEN** Google Chrome on macOS reports a different version from the valid private qualification receipt
+- **THEN** the version difference does not prevent explicit speech enablement
+- **AND** the exact local English voice and all current connection, authority and availability checks still apply
 
 #### Scenario: Voice unavailable
 - **WHEN** the qualified voice is absent, changed or not local after the bounded enumeration
