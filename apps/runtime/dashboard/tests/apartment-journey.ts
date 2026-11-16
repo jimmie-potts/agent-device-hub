@@ -149,6 +149,8 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     assert.equal(world.lifxState().bulbs['192.0.2.42']?.power,untouched);
     const writesAfterUncertainty=[wallPowerWrite,wallPowerWrite,wallPowerWrite];
     assert.deepEqual(writes(),writesAfterUncertainty,'the owner made its two allowed protocol attempts for the single lost-reply command');
+    // Keep recovery reads from changing availability during the later artwork checks.
+    world.offlineLifx(wallPowerWrite.address);
     await page.reload();await feed(page,'connected');await selectLight(page,'Reading wall light');
     await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor();
     assert.equal(await card.getByRole('button',{name:'Off',exact:true}).isDisabled(),true);
