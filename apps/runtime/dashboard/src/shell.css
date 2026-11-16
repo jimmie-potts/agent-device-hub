@@ -126,6 +126,6 @@
   }
   .workspace-shell .primary-navigation {
     grid-column: 1 / -1;
-    grid-template-columns: repeat(4, minmax(0, 1fr)) max-content;
+    grid-template-columns: repeat(5, auto);
   }
 }

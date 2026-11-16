@@ -57,6 +57,12 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
       ['B.U.N.N.Y. · Everyday assistant', 'Reachy · Demo', 'MicroDuck · Demo']);
     const navigation = page.getByRole('navigation', {name: 'Main navigation'});
     assert.deepEqual(await navigation.getByRole('link').allTextContents(), ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation']);
+    const labelLines = await navigation.getByRole('link').evaluateAll(links => links.map(link => {
+      const text = document.createRange();
+      text.selectNodeContents(link);
+      return text.getClientRects().length;
+    }));
+    assert.deepEqual(labelLines, [1, 1, 1, 1, 1], 'all five navigation labels fit on one line at 320px');
     assert.equal(await page.getByRole('heading', {name: 'Conversation', exact: true}).count(), 1);
     const posts: string[] = [];
     page.on('request', request => {
