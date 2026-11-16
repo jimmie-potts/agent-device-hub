@@ -201,6 +201,25 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 - **THEN** the section explains saved input and offers the current enable or disable action through the same guarded command
 - **AND** a reader or stale copy cannot mutate, and an unfinished task prevents disabling the conversation
 
+#### Scenario: Read saved conversation messages
+
+- **WHEN** the reader opens a saved exchange at desktop or narrow widths
+- **THEN** assistant replies use open text and owner messages use modest bubbles in a reading column aligned with the composer
+- **AND** paragraphs, long URLs and markup remain literal, wrap to fit and retain the complete saved text
+- **AND** each eligible assistant reply has a quiet labelled Read aloud action, and tool messages have a labelled Tool result disclosure
+
+#### Scenario: Start with empty history
+
+- **WHEN** the selected profile has a fresh, successful empty history read and can accept a new message
+- **THEN** the transcript offers a short invitation to send a message
+- **AND** while a read or a new message is unavailable, the page shows the applicable history state or blocker instead of the invitation
+
+#### Scenario: See ordinary completion and required decisions
+
+- **WHEN** a live task succeeds
+- **THEN** a compact completion cue appears by the composer, with task facts in Details
+- **AND** unresolved or unsuccessful outcomes, stale state, waits and decisions remain visible when they affect the next action
+
 #### Scenario: Expand saved tool text
 - **WHEN** the owner or reader opens a tool result on a saved transcript row
 - **THEN** the full inert text can be read without horizontal page overflow, and the row retains its original task association and message order

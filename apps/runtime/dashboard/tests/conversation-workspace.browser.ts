@@ -8,14 +8,22 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(12_000);
+    await page.route('**/modules/companions/content/conversation?profile=bunny&view=recent',
+      route => route.fulfill({status: 503, json: {}}), {times: 1});
     await page.goto(`${world.url}/#/module/companions/assistant`);
     await feed(page, 'connected');
     const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
     const message = assistant.getByRole('textbox', {name: 'Message', exact: true});
     const send = assistant.getByRole('button', {name: 'Send', exact: true});
-    const empty = assistant.getByText('No saved messages for this profile yet.', {exact: true});
+    const invitation = assistant.getByRole('heading', {name: 'What’s on your mind?', exact: true});
+    const retry = assistant.getByRole('button', {name: 'Retry history', exact: true});
+    await retry.waitFor();
+    assert.equal(await invitation.count(), 0, 'a failed history read does not invite a new message');
+    await retry.click();
+    await assistant.getByText('No saved messages for this profile yet.', {exact: true}).waitFor();
+    assert.equal(await invitation.count(), 0, 'off state does not invite a new message');
     await assistant.getByRole('button', {name: 'Enable conversation', exact: true}).click();
-    await empty.waitFor();
+    await invitation.waitFor({timeout: 3000});
     await message.fill('Companion fixture is ready');
     await message.clear();
 
@@ -29,12 +37,13 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
         `normal Conversation fits at ${String(width)}x${String(height)} (document: ${String(scrollWidth)}x${String(scrollHeight)})`);
       const reading = await assistant.locator('.conversation-transcript').boundingBox();
       assert.ok(reading !== null && reading.height >= 96, 'the transcript has room to read');
-      const messages = assistant.getByRole('list', {name: 'Saved conversation messages'});
-      if (await messages.isVisible()) {
-        const [column, input] = await Promise.all([messages.boundingBox(), assistant.locator('.conversation-input-surface').boundingBox()]);
-        assert.ok(column !== null && input !== null && Math.abs(column.x - input.x) <= 1 && Math.abs(column.width - input.width) <= 2,
-          'the saved messages and composer share the same reading column');
-      }
+      const [column, input] = await Promise.all([
+        assistant.locator('.conversation-transcript > ol, .conversation-empty').boundingBox(),
+        assistant.locator('.conversation-input-surface').boundingBox(),
+      ]);
+      assert.ok(column !== null && input !== null && column.width <= 761
+        && Math.abs(column.x - input.x) <= 1 && Math.abs(column.width - input.width) <= 1,
+      `reading content and composer share their measure at ${String(width)}x${String(height)}`);
       return reading.height;
     };
 

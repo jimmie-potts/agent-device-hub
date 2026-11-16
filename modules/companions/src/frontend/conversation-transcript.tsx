@@ -4,9 +4,11 @@ import type {ConversationHistory} from './conversation-history.js';
 
 type Position = {follow: boolean; anchor?: {id: string; offset: number}};
 
-export function ConversationTranscript({history, status, readLocked, loadEarlier, retry, renderMessage}: {
+export function ConversationTranscript({history, status, live, canStart, readLocked, loadEarlier, retry, renderMessage}: {
   history: ConversationHistory | undefined;
-  status: 'loading' | 'ready' | 'failed';
+  status: 'loading' | 'ready' | 'failed' | 'unavailable';
+  live: boolean;
+  canStart: boolean;
   readLocked: boolean;
   loadEarlier: (before: string) => void;
   retry: () => void;
@@ -81,7 +83,7 @@ export function ConversationTranscript({history, status, readLocked, loadEarlier
             {message.role === 'tool' ? <article aria-label="tool message">
               <details className="conversation-tool-result" onToggle={remember}>
                 <summary>Tool result</summary>
-                <p dir="auto">{message.text}</p>
+                <p className="conversation-message-text" dir="auto">{message.text}</p>
               </details>
             </article> : renderMessage(message)}
           </li>);
@@ -99,11 +101,16 @@ export function ConversationTranscript({history, status, readLocked, loadEarlier
           </li>, ...messages];
         })}
       </ol>}
-      {!hasMessages && status !== 'loading' && <p>{status === 'failed' ? 'No saved text is available here.' : 'No saved messages for this profile yet.'}</p>}
+      {!hasMessages && status !== 'loading' && (status === 'ready' && live && history !== undefined
+        ? canStart ? <div className="conversation-empty">
+          <h3>What’s on your mind?</h3>
+          <p>Send a message to start the conversation.</p>
+        </div> : <p className="conversation-empty-note">No saved messages for this profile yet.</p>
+        : <p className="conversation-empty-note">No saved text is available here.</p>)}
     </div>
     <div className="conversation-history-actions">
       {status === 'loading' && <p role="status">Loading saved conversation.</p>}
-      {status === 'failed' && <><p role="status">Saved conversation could not be refreshed. Previously loaded text remains readable.</p>
+      {status === 'failed' && <><p role="status">Saved conversation could not be refreshed.{hasMessages && ' Previously loaded text remains readable.'}</p>
         <button type="button" disabled={readLocked} onClick={retry}>Retry history</button></>}
       {newMessages && <button type="button" onClick={showLatest}>New messages</button>}
     </div>
