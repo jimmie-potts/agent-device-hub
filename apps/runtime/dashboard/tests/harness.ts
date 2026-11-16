@@ -145,6 +145,7 @@ export type World = {
   readonly logs: LogRecord[];
   runtime(): Runtime;
   lifxState(): ReturnType<SimulatedLifx['state']>;
+  offlineLifx(address: string): void;
   pixooState(): SimulatedPixooState;
   pixooPlaylists(): Promise<readonly PlaylistRecord[]>;
   pixooMedia(): Promise<{items: {name: string; renditionId: string}[]; catalogRevision: number}>;
@@ -427,6 +428,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       await response.arrayBuffer(); return response.status;
     },
     lifxState: () => bulbs.state(),
+    offlineLifx: address => { bulbs.offline(address); },
     pixooState: () => panel.state(),
     wisprPrivacy: (expose, text) => { wispr.privacy(expose, text); },
     readonlyWispr: async ref => {
