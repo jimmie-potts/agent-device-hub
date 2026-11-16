@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useId, useRef, useState} from 'react';
 import type {AssistantProfile, AssistantState, AssistantStatus} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
@@ -31,29 +31,36 @@ function SavedQuestionContext({question}: {question: SavedQuestion}): React.JSX.
   </article>;
 }
 
-function TaskControls({context, command, state, profile, live, question, drafts, setDraft, refreshHistory, historyBusy}: {
-  context: FrontendContext; command: FrontendCommand; state: AssistantState; profile: AssistantProfile; live: boolean;
+function TaskControls({context, command, state, profile, live, question, drafts, setDraft, refreshHistory, historyBusy, voice}: {
+  context: FrontendContext; command: FrontendCommand; state: AssistantState | undefined; profile: AssistantProfile; live: boolean;
   question: SavedQuestion | undefined; drafts: Record<string, string>; setDraft: (key: string, value: string) => void;
-  refreshHistory: () => void; historyBusy: boolean;
+  refreshHistory: () => void; historyBusy: boolean; voice: React.JSX.Element;
 }): React.JSX.Element {
-  const task = state.tasks.find(value => value.profile === profile);
-  const unfinished = state.tasks.find(value => !finished(value.status));
+  const formId = useId();
+  const task = state?.tasks.find(value => value.profile === profile);
+  const unfinished = state?.tasks.find(value => !finished(value.status));
   const pending = task !== undefined && task.questionId !== null && !task.hasAnswer && ['waiting', 'paused'].includes(task.status);
   const approval = pending && question?.kind === 'approval';
   const unavailableDecision = pending && (question === undefined || (approval && question.proposal === null));
   const delegated = pending && question?.kind === 'delegation';
-  const canResume = task !== undefined && state.enabled && ['paused', 'uncertain', 'waiting'].includes(task.status)
+  const enabled = state?.enabled === true;
+  const canResume = task !== undefined && enabled && ['paused', 'uncertain', 'waiting'].includes(task.status)
     && (task.questionId === null || task.hasAnswer);
   const draftKey = `${profile}:${pending ? task.questionId ?? 'start' : 'start'}`;
   const draft = drafts[draftKey] ?? '';
   const bytes = new TextEncoder().encode(draft).byteLength;
+  const showInput = state !== undefined && !unavailableDecision && !approval && !delegated;
+  const tooLong = bytes > LIMITS.inputBytes;
   const locked = command.locked || !live || !context.control || !context.operationsLive;
+  const canSubmit = showInput && !locked && enabled && draft.trim() !== '' && !tooLong && (pending || unfinished === undefined);
   const control = (action: 'resume' | 'cancel', taskId: string): void => {
+    if (state === undefined) return;
     const requestId = crypto.randomUUID();
     void command.run({family: 'assistant-control', target: 'assistant', requestId,
       data: {action, expectedRevision: state.revision, taskId}});
   };
   const send = (text: string, answer: boolean): void => {
+    if (state === undefined) return;
     // Command retains this identity before staging. The draft remains on refusals and uncertain replies.
     const requestId = crypto.randomUUID();
     const input = {action: answer ? 'answer' : 'start', profile, text, expectedRevision: state.revision,
@@ -62,8 +69,7 @@ function TaskControls({context, command, state, profile, live, question, drafts,
       upload: {name: 'input.json', file: new Blob([JSON.stringify(input)], {type: 'application/json'})}});
   };
   const submit = (): void => {
-    if (locked || !state.enabled || unavailableDecision || approval || delegated || draft.trim() === '' || bytes > 4096 || (!pending && unfinished !== undefined)) return;
-    send(draft, pending);
+    if (canSubmit) send(draft, pending);
   };
   return <>
     {unavailableDecision && <div>
@@ -71,7 +77,7 @@ function TaskControls({context, command, state, profile, live, question, drafts,
       <button type="button" className="secondary" disabled={historyBusy || !context.connected} onClick={refreshHistory}>Refresh history</button>
     </div>}
     <fieldset className="conversation-task-controls" aria-label="Conversation controls" disabled={locked}>
-      {unavailableDecision ? null : delegated ? <article aria-label="Delegated work">
+      {!unavailableDecision && (delegated ? <article aria-label="Delegated work">
         <p>{question?.text}</p>
         <p>Waiting for the coding worker on your computer. Its structured result ends this wait; Cancel task asks the worker to stop.</p>
       </article> : approval && question?.proposal !== null && question?.proposal !== undefined ? <article aria-label="Proposed command">
@@ -83,31 +89,40 @@ function TaskControls({context, command, state, profile, live, question, drafts,
           : <p>Delegation to the coding worker in repository <strong>{question.proposal.data.repository}</strong>, in a fresh worktree with edits, builds and tests allowed and no push.
             {' '}Brief: <span style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{question.proposal.data.brief}</span>.
             {' '}Bound to coding worker revision {String(question.proposal.expectedRevision)}; a worker changed since then refuses it.</p>}
-        <button type="button" disabled={!state.enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', true);}}>Approve proposal</button>
-        <button type="button" className="secondary" disabled={!state.enabled} onClick={() => {send('decline', true);}}>Decline proposal</button>
+        <button type="button" disabled={!enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', true);}}>Approve proposal</button>
+        <button type="button" className="secondary" disabled={!enabled} onClick={() => {send('decline', true);}}>Decline proposal</button>
         <p>Approval sends one tracked command; its outcome is reported separately. Declining changes nothing.</p>
-      </article> : <form onSubmit={event => {event.preventDefault(); submit();}}>
-        <label htmlFor="assistant-input">{pending ? 'Answer' : 'Message'}</label>
+      </article> : null)}
+      {task !== undefined && !finished(task.status) && <div className="conversation-task-actions">
+        {canResume && <button type="button" className="secondary" onClick={() => {control('resume', task.taskId);}}>Resume task</button>}
+        <button type="button" className="secondary" onClick={() => {control('cancel', task.taskId);}}>Cancel task</button>
+      </div>}
+    </fieldset>
+    <div className="conversation-input-surface">
+      {showInput && <form id={formId} onSubmit={event => {event.preventDefault(); submit();}}>
+        <label className="vh" htmlFor="assistant-input">{pending ? 'Answer' : 'Message'}</label>
         <textarea id="assistant-input" rows={2} value={draft} aria-describedby="assistant-input-help"
-          style={{width: '100%', maxWidth: '100%', boxSizing: 'border-box'}}
+          placeholder={pending ? 'Answer the question' : `Message ${profiles[profile].name}`} disabled={locked} aria-invalid={tooLong || undefined}
           onKeyDown={event => {
             if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
             event.preventDefault();
             if (!event.repeat) submit();
           }}
           onChange={event => {setDraft(draftKey, event.target.value);}}/>
-        <div id="assistant-input-help">
-          <p>{bytes} / 4096 UTF-8 bytes. Saved privately and sent to the selected model. Drafts remain after sending.</p>
-          {bytes > 4096 && <p role="alert">Shorten the text to 4096 UTF-8 bytes.</p>}
+        <div className="conversation-byte-feedback">
+          {bytes >= LIMITS.inputBytes * 0.8 && <p>{bytes.toLocaleString('en-US')} / {LIMITS.inputBytes.toLocaleString('en-US')} UTF-8 bytes</p>}
+          {tooLong && <p role="alert">Shorten the text to {LIMITS.inputBytes.toLocaleString('en-US')} UTF-8 bytes.</p>}
         </div>
-        <button type="submit" disabled={!state.enabled || draft.trim() === '' || bytes > 4096 || (!pending && unfinished !== undefined)}>
-          {pending ? 'Save answer and continue' : 'Send message'}</button>
       </form>}
-      {task !== undefined && !finished(task.status) && <div className="conversation-task-actions">
-        {canResume && <button type="button" className="secondary" onClick={() => {control('resume', task.taskId);}}>Resume task</button>}
-        <button type="button" className="secondary" onClick={() => {control('cancel', task.taskId);}}>Cancel task</button>
-      </div>}
-    </fieldset>
+      <div className="conversation-composer-actions">
+        {voice}
+        {showInput && <button type="submit" form={formId} disabled={!canSubmit}>{pending ? 'Answer' : 'Send'}</button>}
+      </div>
+    </div>
+    {showInput && <div id="assistant-input-help" className="conversation-input-help">
+      <p>Enter to {pending ? 'answer' : 'send'}. Shift+Enter for a new line.</p>
+      <p>Saved privately. Sent to the selected model.</p>
+    </div>}
   </>;
 }
 
@@ -128,6 +143,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const historyAttempt = useRef<HistoryAttempt>(undefined);
   const [historyStatus, setHistoryStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const failedCursor = useRef<string>(undefined);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [speakRequest, setSpeakRequest] = useState<string>();
   const [coding, setCoding] = useState<CodingState>();
@@ -274,7 +290,6 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                 <Select label="Companion profile" value={profile} onChange={pickProfile}
                   options={Object.entries(profiles).map(([value, {name, kind}]) => ({value, label: `${name} · ${kind}`}))}/>
               </nav>
-              <ConversationVoice context={context} speech={speech}/>
             </header>
             {profile !== 'bunny' && <p className="conversation-demo-note">Demo profile. No paid calls.</p>}
             {!connected ? <p role="status">Disconnected. Saved history remains readable. Last known task state.</p>
@@ -306,9 +321,10 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             {task?.code != null && <p>Task code: {task.code}</p>}
             {state?.enabled === true && unfinished !== undefined && !['waiting', 'paused'].includes(task?.status ?? '') && <p>Finish or cancel the unfinished task before sending another message.</p>}
             {activeClarification !== undefined && <SavedQuestionContext question={activeClarification}/>}
-            {state !== undefined && <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion}
+            <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion}
               drafts={drafts} setDraft={(key, value) => {setDrafts(prior => ({...prior, [key]: value}));}}
-              refreshHistory={() => {readHistory();}} historyBusy={historyStatus === 'loading'}/>}
+              refreshHistory={() => {readHistory();}} historyBusy={historyStatus === 'loading'}
+              voice={<ConversationVoice context={context} speech={speech} open={voiceOpen} onOpenChange={setVoiceOpen}/>}/>
             {!routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
           </div>
         </div>

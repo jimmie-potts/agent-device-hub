@@ -12,7 +12,7 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await feed(page, 'connected');
     const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
     const message = assistant.getByRole('textbox', {name: 'Message', exact: true});
-    const send = assistant.getByRole('button', {name: 'Send message', exact: true});
+    const send = assistant.getByRole('button', {name: 'Send', exact: true});
     const empty = assistant.getByText('No saved messages for this profile yet.', {exact: true});
     await assistant.getByRole('button', {name: 'Enable conversation', exact: true}).click();
     await empty.waitFor();
@@ -29,6 +29,12 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
         `normal Conversation fits at ${String(width)}x${String(height)} (document: ${String(scrollWidth)}x${String(scrollHeight)})`);
       const reading = await assistant.locator('.conversation-transcript').boundingBox();
       assert.ok(reading !== null && reading.height >= 96, 'the transcript has room to read');
+      const messages = assistant.getByRole('list', {name: 'Saved conversation messages'});
+      if (await messages.isVisible()) {
+        const [column, input] = await Promise.all([messages.boundingBox(), assistant.locator('.conversation-input-surface').boundingBox()]);
+        assert.ok(column !== null && input !== null && Math.abs(column.x - input.x) <= 1 && Math.abs(column.width - input.width) <= 2,
+          'the saved messages and composer share the same reading column');
+      }
       return reading.height;
     };
 
@@ -44,7 +50,7 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await send.click();
     const answer = assistant.getByRole('textbox', {name: 'Answer', exact: true});
     await answer.fill('Short answer');
-    await assistant.getByRole('button', {name: 'Save answer and continue', exact: true}).click();
+    await assistant.getByRole('button', {name: 'Answer', exact: true}).click();
     await transcript.getByText(/Synthetic result: Short answer/).waitFor();
     await message.fill('Draft through resize and menu');
     await layout(1440, 1000);

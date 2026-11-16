@@ -239,12 +239,18 @@ full decision and its controls. Conversation opens at the newest saved messages.
 reading. If replies arrive while you are reading farther up, **New messages**
 jumps to the latest exchange.
 
-Use Enter to send and Shift+Enter for a line break. Enter during text composition
-does not submit. Drafts are limited to 4,096 UTF-8 bytes and stay in the page
-after submission. Each profile and pending question has its own draft, and
-reload clears those drafts. You can browse another profile while a task is
-unfinished. Follow the link beside the composer to return to that task before
-starting another one.
+Use **Send** for a message or **Answer** for a saved question. Enter submits
+and Shift+Enter inserts a line break. Enter during text composition does not
+submit. The composer shows the exact UTF-8 count starting at 3,277 bytes and
+refuses drafts over 4,096 bytes. Each profile and pending question has its own
+draft. Drafts remain after submission and clear on reload. You can browse
+another profile while a task is unfinished. Follow the link beside the composer
+to return to that task before starting another one.
+
+**Voice** is in the composer toolbar. Open **Spoken replies** to enable output
+in this tab, mute it, or inspect requirements and tracked playback evidence.
+Use **Close**, Escape, or click outside to dismiss the panel. If playback is
+active, **Stop speaking** stays in the toolbar with the panel closed.
 
 Questions, approvals, worker waits and task controls appear above the composer.
 An approval shows the full scope and the revision it applies to. A command
