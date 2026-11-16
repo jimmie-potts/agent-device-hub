@@ -107,6 +107,11 @@ Speech SHALL default to off. Enabling text companions SHALL NOT enable speech. A
 - **THEN** its availability is invalidated and any local speech is cancelled
 - **AND** reconnect requires explicit enablement, admits only new opportunities and never selects another tab
 
+#### Scenario: Presentation changes during browser speech
+- **WHEN** the selected Conversation tab changes profile, resizes, or opens or closes Voice or Details
+- **THEN** it keeps the same selected endpoint and any eligible playback continues
+- **AND** the controls explain when Enable is unavailable, another tab remains excluded, and reload or reconnect requires a fresh Enable
+
 ### Requirement: Qualified local voice and bounded playback
 Missing installation qualification, an unavailable browser identity or a browser other than Google Chrome on macOS SHALL leave speech unavailable while preserving text companions. The receipt's browser version SHALL remain historical qualification metadata; a different Chrome version SHALL NOT invalidate qualification. Each enable action SHALL re-enumerate voices with a five-second bound and require an exact qualified local English voice. The driver SHALL select that voice explicitly on each utterance without changing defaults or falling back to a default, remote or changed voice. It SHALL perform no microphone, recording, cloud synthesis or automatic retry. Playback SHALL have a finite deadline and SHALL report completion only after an ordered start and end callback. Callback completion SHALL NOT mean heard.
 

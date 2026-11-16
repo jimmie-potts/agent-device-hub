@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
-import type {Browser, Page, Request} from 'playwright';
+import {chromium, type Browser, type Page, type Request} from 'playwright';
 import {feed, startWorld} from './harness.ts';
 import {installSyntheticSpeech} from '../../dist/verify/speech-fixture.js';
 import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
@@ -169,22 +169,55 @@ export async function homeSpeechLifetimeJourney(browser: Browser): Promise<void>
 /** Typed requests on the Conversation page are answered aloud through the same endpoint, with Speak, Stop and Quiet behaving as documented (Hub #500). */
 export async function spokenRepliesJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, speech: true});
-  const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
+  const context = await browser.newContext({viewport: {width: 1280, height: 900}, reducedMotion: 'reduce'});
   const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
   try {
     await context.addInitScript(installSyntheticSpeech, '151.0.0.1');
     const page = await context.newPage(), other = await context.newPage(); page.setDefaultTimeout(12_000); other.setDefaultTimeout(12_000);
+    const registrations: string[] = [];
+    page.on('request', request => {
+      if (request.method() !== 'POST' || new URL(request.url()).pathname !== '/api/sdk/v1/respond') return;
+      const body: unknown = request.postDataJSON();
+      if (typeof body === 'object' && body !== null && 'pattern' in body && typeof body.pattern === 'string'
+        && body.pattern.startsWith('bunny.cmd.companion-speech-output.')) registrations.push(body.pattern);
+    });
     await page.goto(`${world.url}/#/module/companions/assistant`); await feed(page, 'connected');
     const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
+    const voice = assistant.getByRole('button', {name: /^Voice (off|on|· (Speaking|Needs attention|Unavailable))$/});
+    const voiceState = (name: string) => assistant.getByRole('button', {name: name.startsWith('Voice ') ? name : `Voice · ${name}`, exact: true});
+    await voiceState('Voice off').waitFor({timeout: 3500});
+    assert.equal(await voice.getAttribute('aria-expanded'), 'false');
+    await voice.click();
     const controls = assistant.getByRole('region', {name: 'Spoken replies', exact: true});
     const count = () => page.evaluate(() => window.speechFixture.calls);
+    const evidence = controls.getByText('Voice requirements and playback evidence', {exact: true});
+    const receipts = process.env.DASHBOARD_RECEIPTS;
+    if (receipts !== undefined) await mkdir(receipts, {recursive: true});
     const enableAssistant = assistant.getByRole('button', {name: 'Enable conversation', exact: true});
     await enableAssistant.focus(); await enableAssistant.press('Enter');
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).waitFor();
     await controls.getByText(/This tab becomes the one speaker/).waitFor();
     const enable = controls.getByRole('button', {name: 'Enable spoken replies in this tab', exact: true});
     await enable.focus(); await enable.press('Enter');
-    await controls.getByText('Spoken replies enabled in this tab.', {exact: true}).waitFor();
+    await voiceState('Voice on').waitFor();
+    await voice.click();
+    const composer = assistant.getByRole('button', {name: 'Send message', exact: true});
+    const closedComposer = await composer.boundingBox();
+    assert.ok(closedComposer !== null && closedComposer.y + closedComposer.height <= 900, 'closed Voice leaves the composer in the desktop viewport');
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/voice-desktop-closed.png`});
+    await voice.click();
+    const openComposer = await composer.boundingBox();
+    assert.deepEqual(openComposer, closedComposer, 'opening Voice does not move the composer');
+    await assistant.getByRole('textbox', {name: 'Message', exact: true}).click({trial: true});
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/voice-desktop-open.png`});
+    await evidence.click();
+    await controls.getByText(/Qualification recorded in Chrome/).waitFor();
+    await other.goto(`${world.url}/#/module/companions/assistant`); await feed(other, 'connected');
+    const otherPage = other.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
+    await otherPage.getByRole('button', {name: 'Voice · Unavailable', exact: true}).click();
+    await otherPage.getByText('Another tab is the selected speaker.', {exact: true}).waitFor();
+    assert.ok(await otherPage.getByRole('button', {name: 'Enable spoken replies in this tab'}).isDisabled());
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/voice-desktop.png`, fullPage: true});
     // The synthetic provider asks a question first: the question is spoken, then the final result after the answer.
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-PROMPT');
     const send = assistant.getByRole('button', {name: 'Send message', exact: true}); await send.focus(); await send.press('Enter');
@@ -201,38 +234,183 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     // Speak replays the saved result through the same endpoint and reports its receipt separately from playback.
     const messages = assistant.getByRole('list', {name: 'Saved conversation messages', exact: true});
     const tool = messages.getByRole('article', {name: 'tool message'}).filter({hasText: /coding agent session/});
+    await voice.click();
     await tool.locator('summary').click();
     await tool.getByText(/coding agent session/).waitFor();
     await tool.locator('summary').click();
     assert.equal(await count(), 2, 'reading saved tool output never queues speech');
     const result = messages.getByRole('article', {name: 'assistant message', exact: true}).filter({hasText: 'Synthetic result:'}).last();
-    const speak = result.getByRole('button', {name: /^Speak message /}); await speak.focus(); await speak.press('Enter');
+    const speak = result.getByRole('button', {name: /^Read aloud message /}); await speak.focus(); await speak.press('Enter');
     // The receipt must leave its idle text; the accepted control is the saved request, the playback report is the speech.
-    await assistant.getByText(/^Speak receipt: (?!No command sent)/).waitFor();
+    await assistant.getByText(/^Read aloud receipt: (?!No command sent)/).waitFor();
     await page.waitForFunction(() => window.speechFixture.calls === 3);
     await page.evaluate(() => window.speechFixture.finish());
+    await voice.click(); await evidence.click();
     await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
     // Stop speaking stops the audio of a question without answering or cancelling the task.
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-SECOND');
     await send.click(); await assistant.getByText('Needs your answer', {exact: true}).waitFor();
     await page.waitForFunction(() => window.speechFixture.calls === 4);
-    const stop = controls.getByRole('button', {name: 'Stop speaking', exact: true}); await stop.focus(); await stop.press('Enter');
+    await voiceState('Speaking').waitFor();
+    const question = await assistant.getByRole('article', {name: 'Saved question', exact: true}).innerText();
+    const details = assistant.locator('details.conversation-details');
+    const detailsToggle = details.locator(':scope > summary');
+    const draft = assistant.getByRole('textbox', {name: 'Answer', exact: true});
+    const savedDraft = 'Draft held during Voice and Details checks';
+    // Open the saved result before opening both companion panels.
+    await voice.click();
+    await tool.locator('summary').click();
+    await detailsToggle.click();
+    await voice.click();
+    assert.equal(await controls.isVisible(), true);
+    assert.equal(await details.getAttribute('open'), '');
+    await draft.fill(savedDraft);
+    const composerBounds = await draft.boundingBox();
+    assert.ok(composerBounds !== null && composerBounds.y + composerBounds.height <= 900);
+    await draft.click({trial: true});
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/conversation-voice-details.png`});
+    const transcript = assistant.locator('.conversation-transcript');
+    await transcript.evaluate(node => {node.scrollTop = 20;});
+    assert.ok(await transcript.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop > 24), 'reading above the live tail');
+    const readingAnchor = () => transcript.evaluate(node => {
+      const top = node.getBoundingClientRect().top;
+      return Array.from(node.querySelectorAll('[data-message]')).find(row => row.getBoundingClientRect().bottom > top)?.getAttribute('data-message');
+    });
+    const heldEndpoint = [...registrations];
+    assert.equal(heldEndpoint.length, 1);
+    const reflow = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await reflow();
+    const heldAnchor = await readingAnchor();
+    assert.equal(typeof heldAnchor, 'string');
+    for (const width of [320, 1280]) {
+      await page.setViewportSize({width, height: 900});
+      await reflow();
+      assert.equal(await readingAnchor(), heldAnchor);
+      assert.equal(await tool.locator('details').getAttribute('open'), '');
+      assert.equal(await draft.inputValue(), savedDraft);
+      assert.equal(await assistant.getByRole('article', {name: 'Saved question', exact: true}).innerText(), question);
+      await voiceState('Speaking').waitFor();
+    }
+    assert.equal(await count(), 4);
+    assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 0);
+    await voice.click();
+    assert.equal(await controls.isVisible(), false);
+    await detailsToggle.click();
+    await page.setViewportSize({width: 320, height: 790});
+    const profile = assistant.getByRole('combobox', {name: /Companion profile/});
+    await profile.selectOption('reachy'); await voiceState('Speaking').waitFor();
+    await profile.selectOption('bunny'); await voiceState('Speaking').waitFor();
+    assert.deepEqual(registrations, heldEndpoint, 'panel, viewport and profile changes keep the original speech endpoint');
+    assert.equal(await count(), 4);
+    assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 0);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/voice-narrow-speaking.png`, fullPage: true});
+    const stop = assistant.getByRole('button', {name: 'Stop speaking', exact: true});
+    await stop.focus(); await stop.press('Enter');
+    await voiceState('Voice on').waitFor();
+    assert.equal(await assistant.getByRole('article', {name: 'Saved question', exact: true}).innerText(), question);
+    await page.setViewportSize({width: 1280, height: 1000});
+    await voice.click(); await evidence.click();
     await controls.getByText('Playback: Playback stopped. The sentence may be incomplete.', {exact: true}).waitFor();
     await assistant.getByText('Needs your answer', {exact: true}).waitFor();
     assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 1);
     // Quiet keeps the result written only; Work lets the next reply speak again.
     await other.goto(`${world.url}/#/`); await feed(other, 'connected'); const hub = other.locator('[data-widget="hub-mode"]');
     await hub.getByRole('button', {name: 'Quiet', exact: true}).click(); await controls.getByText('Quiet mode suppresses spoken replies.', {exact: true}).waitFor();
-    await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-QUIET');
+    await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill('Synthetic answer in Quiet');
     await answer.click(); await assistant.getByText('Task completed', {exact: true}).waitFor();
-    await page.waitForTimeout(300); assert.equal(await count(), 4, 'Quiet mode speaks no reply');
+    await page.waitForTimeout(300); assert.equal(await count(), 4, 'Quiet suppresses a short reply');
+
+    await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('Synthetic long reply fixture');
+    await send.click(); await assistant.getByText('Needs your answer', {exact: true}).waitFor();
+    const longAnswer = 'A synthetic reply detail. '.repeat(24);
+    await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill(longAnswer);
+    await answer.click(); await assistant.getByText('Task completed', {exact: true}).waitFor();
+    const longReply = messages.getByRole('article', {name: 'assistant message', exact: true}).filter({hasText: 'Synthetic result: A synthetic reply detail.'});
+    await longReply.getByText('Written only. Read aloud supports up to 512 characters.', {exact: true}).waitFor();
+    assert.equal(await longReply.getByRole('button', {name: /^Read aloud/}).count(), 0);
+    assert.equal(await count(), 4, 'Quiet mode speaks no reply');
     await hub.getByRole('button', {name: 'Work', exact: true}).click(); await controls.getByText('Quiet mode suppresses spoken replies.', {exact: true}).waitFor({state: 'detached'});
-    const receipts = process.env.DASHBOARD_RECEIPTS;
-    if (receipts !== undefined) {await mkdir(receipts, {recursive: true}); await page.screenshot({path: `${receipts}/spoken-replies-desktop.png`, fullPage: true});}
     await controls.getByRole('button', {name: 'Mute spoken replies', exact: true}).click();
-    await controls.getByText('Spoken replies are off in this tab.', {exact: true}).waitFor();
+    await voiceState('Voice off').waitFor();
+    await enable.click(); await voiceState('Voice on').waitFor();
+    assert.equal(await count(), 4, 'fresh enable does not replay Quiet history');
+    world.dropDashboardStreams(); await feed(page, 'connected');
+    await voiceState('Voice on').waitFor({state: 'detached'});
+    assert.equal(await count(), 4, 'reconnect does not replay');
+    await page.reload(); await feed(page, 'connected');
+    await voice.waitFor(); assert.equal(await voice.getAttribute('aria-expanded'), 'false');
+    assert.equal(await count(), 0, 'reload does not enable or replay');
+    assert.equal(await messages.getByRole('article', {name: /^(owner|tool) message$/}).getByRole('button', {name: /^Read aloud/}).count(), 0);
+
+    await voice.click(); await enable.click(); await voiceState('Voice on').waitFor();
+    await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('Synthetic voice recovery fixture');
+    await send.click(); await page.waitForFunction(() => window.speechFixture.calls === 1);
+    await page.evaluate(() => window.speechFixture.fail());
+    await voiceState('Needs attention').waitFor();
+    await other.goto(`${world.url}/#/module/companions/assistant`);
+    await feed(other, 'connected');
+    const otherVoice = otherPage.getByRole('button', {name: /^Voice (off|on|· (Speaking|Needs attention|Unavailable))$/});
+    await otherPage.getByRole('button', {name: 'Voice · Needs attention', exact: true}).click();
+    const otherControls = otherPage.getByRole('region', {name: 'Spoken replies', exact: true});
+    const otherEnable = otherControls.getByRole('button', {name: 'Enable spoken replies in this tab', exact: true});
+    const recover = otherControls.getByRole('button', {name: 'Recover voice', exact: true});
+    const beforeRestart = {enableDisabled: await otherEnable.isDisabled(), recoveryVisible: await recover.isVisible()};
+    await otherControls.getByText('Earlier playback is unresolved. Voice stays off until recovery is available.', {exact: true}).waitFor();
+
+    // Hold the retained tab offline until the other tab renews their shared browser session.
+    const edge = '**/api/sdk/v1/**';
+    await page.route(edge, route => route.abort('internetdisconnected'));
+    await world.restart();
+    await other.reload(); await feed(other, 'connected');
+    await otherPage.getByRole('button', {name: 'Voice · Needs attention', exact: true}).click();
+    const confirmation = otherControls.getByRole('checkbox', {name: /I have stopped playback/});
+    assert.equal(await confirmation.isChecked(), false);
+    assert.equal(await recover.isDisabled(), true);
+    assert.equal(await otherEnable.isDisabled(), true);
+    await confirmation.check();
+    await otherVoice.click(); await otherVoice.click();
+    assert.equal(await confirmation.isChecked(), false);
+    await confirmation.check(); await recover.click();
+    await otherPage.getByRole('button', {name: 'Voice off', exact: true}).waitFor();
+    await otherControls.getByText('Voice requirements and playback evidence', {exact: true}).click();
+    await otherControls.getByText('Recovery acknowledged. The earlier playback remains uncertain.', {exact: true}).waitFor();
+    assert.equal(await other.evaluate(() => window.speechFixture.calls), 0, 'recovery produces no audio');
+
+    await page.unroute(edge);
+    await feed(page, 'connected');
+    await enable.click();
+    await controls.getByRole('button', {name: 'Mute spoken replies', exact: true}).waitFor();
+    await evidence.click();
+    await controls.getByText('Playback: Playback is uncertain. It will not be replayed automatically.', {exact: true}).waitFor();
+    const currentVoice = await voice.innerText();
+    assert.deepEqual({beforeRestart, currentVoice}, {
+      beforeRestart: {enableDisabled: true, recoveryVisible: false}, currentVoice: 'Voice on',
+    });
+    assert.equal(await count(), 1, 'fresh enable does not replay the recovered operation');
+
+    const unavailableVoice = otherPage.getByRole('button', {name: 'Voice · Unavailable', exact: true});
+    const unavailableEnable = otherPage.getByRole('button', {name: 'Enable spoken replies in this tab'});
+    const controlAuthority = '**/api/v2/authority?scope=control';
+    await other.route(controlAuthority, route => route.fulfill({status: 403, json: {error: {code: 'forbidden', retryable: false}}}));
+    await other.goto(`${world.url}/#/module/companions/assistant`); await other.reload(); await feed(other, 'connected');
+    await unavailableVoice.click();
+    await otherPage.getByText('Voice controls require operator access.', {exact: true}).waitFor();
+    assert.ok(await unavailableEnable.isDisabled());
+    await other.unroute(controlAuthority);
+    await other.route('**/modules/companions/content/speech-qualification', route => route.fulfill({status: 404}));
+    await other.reload(); await feed(other, 'connected');
+    await unavailableVoice.click();
+    await otherPage.getByText(/Voice requires qualified Google Chrome on macOS/).waitFor();
+    assert.ok(await unavailableEnable.isDisabled());
     assert.equal(JSON.stringify(world.logs).includes('PRIVATE-SYNTHETIC'), false, 'diagnostics contain no spoken text');
     assert.deepEqual(errors, []);
   } finally {await context.close(); await world.close();}
-  process.stdout.write('Spoken replies browser: question, result and Speak replay spoken through the Conversation tab, Stop without cancelling, Quiet silence, mute and keyboard passed with synthetic audio.\n');
+  process.stdout.write('Spoken replies browser: question, result and Read aloud receipt, second-tab exclusion, playback through profile and layout changes, Stop with Voice closed, Quiet silence, mute and fresh enable passed with synthetic audio.\n');
+}
+
+if (import.meta.main) {
+  const browser = await chromium.launch({headless: true});
+  try {await spokenRepliesJourney(browser);}
+  finally {await browser.close();}
 }

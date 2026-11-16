@@ -4,7 +4,8 @@ import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk';
 import {LIMITS} from '../assistant/limits.js';
-import {SpeechControls, useCompanionSpeechCopy} from './speech.js';
+import {useCompanionSpeechCopy, useSpeechControlsSession} from './speech.js';
+import {ConversationVoice} from './conversation-voice.js';
 
 import type {SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
@@ -126,7 +127,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [speakRequest, setSpeakRequest] = useState<string>();
   const [coding, setCoding] = useState<CodingState>();
-  const speech = useCompanionSpeechCopy(context);
+  const companionSpeech = useCompanionSpeechCopy(context);
+  const speech = useSpeechControlsSession(context, companionSpeech.copy);
   useEffect(() => {
     setCoding(undefined);
     if (!connected) return;
@@ -266,7 +268,10 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           {profile !== 'bunny' && <p>Synthetic profile. No paid calls.</p>}
         </nav>
         <div className="conversation-main">
-          <h3>{profiles[profile]}</h3>
+          <header className="conversation-header">
+            <h3>{profiles[profile]}</h3>
+            <ConversationVoice context={context} speech={speech}/>
+          </header>
           {!connected ? <p role="status">Disconnected. Saved history remains readable. Last known task state.</p>
             : !live && <p role="status">Stale. Current conversation state is unavailable. Saved history remains readable.</p>}
           {!context.control && <p>Read-only access. Controls require operator authority.</p>}
@@ -276,14 +281,16 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             renderMessage={message => <article aria-label={`${message.role} message`}>
               <strong>{message.role === 'owner' ? 'You' : profiles[profile]}</strong>
               <p>{message.text}</p>
-              {message.role === 'assistant' && state !== undefined && <button type="button" aria-label={`Speak message ${message.seq}`}
-                className="secondary" disabled={locked || message.text.length > LIMITS.spokenChars}
+              {message.role === 'assistant' && (message.text.length > LIMITS.spokenChars
+                ? <p className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</p>
+                : state !== undefined && <button type="button" aria-label={`Read aloud message ${message.seq}`}
+                className="secondary" disabled={locked}
                 onClick={() => {
                   const requestId = crypto.randomUUID();
                   setSpeakRequest(requestId);
                   void command.run({family: 'assistant-control', target: 'assistant', requestId,
                     data: {action: 'speak', expectedRevision: state.revision, taskId: message.taskId, messageId: message.id}});
-                }}>Speak</button>}
+                }}>Read aloud</button>)}
             </article>}/>
           <div className="conversation-compose">
             {state !== undefined && !state.enabled && <p>Conversation is off. <button type="button" disabled={locked} onClick={() => {present('enable');}}>Enable conversation</button></p>}
@@ -296,7 +303,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             {state !== undefined && <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion}
               drafts={drafts} setDraft={(key, value) => {setDrafts(prior => ({...prior, [key]: value}));}}
               refreshHistory={() => {readHistory();}} historyBusy={historyStatus === 'loading'}/>}
-            {!routineReceipt && <p role="status">{speakReceipt ? 'Speak receipt' : 'Command receipt'}: {command.text}</p>}
+            {!routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
           </div>
         </div>
         <ConversationDetails Facts={Facts} profile={profile} profileName={profiles[profile]} state={state} task={task}
@@ -305,7 +312,5 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished !== undefined} setEnabled={present}/>
       </div>;
     }}</Command>
-    <SpeechControls context={context} companion={speech.copy} compact purpose="replies"/>
-    <p>The selected voice reads each eligible reply, question or refusal once. Replies longer than {LIMITS.spokenChars} characters stay written only.</p>
   </section>;
 }
