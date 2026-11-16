@@ -253,18 +253,24 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await page.waitForFunction(() => window.speechFixture.calls === 4);
     await voiceState('Speaking').waitFor();
     const question = await assistant.getByRole('article', {name: 'Saved question', exact: true}).innerText();
-    const details = assistant.locator('details.conversation-details');
-    const detailsToggle = details.locator(':scope > summary');
+    const details = assistant.getByRole('dialog', {name: 'Conversation details', exact: true});
+    const detailsToggle = assistant.getByRole('button', {name: 'Details', exact: true});
+    const closeDetails = details.getByRole('button', {name: 'Close details', exact: true});
     const draft = assistant.getByRole('textbox', {name: 'Answer', exact: true});
     const savedDraft = 'Draft held during Voice and Details checks';
-    // Open the saved result before opening both companion panels.
     await voice.click();
     await tool.locator('summary').click();
-    await detailsToggle.click();
-    await voice.click();
-    assert.equal(await controls.isVisible(), true);
-    assert.equal(await details.getAttribute('open'), '');
     await draft.fill(savedDraft);
+    await detailsToggle.click();
+    await details.getByText('Capabilities', {exact: true}).click();
+    const provider = details.getByText('Synthetic (no paid calls)', {exact: true});
+    await provider.waitFor();
+    await voice.click();
+    await controls.waitFor();
+    await details.waitFor({state: 'hidden'});
+    await detailsToggle.click();
+    await provider.waitFor();
+    await controls.waitFor({state: 'hidden'});
     const composerBounds = await draft.boundingBox();
     assert.ok(composerBounds !== null && composerBounds.y + composerBounds.height <= 900);
     await draft.click({trial: true});
@@ -296,27 +302,40 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
       assert.equal(await readingAnchor(), heldAnchor);
       assert.equal(await tool.locator('details').getAttribute('open'), '');
       assert.equal(await draft.inputValue(), savedDraft);
-      assert.equal(await assistant.getByRole('article', {name: 'Saved question', exact: true}).innerText(), question);
-      await voiceState('Speaking').waitFor();
+      await provider.waitFor();
+      const stop = assistant.getByRole('button', {name: 'Stop speaking', exact: true});
+      assert.equal(await stop.count(), 1, 'only one Stop speaking action is presented');
+      await stop.click({trial: true});
+      assert.equal(await details.getByRole('button', {name: 'Stop speaking', exact: true}).count(), width === 320 ? 1 : 0);
     }
     assert.equal(await count(), 4);
     assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 0);
-    await voice.click();
-    assert.equal(await controls.isVisible(), false);
-    await detailsToggle.click();
+    await closeDetails.click();
     await page.setViewportSize({width: 320, height: 790});
     const profile = assistant.getByRole('combobox', {name: /Companion profile/});
     await profile.selectOption('reachy'); await voiceState('Speaking').waitFor();
+    await detailsToggle.click();
+    await details.locator('.conversation-details-profile').getByText('Reachy', {exact: true}).waitFor();
+    await closeDetails.click();
     await profile.selectOption('bunny'); await voiceState('Speaking').waitFor();
+    assert.equal(await draft.inputValue(), savedDraft);
     assert.deepEqual(registrations, heldEndpoint, 'panel, viewport and profile changes keep the original speech endpoint');
     assert.equal(await count(), 4);
     assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 0);
+    await detailsToggle.click();
+    await provider.waitFor();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-    if (receipts !== undefined) await page.screenshot({path: `${receipts}/voice-narrow-speaking.png`, fullPage: true});
-    const stop = assistant.getByRole('button', {name: 'Stop speaking', exact: true});
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/voice-narrow-speaking.png`});
+    const stop = details.getByRole('button', {name: 'Stop speaking', exact: true});
+    assert.equal(await assistant.getByRole('button', {name: 'Stop speaking', exact: true}).count(), 1);
+    await stop.click({trial: true});
     await stop.focus(); await stop.press('Enter');
+    await page.waitForFunction(() => window.speechFixture.cancelled === 1);
+    await details.waitFor();
+    await closeDetails.click();
     await voiceState('Voice on').waitFor();
     assert.equal(await assistant.getByRole('article', {name: 'Saved question', exact: true}).innerText(), question);
+    assert.equal(await draft.inputValue(), savedDraft);
     await page.setViewportSize({width: 1280, height: 1000});
     await voice.click(); await evidence.click();
     await controls.getByText('Playback: Playback stopped. The sentence may be incomplete.', {exact: true}).waitFor();
@@ -414,7 +433,7 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     assert.equal(JSON.stringify(world.logs).includes('PRIVATE-SYNTHETIC'), false, 'diagnostics contain no spoken text');
     assert.deepEqual(errors, []);
   } finally {await context.close(); await world.close();}
-  process.stdout.write('Spoken replies browser: question, result and Read aloud receipt, second-tab exclusion, playback through profile and layout changes, Stop with Voice closed, Quiet silence, mute and fresh enable passed with synthetic audio.\n');
+  process.stdout.write('Spoken replies browser: question, result and Read aloud receipt, second-tab exclusion, playback through profile and layout changes, Stop in narrow Details, Quiet silence, mute and fresh enable passed with synthetic audio.\n');
 }
 
 if (import.meta.main) {

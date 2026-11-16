@@ -189,7 +189,7 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     await panel.getByRole('status').filter({hasText: 'Uncertain result. The command may have taken effect; it was not sent again.'}).waitFor();
     assert.equal(await draft.inputValue(), 'Synthetic draft retained through refusal and lost reply');
     assert.equal(await send.isDisabled(), true);
-    await panel.locator('details.conversation-details > summary').click();
+    await panel.getByRole('button', {name: 'Details', exact: true}).click();
     await panel.getByRole('status').filter({hasText: 'Uncertain result.'}).waitFor();
     assert.deepEqual(sent.filter(path => path.endsWith('/upload')), ['/api/v2/modules/companions/upload', '/api/v2/modules/companions/upload']);
     const denied = await fetch(`${world.url}${route}?profile=bunny&view=recent`);

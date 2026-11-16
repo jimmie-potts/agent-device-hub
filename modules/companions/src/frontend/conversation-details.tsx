@@ -1,8 +1,20 @@
-import React from 'react';
+import React, {useEffect, useRef, useLayoutEffect, useSyncExternalStore} from 'react';
 import type {AssistantProfile, AssistantState, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendUi} from '@jimmie-potts/sdk/frontend';
 import {LIMITS} from '../assistant/limits.js';
+
+const detailsOverlay = '(width < 1120px)';
+
+function subscribeDetailsLayout(change: () => void): () => void {
+  const query = window.matchMedia(detailsOverlay);
+  query.addEventListener('change', change);
+  return () => {query.removeEventListener('change', change);};
+}
+
+export function useDetailsOverlay(): boolean {
+  return useSyncExternalStore(subscribeDetailsLayout, () => window.matchMedia(detailsOverlay).matches);
+}
 
 const catalog = ['read_sessions', 'set_mode', 'delegate_coding'];
 
@@ -20,21 +32,66 @@ function toolList(names: readonly string[] | undefined): string {
   return names.length === 0 ? 'None' : names.join(', ');
 }
 
-export function ConversationDetails({Facts, profile, profileName, state, task, coding, live, savedQuestion, receipt, locked, unfinished, setEnabled}: {
+export function ConversationDetails({
+  id, open, overlay, onClose, stopSpeaking,
+  Facts, profile, profileName, state, task, coding, live, savedQuestion, receipt, locked, unfinished, setEnabled,
+}: {
+  id: string; open: boolean; overlay: boolean; onClose: () => void; stopSpeaking: React.JSX.Element | null;
   Facts: FrontendUi['Facts']; profile: AssistantProfile; profileName: string;
   state: AssistantState | undefined; task: AssistantTaskSummary | undefined; coding: CodingState | undefined; live: boolean;
   savedQuestion: React.ReactNode; receipt: string | undefined; locked: boolean; unfinished: boolean;
   setEnabled: (action: 'enable' | 'disable') => void;
 }): React.JSX.Element {
+  const panelRef = useRef<HTMLDialogElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (panel === null) return;
+    if (!open) {
+      panel.close();
+      return;
+    }
+    const focus = document.activeElement;
+    // Change how the same dialog opens when the viewport crosses the breakpoint.
+    // Keep the disclosures and their scroll container mounted in both modes.
+    if (panel.open) panel.close();
+    if (overlay) panel.showModal();
+    else panel.show();
+    const target = focus instanceof HTMLElement && panel.contains(focus) ? focus : closeRef.current;
+    target?.focus({preventScroll: true});
+  }, [open, overlay]);
+  useEffect(() => {
+    if (!open || overlay) return;
+    function escape(event: KeyboardEvent): void {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      onClose();
+    }
+    document.addEventListener('keydown', escape);
+    return () => {document.removeEventListener('keydown', escape);};
+  }, [open, overlay, onClose]);
+
   const synthetic = profile !== 'bunny' || state?.provider === 'synthetic';
   const unit = synthetic ? 'units' : 'tokens';
   const allowed = state?.tools;
   const unavailable = allowed === undefined ? undefined : catalog.filter(name => !allowed.includes(name));
   const lastKnown = state !== undefined && !live;
   const enabled = state?.enabled;
-  return <details className="conversation-details">
-    <summary>Details</summary>
+  return <dialog id={id} ref={panelRef} className="conversation-details" aria-labelledby={`${id}-title`}
+    onCancel={event => {event.preventDefault(); onClose();}}
+    onPointerDown={event => {
+      if (!overlay || event.button !== 0 || event.target !== event.currentTarget) return;
+      const {left, top, right, bottom} = event.currentTarget.getBoundingClientRect();
+      if (event.clientX >= left && event.clientX <= right && event.clientY >= top && event.clientY <= bottom) return;
+      event.preventDefault();
+      onClose();
+    }}>
+    <header className="conversation-details-header">
+      <h2 id={`${id}-title`}>Conversation details</h2>
+      <button type="button" className="secondary" ref={closeRef} onClick={onClose} aria-label="Close details">Close</button>
+    </header>
     <div className="conversation-details-sections">
+      <p className="conversation-details-profile"><strong>{profileName}</strong>{profile !== 'bunny' && <small>Demo</small>}</p>
       <details>
         <summary>Capabilities</summary>
         {lastKnown && <p>Last known provider and tools.</p>}
@@ -87,5 +144,6 @@ export function ConversationDetails({Facts, profile, profileName, state, task, c
         </ul>
       </details>
     </div>
-  </details>;
+    {stopSpeaking !== null && <footer className="conversation-details-footer">{stopSpeaking}</footer>}
+  </dialog>;
 }

@@ -1,15 +1,25 @@
-import React, {useId, useState} from 'react';
+import React, {useEffect, useId, useRef, useState} from 'react';
 import type {FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {playbackLabels, SpeechRecovery, type SpeechControlsSession} from './speech.js';
 
-export function ConversationVoice({context, speech}: {context: FrontendContext; speech: SpeechControlsSession}): React.JSX.Element {
-  const [open, setOpen] = useState(false);
+export function stopSpeakingButton(speech: SpeechControlsSession): React.JSX.Element | null {
+  const {local, selected} = speech;
+  const canStop = selected && (local.playback?.status === 'started' || local.playback?.status === 'dispatching');
+  return canStop
+    ? <button type="button" className="secondary" disabled={local.busy} onClick={() => {void speech.stop();}}>Stop speaking</button>
+    : null;
+}
+
+export function ConversationVoice({context, speech, open, onOpenChange, stopSpeaking}: {
+  context: FrontendContext; speech: SpeechControlsSession; open: boolean;
+  onOpenChange: (open: boolean) => void; stopSpeaking: React.JSX.Element | null;
+}): React.JSX.Element {
+  const trigger = useRef<HTMLButtonElement>(null);
   const [recoveredOperation, setRecoveredOperation] = useState<string>();
   const panelId = useId();
   const {local, qualification, ready, selected, synced} = speech;
   const remote = context.connected && synced ? speech.remote : undefined;
   const playing = selected && local.playback?.status === 'started';
-  const canStop = selected && (playing || local.playback?.status === 'dispatching');
   const recoveryId = remote?.recoveryOperationId;
   const unresolvedPlayback = remote?.availability === 'unavailable' && remote.playback?.status === 'uncertain';
   const needsAttention = recoveryId !== undefined || unresolvedPlayback;
@@ -39,13 +49,25 @@ export function ConversationVoice({context, speech}: {context: FrontendContext; 
     return true;
   };
 
+  useEffect(() => {
+    if (!open) return;
+    function escape(event: KeyboardEvent): void {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      onOpenChange(false);
+      trigger.current?.focus({preventScroll: true});
+    }
+    document.addEventListener('keydown', escape);
+    return () => {document.removeEventListener('keydown', escape);};
+  }, [open, onOpenChange]);
+
   return <>
     <div className="conversation-voice-actions">
-      <button type="button" className="secondary" aria-expanded={open} aria-controls={panelId}
-        onClick={() => {setOpen(value => !value);}}>
+      <button type="button" className="secondary" ref={trigger} aria-expanded={open} aria-controls={panelId}
+        onClick={() => {onOpenChange(!open);}}>
         {state.startsWith('Voice ') ? state : `Voice · ${state}`}
       </button>
-      {canStop && <button type="button" className="secondary" disabled={local.busy} onClick={() => {void speech.stop();}}>Stop speaking</button>}
+      {stopSpeaking}
     </div>
     <section id={panelId} className="conversation-voice-panel" aria-label="Spoken replies" hidden={!open}>
       {open && <>
