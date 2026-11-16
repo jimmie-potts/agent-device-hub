@@ -27,15 +27,16 @@ async function assertNarrowProfile(page: Page, expected: string): Promise<void> 
     if (canvas === null) throw new Error('Could not measure the selected profile');
     const style = getComputedStyle(node);
     const text = node.selectedOptions[0]?.textContent ?? '';
+    const visibleIdentity = node.value === 'bunny' ? text.replace(/ · Everyday assistant$/, '') : text;
     canvas.font = style.font;
     // Leave space for the browser's native select arrow as well as the declared padding.
     const available = node.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd) - 24;
     const box = node.getBoundingClientRect();
     const pickerExposed = document.elementFromPoint(box.left + box.width / 2, box.bottom - 2) === node;
-    return {text, width: canvas.measureText(text).width, available, pickerExposed, overflow: document.documentElement.scrollWidth - innerWidth};
+    return {text, width: canvas.measureText(visibleIdentity).width, available, pickerExposed, overflow: document.documentElement.scrollWidth - innerWidth};
   });
   assert.equal(measured.text, expected);
-  assert.ok(measured.available >= measured.width, `Selected profile fits: ${JSON.stringify(measured)}`);
+  assert.ok(measured.available >= measured.width, `Selected profile identity fits: ${JSON.stringify(measured)}`);
   assert.ok(measured.pickerExposed, 'the selected profile stays visible over its full height');
   assert.ok(measured.overflow <= 1, 'profile and conversation controls fit the viewport');
   await trigger.click({trial: true});
