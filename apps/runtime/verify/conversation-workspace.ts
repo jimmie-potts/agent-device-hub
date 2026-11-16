@@ -14,6 +14,7 @@ export async function captureConversationWorkspace(t: CaptureContext): Promise<v
   const draft = conversation.getByRole('textbox', {name: 'Message', exact: true});
   const reply = conversation.getByRole('list', {name: 'Saved conversation messages'}).getByText(/^Synthetic result: SYNTHETIC_ASSISTANT_ANSWER/);
   const send = conversation.getByRole('button', {name: 'Send message', exact: true});
+  const invitation = conversation.getByRole('heading', {name: 'What’s on your mind?', exact: true});
   await reply.waitFor();
   await send.waitFor();
 
@@ -82,9 +83,10 @@ export async function captureConversationWorkspace(t: CaptureContext): Promise<v
   };
   for (const {name, value} of [{name: 'Reachy', value: 'reachy'}, {name: 'MicroDuck', value: 'microduck'}]) {
     await act(profile, `Choose ${name} Demo in Companion profile.`, () => select(value));
-    await conversation.getByText('No saved messages for this profile yet.', {exact: true}).waitFor();
-    await t.expect(`${name} Demo opens its own history and empty draft`, async () => {
+    await t.expect(`${name} Demo shows an invitation, no saved messages and a blank draft`, async () => {
+      await invitation.waitFor();
       assert.equal(await profile.inputValue(), value);
+      assert.equal(await conversation.locator('[data-message]').count(), 0);
       assert.equal(await draft.inputValue(), '');
     });
   }
@@ -92,6 +94,7 @@ export async function captureConversationWorkspace(t: CaptureContext): Promise<v
   await reply.waitFor();
   await t.expect('B.U.N.N.Y. restores the original unsent draft and saved reply', async () => {
     assert.equal(await profile.inputValue(), 'bunny');
+    assert.equal(await invitation.count(), 0);
     assert.equal(await draft.inputValue(), text);
     assert.equal(await send.isEnabled(), true);
     assert.deepEqual(writes, [], 'browsing and typing send no command');
