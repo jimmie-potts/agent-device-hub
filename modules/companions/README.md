@@ -150,7 +150,7 @@ Stop and mute clear pending work. Higher-priority attention waits for confirmed
 cancellation before replacing lower-priority output.
 
 The same coordinator and endpoint speak B.U.N.N.Y.'s replies to typed requests
-(Hub #500, first slice). Open **Voice** in the Conversation header to enable
+(Hub #500, first slice). Open **Voice** in the composer toolbar to enable
 spoken replies, mute them, inspect readiness or recover an eligible earlier
 operation. Enabling makes this tab the speaker for replies and eligible Reachy
 alerts. **Stop speaking** remains available during local playback, including
@@ -240,14 +240,33 @@ full decision and its controls. Conversation opens at the newest saved messages.
 reading. If replies arrive while you are reading farther up, **New messages**
 jumps to the latest exchange.
 
-Use Enter to send and Shift+Enter for a line break. Enter during text composition
-does not submit. Drafts are limited to 4,096 UTF-8 bytes and stay in the page
-after submission. Each profile and pending question has its own draft, and
-reload clears those drafts. You can browse another profile while a task is
-unfinished. Follow the link beside the composer to return to that task before
-starting another one.
+Assistant replies use open text. Your messages sit in bubbles on the other
+side of the same reading column, which aligns with the composer. **Tool result**
+expands the full saved text in place. Long links, markup and line breaks appear
+as saved. **Read aloud** sits below eligible replies. Longer replies explain
+the speech limit and remain readable in full.
+
+A fresh, empty history invites you to send the first message when input is
+available. If history or input is unavailable, the page shows the reason.
+
+Use **Send** for a message or **Answer** for a saved question. Enter submits
+and Shift+Enter inserts a line break. Enter during text composition does not
+submit. The composer shows the exact UTF-8 count starting at 3,277 bytes and
+refuses drafts over 4,096 bytes. Each profile and pending question has its own
+draft. Drafts remain after submission and clear on reload. You can browse
+another profile while a task is unfinished. Follow the link beside the composer
+to return to that task before starting another one.
+
+**Voice** is in the composer toolbar. Open **Spoken replies** to enable output
+in this tab, mute it, or inspect requirements and tracked playback evidence.
+Use **Close**, Escape, or click outside to dismiss the panel. During playback,
+**Stop speaking** stays in the toolbar and moves into the narrow Details
+overlay while it is open.
 
 Questions, approvals, worker waits and task controls appear above the composer.
+A successful task leaves a short **Task completed** cue by the composer.
+Open **Details** to inspect the task. Failed, cancelled, paused and uncertain
+outcomes remain visible by the relevant controls.
 An approval shows the full scope and the revision it applies to. A command
 receipt reports what happened to the request separately from task completion.
 Disconnected or stale copies retain loaded history and lock mutations.

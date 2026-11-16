@@ -22,8 +22,27 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     const panel = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
     await panel.getByRole('button', {name: 'Enable conversation', exact: true}).click();
     const draft = panel.getByRole('textbox', {name: 'Message', exact: true});
-    const send = panel.getByRole('button', {name: 'Send message', exact: true});
+    const send = panel.getByRole('button', {name: 'Send', exact: true});
     const cancel = panel.getByRole('button', {name: 'Cancel task', exact: true});
+    const count = panel.getByText(/^\d[\d,]* \/ 4,096 UTF-8 bytes$/);
+    assert.equal(await panel.getByText(/UTF-8 bytes/).count(), 0, 'the idle composer keeps the byte counter hidden');
+    const emoji = '🙂';
+    await draft.fill(emoji.repeat(819)); // 3,276 UTF-8 bytes
+    assert.equal(await count.count(), 0, 'the counter stays hidden below 80%');
+    await draft.fill(emoji.repeat(819) + 'a');
+    await panel.getByText('3,277 / 4,096 UTF-8 bytes', {exact: true}).waitFor();
+    await draft.fill(emoji.repeat(1024));
+    await panel.getByText('4,096 / 4,096 UTF-8 bytes', {exact: true}).waitFor();
+    assert.equal(await send.isEnabled(), true, 'exactly 4,096 bytes remain eligible');
+    const oversized = emoji.repeat(1024) + 'a';
+    await draft.fill(oversized);
+    await panel.getByText('4,097 / 4,096 UTF-8 bytes', {exact: true}).waitFor();
+    await panel.getByRole('alert').filter({hasText: 'Shorten the text to 4,096 UTF-8 bytes.'}).waitFor();
+    assert.equal(await send.isDisabled(), true);
+    const oversizedWrites = changes(page);
+    await draft.press('Enter');
+    assert.equal(await draft.inputValue(), oversized);
+    assert.deepEqual(oversizedWrites, [], 'over-limit Enter does not stage or send the draft');
     for (let number = 1; number <= 19; number += 1) {
       await draft.fill(`Synthetic history fixture ${String(number)}`);
       await send.click();
@@ -57,7 +76,7 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     await answerDraft.fill('Synthetic answer draft');
     await panel.getByRole('button', {name: 'Reachy Demo', exact: true}).click();
     await panel.getByText('No saved messages for this profile yet.', {exact: true}).waitFor();
-    assert.equal(await panel.getByRole('button', {name: 'Send message', exact: true}).isDisabled(), true);
+    assert.equal(await panel.getByRole('button', {name: 'Send', exact: true}).isDisabled(), true);
     await panel.getByRole('button', {name: 'Go to B.U.N.N.Y. task', exact: true}).click();
     assert.equal(await answerDraft.inputValue(), 'Synthetic answer draft');
     let release = (): void => {};
@@ -84,7 +103,7 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     assert.equal(await answerDraft.inputValue(), 'Synthetic answer draft');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
     const output = process.env.DASHBOARD_RECEIPTS;
-    const answer = panel.getByRole('button', {name: 'Save answer and continue', exact: true});
+    const answer = panel.getByRole('button', {name: 'Answer', exact: true});
     if (output !== undefined) {
       await page.screenshot({path: `${output}/conversation-narrow.png`, fullPage: true});
       await answer.scrollIntoViewIfNeeded();

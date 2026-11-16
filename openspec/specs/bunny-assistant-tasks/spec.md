@@ -173,6 +173,12 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 - **AND** Enter submits eligible text outside IME composition, and Shift+Enter inserts a newline
 - **AND** full approval scope and active questions and waits remain visible outside collapsed routine facts
 
+#### Scenario: Compact composer and UTF-8 guidance
+- **WHEN** the owner composes a message or answers a saved clarification
+- **THEN** one input surface gives the text a Message or Answer identity and places the input action beside Voice
+- **AND** keyboard guidance and a short private-saving and model disclosure stay visible, while Conversation settings explains submitted and unsent text
+- **AND** the exact UTF-8 byte count appears at 80% of the 4,096-byte limit or above, and an over-limit draft shows a refusal and cannot submit
+
 #### Scenario: Retain a draft after a refused or lost reply
 - **WHEN** a submission is refused or its reply is lost
 - **THEN** the draft and tracked receipt remain visible and the page sends no retry
@@ -198,6 +204,25 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 - **THEN** the section explains saved input and offers the current enable or disable action through the same guarded command
 - **AND** a reader or stale copy cannot mutate, and an unfinished task prevents disabling the conversation
 
+#### Scenario: Read saved conversation messages
+
+- **WHEN** the reader opens a saved exchange at desktop or narrow widths
+- **THEN** assistant replies use open text and owner messages use modest bubbles in a reading column aligned with the composer
+- **AND** paragraphs, long URLs and markup remain literal, wrap to fit and retain the complete saved text
+- **AND** each eligible assistant reply has a quiet labelled Read aloud action, and tool messages have a labelled Tool result disclosure
+
+#### Scenario: Start with empty history
+
+- **WHEN** the selected profile has a fresh, successful empty history read and can accept a new message
+- **THEN** the transcript offers a short invitation to send a message
+- **AND** while a read or a new message is unavailable, the page shows the applicable history state or blocker instead of the invitation
+
+#### Scenario: See ordinary completion and required decisions
+
+- **WHEN** a live task succeeds
+- **THEN** a compact completion cue appears by the composer, with task facts in Details
+- **AND** unresolved or unsuccessful outcomes, stale state, waits and decisions remain visible when they affect the next action
+
 #### Scenario: Expand saved tool text
 - **WHEN** the owner or reader opens a tool result on a saved transcript row
 - **THEN** the full inert text can be read without horizontal page overflow, and the row retains its original task association and message order
@@ -206,7 +231,9 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 
 #### Scenario: Compact spoken reply controls
 - **WHEN** the owner opens Voice on the Conversation page
-- **THEN** the panel shows current readiness and the existing Enable, Mute and eligible recovery actions
+- **THEN** the titled Spoken replies panel explains browser output, shows the current blocker or Quiet suppression beside the existing Enable, Mute and eligible recovery actions, and keeps detailed requirements and playback evidence available in a disclosure
+- **AND** explicit close and Escape return keyboard focus to Voice, and clicking outside dismisses the panel without taking focus from the clicked control
+- **AND** opening or dismissing the panel preserves the draft and current speech endpoint without sending a command
 - **AND** an unresolved playback reservation disables Enable until it is cleared, and historical uncertainty remains in the playback disclosure without overriding a later successful Enable
 - **AND** Stop speaking remains available outside the panel during local playback and leaves the task and question unchanged
 - **AND** Read aloud uses the tracked command for the same saved assistant message within the speech limit, presents the command receipt separately from playback, and explains why a longer message stays written only

@@ -1,4 +1,4 @@
-import React, {useEffect, useId, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useId, useRef, useState} from 'react';
 import type {FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {playbackLabels, SpeechRecovery, type SpeechControlsSession} from './speech.js';
 
@@ -14,9 +14,32 @@ export function ConversationVoice({context, speech, open, onOpenChange, stopSpea
   context: FrontendContext; speech: SpeechControlsSession; open: boolean;
   onOpenChange: (open: boolean) => void; stopSpeaking: React.JSX.Element | null;
 }): React.JSX.Element {
-  const trigger = useRef<HTMLButtonElement>(null);
   const [recoveredOperation, setRecoveredOperation] = useState<string>();
   const panelId = useId();
+  const titleId = useId();
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const close = useCallback((): void => {
+    onOpenChange(false);
+    trigger.current?.focus();
+  }, [onOpenChange]);
+  useEffect(() => {
+    if (!open) return;
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      close();
+    };
+    const dismiss = (event: PointerEvent): void => {
+      if (event.target instanceof Node && root.current !== null && !root.current.contains(event.target)) onOpenChange(false);
+    };
+    document.addEventListener('keydown', escape);
+    document.addEventListener('pointerdown', dismiss);
+    return () => {
+      document.removeEventListener('keydown', escape);
+      document.removeEventListener('pointerdown', dismiss);
+    };
+  }, [open, close, onOpenChange]);
   const {local, qualification, ready, selected, synced} = speech;
   const remote = context.connected && synced ? speech.remote : undefined;
   const playing = selected && local.playback?.status === 'started';
@@ -49,34 +72,25 @@ export function ConversationVoice({context, speech, open, onOpenChange, stopSpea
     return true;
   };
 
-  useEffect(() => {
-    if (!open) return;
-    function escape(event: KeyboardEvent): void {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
-      event.preventDefault();
-      onOpenChange(false);
-      trigger.current?.focus({preventScroll: true});
-    }
-    document.addEventListener('keydown', escape);
-    return () => {document.removeEventListener('keydown', escape);};
-  }, [open, onOpenChange]);
-
-  return <>
-    <div className="conversation-voice-actions">
-      <button type="button" className="secondary" ref={trigger} aria-expanded={open} aria-controls={panelId}
-        onClick={() => {onOpenChange(!open);}}>
-        {state.startsWith('Voice ') ? state : `Voice · ${state}`}
-      </button>
-      {stopSpeaking}
-    </div>
-    <section id={panelId} className="conversation-voice-panel" aria-label="Spoken replies" hidden={!open}>
+  return <div className="conversation-voice-actions" ref={root}>
+    <button type="button" className="secondary conversation-voice-toggle" ref={trigger}
+      data-tone={needsAttention ? 'attention' : selectedHere ? 'on' : undefined} aria-expanded={open} aria-controls={panelId}
+      onClick={() => {onOpenChange(!open);}}>
+      {state.startsWith('Voice ') ? state : `Voice · ${state}`}
+    </button>
+    {stopSpeaking}
+    <section id={panelId} className="conversation-voice-panel" aria-labelledby={titleId} hidden={!open}>
       {open && <>
-        <p>This tab becomes the one speaker for B.U.N.N.Y.’s replies and eligible Reachy alerts.</p>
-        <p className="conversation-voice-note">Mute before calls or media. This browser does not detect them.</p>
+        <header className="conversation-voice-heading">
+          <h3 id={titleId}>Spoken replies</h3>
+          <button type="button" className="secondary" aria-label="Close spoken replies" onClick={close}>Close</button>
+        </header>
+        <p>This tab becomes the one speaker for B.U.N.N.Y.’s replies and eligible Reachy alerts. Voice uses audio output only.</p>
+        <p className="conversation-voice-note">Mute before calls or media. The browser cannot detect them.</p>
         <div className="conversation-voice-actions">
           {mayMute
-            ? <button type="button" className="secondary" onClick={() => {void speech.mute();}}>Mute spoken replies</button>
-            : <button type="button" disabled={!canEnable} onClick={() => {if (canEnable) void speech.enable();}}>Enable spoken replies in this tab</button>}
+            ? <button type="button" className="secondary" onClick={() => {void speech.mute();}}>Mute</button>
+            : <button type="button" disabled={!canEnable} onClick={() => {if (canEnable) void speech.enable();}}>Enable</button>}
         </div>
         {refusal !== undefined && <p role="status">{refusal}</p>}
         {context.core?.mode === 'quiet' && <p>Quiet mode suppresses spoken replies.</p>}
@@ -87,12 +101,12 @@ export function ConversationVoice({context, speech, open, onOpenChange, stopSpea
           <summary>Voice requirements and playback evidence</summary>
           <p>Enable selects this connected tab. Reload or reconnect requires a fresh Enable. Missed speech is never replayed.</p>
           {qualification !== undefined && <p>Qualified local voice: {qualification.voice.name} ({qualification.voice.lang}). Qualification recorded in Chrome {qualification.browserVersion} on {qualification.qualifiedAt.slice(0, 10)}.</p>}
-          <p>Stop speaking only stops audio. Playback reports do not establish whether anyone heard it.</p>
+          <p>Stop speaking ends playback and leaves the task unchanged. Playback reports do not establish whether anyone heard it.</p>
           <p role="status">Playback: {playback == null ? 'No playback reported.' : playbackLabels[playback.status]}</p>
           {recoveredOperation !== undefined && <p>Recovery acknowledged. The earlier playback remains uncertain.</p>}
           {speech.operation !== undefined && <p>Tracked operation: {context.operationsLive ? speech.operation.result ?? speech.operation.status : 'unavailable'}.</p>}
         </details>
       </>}
     </section>
-  </>;
+  </div>;
 }

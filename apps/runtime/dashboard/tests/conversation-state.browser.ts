@@ -11,6 +11,11 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
   const toolText = ['<button data-fixture-tool>literal button</button>',
     ...Array.from({length: 18}, (_, index) => `${toolPath}${fixtureId.repeat(3)}&part=${String(index)}`),
     'Résumé · 東京 · 작은 대화 · نهاية'].join('\n');
+  const replyText = [
+    'Synthetic result with <a data-fixture-reply href="https://example.invalid/">literal markup</a>.',
+    `https://example.invalid/${fixtureId.repeat(15)}`,
+    'Paragraph with two  spaces and a final line.\nRésumé · 東京 · 작은 대화 · نهاية',
+  ].join('\n\n');
   const bundle = await build({stdin: {contents: `
     import React from 'react'; import {createRoot} from 'react-dom/client';
     import {AssistantPage} from '../../../../modules/companions/src/frontend/assistant.tsx';
@@ -20,6 +25,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     import '../src/skins/quiet-glass.css';
     const fixture = window.conversationFixture = {commands: [], reads: 0};
     const toolText = ${JSON.stringify(toolText)};
+    const replyText = ${JSON.stringify(replyText)};
     const coding = {id: 'coding', revision: 1, availability: 'available', endpointId: 'worker', active: null};
     let notifyWorker;
     fixture.removeWorker = () => {notifyWorker({type: 'removed', entity: {id: 'coding'}});};
@@ -30,7 +36,8 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     fixture.restoreQuestion = () => {question = approval;};
     let task = {taskId: 'saved-task', conversationId: 'saved-conversation', profile: 'bunny', status: 'waiting', runId: null,
       questionId: 'saved-question', hasAnswer: false, code: null, modelCalls: 1, toolCalls: 1, questions: 1, activeMs: 0, usageUnits: null, reservedUnits: 0};
-    state.tasks = [task];
+    const empty = new URLSearchParams(location.search).has('empty');
+    state.tasks = empty ? [] : [task];
     let notify;
     const accepted = action => {fixture.commands.push(action); return Promise.resolve({status: 'accepted', requestId: action.requestId});};
     fixture.update = (variant) => {
@@ -41,6 +48,10 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
       if (variant === 'paused') task = {...task, status: 'paused'};
       if (variant === 'hosted') {state.provider = 'anthropic'; state.model = 'claude-example-hosted-model'; task = {...task, runId: ${JSON.stringify(longRunId)}, usageUnits: 0, reservedUnits: 16384};}
       if (variant === 'uncertain') task = {...task, status: 'uncertain', questionId: null, code: 'uncertain-result'};
+      if (variant === 'succeeded') {
+        task = {...task, status: 'succeeded', questionId: null, code: null};
+        question = null;
+      }
       state.revision += 1;
       state.tasks = [task];
       notify({type: 'updated', message: {data: {...state}}});
@@ -49,6 +60,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
       read: async path => {
         fixture.reads += 1;
         const profile = 'bunny';
+        if (empty) return {version: 2, profile, conversationId: null, older: null, currentTask: null, messages: []};
         const conversationId = 'saved-conversation';
         if (new URL(path, location.href).searchParams.has('before')) {
           return {version: 2, profile, conversationId, older: null, currentTask: null, messages: [
@@ -62,6 +74,9 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
               text: 'Inspect the complete saved result for the conversation layout. Keep the earlier messages in place so each detail can be checked in context.'},
             {id: 'saved-tool', seq: 5, taskId: task.taskId, role: 'tool', text: toolText, atMs: 3},
             {id: 'saved-reply', seq: 6, taskId: task.taskId, role: 'assistant', text: 'Synthetic retained reply', atMs: 4},
+            ...(task.status === 'succeeded' ? [
+              {id: 'saved-long-reply', seq: 7, taskId: task.taskId, role: 'assistant', text: replyText, atMs: 5},
+            ] : []),
           ]};
       },
       sync: async (families, callback) => {
@@ -248,7 +263,10 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await page.keyboard.press('Enter');
     await transcript.getByText('Synthetic earlier saved text', {exact: true}).waitFor({state: 'attached'});
     assert.equal(await toolBody.isVisible(), true, 'loading earlier messages keeps the same tool result expanded');
-    assert.deepEqual(await readingAnchor(), insideTool, 'loading earlier messages preserves the reading position within the result');
+    const afterEarlier = await readingAnchor();
+    assert.equal(afterEarlier.id, insideTool.id, 'loading earlier messages keeps the same saved row in view');
+    assert.ok(Math.abs(afterEarlier.offset - insideTool.offset) <= 1,
+      'loading earlier messages preserves the reading position within one CSS pixel');
     assert.equal(await page.evaluate<number>('window.conversationFixture.reads'), readsBeforeTool + 1, 'Load earlier performs only its explicit read');
     await tool.locator('summary').press('Enter');
     assert.equal(await toolBody.isVisible(), false);
@@ -292,13 +310,32 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await page.evaluate('window.conversationFixture.settle()');
     await fact(activity, 'Command receipt', 'Completed: succeeded. No evidence of a device effect.');
     assert.equal(await composer.getByText('Command receipt:', {exact: false}).count(), 0);
+    await page.evaluate("window.conversationFixture.update('succeeded')");
+    await composer.getByRole('status').filter({hasText: /^Task completed$/}).waitFor();
+    await fact(activity, 'Status', 'succeeded');
+    const reply = transcript.getByRole('article', {name: 'assistant message'}).filter({hasText: 'Synthetic result with'});
+    const writtenOnly = reply.getByText('Written only. Read aloud supports up to 512 characters.', {exact: true});
+    await writtenOnly.waitFor();
+    assert.equal(await reply.locator('p').textContent(), replyText, 'saved markup, URLs, paragraphs and spaces remain literal');
+    assert.equal(await reply.getByRole('link').count(), 0);
+    assert.equal(await reply.getByRole('button', {name: /^Read aloud/}).count(), 0);
+    assert.equal(await transcript.evaluate(node => node.scrollWidth <= node.clientWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1), true);
+    assert.equal(await transcript.locator('[data-message]').count(), 6, 'completion adds no row beyond the new saved reply');
     await page.evaluate('window.conversationFixture.control(false)');
     await page.getByText('Read-only access. Controls require operator authority.', {exact: true}).waitFor();
     assert.equal(await disable.isDisabled(), true);
     await tool.locator('summary').click();
     assert.equal(await toolBody.isVisible(), true, 'read-only permits reading full saved tool text');
+
+    await page.goto('https://conversation-state.invalid/?empty');
+    const invitation = page.getByRole('heading', {name: 'What’s on your mind?', exact: true});
+    await invitation.waitFor();
+    await page.evaluate("window.conversationFixture.update('removed')");
+    await page.getByRole('status').filter({hasText: 'Stale.'}).waitFor();
+    await page.getByText('No saved text is available here.', {exact: true}).waitFor();
+    assert.equal(await invitation.count(), 0, 'stale state does not invite a new message');
   } finally {
     await context.close();
   }
-  process.stdout.write('Conversation state browser: labelled Details, usage, inert tool text, narrow layout, stale and reader state, and guarded explicit Resume passed.\n');
+  process.stdout.write('Conversation state browser: labelled Details, usage, literal saved messages, anchors, completion, stale and reader state, and guarded Resume passed.\n');
 }

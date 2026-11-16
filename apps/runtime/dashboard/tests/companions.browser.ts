@@ -103,7 +103,7 @@ try {
   await enableAssistant.click();
   // An approved proposal: the synthetic provider proposes the named mode, the owner decides by keyboard after a reload.
   await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER quiet mode');
-  const startTask = assistant.getByRole('button', {name: 'Send message', exact: true}); await startTask.focus(); await startTask.press('Enter');
+  const startTask = assistant.getByRole('button', {name: 'Send', exact: true}); await startTask.focus(); await startTask.press('Enter');
   const proposal = assistant.getByRole('article', {name: 'Proposed command', exact: true});
   await proposal.getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
   await page.reload(); await feed(page, 'connected');
@@ -131,7 +131,7 @@ try {
   await world.restart(); await page.reload(); await feed(page, 'connected');
   await assistant.getByText('Needs your answer', {exact: true}).waitFor();
   await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-ANSWER');
-  const answer = assistant.getByRole('button', {name: 'Save answer and continue', exact: true}); await answer.focus(); await answer.press('Enter');
+  const answer = assistant.getByRole('button', {name: 'Answer', exact: true}); await answer.focus(); await answer.press('Enter');
   await assistant.getByText('Task completed', {exact: true}).waitFor();
   await detailsToggle.click();
   await activity.click();

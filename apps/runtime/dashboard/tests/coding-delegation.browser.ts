@@ -36,11 +36,13 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     const brief = ['Please delegate: add a unit test for the readout generator.',
       ...Array.from({length: 10}, () => 'Keep the test fixture deterministic.'), briefEnd].join('\n');
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill(brief);
-    const send = assistant.getByRole('button', {name: 'Send message', exact: true}); await send.focus(); await send.press('Enter');
+    const send = assistant.getByRole('button', {name: 'Send', exact: true}); await send.focus(); await send.press('Enter');
     const proposal = assistant.getByRole('article', {name: 'Proposed command', exact: true});
     await proposal.getByText(/Delegation to the coding worker in repository/).waitFor();
     await proposal.getByText('agent-device-hub', {exact: true}).waitFor();
     await proposal.getByText(/Bound to coding worker revision \d+/).waitFor();
+    assert.equal(await send.count(), 0, 'a proposal has only explicit decision actions');
+    await assistant.getByRole('button', {name: /^Voice /}).waitFor();
     const approve = proposal.getByRole('button', {name: 'Approve proposal', exact: true});
     await page.setViewportSize({width: 640, height: 700});
     await page.locator('html').evaluate(node => {node.style.zoom = '2';});
@@ -63,6 +65,8 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     assert.equal(work.length, 1); const started = work[0]; assert.ok(started?.action === 'start');
     assert.equal(started.repository, 'agent-device-hub'); assert.equal(started.brief, brief);
     assert.equal(await assistant.getByRole('textbox', {name: 'Answer', exact: true}).count(), 0, 'no answer box while the worker runs');
+    assert.equal(await send.count(), 0, 'no generic Send action while the worker runs');
+    await assistant.getByRole('button', {name: /^Voice /}).waitFor();
     await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data: {operationId: started.operationId, status: 'started'}});
     await detailsToggle.click();
     await details.getByText(/Running task [0-9a-f]{8} \(started\)/).waitFor();
