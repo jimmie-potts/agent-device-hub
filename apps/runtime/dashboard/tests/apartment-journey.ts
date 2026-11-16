@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdir,unlink,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {setTimeout as delay} from 'node:timers/promises';
 import type {Browser,Page} from 'playwright';
 import {PACKET} from '@jimmie-potts/lifx';
 import {apartmentArtPath,parseApartmentModel} from '../../src/apartment-model.ts';
@@ -16,6 +17,38 @@ declare global {
 
 const panel=(page:Page)=>page.getByRole('region',{name:'Apartment 3D model',exact:true});
 const selectLight=(page:Page,name:string)=>panel(page).getByRole('button',{name:`Select ${name}`,exact:true}).click();
+
+function asRecord(value:unknown):Record<string,unknown>|undefined {
+  if(typeof value==='object'&&value!==null&&!Array.isArray(value))return Object.fromEntries(Object.entries(value));
+  return undefined;
+}
+
+function diagnosticFields(record:Record<string,unknown>|undefined,keys:readonly string[]):Record<string,unknown> {
+  return Object.fromEntries(keys.flatMap(key=>{
+    const value=record?.[key];
+    return typeof value==='string'||typeof value==='number'||typeof value==='boolean'?[[key,value]]:[];
+  }));
+}
+
+async function roomSnapshot(page:Page,base:string,kind:'operation'|'device',key:string):Promise<Record<string,unknown>> {
+  const owner=kind==='operation'?'bunny/core':'bunny/modules/lifx';
+  const response=await page.request.get(base+'/api/v2/snapshot?families='+kind+'&owner='+encodeURIComponent(owner),{timeout:2000});
+  if(!response.ok())return {httpStatus:response.status()};
+  const body:unknown=await response.json();
+  const rows=asRecord(asRecord(body)?.records)?.[kind];
+  const record=Array.isArray(rows)?rows.map(asRecord).find(row=>row?.[kind==='operation'?'requestId':'id']===key):undefined;
+  if(record===undefined)return {httpStatus:response.status(),found:false};
+  if(kind==='operation'){
+    const errorCode=asRecord(record.error)?.code;
+    return {httpStatus:response.status(),...diagnosticFields(record,
+      ['requestId','status','result','reply','evidence','sentAtMs','updatedAtMs','deadlineAtMs']),
+      errorCode:typeof errorCode==='string'?errorCode:undefined};
+  }
+  const lastOutcome=asRecord(record.lastOutcome),outcomeStatus=lastOutcome?.status;
+  return {httpStatus:response.status(),...diagnosticFields(record,['id','pending','configurationRevision','availability']),
+    outcome:diagnosticFields(asRecord(lastOutcome?.outcome),['requestId','result','evidence']),
+    outcomeStatus:typeof outcomeStatus==='string'?outcomeStatus:undefined};
+}
 
 export async function apartmentJourney(browser:Browser,world:World):Promise<void> {
   const {bytes,image}=syntheticApartmentArtwork(),model=furnishedFixture(image);
@@ -143,7 +176,35 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     assert.equal(acceptance.status(),200);
     assert.deepEqual(await acceptance.json(),{schema:'command-reply/2.0',status:'accepted',requestId:command.requestId});
     assert.equal(sent.length,2,'one deliberate action sent the uncertain request');
-    await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor();
+    try{
+      await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor();
+    }catch(error){
+      try{
+        const failedAtMs=Date.now(),packets=writes();
+        const reads=[
+          roomSnapshot(page,world.url,'operation',command.requestId),
+          roomSnapshot(page,world.url,'device','lamp-b'),
+          page.locator('main#main').evaluate(el=>({
+            feed:el.getAttribute('data-feed'),
+            card:el.querySelector('.apartment-selection [data-light-card="lamp-b"] [role="status"]')?.textContent?.slice(0,180),
+            fixture:el.querySelector('[data-apartment-fixture-status="sample-sconce"]')?.textContent?.slice(0,180),
+            workspace:el.querySelector('.lighting-workspace > [role="status"]')?.textContent?.slice(0,180),
+          }),undefined,{timeout:2000}),
+        ];
+        const evidence:unknown[]=reads.map(()=>'unavailable');
+        const timer=new AbortController();
+        try{
+          await Promise.race([
+            Promise.allSettled(reads.map(async (read,index)=>{evidence[index]=await read;})),
+            delay(2000,undefined,{signal:timer.signal}),
+          ]);
+        }finally{timer.abort();}
+        const [operation,device,browser]=evidence;
+        console.error(JSON.stringify({diagnostic:'synthetic-apartment-lost-reply',requestId:command.requestId,failedAtMs,
+          deviceWrites:packets.length,recentDeviceWrites:packets.slice(-8),operation,device,browser}));
+      }catch{ /* Retain the original browser assertion if collecting failure evidence also fails. */ }
+      throw error;
+    }
     assert.equal(world.lifxState().bulbs['192.0.2.43']?.power,!nextPower);
     assert.equal(world.lifxState().bulbs['192.0.2.42']?.power,untouched);
     const writesAfterUncertainty=[wallPowerWrite,wallPowerWrite,wallPowerWrite];
