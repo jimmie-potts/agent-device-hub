@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser, type Page, type Request} from 'playwright';
-import {feed, startWorld} from './harness.ts';
+import {changes, feed, startWorld} from './harness.ts';
 import {installSyntheticSpeech} from '../../dist/verify/speech-fixture.js';
 import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 
@@ -197,11 +197,32 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await enableAssistant.focus(); await enableAssistant.press('Enter');
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).waitFor();
     await controls.getByText(/This tab becomes the one speaker/).waitFor();
-    const enable = controls.getByRole('button', {name: 'Enable spoken replies in this tab', exact: true});
+    const enable = controls.getByRole('button', {name: 'Enable', exact: true});
     await enable.focus(); await enable.press('Enter');
     await voiceState('Voice on').waitFor();
     await voice.click();
-    const composer = assistant.getByRole('button', {name: 'Send message', exact: true});
+    const composer = assistant.getByRole('button', {name: 'Send', exact: true});
+    const message = assistant.getByRole('textbox', {name: 'Message', exact: true});
+    await message.fill('Draft through voice disclosure');
+    const dismissalWrites = changes(page);
+    const heldRegistration = [...registrations];
+    await voice.press('Enter');
+    const close = controls.getByRole('button', {name: 'Close spoken replies', exact: true});
+    await controls.getByRole('heading', {name: 'Spoken replies', exact: true}).waitFor();
+    await close.press('Enter');
+    assert.equal(await controls.isVisible(), false);
+    assert.equal(await voice.evaluate(node => node === document.activeElement), true, 'Close restores Voice focus');
+    await voice.press('Enter');
+    await close.press('Escape');
+    assert.equal(await controls.isVisible(), false);
+    assert.equal(await voice.evaluate(node => node === document.activeElement), true, 'Escape restores Voice focus');
+    await voice.click();
+    await message.click();
+    assert.equal(await controls.isVisible(), false);
+    assert.equal(await message.evaluate(node => node === document.activeElement), true, 'outside click keeps focus at its target');
+    assert.equal(await message.inputValue(), 'Draft through voice disclosure');
+    assert.deepEqual(dismissalWrites, [], 'Voice disclosure sends no command');
+    assert.deepEqual(registrations, heldRegistration, 'Voice dismissal keeps the selected speaker');
     const closedComposer = await composer.boundingBox();
     assert.ok(closedComposer !== null && closedComposer.y + closedComposer.height <= 900, 'closed Voice leaves the composer in the desktop viewport');
     if (receipts !== undefined) await page.screenshot({path: `${receipts}/voice-desktop-closed.png`});
@@ -210,26 +231,32 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     assert.deepEqual(openComposer, closedComposer, 'opening Voice does not move the composer');
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).click({trial: true});
     if (receipts !== undefined) await page.screenshot({path: `${receipts}/voice-desktop-open.png`});
+    const openEvidence = async (): Promise<void> => {
+      if (!await controls.isVisible()) await voice.click();
+      if (await evidence.locator('..').getAttribute('open') === null) await evidence.click();
+    };
     await evidence.click();
     await controls.getByText(/Qualification recorded in Chrome/).waitFor();
     await other.goto(`${world.url}/#/module/companions/assistant`); await feed(other, 'connected');
     const otherPage = other.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
     await otherPage.getByRole('button', {name: 'Voice · Unavailable', exact: true}).click();
     await otherPage.getByText('Another tab is the selected speaker.', {exact: true}).waitFor();
-    assert.ok(await otherPage.getByRole('button', {name: 'Enable spoken replies in this tab'}).isDisabled());
+    assert.ok(await otherPage.getByRole('button', {name: 'Enable', exact: true}).isDisabled());
     if (receipts !== undefined) await page.screenshot({path: `${receipts}/voice-desktop.png`, fullPage: true});
     // The synthetic provider asks a question first: the question is spoken, then the final result after the answer.
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-PROMPT');
-    const send = assistant.getByRole('button', {name: 'Send message', exact: true}); await send.focus(); await send.press('Enter');
+    const send = assistant.getByRole('button', {name: 'Send', exact: true}); await send.focus(); await send.press('Enter');
     await assistant.getByText('Needs your answer', {exact: true}).waitFor();
     await page.waitForFunction(() => window.speechFixture.calls === 1);
     await page.evaluate(() => window.speechFixture.finish());
+    await openEvidence();
     await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
     await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-ANSWER');
-    const answer = assistant.getByRole('button', {name: 'Save answer and continue', exact: true}); await answer.focus(); await answer.press('Enter');
+    const answer = assistant.getByRole('button', {name: 'Answer', exact: true}); await answer.focus(); await answer.press('Enter');
     await assistant.getByText('Task completed', {exact: true}).waitFor();
     await page.waitForFunction(() => window.speechFixture.calls === 2);
     await page.evaluate(() => window.speechFixture.finish());
+    await openEvidence();
     await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
     // Speak replays the saved result through the same endpoint and reports its receipt separately from playback.
     const messages = assistant.getByRole('list', {name: 'Saved conversation messages', exact: true});
@@ -245,7 +272,7 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await assistant.getByText(/^Read aloud receipt: (?!No command sent)/).waitFor();
     await page.waitForFunction(() => window.speechFixture.calls === 3);
     await page.evaluate(() => window.speechFixture.finish());
-    await voice.click(); await evidence.click();
+    await openEvidence();
     await controls.getByText('Playback: The browser reported playback completed.', {exact: true}).waitFor();
     // Stop speaking stops the audio of a question without answering or cancelling the task.
     await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER-SECOND');
@@ -257,8 +284,8 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     const detailsToggle = details.locator(':scope > summary');
     const draft = assistant.getByRole('textbox', {name: 'Answer', exact: true});
     const savedDraft = 'Draft held during Voice and Details checks';
-    // Open the saved result before opening both companion panels.
-    await voice.click();
+    // Sending the message dismissed Voice. Open the saved result before both panels.
+    assert.equal(await controls.isVisible(), false);
     await tool.locator('summary').click();
     await detailsToggle.click();
     await voice.click();
@@ -338,8 +365,10 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await longReply.getByText('Written only. Read aloud supports up to 512 characters.', {exact: true}).waitFor();
     assert.equal(await longReply.getByRole('button', {name: /^Read aloud/}).count(), 0);
     assert.equal(await count(), 4, 'Quiet mode speaks no reply');
-    await hub.getByRole('button', {name: 'Work', exact: true}).click(); await controls.getByText('Quiet mode suppresses spoken replies.', {exact: true}).waitFor({state: 'detached'});
-    await controls.getByRole('button', {name: 'Mute spoken replies', exact: true}).click();
+    await hub.getByRole('button', {name: 'Work', exact: true}).click();
+    await voice.click();
+    await controls.getByText('Quiet mode suppresses spoken replies.', {exact: true}).waitFor({state: 'detached'});
+    await controls.getByRole('button', {name: 'Mute', exact: true}).click();
     await voiceState('Voice off').waitFor();
     await enable.click(); await voiceState('Voice on').waitFor();
     assert.equal(await count(), 4, 'fresh enable does not replay Quiet history');
@@ -361,7 +390,7 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     const otherVoice = otherPage.getByRole('button', {name: /^Voice (off|on|· (Speaking|Needs attention|Unavailable))$/});
     await otherPage.getByRole('button', {name: 'Voice · Needs attention', exact: true}).click();
     const otherControls = otherPage.getByRole('region', {name: 'Spoken replies', exact: true});
-    const otherEnable = otherControls.getByRole('button', {name: 'Enable spoken replies in this tab', exact: true});
+    const otherEnable = otherControls.getByRole('button', {name: 'Enable', exact: true});
     const recover = otherControls.getByRole('button', {name: 'Recover voice', exact: true});
     const beforeRestart = {enableDisabled: await otherEnable.isDisabled(), recoveryVisible: await recover.isVisible()};
     await otherControls.getByText('Earlier playback is unresolved. Voice stays off until recovery is available.', {exact: true}).waitFor();
@@ -373,6 +402,19 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await other.reload(); await feed(other, 'connected');
     await otherPage.getByRole('button', {name: 'Voice · Needs attention', exact: true}).click();
     const confirmation = otherControls.getByRole('checkbox', {name: /I have stopped playback/});
+    const recoveryDraft = otherPage.getByRole('textbox', {name: 'Answer', exact: true});
+    const recoveryAnswer = otherPage.getByRole('button', {name: 'Answer', exact: true});
+    const retainedAnswer = 'Synthetic answer held during voice recovery';
+    await recoveryDraft.fill(retainedAnswer);
+    assert.equal(await recoveryAnswer.isEnabled(), true, 'the retained answer is eligible to submit');
+    await otherPage.evaluate(node => {
+      node.addEventListener('submit', () => {node.setAttribute('data-draft-submitted', '');}, {once: true});
+    });
+    const recoveryWrites = changes(other);
+    await confirmation.press('Enter');
+    assert.equal(await otherPage.getAttribute('data-draft-submitted'), null, 'Enter in Voice recovery does not submit the answer form');
+    assert.deepEqual(recoveryWrites, [], 'Enter in Voice recovery does not stage an answer');
+    assert.equal(await recoveryDraft.inputValue(), retainedAnswer);
     assert.equal(await confirmation.isChecked(), false);
     assert.equal(await recover.isDisabled(), true);
     assert.equal(await otherEnable.isDisabled(), true);
@@ -387,8 +429,9 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
 
     await page.unroute(edge);
     await feed(page, 'connected');
+    await voice.click();
     await enable.click();
-    await controls.getByRole('button', {name: 'Mute spoken replies', exact: true}).waitFor();
+    await controls.getByRole('button', {name: 'Mute', exact: true}).waitFor();
     await evidence.click();
     await controls.getByText('Playback: Playback is uncertain. It will not be replayed automatically.', {exact: true}).waitFor();
     const currentVoice = await voice.innerText();
@@ -398,7 +441,7 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     assert.equal(await count(), 1, 'fresh enable does not replay the recovered operation');
 
     const unavailableVoice = otherPage.getByRole('button', {name: 'Voice · Unavailable', exact: true});
-    const unavailableEnable = otherPage.getByRole('button', {name: 'Enable spoken replies in this tab'});
+    const unavailableEnable = otherPage.getByRole('button', {name: 'Enable', exact: true});
     const controlAuthority = '**/api/v2/authority?scope=control';
     await other.route(controlAuthority, route => route.fulfill({status: 403, json: {error: {code: 'forbidden', retryable: false}}}));
     await other.goto(`${world.url}/#/module/companions/assistant`); await other.reload(); await feed(other, 'connected');

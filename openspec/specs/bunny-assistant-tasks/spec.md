@@ -173,6 +173,12 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 - **AND** Enter submits eligible text outside IME composition, and Shift+Enter inserts a newline
 - **AND** full approval scope and active questions and waits remain visible outside collapsed routine facts
 
+#### Scenario: Compact composer and UTF-8 guidance
+- **WHEN** the owner composes a message or answers a saved clarification
+- **THEN** one input surface gives the text a Message or Answer identity and places the input action beside Voice
+- **AND** keyboard guidance and a short private-saving and model disclosure stay visible, while Conversation settings explains submitted and unsent text
+- **AND** the exact UTF-8 byte count appears at 80% of the 4,096-byte limit or above, and an over-limit draft shows a refusal and cannot submit
+
 #### Scenario: Retain a draft after a refused or lost reply
 - **WHEN** a submission is refused or its reply is lost
 - **THEN** the draft and tracked receipt remain visible and the page sends no retry
@@ -203,7 +209,9 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 
 #### Scenario: Compact spoken reply controls
 - **WHEN** the owner opens Voice on the Conversation page
-- **THEN** the panel shows current readiness and the existing Enable, Mute and eligible recovery actions
+- **THEN** the titled Spoken replies panel explains browser output, shows the current blocker or Quiet suppression beside the existing Enable, Mute and eligible recovery actions, and keeps detailed requirements and playback evidence available in a disclosure
+- **AND** explicit close and Escape return keyboard focus to Voice, and clicking outside dismisses the panel without taking focus from the clicked control
+- **AND** opening or dismissing the panel preserves the draft and current speech endpoint without sending a command
 - **AND** an unresolved playback reservation disables Enable until it is cleared, and historical uncertainty remains in the playback disclosure without overriding a later successful Enable
 - **AND** Stop speaking remains available outside the panel during local playback and leaves the task and question unchanged
 - **AND** Read aloud uses the tracked command for the same saved assistant message within the speech limit, presents the command receipt separately from playback, and explains why a longer message stays written only
