@@ -509,8 +509,20 @@
 }
 
 @media (max-width: 760px) {
+  .conversation-main {
+    position: relative;
+  }
+
+  .conversation-input-surface {
+    position: static;
+  }
+
   .conversation-voice-panel {
-    max-block-size: min(36dvh, 24rem);
+    grid-row: 2 / 3;
+    inset-block-end: var(--space-xs);
+    inset-inline-start: var(--conversation-reading-gutter);
+    inline-size: min(calc(100% - 2 * var(--conversation-reading-gutter)), 23rem);
+    max-block-size: min(calc(100% - var(--space-s)), 24rem);
   }
 }
 
