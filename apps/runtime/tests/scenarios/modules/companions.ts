@@ -50,6 +50,11 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
   id: 'assistant-task', title: 'private synthetic task waits, restarts and explicitly resumes through existing authenticated controls',
   seed: {modules: ['core', 'companions'], sections: {companions: {}}, follows: [{owner: 'bunny/core', families: ['operation']},
     {owner: 'bunny/modules/companions', families: ['companion-state', 'assistant-state']}]},
+  keepCapturePage: true,
+  capture: async context => {
+    const {captureConversationWorkspace} = await import('../../../verify/conversation-workspace.js');
+    await captureConversationWorkspace(context);
+  },
   steps: [
     expect('core and companions are running', h => running(h, ['core', 'companions'])),
     expect('assistant and Reachy both default off', h => assistant(h)?.enabled === false && state(h)?.settings.enabled === false || 'defaults differ'),

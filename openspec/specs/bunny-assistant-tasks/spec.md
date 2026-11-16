@@ -208,6 +208,25 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 - **AND** Stop speaking remains available outside the panel during local playback and leaves the task and question unchanged
 - **AND** Read aloud uses the tracked command for the same saved assistant message within the speech limit, presents the command receipt separately from playback, and explains why a longer message stays written only
 
+### Requirement: Viewport-filling Conversation workspace
+
+The Conversation page SHALL use remaining viewport height for the transcript and keep the composer in view when the controls fit. The page SHALL retain the Hub navigation and existing companion page links, and distinguish the everyday B.U.N.N.Y. profile from the Reachy and MicroDuck demo chat profiles before selection.
+
+#### Scenario: Read and compose in the available viewport
+- **WHEN** the owner opens an empty or short conversation on desktop or a narrow phone viewport
+- **THEN** the selected profile, transcript and composer fit without scrolling the document, and additional viewport height increases the transcript height
+- **AND** a long decision or constrained viewport still allows scrolling to read its full text and reach every action
+
+#### Scenario: Browse profiles and companion pages
+- **WHEN** the owner inspects the chat choices or opens Companion pages
+- **THEN** both demos are labelled before selection and the device-management links remain distinct from the chat choices
+- **AND** the companion navigation retains its existing links and current page indication
+- **AND** switching to a demo while another profile has unfinished work allows inspection of its separate history without a conflicting start
+
+#### Scenario: Resize or open local navigation while reading
+- **WHEN** the owner resizes the viewport or opens and closes Companion pages without leaving Conversation
+- **THEN** the mounted conversation keeps the reading position and draft, and sends no command or additional speech endpoint registration
+
 ### Requirement: Spoken replies to typed requests
 
 When a task turn ends with a result, a question for the owner or a refusal, the companions module SHALL offer that saved message once to its speech coordinator, after the message is durable, under the message's own identity. A `speak` control naming a task and a saved assistant message SHALL offer that message again under the request's identity; it SHALL refuse owner or tool text and an unknown message, SHALL work for finished tasks, and SHALL be idempotent per request. A message longer than 512 characters SHALL stay written only. Startup reconciliation SHALL offer nothing, and a failed offer SHALL NOT change the task's outcome. The spoken voice SHALL be the installation's qualified local voice regardless of the model provider, and stopping speech SHALL NOT answer a question or cancel the task.

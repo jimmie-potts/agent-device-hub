@@ -77,6 +77,11 @@ model, audio or device output runs. Pair it with `preferences`, `assistant-task`
 `assistant-mode-approval`, `reachy-text` and the companions browser journey for
 source compatibility.
 
+`scenario-assistant-task` ends with a 390×844 Conversation capture after its
+synthetic saved reply. It checks that the reply and Send fit in the viewport,
+then browses both labelled demo profiles and returns to the unsent B.U.N.N.Y.
+draft. The capture sends no input command and uses no provider account.
+
 The same scenario checks explicit Duck Home selection, anonymous read refusal,
 one latest Duck message versus separate history, and retained selection with
 corrected/removal fallback after restart. The companions browser journey checks

@@ -55,7 +55,7 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     assert.ok(Math.abs(after - before) <= 2, 'Load earlier preserves the reading anchor');
     const answerDraft = panel.getByRole('textbox', {name: 'Answer', exact: true});
     await answerDraft.fill('Synthetic answer draft');
-    await panel.getByRole('button', {name: 'Reachy', exact: true}).click();
+    await panel.getByRole('button', {name: 'Reachy Demo', exact: true}).click();
     await panel.getByText('No saved messages for this profile yet.', {exact: true}).waitFor();
     assert.equal(await panel.getByRole('button', {name: 'Send message', exact: true}).isDisabled(), true);
     await panel.getByRole('button', {name: 'Go to B.U.N.N.Y. task', exact: true}).click();
@@ -68,7 +68,7 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     }, {times: 1});
     const held = page.waitForRequest(request => request.url().includes('profile=reachy&view=recent'));
     try {
-      await panel.getByRole('button', {name: 'Reachy', exact: true}).click();
+      await panel.getByRole('button', {name: 'Reachy Demo', exact: true}).click();
       await held;
       await panel.getByRole('button', {name: 'Go to B.U.N.N.Y. task', exact: true}).click();
       await answerDraft.waitFor();

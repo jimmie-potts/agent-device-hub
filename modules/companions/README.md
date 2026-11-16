@@ -227,8 +227,14 @@ no network call and no paid usage. Activation defaults to off. The three
 profiles keep separate conversation histories, with one unfinished task across
 all of them and one graph invocation at a time.
 
-Choose a profile at the side of Conversation, or use the **Companion profile**
-selector on a narrow screen. Conversation opens at the newest saved messages.
+Choose the everyday B.U.N.N.Y. assistant or a Reachy or MicroDuck demo in the
+profile list. On a narrow screen, use **Companion profile**. The **Companion
+pages** menu opens the separate module pages, including the Reachy and MicroDuck
+device controls.
+
+The transcript takes the available height and scrolls above the composer. When
+the screen is short or a decision needs more room, scroll the page to reach the
+full decision and its controls. Conversation opens at the newest saved messages.
 **Load earlier** fills the preceding gap without moving the message you were
 reading. If replies arrive while you are reading farther up, **New messages**
 jumps to the latest exchange.

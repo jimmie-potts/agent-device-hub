@@ -13,7 +13,11 @@ import {ConversationDetails} from './conversation-details.js';
 import {ConversationTranscript} from './conversation-transcript.js';
 import './conversation.css';
 
-const profiles: Readonly<Record<AssistantProfile, string>> = {bunny: 'B.U.N.N.Y.', reachy: 'Reachy', microduck: 'MicroDuck'};
+const profiles = {
+  bunny: {name: 'B.U.N.N.Y.', kind: 'Everyday assistant'},
+  reachy: {name: 'Reachy', kind: 'Demo'},
+  microduck: {name: 'MicroDuck', kind: 'Demo'},
+} satisfies Record<AssistantProfile, {name: string; kind: string}>;
 const finished = (status: string): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
 const taskCue: Readonly<Record<AssistantStatus, string>> = {
   running: 'Working', waiting: 'Task waiting', paused: 'Paused', succeeded: 'Task completed', failed: 'Task failed',
@@ -242,7 +246,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   let cue = task === undefined ? undefined : taskCue[task.status];
   if (task?.status === 'waiting' && pendingQuestion) cue = activeClarification && 'Needs your answer';
   const {Command, Facts, Select} = context.ui;
-  return <section aria-label="B.U.N.N.Y. conversation" className="panel conversation-page">
+  return <section aria-label="B.U.N.N.Y. conversation" className="conversation-page">
     <Command context={context} target="assistant">{command => {
       const locked = command.locked || !live || !context.control || !context.operationsLive;
       const speakReceipt = speakRequest !== undefined && command.requestId === speakRequest;
@@ -256,30 +260,32 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           data: {action, expectedRevision: state.revision}});
       };
       return <div className="conversation-layout">
-        <nav className="conversation-profiles" aria-label="Conversation profiles">
-          <div className="conversation-profiles-wide">
-            {Object.entries(profiles).map(([value, label]) => <button type="button" className="secondary" key={value}
-              aria-pressed={value === profile} onClick={() => {pickProfile(value);}}>{label}</button>)}
-          </div>
-          <div className="conversation-profiles-narrow">
-            <Select label="Companion profile" value={profile} onChange={pickProfile}
-              options={Object.entries(profiles).map(([value, label]) => ({value, label}))}/>
-          </div>
-          {profile !== 'bunny' && <p>Synthetic profile. No paid calls.</p>}
+        <nav className="conversation-profiles conversation-profiles-wide" aria-label="Conversation profiles">
+          {Object.entries(profiles).map(([value, {name, kind}]) => <button type="button" className="secondary" key={value}
+            aria-pressed={value === profile} onClick={() => {pickProfile(value);}}>
+            <span>{name}</span> <small>{kind}</small>
+          </button>)}
         </nav>
         <div className="conversation-main">
-          <header className="conversation-header">
-            <h3>{profiles[profile]}</h3>
-            <ConversationVoice context={context} speech={speech}/>
-          </header>
-          {!connected ? <p role="status">Disconnected. Saved history remains readable. Last known task state.</p>
-            : !live && <p role="status">Stale. Current conversation state is unavailable. Saved history remains readable.</p>}
-          {!context.control && <p>Read-only access. Controls require operator authority.</p>}
-          {context.control && !context.operationsLive && <p>Tracked operations are unavailable. Conversation controls are locked.</p>}
+          <div className="conversation-context">
+            <header className="conversation-header">
+              <h2>{profiles[profile].name}</h2>
+              <nav className="conversation-profiles conversation-profiles-narrow" aria-label="Conversation profiles">
+                <Select label="Companion profile" value={profile} onChange={pickProfile}
+                  options={Object.entries(profiles).map(([value, {name, kind}]) => ({value, label: `${name} · ${kind}`}))}/>
+              </nav>
+              <ConversationVoice context={context} speech={speech}/>
+            </header>
+            {profile !== 'bunny' && <p className="conversation-demo-note">Demo profile. No paid calls.</p>}
+            {!connected ? <p role="status">Disconnected. Saved history remains readable. Last known task state.</p>
+              : !live && <p role="status">Stale. Current conversation state is unavailable. Saved history remains readable.</p>}
+            {!context.control && <p>Read-only access. Controls require operator authority.</p>}
+            {context.control && !context.operationsLive && <p>Tracked operations are unavailable. Conversation controls are locked.</p>}
+          </div>
           <ConversationTranscript key={profile} history={visibleHistory} status={historyStatus} readLocked={!connected || historyStatus === 'loading'}
             loadEarlier={before => {readHistory(before);}} retry={() => {readHistory(failedCursor.current);}}
             renderMessage={message => <article aria-label={`${message.role} message`}>
-              <strong>{message.role === 'owner' ? 'You' : profiles[profile]}</strong>
+              <strong>{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
               <p>{message.text}</p>
               {message.role === 'assistant' && (message.text.length > LIMITS.spokenChars
                 ? <p className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</p>
@@ -295,7 +301,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           <div className="conversation-compose">
             {state !== undefined && !state.enabled && <p>Conversation is off. <button type="button" disabled={locked} onClick={() => {present('enable');}}>Enable conversation</button></p>}
             {unfinished !== undefined && unfinished.profile !== profile && <p>One task is still unfinished. <button type="button"
-              onClick={() => {pickProfile(unfinished.profile);}}>Go to {profiles[unfinished.profile]} task</button></p>}
+              onClick={() => {pickProfile(unfinished.profile);}}>Go to {profiles[unfinished.profile].name} task</button></p>}
             {cue !== undefined && <p role="status">{cue}{!live ? ' (Last known)' : ''}</p>}
             {task?.code != null && <p>Task code: {task.code}</p>}
             {state?.enabled === true && unfinished !== undefined && !['waiting', 'paused'].includes(task?.status ?? '') && <p>Finish or cancel the unfinished task before sending another message.</p>}
@@ -306,7 +312,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             {!routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
           </div>
         </div>
-        <ConversationDetails Facts={Facts} profile={profile} profileName={profiles[profile]} state={state} task={task}
+        <ConversationDetails Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live}
           savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}
           receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished !== undefined} setEnabled={present}/>

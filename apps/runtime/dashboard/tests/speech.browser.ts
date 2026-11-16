@@ -282,6 +282,14 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await reflow();
     const heldAnchor = await readingAnchor();
     assert.equal(typeof heldAnchor, 'string');
+    const companionPages = page.getByText('Companion pages', {exact: true});
+    await companionPages.press('Enter');
+    await page.getByRole('navigation', {name: 'companions pages', exact: true}).waitFor();
+    await companionPages.press('Enter');
+    await reflow();
+    assert.equal(await readingAnchor(), heldAnchor, 'local navigation preserves the reading anchor');
+    assert.equal(await draft.inputValue(), savedDraft);
+    assert.deepEqual(registrations, heldEndpoint, 'local navigation keeps the speaking endpoint');
     for (const width of [320, 1280]) {
       await page.setViewportSize({width, height: 900});
       await reflow();

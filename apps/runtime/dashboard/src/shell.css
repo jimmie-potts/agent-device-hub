@@ -54,3 +54,78 @@
   .directory-categories{width:100%}
   .directory-categories button{flex:1;padding:var(--space-s);font-size:var(--type-small)}
 }
+
+/* A workspace stretches with the shell. Intrinsic rows can still push the page past the viewport. */
+.shell.workspace-shell {
+  min-block-size: 100dvh;
+  grid-template-rows: minmax(min-content, 1fr);
+}
+.workspace-shell > main, .workspace-page {
+  display: flex;
+  flex-direction: column;
+}
+.workspace-shell > main > .top {
+  min-block-size: 44px;
+  padding-block: 0;
+}
+.workspace-page {
+  flex: 1;
+  gap: var(--space-s);
+  padding: 0 0 var(--space-m);
+}
+.workspace-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs) var(--space-m);
+}
+.workspace-page-header h1 {
+  font-size: var(--type-heading);
+}
+.workspace-page-navigation {
+  position: relative;
+}
+.workspace-page-navigation summary {
+  padding: var(--space-s);
+  min-block-size: 44px;
+  cursor: pointer;
+}
+.workspace-page-navigation .feature-navigation {
+  display: grid;
+  position: absolute;
+  inset-inline-end: 0;
+  z-index: 5;
+  min-inline-size: 12rem;
+  max-block-size: min(60dvh, 24rem);
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--edge-dense);
+  background: var(--panel);
+  box-shadow: var(--shell-shadow);
+}
+@media (max-width: 680px) {
+  .shell.workspace-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(min-content, 1fr);
+  }
+  .workspace-shell > aside {
+    display: grid;
+    align-items: center;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-xs) var(--space-m);
+    padding-block: var(--space-s);
+  }
+  .workspace-shell .brand {
+    grid-area: 1 / 1;
+  }
+  .workspace-shell .sidebar-foot {
+    grid-area: 1 / 2;
+    justify-items: end;
+  }
+  .workspace-shell .primary-navigation {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) max-content;
+  }
+}
