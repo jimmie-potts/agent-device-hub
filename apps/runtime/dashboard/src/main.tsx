@@ -196,9 +196,16 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
+  const workspace = selectedModule?.name === 'companions' && selectedPage?.id === 'assistant' && selectedPage.presentation === 'react';
   const known = route.kind === 'habitat' || route.kind === 'devices' || route.kind === 'settings' || route.kind === 'audio' || route.kind === 'visualizer' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const contextModule = route.kind === 'module' ? selectedModule : route.kind === 'lighting-brand' ? runtime.modules?.find(module => module.name === route.brand)
     : route.kind === 'component' ? runtime.modules?.find(module => devices.some(device => device.record.id === route.id && device.copy.owner === `bunny/modules/${module.name}`)) : undefined;
+  const featureNavigation = contextModule !== undefined && contextModule.pages.length > 0
+    ? <nav className="feature-navigation" aria-label={`${contextModule.name} pages`}>{contextModule.pages.map(page =>
+      <NavLink key={page.id} route={{kind: 'module', module: contextModule.name, page: page.id}} current={route}>{page.title}</NavLink>)}
+      {workspace && <NavLink route={{kind: 'devices'}}>All devices</NavLink>}
+    </nav>
+    : null;
   const deviceCard = ({record, copy}: (typeof devices)[number]): React.ReactNode => (moduleCard(runtime.modules, copy.owner, record.kind) === 'pixoo' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <>
             <ModuleFrontend module="pixoo" connection={connection} connected={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
               control={runtime.control} operations={operations} operationsLive={operationsLive} Component={PixooDisplay}/>
@@ -260,7 +267,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   };
   const schedule = artScheduleCopy(runtime);
   const artNotice = scheduledArtNotice(schedule.record, state.feed === 'connected' && schedule.synced, operations, operationsLive, now);
-  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
+  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className={workspace ? 'shell workspace-shell' : 'shell'}>
     <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <aside>
       <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
@@ -272,8 +279,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     </aside>
     <main id="main" tabIndex={-1} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
       <header className="top"><span>{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</span><nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}>Settings</NavLink></nav></header>
-      {navigationDestination(route) === 'devices' && route.kind !== 'devices' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'devices'}}>All devices</NavLink></nav>}
-      {contextModule !== undefined && contextModule.pages.length > 0 && <nav className="feature-navigation" aria-label={`${contextModule.name} pages`}>{contextModule.pages.map(page => <NavLink key={page.id} route={{kind: 'module', module: contextModule.name, page: page.id}} current={route}>{page.title}</NavLink>)}</nav>}
+      {!workspace && navigationDestination(route) === 'devices' && route.kind !== 'devices' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'devices'}}>All devices</NavLink></nav>}
+      {!workspace && featureNavigation}
       {route.kind === 'connections' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'settings'}}>Back to Settings</NavLink></nav>}
       {route.kind === 'home' && <section aria-label="Home">
         {notice !== undefined && <p role="alert" className="warning">{notice}</p>}
@@ -298,7 +305,10 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         </div>)}</div>
       </section>}
       {route.kind !== 'home' && <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
-      {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title}><header className="page"><h1>{selectedPage.title}</h1></header>
+      {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title} className={workspace ? 'workspace-page' : undefined}>
+        <header className={workspace ? 'workspace-page-header' : 'page'}><h1>{selectedPage.title}</h1>
+          {workspace && <details className="workspace-page-navigation"><summary>Companion pages</summary>{featureNavigation}</details>}
+        </header>
         <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
           connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>
       </section>}
@@ -310,7 +320,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         <h2>{route.kind === 'component' ? `No component named ${route.id}` : 'Nothing at this address'}</h2>
         <p>This address is not declared by the current runtime. <NavLink route={{kind: 'home'}}>Go to the home</NavLink>.</p>
       </div></section>}
-      <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>
+      {!workspace && <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>}
     </main>
   </div></DeviceModesProvider></ArtThemeProvider></ArtPresentationProvider>;
 }

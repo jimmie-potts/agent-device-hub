@@ -1,3 +1,4 @@
+import {conversationWorkspaceJourney} from './conversation-workspace.browser.ts';
 import {conversationStateJourney} from './conversation-state.browser.ts';
 import {conversationHistoryJourney} from './conversation-history.browser.ts';
 import {homeSpeechLifetimeJourney, speechJourney, spokenRepliesJourney} from './speech.browser.ts';
@@ -19,6 +20,7 @@ import {changes, feed, startWorld} from './harness.ts';
 const world = await startWorld({companions: true});
 const browser = await chromium.launch({headless: true});
 try {
+  await conversationWorkspaceJourney(browser);
   await conversationHistoryJourney(browser);
   await conversationStateJourney(browser);
   await companionCardsCheck(browser);
