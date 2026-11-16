@@ -13,7 +13,7 @@ export async function captureConversationWorkspace(t: CaptureContext): Promise<v
   const profile = conversation.getByRole('combobox', {name: 'Companion profile', exact: true});
   const draft = conversation.getByRole('textbox', {name: 'Message', exact: true});
   const reply = conversation.getByRole('list', {name: 'Saved conversation messages'}).getByText(/^Synthetic result: SYNTHETIC_ASSISTANT_ANSWER/);
-  const send = conversation.getByRole('button', {name: 'Send message', exact: true});
+  const send = conversation.getByRole('button', {name: 'Send', exact: true});
   const invitation = conversation.getByRole('heading', {name: 'What’s on your mind?', exact: true});
   await reply.waitFor();
   await send.waitFor();

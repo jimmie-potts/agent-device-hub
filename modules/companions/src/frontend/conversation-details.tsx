@@ -80,7 +80,8 @@ export function ConversationDetails({Facts, profile, profileName, state, task, c
             onClick={() => {setEnabled(enabled ? 'disable' : 'enable');}}>{enabled ? 'Disable conversation' : 'Enable conversation'}</button>
           {enabled && unfinished && <p>Finish or cancel the unfinished task before disabling the conversation.</p>}
         </>}
-        <p>Submitted text is saved privately and sent to the selected model. Drafts stay in this page until reload. Review saved history before submitting retained text again.</p>
+        <p>Submitted messages and answers are saved in private Conversation history and passed to this profile's selected model. The Demo profiles run locally and make no paid calls.</p>
+        <p>Unsent drafts stay in this page until reload. Submitted drafts also stay in the composer. Review saved history before sending the same text again.</p>
         <ul className="conversation-settings-links">
           <li><a href="#/module/companions/preferences">Preferences</a></li>
           <li><a href="#/module/companions/knowledge">Companion knowledge</a></li>

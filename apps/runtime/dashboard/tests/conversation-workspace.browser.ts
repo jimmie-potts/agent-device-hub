@@ -14,7 +14,7 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await feed(page, 'connected');
     const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
     const message = assistant.getByRole('textbox', {name: 'Message', exact: true});
-    const send = assistant.getByRole('button', {name: 'Send message', exact: true});
+    const send = assistant.getByRole('button', {name: 'Send', exact: true});
     const invitation = assistant.getByRole('heading', {name: 'What’s on your mind?', exact: true});
     const retry = assistant.getByRole('button', {name: 'Retry history', exact: true});
     await retry.waitFor();
@@ -37,10 +37,12 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
         `normal Conversation fits at ${String(width)}x${String(height)} (document: ${String(scrollWidth)}x${String(scrollHeight)})`);
       const reading = await assistant.locator('.conversation-transcript').boundingBox();
       assert.ok(reading !== null && reading.height >= 96, 'the transcript has room to read');
-      const column = await assistant.locator('.conversation-transcript > ol, .conversation-empty').boundingBox();
-      const composer = await assistant.locator('.conversation-compose').boundingBox();
-      assert.ok(column !== null && composer !== null && column.width <= 761
-        && Math.abs(column.x - composer.x) <= 1 && Math.abs(column.width - composer.width) <= 1,
+      const [column, input] = await Promise.all([
+        assistant.locator('.conversation-transcript > ol, .conversation-empty').boundingBox(),
+        assistant.locator('.conversation-input-surface').boundingBox(),
+      ]);
+      assert.ok(column !== null && input !== null && column.width <= 761
+        && Math.abs(column.x - input.x) <= 1 && Math.abs(column.width - input.width) <= 1,
       `reading content and composer share their measure at ${String(width)}x${String(height)}`);
       return reading.height;
     };
@@ -57,7 +59,7 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await send.click();
     const answer = assistant.getByRole('textbox', {name: 'Answer', exact: true});
     await answer.fill('Short answer');
-    await assistant.getByRole('button', {name: 'Save answer and continue', exact: true}).click();
+    await assistant.getByRole('button', {name: 'Answer', exact: true}).click();
     await transcript.getByText(/Synthetic result: Short answer/).waitFor();
     await message.fill('Draft through resize and menu');
     await layout(1440, 1000);
