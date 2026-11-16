@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import {mkdir,unlink,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import type {Browser,CDPSession,Page} from 'playwright';
+import type {Browser,Page} from 'playwright';
 import {PACKET} from '@jimmie-potts/lifx';
 import {apartmentArtPath,parseApartmentModel} from '../../src/apartment-model.ts';
 import {syntheticApartmentArtwork} from '../../dist/tests/fixtures/apartment.js';
 import {furnishedFixture} from './apartment-fixture.ts';
-import {watchRoomsBrowser} from './rooms-browser-evidence.ts';
 import {changes,feed,type World} from './harness.ts';
 
 declare global {
@@ -17,87 +16,6 @@ declare global {
 
 const panel=(page:Page)=>page.getByRole('region',{name:'Apartment 3D model',exact:true});
 const selectLight=(page:Page,name:string)=>panel(page).getByRole('button',{name:`Select ${name}`,exact:true}).click();
-
-function asRecord(value:unknown):Record<string,unknown>|undefined {
-  if(typeof value==='object'&&value!==null&&!Array.isArray(value))return Object.fromEntries(Object.entries(value));
-  return undefined;
-}
-
-function diagnosticFields(record:Record<string,unknown>|undefined,keys:readonly string[]):Record<string,unknown> {
-  return Object.fromEntries(keys.flatMap(key=>{
-    const value=record?.[key];
-    return typeof value==='string'||typeof value==='number'||typeof value==='boolean'?[[key,value]]:[];
-  }));
-}
-
-async function roomSnapshot(page:Page,base:string,kind:'operation'|'device',key:string):Promise<Record<string,unknown>> {
-  const owner=kind==='operation'?'bunny/core':'bunny/modules/lifx';
-  const response=await page.request.get(base+'/api/v2/snapshot?families='+kind+'&owner='+encodeURIComponent(owner),{timeout:2000});
-  if(!response.ok())return {httpStatus:response.status()};
-  const body:unknown=await response.json();
-  const rows=asRecord(asRecord(body)?.records)?.[kind];
-  const record=Array.isArray(rows)?rows.map(asRecord).find(row=>row?.[kind==='operation'?'requestId':'id']===key):undefined;
-  if(record===undefined)return {httpStatus:response.status(),found:false};
-  if(kind==='operation'){
-    const errorCode=asRecord(record.error)?.code;
-    return {httpStatus:response.status(),...diagnosticFields(record,
-      ['requestId','status','result','reply','evidence','sentAtMs','updatedAtMs','deadlineAtMs']),
-      errorCode:typeof errorCode==='string'?errorCode:undefined};
-  }
-  const lastOutcome=asRecord(record.lastOutcome),outcomeStatus=lastOutcome?.status;
-  return {httpStatus:response.status(),...diagnosticFields(record,['id','pending','configurationRevision','availability']),
-    outcome:diagnosticFields(asRecord(lastOutcome?.outcome),['requestId','result','evidence']),
-    outcomeStatus:typeof outcomeStatus==='string'?outcomeStatus:undefined};
-}
-
-function watchRoomStream(cdp:CDPSession,url:string) {
-  let stream:{id:string;buffer:string;decoder:TextDecoder}|undefined;
-  let openedAtMs:number|undefined,endedAtMs:number|undefined,tappedAtMs:number|undefined,unreadable=0,frames=0;
-  const maxFrameBytes=128*1024;
-  const terminal=new Map<string,Record<string,unknown>>();
-  const read=(id:string,bytes:string):void=>{
-    if(stream?.id!==id)return;
-    if(bytes.length>Math.ceil(maxFrameBytes/3)*4){
-      unreadable++;stream=undefined;return;
-    }
-    stream.buffer+=stream.decoder.decode(Buffer.from(bytes,'base64'),{stream:true});
-    for(let end=stream.buffer.indexOf('\n\n');end>=0;end=stream.buffer.indexOf('\n\n')){
-      const frame=stream.buffer.slice(0,end);
-      stream.buffer=stream.buffer.slice(end+2);
-      const line=frame.split('\n').find(value=>value.startsWith('data: '));
-      if(line===undefined)continue;
-      frames++;
-      try{
-        const value:unknown=JSON.parse(line.slice(6));
-        const op=asRecord(asRecord(asRecord(value)?.message)?.data),requestId=op?.requestId;
-        if(op?.target!=='lamp-b'||op.family!=='power-set'||typeof requestId!=='string'||
-          !(op.status==='completed'||op.status==='uncertain'||op.status==='expired'||op.status==='rejected'||op.status==='conflict'))continue;
-        if(terminal.size===8&&!terminal.has(requestId)){
-          const oldest=terminal.keys().next().value;
-          if(oldest!==undefined)terminal.delete(oldest);
-        }
-        terminal.set(requestId,{atMs:Date.now(),...diagnosticFields(op,['status','result','revision'])});
-      }catch{unreadable++;}
-    }
-    if(stream.buffer.length>maxFrameBytes){unreadable++;stream=undefined;}
-  };
-  cdp.on('Network.responseReceived',event=>{
-    if(event.response.url!==url+'/api/sdk/v1/stream'||event.response.status!==200)return;
-    openedAtMs=Date.now();tappedAtMs=undefined;
-    stream={id:event.requestId,buffer:'',decoder:new TextDecoder()};
-    void cdp.send('Network.streamResourceContent',{requestId:event.requestId}).then(result=>{
-      if(stream?.id!==event.requestId)return;
-      tappedAtMs=Date.now();read(event.requestId,result.bufferedData);
-    }).catch(()=>{unreadable++;});
-  });
-  cdp.on('Network.dataReceived',event=>{if(event.data!==undefined)read(event.requestId,event.data);});
-  const end=(id:string):void=>{
-    if(stream?.id===id){endedAtMs=Date.now();stream=undefined;}
-  };
-  cdp.on('Network.loadingFinished',event=>{end(event.requestId);});
-  cdp.on('Network.loadingFailed',event=>{end(event.requestId);});
-  return (requestId:string)=>({openedAtMs,tappedAtMs,endedAtMs,frames,unreadable,terminal:terminal.get(requestId)});
-}
 
 export async function apartmentJourney(browser:Browser,world:World):Promise<void> {
   const {bytes,image}=syntheticApartmentArtwork(),model=furnishedFixture(image);
@@ -111,9 +29,6 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
   try{
     const page=await desktop.newPage();page.setDefaultTimeout(10_000);
     const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-    const cdp=await desktop.newCDPSession(page);
-    const streamEvidence=watchRoomStream(cdp,world.url);
-    const browserEvidence=await watchRoomsBrowser(page,cdp);
     const sent=changes(page);
     // Count live GPU objects through the real API so leaving Rooms proves release at this boundary.
     await page.addInitScript(()=>{
@@ -228,21 +143,8 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     assert.equal(acceptance.status(),200);
     assert.deepEqual(await acceptance.json(),{schema:'command-reply/2.0',status:'accepted',requestId:command.requestId});
     assert.equal(sent.length,2,'one deliberate action sent the uncertain request');
-    try{
-      await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor();
-    }catch(error){
-      try{
-        const failedAtMs=Date.now(),packets=writes();
-        const observed=await browserEvidence.onFailure({
-          operation:roomSnapshot(page,world.url,'operation',command.requestId),
-          device:roomSnapshot(page,world.url,'device','lamp-b'),
-        });
-        console.error(JSON.stringify({diagnostic:'synthetic-apartment-lost-reply',requestId:command.requestId,failedAtMs,
-          deviceWrites:packets.length,recentDeviceWrites:packets.slice(-8),...observed,
-          stream:{enabled:browserEvidence.networkEnabled,...streamEvidence(command.requestId)}}));
-      }catch{ /* Retain the original browser assertion if collecting failure evidence also fails. */ }
-      throw error;
-    }
+    // Hosted CI observed the terminal operation near 10s, with almost no time left to observe it in the card.
+    await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor({timeout:15_000});
     assert.equal(world.lifxState().bulbs['192.0.2.43']?.power,!nextPower);
     assert.equal(world.lifxState().bulbs['192.0.2.42']?.power,untouched);
     const writesAfterUncertainty=[wallPowerWrite,wallPowerWrite,wallPowerWrite];

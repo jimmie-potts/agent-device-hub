@@ -4,7 +4,6 @@ import {join} from 'node:path';
 import type {Browser,Page} from 'playwright';
 import {syntheticApartmentArtwork} from '../../dist/tests/fixtures/apartment.js';
 import {furnishedFixture} from './apartment-fixture.ts';
-import {watchRoomsBrowser} from './rooms-browser-evidence.ts';
 import {changes,feed,type World} from './harness.ts';
 
 const panel=(page:Page)=>page.getByRole('region',{name:'Reported anonymous presence',exact:true});
@@ -29,7 +28,6 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
   try{
     const page=await desktop.newPage();page.setDefaultTimeout(10_000);
     const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
-    const browserEvidence=await watchRoomsBrowser(page,await desktop.newCDPSession(page));
     const sent=changes(page);await page.goto(world.url+'/#/rooms');await feed(page,'connected');
     const layout={rooms:[{id:'studio',name:'Studio'},{id:'reading',name:'Reading room'}],assignments:[],groups:[],home:null};
     const saved=await page.request.post(world.url+'/api/v2/commands/lighting-layout-set',{headers:{origin:world.url,'bunny-request':'1'},data:{target:'lighting',requestId:'presence-fixture-layout',data:{expectedRevision:0,layout}}});
@@ -82,22 +80,7 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     await page.getByRole('combobox',{name:'Frame the apartment or a room'}).selectOption({label:'Reading room'});
     await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]:not([hidden])').length===1);
     assert.equal(await view.locator('[data-presence-room=studio]').count(),0);
-    const previousLoader=browserEvidence.currentLoader();
-    browserEvidence.mark('restart-start');
-    await world.restart();
-    browserEvidence.mark('restart-returned');
-    browserEvidence.mark('reload-start');
-    try{
-      await page.reload();
-    }catch(error){
-      try{
-        const failedAtMs=Date.now();
-        const observed=await browserEvidence.onFailure();
-        console.error(JSON.stringify({diagnostic:'synthetic-apartment-presence-reload',previousLoader,failedAtMs,...observed}));
-      }catch{ /* Preserve the original navigation error. */ }
-      throw error;
-    }
-    await feed(page,'connected');
+    await world.restart();await page.reload();await feed(page,'connected');
     await panel(page).locator('[data-presence-room=studio] strong').getByText('Studio · vacant',{exact:true}).waitFor();
     assert.equal(sent.length,baseline,'reports, camera, loss and restart send zero new commands');
     await capture(page,'presence-desktop.png');
