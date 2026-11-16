@@ -239,6 +239,15 @@ full decision and its controls. Conversation opens at the newest saved messages.
 reading. If replies arrive while you are reading farther up, **New messages**
 jumps to the latest exchange.
 
+Assistant replies use open text. Your messages sit in bubbles on the other
+side of the same reading column, which aligns with the composer. **Tool result**
+expands the full saved text in place. Long links, markup and line breaks appear
+as saved. **Read aloud** sits below eligible replies. Longer replies explain
+the speech limit and remain readable in full.
+
+A fresh, empty history invites you to send the first message when input is
+available. If history or input is unavailable, the page shows the reason.
+
 Use Enter to send and Shift+Enter for a line break. Enter during text composition
 does not submit. Drafts are limited to 4,096 UTF-8 bytes and stay in the page
 after submission. Each profile and pending question has its own draft, and
@@ -247,6 +256,9 @@ unfinished. Follow the link beside the composer to return to that task before
 starting another one.
 
 Questions, approvals, worker waits and task controls appear above the composer.
+A successful task leaves a short **Task completed** cue by the composer.
+Open **Details** to inspect the task. Failed, cancelled, paused and uncertain
+outcomes remain visible by the relevant controls.
 An approval shows the full scope and the revision it applies to. A command
 receipt reports what happened to the request separately from task completion.
 Disconnected or stale copies retain loaded history and lock mutations.

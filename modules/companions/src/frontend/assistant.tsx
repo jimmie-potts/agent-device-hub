@@ -282,15 +282,16 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             {!context.control && <p>Read-only access. Controls require operator authority.</p>}
             {context.control && !context.operationsLive && <p>Tracked operations are unavailable. Conversation controls are locked.</p>}
           </div>
-          <ConversationTranscript key={profile} history={visibleHistory} status={historyStatus} readLocked={!connected || historyStatus === 'loading'}
-            loadEarlier={before => {readHistory(before);}} retry={() => {readHistory(failedCursor.current);}}
+          <ConversationTranscript key={profile} history={visibleHistory} status={!connected && historyStatus === 'loading' ? 'unavailable' : historyStatus}
+            live={live} canStart={!locked && state?.enabled === true && unfinished === undefined}
+            readLocked={!connected || historyStatus === 'loading'} loadEarlier={before => {readHistory(before);}} retry={() => {readHistory(failedCursor.current);}}
             renderMessage={message => <article aria-label={`${message.role} message`}>
-              <strong>{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
-              <p>{message.text}</p>
+              <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
+              <p className="conversation-message-text" dir="auto">{message.text}</p>
               {message.role === 'assistant' && (message.text.length > LIMITS.spokenChars
-                ? <p className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</p>
+                ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>
                 : state !== undefined && <button type="button" aria-label={`Read aloud message ${message.seq}`}
-                className="secondary" disabled={locked}
+                className="secondary conversation-read-aloud" disabled={locked}
                 onClick={() => {
                   const requestId = crypto.randomUUID();
                   setSpeakRequest(requestId);
@@ -302,7 +303,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             {state !== undefined && !state.enabled && <p>Conversation is off. <button type="button" disabled={locked} onClick={() => {present('enable');}}>Enable conversation</button></p>}
             {unfinished !== undefined && unfinished.profile !== profile && <p>One task is still unfinished. <button type="button"
               onClick={() => {pickProfile(unfinished.profile);}}>Go to {profiles[unfinished.profile].name} task</button></p>}
-            {cue !== undefined && <p role="status">{cue}{!live ? ' (Last known)' : ''}</p>}
+            {cue !== undefined && <p role="status" className={live && task?.status === 'succeeded' ? 'conversation-completed' : undefined}>
+              {cue}{!live ? ' (Last known)' : ''}
+            </p>}
             {task?.code != null && <p>Task code: {task.code}</p>}
             {state?.enabled === true && unfinished !== undefined && !['waiting', 'paused'].includes(task?.status ?? '') && <p>Finish or cancel the unfinished task before sending another message.</p>}
             {activeClarification !== undefined && <SavedQuestionContext question={activeClarification}/>}
