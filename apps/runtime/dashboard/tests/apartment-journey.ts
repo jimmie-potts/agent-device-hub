@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import {mkdir,unlink,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {setTimeout as delay} from 'node:timers/promises';
 import type {Browser,CDPSession,Page} from 'playwright';
 import {PACKET} from '@jimmie-potts/lifx';
 import {apartmentArtPath,parseApartmentModel} from '../../src/apartment-model.ts';
 import {syntheticApartmentArtwork} from '../../dist/tests/fixtures/apartment.js';
 import {furnishedFixture} from './apartment-fixture.ts';
+import {watchRoomsBrowser} from './rooms-browser-evidence.ts';
 import {changes,feed,type World} from './harness.ts';
 
 declare global {
@@ -99,22 +99,6 @@ function watchRoomStream(cdp:CDPSession,url:string) {
   return (requestId:string)=>({openedAtMs,tappedAtMs,endedAtMs,frames,unreadable,terminal:terminal.get(requestId)});
 }
 
-async function readRoomDocument(cdp:CDPSession):Promise<unknown> {
-  const reply=await cdp.send('Runtime.evaluate',{returnByValue:true,expression:`(() => {
-    const main=document.querySelector('main#main');
-    const text=selector=>main?.querySelector(selector)?.textContent?.slice(0,180);
-    return {readyState:document.readyState,mainPresent:main!==null,
-      route:['#/rooms','#/devices',''].includes(location.hash)?location.hash:'other',
-      feed:main?.getAttribute('data-feed'),
-      card:text('.apartment-selection [data-light-card="lamp-b"] [role="status"]'),
-      fixture:text('[data-apartment-fixture-status="sample-sconce"]'),
-      workspace:text('.lighting-workspace > [role="status"]')};
-  })()`});
-  if(reply.exceptionDetails!==undefined)return 'unavailable';
-  const value:unknown=reply.result.value;
-  return diagnosticFields(asRecord(value),['readyState','mainPresent','route','feed','card','fixture','workspace']);
-}
-
 export async function apartmentJourney(browser:Browser,world:World):Promise<void> {
   const {bytes,image}=syntheticApartmentArtwork(),model=furnishedFixture(image);
   assert.ok(parseApartmentModel(model),'synthetic room placements obey the prepared model contract');
@@ -126,14 +110,10 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
   const desktop=await browser.newContext({viewport:{width:1280,height:1000},reducedMotion:'reduce'});
   try{
     const page=await desktop.newPage();page.setDefaultTimeout(10_000);
-    const errors:string[]=[];
-    let pageErrorAtMs:number|undefined,crashAtMs:number|undefined,closeAtMs:number|undefined;
-    page.on('pageerror',e=>{errors.push(e.message);pageErrorAtMs=Date.now();});
-    page.on('crash',()=>{crashAtMs=Date.now();});
-    page.on('close',()=>{closeAtMs=Date.now();});
+    const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
     const cdp=await desktop.newCDPSession(page);
     const streamEvidence=watchRoomStream(cdp,world.url);
-    const observingStream=await cdp.send('Network.enable').then(()=>true,()=>false);
+    const browserEvidence=await watchRoomsBrowser(page,cdp);
     const sent=changes(page);
     // Count live GPU objects through the real API so leaving Rooms proves release at this boundary.
     await page.addInitScript(()=>{
@@ -253,24 +233,13 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     }catch(error){
       try{
         const failedAtMs=Date.now(),packets=writes();
-        const reads=[
-          roomSnapshot(page,world.url,'operation',command.requestId),
-          roomSnapshot(page,world.url,'device','lamp-b'),
-          readRoomDocument(cdp),
-        ];
-        const evidence:unknown[]=reads.map(()=>'unavailable');
-        const timer=new AbortController();
-        try{
-          await Promise.race([
-            Promise.allSettled(reads.map(async (read,index)=>{evidence[index]=await read;})),
-            delay(2000,undefined,{signal:timer.signal}),
-          ]);
-        }finally{timer.abort();}
-        const [operation,device,browser]=evidence;
+        const observed=await browserEvidence.onFailure({
+          operation:roomSnapshot(page,world.url,'operation',command.requestId),
+          device:roomSnapshot(page,world.url,'device','lamp-b'),
+        });
         console.error(JSON.stringify({diagnostic:'synthetic-apartment-lost-reply',requestId:command.requestId,failedAtMs,
-          deviceWrites:packets.length,recentDeviceWrites:packets.slice(-8),operation,device,browser,
-          stream:{enabled:observingStream,...streamEvidence(command.requestId)},
-          page:{errorCount:errors.length,pageErrorAtMs,crashAtMs,closeAtMs}}));
+          deviceWrites:packets.length,recentDeviceWrites:packets.slice(-8),...observed,
+          stream:{enabled:browserEvidence.networkEnabled,...streamEvidence(command.requestId)}}));
       }catch{ /* Retain the original browser assertion if collecting failure evidence also fails. */ }
       throw error;
     }
