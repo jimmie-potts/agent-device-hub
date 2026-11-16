@@ -125,7 +125,14 @@
     justify-items: end;
   }
   .workspace-shell .primary-navigation {
+    display: flex;
+    flex-wrap: wrap;
     grid-column: 1 / -1;
-    grid-template-columns: repeat(5, auto);
+    gap: var(--space-xxs);
+  }
+  .workspace-shell .primary-navigation a {
+    flex: 1 0 auto;
+    padding-inline: 0;
+    white-space: nowrap;
   }
 }
