@@ -83,8 +83,9 @@ try {
   await page.setViewportSize({width: 1280, height: 1000});
   await page.goto(`${world.url}/#/module/companions/assistant`); await feed(page, 'connected');
   const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
-  const details = assistant.locator('details.conversation-details');
-  const detailsToggle = details.locator(':scope > summary');
+  const details = assistant.getByRole('dialog', {name: 'Conversation details', exact: true});
+  const detailsToggle = assistant.getByRole('button', {name: 'Details', exact: true});
+  const closeDetails = details.getByRole('button', {name: 'Close details', exact: true});
   const settings = details.getByText('Conversation settings', {exact: true});
   const activity = details.getByText('Task activity', {exact: true});
   await detailsToggle.click();
@@ -98,7 +99,7 @@ try {
   await disableAssistant.click();
   await assistant.locator('.conversation-compose').getByText('Conversation is off.', {exact: false}).waitFor();
   await settings.click();
-  await detailsToggle.click();
+  await closeDetails.click();
   await enableAssistant.click();
   // An approved proposal: the synthetic provider proposes the named mode, the owner decides by keyboard after a reload.
   await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('PRIVATE-SYNTHETIC-BROWSER quiet mode');
@@ -144,8 +145,8 @@ try {
   if (output !== undefined) await page.screenshot({path: `${output}/assistant-browser.png`, fullPage: true});
   await page.setViewportSize({width: 390, height: 844});
   if (output !== undefined) await page.screenshot({path: `${output}/assistant-details-phone.png`, fullPage: true});
+  await closeDetails.click();
   await readResult.locator('summary').click();
-  await detailsToggle.click();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
   await assistant.getByRole('textbox', {name: 'Message', exact: true}).fill('SYNTHETIC-CANCELLATION-CHECK');
   await startTask.click(); await assistant.getByText('Needs your answer', {exact: true}).waitFor();

@@ -10,11 +10,11 @@
   flex: 1;
   min-inline-size: 0;
   grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
-  grid-template-rows: minmax(min-content, 1fr) auto;
+  grid-template-rows: minmax(min-content, 1fr);
   gap: 0.5rem 1rem;
 }
 
-.conversation-profiles, .conversation-details {
+.conversation-profiles {
   min-inline-size: 0;
   background: var(--inset);
   border: 1px solid var(--edge-faint);
@@ -55,9 +55,64 @@
 }
 
 .conversation-details {
-  grid-column: 2;
-  align-self: start;
-  padding-block: 0;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: 0;
+  border: 1px solid var(--edge-dense);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.conversation-details[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.conversation-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+  padding: var(--space-s) var(--space-m);
+  border-block-end: 1px solid var(--edge-faint);
+}
+
+.conversation-details-header h2 {
+  margin: 0;
+  font-size: var(--type-subheading);
+}
+
+.conversation-details-trigger, .conversation-details-header button {
+  min-block-size: 2.5rem;
+  padding-inline: 0.7rem;
+}
+
+.conversation-details-sections {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-inline: var(--space-m);
+}
+
+.conversation-details-profile {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem var(--space-s);
+  margin: 0;
+  padding-block: var(--space-m);
+}
+
+.conversation-details-profile small {
+  color: var(--muted-dense);
+}
+
+.conversation-details-footer {
+  padding: var(--space-s) var(--space-m);
+  border-block-start: 1px solid var(--edge-faint);
 }
 
 .conversation-details summary {
@@ -68,7 +123,7 @@
   touch-action: manipulation;
 }
 
-.conversation-details > summary, .conversation-details-sections summary {
+.conversation-details-sections summary {
   font-weight: 600;
 }
 
@@ -343,27 +398,46 @@
 }
 
 @media (min-width: 1120px) {
-  .conversation-layout {
-    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr) max-content;
-    grid-template-rows: minmax(min-content, 1fr);
-  }
-
   .conversation-layout:has(> .conversation-details[open]) {
-    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr) minmax(13rem, 18rem);
+    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr) clamp(17rem, 23vw, 20.25rem);
   }
 
   .conversation-details {
+    position: static;
     grid-column: 3;
     grid-row: 1;
-    max-block-size: min(37rem, calc(100dvh - 8rem));
-    overflow-y: auto;
+    margin: 0;
+    inline-size: 100%;
+    max-inline-size: none;
+    align-self: stretch;
+    block-size: auto;
+    max-block-size: max(12rem, calc(100dvh - var(--space-xl)));
+    contain: size;
+  }
+}
+
+@media (width < 1120px) {
+  .conversation-details {
+    position: fixed;
+    inset-inline: auto var(--space-s);
+    inset-block: 0;
+    margin-block: auto;
+    margin-inline: 0;
+    inline-size: min(23rem, calc(100% - var(--space-l)));
+    max-inline-size: none;
+    block-size: calc(100dvh - var(--space-m));
+    max-block-size: none;
+    box-shadow: var(--shell-shadow);
+  }
+
+  .conversation-details::backdrop {
+    background: rgb(0 0 0 / 35%);
   }
 }
 
 @media (max-width: 760px) {
   .conversation-layout {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(min-content, 1fr) auto;
   }
 
   .conversation-profiles {
@@ -378,6 +452,7 @@
 
   .conversation-profiles-narrow {
     display: block;
+    flex: 1;
   }
 
   .conversation-profiles-narrow select {
@@ -390,14 +465,17 @@
     display: none;
   }
 
-  .conversation-layout > * {
+  .conversation-main {
     grid-column: 1;
-    grid-row: auto;
   }
 }
 
 .conversation-header {
   min-inline-size: 0;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-s);
 }
 
 .conversation-voice-actions {
@@ -428,6 +506,24 @@
   background: var(--panel);
   box-shadow: var(--shell-shadow);
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .conversation-main {
+    position: relative;
+  }
+
+  .conversation-input-surface {
+    position: static;
+  }
+
+  .conversation-voice-panel {
+    grid-row: 2 / 3;
+    inset-block-end: var(--space-xs);
+    inset-inline-start: var(--conversation-reading-gutter);
+    inline-size: min(calc(100% - 2 * var(--conversation-reading-gutter)), 23rem);
+    max-block-size: min(calc(100% - var(--space-s)), 24rem);
+  }
 }
 
 .conversation-voice-toggle[aria-expanded="true"],

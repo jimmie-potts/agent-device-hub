@@ -7,6 +7,7 @@ import type {Browser} from 'playwright';
 export async function conversationStateJourney(browser: Browser): Promise<void> {
   const toolPath = 'agent-device-hub/modules/companions/assistant/conversation/qualification/browser-playback-recovery-notes.html?fixture=';
   const fixtureId = '3327540ab52e3da567548eb1e6278a9e1e5bbe25';
+  const longRunId = fixtureId.repeat(8);
   const toolText = ['<button data-fixture-tool>literal button</button>',
     ...Array.from({length: 18}, (_, index) => `${toolPath}${fixtureId.repeat(3)}&part=${String(index)}`),
     'Résumé · 東京 · 작은 대화 · نهاية'].join('\n');
@@ -21,6 +22,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     import {historyCursor} from '../../../../modules/companions/src/assistant/history-contract.ts';
     import {Command} from '../src/command-control.tsx';
     import {Facts, Select} from '../src/ui.tsx';
+    import '../src/skins/quiet-glass.css';
     const fixture = window.conversationFixture = {commands: [], reads: 0};
     const toolText = ${JSON.stringify(toolText)};
     const replyText = ${JSON.stringify(replyText)};
@@ -44,7 +46,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
       if (variant === 'missing-proposal') question = {...approval, proposal: null};
       if (variant === 'mismatched') question = {id: 'other-question', text: 'Unrelated question', answer: null, kind: 'clarification', proposal: null};
       if (variant === 'paused') task = {...task, status: 'paused'};
-      if (variant === 'hosted') {state.provider = 'anthropic'; state.model = 'claude-example-hosted-model'; task = {...task, usageUnits: 0, reservedUnits: 16384};}
+      if (variant === 'hosted') {state.provider = 'anthropic'; state.model = 'claude-example-hosted-model'; task = {...task, runId: ${JSON.stringify(longRunId)}, usageUnits: 0, reservedUnits: 16384};}
       if (variant === 'uncertain') task = {...task, status: 'uncertain', questionId: null, code: 'uncertain-result'};
       if (variant === 'succeeded') {
         task = {...task, status: 'succeeded', questionId: null, code: null};
@@ -121,7 +123,13 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await approve.waitFor();
     assert.equal(await approve.isEnabled(), true);
     const details = page.locator('.conversation-details');
-    await details.locator(':scope > summary').click();
+    const detailsToggle = page.getByRole('button', {name: 'Details', exact: true});
+    assert.equal(await details.isVisible(), false, 'Details starts closed');
+    await detailsToggle.press('Enter');
+    await details.getByRole('heading', {name: 'Conversation details', exact: true}).waitFor();
+    await details.locator('.conversation-details-profile').getByText('B.U.N.N.Y.', {exact: true}).waitFor();
+    const closeDetails = details.getByRole('button', {name: 'Close details', exact: true});
+    assert.equal(await closeDetails.evaluate(node => node === document.activeElement), true);
     assert.deepEqual(await details.locator('details > summary').allTextContents(), ['Capabilities', 'Task activity', 'Usage', 'Conversation settings']);
     assert.equal(await details.locator('details[open]').count(), 0, 'routine sections start collapsed');
     const section = (label: string) => details.locator('.conversation-details-sections > details').filter({has: page.locator('summary', {hasText: label})});
@@ -195,9 +203,10 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     const wideAnchor = await readingAnchor();
     assert.equal(wideAnchor.id, 'saved-tool');
     assert.ok(await transcript.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop > 24), 'reading older saved text above the tail');
-    const detailsToggle = details.locator(':scope > summary');
     const afterReflow = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    await detailsToggle.click();
+    await closeDetails.click();
+    assert.equal(await detailsToggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await detailsToggle.evaluate(node => node === document.activeElement), true);
     await afterReflow();
     const closedAnchor = await readingAnchor();
     assert.ok(closedAnchor.width > wideAnchor.width, 'closing wide Details gives space back to the transcript');
@@ -206,21 +215,39 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await detailsToggle.click();
     await afterReflow();
     assert.deepEqual(await readingAnchor(), wideAnchor, 'reopening wide Details preserves the above-tail reading anchor');
+    await page.keyboard.press('Escape');
+    await details.waitFor({state: 'hidden'});
+    assert.equal(await detailsToggle.evaluate(node => node === document.activeElement), true);
+    await detailsToggle.click();
+    const drawerNode = await details.elementHandle();
     await page.setViewportSize({width: 320, height: 768});
     await afterReflow();
     const narrowAnchor = await readingAnchor();
     assert.equal(narrowAnchor.id, wideAnchor.id, 'resizing keeps the first visible saved row');
     assert.ok(Math.abs(narrowAnchor.offset - wideAnchor.offset) <= 2, 'resizing preserves the saved row offset');
-    assert.ok(await top('.conversation-details') > await top('.conversation-compose'), 'narrow Details follows the composer');
+    assert.equal(await details.evaluate(node => node.matches(':modal')), true, 'narrow Details opens over the conversation');
+    assert.equal(await details.evaluate((node, prior) => node === prior, drawerNode), true, 'resize keeps the same drawer');
     assert.equal(await capabilities.getByText('Anthropic', {exact: true}).isVisible(), true, 'resize preserves the open section');
+    await fact(activity, 'Run', longRunId);
+    const closeBounds = await closeDetails.boundingBox();
+    assert.ok(closeBounds !== null && closeBounds.y >= 0 && closeBounds.y + closeBounds.height <= 768);
+    const body = details.locator('.conversation-details-sections');
+    assert.ok(await body.evaluate(node => node.scrollWidth <= node.clientWidth + 1 && node.scrollHeight > node.clientHeight));
+    await body.evaluate(node => {node.scrollTop = node.scrollHeight;});
+    assert.deepEqual(await closeDetails.boundingBox(), closeBounds, 'scrolling facts keeps Close in reach');
+    await page.mouse.click(1, 1);
+    await details.waitFor({state: 'hidden'});
+    assert.equal(await detailsToggle.evaluate(node => node === document.activeElement), true, 'outside dismissal restores focus');
+    assert.deepEqual(await readingAnchor(), narrowAnchor, 'closing the overlay leaves the reading anchor alone');
+    await detailsToggle.click();
+    await page.keyboard.press('Escape');
+    await details.waitFor({state: 'hidden'});
+    assert.equal(await detailsToggle.evaluate(node => node === document.activeElement), true, 'narrow Escape restores focus');
     assert.equal(await toolBody.textContent(), toolText, 'the entire saved result remains literal, including newlines');
     assert.equal(await tool.locator('[data-fixture-tool]').count(), 0);
     assert.equal(await tool.getByRole('button').count(), 0, 'tool text gains no command or speech control');
     assert.equal(await transcript.evaluate(node => node.scrollWidth <= node.clientWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1), true);
     assert.deepEqual(await transcript.locator('[data-message]').evaluateAll(rows => rows.map(row => row.getAttribute('data-message'))), ['saved-message', 'saved-context', 'saved-tool', 'saved-reply']);
-    const toolOffset = await tool.locator('summary').evaluate(node => node.getBoundingClientRect().top - (node.closest('.conversation-transcript')?.getBoundingClientRect().top ?? 0));
-    await details.locator(':scope > summary').click();
-    assert.equal(await tool.locator('summary').evaluate(node => node.getBoundingClientRect().top - (node.closest('.conversation-transcript')?.getBoundingClientRect().top ?? 0)), toolOffset);
     assert.equal(await page.evaluate<number>('window.conversationFixture.reads'), readsBeforeTool, 'disclosing tool text performs no read');
     const loadEarlier = transcript.getByRole('button', {name: 'Load earlier', exact: true});
     await loadEarlier.focus();
@@ -243,7 +270,8 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     assert.equal(await page.evaluate<number>('window.conversationFixture.reads'), readsBeforeTool + 1, 'Load earlier performs only its explicit read');
     await tool.locator('summary').press('Enter');
     assert.equal(await toolBody.isVisible(), false);
-    await details.locator(':scope > summary').click();
+    await page.setViewportSize({width: 1280, height: 900});
+    await detailsToggle.click();
     await page.evaluate("window.conversationFixture.update('removed')");
     await page.getByRole('status').filter({hasText: 'Stale.'}).waitFor();
     assert.equal(await approve.isDisabled(), true);

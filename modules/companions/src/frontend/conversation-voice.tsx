@@ -2,8 +2,17 @@ import React, {useCallback, useEffect, useId, useRef, useState} from 'react';
 import type {FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {playbackLabels, SpeechRecovery, type SpeechControlsSession} from './speech.js';
 
-export function ConversationVoice({context, speech, open, onOpenChange}: {
-  context: FrontendContext; speech: SpeechControlsSession; open: boolean; onOpenChange: (open: boolean) => void;
+export function stopSpeakingButton(speech: SpeechControlsSession): React.JSX.Element | null {
+  const {local, selected} = speech;
+  const canStop = selected && (local.playback?.status === 'started' || local.playback?.status === 'dispatching');
+  return canStop
+    ? <button type="button" className="secondary" disabled={local.busy} onClick={() => {void speech.stop();}}>Stop speaking</button>
+    : null;
+}
+
+export function ConversationVoice({context, speech, open, onOpenChange, stopSpeaking}: {
+  context: FrontendContext; speech: SpeechControlsSession; open: boolean;
+  onOpenChange: (open: boolean) => void; stopSpeaking: React.JSX.Element | null;
 }): React.JSX.Element {
   const [recoveredOperation, setRecoveredOperation] = useState<string>();
   const panelId = useId();
@@ -34,7 +43,6 @@ export function ConversationVoice({context, speech, open, onOpenChange}: {
   const {local, qualification, ready, selected, synced} = speech;
   const remote = context.connected && synced ? speech.remote : undefined;
   const playing = selected && local.playback?.status === 'started';
-  const canStop = selected && (playing || local.playback?.status === 'dispatching');
   const recoveryId = remote?.recoveryOperationId;
   const unresolvedPlayback = remote?.availability === 'unavailable' && remote.playback?.status === 'uncertain';
   const needsAttention = recoveryId !== undefined || unresolvedPlayback;
@@ -70,7 +78,7 @@ export function ConversationVoice({context, speech, open, onOpenChange}: {
       onClick={() => {onOpenChange(!open);}}>
       {state.startsWith('Voice ') ? state : `Voice · ${state}`}
     </button>
-    {canStop && <button type="button" className="secondary" disabled={local.busy} onClick={() => {void speech.stop();}}>Stop speaking</button>}
+    {stopSpeaking}
     <section id={panelId} className="conversation-voice-panel" aria-labelledby={titleId} hidden={!open}>
       {open && <>
         <header className="conversation-voice-heading">

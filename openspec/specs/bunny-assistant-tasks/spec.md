@@ -189,9 +189,12 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 - **AND** Refresh history makes one deliberate latest read when the current saved question or proposal is unavailable
 
 #### Scenario: Inspect labelled Details
-- **WHEN** a reader opens Details in Conversation
-- **THEN** Capabilities, Task activity, Usage and Conversation settings start collapsed, and each can expand independently without changing the selected profile, draft or transcript position
-- **AND** closing Details gives the wide transcript its space back and resizing preserves the viewed saved row
+- **WHEN** a reader opens Details from the Conversation header
+- **THEN** Conversation details shows the selected profile and an explicit close action, with an independently scrolling panel beside the conversation at wide widths and an overlay at narrow widths
+- **AND** Capabilities, Task activity, Usage and Conversation settings start collapsed and expand independently, with the full saved values readable inside the panel
+- **AND** Close, Escape and tapping outside the narrow overlay return focus to Details, keep the draft and transcript position, and send no commands
+- **AND** closing Details gives the wide conversation its space back, and resizing preserves the open sections and viewed saved row
+- **AND** opening Details or Voice dismisses the other panel while keeping the original speech endpoint, and Stop speaking remains available during local playback with narrow Details open
 - **AND** provider and tool facts, worker availability, task identifiers and bounds, saved question and answer, diagnostic codes, successful control receipts and usage retain their meaning
 - **AND** retained assistant facts read as Last known, a missing worker copy reads as unknown, and usage distinguishes unknown, zero, synthetic units and hosted tokens without estimating billed cost
 - **AND** active decisions, task result cues, blockers, and unresolved or negative control outcomes remain visible by the relevant controls

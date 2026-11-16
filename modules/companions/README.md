@@ -150,13 +150,14 @@ Stop and mute clear pending work. Higher-priority attention waits for confirmed
 cancellation before replacing lower-priority output.
 
 The same coordinator and endpoint speak B.U.N.N.Y.'s replies to typed requests
-(Hub #500, first slice). Open **Voice** in the Conversation header to enable
+(Hub #500, first slice). Open **Voice** in the composer toolbar to enable
 spoken replies, mute them, inspect readiness or recover an eligible earlier
 operation. Enabling makes this tab the speaker for replies and eligible Reachy
-alerts. Stop speaking stays in the header during local playback. Closing Voice
-or Details, changing profiles or resizing leaves the selected endpoint in
-place. The **Voice requirements and playback evidence** disclosure shows the
-qualification and playback report.
+alerts. **Stop speaking** remains available during local playback, including
+inside **Details** when it opens as an overlay. Closing Voice or Details,
+changing profiles or resizing leaves the selected endpoint in place. The
+**Voice requirements and playback evidence** disclosure shows the qualification
+and playback report.
 
 When a turn ends with a result, a question for the owner or a refusal, the engine
 offers that saved message once. **Read aloud** beside a saved assistant message
@@ -258,8 +259,9 @@ to return to that task before starting another one.
 
 **Voice** is in the composer toolbar. Open **Spoken replies** to enable output
 in this tab, mute it, or inspect requirements and tracked playback evidence.
-Use **Close**, Escape, or click outside to dismiss the panel. If playback is
-active, **Stop speaking** stays in the toolbar with the panel closed.
+Use **Close**, Escape, or click outside to dismiss the panel. During playback,
+**Stop speaking** stays in the toolbar and moves into the narrow Details
+overlay while it is open.
 
 Questions, approvals, worker waits and task controls appear above the composer.
 A successful task leaves a short **Task completed** cue by the composer.
@@ -272,10 +274,16 @@ Disconnected or stale copies retain loaded history and lock mutations.
 
 ### Inspect conversation details
 
-On a wide screen, **Details** opens beside the transcript and composer. Close
-**Details** to give the transcript more room. On a narrow screen, **Details**
-sits below the composer. Choose a section label to open it, then choose the
-same label again to close it.
+Choose **Details** beside the profile heading to open **Conversation details**.
+The drawer shows the selected profile. On a wide screen it sits beside the
+conversation. On a narrow screen it opens over the conversation. Its facts
+scroll separately from the transcript. Choose **Close**, press Escape, or tap
+outside the narrow drawer to return focus to **Details**. Closing it keeps the
+draft and reading position. Opening Voice closes Details and opening Details
+closes Voice.
+
+Choose a section label to expand it. The sections start collapsed and keep
+their open state while you inspect another panel or resize the page.
 
 - **Capabilities** lists the provider, model, allowed and unavailable tools,
   and coding worker availability.
@@ -570,7 +578,13 @@ runtime catalog cases run over both transports and in a disposable runtime. The
 existing companions browser check exercises the real authenticated page with
 approved and declined proposals across reload, a clarification with the read
 tool, cancellation, keyboard, disconnection and reader refusals while
-preserving Reachy. These are synthetic source checks. They establish neither
+preserving Reachy. The Conversation state journey checks Details at desktop
+and 320px, including scrolling facts, returning focus, and preserving the
+reading position. The speech journey checks Stop speaking during narrow
+inspection. Use the disposable `scenario-assistant-task` capture for the normal
+Conversation view and matched synthetic captures for the open drawer.
+
+These are synthetic source checks. They establish neither
 live-model usefulness nor installed or physical acceptance; live provider use is
 the installed acceptance of #508 under the owner's allowance.
 

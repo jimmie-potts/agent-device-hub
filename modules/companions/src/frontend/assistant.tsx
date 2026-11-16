@@ -1,15 +1,15 @@
-import React, {useCallback, useEffect, useId, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useId, useLayoutEffect, useRef, useState} from 'react';
 import type {AssistantProfile, AssistantState, AssistantStatus} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk';
 import {LIMITS} from '../assistant/limits.js';
 import {useCompanionSpeechCopy, useSpeechControlsSession} from './speech.js';
-import {ConversationVoice} from './conversation-voice.js';
+import {ConversationVoice, stopSpeakingButton} from './conversation-voice.js';
 
 import type {SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
-import {ConversationDetails} from './conversation-details.js';
+import {ConversationDetails, useDetailsOverlay} from './conversation-details.js';
 import {ConversationTranscript} from './conversation-transcript.js';
 import './conversation.css';
 
@@ -143,12 +143,29 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const historyAttempt = useRef<HistoryAttempt>(undefined);
   const [historyStatus, setHistoryStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const failedCursor = useRef<string>(undefined);
-  const [voiceOpen, setVoiceOpen] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [speakRequest, setSpeakRequest] = useState<string>();
   const [coding, setCoding] = useState<CodingState>();
   const companionSpeech = useCompanionSpeechCopy(context);
   const speech = useSpeechControlsSession(context, companionSpeech.copy);
+  const [panel, setPanel] = useState<'voice' | 'details'>();
+  const detailsOpen = panel === 'details';
+  const detailsOverlay = useDetailsOverlay();
+  const detailsId = useId();
+  const detailsTrigger = useRef<HTMLButtonElement>(null);
+  const priorPanel = useRef<typeof panel>(undefined);
+  const closeDetails = useCallback((): void => {
+    setPanel(current => current === 'details' ? undefined : current);
+  }, []);
+  const setVoiceOpen = useCallback((open: boolean): void => {
+    setPanel(current => open ? 'voice' : current === 'voice' ? undefined : current);
+  }, []);
+  useLayoutEffect(() => {
+    if (priorPanel.current === 'details' && panel === undefined) detailsTrigger.current?.focus({preventScroll: true});
+    priorPanel.current = panel;
+  }, [panel]);
+  const stopSpeaking = stopSpeakingButton(speech);
+  const stopInDrawer = detailsOpen && detailsOverlay;
   useEffect(() => {
     setCoding(undefined);
     if (!connected) return;
@@ -290,6 +307,11 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                 <Select label="Companion profile" value={profile} onChange={pickProfile}
                   options={Object.entries(profiles).map(([value, {name, kind}]) => ({value, label: `${name} · ${kind}`}))}/>
               </nav>
+              <button type="button" className="secondary conversation-details-trigger" ref={detailsTrigger}
+                aria-expanded={detailsOpen} aria-controls={detailsId} onClick={() => {
+                  if (detailsOpen) closeDetails();
+                  else setPanel('details');
+                }}>Details</button>
             </header>
             {profile !== 'bunny' && <p className="conversation-demo-note">Demo profile. No paid calls.</p>}
             {!connected ? <p role="status">Disconnected. Saved history remains readable. Last known task state.</p>
@@ -327,11 +349,13 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion}
               drafts={drafts} setDraft={(key, value) => {setDrafts(prior => ({...prior, [key]: value}));}}
               refreshHistory={() => {readHistory();}} historyBusy={historyStatus === 'loading'}
-              voice={<ConversationVoice context={context} speech={speech} open={voiceOpen} onOpenChange={setVoiceOpen}/>}/>
+              voice={<ConversationVoice context={context} speech={speech} open={panel === 'voice'} onOpenChange={setVoiceOpen}
+                stopSpeaking={stopInDrawer ? null : stopSpeaking}/>}/>
             {!routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
           </div>
         </div>
-        <ConversationDetails Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
+        <ConversationDetails id={detailsId} open={detailsOpen} overlay={detailsOverlay} onClose={closeDetails}
+          stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live}
           savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}
           receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished !== undefined} setEnabled={present}/>

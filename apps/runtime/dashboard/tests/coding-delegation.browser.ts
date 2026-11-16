@@ -15,8 +15,10 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     const page = await context.newPage(); page.setDefaultTimeout(12_000);
     await page.goto(`${world.url}/#/module/companions/assistant`); await feed(page, 'connected');
     const assistant = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
-    const details = assistant.locator('details.conversation-details');
-    await details.locator(':scope > summary').click();
+    const details = assistant.getByRole('dialog', {name: 'Conversation details', exact: true});
+    const detailsToggle = assistant.getByRole('button', {name: 'Details', exact: true});
+    const closeDetails = details.getByRole('button', {name: 'Close details', exact: true});
+    await detailsToggle.click();
     await details.getByText('Capabilities', {exact: true}).click();
     await assistant.getByText('read_sessions, set_mode, delegate_coding', {exact: true}).waitFor();
     await assistant.getByText('Not connected', {exact: true}).waitFor();
@@ -29,6 +31,7 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     const enableAssistant = assistant.getByRole('button', {name: 'Enable conversation', exact: true}); await enableAssistant.focus(); await enableAssistant.press('Enter');
     await details.getByText('Conversation settings', {exact: true}).click();
     await details.getByRole('button', {name: 'Disable conversation', exact: true}).waitFor();
+    await closeDetails.click();
     const briefEnd = 'End of the synthetic brief.';
     const brief = ['Please delegate: add a unit test for the readout generator.',
       ...Array.from({length: 10}, () => 'Keep the test fixture deterministic.'), briefEnd].join('\n');
@@ -65,7 +68,8 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     assert.equal(await send.count(), 0, 'no generic Send action while the worker runs');
     await assistant.getByRole('button', {name: /^Voice /}).waitFor();
     await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data: {operationId: started.operationId, status: 'started'}});
-    await assistant.getByText(/Running task [0-9a-f]{8} \(started\)/).waitFor();
+    await detailsToggle.click();
+    await details.getByText(/Running task [0-9a-f]{8} \(started\)/).waitFor();
     await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data: {operationId: started.operationId, status: 'completed',
       result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: ['scripts/tests/readout.test.mjs'], checks: [{name: 'node --test', status: 'passed'}],
         findings: [], limitations: ['No browser check applies.'], summary: 'Added the test; it passes.', sessionId: null, usage: {turns: 7, costUsd: 0.21, durationMs: 90000}}}});
@@ -76,7 +80,7 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     await tool.locator('summary').click();
     await tool.getByText(resultText).waitFor();
     await messages.getByText(/coding worker: completed/).waitFor();
-    await assistant.getByText('Connected and idle', {exact: true}).waitFor();
+    await details.getByText('Connected and idle', {exact: true}).waitFor();
     assert.equal(JSON.stringify(world.logs).includes('readout generator'), false, 'briefs reach no diagnostic record');
     assert.deepEqual(errors, []);
   } finally {await worker.close(); await context.close(); await world.close();}
