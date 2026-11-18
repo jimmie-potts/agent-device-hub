@@ -37,7 +37,7 @@ Suggestions SHALL reuse Reachy enablement/category mute, the exact synced sessio
 ## ADDED Requirements
 
 ### Requirement: Thirty-second question priority
-An unanswered question, input request or approval SHALL take priority over background cards, simulated social cards, suggestions and automatic speech for 30 seconds from its own evidence instant on the reporting host's clock, as the existing opportunity's validity sets it. The window SHALL be held in memory from admitted coding-attention opportunities and SHALL end early when the attention item clears. The question SHALL stay visible afterward. Unrelated progress SHALL NOT renew the window, and a restart SHALL start no new window. Explicitly requested assistant answers SHALL stay outside this rule. When the reporting host's clock runs ahead of the hub's, the core SHALL drop that question's opportunity as today, so the question gets no priority window while status devices still show it.
+An unanswered question, input request or approval SHALL take priority over background cards, simulated social cards, suggestions and automatic speech for 30 seconds from its own evidence instant on the reporting host's clock, as the existing opportunity's validity sets it. The window SHALL be held in memory from admitted coding-attention opportunities and SHALL end early when the attention item clears. The question SHALL stay visible afterward. Unrelated progress SHALL NOT renew the window, and a restart SHALL start no new window. Explicitly requested assistant answers SHALL stay outside this rule. When the reporting host's clock runs ahead of the hub's, or 30 seconds or more behind it, the core SHALL drop that question's opportunity as today, so the question gets no priority window while status devices still show it; a host clock behind by less SHALL shorten the window.
 
 #### Scenario: Inside and after the window
 - **WHEN** a question is raised and a background card waits, and the clock moves to 29 s and then 30 s after the question's evidence instant
@@ -50,3 +50,7 @@ An unanswered question, input request or approval SHALL take priority over backg
 #### Scenario: A host clock ahead of the hub
 - **WHEN** the reporting host's clock runs a minute ahead of the hub's and the host reports a question
 - **THEN** the core raises no opportunity for it, no priority window opens, and the session still needs the owner on every status device
+
+#### Scenario: A host clock behind the hub
+- **WHEN** one host's clock runs 40 seconds behind the hub's and another's runs 10 seconds behind, and each reports a question
+- **THEN** the core raises no opportunity for the first, and the second's priority window ends 20 seconds after the hub received it
