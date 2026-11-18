@@ -5,14 +5,16 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
+import * as legacy from '@jimmie-potts/agent-status';
 import {sessionEntityId} from '../dist/v2/families.js';
+import * as live from '../dist/v2/status.js';
 import {loadSessionCases, noticeIdOf, policyView, statusText} from '../dist/v2/session-cases.js';
 import {forConsumer, highestStatus, opportunityMatches, readSession, sessionState} from '../dist/v2/session.js';
 
 const set = loadSessionCases();
 const DESIGN_CASES = ['launch', 'clear-resume', 'compaction', 'approval', 'question-silent', 'working-silent', 'restart', 'stale-start',
   'parent-child', 'child-only', 'duplicates', 'out-of-order', 'ambiguous', 'capacity', 'expiry', 'runtime-end', 'acknowledgment',
-  'unknown-detail', 'reset'];
+  'unknown-detail', 'lost-prompt', 'stop-without-turn', 'unknown-turn-notice', 'superseded-notice', 'activity-lost', 'unsynced', 'reset'];
 const every = function* () {
   for (const item of set.cases) for (const [index, check] of item.checks.entries()) yield {item, index, check, where: `${item.id} check ${index}`};
 };
@@ -41,9 +43,12 @@ function tronbyt(check) {
 // unconfirmed work, an unavailable warning applies, or the parent is ambiguous. Age, an unknown parent and an unknown
 // turn alone no longer mark a row.
 const warns = ({dimension, reason}) => !((dimension === 'ordering' || dimension === 'read') && ['missing', 'unsupported', 'inaccessible'].includes(reason));
+const ambiguousParent = view => view.unavailable.some(item => item.dimension === 'parent' && item.reason === 'ambiguous');
 const pixoo = (check, view) => !check.synced || view.status.class === 'unknown' ||
-  (view.status.class === 'working' && view.work.confidence === 'unconfirmed') || view.unavailable.some(warns) ||
-  view.unavailable.some(item => item.dimension === 'parent' && item.reason === 'ambiguous');
+  (view.status.class === 'working' && view.work.confidence === 'unconfirmed') || view.unavailable.some(warns) || ambiguousParent(view);
+// The children marker: the row's unconfirmed child count is above zero, a parent is ambiguous, or the copy is not current.
+const pixooChildren = (check, view) => !check.synced || view.relationships.children.unconfirmed > 0 ||
+  named(check).some(([, other]) => ambiguousParent(other));
 
 // Design decision 10, Nanoleaf: each task is a root and its subagents, read with Nanoleaf's policy. A member that needs
 // the owner with `approval` or `input` blocks; with `question` it asks; a working root or member makes the task
@@ -143,11 +148,36 @@ test('the Tronbyt rows follow the shared state, and only unconfirmed work marks 
   for (const {check, where} of every()) assert.deepEqual(tronbyt(check), check.readers.tronbyt, where);
 });
 
-test('the Pixoo marker follows the shared status, not age or an unknown parent', () => {
+test('the Pixoo markers follow the shared status, not age or an unknown parent', () => {
+  let pinned = 0;
   for (const {check, where} of every()) {
     const marked = Object.fromEntries(named(check).filter(([, view]) => isRoot(view)).map(([name, view]) => [name, pixoo(check, view)]));
     assert.deepEqual(marked, check.readers.pixoo, where);
+    if (check.readers.pixooChildren === undefined) continue;
+    const children = Object.fromEntries(named(check).filter(([, view]) => isRoot(view)).map(([name, view]) => [name, pixooChildren(check, view)]));
+    assert.deepEqual(children, check.readers.pixooChildren, `${where}: children marker`);
+    pinned++;
   }
+  assert.ok(pinned >= 7, `${pinned} children-marker expectations`);
+});
+
+// Group 1 is inert: the live 2.x helper that LIFX and the Tidbyt tile call keeps main's rule. Over every check's
+// records it ranks as the 1.x helper does, and where a check pins today's result (S1 to S3 among them), it gives it.
+test('the live status helper gives main\'s results on every case, S1 to S3 included', () => {
+  let pinned = 0;
+  for (const {check, where} of every()) {
+    const records = check.messages.map(message => message.data);
+    const roots = Object.entries(check.records).filter(([, record]) => record.parent.status !== 'known');
+    for (const [name, record] of roots) {
+      const {id: _id, revision: _revision, ...snapshot} = record;
+      assert.equal(live.sessionState(record), legacy.sessionState({...snapshot, observationAgeMs: 0}), `${where}: ${name} against 1.x`);
+    }
+    if (check.readers.live === undefined) continue;
+    assert.equal(live.highestStatus({synced: check.synced, sessions: records}), check.readers.live.highest, `${where}: live highestStatus`);
+    assert.deepEqual(Object.fromEntries(roots.map(([name, record]) => [name, live.sessionState(record) ?? null])), check.readers.live.states, `${where}: live sessionState`);
+    pinned++;
+  }
+  assert.ok(pinned >= 6, `${pinned} live expectations`);
 });
 
 test('the Nanoleaf tasks follow the hub\'s status with Nanoleaf\'s policy and no session rule of their own', () => {

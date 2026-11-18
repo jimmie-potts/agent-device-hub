@@ -1,5 +1,5 @@
 {
- "description": "The shared synthetic session case set (Hub #1865, design decision 10). Each case is an input sequence and checks. Steps are at `atMs` after `startAtMs`: an observation (`observe`), a transport repeat of an earlier step (`again`), a different message under an earlier step's message ID (`conflict`), a consumer's notice acknowledgment, a clock advance, a core restart, the one-time cutover reset, or launch-only roots that fill the session limit (`fill`). A check holds, after `after` steps and at `atMs`, the expected copy as session/2.0 records, the removals, the occurrences since the previous check in publication order, and each reader's expected output. Records name sessions, turns and notices by name, and the loader in src/v2/session-cases.ts expands them into messages the core families accept. Revisions and generations count steps: the core compares their order, not their values. `since` names the first step of #1865 whose core produces the case: `now` is today's core, `step 7` the storage step and `step 8` the restart, root-start and capacity step. Reader outputs follow design decision 10 and hold for the shared read function from step 1. Everything here is synthetic.",
+ "description": "The shared synthetic session case set (Hub #1865, design decision 10). Each case is an input sequence and checks. Steps are at `atMs` after `startAtMs`: an observation (`observe`), a transport repeat of an earlier step (`again`), a different message under an earlier step's message ID (`conflict`), a consumer's notice acknowledgment, a clock advance, a core restart, the one-time cutover reset, or launch-only roots that fill the session limit (`fill`). A check holds, after `after` steps and at `atMs`, the expected copy as session/2.0 records, the removals, the occurrences since the previous check in publication order, and each reader's expected output. Records name sessions, turns and notices by name, and the loader in src/v2/session-cases.ts expands them into messages the core families accept. Revisions and generations count steps: the core compares their order, not their values. `since` names the first step of #1865 whose core produces the case: `now` is today's core, `step 7` the storage step and `step 8` the restart, root-start and capacity step. Reader outputs follow design decision 10 and hold for the shared read function from step 1, with status rule 3 as `noticeCounts` defines it pending the owner's decision. `live`, where a check gives it, is what the live 2.x helper in status.ts gives today, which group 1 leaves unchanged. Everything here is synthetic.",
  "startAtMs": 1791288000000,
  "sessions": {
   "claude": {"identity": {"provider": "claude", "client": "code", "hostId": "synthetic-host", "sourceId": "claude-hooks", "sessionId": "synthetic-claude"}, "parent": "unknown"},
@@ -262,7 +262,7 @@
        "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
      ],
      "readers": {
-      "status": {"claude": "working/confirmed", "claude-agent": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false},
+      "status": {"claude": "working/confirmed", "claude-agent": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": false},
       "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working", "claude-agent": "working"}
      }},
     {"after": 3, "atMs": 4000,
@@ -274,7 +274,7 @@
      ],
      "occurrences": [{"kind": "turn-ended", "session": "claude-agent", "notice": "589a0209d7321f39b91485fb57e2f05e73d34cbe22f5bd86477f38f677507f77"}],
      "readers": {
-      "status": {"claude": "working/confirmed", "claude-agent": "finished/turn-ended"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false},
+      "status": {"claude": "working/confirmed", "claude-agent": "finished/turn-ended"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": true},
       "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working", "claude-agent": "finished"}
      }}
    ]
@@ -300,7 +300,7 @@
      ],
      "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
      "readers": {
-      "status": {"claude": "working/subagent", "claude-agent": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false},
+      "status": {"claude": "working/subagent", "claude-agent": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": false},
       "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working", "claude-agent": "working"}
      }},
     {"after": 4, "atMs": 302000,
@@ -311,7 +311,7 @@
        "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
      ],
      "readers": {
-      "status": {"claude": "finished/turn-ended", "claude-agent": "working/unconfirmed"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": false},
+      "status": {"claude": "finished/turn-ended", "claude-agent": "working/unconfirmed"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": true},
       "nanoleaf": {"tasks": {"claude": "working"}, "steady": ["claude"]}, "dashboard": {"claude": "finished", "claude-agent": "working"}
      }}
    ]
@@ -406,7 +406,7 @@
      "removed": [{"session": "claude-agent", "reason": "retired"}],
      "occurrences": [{"kind": "turn-ended", "session": "claude-agent", "notice": "c1"}],
      "readers": {
-      "status": {"claude": "working/confirmed", "codex": "quiet/idle"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false, "codex": true},
+      "status": {"claude": "working/confirmed", "codex": "quiet/idle"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false, "codex": true}, "pixooChildren": {"claude": false, "codex": false},
       "nanoleaf": {"tasks": {"claude": "working", "codex": "idle"}, "steady": []}, "dashboard": {"claude": "working", "codex": "idle"}
      }}
    ]
@@ -454,7 +454,7 @@
        "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
      ],
      "readers": {
-      "status": {"claude": "working/confirmed", "claude-agent": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false},
+      "status": {"claude": "working/confirmed", "claude-agent": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": false},
       "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working", "claude-agent": "working"}
      }},
     {"after": 4, "atMs": 4000,
@@ -539,6 +539,151 @@
       "status": {"claude": "finished/failed-remotely"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": false},
       "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished"},
       "opportunities": [{"session": "claude", "for": "notice", "raisedAt": 0, "consumer": "reachy-mini", "matches": false}]
+     }}
+   ]
+  },
+  {
+   "id": "lost-prompt",
+   "name": "a finished turn whose next prompt start was lost (S1)",
+   "covers": "PR 1903 review R1: hooks publish once and fail open, so a Stop for p2 can arrive without its UserPromptSubmit; the turn becomes ambiguous and both notices stay unacknowledged",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-ended"}}}
+   ],
+   "checks": [
+    {"after": 3, "atMs": 3000,
+     "records": [
+      {"session": "claude", "revision": 3, "generation": 1, "turn": null, "activity": "unknown",
+       "notices": [{"turn": "p1", "acknowledgedBy": []}, {"turn": "p2", "acknowledgedBy": []}],
+       "unavailable": [["turn", "ambiguous"], ["ordering", "ambiguous"], ["activity", "ambiguous"]], "observedAtMs": 2000, "lastEvidenceAtMs": 2000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}, {"kind": "turn-ended", "session": "claude", "notice": "p2"}],
+     "readers": {
+      "status": {"claude": "finished/turn-ended"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished"},
+      "live": {"highest": "done", "states": {"claude": "done"}}
+     }}
+   ]
+  },
+  {
+   "id": "stop-without-turn",
+   "name": "a stop without a turn ID after a known running turn (S2)",
+   "covers": "PR 1903 review R1: missing turn evidence never hides the recorded outcome",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": null, "event": {"kind": "turn-ended"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "unknown",
+       "notices": [{"turn": null, "acknowledgedBy": [], "id": "f95d09316368ebff90d73f4b9d095ded63e61391629f29710be708781d423327"}],
+       "unavailable": [["turn", "missing"], ["ordering", "missing"], ["activity", "ambiguous"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "f95d09316368ebff90d73f4b9d095ded63e61391629f29710be708781d423327"}],
+     "readers": {
+      "status": {"claude": "finished/turn-ended"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished"},
+      "live": {"highest": "done", "states": {"claude": "done"}}
+     }}
+   ]
+  },
+  {
+   "id": "unknown-turn-notice",
+   "name": "a notice with an unknown turn, then a next turn that starts and is interrupted (S3)",
+   "covers": "PR 1903 review R1: only a known later turn supersedes a notice",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": null, "event": {"kind": "session-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": null, "event": {"kind": "turn-ended"}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-started"}}},
+    {"atMs": 3000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-interrupted"}}}
+   ],
+   "checks": [
+    {"after": 4, "atMs": 4000,
+     "records": [
+      {"session": "claude", "revision": 4, "generation": 1, "turn": "p2", "activity": "unknown",
+       "notices": [{"turn": null, "acknowledgedBy": [], "id": "f95d09316368ebff90d73f4b9d095ded63e61391629f29710be708781d423327"}],
+       "unavailable": [["ordering", "missing"], ["activity", "ambiguous"]], "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "f95d09316368ebff90d73f4b9d095ded63e61391629f29710be708781d423327"}],
+     "readers": {
+      "status": {"claude": "finished/turn-ended"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished"},
+      "live": {"highest": "done", "states": {"claude": "done"}}
+     }}
+   ]
+  },
+  {
+   "id": "superseded-notice",
+   "name": "a finished turn superseded by a known next turn that is interrupted",
+   "covers": "design decision 3, rule 3: a notice that a known later turn superseded makes no finished status",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-started"}}},
+    {"atMs": 3000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-interrupted"}}}
+   ],
+   "checks": [
+    {"after": 4, "atMs": 4000,
+     "records": [
+      {"session": "claude", "revision": 4, "generation": 1, "turn": "p2", "activity": "unknown", "notices": [{"turn": "p1", "acknowledgedBy": ["nanoleaf", "pixoo"]}],
+       "unavailable": [["ordering", "missing"], ["activity", "ambiguous"]], "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
+     "readers": {
+      "status": {"claude": "unknown/ambiguous"}, "lifx": "idle", "tronbyt": [], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "idle"}, "steady": []}, "dashboard": {"claude": "unknown"},
+      "live": {"highest": "idle", "states": {"claude": null}}
+     }}
+   ]
+  },
+  {
+   "id": "activity-lost",
+   "name": "lost activity evidence on running work",
+   "covers": "design decision 3: ambiguous or lost activity evidence makes active work unconfirmed (PR 1903 review R3)",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "evidence-unavailable", "dimension": "activity", "reason": "lost"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "active", "unavailable": [["ordering", "missing"], ["activity", "lost"]],
+       "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "readers": {
+      "status": {"claude": "working/unconfirmed"}, "lifx": "working", "tronbyt": [["RUN", true]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": ["claude"]}, "dashboard": {"claude": "working"},
+      "live": {"highest": "working", "states": {"claude": "working"}}
+     }}
+   ]
+  },
+  {
+   "id": "unsynced",
+   "name": "a copy that has not synced",
+   "covers": "design decision 10: an unsynced copy marks every Tronbyt row and Pixoo row, and LIFX shows unknown",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000, "synced": false,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "idle", "notices": [{"turn": "p1", "acknowledgedBy": []}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
+     "readers": {
+      "status": {"claude": "finished/turn-ended"}, "lifx": "unknown", "tronbyt": [["DONE", true]], "pixoo": {"claude": true}, "pixooChildren": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished"},
+      "live": {"highest": "unknown", "states": {"claude": "done"}}
      }}
    ]
   },

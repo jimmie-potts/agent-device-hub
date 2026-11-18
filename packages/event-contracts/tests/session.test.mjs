@@ -6,9 +6,10 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {coreValidator, sessionEntityId} from '../dist/v2/families.js';
 import {
-  forConsumer, highestStatus, knownDetail, opportunityMatches, READABLE_SESSION_SCHEMAS, readSession, sessionState, sessionView, statusOf,
-  STATUS_DETAILS,
+  forConsumer, highestStatus, knownDetail, noticeCounts, opportunityMatches, READABLE_SESSION_SCHEMAS, readSession, sessionState, sessionView, statusOf,
+  STATUS_COLORS, STATUS_DETAILS,
 } from '../dist/v2/session.js';
+import * as liveStatus from '../dist/v2/status.js';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8')).valid;
 const TIME = '2026-10-06T12:00:00.000Z', AT = Date.parse(TIME), STALE = 300_000;
@@ -70,17 +71,24 @@ test('the status function takes the first rule that matches, in the design\'s or
     'an unconfirmed child never makes its root working');
 });
 
-test('a finished turn is the latest notice on the current turn, whatever its acknowledgments and read evidence', () => {
+// Rule 3 pending the owner's decision: a notice counts unless a known later turn superseded it (noticeCounts).
+test('a finished turn is a notice no known later turn superseded, whatever its acknowledgments and read evidence', () => {
   const outcome = notices => ({notices, read: 'read', confidence: 'confirmed', evidenceAtMs: AT});
+  const interrupted = {state: 'interrupted', confidence: 'confirmed', evidenceAtMs: AT, reasons: []};
   assert.deepEqual(statusOf(claims({outcome: outcome([notice('turn-1', ['pixoo', 'nanoleaf', 'dashboard'])])})), {class: 'finished', detail: 'turn-ended'});
   assert.deepEqual(statusOf(claims({work: {state: 'unknown', confidence: 'confirmed', evidenceAtMs: AT, reasons: []}, outcome: outcome([notice()])})),
     {class: 'finished', detail: 'turn-ended'});
-  // A notice of an earlier turn: the session moved on, and its new turn was interrupted.
-  assert.deepEqual(statusOf(claims({turn: known('turn-2'), work: {state: 'interrupted', confidence: 'confirmed', evidenceAtMs: AT, reasons: []},
-    outcome: outcome([notice('turn-1')])})), {class: 'quiet', detail: 'interrupted'});
-  assert.deepEqual(statusOf(claims({turn: known('turn-2'), outcome: outcome([notice('turn-2'), notice('turn-1')])})), {class: 'quiet', detail: 'idle'},
-    'only the latest notice counts');
-  assert.deepEqual(statusOf(claims({turn: {status: 'unknown'}, outcome: outcome([{...notice(), turn: {status: 'unknown'}}])})), {class: 'finished', detail: 'turn-ended'});
+  // A notice of an earlier known turn: the session moved on, and its new turn was interrupted.
+  assert.deepEqual(statusOf(claims({turn: known('turn-2'), work: interrupted, outcome: outcome([notice('turn-1')])})), {class: 'quiet', detail: 'interrupted'});
+  assert.deepEqual(statusOf(claims({turn: known('turn-2'), outcome: outcome([notice('turn-2'), notice('turn-1')])})), {class: 'finished', detail: 'turn-ended'},
+    'any notice that still counts');
+  // Missing or conflicting turn evidence never hides a recorded outcome.
+  const unknownTurn = {...notice(), turn: {status: 'unknown'}};
+  assert.deepEqual(statusOf(claims({turn: {status: 'unknown'}, outcome: outcome([unknownTurn])})), {class: 'finished', detail: 'turn-ended'});
+  assert.deepEqual(statusOf(claims({turn: known('turn-2'), work: interrupted, outcome: outcome([unknownTurn])})), {class: 'finished', detail: 'turn-ended'});
+  assert.deepEqual(statusOf(claims({turn: {status: 'unknown'}, work: interrupted, outcome: outcome([notice('turn-1')])})), {class: 'finished', detail: 'turn-ended'});
+  assert.deepEqual([noticeCounts({turn: known('a')}, known('a')), noticeCounts({turn: known('a')}, known('b')),
+    noticeCounts({turn: {status: 'unknown'}}, known('b')), noticeCounts({turn: known('a')}, {status: 'unknown'})], [true, false, true, true]);
 });
 
 test('unknown work without another claim is unknown, detailed by the activity\'s unavailable reason', () => {
@@ -186,6 +194,17 @@ test('ambiguous or lost evidence makes the claim of its dimension unconfirmed', 
   assert.equal(read({unavailable: [{dimension: 'attention', reason: 'missing'}]}).attention.confidence, 'confirmed');
 });
 
+// Today's reducer keeps a session active after an `evidence-unavailable` observation with activity `lost`.
+test('ambiguous or lost activity evidence makes active work unconfirmed, after any silence reason', () => {
+  const lost = read({activity: 'active', unavailable: [{dimension: 'ordering', reason: 'missing'}, {dimension: 'activity', reason: 'lost'}]});
+  assert.equal(status(lost), 'working/unconfirmed');
+  assert.deepEqual(lost.work.reasons, ['lost']);
+  const both = read({activity: 'active', unavailable: [{dimension: 'activity', reason: 'ambiguous'}], ...silent});
+  assert.deepEqual(both.work.reasons, ['deadline', 'ambiguous']);
+  assert.equal(read({activity: 'active', unavailable: [{dimension: 'activity', reason: 'missing'}]}).work.confidence, 'confirmed', 'missing is not doubt');
+  assert.deepEqual(read({activity: 'idle', unavailable: [{dimension: 'activity', reason: 'lost'}]}).work.reasons, [], 'only active work is unconfirmed');
+});
+
 test('each consumer\'s policy retires finished to quiet: by acknowledgment, then by read evidence where it counts', () => {
   const desktop = {provider: 'codex', client: 'desktop', hostId: 'synthetic-host', sourceId: 'codex-desktop', sessionId: 'session-d'};
   const pixoo = read({identity: desktop, notices: [notice('turn-1', ['pixoo'])], read: 'read'});
@@ -204,11 +223,11 @@ test('each consumer\'s policy retires finished to quiet: by acknowledgment, then
   assert.equal(forConsumer(working, {read: true}), working, 'only finished retires');
 });
 
-test('sessionState and highestStatus read views and records alike', () => {
+test('the view\'s sessionState and highestStatus rank views, with status.ts\'s colors', () => {
   const records = [message({activity: 'active'}).data, message({identity: identity('session-b'), notices: [notice()]}).data];
   const views = records.map(sessionView);
   assert.deepEqual(views.map(view => sessionState(view)), ['working', 'done']);
-  assert.deepEqual(records.map(record => sessionState(record)), ['working', 'done']);
+  assert.equal(STATUS_COLORS, liveStatus.STATUS_COLORS, 'one color table');
   assert.equal(highestStatus({synced: true, sessions: views}), 'working');
   assert.equal(highestStatus({synced: true, sessions: [views[1]]}), 'done');
   assert.equal(highestStatus({synced: false, sessions: views}), 'unknown');

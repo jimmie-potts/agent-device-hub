@@ -2,16 +2,17 @@
 // session state message: it validates the message and returns the version-independent view, or nothing for a message
 // it does not accept. Until the core publishes `session/3.0` it reads `session/2.0` and `session/2.1`; the switch step
 // changes it to `session/3.0` in the same pull request as the core. The view, the status function, each consumer's
-// policy, opportunity matching and the agent-status helper live in `session-view.ts`, which a browser part can bundle.
+// policy, opportunity matching and the agent-status helper over views live in `session-view.ts`, which a browser part
+// can bundle. The live readers keep `status.ts` in group 1; its helper over records is unchanged.
 import {SCHEMA_BASE} from './errors.js';
 import {coreValidator, type SessionRecord} from './families.js';
 import {sessionView, type SessionView} from './session-view.js';
 
 export {
-  forConsumer, highestStatus, knownDetail, opportunityMatches, sessionState, sessionView, statusOf, STATUS_COLORS, STATUS_DETAILS,
+  forConsumer, highestStatus, knownDetail, noticeCounts, opportunityMatches, sessionState, sessionView, statusOf, STATUS_COLORS, STATUS_DETAILS,
 } from './session-view.js';
 export type {
-  AgentState, ConsumerPolicy, HighestStatus, HighestStatusOptions, Rgb, SessionClaims, SessionCopy, SessionView,
+  AgentState, ConsumerPolicy, HighestStatus, HighestStatusOptions, Rgb, SessionClaims, SessionView, ViewCopy,
 } from './session-view.js';
 
 /** The session versions `readSession` reads now. */

@@ -658,27 +658,26 @@ someone lists it.
 
 `@jimmie-potts/event-contracts/v2/status` holds `sessionState`, `highestStatus`
 and `STATUS_COLORS`, copied from `@jimmie-potts/agent-status` and rewritten for
-`session/2.0` records (Hub #918). Since Hub #1865 they read each session
-through the shared session view below. The 1.x package stays for the old
-controllers until #839.
+`session/2.0` records (Hub #918). The 1.x package stays for the old controllers
+until #839. Hub #1865 leaves this helper unchanged until each reader's step moves
+the reader onto the view's helper below.
 
-- `sessionState(session, consumers?)` ranks a root session, a `session/2.x`
-  record or a view, by the hub's status: `needs-owner` is `attention`,
-  `working` is `working`, `finished` is `done`, and anything else is
-  undefined. Read evidence never retires `done`. By default any consumer's
-  acknowledgment retires it, as LIFX and Tidbyt use it today; `consumers`
-  restricts that to the named ones. Acknowledgments are recorded per consumer,
-  and each caller's policy decides which ones clear what it shows.
+- `sessionState(record, consumers?)` ranks a root session: `attention` when it
+  has attention, `working` when it is active or has an active child, `done`
+  when a turn-ended notice lacks an acknowledgment, otherwise undefined. Read
+  evidence never retires `done`. By default any consumer's acknowledgment
+  retires it, as LIFX and Tidbyt use it today; `consumers` restricts that to
+  the named ones. Acknowledgments are recorded per consumer, and each caller's
+  policy decides which ones clear what it shows.
 - `highestStatus(copy, {acknowledgingConsumers?})` takes a consumer's copy of the
   session family, `{synced, sessions}`, and returns the highest root state,
   `idle` or `unknown`. A copy that has not synced, or whose later sync failed,
-  reads as `unknown`. Unconfirmed work never hides a state the hub reports.
+  reads as `unknown`. Uncertain freshness never hides a state the owner reports.
 - `STATUS_COLORS` gives every device the same color for each state.
 
 `tests/status.test.mjs` runs the copied 1.x cases against valid `session/2.0`
 records and checks that both helpers rank the same sessions alike and use the
-same colors. One difference is deliberate: a notice of an earlier turn no
-longer makes a session done (design decision 3 of `gh-1865-flat-session-state`).
+same colors.
 
 ### Shared session view and read function (Hub #1865)
 
@@ -697,13 +696,17 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
   `outcome` and `relationships` claims, each with its confidence. It has no
   freshness and no restart uncertainty. The validator refuses a status that is
   not `statusOf` of the record's claims and keeps the 2.x record rules.
-- `src/v2/session-view.ts` (`./v2/session-view`) has no runtime import, so a
-  browser part can bundle it. It holds `statusOf`, `sessionView(record)` for a
-  `session/2.x` record its copy already validated, `forConsumer(view, policy)`,
-  which retires `finished` to `quiet` under a reader's acknowledgment and read
-  policy, `opportunityMatches(view, opportunity, consumer)`, `knownDetail` and
-  the status helper. A detail a reader does not know falls back to its class
-  and never makes an opportunity match.
+- `src/v2/session-view.ts` (`./v2/session-view`) imports only the import-free
+  `status.ts`, so a browser part can bundle it. It holds `statusOf`,
+  `noticeCounts` (which notices make a session finished: pending the owner's
+  decision, every notice no known later turn superseded), `sessionView(record)`
+  for a `session/2.x` record its copy already validated,
+  `forConsumer(view, policy)`, which retires `finished` to `quiet` under a
+  reader's acknowledgment and read policy,
+  `opportunityMatches(view, opportunity, consumer)`, `knownDetail`, and
+  `sessionState` and `highestStatus` over views with `status.ts`'s colors and
+  ranking. Nothing live calls them yet. A detail a reader does not know falls
+  back to its class and never makes an opportunity match.
 - `src/v2/session.ts` (`./v2/session`) re-exports the view and adds
   `readSession(message)`, which validates a session state message and returns
   its view, or undefined. It reads `session/2.0` and `2.1` until the core
@@ -713,7 +716,8 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
 - `fixtures/v2/session-cases.json` is the shared synthetic case set, and
   `loadSessionCases()` in `./v2/session-cases` expands it into messages for the
   core's and each reader's tests. `tests/session-cases.test.mjs` runs every
-  case's reader expectations through the shared functions, and
+  case's reader expectations through the shared functions and checks that the
+  live helper in `status.ts` still gives main's results, and
   `tests/session.test.mjs` covers the status function, the 2.x mapping, the
   policies and opportunity matching.
 

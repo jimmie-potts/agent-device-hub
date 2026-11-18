@@ -79,6 +79,13 @@ export type ReaderExpectations = {
   tronbyt: TronbytRow[];
   /** Whether the Pixoo Monitor marks each root row uncertain. */
   pixoo: Record<string, boolean>;
+  /** Whether the Pixoo Monitor shows each root row's children marker, where the case pins it. */
+  pixooChildren?: Record<string, boolean>;
+  /**
+   * What the live 2.x helper in `status.ts` gives today, over the records with any consumer's acknowledgment: LIFX's
+   * `highestStatus` and each root's `sessionState` (null for none). Group 1 changes neither.
+   */
+  live?: {highest: string; states: Record<string, string | null>};
   /** Each Nanoleaf task's status by its root, and the tasks the Lines hold steady for unconfirmed work. */
   nanoleaf: {tasks: Record<string, NanoleafTask>; steady: string[]};
   /** The dashboard chip of each session. */

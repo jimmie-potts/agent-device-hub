@@ -38,9 +38,7 @@ function session(overrides = {}) {
 const copy = (sessions, synced = true) => ({synced, sessions});
 const asking = extra => session({activity: 'active', attention: [{id: {status: 'known', id: 'a1'}, kind: 'approval', turn: {status: 'known', id: 't'}}], ...extra});
 const working = extra => session({activity: 'active', ...extra});
-// A notice is on the turn of the session it is given to, the next one made, as the core records a finished turn. Since
-// Hub #1865 a session is done only while its latest notice belongs to its current turn (design decision 3).
-const notice = (acknowledgedBy = []) => ({id: createHash('sha256').update(`notice-${next}`).digest('hex'), kind: 'turn-ended', turn: {status: 'known', id: `turn-${next + 1}`}, acknowledgedBy});
+const notice = (acknowledgedBy = []) => ({id: createHash('sha256').update(`notice-${next}`).digest('hex'), kind: 'turn-ended', turn: {status: 'known', id: 't'}, acknowledgedBy});
 const done = extra => session({notices: [notice()], ...extra});
 const desktop = () => ({provider: 'codex', client: 'desktop', hostId: 'host-private', sourceId: 'codex-desktop', sessionId: `session-private-${next + 1}`});
 // Five minutes without evidence: freshness must be uncertain at the envelope time.
@@ -145,17 +143,4 @@ test('by default any consumer\'s acknowledgment retires done; a caller that name
   assert.equal(highestStatus(copy([pixooAcknowledged]), {acknowledgingConsumers: ['nanoleaf']}), 'done');
   assert.equal(highestStatus(copy([pixooAcknowledged]), {acknowledgingConsumers: ['pixoo']}), 'idle');
   assert.equal(sessionState(session({notices: [notice()]})), 'done', 'no acknowledgment at all is still done');
-});
-
-// Hub #1865, design decision 3: the helper ranks by the hub's status, where done is the latest notice of the current
-// turn. An unacknowledged notice of an earlier turn, which 1.x still counted, no longer makes a session done once its
-// next turn is interrupted. The core acknowledges an earlier turn's notice for Nanoleaf and Pixoo when the next turn
-// starts, so any-consumer callers saw this only for a notice whose turn was unknown.
-test('a notice of an earlier turn no longer makes a session done', () => {
-  const earlier = {id: createHash('sha256').update('earlier').digest('hex'), kind: 'turn-ended', turn: {status: 'known', id: 'turn-earlier'}, acknowledgedBy: []};
-  const interrupted = session({activity: 'interrupted', notices: [earlier]});
-  assert.equal(sessionState(interrupted), undefined);
-  assert.equal(highestStatus(copy([interrupted])), 'idle');
-  const {id: _id, revision: _revision, ...snapshotSession} = interrupted;
-  assert.equal(legacy.sessionState({...snapshotSession, observationAgeMs: 0}), 'done', 'the 1.x helper still counted it');
 });
