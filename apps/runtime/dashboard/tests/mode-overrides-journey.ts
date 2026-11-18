@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import type {ModeState, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {destinationLink} from './navigation-helpers.ts';
 
 export async function checkModeOverrides(browser: Browser, evidence?: string): Promise<void> {
   const world = await startWorld({nanoleaf: true, pixooPages: true});
@@ -51,7 +52,7 @@ export async function checkModeOverrides(browser: Browser, evidence?: string): P
     await details.getByRole('link').click();
     await page.locator('[data-mode-target="wall"]').getByText('Free · individual exception', {exact: true}).waitFor();
     assert.equal(commands(), beforeInspect, 'device navigation sends nothing');
-    await page.getByRole('link', {name: /^Home/}).click();
+    await (await destinationLink(page, /^Home/)).click();
     // The Pixoo follows the Hub mode one to one (ADR 0014); only this explicit choice records Quiet.
     await pixooChoice.getByRole('button', {name: 'Quiet', exact: true}).click(); await settled(4);
     assert.deepEqual((await mode()).overrides?.map(item => [item.target, item.mode]), [['wall', 'free'], ['pixoo-1', 'quiet']]);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
 import {feed, startWorld} from './harness.ts';
+import {showRail} from './navigation-helpers.ts';
 
 export async function conversationWorkspaceJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, speech: true});
@@ -71,13 +72,18 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     assert.deepEqual(await profiles.getByRole('combobox').locator('option').allTextContents(),
       ['B.U.N.N.Y. · Everyday assistant', 'Reachy · Demo', 'MicroDuck · Demo']);
     const navigation = page.getByRole('navigation', {name: 'Main navigation'});
+    // At this width the rail is a drawer (Hub #1887), so the destinations are checked with it open.
+    await showRail(page);
     assert.deepEqual(await navigation.getByRole('link').allTextContents(), ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation']);
     const labelLines = await navigation.getByRole('link').evaluateAll(links => links.map(link => {
-      const text = document.createRange();
-      text.selectNodeContents(link);
+      const label = link.querySelector('.rail-text'), text = document.createRange();
+      if (label === null) return 0;
+      text.selectNodeContents(label);
       return text.getClientRects().length;
     }));
-    assert.deepEqual(labelLines, [1, 1, 1, 1, 1], 'all five navigation labels fit on one line at 320px');
+    assert.deepEqual(labelLines, [1, 1, 1, 1, 1], 'all five navigation labels fit on one line in the 320px drawer');
+    await page.keyboard.press('Escape');
+    await page.locator('.shell>aside').waitFor({state: 'hidden'});
     assert.equal(await page.getByRole('heading', {name: 'Conversation', exact: true}).count(), 1);
     const posts: string[] = [];
     page.on('request', request => {

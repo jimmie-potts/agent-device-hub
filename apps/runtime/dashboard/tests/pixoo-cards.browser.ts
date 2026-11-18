@@ -7,6 +7,7 @@ import {SIMULATED_SECTION} from '@jimmie-potts/pixoo';
 import {gifFixture} from '../../../../modules/pixoo/dist/tests/helpers/media-fixtures.js';
 import {changes, feed, startWorld} from './harness.ts';
 import {pixooAnimation} from '../../dist/tests/fixtures/pixoo-animation.js';
+import {destinationLink} from './navigation-helpers.ts';
 
 const world = await startWorld({pixooPages: true});
 const browser = await chromium.launch({headless: true});
@@ -40,7 +41,7 @@ try {
     assert.equal((await world.pixooMedia()).items.length, index + 1);
   }
   const setupRequests = sent.length;
-  await page.getByRole('link', {name: /^Home/}).click();
+  await (await destinationLink(page, /^Home/)).click();
   // The wide Home grid (#1672 PR B) shows the Pixoo module's compact card for its shape; its options menu leads to the full
   // card on the device page.
   const compact = page.locator('[data-home-card^="device:bunny/modules/pixoo:"] [data-pixoo-shape]');

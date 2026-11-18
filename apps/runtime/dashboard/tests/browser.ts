@@ -1,4 +1,4 @@
-import {openConnections, openSettings} from './navigation-helpers.ts';
+import {destinationLink, openConnections, openSettings} from './navigation-helpers.ts';
 // The runtime dashboard's full browser suite (Hub #922), converted from `apps/dashboard/tests/browser.mjs`: the shell,
 // its routes and Places, and the agent sessions it syncs from the core, on the built runtime with a synthetic hook.
 // Sessions appear, an approval is raised and cleared, a finished turn stays unread until the session record clears it,
@@ -53,7 +53,7 @@ try {
   assert.deepEqual(await places.locator('a, [aria-current=page]').allTextContents(), ['Architecture', 'Atlas', 'Reference', 'B.U.N.N.Y.Local', 'WallLocal']);
   assert.equal(await places.getByRole('link', {name: 'Wall Local'}).getAttribute('href'), PAIRED);
   checks.push('Places link Wall to the paired run and keep retained public documents');
-  await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: 'Home', exact: true}).click();
+  await (await destinationLink(page, 'Home')).click();
 
   // Sessions appear as the hook observes them.
   await world.observe(sessionStarted, {title: {value: 'Port the wall', source: 'provider'}});
@@ -263,7 +263,7 @@ try {
   await feed(page, 'connected');
   assert.equal(world.browserSessions(), 1);
   checks.push('Disconnect and Sign in');
-  await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: 'Home', exact: true}).click();
+  await (await destinationLink(page, 'Home')).click();
 
   assert.deepEqual(sent, [], 'the page sent no command before explicit label controls');
 

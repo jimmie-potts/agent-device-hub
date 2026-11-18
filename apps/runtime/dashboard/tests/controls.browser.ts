@@ -1,4 +1,4 @@
-import {directoryLink, openConnections} from './navigation-helpers.ts';
+import {destinationLink, directoryLink, openConnections} from './navigation-helpers.ts';
 // Focused #922 control/navigation acceptance against a synthetic process, never an installed service or real device.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
@@ -63,7 +63,7 @@ try {
     await page.getByRole('heading', {name: 'Running build'}).waitFor();
     await page.getByText('0.1.0', {exact: true}).waitFor();
     await page.setViewportSize({width: 390, height: 844});
-    await page.getByRole('link', {name: 'Home', exact: false}).first().click();
+    await (await destinationLink(page, /Home/)).click();
     await screenshot('phone-home');
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.goto(`${world.url}/#/component/pendant-1`); await page.reload(); await feed(page, 'connected');
