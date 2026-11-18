@@ -20,7 +20,8 @@ import {HttpError} from '../src/transport.js';
 import type {Indication} from '../src/line-projection.js';
 import {MusicInput, type MusicClock} from '../src/music-input.js';
 import {initReactivePresets, saveReactivePreset} from '../src/music-presets.js';
-import {admitMusicStart, admitMusicStop, checkMusicStart, musicDeviceState, playMusic} from '../src/music-session.js';
+import {admitMusicStart, admitMusicStop, checkMusicStart, musicDeviceState, playMusic, type StartRequest} from '../src/music-session.js';
+import {initShows, saveShow} from '../src/music-shows.js';
 import {transaction} from '../src/sqlite.js';
 import type {LightRequest} from '../src/transport.js';
 import {test} from './support.js';
@@ -115,14 +116,15 @@ const OCEAN: MusicBase = {kind: 'scene', name: 'Ocean', brightness: 50};
  * Admits a Start over `base`, the `Ocean` scene at 50 % unless named, and runs it until it ends, feeding a feature every
  * 100 ms while `feeding`.
  */
-async function run(world: World, step: (world: World) => void, base: MusicBase = OCEAN, presetId = 'preset-green'): Promise<void> {
+async function run(world: World, step: (world: World) => void, base: MusicBase = OCEAN, presetId = 'preset-green',
+  show?: Extract<StartRequest, {action: 'start-show'}>, expiresAfterMs = 5000): Promise<void> {
   const {db, target} = world;
   const transact: Transact = action => Promise.resolve(transaction(db, () => action(message => {
     if (message.type === 'outcome') world.outcomes.push(message);
     else if (message.type === 'selection') world.selectionReports.push(world.now);
   })));
-  transaction(db, () => admitMusicStart(db, target.device, {requestId: 'start', generation: GENERATION, capture: CAPTURE, presetId}, target.layout,
-    base, 0, world.now, world.now + 5000, () => {}));
+  const start = show ?? {requestId: 'start', generation: GENERATION, action: 'start', capture: CAPTURE, presetId};
+  transaction(db, () => admitMusicStart(db, target.device, start, target.layout, base, 0, world.now, world.now + expiresAfterMs, () => {}));
   const request: LightRequest = async (_target, method, endpoint = '', payload = null) => {
     world.inFlight += 1;
     world.maxInFlight = Math.max(world.maxInFlight, world.inFlight);
@@ -184,7 +186,8 @@ async function run(world: World, step: (world: World) => void, base: MusicBase =
   const row = journalRow(db, 'start');
   assert.ok(row);
   let fed = world.now - 100;
-  await playMusic({db, device: target.device, row, config: {ip: 'synthetic', token: 'synthetic', line_groups: target.layout.elements.map(element => element.zones)},
+  await playMusic({db, device: target.device, row, config: {ip: 'synthetic', token: 'synthetic', line_groups: target.layout.elements.map(element => element.zones),
+      line_positions: target.layout.elements.map(element => element.position ?? [])},
     transact, request, stream, input: world.input, now: () => world.now, clock: () => ({wallMs: world.now, monotonicMs: world.now}),
     sleep: seconds => {
       world.now += seconds * 1000;
@@ -470,7 +473,7 @@ test('the expiry sweep leaves a live session\'s Stop for its loop and a second S
   const world = open();
   try {
     const {db} = world;
-    transaction(db, () => admitMusicStart(db, 'wall', {requestId: 'start', generation: GENERATION, capture: CAPTURE, presetId: 'preset-green'}, LAYOUT,
+    transaction(db, () => admitMusicStart(db, 'wall', {requestId: 'start', generation: GENERATION, action: 'start', capture: CAPTURE, presetId: 'preset-green'}, LAYOUT,
       OCEAN, 0, world.now, world.now + 5000, () => {}));
     transaction(db, () => admitMusicStop(db, 'wall', {kind: 'music.stop', requestId: 'stop-a', generation: GENERATION}, world.now, world.now + 300));
     transaction(db, () => admitMusicStop(db, 'wall', {kind: 'music.stop', requestId: 'stop-b', generation: GENERATION}, world.now, world.now + 300));
@@ -1079,7 +1082,7 @@ test('silence keeps an NL22 session playing with dark frames, and stale input en
 test('a layout the NL22\'s version 1 stream cannot address is refused before any device request; the Lines\' version 2 addresses it', () => {
   const world = open(PANELS_TARGET);
   try {
-    const start = {requestId: 'start', generation: GENERATION, capture: CAPTURE, presetId: 'preset-green'};
+    const start = {requestId: 'start', generation: GENERATION, action: 'start' as const, capture: CAPTURE, presetId: 'preset-green'};
     const wide: LayoutEntry = {kind: 'panels', elements: [11, 300].map((id, index) => ({id: elementId([id]), number: index + 1, zones: [id], position: [index * 86.6, 0]}))};
     const many: LayoutEntry = {kind: 'panels', elements: Array.from({length: 256}, (_, index) => ({id: elementId([index]), number: index + 1, zones: [index], position: [index, 0]}))};
     for (const layout of [wide, many]) {
@@ -1493,4 +1496,40 @@ test('#1777 store: the colour table is created if absent, survives a reopen, and
   } finally {
     rmSync(directory, {recursive: true, force: true});
   }
+});
+
+function savedTimeline(world: World, startDelayMs: number): Extract<StartRequest, {action: 'start-show'}> {
+  initShows(world.db);
+  transaction(world.db, () => saveShow(world.db, {showId: 'show-ocean', expectedVersion: 0, name: 'Synthetic show', versionName: 'First',
+    timeline: {version: 1, durationMs: 2500, cues: [{id: 'ocean', offsetMs: 0, durationMs: 2500, recipe: {preset: 'ocean'}, intensity: 0.5}]}}, 1));
+  world.feeding = false;
+  return {requestId: 'start', generation: GENERATION, action: 'start-show', showId: 'show-ocean', version: 1, positionMs: 0, startDelayMs};
+}
+
+test('a delayed show that expires before its target never enters streaming', async () => {
+  const world = open();
+  try {
+    await run(world, () => {}, OCEAN, 'unused', savedTimeline(world, 2000), 500);
+    assert.deepEqual(world.outcomes.map(({requestId, error}) => [requestId, error?.code]), [['start', 'expired']]);
+    assert.equal(ended(world)?.reason, 'expired');
+    assert.equal(world.writes.length, 0);
+    assert.equal(world.datagrams.length, 0);
+  } finally {world.db.close();}
+});
+
+test('a clock correction during a status read retires the show and restores the base before another frame', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    let countAtRead: number | undefined;
+    world.onRead = endpoint => {
+      if (endpoint !== '/effects' || countAtRead !== undefined) return;
+      countAtRead = world.datagrams.length;
+      world.now -= 400;
+    };
+    await run(world, () => {}, OCEAN, 'unused', savedTimeline(world, 0));
+    assert.ok(countAtRead !== undefined && countAtRead > 0);
+    assert.equal(world.datagrams.length, countAtRead);
+    assert.deepEqual(ended(world), {reason: 'source-lost', restoration: 'restored'});
+    assert.equal(world.selected, 'Ocean');
+  } finally {world.db.close();}
 });

@@ -2,8 +2,8 @@
 // the card sends nothing on its own, and every reason here only explains a disabled control.
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture-data';
-import {LIGHTING_END_REASONS, LIGHTING_RESTORATIONS, LIGHTING_STATUSES, type LightingCapture, type LightingEnded,
-  type LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import {LIGHTING_END_REASONS, LIGHTING_RESTORATIONS, LIGHTING_SHOW_ID, LIGHTING_SHOW_LIMITS, LIGHTING_STATUSES, type LightingCapture, type LightingEnded,
+  type LightingShow, type LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import type {Restores, WallSelection} from '@jimmie-potts/nanoleaf/frontend';
 import type {ReactiveCatalogView} from '@jimmie-potts/nanoleaf/reactive-presets';
 
@@ -12,9 +12,16 @@ const object = (value: unknown): value is Record<string, unknown> => typeof valu
 const text = (value: unknown): value is string => typeof value === 'string' && value !== '';
 const count = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const capture = (value: unknown): value is LightingCapture => object(value) && text(value.endpointId) && text(value.generation);
+const missedCues = (value: unknown): value is number => count(value) && value <= LIGHTING_SHOW_LIMITS.missedCues;
+function show(value: unknown): value is LightingShow {
+  return object(value) && text(value.showId) && value.showId.length <= LIGHTING_SHOW_LIMITS.idLength && LIGHTING_SHOW_ID.test(value.showId) &&
+    count(value.version) && value.version >= 1 && value.version <= LIGHTING_SHOW_LIMITS.version &&
+    count(value.positionMs) && value.positionMs <= LIGHTING_SHOW_LIMITS.positionMs && missedCues(value.missedCues);
+}
 function ended(value: unknown): value is LightingEnded {
   return object(value) && text(value.generation) && count(value.atMs) && (LIGHTING_END_REASONS as readonly unknown[]).includes(value.reason) &&
-    (LIGHTING_RESTORATIONS as readonly unknown[]).includes(value.restoration) && (value.code === undefined || text(value.code));
+    (LIGHTING_RESTORATIONS as readonly unknown[]).includes(value.restoration) && (value.code === undefined || text(value.code)) &&
+    (value.missedCues === undefined || missedCues(value.missedCues));
 }
 
 /** The core's own record for one light, checked once at the browser boundary; anything else is not shown. */
@@ -24,8 +31,12 @@ export function lightingRecord(message: Message<unknown>): LightingState | undef
     message.dataschema !== LIGHTING_STATE_SCHEMA || !object(data) || !text(data.id) || message.subject !== data.id || !count(data.revision) ||
     !object(data.session) || !(data.last === null || ended(data.last))) return undefined;
   const session = data.session;
-  if (session.status !== 'idle' && (!(LIGHTING_STATUSES as readonly unknown[]).includes(session.status) || !text(session.generation) ||
-    !text(session.operationId) || !capture(session.capture) || !text(session.presetId) || !count(session.startedAtMs))) return undefined;
+  if (session.status !== 'idle') {
+    if (!(LIGHTING_STATUSES as readonly unknown[]).includes(session.status) || !text(session.generation) || !text(session.operationId) || !count(session.startedAtMs)) return undefined;
+    if ('show' in session) {
+      if (!show(session.show) || 'capture' in session || 'presetId' in session) return undefined;
+    } else if (session.status === 'paused' || !capture(session.capture) || !text(session.presetId)) return undefined;
+  }
   return data as LightingState;
 }
 
@@ -79,7 +90,9 @@ export function sessionText(session: LightingState['session']): string {
   switch (session.status) {
     case 'idle': return 'Idle. No Music lighting session is running.';
     case 'starting': return 'Starting. The core saved the session and is waiting for the light to report playing.';
-    case 'active': return 'Active. The light reported that it is playing this session.';
+    case 'active': return 'show' in session ? 'Active. The light module reports that the show is running.'
+      : 'Active. The light reported that it is playing this session.';
+    case 'paused': return 'Paused. The light module has suspended frame sends.';
     case 'stopping': return 'Stopping. Waiting for the light to report how the session ended.';
     case 'uncertain': return 'Uncertain. An answer was lost or the runtime restarted. The light\'s next report decides; nothing is sent again.';
   }
@@ -87,7 +100,7 @@ export function sessionText(session: LightingState['session']): string {
 const REASONS: Record<LightingEnded['reason'], string> = {
   stopped: 'stopped on request', alert: 'an agent alert interrupted it', manual: 'a manual change on the light took over',
   'source-lost': 'the Music input was lost or went stale', device: 'a light write or read failed', restart: 'the light module or runtime restarted',
-  expired: 'the start expired before the light took it', refused: 'the light refused the start',
+  expired: 'the start expired before the light took it', refused: 'the light refused the start', completed: 'the saved show completed',
 };
 const RESTORATIONS: Record<LightingEnded['restoration'], string> = {
   restored: 'The current base scene and brightness were restored.',
@@ -96,7 +109,7 @@ const RESTORATIONS: Record<LightingEnded['restoration'], string> = {
   uncertain: 'Restoration is uncertain: a restoration write\'s answer was lost, so it may have landed.',
 };
 /** The endings that put the base back when it can be (#1614); every other ending leaves the light as it is. */
-const RESTORING: ReadonlySet<LightingEnded['reason']> = new Set(['stopped', 'alert', 'source-lost']);
+const RESTORING: ReadonlySet<LightingEnded['reason']> = new Set(['stopped', 'alert', 'source-lost', 'completed']);
 const CODE_HINTS: Partial<Record<string, string>> = {
   'invalid-state': 'The light must be on, already in Free mode, and free of another session.',
   'unsupported-capability': 'The light cannot render this preset with its saved layout, or its stream cannot address every zone of that layout.',
@@ -116,15 +129,18 @@ export function endingText(last: LightingEnded, restores?: Restores): string {
   // A light that accepted the streaming entry but named no usable port to stream to (#1272): nothing failed to send, the
   // light may still be in external control, and nothing was written after the entry.
   if (last.reason === 'device' && last.code === 'unsupported-capability') {
-    return `Last session ended: ${UNSTREAMABLE}`;
+    return `Last session ended: ${UNSTREAMABLE}${last.missedCues === undefined ? '' : ` Missed cues: ${last.missedCues}.`}`;
   }
-  const hint = last.code === undefined ? undefined : CODE_HINTS[last.code];
+  const reason = last.reason === 'source-lost' && last.missedCues !== undefined ? 'the show lost its clock or ownership updates' : REASONS[last.reason];
+  const hint = last.missedCues !== undefined && last.code === 'not-found' ? 'The saved show version is unavailable.'
+    : last.missedCues !== undefined && last.code === 'unsupported-capability' ? 'The light cannot render this show with its saved layout or stream.'
+      : last.code === undefined ? undefined : CODE_HINTS[last.code];
   const restoration = last.restoration === 'restored' && restores === 'color' ? 'The base colour and brightness were restored.'
     : last.restoration === 'none' && restores === 'nothing' && RESTORING.has(last.reason)
       ? 'Nothing was put back: the session started over a selection the light cannot select again, so the light keeps what it last showed.'
       : RESTORATIONS[last.restoration];
-  return `Last session ended: ${REASONS[last.reason]}${last.code === undefined ? '' : ` (${last.code})`}. ${restoration}` +
-    `${hint === undefined ? '' : ` ${hint}`} Nothing restarts automatically.`;
+  return `Last session ended: ${reason}${last.code === undefined ? '' : ` (${last.code})`}. ${restoration}` +
+    `${last.missedCues === undefined ? '' : ` Missed cues: ${last.missedCues}.`}${hint === undefined ? '' : ` ${hint}`} Nothing restarts automatically.`;
 }
 
 /** The light module's record of the light's last read selection and its latest session's base (#1614), checked at the browser boundary. */

@@ -39,7 +39,7 @@ import {admitMoment, initMoments, momentRevision, readFreeBase, type FreeBase} f
 import {colorStateOf, readMusicBase} from '../music-base.js';
 import {saveSelection} from '../music-store.js';
 import type {LightingWork} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
-import {admitMusicStart, admitMusicStop, checkMusicStart, endMusicAtStart, MusicFeeds, musicDeviceState, MUSIC_STOP} from '../music-session.js';
+import {admitMusicStart, admitMusicStop, admitMusicTransport, checkMusicStart, endMusicAtStart, MusicFeeds, musicDeviceState, MUSIC_STOP, MUSIC_TRANSPORT} from '../music-session.js';
 import {presented} from '../shared-input.js';
 import {execute, first, rows, text, type Db, type Synchronous} from '../sqlite.js';
 import {controlState} from '../store.js';
@@ -520,6 +520,7 @@ export class NanoleafRuntime {
     if (result.status === 'synced') return;
     if (signal.aborted) return;
     this.#feedFailure(result.error.error.code);
+    this.#feeds.loseOwnershipFeed();
     this.#syncAttempts += 1;
     scheduler.after(Math.min(SYNC_RETRY_MAX_MS, 1000 * 2 ** Math.min(5, this.#syncAttempts - 1)), () => this.#follow());
   }
@@ -539,6 +540,7 @@ export class NanoleafRuntime {
       case 'failed':
         // The copy stopped following the core: the tasks freeze and its comets go until a new sync completes.
         this.#feedFailure(change.error.error.code);
+        this.#feeds.loseOwnershipFeed();
         try {
           this.#feed.failed();
         } catch {
@@ -579,6 +581,7 @@ export class NanoleafRuntime {
       this.#projectLater(true, 1000);
       return;
     }
+    if (pendingProjection.resync && outcome !== 'stale-generation') this.#feeds.followOwnershipFeed();
     this.#syncAttempts = 0;
     if (this.#feedFailing) {
       this.#feedFailing = false;
@@ -918,7 +921,7 @@ export class NanoleafRuntime {
   async #musicWork(device: string, command: Command<LightingWork>): Promise<Reply> {
     const {requestId} = command.data;
     const {clock} = this.#context;
-    if (command.source !== CORE_SOURCE) return errorBody('forbidden', {requestId, detail: 'only the core starts or stops a Music session'});
+    if (command.source !== CORE_SOURCE) return errorBody('forbidden', {requestId, detail: 'only the core controls a Music lighting session'});
     if (!this.#links.has(device)) return errorBody('not-found', {requestId});
     const data = command.data;
     if (data.action === 'stop') {
@@ -927,12 +930,26 @@ export class NanoleafRuntime {
         admitMusicStop(this.#db, device, {kind: MUSIC_STOP, requestId, generation: data.generation}, clock.now(), expiresMs(command, clock.now()));
       }, () => { this.#accepted(device, command); });
     }
-    const start = {requestId, generation: data.generation, capture: data.capture, presetId: data.presetId};
+    if (data.action !== 'start' && data.action !== 'start-show') {
+      return this.#admit(command, () => {
+        this.#record(command, device, MUSIC_WORK);
+        const at = clock.now();
+        admitMusicTransport(this.#db, device, {...data, kind: MUSIC_TRANSPORT}, at, expiresMs(command, at));
+      }, () => { this.#accepted(device, command); });
+    }
+    const start = data;
+    const ownershipEpoch = this.#feeds.ownershipEpoch;
+    const checkOwnershipFeed = (): void => {
+      if (start.action === 'start-show' && (!this.#feeds.ownershipAvailable || ownershipEpoch !== this.#feeds.ownershipEpoch)) {
+        throw new PortRefused('unavailable', 'The alert feed is unavailable.');
+      }
+    };
     // What the read must not overlap: a mode or configuration change, or any journaled command, even one that already
     // ran (a scene shown during the read would leave the Free base stale, and a finished row is no longer in the journal).
     const control = controlState(this.#db, device), revision = momentRevision(this.#db, device), journaled = journalHighWater(this.#db);
     try {
-      checkMusicStart(this.#db, device, start, savedLayout(this.#directory, device), clock.now(), expiresMs(command, clock.now()));
+      checkOwnershipFeed();
+      checkMusicStart(this.#db, device, start, savedLayout(this.#directory, device), clock.now(), expiresMs(command, clock.now()), ownershipEpoch);
     } catch (error) {
       if (error instanceof PortRefused) return errorBody(error.code, {requestId, detail: MUSIC_REFUSALS[error.code] ?? OTHER_REFUSAL});
       throw error;
@@ -977,10 +994,12 @@ export class NanoleafRuntime {
       if (latest.revision !== control.revision || momentRevision(this.#db, device) !== revision || journalHighWater(this.#db) !== journaled) {
         throw new CommandRefused('revision-conflict', 'a command or change reached the light during the read of its scene');
       }
+      checkOwnershipFeed();
       this.#record(command, device, MUSIC_WORK);
-      admitMusicStart(this.#db, device, start, savedLayout(this.#directory, device), base, revision, clock.now(), expiresMs(command, clock.now()), report);
+      const at = clock.now();
+      admitMusicStart(this.#db, device, start, savedLayout(this.#directory, device), base, revision, at, expiresMs(command, at), report, ownershipEpoch);
     }, () => {
-      this.#feeds.open(device, start.generation, start.capture);
+      if (start.action === 'start') this.#feeds.open(device, start.generation, start.capture);
       this.#accepted(device, command);
     });
   }
@@ -1159,8 +1178,8 @@ const PORT_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {
 const OTHER_REFUSAL = 'the command is not one the device takes';
 /** Fixed text for each refusal of a live Music Start or Stop (`music-session.ts`). */
 const MUSIC_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {
-  'unsupported-capability': 'live Music plays with a preset the light\'s saved layout renders, on zones its stream can address',
-  'invalid-state': 'live Music needs a light already in Free and on, and no session already starting or playing',
+  'unsupported-capability': 'Music lighting needs content the light\'s saved layout renders on zones its stream can address',
+  'invalid-state': 'Music lighting needs a light already in Free and on, and no session already starting or playing',
   unavailable: 'a device hold waits for an explicit choice',
   capacity: 'other content waits on the light',
   'not-found': 'no saved reactive preset has this ID',

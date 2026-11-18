@@ -431,6 +431,7 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
               ...(options.musicRead === undefined ? {} : {read: options.musicRead}),
               stream:options.stream ?? (()=>Promise.reject(new Error('No streaming transport.'))),
               input:options.music?.input(device,(row.command as MusicStart).generation),
+              ...(options.music === undefined ? {} : {ownershipEpoch: () => options.music?.ownershipEpoch ?? -1}),
               clock:options.music?.clock ?? (()=>({wallMs:clock.now(),monotonicMs:clock.now()})),stopping:()=>signal.aborted});
             execute(db,'DELETE FROM display_v3 WHERE device=?',device);
             throw new Cancelled('Start a fresh display pass after a Music session.');

@@ -2,11 +2,13 @@
 // frame through the work command's journaled write, paced rendering of the newest fresh feature, every ending and its
 // restoration, and no replay after a restart. Synthetic features and the simulated controllers only.
 import assert from 'node:assert/strict';
+import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import type {LightingDeviceState, LightingWork} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import type {CaptureFeatures} from '@jimmie-potts/event-contracts/v2/music-capture';
 import type {Participant, RequestResult} from '@jimmie-potts/sdk';
 import {LINES_ADDRESS, PANELS_ADDRESS, SYNTHETIC_TOKEN} from '../src/index.js';
+import {saveLayout} from '../src/devices.js';
 import {deviceCommand, ModuleWorld, SECTION, type WorldOptions} from './module-support.js';
 import {test} from './support.js';
 
@@ -751,5 +753,193 @@ test('the session keeps one request in flight to the light', async context => {
   assert.equal(world.device.state().held, 1, 'one request waits; nothing overlaps it');
   world.device.release();
   await world.advance(500);
+  world.verifyMessages();
+});
+
+test('an explicit saved revision starts at its scheduled time without live Music features', async context => {
+  const session = await lightsInFree(context);
+  const {world} = session;
+  assert.equal((await world.request('bunny.cmd.nanoleaf-show-save.shows', {
+    type: 'org.bunny.nanoleaf-show.save.requested', subject: 'shows',
+    dataschema: 'https://bunny.invalid/events/nanoleaf-show-save/2.0',
+    data: {requestId: 'save-test-show', showId: 'show-test', expectedVersion: 0, name: 'Test', versionName: 'First',
+      timeline: {version: 1, durationMs: 2000, cues: [{id: 'first', offsetMs: 0, durationMs: 2000, recipe: {preset: 'ocean'}, intensity: 0.5}]}},
+  })).status, 'accepted');
+  const since = world.clock.now();
+  // Use the SDK wire entry point so this test can fail before the new work variant is registered.
+  assert.deepEqual(await ask(world, session.core, 'bunny.cmd.music-lighting-work.wall', {
+    type: 'org.bunny.music-lighting.work.requested', subject: 'wall',
+    dataschema: 'https://bunny.invalid/events/music-lighting-work/2.0',
+    data: {requestId: 'start-test-show', generation: generation(1), action: 'start-show', showId: 'show-test',
+      version: 1, positionMs: 0, startDelayMs: 500},
+  }), {status: 'accepted'});
+  await world.advance(350);
+  assert.equal(frames(world, since).length, 0);
+  await world.until(() => frames(world, since).length > 0, 2000, 'prepared show frame');
+  assert.ok((frames(world, since)[0]?.atMs ?? 0) >= since + 500);
+  await world.until(() => ended(world) !== undefined, 3000, 'prepared show completion');
+  assert.equal(ended(world)?.reason, 'completed');
+  assert.equal(ended(world)?.restoration, 'restored');
+  world.verify();
+});
+
+const showCue = (id: string, offsetMs: number, durationMs: number, color: string) =>
+  ({id, offsetMs, durationMs, recipe: {pattern: 'pulse', colors: [color], loop: false}});
+const COLOR_SHOW = {version: 1, durationMs: 20_000, cues: [
+  showCue('red', 0, 4000, '#ff0000'),
+  showCue('green', 4000, 4000, '#00ff00'),
+  showCue('blue', 8000, 12_000, '#0000ff'),
+]};
+
+async function saveColorShow(world: ModuleWorld, expectedVersion = 0, timeline = COLOR_SHOW): Promise<void> {
+  const answer = await world.request('bunny.cmd.nanoleaf-show-save.shows', {
+    type: 'org.bunny.nanoleaf-show.save.requested', subject: 'shows',
+    dataschema: 'https://bunny.invalid/events/nanoleaf-show-save/2.0',
+    data: {requestId: `save-color-show-${expectedVersion}`, showId: 'show-color', expectedVersion,
+      name: 'Synthetic color show', versionName: `Version ${expectedVersion + 1}`, timeline},
+  });
+  assert.equal(answer.status, 'accepted', answer.status === 'accepted' ? undefined : answer.error.error.detail);
+}
+
+function startColorShow(session: Session, requestId: string, device = 'wall', version = 1, startDelayMs = 0): Promise<Answer> {
+  return work(session, {requestId, generation: generation(device === 'wall' ? 1 : 2), action: 'start-show',
+    showId: 'show-color', version, positionMs: 0, startDelayMs}, device);
+}
+
+function showState(world: ModuleWorld, device = 'wall') {
+  const session = deviceState(world, device)?.session;
+  return session !== null && session !== undefined && 'show' in session ? session.show : undefined;
+}
+
+test('saved revisions run independently and paused seeks take effect only after explicit Resume', async context => {
+  const session = await bothInFree(context);
+  const {world} = session;
+  await saveColorShow(world);
+  assert.deepEqual(await startColorShow(session, 'color-lines'), {status: 'accepted'});
+  await world.until(() => (lines(world)?.streamed ?? 0) > 0, 2000, 'first Lines frame');
+  assert.equal(panelsOf(world)?.streamed, 0);
+  assert.equal(deviceState(world, 'nl22')?.session, null, 'the Panels require their own Start');
+  assert.deepEqual(await startColorShow(session, 'color-panels', 'nl22', 1, 500), {status: 'accepted'});
+  await saveColorShow(world, 1, {...COLOR_SHOW, cues: [showCue('white', 0, 20_000, '#ffffff')]});
+  await world.until(() => (panelsOf(world)?.streamed ?? 0) > 0, 2000, 'first Panels frame');
+  assert.equal(lines(world)?.streaming?.version, 'v2');
+  assert.equal(panelsOf(world)?.streaming?.version, 'v1');
+  assert.equal(showState(world)?.version, 1);
+  assert.equal(showState(world, 'nl22')?.version, 1);
+  const firstPanel = panelsOf(world)?.frame?.['200'];
+  assert.ok(firstPanel && firstPanel[0] > 0);
+  assert.deepEqual(firstPanel.slice(1), [0, 0], 'the Panels use the admitted version even after saving another');
+
+  const gen = generation(1);
+  assert.deepEqual(await work(session, {requestId: 'stale-pause', generation: generation(3), action: 'pause-show'}),
+    {status: 'rejected', code: 'invalid-state'});
+  assert.deepEqual(await work(session, {requestId: 'color-pause', generation: gen, action: 'pause-show'}), {status: 'accepted'});
+  await world.until(() => deviceState(world)?.session?.status === 'paused', 2000, 'Lines paused');
+  const heldFrame = lines(world)?.frame;
+  const heldCount = lines(world)?.streamed;
+  const panelsCount = panelsOf(world)?.streamed ?? 0;
+  assert.deepEqual(await work(session, {requestId: 'color-seek', generation: gen, action: 'seek-show', positionMs: 8000}),
+    {status: 'accepted'});
+  await world.until(() => showState(world)?.positionMs === 8000, 2000, 'paused seek published');
+  await world.advance(500);
+  assert.equal(lines(world)?.streamed, heldCount);
+  assert.deepEqual(lines(world)?.frame, heldFrame);
+  assert.equal(showState(world)?.missedCues, 0, 'intentional seek skipped the green cue');
+  assert.ok((panelsOf(world)?.streamed ?? 0) > panelsCount, 'Panels keep playing while Lines pause');
+
+  assert.deepEqual(await work(session, {requestId: 'color-resume', generation: gen, action: 'resume-show'}), {status: 'accepted'});
+  await world.until(() => (lines(world)?.frame?.['100']?.[2] ?? 0) > 0, 2000, 'blue Lines frame');
+  assert.deepEqual(lines(world)?.frame?.['100']?.slice(0, 2), [0, 0], 'resume samples the cue at the seek boundary');
+  assert.deepEqual(await work(session, {requestId: 'color-rewind', generation: gen, action: 'seek-show', positionMs: 0}),
+    {status: 'accepted'});
+  await world.until(() => (lines(world)?.frame?.['100']?.[0] ?? 0) > 0, 2000, 'red Lines frame after rewind');
+  assert.deepEqual(lines(world)?.frame?.['100']?.slice(1), [0, 0]);
+  assert.equal(lines(world)?.tooSoon, 0);
+  assert.equal(panelsOf(world)?.tooSoon, 0);
+
+  world.device.chooseEffect(PANELS_ADDRESS, 'dynamic');
+  const ignoredBefore = panelsOf(world)?.ignored ?? 0;
+  await world.advance(1500);
+  assert.equal(deviceState(world, 'nl22')?.session?.status, 'playing', 'the NL22 reports *Dynamic* for both states');
+  assert.ok((panelsOf(world)?.ignored ?? 0) > ignoredBefore);
+  const linesWrites = lines(world)?.writes;
+  assert.deepEqual(await stop(session, 'color-panels-stop', generation(2), 'nl22'), {status: 'accepted'});
+  await world.until(() => outcome(world, 'color-panels-stop') !== undefined, 2000, 'Panels Stop outcome');
+  assert.equal(panelsOf(world)?.select, 'Beach Waves', 'Stop restores the base over an indistinguishable unsaved effect');
+  assert.equal(lines(world)?.writes, linesWrites);
+  assert.equal(deviceState(world)?.session?.status, 'playing');
+  world.device.chooseScene(LINES_ADDRESS, 'Northern Lights');
+  await world.until(() => ended(world)?.reason === 'manual', 2000, 'observable Lines takeover');
+  assert.equal(ended(world)?.restoration, 'none');
+  assert.equal(lines(world)?.writes, linesWrites);
+  assert.equal(lines(world)?.select, 'Northern Lights');
+  world.verify();
+});
+
+test('saved-show admission refuses missing versions and a changed NL22 layout without any device write', async context => {
+  const session = await bothInFree(context);
+  const {world} = session;
+  await saveColorShow(world);
+  const before = panelsOf(world)?.writes;
+  assert.deepEqual(await startColorShow(session, 'missing-color-version', 'nl22', 2), {status: 'rejected', code: 'not-found'});
+  saveLayout(join(world.stateDir, 'nanoleaf', 'layout.json'), {nl22: {kind: 'panels', elements: [
+    {id: '300', number: 1, zones: [300], position: [0, 0]},
+  ]}});
+  assert.deepEqual(await startColorShow(session, 'incompatible-color-layout', 'nl22'),
+    {status: 'rejected', code: 'unsupported-capability'});
+  await world.advance(500);
+  assert.equal(panelsOf(world)?.writes, before);
+  assert.equal(panelsOf(world)?.streamed, 0);
+  assert.equal(deviceState(world, 'nl22')?.session, null);
+  world.verify();
+});
+
+test('an unanswered saved-show stream entry holds the light and remains uncertain across restart', async context => {
+  const session = await lightsInFree(context);
+  const {world} = session;
+  await saveColorShow(world);
+  world.device.loseNextAnswer('/effects');
+  assert.deepEqual(await startColorShow(session, 'unanswered-color-show'), {status: 'accepted'});
+  await world.until(() => outcome(world, 'unanswered-color-show') !== undefined, 12_000, 'uncertain Start outcome');
+  await world.until(() => world.device_()?.held?.requestId === 'unanswered-color-show', 2000, 'hold after lost answer');
+  assert.equal(outcome(world, 'unanswered-color-show')?.result, 'uncertain');
+  assert.equal(lines(world)?.streamed, 0);
+  const before = lines(world)?.writes;
+  await world.restart();
+  await world.advance(3000);
+  assert.equal(lines(world)?.writes, before, 'restart does not repeat entry or restore over an uncertain write');
+  assert.equal(lines(world)?.streamed, 0);
+  assert.equal(world.device_()?.held?.requestId, 'unanswered-color-show');
+  world.verifyMessages();
+});
+
+test('a late wake skips obsolete cues and an alert ends a paused saved show with its missed count', async context => {
+  const session = await lightsInFree(context);
+  const {world} = session;
+  await saveColorShow(world, 0, {...COLOR_SHOW, cues: [
+    showCue('red', 0, 500, '#ff0000'), showCue('green', 500, 500, '#00ff00'), showCue('blue', 1000, 19_000, '#0000ff'),
+  ]});
+  assert.deepEqual(await startColorShow(session, 'late-color-show'), {status: 'accepted'});
+  await world.until(() => (lines(world)?.frame?.['100']?.[0] ?? 0) > 0, 500, 'red sample before the stall');
+  await world.until(() => outcome(world, 'late-color-show') !== undefined, 500, 'first sample outcome');
+  assert.deepEqual(outcome(world, 'late-color-show'), {requestId: 'late-color-show', result: 'succeeded', evidence: 'transmitted'});
+  world.clock.advance(1300);
+  await world.until(() => (lines(world)?.frame?.['100']?.[2] ?? 0) > 0, 500, 'late wake samples blue');
+  await world.until(() => showState(world)?.missedCues === 1, 1000, 'the missed green cue is published');
+  const gen = generation(1);
+  assert.deepEqual(await work(session, {requestId: 'late-color-pause', generation: gen, action: 'pause-show'}), {status: 'accepted'});
+  await world.until(() => deviceState(world)?.session?.status === 'paused', 2000, 'late show paused');
+  const framesBefore = lines(world)?.streamed;
+  await world.core.set('alpha', {attention: [{kind: 'approval', id: {status: 'known', id: 'approval-1'}, turn: {status: 'known', id: 't1'}}]});
+  await world.until(() => ended(world)?.reason === 'alert', 2000, 'alert ended the paused show');
+  assert.equal(ended(world)?.restoration, 'restored');
+  assert.equal(ended(world)?.missedCues, 1);
+  assert.equal(lines(world)?.select, 'Beach Waves');
+  assert.equal(lines(world)?.streamed, framesBefore);
+  assert.deepEqual(await work(session, {requestId: 'late-color-resume', generation: gen, action: 'resume-show'}),
+    {status: 'rejected', code: 'invalid-state'});
+  await world.restart();
+  await world.until(() => ended(world)?.missedCues === 1, 2000, 'terminal missed count survives restart');
+  assert.equal(lines(world)?.streamed, framesBefore);
   world.verifyMessages();
 });

@@ -1,5 +1,5 @@
-// #1272: the real core and the real Nanoleaf module on a simulated Lines controller, with a remote fake Music producer.
-// No device, network or capture is used, and this proves no physical cadence or appearance.
+// Real core and Nanoleaf module over a simulated Lines controller. The live case uses a loopback fake Music producer.
+// The saved-show case leaves capture idle.
 import assert from 'node:assert/strict';
 import {chmod, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -21,7 +21,7 @@ const RECIPE = {rendererVersion: 1, effect: 'level-glow', palette: ['#12ab34'], 
 const sleep = (ms: number) => new Promise(resolve => { setTimeout(resolve, ms); });
 type Outcome = {requestId: string; result: string; evidence: string; error?: {code: string}};
 
-async function setup(t: TestContext) {
+async function setup(t: TestContext, live = true) {
   let handle: CoreHandle | undefined;
   const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
   const outcomes: Message<Outcome>[] = [];
@@ -38,11 +38,6 @@ async function setup(t: TestContext) {
     {id: 'music-producer', source: MUSIC_PRODUCER_SOURCE, digest: tokenDigest(PRODUCER_TOKEN), scopes: [], role: 'music-producer'},
   ]})});
   const {runtime} = await run(t, {modules: [core, createNanoleafModule({transport: wall.request, datagram: wall.datagram}), operator], configFile: files.config, edge: {schemas: {}}});
-  const producer = await connectRemote({url: runtime.url, source: MUSIC_PRODUCER_SOURCE, token: PRODUCER_TOKEN});
-  const pumping = {stopped: false};
-  t.after(async () => {pumping.stopped = true;await producer.close();});
-  const captureWork: Command<CaptureWork>[] = [];
-  const endpoint = await producer.openEndpoint<CaptureWork>({family: 'music-capture-work', respond: command => {captureWork.push(command);return {status: 'accepted'};}});
   const sdk = () => contextOf(operator).sdk;
   const states = async <T extends object>(family: string, owner: string): Promise<T[]> => {
     const result = await sdk().sync<T>([family], () => {}, {owner, timeoutMs: 2000});
@@ -70,32 +65,43 @@ async function setup(t: TestContext) {
     dataschema: schema('nanoleaf-reactive-preset-save'), data: {presetId: 'preset-green', expectedRevision: 0, name: 'Synthetic green', recipe: RECIPE}}, 'save-preset');
   assert.equal(preset.status, 'accepted');
 
-  // An active Music capture session, kept fresh by the fake producer.
-  assert.equal((await endpoint.request('music-capture-endpoint', {type: 'org.bunny.music-capture.endpoint.requested', dataschema: schema('music-capture-endpoint'),
-    data: {action: 'enable', input: 'music'}}, {requestId: 'enable-music', timeoutMs: 2000})).status, 'accepted');
-  assert.deepEqual(await core.operatorActions.dispatch({key: 'bunny.cmd.music-capture-control.music', requestedBy: 'bunny/parts/operator', requestId: 'capture-start',
-    draft: {type: 'org.bunny.music-capture.control.requested', subject: 'music', dataschema: schema('music-capture-control'),
-      data: {action: 'start', expectedRevision: (await captureState()).revision, endpointId: endpoint.id, input: 'music'}}}), {status: 'accepted', requestId: 'capture-start'});
-  await waitFor(() => captureWork.length === 1);
-  const startCapture = captureWork[0];assert.ok(startCapture !== undefined);
-  await endpoint.publish('music-capture-progress', {kind: 'occurrence', type: 'org.bunny.music-capture.progress.observed', dataschema: schema('music-capture-progress'),
-    data: {operationId: startCapture.data.operationId, generation: startCapture.data.generation, status: 'started'}});
-  void (async () => {
-    for (let sequence = 1; !pumping.stopped; sequence += 1) {
-      const at = Date.now();
-      const data: CaptureFeatures = {generation: startCapture.data.generation, input: 'music', sequence, sampleRateHz: 48000, channels: 2, frameCount: 4800,
-        startMonotonicMs: (sequence - 1) * 100, endMonotonicMs: sequence * 100, emittedMonotonicMs: sequence * 100 + 1, observedAtMs: at, validUntilMs: at + 400,
-        rms: 0.3 + (sequence % 5) / 10, peak: 1, clippedFraction: 0, bands: {bass: (sequence % 7) / 7, mid: 0.2, treble: 0.1}, onset: {strength: 0, confidence: 0}, discontinuity: false};
-      await endpoint.publish('music-capture-features', {kind: 'occurrence', type: 'org.bunny.music-capture.features.observed', dataschema: schema('music-capture-features'), data}).catch(() => {});
-      await sleep(50);
-    }
-  })();
-  await waitFor(async () => (await captureState()).session.status === 'active', 5000, 'active capture');
-  const capture: LightingCapture = {endpointId: endpoint.id, generation: startCapture.data.generation};
+  let capture: LightingCapture | undefined;
+  if (live) {
+    const producer = await connectRemote({url: runtime.url, source: MUSIC_PRODUCER_SOURCE, token: PRODUCER_TOKEN});
+    const pumping = {stopped: false};
+    t.after(async () => {pumping.stopped = true;await producer.close();});
+    const captureWork: Command<CaptureWork>[] = [];
+    const endpoint = await producer.openEndpoint<CaptureWork>({family: 'music-capture-work', respond: command => {captureWork.push(command);return {status: 'accepted'};}});
+    // An active Music capture session, kept fresh by the fake producer.
+    assert.equal((await endpoint.request('music-capture-endpoint', {type: 'org.bunny.music-capture.endpoint.requested', dataschema: schema('music-capture-endpoint'),
+      data: {action: 'enable', input: 'music'}}, {requestId: 'enable-music', timeoutMs: 2000})).status, 'accepted');
+    assert.deepEqual(await core.operatorActions.dispatch({key: 'bunny.cmd.music-capture-control.music', requestedBy: 'bunny/parts/operator', requestId: 'capture-start',
+      draft: {type: 'org.bunny.music-capture.control.requested', subject: 'music', dataschema: schema('music-capture-control'),
+        data: {action: 'start', expectedRevision: (await captureState()).revision, endpointId: endpoint.id, input: 'music'}}}), {status: 'accepted', requestId: 'capture-start'});
+    await waitFor(() => captureWork.length === 1);
+    const startCapture = captureWork[0];assert.ok(startCapture !== undefined);
+    await endpoint.publish('music-capture-progress', {kind: 'occurrence', type: 'org.bunny.music-capture.progress.observed', dataschema: schema('music-capture-progress'),
+      data: {operationId: startCapture.data.operationId, generation: startCapture.data.generation, status: 'started'}});
+    void (async () => {
+      for (let sequence = 1; !pumping.stopped; sequence += 1) {
+        const at = Date.now();
+        const data: CaptureFeatures = {generation: startCapture.data.generation, input: 'music', sequence, sampleRateHz: 48000, channels: 2, frameCount: 4800,
+          startMonotonicMs: (sequence - 1) * 100, endMonotonicMs: sequence * 100, emittedMonotonicMs: sequence * 100 + 1, observedAtMs: at, validUntilMs: at + 400,
+          rms: 0.3 + (sequence % 5) / 10, peak: 1, clippedFraction: 0, bands: {bass: (sequence % 7) / 7, mid: 0.2, treble: 0.1}, onset: {strength: 0, confidence: 0}, discontinuity: false};
+        await endpoint.publish('music-capture-features', {kind: 'occurrence', type: 'org.bunny.music-capture.features.observed', dataschema: schema('music-capture-features'), data}).catch(() => {});
+        await sleep(50);
+      }
+    })();
+    await waitFor(async () => (await captureState()).session.status === 'active', 5000, 'active capture');
+    capture = {endpointId: endpoint.id, generation: startCapture.data.generation};
+  }
   const control = async (requestId: string, data: object) => core.operatorActions.dispatch({key: 'bunny.cmd.music-lighting-control.wall', requestedBy: 'bunny/parts/operator', requestId,
     draft: {type: 'org.bunny.music-lighting.control.requested', subject: 'wall', dataschema: schema('music-lighting-control'), data: {expectedRevision: (await light()).revision, ...data}}});
-  return {lines, light, request, outcome, operation: (id: string) => handle?.operation(id),
-    start: (requestId: string) => control(requestId, {action: 'start', capture, presetId: 'preset-green'}),
+  return {lines, light, request, outcome, control, captureState, operation: (id: string) => handle?.operation(id),
+    start: (requestId: string) => {
+      assert.ok(capture);
+      return control(requestId, {action: 'start', capture, presetId: 'preset-green'});
+    },
     stop: (requestId: string) => control(requestId, {action: 'stop'}),
     status: (expected: string, what: string) => waitFor(async () => (await light()).session.status === expected, 8000, what),
     // Frames are datagrams the simulated Lines apply only while streaming (#1598).
@@ -137,3 +143,24 @@ it('the real core and Nanoleaf module play Music frames, restore on Stop and end
     assert.ok(h.operation(work), `work for ${id}`);
   }
 }, 40_000);
+
+it('the real core and Nanoleaf worker schedule a saved show with capture idle', async t => {
+  const h = await setup(t, false);
+  assert.equal((await h.captureState()).session.status, 'idle');
+  const saved = await h.request('bunny.cmd.nanoleaf-show-save.shows', {
+    type: 'org.bunny.nanoleaf-show.save.requested', subject: 'shows', dataschema: schema('nanoleaf-show-save'),
+    data: {showId: 'show-demo', expectedVersion: 0, name: 'Synthetic show', versionName: 'First',
+      timeline: {version: 1, durationMs: 1000, cues: [{id: 'cue', offsetMs: 0, durationMs: 1000, recipe: {preset: 'ocean'}, intensity: 0.5}]}},
+  }, 'save-show');
+  assert.equal(saved.status, 'accepted');
+  const base = h.lines()?.select;
+  assert.ok(base !== undefined);
+  const start = await h.control('start-saved', {action: 'start-show', showId: 'show-demo', version: 1, positionMs: 0, startDelayMs: 250});
+  assert.deepEqual(start, {status: 'accepted', requestId: 'start-saved'});
+  await waitFor(() => h.frames().length > 0, 6000, 'saved show frames');
+  await h.status('idle', 'saved show completion');
+  const {last} = await h.light();
+  assert.deepEqual([last?.reason, last?.restoration, last?.missedCues], ['completed', 'restored', 0]);
+  assert.equal(h.lines()?.select, base);
+  assert.equal((await h.captureState()).session.status, 'idle');
+}, 30_000);

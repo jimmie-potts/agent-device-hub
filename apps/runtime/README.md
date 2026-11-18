@@ -833,14 +833,38 @@ module once held but no longer holds ends `restart`; a Start it never held is
 settled as above. The core keeps the work IDs and whether the module reported the
 generation as private notes beside the published record.
 
-Only the core dispatches lighting work, and only in direct answer to an operator
-Start or Stop. No ending resumes a session, nothing is resent after restart or
+Only the core dispatches lighting work, in direct answer to a tracked operator
+command. No ending resumes a session, nothing is resent after restart or
 reconnection, and no path selects the microphone or another light. No edge grant
 requests lighting work or publishes a device record. Device admission, frames
 and restoration belong to the [Nanoleaf module](../../modules/nanoleaf/README.md).
 The dashboard's Audio page reads these records and sends explicit Start and Stop
 from its [Music lighting](dashboard/README.md#music-lighting) card (#722).
 This source path does not qualify installed or physical behavior.
+
+### Saved show transport
+
+Use the same tracked operator dispatch for a saved decorative show. Select one
+Lines or NL22 light already in Free. Send `start-show` with `showId`, the exact
+`version`, `positionMs`, `startDelayMs` and the light's `expectedRevision`.
+A delay of 0 requests immediate playback. The maximum delay is 30 seconds,
+measured by the Nanoleaf worker from admission. Start the other light
+explicitly to play there too.
+
+When the device reports the show playing or paused, use the current record's
+revision and session `generation` for `pause-show`, `resume-show`, `seek-show`,
+or `stop`. Seek takes `positionMs`. Stop can also cancel a scheduled Start.
+Resume applies to the same paused session. After Stop, an alert, source loss,
+manual takeover or completion, playback requires a new Start.
+
+The device record reports the position at its last scheduling or transport
+update and the cumulative count of distinct missed cues. A gap holds the last
+frame. An intentional seek past cues does not count them as missed. A
+`completed` ending stores the missed count and restoration result. The
+[lighting message contract](../../packages/event-contracts/README.md) documents
+the payload fields. The [Nanoleaf guide](../../modules/nanoleaf/README.md#saved-show-execution)
+documents the worker's evidence and physical limits.
+
 
 ## Agent hooks
 

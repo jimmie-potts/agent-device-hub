@@ -159,6 +159,38 @@ retains worker scheduling and outcome integration under the
 and [installed/physical acceptance](https://github.com/jimmie-potts/agent-device-hub/issues/725)
 remain separately owned. Synthetic payloads establish no physical timing.
 
+
+### Saved show execution
+
+`start-show` takes an immutable decorative version and schedules it through
+the same locked worker that streams live Music. Each light needs its own
+explicit Start in Free. Admission validates every cue against the current saved
+layout and stream address range. A mode, configuration or device choice that
+supersedes admission ends the show before it can send more frames. The worker
+also checks that its loaded layout agrees with the one used to prepare the show.
+
+The worker waits until its local start target before entering external control.
+A late entry or wake samples the current cue at its elapsed time. Complete cues
+that elapsed without a scheduled sample count as missed. The cursor reports
+distinct missed cue IDs as a cumulative count that survives restart. A seek
+sets the new position without counting crossed cues. Pause and gaps hold the last
+frame while the worker continues checking for interruption. A paused seek
+changes the position without sending a frame until Resume.
+
+The worker samples canonical RGB endpoints in software and sends at most one
+datagram per 100 ms, through the existing Lines or Panels encoder. A sent
+datagram records a local transmission. Visible phase and coordination between
+lights require physical acceptance. Saved shows use a receiver-local clock.
+A backward clock step or loss of the alert feed ends the show and applies the
+guarded base return. Music.app position, route-delay alignment and replay UI
+belong to [#723](https://github.com/jimmie-potts/agent-device-hub/issues/723).
+
+Stop, an alert and completion use the existing base restoration guard. A
+detectable manual change wins without restoration. After any ending, start the
+light explicitly again. See the streaming limits below for the NL22's
+indistinguishable unsaved effects. Installed and physical acceptance belong to
+[#725](https://github.com/jimmie-potts/agent-device-hub/issues/725).
+
 ## Music rendering source helpers
 
 `src/music-effects.ts` and `src/music-input.ts` provide the deterministic source
@@ -382,8 +414,8 @@ Known limits:
   - a scene, palette or effect that the app or an integration plays with a temporary display write instead of selecting a listed name. To the owner this can look like picking a scene: #1777 recorded the app's own label not matching the name the API reported;
   - another external-control client that starts streaming to the Panels mid-session. Its frames and this session's may then interleave on the same port, so this is not a case of frames being ignored. On the Lines the same applies to another client streaming with `*ExtControl*`.
 
-  The session keeps sending frames. Whether the NL22 ignores them after such a choice is not known: the Lines ignored them after an app scene (#1598), and on the NL22 nothing chosen during a session has been observed. If the NL22 still applies them, they keep painting over the choice with no bound except Stop, an alert, source loss, a hub choice, a brightness or power change, or a module stop. A later Stop, alert or source loss puts a scene or colour base back over the choice when the brightness is unchanged and the light is on. A saved scene, a colour or an unsaved static selection picked on the NL22 is still seen within about a second and ends the session `manual` with nothing written. The installed check includes the step "an app dynamic effect picked during a Panels session: does it stay, or do the frames paint over it?". The owner's options are listed in the next item.
-- **Owner options for the unseen choices (#1777, pending):** (1) accept the limit as it stands; (2) restore only on an explicit Stop on the Panels, not on an alert or source loss, which departs from #40's rule that an alert and source loss restore and narrows the limit without removing it; (3) send `PUT /effects` with `{"write": {"command": "request", "animName": "*Dynamic*"}}` once a second, a write-method command whose answer for a reserved name is undocumented and whose effect on the stream is unknown; (4) subscribe to effects events with `GET /events?id=3`, a long-lived connection outside the device queue, where it is undocumented whether a pick with the same name sends an event; (5) first read the colour-state diagnostic below during the installed check, which needs no new request, and decide from that evidence.
+  The session keeps sending frames. Whether the NL22 ignores them after such a choice is not known: the Lines ignored them after an app scene (#1598), and in one NL22 trial an unsaved effect stayed visible until the device became unavailable. The session ended before Stop. If the NL22 still applies them, they keep painting over the choice with no bound except Stop, an alert, source loss, a hub choice, a brightness or power change, or a module stop. A later Stop, alert or source loss puts a scene or colour base back over the choice when the brightness is unchanged and the light is on. A saved scene, a colour or an unsaved static selection picked on the NL22 is still seen within about a second and ends the session `manual` with nothing written. The installed check includes the step "an app dynamic effect picked during a Panels session: does it stay, or do the frames paint over it?". For saved shows, the owner accepted this limit on 2026-11-17. If you pick an unsaved effect on the Panels during a show, Stop can restore the original scene over your pick. See [the saved-show decision](https://github.com/jimmie-potts/agent-device-hub/issues/1273#issuecomment-6964558890).
+- **Live-session options for unseen choices (#1777):** (1) accept the limit as it stands; (2) restore only on an explicit Stop on the Panels, not on an alert or source loss, which departs from #40's rule that an alert and source loss restore and narrows the limit without removing it; (3) send `PUT /effects` with `{"write": {"command": "request", "animName": "*Dynamic*"}}` once a second, a write-method command whose answer for a reserved name is undocumented and whose effect on the stream is unknown; (4) subscribe to effects events with `GET /events?id=3`, a long-lived connection outside the device queue, where it is undocumented whether a pick with the same name sends an event; (5) first read the colour-state diagnostic below during the installed check, which needs no new request, and decide from that evidence.
 - **Colour-state diagnostic (#1777).** Each light's `nanoleaf-wall` record now also shows what the `/state` read made with its last selection read said of the light's colour, with no added request. These fields are present only when such a read was made: the Start's base read always makes one, and the playing check makes one only while the light reports its streaming value. They are `colorMode` (the light's own word, or `null` when it gives none or an unexpected one) and the whole `hue`, `sat` and `ct` it reports. The fields are stored in `nanoleaf_selection_colors`, beside `nanoleaf_selections`. A changed `colorMode` is kept and published at once. A change of only `hue`, `sat` or `ct` waits for the selection's one-minute refresh, so those numbers may be up to a minute old. Nothing in the module ends, guards or restores a session on them. They exist so that the installed check can see whether the NL22's colour state differs between its own stream and an app choice.
 - The Lines' streaming behavior (zone addressing, app takeover, brightness) comes from third-party protocol notes; #725 qualifies it on the installed Lines.
 - An NL22 that accepts the streaming entry but names no usable port (none, or one outside 1024 to 65535) is in external control with no frame sent. The ending reports `device` with `unsupported-capability`, and the Audio card says so. Nothing is put back and no write is made to leave the mode: the light keeps its last presentation until it times out or a scene is chosen.
