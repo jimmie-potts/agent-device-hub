@@ -239,7 +239,7 @@ Failure and recovery:
 | Fault | Behavior | Recovery |
 | --- | --- | --- |
 | Crash or power loss during the reset | One SQLite transaction: either nothing changed or all of it did | The next start runs the reset again or finds nothing to drop |
-| Full disk at the reset | The open fails before anything is reported. The core runs and refuses intake with `capacity` and syncs with `unavailable` | The capped backoff opens it again (1 s doubling to 60 s), and the reset runs then |
+| Full disk at the reset | The open fails before anything is reported, whether at creating the tables or in the reset's own transaction, and the store exposes nothing until an open succeeds whole: no pending message goes out, no part commits and `core_revision` stays as stored. The core runs and refuses intake with `capacity` and syncs with `unavailable` | The capped backoff opens it again (1 s doubling to 60 s), and the reset runs then |
 | Second runtime on the same state directory | Refused at runtime ownership, before the core opens | None needed. The first keeps running |
 | Release before step 7 run on a reset store | Starts with empty session state and writes a new `state` row. Session rows from step 7 stay unread | Forward again. The next step-7 start finds the `state` row and resets everything, the step's own session and guard tables included. Rolling back below step 7 is unsupported for session data |
 | Pending session publications at upgrade | Deleted by the reset, so they never go out | Consumers resync. Occurrences are not replayed |
@@ -254,7 +254,7 @@ Step 7 settled the storage mechanics as follows:
 - The reset records `operation.completed` with `bunny.operation` `storage` and no other attribute. The existing catalog expresses it, so no event or attribute is added.
 - A notice on an unknown turn is named from the observation's semantic key, so its ID is not the 1.x one. The differential test normalizes notice IDs with revisions and generations, and the core's run of the case set compares such notices by turn. The case set's literal IDs for those notices name the 1.x IDs until step 9 rewrites the case set.
 - The session logic bounds an observation at 2,304 bytes of its own compact JSON: 1.x's 2,048-byte event bound, with room for the ordering authority that 2.0 adds.
-- Restart uncertainty and the floor that keeps a change's instant from going back before an earlier change's stay in memory, as in agent-state's owner. Step 8 stores the restart marking.
+- Restart uncertainty stays in memory, as in agent-state's owner; step 8 stores the restart marking. The floor that keeps a change's instant from going back before an earlier change's is held in memory too. agent-state kept it durably as `lastCommitAtMs`; the core rebuilds it at open from the stored sessions' `lastEvidenceAtMs` and the guards' `atMs`, so after a restart on a clock that went back it can sit below the instant of a last commit that was a command. Only evidence instants across such a step can differ.
 
 ### 13. Host-installed code and install skew
 

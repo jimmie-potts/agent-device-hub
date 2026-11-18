@@ -98,6 +98,8 @@ class Pair {
   readonly #retainedNames = new Normalizer();
   readonly #portNames = new Normalizer();
   #messages = 0;
+  /** How many approval recoveries the core accepted, so the corpus shows it compares owner-started clearings. */
+  recoveries = 0;
 
   constructor() {
     this.retained = new RetainedCore(this.clock.now, identity => this.archived && identity.client === 'desktop');
@@ -157,6 +159,7 @@ class Pair {
       case 'recover':
         retained = await this.retained.recoverApproval(step.identity, step.turnId);
         port = await this.world.recoverApproval(step.identity, step.turnId);
+        if (port.ok) this.recoveries += 1;
         break;
       case 'archive':
         this.archived = step.archived;
@@ -244,6 +247,25 @@ function sequence(seed: number, length: number, admissible: (observation: Lifecy
     }
     if (roll < 0.08) { steps.push({kind: 'restart'}); continue; }
     if (roll < 0.09) { steps.push({kind: 'archive', archived: r.chance(0.5)}); continue; }
+    if (roll < 0.12) {
+      // An approval without a request ID on a turn, left uncertain by five minutes of silence or by a restart, then recovered.
+      const session = r.pick(SESSIONS);
+      const turn = r.pick(TURNS);
+      const at = (event: LifecycleEvent): LifecycleObservation => ({identity: session.identity, turn: {status: 'known', id: turn}, parent: r.pick(session.parents),
+        event, observedAtMs: clock, ordering: {status: 'unknown'}});
+      for (const observation of [at({kind: 'turn-started'}), at({kind: 'attention-approval', attention: {status: 'unknown'}})]) {
+        if (admissible(observation)) {
+          sent.push(observation);
+          steps.push({kind: 'observe', observation});
+        }
+      }
+      if (r.chance(0.5)) {
+        steps.push({kind: 'advance', ms: 300_000});
+        clock += 300_000;
+      } else steps.push({kind: 'restart'});
+      steps.push({kind: 'recover', identity: session.identity, turnId: turn});
+      continue;
+    }
     const {identity} = r.pick(SESSIONS);
     if (roll < 0.17) {
       const command = r.int(0, 4);
@@ -300,6 +322,7 @@ function sequence(seed: number, length: number, admissible: (observation: Lifecy
 const SEQUENCES = 250, LENGTH = 60;
 
 it('the seeded random corpus publishes the same records and occurrences through both paths', async context => {
+  let recoveries = 0;
   for (let seed = 1; seed <= SEQUENCES; seed++) {
     await context.test(`sequence ${seed}`, async t => {
       const pair = new Pair();
@@ -308,9 +331,12 @@ it('the seeded random corpus publishes the same records and occurrences through 
       for (const [index, step] of steps.entries()) await pair.step(step, `seed ${seed} step ${index}`);
       await pair.advance(86_400_001);
       pair.same(`seed ${seed} after a day`);
+      recoveries += pair.recoveries;
       pair.world.close();
     });
   }
+  context.diagnostic(`approval recoveries accepted on both paths: ${recoveries}`);
+  assert.ok(recoveries > 0, 'the corpus compares owner-started recovered clearings');
 }, 600_000);
 
 it('the root sessions of two sources at the session limit displace finished child subtrees the same way on both paths', async context => {

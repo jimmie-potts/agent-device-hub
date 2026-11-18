@@ -8,12 +8,16 @@ import {DatabaseSync} from 'node:sqlite';
 import {createAgentState, MemoryStorage} from '@jimmie-potts/agent-state';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {LifecycleEvent} from '@jimmie-potts/event-contracts/v2/families';
+import {InProcessBus} from '@jimmie-potts/sdk';
+import {createCoreModule, type CoreHandle} from '../src/core/core.js';
 import {CoreStore} from '../src/core/store.js';
 import {DEFAULT_CONSUMERS} from '../src/index.js';
-import {CHILD, OTHER, approvalPrompt, runtimeEnded, sessionStarted, turnEnded, turnStarted} from './fixtures/agents.js';
+import {CHILD, OTHER, approvalPrompt, observation, runtimeEnded, sessionStarted, turnEnded, turnStarted} from './fixtures/agents.js';
+import {CoreHarness} from './fixtures/core-harness.js';
 import {fillDisk} from './fixtures/disk.js';
 import {World} from './fixtures/store-world.js';
-import {START, flush, it, stateDir} from './support.js';
+import {START, flush, it, manualClock, stateDir} from './support.js';
 
 const records = (messages: readonly Message[]): SessionRecord[] =>
   messages.filter(message => message.type === 'org.bunny.session.updated').map(message => message.data as SessionRecord);
@@ -185,6 +189,91 @@ it('a reset that falls on a full disk leaves the store unopened and unchanged, a
   assert.equal(full.isOpen, true);
   assert.equal(hasState(db), false, 'the reset ran');
   assert.equal(full.revision, 8);
+});
+
+it('a reset transaction that fails on a full disk after its tables exist exposes nothing: the core publishes nothing, refuses part transactions and keeps its revision', async context => {
+  const dir = await stateDir(context);
+  const clock = manualClock();
+  const bus = new InProcessBus({now: clock.now, scheduler: clock.scheduler});
+  const hook = bus.connect('bunny/parts/hook'), watch = bus.connect('bunny/test/watch');
+  context.after(async () => { await hook.close(); await watch.close(); });
+  const heard: Message[] = [];
+  for (const pattern of ['bunny.state.session.*', ...['attention-raised', 'attention-cleared', 'turn-ended', 'session-ended'].map(family => `bunny.event.${family}.*`)]) {
+    await watch.subscribe(pattern, message => { heard.push(message); });
+  }
+  let handle: CoreHandle | undefined;
+  /** The core as the runtime hosts it, its session publications refused or its reset made to fail on a full disk. */
+  const core = (faults: {refuseSessions?: boolean; fullReset?: () => boolean}): {harness: CoreHarness; module: ReturnType<typeof createCoreModule>; db: () => DatabaseSync} => {
+    const module = createCoreModule({parts: [{start: value => { handle = value; return Promise.resolve(); }}]});
+    let database: DatabaseSync | undefined;
+    const harness = new CoreHarness({manifest: module.manifest, stop: () => module.stop(), start: ctx => module.start({...ctx,
+      sdk: {...ctx.sdk, publishMessage: (key, message) => faults.refuseSessions === true && (key.startsWith('bunny.state.session.') || message.kind === 'occurrence')
+        ? Promise.reject(new Error('synthetic publish refusal')) : ctx.sdk.publishMessage(key, message)},
+      database: () => {
+        const real = ctx.database();
+        database = real;
+        return new Proxy(real, {get(target, property) {
+          if (property === 'exec') {
+            return (sql: string): void => {
+              if (faults.fullReset?.() === true && sql.includes('DROP TABLE state')) throw Object.assign(new Error('database or disk is full'), {errcode: 13});
+              target.exec(sql);
+            };
+          }
+          const value: unknown = Reflect.get(target, property, target);
+          return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+        }});
+      }})}, {bus, stateDir: dir, clock: {now: clock.now}, scheduler: clock.scheduler});
+    return {harness, module, db: () => { assert.ok(database); return database; }};
+  };
+  const observe = async (event: LifecycleEvent, turn: string): Promise<void> => {
+    clock.advance(10);
+    const {key, draft} = observation(event, clock.now(), {turn});
+    await hook.publish(key, draft);
+    await flush();
+  };
+
+  // A release of this step ran, and its session publications are still pending, as at an upgrade.
+  const first = core({refuseSessions: true});
+  await first.harness.start();
+  await observe(turnStarted, 'turn-1');
+  await observe(turnEnded, 'turn-1');
+  await first.harness.stop();
+  assert.equal(heard.length, 0);
+  // An earlier release then ran on the store and wrote its own state row again.
+  const planted = new DatabaseSync(join(dir, 'core.sqlite'));
+  const pending = (planted.prepare('SELECT COUNT(*) AS count FROM bunny_outbox').get() as {count: number}).count;
+  assert.ok(pending >= 2, 'session publications are pending');
+  planted.exec(`${OLD_STATE}; INSERT INTO state VALUES (1, 0, '{}')`);
+  const revision = revisionOf(planted);
+  planted.close();
+
+  // The reset's own transaction fails on a full disk; every table it needs already exists.
+  let full = true;
+  const second = core({fullReset: () => full});
+  context.after(() => second.harness.stop());
+  await second.harness.start();
+  await flush();
+  assert.deepEqual(heard.map(message => message.type), [], 'nothing pending from before the cutover went out');
+  assert.equal(Array.isArray(second.module.history.read({})), false, 'history is unavailable while the store is not open');
+  assert.ok(handle);
+  await assert.rejects(handle.transaction(tx => tx.revision()), 'a part transaction is refused');
+  assert.equal(revisionOf(second.db()), revision, 'the revision is unchanged');
+  assert.equal(hasState(second.db()), true, 'nothing was reset');
+  const refusedAt = heard.length;
+  await observe(sessionStarted, 'turn-2');
+  assert.equal(heard.length, refusedAt, 'an observation is refused');
+  assert.equal(revisionOf(second.db()), revision);
+
+  // Room again: after the backoff, the next intake opens the store and the reset runs at the stored revision plus one.
+  full = false;
+  clock.advance(1000);
+  await observe(sessionStarted, 'turn-2');
+  await flush();
+  assert.equal(hasState(second.db()), false);
+  const sessions = heard.filter(message => message.type === 'org.bunny.session.updated').map(message => message.data as SessionRecord);
+  assert.equal(sessions.length, 1, 'only the new session went out');
+  assert.deepEqual([sessions[0]?.revision, sessions[0]?.generation], [revision + 2, revision + 2], 'the reset took one revision, the new session the next');
+  assert.equal(heard.some(message => message.kind === 'occurrence'), false, 'no occurrence from before the cutover');
 });
 
 it('a crash during the reset leaves the store unchanged, and the next start runs the reset again', async context => {

@@ -206,7 +206,7 @@ On failure:
 | Fault | Behavior | Recovery |
 |---|---|---|
 | Crash or power loss during the reset | The transaction commits whole or not at all | The next start runs the reset again |
-| Full disk at the reset | The store does not open. The core keeps running, refuses intake with `capacity` and syncs with `unavailable` | The next intake or sync after a backoff that doubles from 1 s to 60 s opens the store again, and the reset runs once there is room |
+| Full disk at the reset, whether at creating the new tables or in the reset's own transaction | The store does not open and exposes nothing: no pending message goes out, no part commits and the revision stays as stored. The core keeps running, refuses intake with `capacity` and syncs with `unavailable` | The next intake or sync after a backoff that doubles from 1 s to 60 s opens the store again, and the reset runs once there is room |
 | A second runtime on the same state directory | Refused at the lease or the database, before its core opens the store | None needed; the first keeps running |
 
 Rolling back below this release is unsupported for session data. An earlier

@@ -165,7 +165,12 @@ export class CoreStore {
   readonly #options: StoreOptions;
   readonly #validator = coreValidator();
   readonly #consumers: readonly Consumer[];
-  #opened: {outbox: Outbox; statements: Statements; history: History} | undefined;
+  /**
+   * The store's tables, outbox, statements and history once open has created them. Nothing uses them until `#opened`
+   * is set, which happens only after the reset and the cache load have succeeded too.
+   */
+  #tables: Opened | undefined;
+  #opened: Opened | undefined;
   /** The store's lock, held from its open until `close`. */
   #lock: Lock | undefined;
   /** The stored sessions, by entity ID, in the order they were first stored. */
@@ -181,7 +186,6 @@ export class CoreStore {
   #restarted = new Set<string>();
   /** The latest instant a session change took: a change's instant never goes back before it. */
   #floorMs = 0;
-  #loaded = false;
   /** The instant every message of the transaction under way is stamped with. */
   #frozen: number | undefined;
   #failure: StoreFailure | undefined;
@@ -215,9 +219,12 @@ export class CoreStore {
     return structuredClone([...this.#sessions.values()]);
   }
 
-  /** Whether the store is open, so parts may use it: not before it opens, and not once its database closed, as a crash closes it. */
+  /**
+   * Whether the store is open, so parts may use it: not before its open has fully succeeded, and not once its database
+   * closed, as a crash closes it.
+   */
   get isOpen(): boolean {
-    return this.#opened !== undefined && this.#loaded && this.#db.isOpen;
+    return this.#opened !== undefined && this.#db.isOpen;
   }
 
   /** The core's history (#782), once the store is open. */
@@ -243,17 +250,20 @@ export class CoreStore {
    * Opens the store, once: borrows the runtime's ownership of the lease, or takes the lease, waiting for another holder
    * until `signal` aborts; then creates every core part's tables, runs the one-time session reset when it applies, and
    * loads the revision, commit count, sessions, guards and records. Every stored session starts restart-uncertain. A
-   * store that cannot open, as on a full disk at a first start, rejects with its failure named and can be opened again.
+   * store that cannot open, as on a full disk at a first start or at the reset, rejects with its failure named and can
+   * be opened again. Until an open succeeds whole, the store exposes nothing: its intake, transactions, history and
+   * republication refuse with `unavailable`, so nothing it holds goes out and nothing commits before the reset.
    */
   async open(signal: AbortSignal = AbortSignal.timeout(LEASE_WAIT_MS)): Promise<void> {
-    if (this.#loaded) return;
+    if (this.#opened !== undefined) return;
     this.#failure = undefined;
     try {
       this.#lock ??= this.#options.ownership === undefined
         ? await takeLock(this.#db.location(), signal) : borrowRuntimeOwnership(this.#options.ownership, this.#db.location());
-      this.#openTables();
+      const tables = this.#tables ??= this.#openTables();
       this.#reset();
-      this.#loadCaches();
+      this.#loadCaches(tables.statements);
+      this.#opened = tables;
     } catch (error) {
       // A store that cannot create its tables or run its reset on a full disk, as at a first start, is full, not broken (Hub #972).
       if (fullDisk(error)) this.#failure = 'full';
@@ -276,7 +286,7 @@ export class CoreStore {
    * (MAPPING.md). True when it published. Rejects, changing nothing more, when the store refuses a commit.
    */
   async refresh(): Promise<boolean> {
-    if (!this.#loaded) return false;
+    if (this.#opened === undefined) return false;
     const expired = await this.#expire();
     if (expired === 'failed') throw new Error('the core store refused the expiry');
     const atMs = this.#options.clock.now();
@@ -493,8 +503,8 @@ export class CoreStore {
     this.#lock = undefined;
   }
 
-  #openTables(): void {
-    if (this.#opened !== undefined) return;
+  /** Creates the store's and every core part's tables, its outbox and history, once. */
+  #openTables(): Opened {
     const db = this.#db;
     db.exec(`PRAGMA busy_timeout = 0;
       CREATE TABLE IF NOT EXISTS core_revision (only INTEGER PRIMARY KEY CHECK (only = 1), value INTEGER NOT NULL, commits INTEGER NOT NULL) STRICT;
@@ -517,7 +527,7 @@ export class CoreStore {
       // Every message of one transaction carries the instant its freshness was computed at.
       clock: {now: () => this.#frozen ?? this.#options.clock.now()},
     });
-    this.#opened = {outbox, statements, history};
+    return {outbox, statements, history};
   }
 
   /**
@@ -555,8 +565,7 @@ export class CoreStore {
   }
 
   /** The revision, commit count, sessions, guards and published records as the file holds them. */
-  #loadCaches(): void {
-    const statements = this.#statements();
+  #loadCaches(statements: Statements): void {
     const stored = statements.revision.get() as {value: number; commits: number} | undefined;
     const revision = stored?.value ?? 0, commits = stored?.commits ?? 0;
     const records = new Map<string, SessionRecord>();
@@ -578,7 +587,6 @@ export class CoreStore {
     // The open is the core's start: every stored session is uncertain until fresh evidence.
     this.#restarted = new Set(sessions.keys());
     this.#floorMs = Math.max(0, ...[...sessions.values()].map(session => session.lastEvidenceAtMs), ...guards.map(guard => guard.atMs));
-    this.#loaded = true;
   }
 
   #statements(): Statements {
@@ -728,6 +736,8 @@ export class CoreStore {
 
 /** How long the core keeps a lifecycle observation's `(source, id)`: as long as an observation can still be admitted. */
 const TAKEN_LIFECYCLE_MS = 86_400_000;
+
+type Opened = {outbox: Outbox; statements: Statements; history: History};
 
 type Statements = {
   revision: StatementSync; writeRevision: StatementSync;

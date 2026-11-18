@@ -321,7 +321,8 @@ function recover(state: SessionState, id: string, turnId: string, now: number): 
   keepReceipt(previous, session, false);
   const data: Occurrence['data'] = {session: id, identity: structuredClone(session.identity), turn: structuredClone(session.turn), observedAtMs: now,
     ordering: {status: 'unknown'}, ...(cleared === undefined ? {} : {attention: cleared}), cause: 'recovered'};
-  return changedOne(state, previous, session, 'applied', [{family: 'attention-cleared', data}]);
+  // As agent-state reported it: an explicit recovery, which claims no provider resolution.
+  return changedOne(state, previous, session, 'ambiguous', [{family: 'attention-cleared', data}]);
 }
 
 /** Title, label, acknowledgment and read receipt: changes to one known session's metadata or outcome. */
