@@ -14,7 +14,7 @@ export function mountHabitat(root, callbacks={}) {
   const canvas=$('habitat'),ctx=canvas.getContext('2d');
   if(!ctx){$('loading').textContent='Canvas is unavailable. Use the session status list below.';callbacks.unavailable?.();controller.abort();return null;}
   const W=world.width,H=world.height;
-  const labels={working:'Working',idle:'Idle',approval:'Waiting for approval',input:'Waiting for input',question:'Question · continuing',finished:'Finished · unread',interrupted:'Interrupted',unknown:'Activity unknown'};
+  const labels={working:'Working',idle:'Idle',approval:'Waiting for approval',input:'Waiting for input','needs-owner':'Needs you',question:'Question · continuing',finished:'Finished · unread',interrupted:'Interrupted',unknown:'Activity unknown'};
   const names=['Clover','Pip','Hazel','Fern','Moss','Juniper','Olive','Maple','Sage','Basil'];
   const mixed=['working','working','working','working','idle','idle','approval','finished','idle','input'];
   let storageAvailable=true;
@@ -98,14 +98,14 @@ export function mountHabitat(root, callbacks={}) {
     $('motion').setAttribute('aria-pressed',String(paused()));$('motion').textContent=reduced.matches?'Reduced motion':motionPaused?'Resume motion':'Pause motion';$('motion').disabled=reduced.matches;
     $('motion-note').textContent=reduced.matches?'Reduced motion · poses update without travel':motionPaused?'Motion paused · poses update without travel':'Candles on. Make yourself at home.';
     const working=agents.filter(a=>a.state==='working'||a.state==='question').length;
-    const waiting=agents.filter(a=>a.state==='approval'||a.state==='input').length;
+    const waiting=agents.filter(a=>a.state==='approval'||a.state==='input'||a.state==='needs-owner').length;
     $('summary').textContent=`10 bunnies · ${working} working${waiting?` · ${waiting} waiting`:''}`;
     for(const a of agents){
       const btn=$(`agent-${a.id}`);btn.dataset.state=a.state;btn.dataset.assigned=String(!!a.liveBound);btn.dataset.uncertain=String(!!a.liveUncertain);btn.setAttribute('aria-pressed',String(a.id===selected));
       btn.style.setProperty('--apron',a.apron);btn.querySelector('.agent-name').textContent=a.name;btn.querySelector('.client').textContent=a.client;
       const dest=a.route.length?` → ${rooms[a.targetRoom].name}`:` · ${rooms[a.room].name}`;
       btn.querySelector('.agent-status-text').textContent=(a.liveBound?(a.liveUncertain?'Live · uncertain · ':'Live · '):a.liveResident?'No session · ':'')+labels[a.state]+dest;
-      btn.querySelector('.dot').className='dot'+(['approval','input','finished'].includes(a.state)?' waiting':['unknown','interrupted'].includes(a.state)?' unknown':'');
+      btn.querySelector('.dot').className='dot'+(['approval','input','needs-owner','finished'].includes(a.state)?' waiting':['unknown','interrupted'].includes(a.state)?' unknown':'');
     }
     const a=agents[selected];$('selected-name').textContent=`${a.id+1}. ${a.name} · ${a.client}`;$('agent-state').value=a.state;$('agent-state').disabled=!!(a.liveResident||a.liveBound);root.querySelector('label[for="agent-state"]').textContent=a.liveBound?'Observed agent state':a.liveResident?'Unassigned resident':'Simulated agent state';
     const target=conversation(selected);
@@ -448,13 +448,13 @@ export function mountHabitat(root, callbacks={}) {
       if(!mailPlace||mailPlace.render.frontOverSeated!==false)mailFurnitureFront(a,actorContext,mailPlace||stationHop?a.id:null);
       ctx.drawImage(actorLayer,left,top);
     }
-    const attention=a.liveUncertain||['approval','input','finished','unknown','interrupted','question'].includes(a.state);
+    const attention=a.liveUncertain||['approval','input','needs-owner','finished','unknown','interrupted','question'].includes(a.state);
     if(!attention&&a.id!==selected&&a.id!==hovered&&!showSpots)return;
-    let mark=a.liveUncertain?'?':['approval','input'].includes(a.state)?'!':a.state==='question'?'?':unknown?'?':a.state==='finished'?'✉':String(a.id+1);
+    let mark=a.liveUncertain?'?':['approval','input','needs-owner'].includes(a.state)?'!':a.state==='question'?'?':unknown?'?':a.state==='finished'?'✉':String(a.id+1);
     const badgeY=sleepDetail?.badgeOffset!==undefined?a.y+sleepDetail.badgeOffset*H/1173:a.y-height+(['sleeping','curled'].includes(pose)?height*.58:3)+bob;
     ctx.save();ctx.font='600 19px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillStyle=['approval','input','finished'].includes(a.state)?'#ecd19a':'#292515';ctx.strokeStyle='#dfcfaa';ctx.lineWidth=1.4;
-    ctx.beginPath();ctx.arc(a.x-24,badgeY,13,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle=['approval','input','finished'].includes(a.state)?'#2a2010':'#f6e6c7';ctx.fillText(mark,a.x-24,badgeY+.5);
+    ctx.fillStyle=['approval','input','needs-owner','finished'].includes(a.state)?'#ecd19a':'#292515';ctx.strokeStyle='#dfcfaa';ctx.lineWidth=1.4;
+    ctx.beginPath();ctx.arc(a.x-24,badgeY,13,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle=['approval','input','needs-owner','finished'].includes(a.state)?'#2a2010':'#f6e6c7';ctx.fillText(mark,a.x-24,badgeY+.5);
     if((a.id===selected||a.id===hovered)&&!workshopFocus&&!dormFocus&&!mailFocus){
       const text=`${a.name} · ${labels[a.state]}`;ctx.font='500 19px system-ui';const tw=ctx.measureText(text).width+24;
       const xx=Math.max(8,Math.min(W-tw-8,a.x-tw/2)),yy=badgeY-44;

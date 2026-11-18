@@ -2,8 +2,9 @@ import {destinationLink, openConnections} from './navigation-helpers.ts';
 // One focused confirmed Connections journey against the built synthetic runtime; no installed services or devices.
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
-import {sessionStarted, turnStarted, turnEnded} from '../../dist/tests/fixtures/agents.js';
+import {IDENTITY, OTHER, sessionStarted, turnStarted, turnEnded} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
+import {worldClock} from './world-clock.ts';
 
 const world = await startWorld();
 let browser: Browser | undefined;
@@ -66,3 +67,51 @@ try {
     process.stdout.write(`${JSON.stringify({passed: true, checks: ['confirmed notice override, synced acknowledgments, passive row, keyboard, no replay and read-only refusal'], clearRequests: clears()})}\n`);
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}
+
+// Silence marks only work (Hub #1865, design decision 10): one session waits on a question, one holds an unread finished
+// turn and one works, and all three stay silent for ten minutes on the world's clock. Only the working row is uncertain,
+// in the rows and in Habitat, and the notice override stays available for the finished session.
+const clock = worldClock();
+const silent = await startWorld({clock});
+let quietBrowser: Browser | undefined;
+try {
+  quietBrowser = await chromium.launch({headless: true});
+  const context = await quietBrowser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
+  try {
+    const page = await context.newPage(); page.setDefaultTimeout(12_000);
+    const sent = changes(page);
+    await page.goto(silent.url); await feed(page, 'connected');
+    const WORKING = {...IDENTITY, sessionId: 'session-sim-working'}, LATER = {...IDENTITY, sessionId: 'session-sim-later'};
+    await silent.observe(sessionStarted, {identity: OTHER, title: {value: 'Ask a question', source: 'provider'}});
+    await silent.observe(turnStarted, {identity: OTHER});
+    await silent.observe({kind: 'question-continuing', attention: {status: 'known', id: 'question-1'}}, {identity: OTHER});
+    await silent.observe(sessionStarted, {title: {value: 'Port the wall', source: 'provider'}});
+    await silent.observe(turnStarted); await silent.observe(turnEnded);
+    await silent.observe(sessionStarted, {identity: WORKING, title: {value: 'Keep working', source: 'provider'}});
+    await silent.observe(turnStarted, {identity: WORKING});
+    const card = (name: string) => page.locator('article.session').filter({has: page.getByRole('heading', {name, exact: true})});
+    await card('Ask a question').locator('.chip', {hasText: 'Question'}).waitFor();
+    await card('Port the wall').locator('.chip', {hasText: 'Finished · unread'}).waitFor();
+    await card('Keep working').locator('.chip', {hasText: 'Working'}).waitFor();
+    await clock.advance(10 * 60_000);
+    await card('Keep working').and(page.locator('[data-stale=true]')).waitFor();
+    // A later session orders the copy: once it shows, every change the silence published before it shows too.
+    await silent.observe(sessionStarted, {identity: LATER, title: {value: 'Arrive later', source: 'provider'}});
+    await card('Arrive later').waitFor();
+    assert.deepEqual(await Promise.all(['Ask a question', 'Port the wall', 'Keep working'].map(name => card(name).getAttribute('data-stale'))), ['false', 'false', 'true'],
+      'silence marks only the working row');
+    await card('Keep working').locator('.chip', {hasText: 'Working · unconfirmed'}).waitFor();
+    await card('Port the wall').locator('.chip', {hasText: 'Finished · unread'}).waitFor();
+    await openConnections(page);
+    await page.getByLabel('Session', {exact: true}).selectOption({label: 'Port the wall'});
+    assert.equal(await page.getByRole('button', {name: 'Clear this notice on every device', exact: true}).isEnabled(), true,
+      'the override stays available for a finished session silent for ten minutes');
+    await page.getByLabel('Session', {exact: true}).selectOption({label: 'Keep working'});
+    await page.getByText('The hub does not confirm this session\'s state. Wait for a confirmed record.', {exact: true}).waitFor();
+    await page.getByRole('link', {name: 'Habitat', exact: true}).click(); await page.locator('#habitat[data-ready=true]').waitFor();
+    await page.locator('.habitat-root .agent[data-assigned=true]').nth(3).waitFor();
+    assert.equal(await page.locator('.habitat-root .agent[data-uncertain=true]').count(), 1, 'Habitat marks only the working resident');
+    assert.deepEqual(sent, [], 'reading the silent sessions sends nothing');
+    process.stdout.write(`${JSON.stringify({passed: true, checks: ['ten minutes of silence mark only working rows; the override stays available for a finished session']})}\n`);
+  } finally {await context.close();}
+} finally {try {await quietBrowser?.close();} finally {await silent.close();}}

@@ -1,6 +1,6 @@
 // Presentation only: the runtime core and dashboard helpers own the meaning.
-import {chipOf,sessionName,clientName} from '../sessions.ts';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {chipOf,sessionName,clientName,uncertainOf} from '../sessions.ts';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {THREAD_ID} from '../../../../chompi-bridge/src/windows/uri.ts';
 export type Binding={sessionId:string;bunnyId:number};
 export type HabitatSettings={version:2;automatic:boolean;bindings:Binding[]};
@@ -23,8 +23,8 @@ export function settingsFrom(raw:string|null,legacy:string|null=null):HabitatSet
  }
  const binding=bindingFrom(legacy);return {version:2,automatic:true,bindings:binding===null?[]:[binding]};
 }
-export function eligibleSessions(records:readonly SessionRecord[]):SessionRecord[]{return records.filter(r=>r.parent.status!=='known');}
-export function reconcileBindings(bindings:readonly Binding[],records:readonly SessionRecord[]):Binding[]{
+export function eligibleSessions(records:readonly SessionView[]):SessionView[]{return records.filter(r=>r.parent.status!=='known');}
+export function reconcileBindings(bindings:readonly Binding[],records:readonly SessionView[]):Binding[]{
  const eligible=eligibleSessions(records),available=new Map(eligible.map(r=>[r.id,r]));
  const next=bindings.filter(b=>available.has(b.sessionId)).map(b=>({...b}));
  const occupied=new Set(next.map(b=>b.bunnyId)),assigned=new Set(next.map(b=>b.sessionId));
@@ -39,11 +39,12 @@ export function assignSession(bindings:readonly Binding[],sessionId:string,bunny
  if(previous&&displaced&&displaced.sessionId!==sessionId)next.push({sessionId:displaced.sessionId,bunnyId:previous.bunnyId});
  return next.sort((a,b)=>a.bunnyId-b.bunnyId);
 }
-export function presentation(record:SessionRecord,synced:boolean){
- return {state:chipOf(record),name:sessionName(record),client:clientName(record.identity),uncertain:!synced||record.freshness!=='current'||record.restartUncertain};
+/** A resident's presentation: the dashboard's chip and the same uncertainty rule as its rows (Hub #1865). */
+export function presentation(record:SessionView,synced:boolean){
+ return {state:chipOf(record),name:sessionName(record),client:clientName(record.identity),uncertain:!synced||uncertainOf(record)!==undefined};
 }
 export type ConversationDestination={href?:string;key?:string;reason:string};
-export function conversationFor(record:SessionRecord,platform:string):ConversationDestination{
+export function conversationFor(record:SessionView,platform:string):ConversationDestination{
  if(record.identity.provider!=='codex'||record.identity.client!=='desktop')return {reason:'Opening this provider’s conversation is not connected yet.'};
  if(!/^Win/i.test(platform))return {reason:'Conversation opening is available on Windows. Mobile links are not connected yet.'};
  if(record.parent.status==='known'||!THREAD_ID.test(record.identity.sessionId))return {reason:'No verified desktop chat destination for this session.'};

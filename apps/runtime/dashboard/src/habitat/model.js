@@ -2,7 +2,7 @@ export function createModel() {
   function roomFor(agent, music, previousRoom = 'dorm') {
     switch (agent.state) {
       case 'working': case 'question': return 'workshop';
-      case 'approval': case 'input': return 'mail';
+      case 'approval': case 'input': case 'needs-owner': return 'mail';
       case 'finished': return 'mail';
       case 'unknown': case 'interrupted': return previousRoom;
       default: return music ? 'music' : 'dorm';
@@ -13,7 +13,7 @@ export function createModel() {
     const waitingPose=place?.type==='rug'?'curled':['chair','stool','bench','beanbag','cushion'].includes(place?.type)?'waiting-seated':'waiting';
     if (agent.state === 'unknown' || agent.state === 'interrupted') return room==='dorm'?'curled':waitingPose;
     if (agent.state === 'working' || agent.state === 'question') return 'working';
-    if (agent.state === 'approval' || agent.state === 'input' || agent.state === 'finished') return waitingPose;
+    if (agent.state === 'approval' || agent.state === 'input' || agent.state === 'needs-owner' || agent.state === 'finished') return waitingPose;
     if (room === 'dorm') return 'sleeping';
     if(music&&room==='music')return place?.type==='dance'?'dancing':place?.type==='rug'?'curled':'listening';
     return 'idle';

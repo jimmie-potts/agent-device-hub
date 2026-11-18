@@ -235,7 +235,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     const clock = setInterval(() => { setNow(Date.now()); }, 1000);
     return () => { clearInterval(clock); };
   }, []);
-  const rows = useMemo(() => sessionRows(state.sessions.records), [state.sessions.records]);
+  const rows = useMemo(() => sessionRows(state.sessions.views), [state.sessions.views]);
   // The jump palette (#1888). jumpShortcut holds the keys that open it. jumpFrom is where focus goes when it closes:
   // back to where it was, or to the page that was chosen.
   const [jump, setJump] = useState(false);
@@ -389,7 +389,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         devices={devices.map(({record}) => record)} focus={inboxFocus} headingId="widget-inbox"/></Widget>;
     }
     if (widgetDefinition(placement.widget)?.slot !== undefined) return <SlotWidget key={placement.widget} placement={placement}/>;
-    if (placement.widget === 'sessions') return <Widget key="sessions" id="sessions" size={placement.size}><AgentSessions records={state.sessions.records}
+    if (placement.widget === 'sessions') return <Widget key="sessions" id="sessions" size={placement.size}><AgentSessions views={state.sessions.views}
       synced={state.sessions.synced} live={live} control={state.runtime.control} now={now}/></Widget>;
     return null;
   };
@@ -473,7 +473,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
           connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>
       </section>}
-      {route.kind === 'habitat' && <HabitatPage records={state.sessions.records} live={live}/>}
+      {route.kind === 'habitat' && <HabitatPage views={state.sessions.views} live={live}/>}
       {route.kind === 'timeline' && <Timeline connected={state.feed === 'connected'}/>}
       {route.kind === 'automation' && <AutomationPage connection={connection} live={state.feed === 'connected'} control={runtime.control}/>}
       {route.kind === 'connections' && <ConnectionsPage state={state} now={now} links={links}/>}
