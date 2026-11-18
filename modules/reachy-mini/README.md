@@ -18,7 +18,10 @@ can also send holding targets to head/body. These bounds are software
 candidates and establish no physical safety or settling tolerance.
 
 Manual gestures require Take over. Automatic expression defaults off, honors
-Quiet and current source evidence, and never catches up after reconnect.
+Quiet and current robot observations, needs an opportunity that still matches
+its session through the shared session read function, and never catches up
+after reconnect. Unconfirmed work
+alone does not refuse a waiting approval.
 Validated source identities are durably fenced before policy suppression, so
 redelivery after enablement, resume or restart cannot replay a discarded event.
 Stop cancels only a known owned vendor task and latches automatic expression

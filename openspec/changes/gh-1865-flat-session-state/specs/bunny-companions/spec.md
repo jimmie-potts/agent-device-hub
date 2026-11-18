@@ -34,6 +34,18 @@ Suggestions SHALL reuse Reachy enablement/category mute, the exact synced sessio
 - **WHEN** the owner inspects a suggestion for a session whose turn ended ten minutes ago, with fresh matching evidence
 - **THEN** the session's silence does not make the suggestion unavailable
 
+### Requirement: Isolated simulated social decisions
+The system SHALL label arrival and visit fixtures as synthetic, with identity and location explicitly unknown, and route them through the same admission, text and presentation functions. Social admission SHALL require fresh Free mode, known non-busy/non-media facts, no open question priority window, no snooze, and one shared allowance of three episodes per local day with at least three hours between episodes. Scenario facts, repetition and allowance SHALL remain isolated from live household facts and records. Seeded variation and fixed-clock decisions SHALL be repeatable.
+
+#### Scenario: Mixed synthetic priorities
+- **WHEN** a simulated arrival and coding question compete in a labelled scenario
+- **THEN** coding attention wins and synthetic arrival cannot become real perception, memory, speech or physical output
+
+#### Scenario: Budget and snooze
+- **WHEN** a scenario exceeds repetition, the shared social budget or spacing, has unknown busy/media evidence, or is snoozed
+- **THEN** it produces no social reaction and exposes the corresponding decision reason
+- **AND** scenario admission spends no live social slot
+
 ## ADDED Requirements
 
 ### Requirement: Thirty-second question priority

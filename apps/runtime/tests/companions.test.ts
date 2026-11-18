@@ -200,3 +200,41 @@ it('unknown turn identity is never reused to admit a card after the session chan
   assert.equal(w.module.inspect()?.presentation, null);
   assert.equal(w.module.inspect()?.decision, 'source-changed');
 });
+
+// The 30-second question window (Hub #1865, decision 2) through the core and the module on the manual clock.
+const arrival = {scenario: 'arrival', busy: false, media: false} as const;
+it('a question holds priority over a background card at 29 s and not at 30 s, progress does not renew it, and the question stays shown', async context => {
+  const w = await setup(context); await w.settings();
+  await w.observe(sessionStarted); await w.observe(turnStarted);
+  const askedAt = w.clock.now();
+  await w.observe(approvalPrompt('window-question')); await w.advance();
+  assert.equal(w.module.inspect()?.presentation?.opportunity.category, 'coding-attention');
+  const at = (offset: number) => w.advance(askedAt + offset - w.clock.now());
+  await at(20_000); await w.observe({kind: 'activity-observed'});
+  await at(29_000); await w.command('companion-fixture-run', arrival); await flush();
+  assert.equal(w.module.inspect()?.decision, 'attention-priority', 'inside the window the background card waits for the question');
+  assert.equal(w.module.inspect()?.presentation?.opportunity.category, 'coding-attention');
+  await at(30_000); await w.command('companion-fixture-run', arrival); await w.advance();
+  assert.equal(w.module.inspect()?.presentation?.opportunity.context, 'scenario', 'at 30 s the window has ended, and progress 20 s in did not renew it');
+  const held = await contextOf(w.watcher).sdk.sync<{attention: unknown[]}>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
+  assert.equal(held.status, 'synced');
+  if (held.status === 'synced') {assert.equal(held.copy.states()[0]?.data.attention.length, 1, 'the question stays shown'); await held.copy.close();}
+});
+
+it('a restart opens no question window and replays no card', async context => {
+  const w = await setup(context); await w.settings();
+  await w.observe(sessionStarted); await w.observe(turnStarted); await w.observe(approvalPrompt('restart-question')); await w.advance();
+  const before = w.module.inspect()?.presentation;
+  assert.equal(before?.opportunity.category, 'coding-attention');
+  await w.advance(5_000); await w.runtime.stop();
+  const companion = createCompanionsModule(), core = createCoreModule();
+  await run(context, {stateDir: w.directory, modules: [core, companion], config: {modules: {companions: {}}}, clock: {now: w.clock.now}, scheduler: w.clock.scheduler});
+  w.clock.advance(100); await flush();
+  assert.equal(companion.inspect()?.presentation?.presentedAtMs, before?.presentedAtMs, 'the question card is not replayed');
+  assert.equal(companion.inspect()?.presentation?.history, true);
+  await core.actions.dispatch({key: 'bunny.cmd.companion-fixture-run.reachy', requestedBy: 'bunny/parts/operator', requestId: 'after-restart',
+    draft: {type: 'org.bunny.companion-fixture.run.requested', subject: 'reachy', dataschema: 'https://bunny.invalid/events/companion-fixture-run/2.0', data: arrival}});
+  w.clock.advance(26); await flush();
+  await waitFor(() => companion.inspect()?.presentation?.opportunity.context === 'scenario');
+  assert.notEqual(companion.inspect()?.decision, 'attention-priority', 'the open question has no window after the restart');
+});
