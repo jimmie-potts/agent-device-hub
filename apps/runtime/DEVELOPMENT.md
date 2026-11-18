@@ -829,7 +829,8 @@ destination's name kept once and shown on hover; that a toggle survives a reload
 for its own window size only and still works when the save is refused; and that
 at 390px the menu button opens a drawer which Escape, an outside tap and a chosen
 destination close. Journeys that navigate at phone width open the drawer through
-`destinationLink` or `openSettings` in `tests/navigation-helpers.ts`. Run every
+`destinationLink` or `openSettings` in
+`apps/runtime/dashboard/tests/navigation-helpers.ts`. Run every
 dashboard browser journey for a shell change, since the main column's width
 below 1200px depends on the rail.
 
