@@ -53,6 +53,8 @@ The package SHALL provide `sessionState`, `highestStatus` and `STATUS_COLORS` ov
 - **WHEN** the 1.x status tests and the shared case set run against the view
 - **THEN** they pass, including the acknowledging-consumer cases, and a copy that has not synced reads as `unknown`
 
+Pending: this scenario waits on the owner's answer on status rule 3 (design.md, "Rule 3 pending the owner"); task 3.7 settles it before any live reader moves onto the view.
+
 #### Scenario: Today's acknowledgment scope
 - **WHEN** Pixoo acknowledges a session's only notice, and one caller names no consumers while another names Nanoleaf
 - **THEN** the first sees no `done` and the second still sees `done`
@@ -60,6 +62,8 @@ The package SHALL provide `sessionState`, `highestStatus` and `STATUS_COLORS` ov
 #### Scenario: The same colors and ranking as 1.x
 - **WHEN** the shared and 1.x helpers judge the same sessions and their colors are compared
 - **THEN** they agree
+
+Pending: the ranking half of this scenario waits on the owner's answer on status rule 3; task 3.7 settles it before any live reader moves onto the view.
 
 ### Requirement: Versioned session output retains explicit receipt provenance
 

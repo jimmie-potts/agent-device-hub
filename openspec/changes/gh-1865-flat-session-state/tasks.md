@@ -28,6 +28,7 @@ Each numbered group is one pull request on its own `gh-1865-<step>` branch, with
 - [ ] 3.4 Amend the Nanoleaf preservation line in `AGENTS.md`: the Lines follow the hub's shared status, so waiting and unread tasks keep their indication until that status changes; other preserved Nanoleaf behavior stays. Evidence: instruction readback in the pull request.
 - [ ] 3.5 LIFX: run the case set through `highestStatus` with no code change. Evidence: the LIFX module suite passes the shared cases.
 - [ ] 3.6 Run the module suites (`test:tidbyt-module:built`, `test:pixoo:built`, `test:nanoleaf:built`, `test:lifx-module:built`) and a disposable acceptance exercise with synthetic sessions on simulated devices.
+- [ ] 3.7 Before any live reader moves onto the view, and before this change is archived, apply the owner's answer on status rule 3 (design.md, "Rule 3 pending the owner") in `noticeCounts` and settle the `bunny-message-profile` scenarios "The copied status cases on session records" and "The same colors and ranking as 1.x": make them true over the view, or reword them to the answer, and remove their pending notes. Evidence: the owner's answer recorded on #1865, the case set and `status.test.mjs` passing over the view or the reworded scenarios, and `npm run openspec -- validate gh-1865-flat-session-state --strict` exiting zero.
 
 ## 4. Readers: companions, Reachy and MicroDuck (focused second review: device-command safety)
 
