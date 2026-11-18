@@ -7,13 +7,15 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {chromium, type Locator, type Page, type Request} from 'playwright';
 import {expect} from 'playwright/test';
 import {LINES_ADDRESS, PANELS_ADDRESS} from '@jimmie-potts/nanoleaf';
+import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import {connectRemote} from '@jimmie-potts/sdk/remote';
 import {CAPTURE_VALIDITY_MS, CAPTURE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/music-capture-data';
 import {startWorld, changes, feed} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {worldClock} from './world-clock.ts';
 
-type Control = {target: string; requestId: string; data: {action: 'start' | 'stop'; expectedRevision: number; capture?: {endpointId: string; generation: string}; presetId?: string}};
+type Control = {target: string; requestId: string; data: {action: 'start' | 'start-show' | 'stop'; expectedRevision: number; capture?: {endpointId: string; generation: string}; presetId?: string; generation?: string}};
 const RECIPE = {rendererVersion: 1, effect: 'level-glow', palette: ['#12ab34'], intensity: 0.5, sensitivity: 1, smoothingMs: 0};
 const clock = worldClock(Date.now(), {paused: true});
 const world = await startWorld({nanoleaf: true, nanoleafPanels: true, musicCapture: true, clock});
@@ -27,6 +29,16 @@ async function advanceUntil(observed: () => Promise<boolean> | boolean, withinMs
   while (!await observed() && clock.clock.now() < deadline) {
     await clock.advance(Math.min(CAPTURE_WINDOW_MS, deadline - clock.clock.now()));
   }
+}
+async function wallLighting(): Promise<LightingState> {
+  const reader = await connectRemote({url: world.url, source: 'bunny/parts/reader', token: world.readerToken});
+  try {
+    const result = await reader.sync<LightingState>(['music-lighting-state'], () => {}, {owner: 'bunny/core', timeoutMs: 5000});
+    assert.equal(result.status, 'synced');
+    const record = result.copy.states().find(message => message.data.id === 'wall')?.data;
+    assert.ok(record !== undefined);
+    return record;
+  } finally {await reader.close();}
 }
 const datagrams = (address: string): number => world.nanoleafState().devices[address]?.streamed ?? 0;
 async function playing(light: Locator, address: string, previousFrames: number): Promise<void> {
@@ -266,6 +278,68 @@ try {
   await expect(start).toBeDisabled();
   assert.equal(controls.length, 9);
   assert.equal(sent.filter(path => path === '/api/v2/commands/music-lighting-control').length, 9);
+  // Saved playback is independent of the active microphone measurement and pins the selected version.
+  const savedStart = light.getByRole('button', {name: 'Start saved show', exact: true});
+  const savedVersion = light.getByRole('combobox', {name: 'Saved show and version', exact: true});
+  await expect(savedStart).toBeDisabled();
+  const saved = {showId: 'show-audio-test', expectedVersion: 0, name: 'Synthetic show', versionName: 'Original',
+    timeline: {version: 1, durationMs: 10_000, cues: [{id: 'cue', offsetMs: 0, durationMs: 10_000,
+      recipe: {preset: 'ocean'}, intensity: 0.5}]}};
+  assert.equal((await world.credentialAction('nanoleaf-show-save', 'shows', saved)).status, 200);
+  await savedVersion.selectOption({label: 'Synthetic show · v1 · Original'});
+  assert.equal((await world.credentialAction('nanoleaf-show-save', 'shows',
+    {...saved, expectedVersion: 1, versionName: 'Edited'})).status, 200);
+  await expect(savedVersion.locator('option', {hasText: 'Edited'})).toHaveCount(1);
+  await expect(savedVersion.locator('option:checked')).toHaveText('Synthetic show · v1 · Original');
+  assert.equal(controls.length, 9, 'selecting and saving send no lighting command');
+  await refresh.click();
+  await expect(savedStart).toBeEnabled();
+  await expect(savedVersion.locator('option:checked')).toHaveText('Synthetic show · v1 · Original');
+  await page.setViewportSize({width: 390, height: 900});
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await light.screenshot({path: join(artifacts, 'saved-show-picker-phone.png')});
+  await page.setViewportSize({width: 1280, height: 900});
+  assert.equal(controls.length, 9, 'refresh preserves selection without starting playback');
+
+
+  world.nanoleafPower(false);
+  await savedStart.click();
+  await light.getByText(/Start light work: Refused \(invalid-state\)/).waitFor();
+  assert.equal(controls.length, 10);
+  world.nanoleafPower(true);
+  const showFrames = datagrams(LINES_ADDRESS);
+  const beforeShow = await wallLighting();
+  assert.equal(beforeShow.session.status, 'idle');
+  await savedStart.click();
+  const showActive = light.getByText('Active. The light module reports that the show is running.', {exact: true});
+  await advanceUntil(async () => datagrams(LINES_ADDRESS) > showFrames && await showActive.isVisible(), 2000);
+  await expect(showActive).toBeVisible();
+  assert.ok(datagrams(LINES_ADDRESS) > showFrames);
+  const selectedControl = controls.at(-1);
+  assert.equal(selectedControl?.target, 'wall');
+  assert.deepEqual(selectedControl.data, {action: 'start-show', expectedRevision: beforeShow.revision,
+    showId: saved.showId, version: 1, positionMs: 0, startDelayMs: 0});
+  await light.getByText(/Saved show show-audio-test, version 1/).waitFor();
+  const savedRestoration = light.getByText(/^This show started over a scene saved on the light\. Stop, an alert or completion can restore it at its previous brightness\./);
+  await expect(savedRestoration).toBeVisible();
+  await expect(light.getByText(/This session started over.*lost Music input/)).toHaveCount(0);
+  await capture.getByRole('button', {name: 'Stop measuring', exact: true}).click();
+  await capture.getByText(/Stop: Completed: succeeded/).waitFor();
+  await expect(showActive).toBeVisible();
+
+  await light.screenshot({path: join(artifacts, 'saved-show-active-desktop.png')});
+  await page.reload(); await feed(page, 'connected');
+  await expect(showActive).toBeVisible();
+  await expect(savedStart).toBeDisabled();
+  assert.equal(controls.length, 11, 'reload leaves the accepted show running without another Start');
+  const beforeStop = await wallLighting();
+  assert.equal(beforeStop.session.status, 'active');
+  await stop.click();
+  await advanceUntil(() => stopped.isVisible(), 1000);
+  await expect(stopped).toBeVisible();
+  assert.equal(controls.at(-1)?.target, 'wall');
+  assert.deepEqual(controls.at(-1)?.data, {action: 'stop', expectedRevision: beforeStop.revision, generation: beforeStop.session.generation});
+  assert.equal(controls.length, 12);
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({journey: 'music-lighting', lightingCommands: controls.length, lostReplies: lost, artifacts, physical: false}));
   await context.close();

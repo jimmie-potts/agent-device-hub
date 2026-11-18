@@ -51,7 +51,7 @@ export type LightingControls = {
   capture: CaptureState | undefined; captureLive: boolean; presets: ReactiveCatalogView; presetId: string | undefined;
   startLocked: boolean; stopLocked: boolean;
 };
-function common(controls: LightingControls): string | undefined {
+function common(controls: Pick<LightingControls, 'recordsLive' | 'control' | 'operationsLive'>): string | undefined {
   if (!controls.recordsLive) return 'Lighting status is stale or unavailable. Refresh lighting status first.';
   if (!controls.control) return 'Read-only access. Lighting controls are disabled.';
   if (!controls.operationsLive) return 'Command records are unavailable. Lighting controls are disabled.';
@@ -76,6 +76,18 @@ export function startBlocked(controls: LightingControls): string | undefined {
   if (controls.startLocked || controls.stopLocked) return 'Waiting for the previous lighting request. It is not sent again.';
   return undefined;
 }
+export function savedStartBlocked(controls: Pick<LightingControls, 'recordsLive' | 'control' | 'operationsLive' | 'record' | 'startLocked' | 'stopLocked'>,
+  catalog: {live: boolean; failed: boolean}, selected: boolean, modeBlocked: boolean): string | undefined {
+  const reason = common(controls);
+  if (reason !== undefined) return reason;
+  if (controls.record.session.status !== 'idle') return 'Stop the current lighting session first.';
+  if (modeBlocked) return 'Choose Free mode on this light first.';
+  if (controls.startLocked || controls.stopLocked) return 'Waiting for the previous lighting request.';
+  if (!catalog.live) return catalog.failed ? 'The saved show library is unavailable.' : 'The saved show library is stale or still loading.';
+  if (!selected) return 'Choose an exact saved version.';
+  return undefined;
+}
+
 /** Stop is offered for every session that is not idle, including uncertain and stopping ones. */
 export function stopBlocked(controls: LightingControls): string | undefined {
   const reason = common(controls);
@@ -190,6 +202,14 @@ const STARTED_OVER: Record<Restores, string> = {
 };
 /** During a session: what its ending puts back, from the light module's record for that session. */
 export const sessionBaseText = (base: Restores): string => `${STARTED_OVER[base]} ${MANUAL}`;
+
+export function savedShowBaseText(base: Restores): string {
+  switch (base) {
+    case 'scene': return 'This show started over a scene saved on the light. Stop, an alert or completion can restore it at its previous brightness.';
+    case 'color': return 'This show started over a plain colour. Stop, an alert or completion can restore it at its previous brightness.';
+    case 'nothing': return 'This show started over a selection the light cannot restore. The light keeps the last frame unless you change it.';
+  }
+}
 
 const CONTROL_HINTS: Partial<Record<string, string>> = {
   unavailable: 'Music capture is not active, or this is not a qualified light.',

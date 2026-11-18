@@ -109,3 +109,5 @@ export const frontend: FrontendContribution = {module: 'nanoleaf', pages: [{id: 
 
 export type {Restores, WallRecord, WallSelection} from './model.js';
 export {NanoleafLightVisual} from './light-visual.js';
+
+export {followShows, type CatalogView as ShowCatalogView, type ShowSync} from './show-feed.js';
