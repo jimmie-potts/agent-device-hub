@@ -1,0 +1,333 @@
+## Context
+
+Source references are to main `16a9f698`. Each implementing pull request rechecks them.
+
+One hook event passes through six shapes today:
+
+| Shape | Where it is made |
+| --- | --- |
+| Hook JSON | the client, read by `runHook` (`apps/runtime/src/hook/hook.ts:74-84`) |
+| Lifecycle 1.x envelope | `normalizeHook` and `enrichHook` (`packages/agent-state/src/providers.ts:46`, `:108`), imported at `hook.ts:6` |
+| `lifecycle/2.0` observation | `observationOf` (`apps/runtime/src/hook/observation.ts:48`), published once with no retry (`hook.ts:91`) |
+| Lifecycle 1.2 envelope | `toEnvelope` (`apps/runtime/src/core/mapping.ts:65`), called at `core.ts:767` |
+| agent-state 1.x `Session` | `reduceSession` (`packages/agent-state/src/reducer.ts:77`) inside agent-state's owner (`packages/agent-state/src/index.ts:265-317`) |
+| `session/2.0` record | `project` (`mapping.ts:150`), diffed against the last record (`mapping.ts:157`) |
+
+The core runs agent-state's owner (`core.ts:561`) on the core store, which implements agent-state's `Storage` (`apps/runtime/src/core/store.ts:189`). The store keeps the owner's whole durable state as one JSON row in the table `state` (`store.ts:443`). It reconstructs what caused each commit (`store.ts:780`) and derives occurrences by comparing states before and after (`store.ts:687-777`). Both owners keep a revision. The record's `generation` comes from agent-state's revision (`index.ts:306`). The five-minute rule exists twice (`packages/agent-state/src/types.ts:7`, `packages/event-contracts/src/v2/families.ts:35`), and the profile validator enforces it on every `session/2.0` record (`families.ts:262-267`). Child counting is copied (`mapping.ts:134`). Restart uncertainty lives in memory in both owners (`index.ts:94`, `store.ts:502-505`). Agent-state's expiry timer uses `setTimeout`, outside the runtime's scheduler (`index.ts:113-121`).
+
+The store takes its lock, checks the stored `ownerId`, creates every core part's tables and loads its caches only inside `acquire`, which only agent-state's owner calls (`store.ts:357-372`, `:424-437`). Two other layers already keep one writer. The runtime takes the existing lease on `modules/core.sqlite-owner` without waiting before the core starts (`apps/runtime/src/runtime-ownership.ts:44-62`), and the store borrows it (`runtime-ownership.ts:90-96`). The SDK opens every module database with `locking_mode = EXCLUSIVE` (`packages/sdk/src/database.ts:43-46`).
+
+Readers interpret `freshness` and `restartUncertain` in their own ways. Examples are the Tronbyt tile (`modules/tidbyt/src/status.ts:82`), the Pixoo marker (`modules/pixoo/src/presentation/agent-dashboard.ts:84`), Nanoleaf's stale rule (`modules/nanoleaf/src/shared-input.ts:436`, `:556`), the companions (`modules/companions/src/presentation-policy.ts:11`, `:33`), the robots (`modules/microduck/src/module.ts:156-159`, `modules/reachy-mini/src/module.ts:142`), the core's opportunity admission (`apps/runtime/src/core/companion-part.ts:90`), the dashboard (`apps/runtime/dashboard/src/sessions.ts:103`, `habitat/session.ts:42-43`, `operator-tools.tsx:26`) and the assistant's `read_sessions` (`modules/companions/src/assistant/tools.ts:60`).
+
+## Goals and non-goals
+
+Goals:
+
+- One flat path with one owner: adapter, then observation, then the core's transition, then a stored session whose public part is the record.
+- One hub-computed status that every reader takes from one shared read function, and one shared synthetic case set that holds them to it.
+- A record that later work extends in one place: a source in the supported-source definition, a detail token, or a claim.
+- Every merged step leaves main installable and the runtime working.
+
+Non-goals:
+
+- No change to the retained 1.x packages (`packages/agent-state`, `packages/lifecycle-contracts`, `packages/agent-status`) or to their legacy consumers. #839 owns their retirement.
+- No new message format, transport, retry policy, polling path, event sourcing, provider registry service or second state owner.
+- No migration of old session data, no compatibility record for older read helpers, no reset marker, no stored run epoch and no store start-up step of its own. These follow the owner's 2026-11-18 decisions.
+- No new progress mapping. Qualified Codex Mac progress is #1867, native assistant tasks are #505 and title refinements are #1868.
+
+## Decisions
+
+### 1. The flattened path
+
+```text
+hook JSON or a native producer
+  -> lifecycle/2.0 observation   built by the adapter
+  -> transition(stored, input)   one function in the core
+  -> stored session              public record plus private bookkeeping, in core tables
+  -> session/3.0 record          the public part, published in the commit
+```
+
+- The hook adapter moves into `apps/runtime/src/hook/` (step 2). It builds the observation directly and drops `observationOf`. Its output is byte-identical to today's for every hook, producer file and lifecycle version, title enrichment included. The runtime copy of the normalizer and title reader replaces the import of `@jimmie-potts/agent-state/providers`. The retained package keeps its own copy for `apps/hub`.
+- The session logic moves into a new folder, `apps/runtime/src/core/session/`. It takes observations, not envelopes (step 7). This is a port of agent-state's reducer, retirement, child counting, approval recovery, title, label and acknowledgment operations, archived-session admission and 24-hour expiry. The rules carry over unchanged unless a later decision here changes them. Expiry and deadlines run on the core's scheduler and injected clock, not `setTimeout`.
+- The stored session is the public record plus private bookkeeping: ordering watermarks, seen content keys, retired turns and the private progress time (decision 5). Session rows live in core tables (step 8). The projection step and `mapping.ts`'s child-count copy disappear. The reducer writes the public shape.
+- No new message format is added. Adapters keep producing `lifecycle/2.0` (and `lifecycle/2.1` for read receipts). The only new document is the `session/3.0` state record of an existing family.
+
+### 2. One supported-source definition
+
+`packages/event-contracts/src/v2/sources.ts` defines each supported source once: its provider, its clients and, for hooks, the hook names it maps. Today's values are Codex with `cli`, `desktop` and `local`, and Claude with `code`. The `Identity` type, the `session/3.0` and `lifecycle` schema enums and the runtime hook adapter's source check derive from it. A contract test fails if any of them differs. The retained 1.x lists (`packages/lifecycle-contracts`, `packages/agent-state`) stay as they are.
+
+Capability facts are design inputs and stay in `docs/provider-qualification.md`. Each source records documented support, implemented mapping and actual qualification separately. Today Claude maps SessionStart, UserPromptSubmit, PermissionRequest, PostToolUse and PostToolUseFailure, Stop, SessionEnd, SubagentStart and SubagentStop (`providers.ts:31-34`), and nothing emits `activity-observed`. The Mac Codex wrapper forwards root SessionStart (not `compact`), UserPromptSubmit, Stop, Interrupt and SessionEnd, and drops child payloads (`apps/runtime/bin/mac-codex-hook.mjs:6-18`). It therefore reports no approval, no tool result and no subagent. Codex Desktop adds module metadata and read evidence (`modules/codex-desktop/src/evidence.ts:20-38`). No installed parity is claimed.
+
+A new source is a minor version of the session family under ADR 0012's `<family>/<major>.<minor>` rule. Its readers update in the same batch. #505 adds the native assistant this way.
+
+### 3. The `session/3.0` record
+
+`session/3.0` is a new major of the `session` family, registered beside `2.0` and `2.1` in step 1 and published by the core only from step 10. The names below are design names. Step 1 settles the exact schema mechanics and updates this design if they move.
+
+| Member | Meaning |
+| --- | --- |
+| `id`, `revision`, `generation`, `identity`, `parent`, `turn`, `ordering`, `observedAtMs`, `lastEvidenceAtMs`, `label`, `title`, `project`, `projectId`, `hostSessionId` | As in `session/2.0`. `lastEvidenceAtMs` is the evidence time of the last published change (decision 5). |
+| `status` | `{class, detail}`. `class` is a closed enum: `needs-owner`, `working`, `finished`, `quiet` or `unknown`. `detail` is an open kebab-case token. |
+| `work` | `{state, confidence, evidenceAtMs, reasons}`. `state` is `active`, `idle`, `interrupted` or `unknown`. `confidence` is `confirmed` or `unconfirmed`. `reasons` lists why it is unconfirmed: `deadline`, `restart`, or an `activity` unavailable reason. |
+| `attention` | `{items, confidence, evidenceAtMs}`. `items` keeps today's attention items. |
+| `outcome` | `{notices, read, readReceipt, confidence, evidenceAtMs}`. It keeps today's notices with per-consumer acknowledgments, read evidence and receipt provenance (`session/2.1`). |
+| `relationships` | `{children: {working, unconfirmed}, confidence}`. A child counts as working only while its own work claim is active and confirmed. Activity it cannot attribute counts as unconfirmed. |
+| `unavailable` | Today's dimension and reason list, so unsupported, missing, inaccessible, ambiguous and lost stay distinct. A claim's `confidence` is `unconfirmed` when an `ambiguous` or `lost` entry exists for its dimensions, and for work also after a deadline or restart. |
+
+The core computes `status` with one pure function from the claims. It lives in the contracts package and the shared read function uses it too. The first rule that matches wins:
+
+1. Attention items present: `needs-owner`, with the highest-ranked kind as detail (`approval`, then `input`, then `question`, as `apps/runtime/dashboard/src/sessions.ts:56` ranks them).
+2. Work active: `working`, detail `confirmed` or `unconfirmed`. Otherwise a working child: `working`, detail `subagent`.
+3. The latest notice belongs to the current turn: `finished`, detail `turn-ended`. The class ignores acknowledgments and read evidence. #505 adds details such as `failed` and `cancelled` without a schema change.
+4. Work idle or interrupted: `quiet`, detail `idle` or `interrupted`.
+5. Otherwise `unknown`, with the activity's unavailable reason as detail, or `unknown`.
+
+A reader switches on the class and may use the detail. A detail it does not know falls back to its class. Unknown action semantics never grant eligibility (decision 10). Per-consumer acknowledgment stays on the record. The shared read function applies each reader's own acknowledgment and read policy to retire `finished` to `quiet` for that reader (detail `acknowledged` or `read`).
+
+The `session/3.0` validator keeps today's record checks: entity ID, parentage, ordering authority, unique notices and dimensions, generation not after revision, and receipt provenance on an idle or interrupted root's current turn. It drops the freshness check and adds the status check: `status` must equal the function of the record's claims.
+
+### 4. Aging, restart and clocks
+
+The core owns every time-driven change of meaning and publishes it. One aging table holds a row per claim:
+
+| Claim | Silence | Restart |
+| --- | --- | --- |
+| Work, active | `unconfirmed` (reason `deadline`) five minutes after its private progress time | `unconfirmed` (reason `restart`) at start |
+| Work, idle or interrupted | no change | no change |
+| Attention | no change | no change |
+| Outcome | no change | no change |
+| Relationships | follow each child's work claim | follow each child's work claim |
+| Whole session | removed as `expired` after 24 hours without lifecycle evidence | kept |
+
+- Only qualifying evidence for the current turn confirms work again: `turn-started`, `activity-observed`, or `attention-resolved` on the current turn (today's Claude tool-result evidence, `providers.ts:72-77`). Evidence for a retired or other turn never confirms. #1867 refines qualification.
+- After a restart, evidence whose producer instant precedes the core's start instant does not confirm work. The core holds that instant in memory. No run epoch is stored. A host clock that runs behind leaves work unconfirmed until its next evidence, so skew can delay confirmation but never fake it.
+- Deadlines and expiry use the core's clock, at the core's receipt of evidence, as `lastEvidenceAtMs` does today (`index.ts:110`, `reducer.ts:201`). Host instants stay evidence fields only.
+- At start, one core transaction marks every stored active work claim `unconfirmed` (reason `restart`) and publishes the changed records. It emits no occurrence. Questions, recorded outcomes and read evidence stay as stored.
+- Explicit uncertainty, such as lost or conflicting evidence, publishes at once.
+
+Until step 10 the core still publishes `session/2.x`, whose validator enforces the five-minute freshness rule. Steps 7 to 9 therefore keep today's republication at five minutes. From step 9, `restartUncertain` is true only for sessions whose work claim the restart made unconfirmed. The shared read function maps `session/2.x` to the same claims: active work is unconfirmed while `freshness` is `uncertain` or `restartUncertain` is true. Children map as `working = children.active` and `unconfirmed = children.uncertain`.
+
+### 5. The transition result and publication
+
+`transition(stored, input, nowMs)` is pure. Its inputs are an observation, an acknowledgment, a notice override, a label, a title, an approval recovery, a read receipt, a due deadline, a start or an expiry. It returns:
+
+- every changed stored session, including affected parents and descendants;
+- every removal with its reason (`expired` or `retired`) and the retirement guards it leaves;
+- the occurrences in order (`attention-raised`, `attention-cleared` with its cause, `turn-ended` naming the notice, `session-ended` before a runtime end's removals), with exactly today's payloads and order;
+- the next deadline.
+
+The store commits the result in one transaction through the existing outbox, with history, the intake's `(source, id)`, the core's revision and part derivers (`store.ts:557-684`). It no longer reconstructs causes (`store.ts:780`) or derives occurrences by comparing states. The shared transaction, history and outbox machinery stays.
+
+Private progress can change without a public revision. From step 10 a work observation that changes no public member only advances the private progress time and re-arms the deadline. It writes the stored session, publishes nothing and adds no history row. Any change of public meaning publishes at a new revision and history keeps it. Confirmation changes count as meaning. A record's public `lastEvidenceAtMs` is therefore the evidence time of its last published change. The Tronbyt tile and Habitat keep ordering by it (`modules/tidbyt/src/status.ts:64`, `habitat/session.ts:31`). Before a sync the core commits any transition that is due, so a revision always names one payload. Bindings that compare revisions exactly keep working (`operator-tools.tsx:27`, `suggestion-model.ts:33`, `presentation-policy.ts:29`). There is no one-minute publication throttle. The existing save-cost and hourly history checks stay.
+
+### 6. Root starts (#397)
+
+The session-start handler follows the accepted policy (step 9):
+
+- A `session-started` observation for an unknown root creates the record with work `idle` and no work turn. The turn it carries, such as a SessionStart `prompt_id`, selects no work turn.
+- For a known root it preserves work state and the current turn. Mid-turn compaction keeps the active turn, and a stale or conflicting start cannot replace a newer evidenced turn or restore a finished one.
+- A child start (SubagentStart) keeps today's meaning: evidenced child work under its known parent.
+- `turn-started` and qualifying activity remain work evidence.
+- The rule applies to Codex roots too, because their SessionStart is also not work. Codex's first event arrives with its first prompt. The Mac Codex path cannot exercise compaction, because the wrapper drops `compact`. That provider difference is recorded and not tested on that path.
+
+The correction is in the core, so it also applies to observations from older hooks.
+
+### 7. Session capacity
+
+The core ports the 128-session limit (`types.ts:8`) and its eviction rule (`index.ts:286-305`) deliberately:
+
+- The limit counts every stored session, root or child, from any source.
+- At the limit, a new child is refused.
+- A new root may displace one child subtree. Every member of that subtree must be finished, with no attention. The subtree with the oldest newest evidence goes first, ties to the lower identity key. Roots are never displaced. Without such a subtree the new root is refused.
+- A refusal is silent to the reporter. The hook still sees its publication accepted at the edge. The core records `message.received` refused with `capacity`.
+- A native assistant task (#505) will be one root of its own source under the same rule. Step 9 tests the source-agnostic rule with synthetic roots of two sources. #505 tests it with native tasks.
+
+### 8. Duplicates and ordering
+
+Four guarantees stay distinct:
+
+1. Transport duplicates: `(source, id)` in `core_taken`, kept 24 hours past the later of commit and observation (`store.ts:587`, `:606-611`). An exact repeat is `duplicate`, and other content is `duplicate-conflict`.
+2. Semantic duplicates and collisions: the seen content keys and collision rule (`reducer.ts:78-89`). Step 7 hashes the same canonical content as the 1.x deduplication key, so stores written before step 7 keep recognizing duplicates. Step 8 may change the key form, because it drops session data.
+3. Ordering: per-dimension watermarks and epochs (`reducer.ts:120-154`).
+4. Retired turns and retirement guards: the retired-turn check and bounded retirement records (`reducer.ts:111-112`, `packages/agent-state/src/retirement.ts`).
+
+### 9. Generations
+
+From step 8 a new session's `generation` is the core revision of the transaction that creates it, not agent-state's revision. The core revision lives in `core_revision`, survives the reset and only grows. A guard that compares generations therefore cannot match across the reset. Such guards are in the robots, the companions, the read helpers and Nanoleaf's recreated-task check. A record's generation is never after its revision.
+
+### 10. The shared read function and every reader
+
+`packages/event-contracts/src/v2/session.ts` (step 1) exports:
+
+- `readSession(message)`: validates a session state message and returns a version-independent `SessionView`, or nothing for anything it does not accept. Through step 9 it accepts `session/2.0` and `session/2.1`. In step 10 it switches to `session/3.0` in the same pull request in which the core switches.
+- `statusOf(claims)`: the status function of decision 3, which the core uses too.
+- `forConsumer(view, policy)`: applies a reader's acknowledgment policy (any consumer, or named consumers) and whether read evidence counts.
+- `highestStatus`, `sessionState` and `STATUS_COLORS`: kept with their names and ranking, now over the view.
+- `opportunityMatches(view, opportunity, consumer)`: the opportunity is still current for this session. Generation, identity and turn match, and the attention item is still present, or the notice is still present and not acknowledged by `consumer`. A reader adds only its own device conditions.
+
+`packages/event-contracts/fixtures/v2/session-cases.json` (step 1) is the shared synthetic case set. Each case holds an input sequence (observations, commands, clock advances and restarts), the expected records and the expected occurrence sequence. It also holds expected reader outputs: status per consumer policy, the Tronbyt row, the Pixoo row, the Nanoleaf task status, the dashboard chip, the LIFX color and opportunity matches. The core's tests and every reader's tests run it. The cases include: launch, clear and resume without a prompt; mid-turn compaction; an approval raised and resolved; a question silent for more than five minutes; working silent for more than five minutes; restart with a question, an outcome and running work; a stale delayed start; parent and child updates; a child-only working root; duplicates and collisions; out-of-order evidence; ambiguous ordering; capacity; 24-hour expiry; runtime-end retirement; per-consumer acknowledgment; an unknown detail token; and the cutover reset.
+
+Every reader moves onto the function. Only the function and the core change at the switch.
+
+| Step | Reader | Files | Accepted behavior |
+| --- | --- | --- | --- |
+| 3 | Tronbyt status tile | `modules/tidbyt/src/status.ts`, `module.ts:738-743` | `?` only for `unknown` status or unconfirmed work, or an unsynced copy. A waiting or finished session is never `?` from age. The attention gate for moments and ambient art is unchanged. |
+| 3 | Pixoo Monitor | `modules/pixoo/src/presentation/agent-dashboard.ts`, `sources.ts`, `module/monitor-content.ts`, `module/schemas.ts`, `frontend/monitor.tsx` | Marker rule below. |
+| 3 | Nanoleaf | `modules/nanoleaf/src/module/feed.ts` (boundary), `module/runtime.ts` | Adapts at the feed boundary only. The Lines projection is not rewritten. Rule below. |
+| 3 | LIFX | `modules/lifx/src/module.ts:749` | No behavior change. Runs the case set. |
+| 4 | Companions | `modules/companions/src/presentation-policy.ts`, `rules.ts`, `module.ts`, `frontend/suggestion-model.ts`, `frontend/speech.tsx`, `assistant/tools.ts` | No session-age term. 30-second question window below. `read_sessions` reports the shared status. |
+| 4 | Core opportunity admission | `apps/runtime/src/core/companion-part.ts:85-107`, `packages/event-contracts/src/v2/companions.ts:40-45` | No freshness term. Validity anchors on the core's commit instant. |
+| 4 | Reachy | `modules/reachy-mini/src/module.ts:139-145` | `opportunityMatches` plus its own device conditions. No freshness term. |
+| 4 | MicroDuck | `modules/microduck/src/module.ts:154-162` | As Reachy. No blanket session-count rule. |
+| 5 | Dashboard rows, card and Habitat | `apps/runtime/dashboard/src/sessions.ts`, `agent-sessions.tsx`, `agent-status-card.tsx`, `habitat/session.ts`, `habitat/controller.ts`, `habitat.tsx`, `connection.ts`, `widgets.ts` | Uncertain only for `unknown` status, unconfirmed work or an unsynced copy. The dashboard's acknowledgment and read policy is unchanged. |
+| 5 | Notice override control | `apps/runtime/dashboard/src/operator-tools.tsx:26`, `:54`, `notice-clear.ts` | No freshness term. Keeps the synced copy, the selected notice and the expected-revision guard. |
+| 5 | Timeline | `apps/runtime/dashboard/src/timeline-model.ts:181` | Titles a `session/3.0` change from `status`, keeps today's rule for old rows and falls back to its generic title otherwise. |
+| 5 | Gateway and MCP | `apps/runtime/src/gateway/gateway.ts` (approval recovery, snapshot), `gateway/mcp.ts`, `apps/runtime/src/core/core.ts:169-189` (`core_sessions`) | Pass records unchanged. Tool descriptions name the shared status in step 10. |
+| 5 | Automations and the art alert | `apps/runtime/src/core/automation-part.ts:32-35`, `:241`, `:258`, `:263`, `:272-277` | Attention reads use `needs-owner`. Triggers stay the four live occurrences. |
+| 5 | SDK frontend types | `packages/sdk/src/frontend.ts` | Exposes the view. |
+| 6 | Codex Desktop module | `modules/codex-desktop/src/evidence.ts:20-38`, `module.ts:163-240` | The settle rule reads work state from the view. |
+| 6 | Read-receipt helpers | `apps/runtime/src/read-receipts/helper.ts:31-36`, `codex-publisher.ts:25-30`, `qualification.ts`, run by `apps/runtime/bin/claude-read.mjs`, `codex-observer.mjs` and `codex-with-read.mjs` | Accept what `readSession` accepts. Generation, turn, notice and receipt matching is unchanged. |
+| 10 | Verification tooling | `apps/runtime/verify/mac-codex.ts`, `follow-proof.ts`, `plugin.ts`, `speech-browser.ts` | Read the view. |
+
+The owner's step list names readers in groups 3 to 6. This table places the unnamed ones: LIFX in step 3, the core's opportunity admission in step 4, automations, the art alert, the SDK frontend types, the gateway's routes and `core_sessions` in step 5, and the verification tooling in step 10.
+
+Reader policies:
+
+- **Nanoleaf (decision 1).** `sharedSession` (`feed.ts:25-36`) maps the view into the projection's existing input. A member supports its displayed status as `current` unless that status rests on unconfirmed work. Attention, as `blocked` or `question`, therefore never goes stale with silence. A waiting task keeps its Lines indication for as long as it waits, subject to mode and connection rules (`shared-input.ts:436`, `:556`). Reconnection never replays an arrival wave or comet. Step 3 amends the Nanoleaf preservation line in `AGENTS.md` for this behavior. See the open question on unread tasks.
+- **Pixoo marker.** A row is marked uncertain when the copy's connection is not current, the status is `unknown`, the status is `working` with unconfirmed work, an unavailable warning applies (`warnsForUnavailable`), or its parent is ambiguous. The age, parent-unknown and turn-unknown terms of `agent-dashboard.ts:84` go. Every hook root has an unknown parent (`providers.ts:60`), so those terms marked almost every root uncertain today. The children marker shows when the row's `unconfirmed` child count is above zero, a parent is ambiguous, or the connection is not current. The all-sessions parent-unknown term (`agent-dashboard.ts:80`) goes.
+- **30-second question window (decision 2).** The core's companion part raises a coding-attention opportunity when it takes the live `attention-raised` occurrence. Validity is 30 seconds from the occurrence message's `time`, which is the core's commit instant. A new minor, `companion-opportunity/2.1`, carries that instant as `receivedAtMs` and bounds `validUntilMs` by it, so host clock skew cannot shorten or drop the window. The companions module and the browser's final speech and suggestion checks give `attention-priority` only while an admitted coding-attention opportunity is valid and its attention item is still present. The window lives in memory, so a restart starts no new window and replays nothing. The question stays visible afterward. Unrelated progress raises no new opportunity, so it does not renew priority. Explicitly requested assistant answers stay separate. The Tidbyt and Pixoo gates that hold moments and ambient art while any attention exists are not background cards in this sense, and they are unchanged.
+- **Robots and cards (decision 3).** Admission keeps the opportunity's validity window, `opportunityMatches`, mode, Quiet, takeover, interruption, spacing and queues. The freshness and restart terms go, as does MicroDuck's "exactly one fresh session" rule. Work uncertainty alone does not abandon an approval.
+- **Coding suggestions.** The session-age term (`presentation-policy.ts:11`, `suggestion-model.ts:32`) goes. Each suggestion's own evidence window, exact session, revision, generation and turn match, and the 30-second attention priority remain.
+- **Approval recovery.** Allowed only while the session's work claim is unconfirmed, for its deadline or a restart. This replaces "five minutes without evidence or since a restart" (`index.ts:369`).
+
+### 11. History
+
+Old `session/2.x` history rows stay as they are, and readers skip or generically title rows in a shape they do not know. Step 8 deletes the session family's rows from `core_history_latest` and `core_history_span` in its reset transaction. The first new row of each session is then a change with `previous: null` and is not compared with the old shape. Step 10 does the same, keyed on the stored shape (a latest session record that still has `freshness`), so the first `session/3.0` row of a session is not compared with a `session/2.x` one. The owner's decision names step 8. Repeating it at step 10 follows the same intent, and the PR for step 10 reports it. History fact rows are never updated or deleted. #1774's growth measurement will show one jump at step 8 and a smaller one at step 10. The history owners hear of this through the owner.
+
+### 12. Storage, the one-time reset and writer exclusion
+
+Step 8 moves session state into core tables and removes agent-state's storage contract from the core:
+
+- New tables in the core store: one row per stored session (entity ID, revision, generation, stored session JSON) and one per retirement guard. The consumer list becomes a code constant (`DEFAULT_CONSUMERS`, `core.ts:60`), so agent-state's stored consumer check goes. The agent-state journal goes, because history replaces it.
+- `CoreStore` stops implementing `Storage`. `acquire`, the lease object, `apply`, `#load`, `#commitChange`, `#checkOwner` and `#matches` go. `CoreStore.open()` runs inside the core's start, before the core serves a sync or republishes. It borrows the runtime's ownership, or takes the lock when no ownership was passed, as tests and offline harnesses do. It then creates the tables, runs the reset when it applies and loads caches. This is the core's ordinary start, not a separate step. A store that cannot open leaves the core running and refusing durable work, as today's reopen path does (`core.ts:585-597`).
+- Writer exclusion rests on the two existing layers: the runtime lease taken before the core (`runtime-ownership.ts:44`) and SQLite exclusive locking (`database.ts:46`). The removed `ownerId` check only guarded the old `state` row against another agent-state owner. Step 8 keeps a test that a second runtime on the same state directory is refused, and one that an offline tool holding the lease stops a runtime from starting.
+- The one-time reset runs in the first open that finds the old `state` table. In one transaction it drops the `state` table and deletes the session family's `core_records` rows. It deletes the session family's latest-history and span rows (decision 11). It deletes pending outbox rows whose routing keys are session states, session removals or agent occurrences (`bunny.state.session.*`, `bunny.event.attention-raised.*`, `bunny.event.attention-cleared.*`, `bunny.event.turn-ended.*`, `bunny.event.session-ended.*`). It publishes nothing: no removal, no occurrence and no history row. Its key is the old data's presence, so it needs no marker. Once the table is gone a later start finds nothing to drop. Other parts' tables, history rows, the outbox's other rows, `core_revision` and `core_taken` stay.
+- Consumers lose no truth. The runtime restarts for the upgrade, so every in-process module syncs again, and remote consumers resync when their stream restarts. A sync replaces the full membership, so no copy keeps a dropped session. Each live session returns at its next observation, as a new record with a new generation.
+
+Failure and recovery:
+
+| Fault | Behavior | Recovery |
+| --- | --- | --- |
+| Crash or power loss during the reset | One SQLite transaction: either nothing changed or all of it did | The next start runs the reset again or finds nothing to drop |
+| Full disk at the reset | The open fails before anything is reported. The core runs and refuses intake with `capacity` and syncs with `unavailable` | The capped backoff opens it again (1 s doubling to 60 s), and the reset runs then |
+| Second runtime on the same state directory | Refused at runtime ownership, before the core opens | None needed. The first keeps running |
+| Release before step 8 run on a reset store | Starts with empty session state and writes a new `state` row | Forward again. The next step-8 start drops it. Rolling back below step 8 is unsupported for session data |
+| Pending session publications at upgrade | Deleted by the reset, so they never go out | Consumers resync. Occurrences are not replayed |
+| Automations | No occurrence comes from the reset or the restart marking, and republication is never eligible (`automation-part.ts:270-277`) | None needed |
+
+Recovery is fix-forward with no snapshot restore. Downtime and loss of session-monitoring data are accepted (owner, 2026-11-18). The reset clears session monitoring only. It is not a command to clear other core data.
+
+### 13. Host-installed code and install skew
+
+Hooks and read-receipt helpers run from each host's installed release, not the runtime image.
+
+- **Hooks.** The `lifecycle/2.0` wire does not change in any step. Step 2 proves byte-identical output. An older host's hook keeps reporting, and the #397 correction applies to it in the core. Producer files are read unchanged, including `lifecycleVersion`, which selects title enrichment (`hook.ts:76`, `:82-83`). Changing those files would be a personal-settings change.
+- **Read-receipt helpers.** Through step 9 the core publishes `session/2.x`, which every helper accepts. After step 10 an older helper finds no record it accepts (`helper.ts:31-36`). Its receipts stop quietly, with no wrong receipt and no session change, until the host gets a release with step 10 (owner, 2026-11-18). #1869 updates each such host in the batch that carries step 10, or records it as degraded with its owner and next action.
+- **Shared main.** Every step's revision is installable. Step 8 drops session data on its first start, and step 10 stops older host read helpers. The coordinator gives the deployment owner those two facts with the merged revisions. No deployment hold is needed, because no intermediate revision is unsafe to install.
+
+### 14. Titles
+
+Step 2 moves the normalizer and title reader with identical output, proven by golden tests that run the retained package's path beside the new one. The core's title operation ports unchanged in step 7. Display precedence stays label, then title, then the reader's neutral fallback. #1847's PC check stays valid, and whichever of the two merges second adapts to the other (owner, 2026-11-18). The PC's installed release is not updated while #1847's check runs.
+
+## Owner decisions and where they land
+
+| Decision | Where |
+| --- | --- |
+| 2026-11-16 (1): waiting Nanoleaf Lines keep their indication, and the preservation line is amended | Decision 10, step 3 |
+| 2026-11-16 (2): 30-second question priority from its own evidence time | Decision 10, step 4 (see below) |
+| 2026-11-16 (3): no blanket MicroDuck session-count rule | Decision 10, step 4 |
+| 2026-11-16 (4): restart makes running work unconfirmed, and questions and outcomes stay | Decision 4, step 9 |
+| 2026-11-16 (5): flatten, one transition and commit path, empty once at cutover | Decisions 1, 5 and 12, steps 2, 7 and 8 |
+| 2026-11-16 (6): #1866 folded in, progress to #1867, workers deferred from #505 | Scope of this change |
+| 2026-11-18: downtime and data loss accepted, fix forward | Decision 12 |
+| 2026-11-18: no separate store start-up step | Decision 12: the store opens inside the core's start |
+| 2026-11-18: nothing built beside the live path | Every step changes the live path in place |
+| 2026-11-18: old session data dropped on start, no reset marker, no compatibility record | Decisions 12 and 13 |
+| 2026-11-18: restart marks running work unconfirmed, no stored run epoch | Decision 4 |
+| 2026-11-18: 30-second window in memory | Decision 10 |
+| 2026-11-18: older hosts' read receipts stop until updated | Decision 13 |
+| 2026-11-18: old history rows stay, and the latest pointer is cleared at step 8 | Decision 11 |
+| 2026-11-18: title output identical, #1847 not waited for | Decision 14 |
+
+The owner's plan lands decision 2 in step 3. Its code is in the companions module, the core's companion part and the opportunity contract, which belong to step 4's reader group. No step 3 reader has a freshness-based priority rule. This design therefore lands decision 2 in step 4 and leaves the step 3 attention gates unchanged. The coordinator confirms this placement before step 3 or 4 starts.
+
+## Requirements from the pre-implementation review
+
+| Requirement | Answer |
+| --- | --- |
+| Writer exclusion | Decision 12. The lock is borrowed and the tables and caches load in `CoreStore.open()` at the core's start. The owner check goes with the old row. Tests cover a refused second runtime and an offline tool. |
+| Host-installed code | Decision 13. Hooks stay wire-compatible, and helpers stop after step 10 until each host is updated (#1869). |
+| Shared main | Decision 13. Every revision is installable. The reset rides in step 8 and runs once, keyed on the old data's presence (owner decision: no stored marker). |
+| Automations | Decisions 5 and 12. Occurrence payloads and order are unchanged. Reset and restart marking emit none. Occurrence sequences are in the case set. Focused second reviews are listed below. |
+| Nanoleaf and Pixoo | Decision 10. |
+| Session limit | Decision 7. |
+| Clock | Decisions 4 and 10. Deadlines use the core's receipt clock, and the question window uses the core's commit instant. |
+| History | Decision 11. |
+| Reset | Decision 12. A step 8 test opens a synthetic store shaped like an installed one, with an old `state` row, old session records, session latest-history rows and pending session outbox rows. |
+| Review | Below and in `tasks.md`. |
+
+## Component boundaries (ADR 0012)
+
+Each entry names the rule it follows. No exception to ADR 0012 or the diagnostic contract is needed.
+
+**Entry points and hand-offs.**
+
+- Hook to edge to core: `bunny.event.lifecycle.<session>` through `publishOnce` and the core's subscription (`core.ts:489`). ADR 0012 "Ownership and publication": hooks stay bounded and fail-open.
+- In-process producers: the Codex Desktop module's read and metadata observations on the same subscription (`core.ts:698-770`), and later #505's native outbox.
+- Read-receipt helpers: SDK edge sync of `session`, then `lifecycle/2.1` receipts to the core's serialized intake (`store.ts:298-323`).
+- Operator commands: `notice-acknowledge`, `notice-clear`, `approval-recover` and `session-label-set`, through the gateway, MCP and the SDK edge.
+- Core to readers: `session` state, removal and occurrence messages after each commit, plus sync. Core to companions: `companion-opportunity` from the live occurrence. Core to automations: the four live occurrences, as `committed` hands them over (`automation-part.ts:272-277`).
+
+**Refusals and outcomes.** Observations are occurrences, so they have no reply or outcome. The core records `accepted`, `duplicate`, `stale` or a typed refusal. Operator commands keep their replies: `accepted` after the commit, or a typed refusal with no effect. Labels and notice overrides keep their tracked completion. ADR 0012 "Errors, effects and outcomes": a rejection proves no effect, and committed is not published. No command has an `uncertain` or `expired` path that changes here.
+
+**Codes and retry policy.** Existing registry codes only: `invalid-message`, `duplicate-conflict`, `forbidden`, `capacity`, `unavailable`, `not-found`, `revision-conflict`, `invalid-state` and `internal`. No new code. Hooks never retry. The Codex Desktop module keeps its own capped re-send of read evidence, an observation it owns. The outbox republishes committed messages. No command is ever resent. ADR 0012 "Retries".
+
+**Diagnostic records and trace continuity.** The core records `message.received` once per intake with its outcome, `command.completed` or `command.rejected` per command, and the storage transitions and summaries it records today (ADR 0012 "Records at decision points" and "Repetition"). Levels come from `levelOf`. A hook's message starts the trace, and the commit's messages carry it as parent (`store.ts:598`). Deadline publications, restart marking and the reset have no cause and start new roots or stay untraced, never with a fabricated parent (diagnostic contract, "Traces and context"). The reset records one existing `operation.completed` record with `bunny.operation` `storage` and no new event or attribute. If the catalog cannot express it without an addition, the step records nothing new and says so. `storage.cost.*` keeps measuring save time. Its size condition measures the session rows one save writes, with the same 8 MiB threshold that half of the old 16 MiB state block set. Step 8 updates "Core save cost" to match. No session content enters logs.
+
+**Fault cases.** Malformed or cross-source observations are refused at the edge or intake. A reused `(source, id)` is a conflict. The store can be full, fail or crash between commit and publish. The core can be full at the session limit. Older host hooks and read helpers are covered by decision 13. Delayed or reordered events after a restart, host clock skew, a lost consumer stream (resync, no replay), a second runtime and a crash during the reset are covered above. Each is in the case set or the store tests.
+
+## Delivery steps and cut lines
+
+The ten steps follow the owner's plan of 2026-11-18. `tasks.md` holds each step's work and evidence. The cut lines of steps 7 to 9 were checked against the code:
+
+- **Step 7 stands alone if it keeps agent-state's storage contract.** The ported session logic takes observations directly, but it still leases the store through `CoreStore.acquire` and commits the same 2.1 state row through `#commitChange` (`store.ts:357`, `:510`). The store's `#plan` (`store.ts:687`) still derives records and occurrences. Step 7 then changes no storage, writer exclusion or published message. A differential test feeds the same observation sequences to the retained agent-state path (`toEnvelope` and `createAgentState`) and the new one, and compares every published record and occurrence. The cost is that step 7 ports agent-state's queue and commit shape, which step 8 then replaces.
+- **Step 8 stands alone.** Storage, writer exclusion, the transition result replacing `#plan` and `#matches`, the reset and generations change together, because each depends on removing the `state` row.
+- **Step 9 needs step 8.** The restart marking stores per-claim work confidence, which the 2.1 state row cannot hold (`validateExport`). The #397 handler and the capacity statement could land earlier, but they stay in step 9 as planned.
+
+Verdict: no merge is needed. If review of step 7 finds the temporary lease port too costly, steps 7 and 8 merge into one pull request with the focused second review.
+
+Focused second reviews, as AGENTS.md requires:
+
+| Step | Risk covered |
+| --- | --- |
+| 4 | Device-command safety: robot gestures and companion speech eligibility change |
+| 7 | Device-command safety: the code that produces occurrences, which trigger automations, is ported |
+| 8 | Storage migration, writer exclusion and device-command safety: generation guards and occurrence derivation |
+| 10 | Device-command safety and storage: publication timing, aging and the read-function switch that robots and automations depend on |
+
+## Risks and trade-offs
+
+- The ported rules are about 300 lines whose ordering and ambiguity handling grew over several fixes. The protection is the ported agent-state tests, translated from envelopes to observations, plus step 7's differential test.
+- Readers move before the format. Between steps 3 and 10 the shared function reads `session/2.x`, whose freshness still ages waiting sessions. The function maps it so that only work becomes unconfirmed. Readers show the new meaning from step 3 on.
+- Publishing only on meaning change makes the public evidence time lag private progress. Readers that order by it see the time of the last meaningful change.
+- A future minor version, such as #505's native source, stops older host read helpers until they are updated, as today. A minor-tolerant reader is a separate decision and is not taken here.
+- The unread-task behavior on Nanoleaf is an open question. See below.
+
+## Open questions
+
+1. **Nanoleaf unread tasks (owner).** The accepted rule keeps recorded outcomes meaningful without age-only uncertainty. Today an unread finished task's Line goes steady after five minutes of silence (`shared-input.ts:556`). Under the new model, nothing makes it stale, so its unread indication would continue until it is read, acknowledged, superseded by a new turn or expired. Keeping today's steady-after-five-minutes behavior would need a time-driven publication of the outcome claim, which is the kind of age rule this change removes. Recommendation: accept the continued indication and amend the `AGENTS.md` Nanoleaf line in step 3 to cover both waiting and unread tasks. Step 3 does not merge before this is answered.
+2. **Decision 2 placement (coordinator).** Confirm that decision 2 lands in step 4 with the companions, as set out above.
+
+## Validation
+
+Each step uses Node 24 from the worktree root and runs the checks its area guide names. All steps run `npm run build`, `npm run typecheck`, `npm run lint:js`, `npm run check:workflow` and `npm run test:workflow`, plus `npm run ci:select` with the delivery comparison. Contract steps add `npm run test:events:built`, `npm run test:events:python` and the packaged contract checks. Core steps add `npm run test:runtime:built`, `npm run test:runtime:scenarios:built` and the SDK suite. Reader steps add each module's suite: `test:tidbyt-module:built`, `test:pixoo:built`, `test:nanoleaf:built`, `test:lifx-module:built`, `test:companions:built`, `test:reachy:built`, `test:microduck:built`, `test:runtime-dashboard:built` and `test:codex-desktop:built`, with their browser suites where a page changes. Tests use the injected clock and scheduler, with no real-clock waits. Behavior that a person can observe gets a disposable acceptance exercise with synthetic sessions. Installed, client and physical acceptance stay with #1869.
