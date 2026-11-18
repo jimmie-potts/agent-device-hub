@@ -1,4 +1,4 @@
-import {directoryLink} from './navigation-helpers.ts';
+import {destinationLink, directoryLink} from './navigation-helpers.ts';
 // Synthetic integration proof: the runtime owns metadata and real module queues control only in-memory lamps.
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
@@ -93,7 +93,7 @@ try {
     await faultPage.getByRole('heading', {name: 'Reading room', exact: true}).waitFor();
     assert.equal(forwarded, 1); assert.equal(layoutSends.filter(url => url.includes('/commands/')).length, 1, 'committed layout survives reload without replay');
   } finally { await faultContext.close(); }
-  await page.getByRole('link', {name: 'Rooms', exact: true}).click();
+  await (await destinationLink(page, 'Rooms')).click();
   const rooms = page.getByRole('region', {name: 'Rooms', exact: true});
   await rooms.getByText('Manage rooms', {exact: true}).click();
   await rooms.getByLabel('New room name', {exact: true}).fill('Studio');
@@ -115,7 +115,7 @@ try {
   } finally { await context2.close(); }
   await page.reload(); await feed(page, 'connected'); await studio.getByText('1 lights · room', {exact: false}).waitFor();
   await world.restart(); await page.reload(); await feed(page, 'connected'); await studio.getByText('1 lights · room', {exact: false}).waitFor();
-  await page.getByRole('link', {name: /^Home/}).first().click();
+  await (await destinationLink(page, /^Home/)).click();
   await lights.getByRole('heading', {name: 'Studio', exact: true}).waitFor();
   const restored = lights.locator(`[data-light-card="${groupId}"]`); await restored.waitFor();
   await restored.getByLabel('Options for Light group', {exact: true}).click(); await restored.getByRole('button', {name: 'Ungroup', exact: true}).click();

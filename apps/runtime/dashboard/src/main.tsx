@@ -8,6 +8,8 @@ import type {HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 import {LightingWorkspace} from './lighting-workspace.tsx';
 import {DeviceDirectory} from './device-directory.tsx';
 import {NavLink, ShellNavigation, useRoute} from './navigation.tsx';
+import {RailIcon, usePhone, useRail} from './rail.tsx';
+import {railAttribute} from './rail-preference.ts';
 import {InboxPanel, type InboxFocus} from './inbox.tsx';
 import {Timeline, TimelinePanel} from './timeline.tsx';
 import {MusicVisualizerCard} from './music-visualizer.tsx';
@@ -38,7 +40,7 @@ import {WisprWidget} from '@jimmie-potts/wispr/frontend';
 import {DuckWidget, ReachyWidget} from '@jimmie-potts/companions/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
-import {navigationDestination} from './routes.ts';
+import {navigationDestination, routeHash} from './routes.ts';
 import {age, sessionRows} from './sessions.ts';
 import {AgentSessions} from './agent-sessions.tsx';
 import {OperatorTools} from './operator-tools.tsx';
@@ -102,12 +104,16 @@ function SlotWidget({placement}: {placement: Placement}): React.JSX.Element {
 
 const FEED_TEXT: Readonly<Record<DashboardState['feed'], string>> = {connecting: 'Connecting', connected: 'Feed connected', reconnecting: 'Reconnecting', ended: 'Signed out'};
 
-/** The link's health in one indicator; its details say what the page last synced, never that work succeeded. */
-function FeedIndicator({state, now}: {state: DashboardState; now: number}): React.JSX.Element {
+/**
+ * The link's health in one indicator; its details say what the page last synced and whether this session may send
+ * commands, never that work succeeded.
+ */
+function FeedIndicator({state, now, control}: {state: DashboardState; now: number; control: boolean}): React.JSX.Element {
   const {feed, sessions} = state;
   const healthy = feed === 'connected' && sessions.synced;
   const label = feed === 'connected' && !sessions.synced ? 'Syncing sessions' : FEED_TEXT[feed];
-  return <InfoTip warning={!healthy} label={<><span aria-hidden="true">{healthy ? '●' : '⚠'}</span> {label}</>}>
+  return <InfoTip warning={!healthy} label={<><span aria-hidden="true">{healthy ? '●' : '⚠'}</span><span className="rail-text"> {label}</span></>}>
+    <span className="tip-line">{feed === 'ended' ? 'Signed out' : control ? 'Control enabled' : 'Read-only'}</span>
     <span className="tip-line">Core sessions: {sessions.synced ? 'synced' : 'not synced'}</span>
     <span className="tip-line">Core revision: {sessions.revision ?? 'Unknown'}</span>
     <span className="tip-line">Last change: {sessions.changedAtMs === undefined ? 'Unknown' : `${age(Math.max(0, now - sessions.changedAtMs))} ago`}</span>
@@ -170,6 +176,28 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const route = useRoute();
   const [now, setNow] = useState(Date.now());
   const [inboxFocus, setInboxFocus] = useState<InboxFocus>();
+  const rail = useRail();
+  // On a phone the rail is a drawer. A chosen destination, Escape and an outside tap close it and hand focus back to its button.
+  // While it is open the page behind it is inert, so focus stays in the drawer or on its button.
+  const phone = usePhone();
+  const [drawerWanted, setDrawer] = useState(false);
+  const drawer = drawerWanted && phone;
+  useEffect(() => { if (!phone) setDrawer(false); }, [phone]);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const railElement = useRef<HTMLElement>(null);
+  const address = routeHash(route);
+  useEffect(() => { setDrawer(false); }, [address]);
+  useEffect(() => {
+    if (!drawer) return;
+    (railElement.current?.querySelector<HTMLElement>('a[aria-current]') ?? railElement.current?.querySelector<HTMLElement>('a'))?.focus();
+    const dismiss = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      setDrawer(false);
+      menuButton.current?.focus();
+    };
+    window.addEventListener('keydown', dismiss);
+    return () => { window.removeEventListener('keydown', dismiss); };
+  }, [drawer]);
   // The clock only ages what the page shows; it reads nothing.
   useEffect(() => {
     const clock = setInterval(() => { setNow(Date.now()); }, 1000);
@@ -267,18 +295,39 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   };
   const schedule = artScheduleCopy(runtime);
   const artNotice = scheduledArtNotice(schedule.record, state.feed === 'connected' && schedule.synced, operations, operationsLive, now);
-  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className={workspace ? 'shell workspace-shell' : 'shell'}>
-    <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
-    <aside>
-      <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
+  // An ended session expands the rail at every width, so "Sign in again" is never squeezed into the icon rail.
+  const ended = state.feed === 'ended', railExpanded = rail.expanded || ended;
+  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className={workspace ? 'shell workspace-shell' : 'shell'}
+    data-rail-wide={ended ? 'expanded' : railAttribute(rail.saved.wide)} data-rail-narrow={ended ? 'expanded' : railAttribute(rail.saved.narrow)}
+    data-drawer={drawer ? 'open' : undefined}>
+    <a className="skip" href="#main" inert={drawer} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
+    <header className="phone-bar">
+      <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-expanded={drawer} aria-controls="rail"
+        onClick={() => { setDrawer(open => !open); }}><RailIcon name="menu"/></button>
+      <span className="phone-brand">B.U.N.N.Y.</span>
+      {ended && <button type="button" className="phone-sign-in" inert={drawer} onClick={signInAgain}>Sign in again</button>}
+    </header>
+    <aside id="rail" ref={railElement} onClick={event => {
+      if (!drawer || !(event.target instanceof Element) || event.target.closest('a') === null) return;
+      setDrawer(false);
+      menuButton.current?.focus();
+    }}>
+      <div className="rail-head">
+        <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
+        <button type="button" className="secondary rail-button rail-toggle" disabled={ended}
+          aria-label={railExpanded ? 'Collapse navigation' : 'Expand navigation'} title={railExpanded ? 'Collapse navigation' : 'Expand navigation'}
+          onClick={rail.toggle}><RailIcon name="sidebar"/></button>
+      </div>
       <ShellNavigation route={route}/>
       <div className="sidebar-foot">
-        <FeedIndicator state={state} now={now}/>
+        <nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}><RailIcon name="settings"/><span className="rail-text">Settings</span></NavLink></nav>
+        <FeedIndicator state={state} now={now} control={runtime.control}/>
+        <p className="rail-text">{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</p>
         {state.feed === 'ended' && <button type="button" onClick={signInAgain}>Sign in again</button>}
       </div>
     </aside>
-    <main id="main" tabIndex={-1} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
-      <header className="top"><span>{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</span><nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}>Settings</NavLink></nav></header>
+    <div className="rail-scrim" onClick={() => { setDrawer(false); menuButton.current?.focus(); }}/>
+    <main id="main" tabIndex={-1} inert={drawer} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
       {!workspace && navigationDestination(route) === 'devices' && route.kind !== 'devices' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'devices'}}>All devices</NavLink></nav>}
       {!workspace && featureNavigation}
       {route.kind === 'connections' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'settings'}}>Back to Settings</NavLink></nav>}
@@ -290,7 +339,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       <DeviceDirectory runtime={runtime} connected={state.feed === 'connected'} active={route.kind === 'devices'}/>
       {route.kind === 'settings' && <section aria-label="Settings"><header className="page"><h1>Settings</h1></header>
         <div className="settings-grid"><article className="card"><h2>Connections</h2><p className="hint">Connection evidence, running build and operator tools.</p><NavLink route={{kind: 'connections'}}>Connections</NavLink></article>
-          <article className="card"><h2>Browser session</h2><FeedIndicator state={state} now={now}/><div className="actions"><button type="button" className="secondary" onClick={disconnect}>Disconnect</button></div></article>
+          <article className="card"><h2>Browser session</h2><FeedIndicator state={state} now={now} control={runtime.control}/><div className="actions"><button type="button" className="secondary" onClick={disconnect}>Disconnect</button></div></article>
           <ArtThemeSettings/><article className="card"><PlacesNav links={links}/></article></div>
       </section>}
       {route.kind !== 'home' && <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}

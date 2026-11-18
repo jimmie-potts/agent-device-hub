@@ -4,6 +4,7 @@ import {chromium, expect, type Locator, type Page} from 'playwright/test';
 import {ART_THEME_KEY} from '../src/skins/art-theme.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {changes, feed, startWorld} from './harness.ts';
+import {openSettings} from './navigation-helpers.ts';
 
 const world = await startWorld({art: true}), browser = await chromium.launch({headless: true});
 const artifacts = await browserArtifactDirectory();
@@ -100,7 +101,7 @@ try {
   for (const scheme of ['light', 'dark'] as const) for (const width of [1440, 390, 320]) {
     await page.emulateMedia({colorScheme: scheme});await page.setViewportSize({width, height: 1000});
     await page.goto(`${world.url}/#/module/art/gallery`);await feed(page, 'connected');await expect(page.locator('html')).toHaveAttribute('data-art-theme', 'applied');
-    await page.getByRole('navigation', {name: 'Utilities'}).getByRole('link', {name: 'Settings', exact: true}).click();
+    await openSettings(page);
     const lock = settings.getByRole('button', {name: 'Lock current colors', exact: true}), before = await layoutBox(lock);
     await lock.click();assert.deepEqual(await layoutBox(lock), before, 'locking does not move theme controls');
     await settings.getByRole('button', {name: 'Restore default', exact: true}).click();assert.deepEqual(await layoutBox(lock), before, 'default restore does not move theme controls');

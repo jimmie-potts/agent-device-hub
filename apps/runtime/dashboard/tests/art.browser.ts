@@ -9,6 +9,7 @@ import {artSelectionJourney} from './art-selection-journey.ts';
 import {artScheduleJourney} from './art-schedule-journey.ts';
 import {artNoticeJourney} from './art-notice-journey.ts';
 import {artShowJourney} from './art-show-journey.ts';
+import {destinationLink} from './navigation-helpers.ts';
 
 await artScheduleJourney();
 await artNoticeJourney();
@@ -102,7 +103,7 @@ try {
   await page.reload();await feed(page, 'connected');await expect(create).toBeEnabled();assert.equal(world.art.state().imageCalls, uncertainCalls);
   await expect(page.getByRole('region', {name: 'Art allowance'})).toContainText('Uncertain');
   // Reserve a Home row through the existing layout owner; image changes never change its order.
-  await page.setViewportSize({width: 1440, height: 1100});await page.getByRole('link', {name: /^Home/}).first().click();
+  await page.setViewportSize({width: 1440, height: 1100});await (await destinationLink(page, /^Home/)).click();
   const edit = page.getByRole('button', {name: 'Edit Home', exact: true});await expect(edit).toBeEnabled();
   await edit.click();await page.getByRole('button', {name: 'Add card', exact: true}).click();
   await page.getByRole('button', {name: 'Add Art', exact: true}).click();await page.getByRole('button', {name: 'Close', exact: true}).click();
@@ -169,7 +170,8 @@ try {
   await expect(automatic).toHaveAttribute('data-home-shape', 'wide');const before = await cells();
   // The viewport's height never moves it; a narrower grid gives it the square left after Hub mode, with no command.
   await page.setViewportSize({width: 1440, height: 300});await settle(page);assert.equal(await cells(), before, 'viewport height keeps automatic art in place');
-  await page.setViewportSize({width: 1100, height: 1100});await expect(automatic).toHaveAttribute('data-home-shape', 'square');
+  // 980px with the icon rail (Hub #1887) gives the same main column that 1100px gave with the full rail.
+  await page.setViewportSize({width: 980, height: 1100});await expect(automatic).toHaveAttribute('data-home-shape', 'square');
   assert.equal(sent.length, automaticCommands, 'free-space fitting sends no commands');
   await page.setViewportSize({width: 1440, height: 1100});await expect(automatic).toBeVisible();
   assert.deepEqual(errors, [], 'no browser errors');

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import {chromium, type Browser, type Route} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {destinationLink} from './navigation-helpers.ts';
 const world = await startWorld({devices: true, inbox: true});
 let browser: Browser | undefined;
 try {
@@ -25,7 +26,7 @@ try {
     await off.waitFor(); await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('[data-device="pendant-1"] button')?.disabled === false);
     world.loseDeviceReply(); await off.click();
     await card.locator('p[role="status"]').filter({hasText: 'Uncertain result.'}).waitFor();
-    await page.getByRole('link', {name: /Home/}).first().click();
+    await (await destinationLink(page, /Home/)).click();
     await panel.locator('[data-inbox]').filter({hasText: 'Uncertain'}).waitFor();
     const beforeReload = sent.length;
     await page.reload(); await feed(page, 'connected');
@@ -50,7 +51,7 @@ try {
     await page.setViewportSize({width: 390, height: 844});
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     // Responses complete in reverse order: entry versus a filter, then two submitted filters.
-    await page.getByRole('link', {name: /Home/}).first().click();
+    await (await destinationLink(page, /Home/)).click();
     const held = new Map<string, Route>(), waiting = new Map<string, (route: Route) => void>();
     const take = (kind: string): Promise<Route> => {
       const route = held.get(kind);
@@ -103,7 +104,7 @@ try {
     assert.match(await page.getByRole('status').innerText(), /^0 history entries/, 'obsolete failure cannot replace the latest successful status');
     assert.equal(sent.length, beforeReload + 1, 'overlapping timeline reads send no command');
     await page.unroute('**/api/v2/history*');
-    await page.getByRole('link', {name: /Home/}).first().click();
+    await (await destinationLink(page, /Home/)).click();
     await page.route('**/api/v2/authority?scope=control', route => route.fulfill({status: 403, contentType: 'application/json', body: '{"error":{"code":"forbidden","retryable":false}}'}));
     await page.reload(); await feed(page, 'connected');
     await panel.getByText('Your session is read-only.').waitFor();

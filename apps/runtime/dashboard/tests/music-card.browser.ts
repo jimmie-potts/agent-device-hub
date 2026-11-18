@@ -1,4 +1,4 @@
-import {openAudio} from './navigation-helpers.ts';
+import {destinationLink, openAudio} from './navigation-helpers.ts';
 // Shared Music card journey through a real disposable runtime; all media and receivers are synthetic.
 import assert from 'node:assert/strict';
 import {chromium, type Route} from 'playwright';
@@ -40,7 +40,7 @@ try {
   await studio.check(); await page.getByRole('button', {name: 'Save room placement', exact: true}).focus(); await page.keyboard.press('Enter');
   await page.getByRole('status').filter({hasText: 'Room placement saved.'}).waitFor();
   assert.equal(sent.filter(url => url.endsWith('/playback-layout-set')).length, 1);
-  await page.getByRole('link', {name: 'Rooms', exact: true}).click();
+  await (await destinationLink(page, 'Rooms')).click();
   const room = page.getByRole('region', {name: 'Studio audio', exact: true}); await room.getByRole('article', {name: 'Music living-room', exact: true}).waitFor();
   assert.equal(await page.getByRole('region', {name: 'Kitchen audio', exact: true}).count(), 0);
   const second = await context.newPage(); const secondSent = changes(second); await second.goto(world.url + '/#/rooms'); await feed(second, 'connected');
