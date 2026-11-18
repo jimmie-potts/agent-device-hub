@@ -27,7 +27,8 @@
         "1.8",
         "1.9",
         "1.10",
-        "1.11"
+        "1.11",
+        "1.12"
       ]
     },
     "timestamp": {
@@ -122,7 +123,10 @@
         "nanoleaf.http.read.failed",
         "nanoleaf.http.read.recovered",
         "nanoleaf.http.read.sampled",
-        "nanoleaf.http.read.summary"
+        "nanoleaf.http.read.summary",
+        "music.capture.producer.checkpoint",
+        "music.capture.freshness",
+        "nanoleaf.music.input.lost"
       ]
     },
     "body": {
@@ -189,7 +193,10 @@
         "Nanoleaf HTTP read failed",
         "Nanoleaf HTTP read recovered",
         "Nanoleaf HTTP read sampled",
-        "Nanoleaf HTTP read failures summarized"
+        "Nanoleaf HTTP read failures summarized",
+        "Music producer capture checkpoint",
+        "Runtime capture freshness checkpoint",
+        "Nanoleaf Music input lost"
       ]
     },
     "resource": {
@@ -222,7 +229,8 @@
             "nanoleaf-wall-ui",
             "nanoleaf-mcp",
             "bunny-tool",
-            "runtime"
+            "runtime",
+            "music-producer"
           ]
         },
         "service.version": {
@@ -271,7 +279,8 @@
             "bunny.verification",
             "bunny.telemetry",
             "bunny.runtime",
-            "bunny.module"
+            "bunny.module",
+            "bunny.music-producer"
           ]
         },
         "version": {
@@ -856,6 +865,117 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        },
+        "bunny.music.capture_generation": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?![\\s\\S])"
+        },
+        "bunny.music.checkpoint": {
+          "type": "string",
+          "enum": [
+            "loss",
+            "recovery",
+            "summary",
+            "terminal"
+          ]
+        },
+        "bunny.music.input_loss": {
+          "type": "string",
+          "enum": [
+            "no-current-input",
+            "sample-expired",
+            "incoming-expired",
+            "receiver-clock-invalid",
+            "source-clock-reversed",
+            "binding-replaced",
+            "subscription-overflow",
+            "retired"
+          ]
+        },
+        "bunny.music.observation": {
+          "type": "string",
+          "enum": [
+            "dequeue-quiet",
+            "publish-unacknowledged",
+            "dequeue-timestamp-rejected",
+            "publication-timestamp-rejected",
+            "accepted-sample-expired",
+            "dequeued-window-expired"
+          ]
+        },
+        "bunny.music.loss_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "bunny.music.dequeued_sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.music.dequeued_idle_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.music.attempted_sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.music.attempted_idle_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.music.acknowledged_sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.music.acknowledged_idle_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.music.accepted_sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "bunny.music.accepted_idle_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.music.dequeued_source_age_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.music.attempted_source_age_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "bunny.music.publication_state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "acknowledged",
+            "rejected"
+          ]
+        },
+        "bunny.music.dequeued_window_expired": {
+          "type": "boolean"
+        },
+        "bunny.music.publish_pending_overdue": {
+          "type": "boolean"
+        },
+        "bunny.music.sink_dropped_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       }
     },
@@ -1271,7 +1391,9 @@
               "nanoleaf.http.read.failed",
               "nanoleaf.http.read.recovered",
               "nanoleaf.http.read.sampled",
-              "nanoleaf.http.read.summary"
+              "nanoleaf.http.read.summary",
+              "nanoleaf.music.input.lost",
+              "music.capture.freshness"
             ]
           },
           "attributes": {
@@ -1578,7 +1700,8 @@
               "enum": [
                 "1.9",
                 "1.10",
-                "1.11"
+                "1.11",
+                "1.12"
               ]
             }
           }
@@ -1678,7 +1801,8 @@
             "not": {
               "enum": [
                 "1.10",
-                "1.11"
+                "1.11",
+                "1.12"
               ]
             }
           }
@@ -2036,7 +2160,10 @@
         "not": {
           "properties": {
             "schema_version": {
-              "const": "1.11"
+              "enum": [
+                "1.11",
+                "1.12"
+              ]
             },
             "event_name": {
               "enum": [
@@ -2423,6 +2550,515 @@
             ]
           }
         }
+      }
+    },
+    {
+      "$comment": "Profile 1.12 Music diagnostic fields, scope and service belong to their checkpoint events.",
+      "if": {
+        "not": {
+          "properties": {
+            "event_name": {
+              "enum": [
+                "music.capture.producer.checkpoint",
+                "music.capture.freshness",
+                "nanoleaf.music.input.lost"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "attributes": {
+                "propertyNames": {
+                  "not": {
+                    "enum": [
+                      "bunny.music.accepted_idle_ms",
+                      "bunny.music.accepted_sequence",
+                      "bunny.music.acknowledged_idle_ms",
+                      "bunny.music.acknowledged_sequence",
+                      "bunny.music.attempted_idle_ms",
+                      "bunny.music.attempted_sequence",
+                      "bunny.music.attempted_source_age_ms",
+                      "bunny.music.capture_generation",
+                      "bunny.music.checkpoint",
+                      "bunny.music.dequeued_idle_ms",
+                      "bunny.music.dequeued_sequence",
+                      "bunny.music.dequeued_source_age_ms",
+                      "bunny.music.dequeued_window_expired",
+                      "bunny.music.input_loss",
+                      "bunny.music.loss_at_ms",
+                      "bunny.music.observation",
+                      "bunny.music.publication_state",
+                      "bunny.music.publish_pending_overdue",
+                      "bunny.music.sink_dropped_count"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "scope": {
+                "properties": {
+                  "name": {
+                    "not": {
+                      "const": "bunny.music-producer"
+                    }
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "resource": {
+                "properties": {
+                  "service.name": {
+                    "not": {
+                      "const": "music-producer"
+                    }
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "music.capture.producer.checkpoint"
+          }
+        },
+        "type": "object"
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "schema_version": {
+                "const": "1.12"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "resource": {
+                "properties": {
+                  "service.name": {
+                    "const": "music-producer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "scope": {
+                "properties": {
+                  "name": {
+                    "const": "bunny.music-producer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "attributes": {
+                "required": [
+                  "bunny.music.capture_generation",
+                  "bunny.music.checkpoint"
+                ],
+                "properties": {
+                  "bunny.music.observation": {
+                    "enum": [
+                      "dequeue-quiet",
+                      "publish-unacknowledged",
+                      "dequeue-timestamp-rejected",
+                      "publication-timestamp-rejected",
+                      "dequeued-window-expired"
+                    ]
+                  },
+                  "bunny.music.capture_generation": {},
+                  "bunny.music.checkpoint": {}
+                },
+                "propertyNames": {
+                  "enum": [
+                    "bunny.attempt_count",
+                    "bunny.music.acknowledged_idle_ms",
+                    "bunny.music.acknowledged_sequence",
+                    "bunny.music.attempted_idle_ms",
+                    "bunny.music.attempted_sequence",
+                    "bunny.music.attempted_source_age_ms",
+                    "bunny.music.capture_generation",
+                    "bunny.music.checkpoint",
+                    "bunny.music.dequeued_idle_ms",
+                    "bunny.music.dequeued_sequence",
+                    "bunny.music.dequeued_source_age_ms",
+                    "bunny.music.dequeued_window_expired",
+                    "bunny.music.loss_at_ms",
+                    "bunny.music.observation",
+                    "bunny.music.publication_state",
+                    "bunny.music.publish_pending_overdue",
+                    "bunny.music.sink_dropped_count",
+                    "bunny.provenance"
+                  ]
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "music.capture.freshness"
+          }
+        },
+        "type": "object"
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "schema_version": {
+                "const": "1.12"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "resource": {
+                "properties": {
+                  "service.name": {
+                    "const": "runtime"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "scope": {
+                "properties": {
+                  "name": {
+                    "const": "bunny.module"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "attributes": {
+                "required": [
+                  "bunny.music.capture_generation",
+                  "bunny.music.checkpoint",
+                  "bunny.module"
+                ],
+                "properties": {
+                  "bunny.music.observation": {
+                    "const": "accepted-sample-expired"
+                  },
+                  "bunny.music.capture_generation": {},
+                  "bunny.music.checkpoint": {},
+                  "bunny.module": {
+                    "const": "core"
+                  }
+                },
+                "propertyNames": {
+                  "enum": [
+                    "bunny.attempt_count",
+                    "bunny.module",
+                    "bunny.music.accepted_idle_ms",
+                    "bunny.music.accepted_sequence",
+                    "bunny.music.capture_generation",
+                    "bunny.music.checkpoint",
+                    "bunny.music.loss_at_ms",
+                    "bunny.music.observation",
+                    "bunny.provenance"
+                  ]
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_name": {
+            "const": "nanoleaf.music.input.lost"
+          }
+        },
+        "type": "object"
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "schema_version": {
+                "const": "1.12"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "resource": {
+                "properties": {
+                  "service.name": {
+                    "const": "runtime"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "scope": {
+                "properties": {
+                  "name": {
+                    "const": "bunny.module"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "attributes": {
+                "required": [
+                  "bunny.music.capture_generation",
+                  "bunny.music.input_loss",
+                  "bunny.module"
+                ],
+                "properties": {
+                  "bunny.module": {
+                    "const": "nanoleaf"
+                  },
+                  "bunny.music.capture_generation": {},
+                  "bunny.music.input_loss": {}
+                },
+                "propertyNames": {
+                  "enum": [
+                    "bunny.device.id",
+                    "bunny.module",
+                    "bunny.music.accepted_idle_ms",
+                    "bunny.music.accepted_sequence",
+                    "bunny.music.capture_generation",
+                    "bunny.music.input_loss",
+                    "bunny.provenance"
+                  ]
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "event_name": {
+                "enum": [
+                  "music.capture.producer.checkpoint",
+                  "music.capture.freshness"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "attributes": {
+                "required": [
+                  "bunny.music.checkpoint"
+                ],
+                "properties": {
+                  "bunny.music.checkpoint": {
+                    "enum": [
+                      "loss",
+                      "summary"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "attributes": {
+                "required": [
+                  "bunny.music.observation"
+                ],
+                "type": "object",
+                "properties": {
+                  "bunny.music.observation": {}
+                }
+              }
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "event_name": {
+                "enum": [
+                  "music.capture.producer.checkpoint",
+                  "music.capture.freshness"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "attributes": {
+                "required": [
+                  "bunny.music.checkpoint"
+                ],
+                "properties": {
+                  "bunny.music.checkpoint": {
+                    "enum": [
+                      "summary"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "attributes": {
+                "required": [
+                  "bunny.attempt_count"
+                ],
+                "properties": {
+                  "bunny.attempt_count": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "event_name": {
+                "enum": [
+                  "music.capture.producer.checkpoint",
+                  "music.capture.freshness"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "attributes": {
+                "required": [
+                  "bunny.music.checkpoint"
+                ],
+                "properties": {
+                  "bunny.music.checkpoint": {
+                    "enum": [
+                      "recovery",
+                      "terminal"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "properties": {
+              "attributes": {
+                "propertyNames": {
+                  "not": {
+                    "enum": [
+                      "bunny.attempt_count",
+                      "bunny.music.loss_at_ms",
+                      "bunny.music.observation"
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        ]
       }
     }
   ]

@@ -6,7 +6,7 @@ import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {CAPTURE_CLOCK_DRIFT_MS, CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_VALIDITY_MS, MUSIC_PRODUCER_SOURCE,
   type CaptureCalibrationReason, type CaptureResponseBinding, type CaptureResponseState, type CaptureControl, type CaptureEndpointControl, type CaptureFeatures, type CaptureLost, type CaptureProgress, type CaptureSelection, type CaptureState, type CaptureWork,
 } from '@jimmie-potts/event-contracts/v2/music-capture';
-import {Outcome, fullDisk, recordLog, type Cancel, type Command, type ModuleScheduler, type Reply, type StateDraft} from '@jimmie-potts/sdk';
+import {DiagnosticEpisodes, Outcome, fullDisk, recordLog, type Cancel, type Command, type ModuleScheduler, type Reply, type StateDraft} from '@jimmie-potts/sdk';
 import {Backoff} from './backoff.js';
 import {QuietCalibration, ResponseClock, calibrationDurationMs, responseDefaults, retireResponse, sameResponseBinding} from './music-calibration.js';
 import type {CoreHandle, CorePart} from './core.js';
@@ -20,7 +20,7 @@ type Responsibility = {authority: CoreResponsibility; action: 'start' | 'stop' |
   result: 'pending' | 'uncertain' | 'succeeded' | 'failed'; traceparent: string; selection?: CaptureSelection};
 type ClockAnchor = {wall: number; mono: number};
 type Live = ClockAnchor & {generation: string; sequence: number; sourceEnd: number; untilWall: number; untilMono: number;
-  latest?: CaptureFeatures; latestAtMono?: number; appliedClock?: ResponseClock; candidateClock?: ResponseClock};
+  latest?: CaptureFeatures; latestAtMono?: number; freshness?: DiagnosticEpisodes; appliedClock?: ResponseClock; candidateClock?: ResponseClock};
 type CurrentState = CaptureState & {response: CaptureResponseState};
 export type CaptureAdmission = {
   admit(command: Command<CaptureControl>): boolean;
@@ -367,16 +367,20 @@ export class MusicCapturePart implements CorePart {
       previous !== undefined && (frame.discontinuity || frame.sequence !== previous.sequence + 1 || Math.abs(frame.startMonotonicMs - previous.endMonotonicMs) > 0.01) ? 'discontinuity' :
       previous !== undefined && (wall >= live.untilWall || mono >= live.untilMono) ? 'stale' :
       live.appliedClock?.accept(frame, mono) === false || live.candidateClock?.accept(frame, mono) === false ? 'clock' : undefined;
+    const session = current.session;
+    const previousExpired = previous !== undefined && (wall >= live.untilWall || mono >= live.untilMono);
+    if (session.status === 'active' && previousExpired) this.#freshnessLoss(live, wall, mono);
     live.sequence = frame.sequence;live.sourceEnd = frame.endMonotonicMs;live.untilWall = frame.validUntilMs;
     live.untilMono = mono + Math.min(CAPTURE_VALIDITY_MS, frame.validUntilMs - wall); live.latest = frame;live.latestAtMono = mono;
-    const session = current.session;
     if (session.status !== 'active' || invalidation !== undefined) {
       let complete = () => {};
       await core.transaction(tx => {
         const retired = invalidation === undefined ? {state: current, complete} : this.#invalidate(tx, current, invalidation);
         complete = retired.complete;this.#save(tx, {...retired.state, session: {...session, status: 'active'}});
-      });complete();if (invalidation !== undefined) this.#calibration = undefined;
+      });complete();
+      if (invalidation !== undefined) this.#calibration = undefined;
     }
+    if (session.status === 'stale' || previousExpired) live.freshness?.recovery(this.#freshnessFields(live, mono));
     const calibration = this.#calibration;
     if (calibration !== undefined) {
       let result = calibration.trial.accept(frame, mono);
@@ -427,10 +431,30 @@ export class MusicCapturePart implements CorePart {
         const retired = this.#invalidate(tx, current, stale ? 'stale' : 'deadline');complete = retired.complete;
         this.#save(tx, {...retired.state, session: stale ? {...session, status: 'stale'} : session});
       });complete();this.#calibration = undefined;
+      if (stale) this.#freshnessLoss(live, wall, mono);
     }
     this.#schedule();
   }
-  #fence(): void {this.#calibration = undefined;this.#live = undefined;this.#timer?.();this.#timer = undefined;}
+  #freshnessFields(live: Live, mono?: number) {
+    const age = mono === undefined || live.latestAtMono === undefined ? undefined : mono - live.latestAtMono;
+    return {...(live.sequence > 0 ? {'bunny.music.accepted_sequence': live.sequence} : {}),
+      ...(age !== undefined && Number.isFinite(age) && age >= 0 ?
+        {'bunny.music.accepted_idle_ms': Math.min(86_400_000, Math.floor(age))} : {})};
+  }
+  #freshnessLoss(live: Live, wall: number, mono: number): void {
+    if (this.#live !== live || this.#closed) return;
+    live.freshness ??= new DiagnosticEpisodes((delay, callback) => this.scheduler.after(delay, callback), (kind, fields) => {
+      recordLog(this.#required().log, 'music.capture.freshness', {
+        'bunny.music.capture_generation': live.generation, 'bunny.music.checkpoint': kind, ...fields,
+      });
+    });
+    live.freshness.loss({...this.#freshnessFields(live, mono), 'bunny.music.observation': 'accepted-sample-expired',
+      ...(Number.isSafeInteger(wall) && wall >= 0 ? {'bunny.music.loss_at_ms': wall} : {})});
+  }
+  #fence(): void {
+    const live = this.#live;
+    if (live?.freshness !== undefined) live.freshness.close(this.#freshnessFields(live));
+    this.#calibration = undefined;this.#live = undefined;this.#timer?.();this.#timer = undefined;}
   #cancelDeadline(id: string): void {this.#deadlines.get(id)?.();this.#deadlines.delete(id);}
   #lose(): void {this.#fence();if (!this.#closed) void this.#serial(() => this.#retire('unavailable')).catch(() => {});}
   async #retire(availability: 'off' | 'unavailable'): Promise<void> {

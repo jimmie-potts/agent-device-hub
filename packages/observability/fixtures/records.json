@@ -1002,10 +1002,10 @@
       }
     },
     {
-      "name": "unsupported-1.12",
+      "name": "unsupported-1.13",
       "valid": false,
       "record": {
-        "schema_version": "1.12",
+        "schema_version": "1.13",
         "timestamp": "2026-10-01T12:00:00.123Z",
         "severity_number": 9,
         "severity_text": "INFO",
@@ -6167,6 +6167,309 @@
           "bunny.nanoleaf.rejection.category": "connection-refused",
           "bunny.nanoleaf.rejection.count.request.connection-refused": 1,
           "bunny.nanoleaf.rejection.count.request.connection-reset": 1
+        }
+      }
+    },
+    {
+      "name": "music-freshness-producer",
+      "valid": true,
+      "record": {
+        "schema_version": "1.12",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "music.capture.producer.checkpoint",
+        "body": "Music producer capture checkpoint",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "music-producer",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.music-producer",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.music.capture_generation": "00000000-0000-4000-8000-000000000002",
+          "bunny.music.checkpoint": "summary",
+          "bunny.music.observation": "dequeued-window-expired",
+          "bunny.music.dequeued_sequence": 2,
+          "bunny.music.dequeued_idle_ms": 305,
+          "bunny.music.dequeued_source_age_ms": 100,
+          "bunny.music.attempted_sequence": 1,
+          "bunny.music.attempted_idle_ms": 406,
+          "bunny.music.attempted_source_age_ms": 25,
+          "bunny.music.acknowledged_sequence": 1,
+          "bunny.music.acknowledged_idle_ms": 400,
+          "bunny.music.loss_at_ms": 1791000000000,
+          "bunny.attempt_count": 9007199254740991
+        }
+      }
+    },
+    {
+      "name": "music-freshness-producer-prior-profile",
+      "valid": false,
+      "record": {
+        "schema_version": "1.11",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "music.capture.producer.checkpoint",
+        "body": "Music producer capture checkpoint",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "music-producer",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.music-producer",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.music.capture_generation": "00000000-0000-4000-8000-000000000002",
+          "bunny.music.checkpoint": "summary",
+          "bunny.music.observation": "dequeued-window-expired",
+          "bunny.music.dequeued_sequence": 2,
+          "bunny.music.dequeued_idle_ms": 305,
+          "bunny.music.dequeued_source_age_ms": 100,
+          "bunny.music.attempted_sequence": 1,
+          "bunny.music.attempted_idle_ms": 406,
+          "bunny.music.attempted_source_age_ms": 25,
+          "bunny.music.acknowledged_sequence": 1,
+          "bunny.music.acknowledged_idle_ms": 400,
+          "bunny.music.loss_at_ms": 1791000000000,
+          "bunny.attempt_count": 9007199254740991
+        }
+      }
+    },
+    {
+      "name": "music-freshness-producer-bad-generation",
+      "valid": false,
+      "record": {
+        "schema_version": "1.12",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "music.capture.producer.checkpoint",
+        "body": "Music producer capture checkpoint",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "music-producer",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.music-producer",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.music.capture_generation": "not-neutral",
+          "bunny.music.checkpoint": "summary",
+          "bunny.music.observation": "dequeued-window-expired",
+          "bunny.music.dequeued_sequence": 2,
+          "bunny.music.dequeued_idle_ms": 305,
+          "bunny.music.dequeued_source_age_ms": 100,
+          "bunny.music.attempted_sequence": 1,
+          "bunny.music.attempted_idle_ms": 406,
+          "bunny.music.attempted_source_age_ms": 25,
+          "bunny.music.acknowledged_sequence": 1,
+          "bunny.music.acknowledged_idle_ms": 400,
+          "bunny.music.loss_at_ms": 1791000000000,
+          "bunny.attempt_count": 9007199254740991
+        }
+      }
+    },
+    {
+      "name": "music-freshness-core",
+      "valid": true,
+      "record": {
+        "schema_version": "1.12",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "music.capture.freshness",
+        "body": "Runtime capture freshness checkpoint",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.music.capture_generation": "00000000-0000-4000-8000-000000000002",
+          "bunny.music.checkpoint": "loss",
+          "bunny.music.observation": "accepted-sample-expired",
+          "bunny.music.accepted_sequence": 2,
+          "bunny.music.accepted_idle_ms": 400,
+          "bunny.module": "core"
+        }
+      }
+    },
+    {
+      "name": "music-freshness-core-prior-profile",
+      "valid": false,
+      "record": {
+        "schema_version": "1.11",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "music.capture.freshness",
+        "body": "Runtime capture freshness checkpoint",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.music.capture_generation": "00000000-0000-4000-8000-000000000002",
+          "bunny.music.checkpoint": "loss",
+          "bunny.music.observation": "accepted-sample-expired",
+          "bunny.music.accepted_sequence": 2,
+          "bunny.music.accepted_idle_ms": 400,
+          "bunny.module": "core"
+        }
+      }
+    },
+    {
+      "name": "music-freshness-core-bad-generation",
+      "valid": false,
+      "record": {
+        "schema_version": "1.12",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 9,
+        "severity_text": "INFO",
+        "event_name": "music.capture.freshness",
+        "body": "Runtime capture freshness checkpoint",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.music.capture_generation": "not-neutral",
+          "bunny.music.checkpoint": "loss",
+          "bunny.music.observation": "accepted-sample-expired",
+          "bunny.music.accepted_sequence": 2,
+          "bunny.music.accepted_idle_ms": 400,
+          "bunny.module": "core"
+        }
+      }
+    },
+    {
+      "name": "music-freshness-worker",
+      "valid": true,
+      "record": {
+        "schema_version": "1.12",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "nanoleaf.music.input.lost",
+        "body": "Nanoleaf Music input lost",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.music.capture_generation": "00000000-0000-4000-8000-000000000002",
+          "bunny.music.input_loss": "subscription-overflow",
+          "bunny.music.accepted_sequence": 2,
+          "bunny.module": "nanoleaf"
+        }
+      }
+    },
+    {
+      "name": "music-freshness-worker-prior-profile",
+      "valid": false,
+      "record": {
+        "schema_version": "1.11",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "nanoleaf.music.input.lost",
+        "body": "Nanoleaf Music input lost",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.music.capture_generation": "00000000-0000-4000-8000-000000000002",
+          "bunny.music.input_loss": "subscription-overflow",
+          "bunny.music.accepted_sequence": 2,
+          "bunny.module": "nanoleaf"
+        }
+      }
+    },
+    {
+      "name": "music-freshness-worker-bad-generation",
+      "valid": false,
+      "record": {
+        "schema_version": "1.12",
+        "timestamp": "2026-10-01T12:00:00.123Z",
+        "severity_number": 13,
+        "severity_text": "WARN",
+        "event_name": "nanoleaf.music.input.lost",
+        "body": "Nanoleaf Music input lost",
+        "resource": {
+          "service.namespace": "bunny",
+          "service.name": "runtime",
+          "service.version": "unknown",
+          "service.instance.id": "00000000-0000-4000-8000-000000000001",
+          "deployment.environment.name": "test"
+        },
+        "scope": {
+          "name": "bunny.module",
+          "version": "1.0.0"
+        },
+        "attributes": {
+          "bunny.provenance": "source",
+          "bunny.music.capture_generation": "not-neutral",
+          "bunny.music.input_loss": "subscription-overflow",
+          "bunny.music.accepted_sequence": 2,
+          "bunny.module": "nanoleaf"
         }
       }
     }

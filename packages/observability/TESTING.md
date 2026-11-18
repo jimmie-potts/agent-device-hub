@@ -190,3 +190,5 @@ Run build/type first and install the pinned contract and host requirements.
 Browser conformance keeps the pure entrypoint separate. Hub CLI/request/worker
 adoption is covered by the existing Hub/MCP/setup checks. These are synthetic
 source checks; they do not install services or qualify physical devices.
+
+Profile 1.12 fixture parity covers bounded Music capture checkpoints and prior-profile refusals in Node and Python. The runtime entrypoint keeps its current profile expectation.

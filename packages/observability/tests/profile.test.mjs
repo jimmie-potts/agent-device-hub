@@ -117,10 +117,14 @@ const at = (value, version) => ({...value, schema_version: version});
 const nanoleaf = new Map(JSON.parse(readFileSync(new URL('../fixtures/records.json', import.meta.url), 'utf8'))
   .cases.filter(({name}) => name.startsWith('nanoleaf-http-timing-')).map(({record}) => [record.event_name, record]));
 
-test('artifact 1.11.0 adds profile 1.11, and producers still default to profile 1.1', () => {
-  assert.equal(ARTIFACT_VERSION, '1.11.0');
-  assert.equal(catalog.artifact_version, '1.11.0');
-  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11']);
+const checkpoints = new Map(JSON.parse(readFileSync(new URL('../fixtures/records.json', import.meta.url), 'utf8'))
+  .cases.filter(({name, valid: admitted}) => admitted && name.startsWith('music-freshness-')).map(({record}) => [record.event_name, record]));
+const producerCheckpoint = checkpoints.get('music.capture.producer.checkpoint');
+
+test('artifact 1.12.0 adds profile 1.12, and producers still default to profile 1.1', () => {
+  assert.equal(ARTIFACT_VERSION, '1.12.0');
+  assert.equal(catalog.artifact_version, '1.12.0');
+  assert.deepEqual(versions, ['1.0', '1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '1.10', '1.11', '1.12']);
   assert.equal(SCHEMA_VERSION, '1.1');
   assert.equal(catalog.default_schema_version, '1.1');
   const omitted = {...hub};
@@ -154,10 +158,10 @@ test('the catalog registers exactly profile 1.0\'s vocabulary plus each later pr
 test('each profile\'s additions are registered, and every earlier profile rejects them', () => {
   const added = Object.entries(catalog.additions);
   assert.deepEqual(added.map(([version]) => version), versions.slice(1));
-  assert.deepEqual(Object.keys(examples).sort(), added.filter(([version]) => version !== '1.11').flatMap(([, addition]) => addition.attributes ?? []).sort());
+  assert.deepEqual(Object.keys(examples).sort(), added.filter(([version]) => !['1.11', '1.12'].includes(version)).flatMap(([, addition]) => addition.attributes ?? []).sort());
   for (const [version, addition] of added) {
     const earlier = versions.slice(0, versions.indexOf(version));
-    for (const name of version === '1.11' ? [] : addition.attributes ?? []) {
+    for (const name of ['1.11', '1.12'].includes(version) ? [] : addition.attributes ?? []) {
       assert.ok(catalog.attributes[name], name);
       // The exception fields are admitted only together, under the runtime's scopes, so their example is a module failure.
       const uses = EXCEPTION_ATTRIBUTES.includes(name) ? failed : {...hub, attributes: {...hub.attributes, [name]: examples[name]}};
@@ -166,11 +170,11 @@ test('each profile\'s additions are registered, and every earlier profile reject
     }
     for (const name of addition.services ?? []) {
       assert.ok(catalog.services.includes(name), name);
-      for (const old of earlier) assert.equal(valid(at(runtime, old)), false, `${name} in ${old}`);
+      for (const old of earlier) assert.equal(valid(at(name === 'music-producer' ? producerCheckpoint : runtime, old)), false, `${name} in ${old}`);
     }
     for (const name of addition.scopes ?? []) {
       assert.ok(catalog.scopes.includes(name), name);
-      const uses = name === 'bunny.module' ? module : runtime;
+      const uses = name === 'bunny.music-producer' ? producerCheckpoint : name === 'bunny.module' ? module : runtime;
       assert.equal(valid(at(uses, version)), true, `${name} in ${version}`);
       for (const old of earlier) assert.equal(valid(at(uses, old)), false, `${name} in ${old}`);
     }
@@ -180,7 +184,7 @@ test('each profile\'s additions are registered, and every earlier profile reject
       assert.ok(uses, `${name} belongs to a scope`);
       const [scope] = uses;
       const base = scope === 'bunny.module' ? module : runtime;
-      const record = name === noisy.event_name ? noisy : nanoleaf.get(name) ?? {...base, event_name: name, body: catalog.events[name]};
+      const record = name === noisy.event_name ? noisy : nanoleaf.get(name) ?? checkpoints.get(name) ?? {...base, event_name: name, body: catalog.events[name]};
       assert.equal(valid(at(record, version)), true, `${name} in ${version}`);
       for (const old of earlier) assert.equal(valid(at(record, old)), false, `${name} in ${old}`);
     }
@@ -196,13 +200,13 @@ test('the runtime\'s scopes allow only their own service and events, and a modul
   assert.ok(moduleEvents.every(name => !name.startsWith('runtime.')));
   const latest = versions.at(-1);
   for (const name of runtimeEvents) {
-    const record = {...at(runtime, latest), event_name: name, body: catalog.events[name]};
+    const record = checkpoints.get(name) ?? {...at(runtime, latest), event_name: name, body: catalog.events[name]};
     assert.equal(valid(record), true, name);
     assert.equal(valid({...record, scope: module.scope, attributes: module.attributes}), false, `${name} under bunny.module`);
     if (name !== 'telemetry.dropped') assert.equal(valid({...record, scope: hub.scope}), false, `${name} under ${hub.scope.name}`);
   }
   for (const name of moduleEvents) {
-    const record = name === noisy.event_name ? noisy : nanoleaf.get(name) ?? {...at(module, latest), event_name: name, body: catalog.events[name]};
+    const record = name === noisy.event_name ? noisy : nanoleaf.get(name) ?? checkpoints.get(name) ?? {...at(module, latest), event_name: name, body: catalog.events[name]};
     assert.equal(valid(record), true, name);
     assert.equal(valid({...record, scope: runtime.scope}), false, `${name} under bunny.runtime`);
   }
@@ -220,7 +224,7 @@ test('a profile 1.2 record projects to 1.1 only without 1.2 vocabulary, and a 1.
   const raised = projectRecord(hub, '1.2');
   assert.equal(raised.ok, true);
   assert.equal(raised.value.schema_version, '1.2');
-  assert.equal(projectRecord(hub, '1.12').ok, false);
+  assert.equal(projectRecord(hub, '1.13').ok, false);
 });
 
 test('a profile 1.3 record projects to 1.2 only without 1.3 vocabulary, and a 1.2 record projects to 1.3', () => {
@@ -442,4 +446,20 @@ test('maximal supported classification counts fit normalization, JSON, OTLP and 
   assert.deepEqual(older.value, prior);
   for (const version of versions.slice(0, versions.indexOf('1.11'))) assert.equal(valid(at(record, version)), false);
   assert.equal(valid({...record, attributes: {...record.attributes, [names[0]]: 0}}), false);
+});
+
+test('Music checkpoint normalization retains closed evidence and never downgrades a new event', () => {
+  for (const [event, checkpoint] of checkpoints) {
+    const made = createRecord({...checkpoint, attributes: {...checkpoint.attributes, unregistered_private_feature: 'omitted'}});
+    assert.equal(made.ok, true, event);
+    assert.equal(Object.hasOwn(made.value.attributes, 'unregistered_private_feature'), false);
+    assert.equal(valid(JSON.parse(JSON.stringify(made.value))), true);
+    assert.ok(toOtlp(made.value));
+    assert.equal(projectRecord(checkpoint, '1.11').ok, false);
+  }
+  assert.equal(valid({...producerCheckpoint, attributes: {...producerCheckpoint.attributes, 'bunny.music.observation': 'accepted-sample-expired'}}), false);
+  assert.equal(valid({...producerCheckpoint, attributes: {...producerCheckpoint.attributes, 'bunny.music.accepted_sequence': 12}}), false);
+  const classified = nanoleaf.get('nanoleaf.http.read.failed');
+  assert.equal(valid(at(classified, '1.12')), true);
+  assert.equal(projectRecord(at(classified, '1.12'), '1.11').ok, true);
 });

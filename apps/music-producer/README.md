@@ -128,9 +128,12 @@ restarts a helper or redeclares an endpoint after connection loss. A late stop
 for the latest terminated generation reports its existing cleanup result without
 opening capture. The native helper also has an explicit 24-hour resource bound.
 
-The CLI writes only fixed startup or uncertain-cleanup notices to stderr. It does
-not write features, credentials, configuration paths or OS exception text to
-standard streams. Reconnection and another capture require a new explicit
+The CLI writes fixed startup or uncertain-cleanup notices and bounded profile
+1.12 capture checkpoints to its existing foreground stderr. Checkpoints report
+local dequeue, publish attempt and acknowledgment progress. Publication
+acknowledgment does not identify a downstream subscriber's delivery. The stream
+carries no features, credentials, configuration paths or OS exception text. The
+producer opens no additional log file or network exporter. Reconnection and another capture require a new explicit
 producer invocation and a new core start.
 
 ## Source checks

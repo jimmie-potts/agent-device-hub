@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {RETRYABLE, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {levelOf} from '../src/diagnostics.js';
-import {InProcessBus, type Command, type Diagnostic, type Reply, type RequestResult} from '../src/index.js';
+import {DiagnosticEpisodes, InProcessBus, type Command, type Diagnostic, type LogFields, type Reply, type RequestResult} from '../src/index.js';
 import {START, SESSION_FAMILY, blob, deferred, flush, it, manualClock, peek, session, setMode, until, type Mode} from './support.js';
 import {inProcess, remote, using, type Transport, type World} from './transports.js';
 
@@ -337,4 +337,27 @@ it('every registry code has the level ADR 0012 groups it under, in the one table
   for (const [level, codes] of Object.entries(groups)) {
     for (const code of codes) assert.equal(levelOf(code), level, code);
   }
+});
+
+
+it('the trailing diagnostic keeps an independent loss-time snapshot', () => {
+  const {scheduler, advance, pending} = manualClock();
+  const records: {kind: string; fields: LogFields}[] = [];
+  const episodes = new DiagnosticEpisodes((delay, callback) => scheduler.after(delay, callback), (kind, fields) => {records.push({kind, fields});});
+  episodes.loss({'bunny.music.accepted_sequence': 1});
+  episodes.recovery({'bunny.music.accepted_sequence': 2});
+  const secondLoss = {'bunny.music.accepted_sequence': 3};
+  episodes.loss(secondLoss);
+  secondLoss['bunny.music.accepted_sequence'] = 4;
+  episodes.recovery({'bunny.music.accepted_sequence': 5});
+  advance(60_000);
+  episodes.close({'bunny.music.accepted_sequence': 6});
+  episodes.close({'bunny.music.accepted_sequence': 7});
+  assert.equal(pending(), 0);
+  assert.deepEqual(records, [
+    {kind: 'loss', fields: {'bunny.music.accepted_sequence': 1}},
+    {kind: 'recovery', fields: {'bunny.music.accepted_sequence': 2}},
+    {kind: 'summary', fields: {'bunny.music.accepted_sequence': 3, 'bunny.attempt_count': 1}},
+    {kind: 'terminal', fields: {'bunny.music.accepted_sequence': 6}},
+  ]);
 });

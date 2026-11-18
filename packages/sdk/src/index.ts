@@ -49,3 +49,5 @@ export {CALLS, REMOTE_PATH, REMOTE_SCHEMA, REQUEST_HEADER, SOURCE_HEADER, readBo
 export {prepareMessage, publishOnce, type PublishOnceOptions, type PublishOnceResult} from './remote-publish.js';
 export {HeldEvidence, Outcome, absent, hold, merge, observed, transmitted, uncertain, type Evidence, type EvidenceLevel, type Merged, type OutcomeLiteral} from './evidence.js';
 export {serializedAdmission, type Fresh, type SerializedAdmission} from './admission.js';
+
+export {DiagnosticEpisodes} from './diagnostic-episodes.js';

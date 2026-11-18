@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type {Command, RemoteEndpoint, RemoteParticipant, Reply} from '@jimmie-potts/sdk';
+import type {Command, LogFields, RemoteEndpoint, RemoteParticipant, Reply} from '@jimmie-potts/sdk';
 import type {CaptureFeatures, CaptureProgress, CaptureWork} from '@jimmie-potts/event-contracts/v2/music-capture';
 import type {NativeInput, NativeSource, NativeTermination} from '../src/native.js';
 import type {NativeFrame} from '../src/protocol.js';
@@ -9,7 +9,7 @@ import {flush, timerWorld} from './support.js';
 
 const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
 const generation = '00000000-0000-4000-8000-000000000001';
-function fixture({qualified = true, skew = 0, deferredClock = false, microphoneId}: {qualified?: boolean; skew?: number; deferredClock?: boolean; microphoneId?: string} = {}) {
+function fixture({qualified = true, skew = 0, deferredClock = false, microphoneId, diagnostic}: {qualified?: boolean; skew?: number; deferredClock?: boolean; microphoneId?: string; diagnostic?: (fields: LogFields) => void} = {}) {
   const time = timerWorld();
   let captures = 0, stopped = 0, closed = 0, held = false;
   let onFrame: (frame: NativeFrame) => void = () => {};
@@ -48,6 +48,7 @@ function fixture({qualified = true, skew = 0, deferredClock = false, microphoneI
     return {ended, stop: () => {stopped += 1; return ended;}};
   }};
   const producer = new MusicProducer({participant, native, clock: time.clock, scheduler: time.scheduler,
+    ...(diagnostic === undefined ? {} : {diagnostic}),
     ...(microphoneId === undefined ? {} : {microphone: {id: microphoneId, uid: 'synthetic-private-uid'}})});
   const work = (data: CaptureWork, source = 'bunny/core') => respond({specversion: '1.0', bunnyprofile: '2.0', id: `cmd-${data.requestId}`, source,
     type: 'org.bunny.music-capture.work.requested', subject: 'capture-1', time: new Date(time.clock().wallMs).toISOString(), kind: 'command',
@@ -202,4 +203,136 @@ void test('a wall clock jump during capture stops it without refreshing an obser
   world.finish({status: 'stopped'}); await flush();
   assert.equal(world.progress()[1]?.status, 'failed');
   await world.producer.stop();
+});
+
+void test('capture checkpoints retain the later expired source window before the periodic observer fires', async () => {
+  const records: LogFields[] = [];
+  const world = fixture({diagnostic: fields => {records.push(fields);}});
+  await world.producer.start(); await world.start(); await flush();
+  world.frame(1, 100); await flush();
+  world.advance(310); world.frame(2); await flush();
+  assert.deepEqual(records.map(record => record['bunny.music.checkpoint']), ['loss', 'recovery']);
+  assert.equal(records[0]?.['bunny.music.observation'], 'dequeued-window-expired');
+  assert.equal(records[0]?.['bunny.music.dequeued_idle_ms'], 310);
+  assert.equal(records[0]?.['bunny.music.dequeued_source_age_ms'], 100);
+  world.advance(100); world.frame(3, 100); await flush();
+  world.advance(310); world.frame(4); await flush();
+  assert.equal(records.length, 2, 'the second episode is coalesced');
+  await world.stop(); world.finish({status: 'stopped'}); await flush(); await world.producer.stop();
+  const summary = records.find(record => record['bunny.music.checkpoint'] === 'summary');
+  const terminal = records.find(record => record['bunny.music.checkpoint'] === 'terminal');
+  assert.equal(summary?.['bunny.attempt_count'], 1);
+  assert.equal(summary?.['bunny.music.capture_generation'], generation);
+  assert.equal(summary?.['bunny.music.dequeued_sequence'], 3, 'the loss snapshot still describes the pre-recovery sequence');
+  assert.equal(terminal?.['bunny.music.dequeued_sequence'], 4);
+  assert.equal(records.length, 4);
+  world.advance(60_000); assert.equal(records.length, 4, 'stop cancels the pending summary and sample');
+});
+
+void test('capture diagnostics distinguish a timestamp-rejected publication from a delayed acknowledgment', async () => {
+  for (const pending of [false, true]) {
+    const records: LogFields[] = [];
+    const world = fixture({diagnostic: fields => {records.push(fields); throw new Error('synthetic failed sink');}});
+    await world.producer.start(); await world.start(); await flush();
+    world.hold(); world.frame(1); await flush();
+    world.advance(100); world.frame(2);
+    if (pending) {
+      world.advance(100); world.frame(3);
+      world.advance(100); world.frame(4);
+      world.advance(100);
+    } else {
+      world.advance(251); world.release(); await flush();
+    }
+    const checkpoint = records.find(record => record['bunny.music.checkpoint'] === 'loss');
+    assert.equal(checkpoint?.['bunny.music.observation'], pending ? 'publish-unacknowledged' : 'publication-timestamp-rejected');
+    assert.equal(checkpoint?.['bunny.music.attempted_sequence'], 1);
+    assert.equal(checkpoint?.['bunny.music.acknowledged_sequence'], pending ? undefined : 1);
+    assert.equal(world.features().length, 1);
+    assert.deepEqual(await world.stop(), {status: 'accepted'});
+    world.finish({status: 'stopped'}); await flush();
+    world.release(); await flush(); world.advance(60_000);
+    assert.equal(records.filter(record => record['bunny.music.checkpoint'] === 'terminal').length, 1);
+    assert.equal(world.features().length, 1, 'late acknowledgment does not restart publishing');
+    await world.producer.stop();
+  }
+});
+
+void test('the owned diagnostics stream tolerates an asynchronous write failure', async () => {
+  const {Writable} = await import('node:stream');
+  const {producerDiagnosticWriter} = await import('../src/diagnostics.js');
+  let writes = 0;
+  let failed = () => {};
+  const emitted = new Promise<void>(resolve => {failed = resolve;});
+  const sink = new Writable({write(_chunk, _encoding, callback) {
+    writes++;
+    queueMicrotask(() => {callback(new Error('synthetic stderr failure')); failed();});
+  }});
+  const diagnostic = producerDiagnosticWriter(sink);
+  const fields = {'bunny.music.capture_generation': generation, 'bunny.music.checkpoint': 'terminal'};
+  diagnostic(fields);
+  await emitted; await flush();
+  diagnostic(fields);
+  assert.equal(writes, 1);
+});
+
+void test('producer diagnostics count records skipped under sink pressure on the next successful write', async () => {
+  const {Writable} = await import('node:stream');
+  const {producerDiagnosticWriter} = await import('../src/diagnostics.js');
+  const writes: string[] = [];
+  let release = () => {};
+  const sink = new Writable({highWaterMark: 1, write(chunk: Buffer, _encoding, callback) {
+    writes.push(chunk.toString());
+    release = () => callback();
+  }});
+  const diagnostic = producerDiagnosticWriter(sink);
+  const fields = {'bunny.music.capture_generation': generation, 'bunny.music.checkpoint': 'terminal'};
+  diagnostic(fields); diagnostic(fields); diagnostic(fields);
+  assert.equal(writes.length, 1);
+  const drained = new Promise<void>(resolve => {sink.once('drain', resolve);});
+  release(); await drained;
+  diagnostic(fields);
+  assert.match(writes[1] ?? '', /"bunny.music.sink_dropped_count":2/);
+  release(); sink.end();
+});
+
+void test('coalesced producer diagnostics flush the latest loss once at the trailing boundary', async () => {
+  const records: LogFields[] = [];
+  const world = fixture({diagnostic: fields => {records.push(fields);}});
+  await world.producer.start(); await world.start(); await flush();
+  world.frame(1, 100); await flush();
+  world.advance(310); world.frame(2); await flush();
+  world.advance(100); world.frame(3, 100); await flush();
+  world.advance(310); world.frame(4); await flush();
+  world.advance(60_000 - 410);
+  const summaries = () => records.filter(record => record['bunny.music.checkpoint'] === 'summary');
+  assert.equal(summaries().length, 1);
+  assert.equal(summaries()[0]?.['bunny.music.dequeued_sequence'], 4);
+  assert.ok(Number(summaries()[0]?.['bunny.attempt_count']) > 0);
+  await world.stop(); world.finish({status: 'stopped'}); await flush(); await world.producer.stop();
+  assert.equal(summaries().length, 1);
+});
+
+void test('a late publish acknowledgment cannot alter diagnostics for a replacement capture generation', async () => {
+  const records: LogFields[] = [];
+  const world = fixture({diagnostic: fields => {records.push(fields);}});
+  await world.producer.start(); await world.start(); await flush();
+  world.hold(); world.frame(1); await flush(); world.advance(400);
+  await world.stop(); world.finish({status: 'stopped'}); await flush();
+  const firstTerminal = records.find(record => record['bunny.music.checkpoint'] === 'terminal');
+  assert.equal(firstTerminal?.['bunny.music.capture_generation'], generation);
+  assert.equal(firstTerminal?.['bunny.music.publication_state'], 'pending');
+  assert.equal(firstTerminal?.['bunny.music.publish_pending_overdue'], true);
+  assert.equal(firstTerminal?.['bunny.music.dequeued_window_expired'], true);
+
+  const replacement = '00000000-0000-4000-8000-000000000002';
+  assert.deepEqual(await world.work({requestId: 'replacement', operationId: 'replacement', generation: replacement,
+    action: 'start', input: 'music'}), {status: 'accepted'});
+  await flush(); world.frame(7); await flush();
+  world.release(); await flush();
+  assert.deepEqual(world.features().map(frame => [frame.generation, frame.sequence]), [[generation, 1], [replacement, 7]]);
+  await world.work({requestId: 'new-stop', operationId: 'new-stop', generation: replacement, action: 'stop'});
+  world.finish({status: 'stopped'}); await flush(); await world.producer.stop();
+  const terminals = records.filter(record => record['bunny.music.checkpoint'] === 'terminal');
+  assert.deepEqual(terminals.map(record => [record['bunny.music.capture_generation'], record['bunny.music.acknowledged_sequence']]),
+    [[generation, undefined], [replacement, 7]]);
 });

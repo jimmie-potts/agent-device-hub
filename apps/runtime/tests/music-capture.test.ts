@@ -31,15 +31,15 @@ async function passUntil(clock: ManualClock, condition: () => boolean | Promise<
  * gets no monotonic clock and keeps its own default.
  */
 async function setup(t: TestContext, {directory, clock = manualClock(Date.now()), monotonic = 'clock'}: {directory?: string; clock?: ManualClock; monotonic?: 'clock' | 'default'} = {}) {
-  let handle: CoreHandle | undefined, wallOffset = 0;
+  let handle: CoreHandle | undefined, wallOffset = 0, observedClockOffset = 0;
   // Each runtime's monotonic clock has its own origin, as a new process's does; it advances with the wall clock.
   const origin = clock.now() - 1000;
-  const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}], ...(monotonic === 'clock' ? {monotonic: () => clock.now() - origin} : {})});
+  const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}], ...(monotonic === 'clock' ? {monotonic: () => clock.now() + observedClockOffset - origin} : {})});
   const observer = fixture('capture-observer');
   const files = await edgeConfig(t, [], {credentials: JSON.stringify({schema: 'edge-credentials/1.0', credentials: [
     {id: 'music-producer', source: MUSIC_PRODUCER_SOURCE, digest: tokenDigest('synthetic-token'), scopes: [], role: 'music-producer'},
   ]})});
-  const {runtime} = await run(t, {modules: [core, observer], configFile: files.config, edge: {schemas: {}}, clock: {now: () => clock.now() + wallOffset}, scheduler: clock.scheduler,
+  const {runtime, logs} = await run(t, {modules: [core, observer], configFile: files.config, edge: {schemas: {}}, clock: {now: () => clock.now() + wallOffset + observedClockOffset}, scheduler: clock.scheduler,
     ...(directory === undefined ? {} : {stateDir: directory})});
   const producer = await connectRemote({url: runtime.url, source: MUSIC_PRODUCER_SOURCE, token: 'synthetic-token', now: clock.now, scheduler: clock.scheduler});
   t.after(() => producer.close());
@@ -71,7 +71,8 @@ async function setup(t: TestContext, {directory, clock = manualClock(Date.now())
   };
   const tune = (requestId: string, data: object) => core.operatorActions.dispatch({key: 'bunny.cmd.music-capture-control.music', requestedBy: 'bunny/parts/operator', requestId,
     draft: {type: 'org.bunny.music-capture.control.requested', subject: 'music', dataschema: schema('music-capture-control', '2.2'), data}});
-  return {core, runtime, producer, observer, endpoint, work, liveStates, tune, clock,
+  return {core, runtime, producer, observer, endpoint, work, liveStates, tune, clock, logs,
+    shiftObservedClocks: (ms: number) => {observedClockOffset += ms;},
     pass: (ms: number) => pass(clock, ms), passUntil: (condition: () => boolean | Promise<boolean>, limitMs: number, what?: string) => passUntil(clock, condition, limitMs, what),
     legacyResponsibilities: async () => {
     assert.ok(handle);await handle.transaction(tx => {tx.database.exec("UPDATE music_capture_responsibilities SET record = json_remove(record, '$.selection')");});
@@ -182,6 +183,27 @@ it('silence is live, expired and reversed frames do not refresh it, and a discon
   await waitFor(async () => (await h.read()).availability === 'unavailable');
   assert.equal((await h.read()).session.status, 'unavailable');
   assert.equal(h.operation('freshness-start')?.result, 'succeeded', 'later source loss cannot rewrite an observed start');
+});
+
+it('an expired core sample is diagnosed when a replacement arrives before the scheduled tick', async t => {
+  const h = await setup(t); await h.enable();
+  await h.control('freshness-gap', (await h.read()).revision, 'start');
+  await waitFor(() => h.work.length === 1);
+  const start = h.work[0]; assert.ok(start);
+  const {generation, operationId} = start.data;
+  await h.progress({operationId, generation, status: 'started'});
+  await h.frame(generation, 1);
+  await waitFor(async () => (await h.read()).session.status === 'active');
+  h.shiftObservedClocks(CAPTURE_VALIDITY_MS + 1);
+  const now = h.clock.now() + CAPTURE_VALIDITY_MS + 1;
+  await h.frame(generation, 2, {observedAtMs: now, validUntilMs: now + CAPTURE_VALIDITY_MS});
+  const reports = () => h.logs.filter(log => log.event_name === 'music.capture.freshness');
+  await waitFor(() => reports().length === 2);
+  assert.deepEqual(reports().map(({attributes}) => [attributes['bunny.music.capture_generation'],
+    attributes['bunny.music.checkpoint'], attributes['bunny.music.accepted_sequence']]),
+  [[generation, 'loss', 1], [generation, 'recovery', 2]]);
+  assert.equal((await h.read()).session.status, 'active');
+  assert.equal(h.operation('freshness-gap')?.result, 'succeeded');
 });
 
 for (const input of ['music', 'microphone'] as const) it(`restart retires pending ${input} without replay, including old Music records`, async t => {

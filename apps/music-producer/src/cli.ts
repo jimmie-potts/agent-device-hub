@@ -1,3 +1,4 @@
+import {createWriteStream} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
@@ -5,6 +6,7 @@ import {connectRemote, Outcome, SdkError} from '@jimmie-potts/sdk';
 import {loadConfiguration} from './configuration.js';
 import {NativeCapture} from './native.js';
 import {MusicProducer} from './producer.js';
+import {producerDiagnosticWriter} from './diagnostics.js';
 
 /** Foreground endpoint only. Its startup declares availability without starting audio. */
 export async function run(args: readonly string[]): Promise<void> {
@@ -13,7 +15,14 @@ export async function run(args: readonly string[]): Promise<void> {
   const config = await loadConfiguration(args[1]);
   const participant = await connectRemote({url: config.edgeOrigin, token: config.token, source: MUSIC_PRODUCER_SOURCE,
     maxQueued: 8, onError: () => {}});
-  const producer = new MusicProducer({participant, native: new NativeCapture({helper: config.helper}),
+  // This wrapper owns only the diagnostic writes to the existing stderr descriptor.
+  let diagnostics: ReturnType<typeof createWriteStream> | undefined;
+  let diagnostic: ReturnType<typeof producerDiagnosticWriter> | undefined;
+  try {
+    diagnostics = createWriteStream('', {fd: process.stderr.fd, autoClose: false, highWaterMark: 8192});
+    diagnostic = producerDiagnosticWriter(diagnostics);
+  } catch { /* Diagnostic setup cannot affect capture. */ }
+  const producer = new MusicProducer({participant, native: new NativeCapture({helper: config.helper}), ...(diagnostic === undefined ? {} : {diagnostic}),
     ...(config.microphone === undefined ? {} : {microphone: config.microphone})});
   const stop = (): void => {void producer.stop().catch(() => {process.exitCode = 1;});};
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
@@ -26,7 +35,7 @@ export async function run(args: readonly string[]): Promise<void> {
     }
   } finally {
     process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
-    await producer.stop();
+    try {await producer.stop();} finally {diagnostics?.end();}
   }
 }
 

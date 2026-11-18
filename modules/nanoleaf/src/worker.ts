@@ -59,6 +59,7 @@ export interface WorkerOptions {
   music?: MusicFeeds;
   /** The same link read, attributed to a live Music session. */
   musicRead?: DeviceRead;
+  onMusicInputLoss?: NonNullable<Parameters<typeof playMusic>[0]['onInputLoss']>;
 }
 
 /** The worker's stop signal ended a wait. */
@@ -429,6 +430,7 @@ export async function runWorker(options: WorkerOptions): Promise<boolean> {
             active=null;
             await playMusic({db,device,row,config,transact,request,now:()=>clock.now(),sleep,current,taken,
               ...(options.musicRead === undefined ? {} : {read: options.musicRead}),
+              ...(options.onMusicInputLoss === undefined ? {} : {onInputLoss: options.onMusicInputLoss}),
               stream:options.stream ?? (()=>Promise.reject(new Error('No streaming transport.'))),
               input:options.music?.input(device,(row.command as MusicStart).generation),
               ...(options.music === undefined ? {} : {ownershipEpoch: () => options.music?.ownershipEpoch ?? -1}),

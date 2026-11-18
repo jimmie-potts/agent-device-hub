@@ -36,3 +36,12 @@ The core SHALL follow the light module's session record through sync and record 
 #### Scenario: Explicit Stop
 - **WHEN** an operator stops a starting, active, uncertain or stopping session
 - **THEN** the core saves `stopping`, sends one work stop for that generation, and records the module's reported ending
+
+### Requirement: Playing input loss appears in private diagnostics
+
+When a playing session ends for loss of its input, the worker SHALL report the first locally observed retirement cause and bounded last accepted evidence if available. This SHALL preserve the existing ending, restoration and permanent retirement.
+
+#### Scenario: Different losses have the same safe ending
+
+- **WHEN** a synthetic missing-feature expiry or subscription overflow ends a playing session
+- **THEN** diagnostics distinguish the observed local condition while both cases follow the existing source-loss ending and restoration rules
