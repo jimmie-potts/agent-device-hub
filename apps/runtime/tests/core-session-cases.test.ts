@@ -71,7 +71,8 @@ const compactAttention = (attention: Attention): unknown => ({kind: attention.ki
 async function run(item: SessionCase, context: Parameters<Parameters<typeof it>[1]>[0]): Promise<void> {
   const file = join(await stateDir(context), 'core.sqlite');
   const clock = manualClock(cases.startAtMs);
-  const world = await World.open(context, {file, clock});
+  // The cases need no sync to disk: crashes and their recovery are the store's own tests.
+  const world = await World.open(context, {file, clock, wrap: db => { db.exec('PRAGMA synchronous = OFF'); return db; }});
   const names = new Map(Object.entries(cases.sessions).map(([key, {identity}]) => [sessionEntityId(identity), key]));
   const identities = new Map(Object.values(cases.sessions).map(({identity}) => [sessionEntityId(identity), identity]));
   for (const check of item.checks) for (const message of check.messages) identities.set(message.subject, message.data.identity);
@@ -136,7 +137,8 @@ async function run(item: SessionCase, context: Parameters<Parameters<typeof it>[
 }
 
 for (const item of cases.cases) {
-  it(`the core store gives the case set's records and occurrences: ${item.id}`, async context => { await run(item, context); });
+  // The capacity case commits 130 changes; the rest take a few.
+  it(`the core store gives the case set's records and occurrences: ${item.id}`, async context => { await run(item, context); }, item.id === 'capacity' ? 60_000 : 20_000);
 }
 
 it('a check of a full core fails fast with a short report, and orders a fill step as one step', () => {

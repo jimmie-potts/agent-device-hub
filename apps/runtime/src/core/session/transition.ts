@@ -275,7 +275,7 @@ function observe(state: SessionState, observation: LifecycleObservation, context
   if (session.parent.status === 'known' || observation.hostSessionId === undefined) delete session.hostSessionId;
   else session.hostSessionId = observation.hostSessionId;
   if (previous !== undefined) keepReceipt(previous, session, kind === 'read-observed');
-  confirm(previous, session, observation, context.startedAtMs);
+  confirm(previous, session, observation, reduced.fresh, context.startedAtMs);
   return changedOne(state, session, outcome, occurrencesOf(observation, previous, session), displaced ?? {});
 }
 
@@ -286,13 +286,14 @@ const QUALIFYING = new Set<LifecycleObservation['event']['kind']>(['turn-started
 
 /**
  * Keeps the restart marking true to design decision 4 after an observation. Only running work is marked. Qualifying
- * evidence on the session's current turn whose producer instant is at or after the core's start confirms it; anything
+ * evidence on the session's current turn whose producer instant is at or after the core's start, and which the reducer
+ * took as fresh lifecycle evidence rather than a repeat, confirms it; anything
  * else leaves running work as it was. Work that evidence from before the start set running is unconfirmed, since the
  * core cannot tell whether it still runs: a delayed event from before a restart never confirms work.
  */
-function confirm(previous: StoredSession | undefined, session: StoredSession, observation: LifecycleObservation, startedAtMs: number): void {
+function confirm(previous: StoredSession | undefined, session: StoredSession, observation: LifecycleObservation, fresh: boolean, startedAtMs: number): void {
   const before = producedAt(observation) < startedAtMs;
-  if (session.activity !== 'active' || !before && QUALIFYING.has(observation.event.kind) && sameTurn(observation.turn, session.turn)) {
+  if (session.activity !== 'active' || fresh && !before && QUALIFYING.has(observation.event.kind) && sameTurn(observation.turn, session.turn)) {
     delete session.restartUnconfirmed;
   } else if (previous?.activity !== 'active') {
     if (before) session.restartUnconfirmed = true;
