@@ -18,7 +18,7 @@ export function sanitizeMacCodexHook(raw) {
   return {hook_event_name, session_id, ...(turn_id === undefined ? {} : {turn_id})};
 }
 
-/** Lazy input: runHook verifies the private producer and metadata-only mode before this reads stdin. */
+/** Lazy input: runHook verifies the private producer before this reads stdin. */
 export async function* sanitizedInput(input, maxBytes) {
   const chunks = [];
   let size = 0;
@@ -63,11 +63,10 @@ async function main() {
         producer: process.argv[2],
         input: sanitizedInput(process.stdin, MAX_INPUT_BYTES),
         deadline: budget,
-        requireMetadataOnly: true,
       });
     }
   } catch {
-    // Observational and fail-open: no retry, output, permission decision or fallback enrichment.
+    // Observational and fail-open: no retry, output or permission decision.
   }
   finish();
 }

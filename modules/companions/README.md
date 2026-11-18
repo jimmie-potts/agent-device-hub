@@ -110,10 +110,11 @@ creating a file alone does not qualify a route. Keep the receipt and its support
 audio, OS and network evidence private. It stores no availability or queued text.
 
 Missing or invalid qualification leaves speech unavailable and text companions
-usable. The authenticated page reads the receipt and checks Chrome's full version
-and macOS platform locally with a five-second bound. It sends neither hint back
-to the runtime. A changed browser version or unavailable hint requires renewed
-qualification; it never silently selects another browser or voice. The browser
+usable. The authenticated page reads the receipt and checks Google Chrome and
+macOS locally with a five-second bound. Browser identity stays local. The receipt's
+`browserVersion` records the qualification version; a Chrome update does not
+invalidate qualification. Missing browser identity or a different browser or
+platform leaves speech unavailable. The browser
 then verifies the exact local English voice on explicit enablement and before each
 utterance. No settings, microphone or default voice are changed.
 
@@ -132,16 +133,36 @@ prevent replacement. A late definitive cancellation can release the reservation,
 but requires fresh enablement. Unresolved responsibility survives restart as
 uncertain; there is no restored candidate, endpoint or automatic resend.
 Outcomes use the shared outbox, preserving their identity during republication.
+After restart, an orphaned uncertain operation offers **Recover voice**. Stop
+playback in all earlier voice tabs or close those tabs, then check the confirmation
+and recover. The page also cancels local synthesis and requires it to be idle.
+Recovery records the operator acknowledgement separately; it never changes the
+old uncertain result into completion or stop evidence. Voice stays off until a
+fresh Enable action. The old utterance never replays. A live operation or selected
+endpoint, stale recovery request or storage failure prevents recovery. Each new
+uncertain operation needs its own recovery. These controls use the existing
+connection-bound endpoint API with the 2.1 recovery action and speech state;
+2.0 messages remain supported. The additive private `companion_speech_recovery`
+table keeps the operation, request, endpoint, trace and acknowledgement time.
+Acknowledgement and state revision commit together; old speech rows are retained.
+
 Stop and mute clear pending work. Higher-priority attention waits for confirmed
 cancellation before replacing lower-priority output.
 
 The same coordinator and endpoint speak B.U.N.N.Y.'s replies to typed requests
-(Hub #500, first slice). The **Conversation** page carries the same controls
-under **Spoken replies**: enabling there makes that tab the one speaker for
-replies and any enabled Reachy alerts. When a turn ends with a result, a
-question for the owner or a refusal, the engine offers that saved message once;
-**Speak** beside a saved assistant message offers it again under a key that
-carries the request, so a replay is its own utterance. A reply ranks with coding
+(Hub #500, first slice). Open **Voice** in the composer toolbar to enable
+spoken replies, mute them, inspect readiness or recover an eligible earlier
+operation. Enabling makes this tab the speaker for replies and eligible Reachy
+alerts. **Stop speaking** remains available during local playback, including
+inside **Details** when it opens as an overlay. Closing Voice or Details,
+changing profiles or resizing leaves the selected endpoint in place. The
+**Voice requirements and playback evidence** disclosure shows the qualification
+and playback report.
+
+When a turn ends with a result, a question for the owner or a refusal, the engine
+offers that saved message once. **Read aloud** beside a saved assistant message
+offers it again under its own request identity. The command receipt and playback
+report appear separately. A reply ranks with coding
 attention: it interrupts a notice or social card after confirmed cancellation,
 waits for an active equal, and a newer pending reply replaces an older one, so a
 stale answer never precedes the current one. Replies honor Quiet and need the
@@ -206,6 +227,81 @@ selects; Reachy and MicroDuck keep the labelled synthetic provider, which makes
 no network call and no paid usage. Activation defaults to off. The three
 profiles keep separate conversation histories, with one unfinished task across
 all of them and one graph invocation at a time.
+
+Choose the everyday B.U.N.N.Y. assistant or a Reachy or MicroDuck demo in the
+profile list. On a narrow screen, use **Companion profile**. The **Companion
+pages** menu opens the separate module pages, including the Reachy and MicroDuck
+device controls.
+
+The transcript takes the available height and scrolls above the composer. When
+the screen is short or a decision needs more room, scroll the page to reach the
+full decision and its controls. Conversation opens at the newest saved messages.
+**Load earlier** fills the preceding gap without moving the message you were
+reading. If replies arrive while you are reading farther up, **New messages**
+jumps to the latest exchange.
+
+Assistant replies use open text. Your messages sit in bubbles on the other
+side of the same reading column, which aligns with the composer. **Tool result**
+expands the full saved text in place. Long links, markup and line breaks appear
+as saved. **Read aloud** sits below eligible replies. Longer replies explain
+the speech limit and remain readable in full.
+
+A fresh, empty history invites you to send the first message when input is
+available. If history or input is unavailable, the page shows the reason.
+
+Use **Send** for a message or **Answer** for a saved question. Enter submits
+and Shift+Enter inserts a line break. Enter during text composition does not
+submit. The composer shows the exact UTF-8 count starting at 3,277 bytes and
+refuses drafts over 4,096 bytes. Each profile and pending question has its own
+draft. Drafts remain after submission and clear on reload. You can browse
+another profile while a task is unfinished. Follow the link beside the composer
+to return to that task before starting another one.
+
+**Voice** is in the composer toolbar. Open **Spoken replies** to enable output
+in this tab, mute it, or inspect requirements and tracked playback evidence.
+Use **Close**, Escape, or click outside to dismiss the panel. During playback,
+**Stop speaking** stays in the toolbar and moves into the narrow Details
+overlay while it is open.
+
+Questions, approvals, worker waits and task controls appear above the composer.
+A successful task leaves a short **Task completed** cue by the composer.
+Open **Details** to inspect the task. Failed, cancelled, paused and uncertain
+outcomes remain visible by the relevant controls.
+An approval shows the full scope and the revision it applies to. A command
+receipt reports what happened to the request separately from task completion.
+Disconnected or stale copies retain loaded history and lock mutations.
+**Stop speaking** controls audio only.
+
+### Inspect conversation details
+
+Choose **Details** beside the profile heading to open **Conversation details**.
+The drawer shows the selected profile. On a wide screen it sits beside the
+conversation. On a narrow screen it opens over the conversation. Its facts
+scroll separately from the transcript. Choose **Close**, press Escape, or tap
+outside the narrow drawer to return focus to **Details**. Closing it keeps the
+draft and reading position. Opening Voice closes Details and opening Details
+closes Voice.
+
+Choose a section label to expand it. The sections start collapsed and keep
+their open state while you inspect another panel or resize the page.
+
+- **Capabilities** lists the provider, model, allowed and unavailable tools,
+  and coding worker availability.
+- **Task activity** shows the task, conversation and run IDs, status, counters,
+  bounds, diagnostic code, saved question and answer, and settled successful
+  control receipt. Pending and failed receipts stay beside the controls.
+- **Usage** shows reported usage and the reservation against the task limit.
+  A synthetic task may show **Unknown** usage alongside `0 / 65536 units`
+  reserved. Hosted tasks use reported tokens and leave billed cost unknown.
+- **Conversation settings** explains where submitted text goes and links to
+  **Preferences** and **Companion knowledge**. An unfinished task prevents
+  disabling the conversation.
+
+In a synthetic session, ask about recent coding activity and answer the
+clarification. Open **Tool result** in the transcript to read the saved result,
+for example, `No coding agent session is known to the core right now.` Choose
+**Tool result** again to collapse it. While a result is open, **Load earlier**
+keeps the result expanded and preserves your reading position.
 
 ```mermaid
 flowchart LR
@@ -279,7 +375,7 @@ as for every configured module; an empty section keeps every default:
 - With spoken replies enabled in a tab (see [Browser speech](#browser-speech)),
   the result, question or refusal that ends a turn is spoken once through the
   qualified local voice, whatever model answered; the voice never depends on
-  the provider. **Speak** beside a saved assistant message asks to hear it
+  the provider. **Read aloud** beside a saved assistant message asks to hear it
   again through the `speak` control, whose accepted receipt means the request
   was saved, while the playback report says whether the browser spoke.
 
@@ -409,13 +505,55 @@ evidence but cannot continue the graph or undo cancellation. If SQLite cannot
 save the fence, cancellation is refused. A successful command receipt means
 that local control was saved; task completion is reported separately.
 
-The private content route is
-`/modules/companions/content/conversation?profile=bunny&after=0`; profiles are
-`bunny`, `reachy` and `microduck`. The first page includes `currentTask` with its
-saved question, its kind (`clarification` or `approval`), its proposal and its
-answer; subsequent pages use `currentTask: null`. Text is retained through
-reload and private history remains visible during a dashboard reconnect.
-Unsubmitted drafts remain in page memory only.
+### Conversation history contract
+
+The existing authenticated `GET /modules/companions/content/conversation`
+read accepts `profile=bunny`, `profile=reachy` or `profile=microduck`. With
+only `profile` and optional `after` it returns version 1, in ascending order
+after that sequence (default 0). The first page includes `currentTask`; later
+pages return `currentTask: null`. The existing panel still uses version 1.
+
+For version 2, add `view=recent` and omit `after`:
+
+| Request | Result |
+| --- | --- |
+| `profile=bunny&view=recent` | Newest saved window and latest task/question |
+| `profile=bunny&view=recent&before=<older>` | Older window, with `currentTask: null` |
+
+The response is `{version: 2, profile, conversationId, messages, currentTask,
+older}`. Messages retain the version 1 fields and full saved text. Each window
+contains at most 16 messages in ascending sequence order, chosen newest first.
+The body is at most 65,536 UTF-8 bytes, including the cursor and current task.
+If the first whole message and required metadata cannot fit, the owner returns
+the shared `capacity` error rather than skipping or shortening the message.
+
+Pass `older` back unchanged as `before`. It is a canonical base64url encoding
+of the profile, conversation ID and a positive safe integer sequence. It reads
+strictly below the oldest returned sequence and only in that profile and
+conversation. A null cursor means no older messages remain. A profile without
+a saved conversation returns a null conversation ID and an empty window.
+An invalid or mismatched cursor or mixed query returns `invalid-request`.
+Permission refusals still come from the runtime; owner read failures use
+`unavailable`.
+
+The newest response includes the latest task independent of the visible
+messages. Its saved question keeps the ID, text, answer, kind
+(`clarification`, `approval` or `delegation`), and proposal with its target,
+full data and expected revision. It omits the private call reference. Reads
+make no writes and publish no lifecycle observations. Nothing polls history.
+
+The browser reader checks the response profile and conversation before using
+it. It merges overlapping windows by sequence and leaves gaps explicit for
+one earlier read at a time. An earlier page never replaces the latest question.
+Abort old reads when changing profiles or starting a replacement read. If a
+read fails, the caller can retain the last loaded history and explicitly retry
+the read. Unsubmitted drafts stay in page memory only.
+
+The companions source checks above include history route and reader tests. The
+existing browser journey exercises the recent reader against the real private
+gateway with synthetic saved history. Run the focused journey after the root
+build with `node apps/runtime/dashboard/tests/conversation-history.browser.ts`,
+or run it as part of `npm run test:companions:browser`.
 
 Diagnostics use the SDK's log, trace, clock, scheduler and abort signal and the
 runtime's host adapter. Profile 1.6 registers assistant run/model/tool spans and
@@ -440,7 +578,13 @@ runtime catalog cases run over both transports and in a disposable runtime. The
 existing companions browser check exercises the real authenticated page with
 approved and declined proposals across reload, a clarification with the read
 tool, cancellation, keyboard, disconnection and reader refusals while
-preserving Reachy. These are synthetic source checks. They establish neither
+preserving Reachy. The Conversation state journey checks Details at desktop
+and 320px, including scrolling facts, returning focus, and preserving the
+reading position. The speech journey checks Stop speaking during narrow
+inspection. Use the disposable `scenario-assistant-task` capture for the normal
+Conversation view and matched synthetic captures for the open drawer.
+
+These are synthetic source checks. They establish neither
 live-model usefulness nor installed or physical acceptance; live provider use is
 the installed acceptance of #508 under the owner's allowance.
 

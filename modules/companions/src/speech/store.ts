@@ -1,5 +1,6 @@
 import type {DatabaseSync} from 'node:sqlite';
 import type {SpeechPlayback} from '@jimmie-potts/event-contracts/v2/companions';
+import {advanceRevision} from '../revision.js';
 import {Outcome} from '@jimmie-potts/sdk';
 
 export type Responsibility = {operationId: string; candidateId: string; endpointId: string; traceparent: string; started: boolean};
@@ -10,6 +11,10 @@ export class SpeechStore {
       operation_id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL UNIQUE, endpoint_id TEXT NOT NULL,
       traceparent TEXT NOT NULL, started INTEGER NOT NULL DEFAULT 0 CHECK(started IN (0,1)),
       playback TEXT NOT NULL DEFAULT 'pending'
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS companion_speech_recovery (
+      operation_id TEXT PRIMARY KEY, request_id TEXT NOT NULL, endpoint_id TEXT NOT NULL,
+      traceparent TEXT NOT NULL, acknowledged_at_ms INTEGER NOT NULL
     ) STRICT`);
   }
   has(candidateId: string): boolean {return this.database.prepare('SELECT 1 FROM companion_speech WHERE candidate_id=?').get(candidateId) !== undefined;}
@@ -28,5 +33,18 @@ export class SpeechStore {
       return {operationId: row.operation_id, candidateId: row.candidate_id, endpointId: row.endpoint_id, traceparent: row.traceparent, started: row.started === 1};
     });
   }
-  uncertain(): Responsibility | undefined {return this.records(Outcome.uncertain).at(-1);}
+  uncertain(): Responsibility | undefined {
+    return this.records(Outcome.uncertain).reverse().find(record =>
+      this.database.prepare('SELECT 1 FROM companion_speech_recovery WHERE operation_id=?').get(record.operationId) === undefined);
+  }
+  acknowledge(record: {operationId: string; requestId: string; endpointId: string; traceparent: string; atMs: number}): {revision: number; next: Responsibility | undefined} {
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      this.database.prepare('INSERT INTO companion_speech_recovery VALUES(?,?,?,?,?)')
+        .run(record.operationId, record.requestId, record.endpointId, record.traceparent, record.atMs);
+      const revision = advanceRevision(this.database), next = this.uncertain();
+      this.database.exec('COMMIT');
+      return {revision, next};
+    } catch (error) {if (this.database.isTransaction) this.database.exec('ROLLBACK'); throw error;}
+  }
 }

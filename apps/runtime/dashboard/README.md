@@ -65,18 +65,50 @@ Actual phone/certificate verification is separate from desktop browser tests.
 
 ## Pages, routes and widgets
 
-The primary rail has **Home, Habitat, Rooms, Devices and Automation**. Settings is a
-separate corner link; it contains Connections (including build/operator tools),
-Places and Disconnect. An ended browser session still offers **Sign in again**
-globally. Home links Timeline. Devices groups catalog-derived Lighting,
+The rail has **Home, Habitat, Rooms, Devices and Automation**, each with an icon.
+Settings, the feed indicator and the control mode sit at the bottom of the rail
+(#1887); Settings contains Connections (including build/operator tools), Places
+and Disconnect. The rail stays in view while a page scrolls, and a destination chosen from a
+navigation link opens at the top of its page. Its toggle
+collapses it to icons that keep their names for assistive technology and show
+them on hover or focus. It starts collapsed below 1200px and expanded from
+1200px up, and the toggle's choice is kept in this browser for each of those two
+window sizes (`rail-preference.ts`); it is never core or module state. At phone
+width the rail is a drawer behind a menu button, closed by a chosen destination,
+Escape or an outside tap, each of which returns focus to the button; the page
+behind the open drawer is inert. An ended browser session shows the full rail
+and still offers **Sign in again** globally, in the phone bar when the rail is a
+drawer. A window too short for the rail lets it scroll with the page. Home links Timeline. Devices groups catalog-derived Lighting,
 Displays, Audio and Other destinations; module pages keep their sibling links
 locally. The category choice survives navigation within the open page without
 being saved as a new preference. Unknown modules use Other, and unavailable
 catalog or observation evidence stays explicit. Browsing sends no device command.
 
+The jump palette (#1888) opens any page from the keyboard. **Command and K** or
+**Control and K** opens it from anywhere, and so does a **slash** typed outside
+a text field and outside an open menu, list or dialog. A slider or a checkbox
+is not a text field. On a Mac, Control and K
+in a text field keeps its meaning there, deleting to the end of the line. The
+rail's **Jump to…** field and the phone bar's search button open it as well. It
+lists up to three pages visited most recently in this page session, the hub's
+destinations with Timeline, Settings and Connections, and every page the device
+directory lists for a running module. Typing narrows the list to names and
+hints that contain every typed word, the arrow keys move the choice and bring
+it into view, Enter opens the page at its top, and Escape, the same key again or a
+click outside closes it and returns focus to where it was. The page behind it
+is inert while it is open, and the browser's back or forward closes it. While
+open it reads its keys wherever focus is, keeps focus in its field when a
+heading or the footer is pressed, and leaves a list scrolled by touch or wheel
+where it was put. It is drawn above everything the page draws, including the
+full-window visualizer. The palette only navigates: it sends no command,
+sync, upload or provider request, and the recent pages are held in memory, not
+in storage. Its keys do nothing while a modal dialog is open or an element is
+shown full screen, since it could only open out of sight. A key pressed inside a framed module page does not reach
+the shell, so there the field and the button are the way in.
+
 `navigation.tsx` shares native anchor navigation and containing-destination
 selection. `directory.ts` projects the existing copies without acquiring state.
-`skins/quiet-glass.css` supplies light/dark semantic values over the retained
+`rail.tsx` owns the rail's collapse state and icons. `jump.ts` projects the palette's list and holds its key rules; `jump-palette.tsx` is the list. `skins/quiet-glass.css` supplies light/dark semantic values over the retained
 fixed attention/art tokens; `shell.css` owns shared responsive geometry. The
 legacy dashboard and documentation keep their own skins. Settings can follow
 displayed art colors, lock the current colors or restore Quiet glass. These

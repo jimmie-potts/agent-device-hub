@@ -20,7 +20,8 @@ export type CompanionState = {id: 'reachy'; revision: number; settings: Companio
 export type CompanionSettingsSet = {requestId: string; expectedRevision: number; enabled: boolean; muted: CompanionCategory[]; snooze: 'keep' | 'one-hour' | 'clear'};
 export type CompanionFixtureRun = {requestId: string; scenario: 'arrival' | 'visit' | 'question-and-arrival'; busy: boolean | null; media: boolean | null};
 
-export type SpeechEndpointControl = {requestId: string} & ({action: 'enable'; available: true} | {action: 'mute' | 'stop'});
+export type SpeechEndpointControl = {requestId: string} & ({action: 'enable'; available: true} | {action: 'mute' | 'stop'}
+  | {action: 'recover'; operationId: string; expectedRevision: number; previousPlaybackStopped: true});
 export type SpeechDispatch = {requestId: string; candidateId: string; endpointId: string};
 /** One saved assistant message the owner asked to hear, or that ended a turn: its text and the deadline after which it is stale (Hub #500). */
 export type SpokenReply = {taskId: string; messageId: string; text: string; validUntilMs: number};
@@ -34,7 +35,7 @@ export type SpeechPlayback = {operationId: string} & (
 );
 export type SpeechEndpointLost = {id: string};
 export type SpeechState = {id: 'reachy'; revision: number; endpointId: string | null; availability: 'off' | 'available' | 'unavailable';
-  playback: SpeechPlayback | {operationId: string; status: 'dispatching'; started: false} | null; pending: boolean};
+  playback: SpeechPlayback | {operationId: string; status: 'dispatching'; started: false} | null; pending: boolean; recoveryOperationId?: string};
 
 export const OPPORTUNITY_TTL_MS = 30_000;
 export function checkOpportunity(message: Message): string | undefined {
@@ -81,6 +82,7 @@ export const companionFamilies = [
   defineFamily('companion-settings-set', 'command', 'org.bunny.companion-settings.set.requested'),
   defineFamily('companion-fixture-run', 'command', 'org.bunny.companion-fixture.run.requested'),
   defineFamily('companion-speech-endpoint', 'command', 'org.bunny.companion-speech.endpoint.requested', routedSubject('routing')),
+  defineFamily('companion-speech-endpoint', 'command', 'org.bunny.companion-speech.endpoint.requested', routedSubject('routing'), '2.1'),
   defineFamily('companion-speech-output', 'command', 'org.bunny.companion-speech.output.requested', checkSpeechOutput),
   defineFamily('companion-speech-playback', 'occurrence', 'org.bunny.companion-speech.playback.observed', routedSubject('routing')),
   defineFamily('companion-speech-lost', 'occurrence', 'org.bunny.companion-speech.endpoint-lost', message =>
@@ -88,6 +90,12 @@ export const companionFamilies = [
   defineFamily('companion-speech-dispatch', 'command', 'org.bunny.companion-speech.dispatch.requested', message => message.subject === 'reachy' ? undefined : 'envelope /subject must be reachy'),
   defineFamily('companion-speech-play', 'command', 'org.bunny.companion-speech.play.requested', message => message.subject === 'reachy' ? undefined : 'envelope /subject must be reachy'),
   defineFamily('companion-speech-state', 'state', 'org.bunny.companion-speech-state.updated', message => message.subject === 'reachy' ? undefined : 'envelope /subject must be reachy'),
+  defineFamily('companion-speech-state', 'state', 'org.bunny.companion-speech-state.updated', message => {
+    const state = message.data as SpeechState;
+    if (message.subject !== 'reachy') return 'envelope /subject must be reachy';
+    return state.recoveryOperationId !== undefined && state.recoveryOperationId !== state.playback?.operationId
+      ? 'payload recovery must name the uncertain playback' : undefined;
+  }, '2.1'),
 ] as const;
 export const companionSchemas: Readonly<Record<string, object>> = Object.fromEntries(companionFamilies.map(family => [family.dataschema, family.schema]));
 export function registerCompanionFamilies(validator: MessageValidator): void { registerFamilies(validator, companionFamilies); }

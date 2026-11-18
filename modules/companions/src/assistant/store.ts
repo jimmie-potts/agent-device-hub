@@ -5,21 +5,14 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantProfile, AssistantStatus, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
 
-import type {Mode} from '@jimmie-potts/event-contracts/v2/families';
 import type {TranscriptItem} from './provider.js';
+import {HISTORY_ROWS, historyCursor, readHistoryCursor, type ConversationMessage, type RecentConversationPage, type SavedQuestion} from './history-contract.js';
 
 /** The conversation graph of Hub #46. Tasks saved by the fixed synthetic graph (`synthetic-1`) stay readable and refuse resume. */
 export const GRAPH_VERSION = 'conversation-1';
 import {LIMITS} from './limits.js';
 export {LIMITS} from './limits.js';
-/**
- * A proposed command awaiting the owner's approval: the exact family, target and value, and the revision it is bound to:
- * the synced Hub-mode revision for `mode-set`, the coding worker's state revision for a delegation (Hub #502).
- */
-export type Proposal = {family: 'mode-set'; target: 'hub'; data: {mode: Mode}; expectedRevision: number}
-  | {family: 'coding-dispatch'; target: 'assistant'; data: {repository: string; brief: string}; expectedRevision: number};
-/** A clarification the owner answers, an approval the owner decides, or a delegation the worker's result answers. */
-export type Question = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval' | 'delegation'; call: string; proposal: Proposal | null};
+export type Question = SavedQuestion & {call: string};
 export type Task = {version: 1; graphVersion: string; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
@@ -31,7 +24,6 @@ export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; 
   status: AssistantStatus; traceparent: string; previousTraceparent: string | null};
 export type StagedInput = {action: 'start' | 'answer'; profile: AssistantProfile; text: string; expectedRevision: number; taskId?: string; questionId?: string};
 export type Stage = {ref: string; requestId: string; input: StagedInput; expires: number};
-export type ConversationMessage = {seq: number; id: string; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number};
 export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: Question | null} | null; next: number | null};
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = TranscriptItem & {effect: string};
@@ -121,4 +113,34 @@ export class AssistantStore {
     if (rows.length > page.messages.length) page.next = page.messages.at(-1)?.seq ?? after;
     return page;
   }
+  recentPage(profile: AssistantProfile, before: string | undefined): RecentConversationPage | 'invalid-request' | 'capacity' {
+    const conversationId = this.conversation(profile) ?? null;
+    const page: RecentConversationPage = {version: 2, profile, conversationId, currentTask: null, messages: [], older: null};
+    const cursor = before === undefined ? undefined : readHistoryCursor(before, profile);
+    if (before !== undefined && (cursor === undefined || cursor.conversationId !== conversationId)) return 'invalid-request';
+    if (conversationId === null) return page;
+    if (cursor === undefined) {
+      const task = parsed<Task>(this.database.prepare('SELECT record FROM assistant_tasks WHERE profile=? ORDER BY seq DESC LIMIT 1').get(profile) as RecordRow | undefined);
+      if (task !== undefined && task.conversationId === conversationId) {
+        const question = task.question;
+        page.currentTask = {taskId: task.id, question: question === null ? null : {
+          id: question.id, text: question.text, answer: question.answer, kind: question.kind, proposal: question.proposal,
+        }};
+      }
+    }
+    const columns = 'SELECT seq,id,task_id AS taskId,role,text,at_ms AS atMs FROM assistant_messages';
+    const rows = (cursor === undefined
+      ? this.database.prepare(`${columns} WHERE conversation_id=? ORDER BY seq DESC LIMIT ?`).all(conversationId, HISTORY_ROWS + 1)
+      : this.database.prepare(`${columns} WHERE conversation_id=? AND seq<? ORDER BY seq DESC LIMIT ?`).all(conversationId, cursor.seq, HISTORY_ROWS + 1)) as ConversationMessage[];
+    for (const row of rows.slice(0, HISTORY_ROWS)) {
+      const older = page.messages.length + 1 < rows.length ? historyCursor({profile, conversationId, seq: row.seq}) : null;
+      const messages = [row, ...page.messages];
+      if (Buffer.byteLength(JSON.stringify({...page, messages, older})) > LIMITS.pageBytes) break;
+      page.messages = messages;
+      page.older = older;
+    }
+    if ((rows.length > 0 && page.messages.length === 0) || Buffer.byteLength(JSON.stringify(page)) > LIMITS.pageBytes) return 'capacity';
+    return page;
+  }
+
 }

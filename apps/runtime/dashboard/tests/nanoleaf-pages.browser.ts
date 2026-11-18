@@ -1,4 +1,4 @@
-import {directoryLink} from './navigation-helpers.ts';
+import {destinationLink, directoryLink} from './navigation-helpers.ts';
 // Retained wall controls through the real gateway/core/module and a fresh simulated controller (Hub #934).
 import assert from 'node:assert/strict';
 import {mkdir, readFile} from 'node:fs/promises';
@@ -54,7 +54,7 @@ try {
       assert.ok(await animations.evaluate(items => items.length >= 3 && items.some(animation => animation.playState === 'running')),
         'normal-motion fallback assembly is visible and still running before navigation');
       const completion = animations.evaluate(async items => (await Promise.allSettled(items.map(animation => animation.finished))).map(result => result.status));
-      await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: /^Home/}).click();
+      await (await destinationLink(page, /^Home/)).click();
       await page.locator('.nanoleaf-wall').waitFor({state: 'detached'});
       const states = await animations.evaluate(items => items.map(animation => animation.playState));
       const finished = await completion;
@@ -157,7 +157,7 @@ try {
 
     await page.reload(); await feed(page, 'connected'); await drawing.waitFor();
     assert.equal(sent.length, 2, 'reload never repeats a wall edit');
-    await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: /^Home/}).click();
+    await (await destinationLink(page, /^Home/)).click();
     assert.equal(await wall.count(), 0, 'leaving disposes the wall mount');
     await (await directoryLink(page, 'Lighting', 'Wall')).click(); await drawing.waitFor();
     assert.equal(sent.length, 2, 're-entry sends no command');
@@ -179,7 +179,7 @@ try {
     assert.deepEqual(saved(await world.nanoleafWall()), edited);
 
     // Observe power before publishing active tasks that legitimately start Work rendering.
-    await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: /^Home/}).click();
+    await (await destinationLink(page, /^Home/)).click();
     const card = page.locator('[data-light-card="wall"]'); await card.waitFor();
     for (const on of [false, true]) {
       world.nanoleafPower(on);

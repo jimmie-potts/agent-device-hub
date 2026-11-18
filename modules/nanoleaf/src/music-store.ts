@@ -4,15 +4,16 @@
 // the journal can end a session whose start ends before its first frame. It also keeps each light's last read selection
 // (#1614), which the light's `nanoleaf-wall` record publishes.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import type {LightingDeviceState, LightingEnded, LightingEndReason, LightingRestoration} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import type {LightingDeviceState, LightingEnded, LightingEndReason, LightingRestoration, LightingShow} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import type {End, JournalRow, Report} from './journal.js';
 import {RESTORES, restoresOf, type ColorState, type MusicBase, type Restores, type SelectionRead} from './music-base.js';
 import {execute, first, text, type Db} from './sqlite.js';
 
 export const MUSIC_PLAY = 'music.play';
 export const MUSIC_STOP = 'music.stop';
+export const MUSIC_TRANSPORT = 'music.transport';
 
-export type MusicSessionRow = {device: string; generation: string; status: 'starting' | 'playing' | 'ended'; startId: string; ended: LightingEnded | null};
+export type MusicSessionRow = {device: string; generation: string; status: 'starting' | 'playing' | 'ended'; startId: string; ended: LightingEnded | null; show?: LightingShow; durationMs?: number; paused: boolean};
 
 /**
  * One row per light: `status` is starting, playing or ended; a row read with another ends as ended. Each light's last
@@ -94,11 +95,14 @@ export function sessionBase(db: Db, device: string): {generation: string; restor
 }
 
 export function musicSession(db: Db, device: string): MusicSessionRow | undefined {
-  const row = first(db, 'SELECT generation,status,start_id,ended FROM nanoleaf_music_sessions WHERE device=?', device);
+  const row = first(db, 'SELECT generation,status,start_id,ended,detail FROM nanoleaf_music_sessions WHERE device=?', device);
   if (row === undefined) return undefined;
   const status = text(row, 1);
+  const detail = JSON.parse(text(row, 4)) as {show?: LightingShow; durationMs?: number; paused?: boolean};
   return {device, generation: text(row, 0), status: status === 'starting' || status === 'playing' ? status : 'ended', startId: text(row, 2),
-    ended: typeof row[3] === 'string' ? JSON.parse(row[3]) as LightingEnded : null};
+    ended: typeof row[3] === 'string' ? JSON.parse(row[3]) as LightingEnded : null,
+    ...(detail.show === undefined ? {} : {show: detail.show}),
+    ...(detail.durationMs === undefined ? {} : {durationMs: detail.durationMs}), paused: detail.paused === true};
 }
 
 /** Whether a session, or the session of `generation`, is starting or playing on the device. */
@@ -113,10 +117,26 @@ export function saveStarting(db: Db, device: string, generation: string, startId
   report({type: 'music', device});
 }
 
-export function markPlaying(db: Db, device: string, generation: string, report: Report): void {
-  if (execute(db, "UPDATE nanoleaf_music_sessions SET status='playing' WHERE device=? AND generation=? AND status='starting'", device, generation) > 0) {
-    report({type: 'music', device});
-  }
+export function markPlaying(db: Db, device: string, generation: string, report: Report, show?: LightingShow): void {
+  const changed = execute(db, "UPDATE nanoleaf_music_sessions SET status='playing' WHERE device=? AND generation=? AND status='starting'", device, generation);
+  if (changed === 0) return;
+  if (show !== undefined) writeShowProgress(db, device, generation, show, false);
+  report({type: 'music', device});
+}
+
+function writeShowProgress(db: Db, device: string, generation: string, show: LightingShow, paused: boolean): void {
+  execute(db, "UPDATE nanoleaf_music_sessions SET detail=json_set(detail, '$.show', json(?), '$.paused', json(?)) WHERE device=? AND generation=?",
+    JSON.stringify(show), JSON.stringify(paused), device, generation);
+}
+
+/** Updates restart-safe show evidence in the existing JSON detail without a storage migration. */
+export function setShowProgress(db: Db, device: string, generation: string, show: LightingShow, paused: boolean, report: Report,
+  force = false): void {
+  const session = musicSession(db, device);
+  if (session?.generation !== generation || session.status === 'ended' || session.show === undefined) return;
+  if (!force && session.paused === paused && session.show.missedCues === show.missedCues) return;
+  writeShowProgress(db, device, generation, show, paused);
+  report({type: 'music', device});
 }
 
 /** The reasons whose ending names the refusal or failure behind it. */
@@ -127,9 +147,10 @@ const CODED: ReadonlySet<LightingEndReason> = new Set(['refused', 'expired', 'de
  * `expired` or `device` ending keeps `code`, the refusal or failure behind it.
  */
 export function endSession(db: Db, device: string, generation: string, reason: LightingEndReason, restoration: LightingRestoration, atMs: number,
-  report: Report, code?: ErrorCode): boolean {
+  report: Report, code?: ErrorCode, show?: LightingShow): boolean {
+  const count = (show ?? musicSession(db, device)?.show)?.missedCues;
   const ended: LightingEnded = {generation, reason, restoration, atMs: Math.max(0, Math.round(atMs)),
-    ...(code !== undefined && CODED.has(reason) ? {code} : {})};
+    ...(code !== undefined && CODED.has(reason) ? {code} : {}), ...(count === undefined ? {} : {missedCues: count})};
   const changed = execute(db, "UPDATE nanoleaf_music_sessions SET status='ended', ended=? WHERE device=? AND generation=? AND status<>'ended'",
     JSON.stringify(ended), device, generation) > 0;
   if (changed) report({type: 'music', device});
@@ -167,5 +188,7 @@ export function musicDeviceState(db: Db, device: string): Omit<LightingDeviceSta
   const session = musicSession(db, device);
   if (session === undefined) return {id: device, session: null};
   if (session.status === 'ended') return {id: device, session: session.ended === null ? null : {generation: session.generation, status: 'ended', ended: session.ended}};
-  return {id: device, session: {generation: session.generation, status: session.status === 'playing' ? 'playing' : 'starting'}};
+  const {generation, status, show, paused} = session;
+  if (show !== undefined) return {id: device, session: {generation, status: paused ? 'paused' : status, show}};
+  return {id: device, session: {generation, status}};
 }

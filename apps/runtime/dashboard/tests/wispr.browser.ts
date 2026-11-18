@@ -4,6 +4,7 @@ import {mkdir, readFile} from 'node:fs/promises';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {chromium, type Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {destinationLink} from './navigation-helpers.ts';
 
 let browser: Browser | undefined;
 try {
@@ -114,7 +115,7 @@ try {
       await analytics.getByRole('combobox', {name: 'Word list', exact: true}).selectOption('all');
       await analytics.getByRole('cell', {name: '=SUM(1,2)', exact: true}).waitFor();
       await analytics.getByRole('combobox', {name: 'App', exact: true}).selectOption('chatgpt');
-      await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: /^Home/}).click();
+      await (await destinationLink(page, /^Home/)).click();
       await widget.getByText('120', {exact: true}).first().waitFor();
       await widget.getByRole('link', {name: 'Open Wispr'}).click();
       assert.equal(await analytics.getByRole('combobox', {name: 'Period', exact: true}).inputValue(), 'today');

@@ -250,7 +250,7 @@ export class DashboardConnection {
               control: (command, parent) => {
                 if (!live()) return Promise.reject(unavailable());
                 return opened.request('companion-speech-endpoint', {type: 'org.bunny.companion-speech.endpoint.requested',
-                  dataschema: 'https://bunny.invalid/events/companion-speech-endpoint/2.0', data: command},
+                  dataschema: `https://bunny.invalid/events/companion-speech-endpoint/${command.action === 'recover' ? '2.1' : '2.0'}`, data: command},
                 {timeoutMs: 5000, requestId: command.requestId, ...(parent === undefined ? {} : {parent})});
               },
               observe: async (playback, parent) => {

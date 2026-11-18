@@ -82,6 +82,11 @@ one latest Duck message versus separate history, and retained selection with
 corrected/removal fallback after restart. The companions browser journey checks
 Home placement, selection labels, access loss, navigation and keyboard.
 
+`scenario-assistant-task` ends with a 390×844 Conversation capture after its
+synthetic saved reply. It checks that the reply and Send fit in the viewport,
+then browses both labelled demo profiles and returns to the unsent B.U.N.N.Y.
+draft. The capture sends no input command and uses no provider account.
+
 
 `weekly-routines` uses the core and a simulated LIFX consumer. It saves,
 enables and edits a disabled routine through the authenticated routes, refuses

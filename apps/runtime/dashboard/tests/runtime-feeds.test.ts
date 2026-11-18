@@ -4,13 +4,14 @@ import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {RemoteParticipant, SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import {RuntimeFeeds, type RuntimeData, type RuntimeRecord} from '../src/runtime-feeds.ts';
 
-void test('lighting composition, LIFX color and Nanoleaf geometry follow only their declared owner on the existing participant', async context => {
+void test('lighting, geometry and presence follow only their declared owner on the existing participant', async context => {
   context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
     schema: 'module-list/2.0', modules: [
       {name: 'core', state: 'running', serves: ['lighting-layout', 'playback-layout'], pages: []},
       {name: 'lifx', state: 'running', serves: ['device', 'lifx-light'], pages: []},
       {name: 'nanoleaf', state: 'running', serves: ['device', 'nanoleaf-wall'], pages: []},
-      {name: 'other', state: 'running', serves: ['lighting-layout', 'playback-layout', 'lifx-light', 'nanoleaf-wall'], pages: []},
+      {name: 'presence-pro', state: 'running', serves: ['presence-observation'], pages: []},
+      {name: 'other', state: 'running', serves: ['lighting-layout', 'playback-layout', 'lifx-light', 'nanoleaf-wall', 'presence-observation'], pages: []},
     ],
   } : {schema: 'authority/2.0', scope: 'control'})));
   const calls: string[] = [];
@@ -20,8 +21,8 @@ void test('lighting composition, LIFX color and Nanoleaf geometry follow only th
   }} as unknown as RemoteParticipant;
   const feeds = new RuntimeFeeds({after: () => () => {}}, () => {}, () => {});
   await feeds.start(participant);
-  assert.deepEqual(calls, ['bunny/core:lighting-layout', 'bunny/core:playback-layout', 'bunny/modules/lifx:device', 'bunny/modules/lifx:lifx-light', 'bunny/modules/nanoleaf:device', 'bunny/modules/nanoleaf:nanoleaf-wall']);
-  await feeds.refresh();assert.equal(calls.length, 12);feeds.close();
+  assert.deepEqual(calls, ['bunny/core:lighting-layout', 'bunny/core:playback-layout', 'bunny/modules/lifx:device', 'bunny/modules/lifx:lifx-light', 'bunny/modules/nanoleaf:device', 'bunny/modules/nanoleaf:nanoleaf-wall', 'bunny/modules/presence-pro:presence-observation']);
+  await feeds.refresh();assert.equal(calls.length, 14);feeds.close();
 });
 void test('named owners coexist; a gap keeps copies stale until their own replacement arrives, without commands', async context => {
   context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {

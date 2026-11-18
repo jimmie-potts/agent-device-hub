@@ -29,7 +29,7 @@ test('lighting families are new 2.0 commands and states registered with the core
   assert.deepEqual(musicLightingFamilies.map(({family, kind}) => `${family}:${kind}`),
     ['music-lighting-control:command', 'music-lighting-state:state', 'music-lighting-work:command', 'music-lighting-device:state']);
   assert.ok(musicLightingFamilies.every(family => family.dataschema.endsWith('/2.0')));
-  assert.deepEqual([...LIGHTING_END_REASONS], ['stopped', 'alert', 'manual', 'source-lost', 'device', 'restart', 'expired', 'refused']);
+  assert.deepEqual([...LIGHTING_END_REASONS], ['stopped', 'alert', 'manual', 'source-lost', 'device', 'restart', 'expired', 'refused', 'completed']);
   assert.deepEqual([...LIGHTING_RESTORATIONS], ['restored', 'skipped', 'none', 'uncertain']);
 });
 
@@ -73,4 +73,39 @@ test('device state ties an ending to its own session generation', () => {
   invalid(device({id: 'lines', revision: 2, session: {generation, status: 'playing', ended}}));
   invalid(device({id: 'lines', revision: 2, session: {generation, status: 'ended'}}));
   invalid(device({id: 'panels', revision: 0, session: null}));
+});
+
+test('prepared work carries bounded standalone timing and requires a generation for pause, resume and seek', () => {
+  const base = {requestId: 'show-start', expectedRevision: 0, action: 'start-show', showId: 'show-almond', version: 2, positionMs: 0, startDelayMs: 30_000};
+  valid(control(base));
+  for (const patch of [{showId: 'almond'}, {version: 0}, {version: 257}, {positionMs: 1_800_001}, {positionMs: 0.5},
+    {startDelayMs: 30_001}, {startDelayMs: -1}, {capture}, {generation}, {acceptedAtMs: at}]) {
+    invalid(control({...base, ...patch}));
+  }
+  const {expectedRevision, ...startWork} = base;
+  valid(work({...startWork, generation}));
+  invalid(work(startWork));
+  for (const transport of [{action: 'pause-show'}, {action: 'resume-show'}, {action: 'seek-show', positionMs: 700}]) {
+    valid(control({requestId: 'show-control', expectedRevision, generation, ...transport}));
+    invalid(control({requestId: 'show-control', expectedRevision, ...transport}));
+    valid(work({requestId: 'show-work', generation, ...transport}));
+  }
+  valid(control({requestId: 'show-stop', expectedRevision, generation, action: 'stop'}));
+  invalid(control({requestId: 'show-seek', expectedRevision, generation, action: 'seek-show'}));
+  invalid(work({requestId: 'show-pause', generation, action: 'pause-show', positionMs: 0}));
+});
+
+test('prepared session records and endings carry bounded scheduling evidence', () => {
+  const show = {showId: 'show-almond', version: 2, positionMs: 350, missedCues: 256};
+  const paused = {generation, status: 'paused', show};
+  const session = {...paused, operationId: 'show-pause', startedAtMs: at};
+  valid(state({id: 'lines', revision: 4, session, last: null}));
+  valid(device({id: 'lines', revision: 5, session: paused}));
+  invalid(state({id: 'lines', revision: 4, session: {...session, capture, presetId: 'preset-warm'}, last: null}));
+  invalid(device({id: 'lines', revision: 5, session: {generation, status: 'paused'}}));
+  invalid(device({id: 'lines', revision: 5, session: {...paused, show: {...show, missedCues: 257}}}));
+  const ended = {generation, reason: 'completed', restoration: 'restored', atMs: at, missedCues: 256};
+  valid(device({id: 'lines', revision: 6, session: {generation, status: 'ended', ended}}));
+  valid(state({id: 'lines', revision: 6, session: {status: 'idle'}, last: ended}));
+  invalid(state({id: 'lines', revision: 6, session: {status: 'idle'}, last: {...ended, missedCues: -1}}));
 });

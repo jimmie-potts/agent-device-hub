@@ -47,7 +47,8 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
     startLocked: start.locked, stopLocked: stop.locked};
   const startReason = startBlocked(controls), stopReason = stopBlocked(controls);
   const session = record.session;
-  const inUse = session.status === 'idle' ? undefined : list.find(preset => preset.presetId === session.presetId)?.name;
+  const activePreset = 'presetId' in session ? session.presetId : undefined;
+  const inUse = list.find(preset => preset.presetId === activePreset)?.name;
   const mode = device?.desired.mode;
   // What an ending puts back (#1614), from the light module's own record: the session's base when it names this
   // generation, otherwise the light's last read selection before a Start.
@@ -63,7 +64,9 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
     <h3>{label}</h3>
     <div role="status">
       <p>{live ? sessionText(session) : `Last known: ${sessionText(session)}`}</p>
-      {session.status !== 'idle' && <p>Preset: {inUse ?? `${session.presetId} (not in the current library snapshot)`}. Started at {time(session.startedAtMs)}.</p>}
+      {session.status !== 'idle' && ('show' in session
+        ? <p>Saved show {session.show.showId}, version {session.show.version}. Missed cues: {session.show.missedCues}.</p>
+        : <p>Preset: {inUse ?? `${session.presetId} (not in the current library snapshot)`}. Started at {time(session.startedAtMs)}.</p>)}
       {sessionBase !== undefined && <p>{stale}{sessionBaseText(sessionBase)}</p>}
       {record.last !== null && <p>{endingText(record.last, endedBase)} Ended at {time(record.last.atMs)}.</p>}
     </div>
@@ -84,7 +87,7 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
       }}>Start Music lighting</button>
       <button type="button" disabled={stopReason !== undefined} onClick={() => {
         if (stopBlocked(controls) !== undefined) return;
-        void stop.run({family: 'music-lighting-control', target: record.id, requestId: crypto.randomUUID(), data: {action: 'stop', expectedRevision: record.revision}});
+        void stop.run({family: 'music-lighting-control', target: record.id, requestId: crypto.randomUUID(), data: {action: 'stop', expectedRevision: record.revision, ...('show' in session ? {generation: session.generation} : {})}});
       }}>Stop Music lighting</button>
     </div>
     {session.status === 'idle' ? startReason !== undefined && <p className="music-note">Start unavailable: {startReason}</p>

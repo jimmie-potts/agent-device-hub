@@ -55,6 +55,12 @@ it('live companion admissions use one real gateway endpoint and preserve visual 
   assert.equal(companions.inspect()?.presentation?.opportunity.cue, 'question');
   assert.equal((await control('enable')).status, 'accepted');
   assert.equal((await control('enable', alternate)).status, 'rejected');
+  const recovery = await alternate.request('companion-speech-endpoint', {
+    type: 'org.bunny.companion-speech.endpoint.requested', dataschema: 'https://bunny.invalid/events/companion-speech-endpoint/2.1',
+    data: {requestId: 'recovery-live-refusal', action: 'recover', operationId: 'old-operation', expectedRevision: companions.inspectSpeech()?.revision, previousPlaybackStopped: true}}, {timeoutMs: 2000});
+  assert.equal(recovery.status, 'rejected', 'another authenticated browser cannot recover a live speaker');
+  assert.equal(companions.inspectSpeech()?.endpointId, endpoint.id);
+
   await advance(); assert.equal(spoken.length, 0, 'enablement never speaks the previous visual card');
   for (const family of ['companion-speech-play', 'companion-speech-dispatch', 'companion-speech-endpoint', 'companion-speech-output']) {
     const bypass = await fetch(`${runtime.url}/api/v2/commands/${family}`, {method: 'POST', headers: {'bunny-request': '1', 'content-type': 'application/json'}, body: JSON.stringify({target: 'reachy', data: {}})});

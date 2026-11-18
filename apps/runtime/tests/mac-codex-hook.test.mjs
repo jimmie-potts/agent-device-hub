@@ -152,13 +152,13 @@ async function receiver(context, {hang = false, lifecycleVersion} = {}) {
   const endpoint = `http://127.0.0.1:${server.address().port}/api/monitor/v1/events`;
   await writeFile(path, JSON.stringify({enabled: true, qualified: true, source: SOURCE, endpoint, token: TOKEN,
     ...(lifecycleVersion === undefined ? {} : {lifecycleVersion})}), {mode: 0o600});
-  return {path, calls, server};
+  return {path, calls, server, directory};
 }
 
-function invoke(producer, input, options = []) {
+function invoke(producer, input, options = [], env = process.env) {
   return new Promise((resolve, reject) => {
     const started = performance.now();
-    const child = spawn(process.execPath, [...options, HOOK, producer], {stdio: ['pipe', 'pipe', 'pipe']});
+    const child = spawn(process.execPath, [...options, HOOK, producer], {stdio: ['pipe', 'pipe', 'pipe'], env});
     const chunks = [];
     child.stdout.on('data', chunk => chunks.push(chunk));
     child.stderr.on('data', chunk => chunks.push(chunk));
@@ -196,7 +196,7 @@ test('native wrapper publishes all selected events with source-bound metadata on
   for (const [index, hook_event_name] of events.entries()) {
     quiet(await invoke(world.path, {...base, hook_event_name, source: 'startup',
       prompt: 'PRIVATE_CANARY', last_assistant_message: 'PRIVATE_CANARY', cwd: '/DO_NOT_OPEN',
-      transcript_path: '/DO_NOT_OPEN/transcript.jsonl'}, options));
+      transcript_path: '/DO_NOT_OPEN/transcript.jsonl'}, options, {...process.env, CODEX_HOME: '/DO_NOT_OPEN'}));
     assert.equal(world.calls.length, index + 1);
     const call = world.calls[index];
     assert.equal(call.url, REMOTE_PATH + '/publish');
@@ -227,13 +227,40 @@ test('native wrapper drops child, compact and malformed input without publicatio
   assert.equal(world.calls.length, 0);
 });
 
-test('native metadata guard refuses enrichment before waiting for stdin', async context => {
+test('version-selected local hooks carry index titles and renames without supplied paths or content', async context => {
   for (const lifecycleVersion of ['1.1', '1.2']) {
     const world = await receiver(context, {lifecycleVersion});
-    const result = await invoke(world.path, undefined);
-    quiet(result);
-    assert.ok(result.elapsed < 1500, 'enrichment configuration must refuse before reading input');
-    assert.equal(world.calls.length, 0);
+    const index = join(world.directory, 'session_index.jsonl');
+    const env = {...process.env, CODEX_HOME: world.directory};
+    const input = {...base, hook_event_name: 'UserPromptSubmit', cwd: '/DO_NOT_OPEN',
+      transcript_path: '/DO_NOT_OPEN/transcript.jsonl', prompt: 'PRIVATE_CANARY'};
+    for (const title of ['Launch plan', 'Renamed plan']) {
+      await writeFile(index, JSON.stringify({id: base.session_id, thread_name: title}) + '\n');
+      quiet(await invoke(world.path, input, [], env));
+      const observation = world.calls.at(-1)?.body.message.data;
+      assert.deepEqual(observation?.title, {value: title, source: 'provider'});
+      assert.deepEqual(observation.identity, {...SOURCE, sessionId: base.session_id});
+      assert.equal(observation.event.kind, 'turn-started');
+      assert.equal(observation.project, undefined);
+      assert.equal(observation.hostSessionId, undefined);
+      assert.equal(JSON.stringify(observation).includes('PRIVATE_CANARY'), false);
+      assert.equal(JSON.stringify(observation).includes('DO_NOT_OPEN'), false);
+    }
+    assert.equal(world.calls.length, 2, 'one publication per hook, including a rename');
+  }
+});
+
+test('version-selected local hooks still publish activity when the title is missing or rejected', async context => {
+  const world = await receiver(context, {lifecycleVersion: '1.1'});
+  const env = {...process.env, CODEX_HOME: world.directory};
+  const input = {...base, hook_event_name: 'Stop'};
+  quiet(await invoke(world.path, input, [], env));
+  await writeFile(join(world.directory, 'session_index.jsonl'), JSON.stringify({id: base.session_id, thread_name: 'Bearer ' + 'a'.repeat(43)}) + '\n');
+  quiet(await invoke(world.path, input, [], env));
+  assert.equal(world.calls.length, 2);
+  for (const call of world.calls) {
+    assert.equal(call.body.message.data.title, undefined);
+    assert.equal(call.body.message.data.event.kind, 'turn-ended');
   }
 });
 

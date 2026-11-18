@@ -14,7 +14,7 @@ const noop = (): void => {};
 /** A reply answers the owner's own request, so it ranks with coding attention: above notices and social speech, never above an active equal. */
 const priority = (source: SpeechSource): number => source.kind === 'reply' ? 2 : source.card.opportunity.category === 'coding-attention' ? 2 : source.card.opportunity.category === 'coding-notice' ? 1 : 0;
 export const speechStateDraft = (data: SpeechState) => ({kind: 'state' as const, type: 'org.bunny.companion-speech-state.updated', subject: 'reachy',
-  dataschema: 'https://bunny.invalid/events/companion-speech-state/2.0', data});
+  dataschema: 'https://bunny.invalid/events/companion-speech-state/2.1', data});
 
 /** One selected endpoint, one active operation and at most one current pending card. */
 export class SpeechCoordinator {
@@ -37,6 +37,7 @@ export class SpeechCoordinator {
     for (const record of this.#store.records('pending')) await this.#save(record, {operationId: record.operationId, status: Outcome.uncertain, started: record.started});
     const uncertain = this.#store.uncertain();
     if (uncertain !== undefined) {
+      this.#state.recoveryOperationId = uncertain.operationId;
       this.#blocked = true; this.#state.availability = 'unavailable';
       this.#state.playback = {operationId: uncertain.operationId, status: Outcome.uncertain, started: uncertain.started};
     }
@@ -89,6 +90,7 @@ export class SpeechCoordinator {
     if (command.source !== 'bunny/parts/dashboard') return errorBody('forbidden');
     const checked = this.#validator.validate(command, {nowMs: this.context.clock.now()});
     if (!checked.ok) return {error: checked.error};
+    if (command.data.action === 'recover') return this.#recover(command, command.data);
     if (command.data.action === 'enable') {
       if (!this.qualified()) return errorBody('unavailable', {detail: 'this installation has no qualified local speech route'});
       if (this.#blocked) return errorBody('unavailable', {detail: 'previous speech has no definitive stop evidence'});
@@ -103,6 +105,26 @@ export class SpeechCoordinator {
       else if (command.data.action === 'mute') this.#state.endpointId = null;
       this.#changed();
     }
+    return {status: 'accepted'};
+  }
+  #recover(command: Command<SpeechEndpointControl>, recovery: Extract<SpeechEndpointControl, {action: 'recover'}>): Reply {
+    if (!this.qualified()) return errorBody('unavailable');
+    if (this.#active !== undefined || this.#state.endpointId !== null || this.#state.recoveryOperationId !== recovery.operationId
+      || this.#state.revision !== recovery.expectedRevision) return errorBody('invalid-state', {detail: 'speech recovery no longer matches an orphaned operation'});
+    let saved: ReturnType<SpeechStore['acknowledge']>;
+    try {saved = this.#store.acknowledge({...recovery, endpointId: command.subject, traceparent: command.traceparent, atMs: this.context.clock.now()});}
+    catch (error) {
+      this.#storageFailure(error, command);
+      return errorBody(fullDisk(error) ? 'capacity' : 'internal', {detail: 'speech recovery could not be saved'});
+    }
+    this.#clear();
+    const next = saved.next;
+    this.#blocked = next !== undefined;
+    this.#state.availability = next === undefined ? 'off' : 'unavailable';
+    this.#state.playback = next === undefined ? null : {operationId: next.operationId, status: Outcome.uncertain, started: next.started};
+    if (next === undefined) delete this.#state.recoveryOperationId;
+    else this.#state.recoveryOperationId = next.operationId;
+    this.#changed(saved.revision);
     return {status: 'accepted'};
   }
   #schedule(): void {
@@ -241,10 +263,10 @@ export class SpeechCoordinator {
     recordLog(this.context.log, 'message.received', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.uncertain,
       'bunny.code': fullDisk(error) ? 'capacity' : 'internal'}, parent);
   }
-  #changed(): void {
+  #changed(savedRevision?: number): void {
     this.#state.pending = this.#pending !== undefined;
     if (this.#closed || this.context.signal.aborted) return;
-    try {this.#state.revision = advanceRevision(this.context.database());}
+    try {this.#state.revision = savedRevision ?? advanceRevision(this.context.database());}
     catch (error) {
       this.#storageFailure(error, this.#active);
       this.#blocked = true; this.#clear(); this.#state.pending = false; this.#state.availability = 'unavailable';

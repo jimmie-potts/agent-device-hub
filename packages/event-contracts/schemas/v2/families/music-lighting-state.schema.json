@@ -66,6 +66,40 @@
               "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "generation",
+            "operationId",
+            "startedAtMs",
+            "show"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "starting",
+                "active",
+                "stopping",
+                "uncertain",
+                "paused"
+              ]
+            },
+            "generation": {
+              "$ref": "#/$defs/generation"
+            },
+            "operationId": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+            },
+            "startedAtMs": {
+              "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+            },
+            "show": {
+              "$ref": "#/$defs/show"
+            }
+          }
         }
       ]
     },
@@ -128,7 +162,8 @@
             "device",
             "restart",
             "expired",
-            "refused"
+            "refused",
+            "completed"
           ]
         },
         "restoration": {
@@ -144,6 +179,53 @@
         },
         "code": {
           "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorCode"
+        },
+        "missedCues": {
+          "$ref": "#/$defs/missedCues"
+        }
+      }
+    },
+    "missedCues": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 256
+    },
+    "showId": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^show-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "showVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
+    },
+    "positionMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1800000
+    },
+    "show": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "showId",
+        "version",
+        "positionMs",
+        "missedCues"
+      ],
+      "properties": {
+        "showId": {
+          "$ref": "#/$defs/showId"
+        },
+        "version": {
+          "$ref": "#/$defs/showVersion"
+        },
+        "positionMs": {
+          "$ref": "#/$defs/positionMs"
+        },
+        "missedCues": {
+          "$ref": "#/$defs/missedCues"
         }
       }
     }

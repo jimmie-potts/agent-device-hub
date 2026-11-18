@@ -1,4 +1,4 @@
-import {openAudio, openConnections} from './navigation-helpers.ts';
+import {destinationLink, openAudio, openConnections} from './navigation-helpers.ts';
 // Focused #1069 RED/green fixture: real producer owner/decoder, authenticated native image and shared Home/Music card.
 // The world runs on a clock the journey moves (Hub #1708): each speaker read waits for the journey to advance one poll.
 import assert from 'node:assert/strict';
@@ -358,7 +358,7 @@ try {
     });
     assert.equal(await card.count(), 0, 'late unmounted A cannot recreate the card');
     const beforeReentry = acquisitions;
-    await page.getByRole('link', {name: /^Home/}).click(); await feed(page, 'connected');
+    await (await destinationLink(page, /^Home/)).click(); await feed(page, 'connected');
     await frame(await current({title: 'Unmount A', artwork: 'ready'}), [20, 60, 100, 255]);
     assert.equal(acquisitions, beforeReentry); checks.push('unmount/re-entry');
     // Lose sync while A200 is pending; hold the page's existing replacement SDK snapshot.
@@ -436,7 +436,7 @@ try {
     const completed = await card.getByRole('status').innerText(); assert.ok(completed.includes('Completed: succeeded.'));
     for (const destination of ['Music', 'Home']) {
       const beforeNavigation: number = acquisitions;
-      if (destination === 'Home') await page.getByRole('link', {name: 'Home', exact: true}).click(); else await openAudio(page);
+      if (destination === 'Home') await (await destinationLink(page, 'Home')).click(); else await openAudio(page);
       await frame(await current({title: longTitle, artwork: 'ready'}), [20, 60, 100, 255]);
       assert.equal(acquisitions, beforeNavigation);
       for (const width of destination === 'Home' ? [560, 390] : [1440, 390]) {

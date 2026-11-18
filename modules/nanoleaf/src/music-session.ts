@@ -7,26 +7,30 @@
 // while nothing newer took over, and leaves any other base on the last frame; a newer choice, an external change or a
 // failed write ends it with no restoration. Nothing retries, resends, resumes or falls back to another input or light.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import type {LightingCapture, LightingEndReason, LightingRestoration} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import type {LightingCapture, LightingEndReason, LightingRestoration, LightingShow, LightingWork} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import {isObject} from './compat.js';
 import {Cancelled, Execution, Refused} from './controls.js';
-import type {Element, Kind, LayoutEntry} from './devices.js';
+import {projection, type Element, type Kind, type LayoutEntry} from './devices.js';
 import {Rejected, type Zone} from './effects.js';
 import {ValueError} from './errors.js';
-import {finish, finishMusicStops, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
+import {finish, finishMusicControls, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
 import type {Indication} from './line-projection.js';
 import {alerting, newerChoice, NEWER_CHOICES, type Admitted, type DeviceRead} from './moments.js';
 import {colorStateOf, restoreMusicBase, sameColorOf, selectionOf, selectionRead, type MusicBase} from './music-base.js';
 import {MusicRenderer, type MusicRecipeV1} from './music-effects.js';
 import {musicBinding, MusicInput, type MusicInputLoss, type MusicBinding, type MusicClock, type MusicSample} from './music-input.js';
 import {readReactiveCatalog} from './music-presets.js';
-import {endSession, liveSession, markPlaying, musicSession, MUSIC_PLAY, MUSIC_STOP, saveSelection, saveStarting} from './music-store.js';
+import {readShowVersion, ShowFailure} from './music-shows.js';
+import {prepareMusicCueFrames, type MusicTimeline} from './music-timeline.js';
+import {PreparedMusic, type ShowTransport} from './prepared-music.js';
+import {endSession, liveSession, markPlaying, musicSession, MUSIC_PLAY, MUSIC_STOP, MUSIC_TRANSPORT, saveSelection, saveStarting, setShowProgress} from './music-store.js';
 import type {RenderConfig} from './renderer.js';
 import {execute, type Db} from './sqlite.js';
 import {controlState, markDirty, overrides, type Overrides} from './store.js';
 import {streamProtocol} from './stream.js';
 import {HttpError, type LightRequest} from './transport.js';
 
-export {MUSIC_PLAY, MUSIC_STOP, musicDeviceState, initMusicSessions} from './music-store.js';
+export {MUSIC_PLAY, MUSIC_STOP, MUSIC_TRANSPORT, musicDeviceState, initMusicSessions} from './music-store.js';
 
 /** How long a Start waits for its first fresh feature before it ends as source loss. */
 export const FIRST_FEATURE_MS = 2000;
@@ -38,17 +42,23 @@ export const EXTERNAL_CHECK_MS = 1000;
 export const POLL_MS = 25;
 /** A Music session yields to everything a moment yields to, and to a newer moment. */
 const NEWER_THAN_MUSIC = [...NEWER_CHOICES, 'moment.play'] as const;
+class StopExpired extends Error {}
 
 /** A Start as the journal keeps it: the frozen recipe and layout, the Free base and what it was admitted over. */
-export type MusicStart = {
-  kind: typeof MUSIC_PLAY; requestId: string; generation: string; capture: LightingCapture; presetId: string; recipe: MusicRecipeV1;
+type AdmittedSource = {capture: LightingCapture; presetId: string; recipe: MusicRecipeV1}
+  | {show: LightingShow; timeline: MusicTimeline; acceptedAtMs: number; targetMs: number; ownershipEpoch: number};
+export type MusicStart = AdmittedSource & {
+  kind: typeof MUSIC_PLAY; requestId: string; generation: string;
   layout: {kind: Kind; elements: Element[]}; freeBase: MusicBase; configurationRevision: number; overrides: Overrides;
 };
 export type MusicStop = {kind: typeof MUSIC_STOP; requestId: string; generation: string};
-export type StartRequest = {requestId: string; generation: string; capture: LightingCapture; presetId: string};
+type MusicTransport = {kind: typeof MUSIC_TRANSPORT; requestId: string; generation: string} & ShowTransport;
+export type StartRequest = Extract<LightingWork, {action: 'start' | 'start-show'}>;
 
 /** The current features of each device's admitted session, in memory only: features are never persisted. */
 export class MusicFeeds {
+  #ownershipEpoch = 0;
+  #ownershipAvailable = false;
   readonly #inputs = new Map<string, {generation: string; input: MusicInput}>();
 
   /** `clock` reads the runtime's one clock for both of the input's readings, so a clock step back retires the input. */
@@ -70,6 +80,16 @@ export class MusicFeeds {
     for (const {input} of this.#inputs.values()) input.accept(message, this.clock());
   }
 
+  get ownershipEpoch(): number {return this.#ownershipEpoch;}
+  get ownershipAvailable(): boolean {return this.#ownershipAvailable;}
+
+  loseOwnershipFeed(): void {
+    this.#ownershipAvailable = false;
+    this.#ownershipEpoch++;
+  }
+
+  followOwnershipFeed(): void {this.#ownershipAvailable = true;}
+
   /** A gap in the features (a subscription overflow) is source loss for every session: nothing resumes on a later frame. */
   retireAll(): void {
     for (const {input} of this.#inputs.values()) input.retire('subscription-overflow');
@@ -90,7 +110,7 @@ const probe = (binding: MusicBinding): MusicSample => ({endpointId: binding.endp
  * The Lines and the NL22 Light Panels take a session alike, each on its own device; only the stream differs.
  */
 export function checkMusicStart(db: Db, device: string, start: StartRequest, layout: LayoutEntry | undefined, nowMs: number,
-  expiresMs: number): {recipe: MusicRecipeV1; layout: MusicStart['layout']} {
+  expiresMs: number, ownershipEpoch = 0): AdmittedSource & {layout: MusicStart['layout']} {
   const control = controlState(db, device);
   if (control.mode !== 'free' || control.revision !== control.applied) throw new Refused('invalid-state', 'Live Music starts only on a light already in Free.');
   if (held(db, control.revision, device)) throw new Refused('unavailable', 'A device hold waits for an explicit choice.');
@@ -98,27 +118,41 @@ export function checkMusicStart(db: Db, device: string, start: StartRequest, lay
   if (overrides(db, device).power === false) throw new Refused('invalid-state', 'The light is switched off.');
   if (liveSession(db, device)) throw new Refused('invalid-state', 'A Music session is already starting or playing.');
   if (journal(db, device).length > 0) throw new Refused('capacity', 'Other content waits on the light.');
-  let recipe: MusicRecipeV1 | undefined;
-  try {
-    recipe = readReactiveCatalog(db).presets.find(preset => preset.presetId === start.presetId)?.recipe;
-  } catch {
-    throw new Refused('invalid-state', 'The saved reactive library cannot be read.');
-  }
-  if (recipe === undefined) throw new Refused('not-found', 'No saved reactive preset has this ID.');
+  const recipe = start.action === 'start' ? liveRecipe(db, start.presetId) : undefined;
   if (layout === undefined) throw new Refused('invalid-state', 'The saved layout is not available yet.');
-  // The NL22's version 1 stream carries one-byte panel IDs and counts: a layout it cannot address is refused before any
-  // device request, never sent truncated.
   if (!streamProtocol(layout.kind).addresses(layout.elements.flatMap(element => element.zones))) {
     throw new Refused('unsupported-capability', 'The light\'s stream cannot address every zone of its saved layout.');
   }
+  const frozen = {kind: layout.kind, elements: layout.elements.map(element => ({...element, zones: [...element.zones],
+    position: element.position === null ? null : [...element.position]}))};
+  if (start.action === 'start-show') {
+    let timeline: MusicTimeline;
+    try {
+      timeline = readShowVersion(db, start.showId, start.version).timeline;
+    } catch (error) {
+      if (error instanceof ShowFailure && error.code !== 'revision-conflict') throw new Refused(error.code, 'The saved show version is unavailable.');
+      throw error;
+    }
+    if (start.positionMs > timeline.durationMs) throw new Refused('invalid-request', 'The start position exceeds this show.');
+    try {
+      for (const cue of timeline.cues) prepareMusicCueFrames(cue, frozen);
+    } catch (error) {
+      if (error instanceof ValueError || error instanceof TypeError) {
+        throw new Refused('unsupported-capability', 'The light cannot render this show with the saved layout.');
+      }
+      throw error;
+    }
+    if (nowMs >= expiresMs) throw new Refused('expired', 'The Start expired.');
+    return {layout: frozen, timeline, show: {showId: start.showId, version: start.version, positionMs: start.positionMs, missedCues: 0},
+      acceptedAtMs: nowMs, targetMs: nowMs + start.startDelayMs, ownershipEpoch};
+  }
+  if (recipe === undefined) throw new Refused('not-found', 'No saved reactive preset has this ID.');
   let binding: MusicBinding;
   try {
     binding = musicBinding(start.capture);
   } catch {
     throw new Refused('invalid-request', 'The capture binding is invalid.');
   }
-  const frozen = {kind: layout.kind, elements: layout.elements.map(element => ({...element, zones: [...element.zones],
-    position: element.position === null ? null : [...element.position]}))};
   try {
     if (new MusicRenderer(recipe, frozen, binding).render(probe(binding)) === null) throw new Rejected('unsupported-capability');
   } catch (error) {
@@ -128,7 +162,18 @@ export function checkMusicStart(db: Db, device: string, start: StartRequest, lay
     throw error;
   }
   if (nowMs >= expiresMs) throw new Refused('expired', 'The Start expired.');
-  return {recipe, layout: frozen};
+  return {capture: {...start.capture}, presetId: start.presetId, recipe, layout: frozen};
+}
+
+function liveRecipe(db: Db, presetId: string): MusicRecipeV1 {
+  let recipe: MusicRecipeV1 | undefined;
+  try {
+    recipe = readReactiveCatalog(db).presets.find(preset => preset.presetId === presetId)?.recipe;
+  } catch {
+    throw new Refused('invalid-state', 'The saved reactive library cannot be read.');
+  }
+  if (recipe === undefined) throw new Refused('not-found', 'No saved reactive preset has this ID.');
+  return recipe;
 }
 
 /**
@@ -136,14 +181,15 @@ export function checkMusicStart(db: Db, device: string, start: StartRequest, lay
  * `music.play`, saves the session as starting and wakes the worker. The caller opens the session's input after commit.
  */
 export function admitMusicStart(db: Db, device: string, start: StartRequest, layout: LayoutEntry | undefined, freeBase: MusicBase,
-  configurationRevision: number, nowMs: number, expiresMs: number, report: Report): MusicStart {
-  const {recipe, layout: frozen} = checkMusicStart(db, device, start, layout, nowMs, expiresMs);
+  configurationRevision: number, nowMs: number, expiresMs: number, report: Report, ownershipEpoch = 0): MusicStart {
+  const source = checkMusicStart(db, device, start, layout, nowMs, expiresMs, ownershipEpoch);
   const control = controlState(db, device);
-  const command: MusicStart = {kind: MUSIC_PLAY, requestId: start.requestId, generation: start.generation, capture: {...start.capture},
-    presetId: start.presetId, recipe, layout: frozen, freeBase, configurationRevision, overrides: overrides(db, device)};
+  const command: MusicStart = {kind: MUSIC_PLAY, requestId: start.requestId, generation: start.generation,
+    ...source, freeBase, configurationRevision, overrides: overrides(db, device)};
   insert(db, device, command, control.revision, nowMs, expiresMs);
   const row = journalRow(db, start.requestId);
-  saveStarting(db, device, start.generation, start.requestId, {binding: command.capture, presetId: command.presetId, recipe, freeBase,
+  const detail = 'show' in command ? {show: command.show, durationMs: command.timeline.durationMs} : {binding: command.capture, presetId: command.presetId, recipe: command.recipe};
+  saveStarting(db, device, start.generation, start.requestId, {...detail, freeBase,
     modeRevision: control.revision, configurationRevision, seq: row?.seq ?? null}, report);
   markDirty(db);
   return command;
@@ -157,7 +203,24 @@ export function admitMusicStop(db: Db, device: string, stop: MusicStop, nowMs: n
   markDirty(db);
 }
 
-function insert(db: Db, device: string, command: MusicStart | MusicStop, revision: number, nowMs: number, expiresMs: number): void {
+export function admitMusicTransport(db: Db, device: string, command: MusicTransport, nowMs: number, expiresMs: number): void {
+  const session = musicSession(db, device);
+  if (session?.status !== 'playing' || session.show === undefined || session.generation !== command.generation ||
+      (command.action === 'pause-show' && session.paused) || (command.action === 'resume-show' && !session.paused)) {
+    throw new Refused('invalid-state', 'The current show cannot take this transport control.');
+  }
+  if (command.action === 'seek-show' && (session.durationMs === undefined || command.positionMs >= session.durationMs)) {
+    throw new Refused('invalid-request', 'The seek position must fall before the end of this show.');
+  }
+  if (nowMs >= expiresMs) throw new Refused('expired', 'The transport control expired.');
+  if (journal(db, device, 'AND kind IN (?, ?)', MUSIC_STOP, MUSIC_TRANSPORT).length > 0) {
+    throw new Refused('capacity', 'Another Music control is pending.');
+  }
+  insert(db, device, command, controlState(db, device).revision, nowMs, expiresMs);
+  markDirty(db);
+}
+
+function insert(db: Db, device: string, command: MusicStart | MusicStop | MusicTransport, revision: number, nowMs: number, expiresMs: number): void {
   execute(db, "INSERT INTO control_journal (id, device, kind, command, mode_revision, phase, accepted, expires) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)",
     command.requestId, device, command.kind, JSON.stringify(command), revision, nowMs / 1000, expiresMs / 1000);
 }
@@ -177,7 +240,7 @@ export function endInterruptedMusic(db: Db, device: string, nowMs: number, repor
   if (session === undefined || session.status === 'ended') return;
   if (session.status === 'starting' && journalRow(db, session.startId)?.phase === 'queued') return;
   endSession(db, device, session.generation, 'restart', 'none', nowMs, report);
-  finishMusicStops(db, device, session.generation, {kind: 'refused', code: 'invalid-state'}, report, nowMs);
+  finishMusicControls(db, device, session.generation, {kind: 'refused', code: 'invalid-state'}, report, nowMs);
 }
 
 export type MusicPlayback = {
@@ -192,6 +255,7 @@ export type MusicPlayback = {
   /** The session's input, or none when no input was opened for it. */
   input: MusicInput | undefined;
   onInputLoss?: (generation: string, loss: MusicInputLoss | undefined) => void;
+  ownershipEpoch?: () => number;
   /** Recompute from the current store, including current alert/status. */
   current: () => readonly Indication[];
   /** The first frame took the device. */
@@ -205,6 +269,10 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   const {db, device, row, config, transact, request, now, clock, sleep, input, current, stopping} = options;
   const command = row.command as MusicStart;
   const {generation, freeBase} = command;
+  const prepared = 'show' in command
+    ? new PreparedMusic(command.show, command.timeline, command.layout, command.acceptedAtMs, command.targetMs)
+    : undefined;
+  const sourceLost = (): boolean => 'show' in command && (options.ownershipEpoch?.() ?? 0) !== command.ownershipEpoch;
   const target = {ip: config.ip ?? '', token: config.token ?? ''};
   // A rejected device request ends the session as a device failure, unless the module is stopping.
   let deviceFailed = false;
@@ -218,6 +286,11 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   const stale = (): boolean => !liveSession(db, device, generation) || held(db, row.revision, device) || newerChoice(db, device, since, NEWER_THAN_MUSIC);
   const stopRow = (): JournalRow | undefined =>
     journal(db, device, 'AND kind=?', MUSIC_STOP).find(stop => (stop.command as MusicStop).generation === generation);
+  const stopExpired = (stop: JournalRow): boolean => prepared !== undefined && now() >= stop.expires * 1000;
+  const expireStop = (stop: JournalRow): Promise<void> => transact(report => {
+    const pending = journalRow(db, stop.id);
+    if (pending !== undefined) finish(db, pending, {kind: 'expired'}, report, now());
+  });
   /** Rethrows anything but a device request's failure while the module runs. */
   const deviceFailure = (error: unknown): void => {
     if (!deviceFailed || stopping()) throw error;
@@ -233,64 +306,94 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     code: ErrorCode | undefined = startCode(startEnd)): Promise<void> =>
     transact(report => {
       const at = now();
-      endSession(db, device, generation, reason, restoration, at, report, code);
+      endSession(db, device, generation, reason, restoration, at, report, code, prepared?.evidence);
       const start = journalRow(db, row.id);
       if (start !== undefined) finish(db, start, startEnd, report, at);
       const live = stop === undefined ? undefined : journalRow(db, stop.id);
       if (live !== undefined) finish(db, live, {kind: live.completed > 0 ? 'sent' : 'unchanged'}, report, at);
-      finishMusicStops(db, device, generation, reason === 'stopped' ? {kind: 'unchanged'} : {kind: 'refused', code: 'invalid-state'}, report, at);
+      finishMusicControls(db, device, generation, reason === 'stopped' ? {kind: 'unchanged'} : {kind: 'refused', code: 'invalid-state'}, report, at);
     });
 
-  // Before the first frame: a Stop, a newer choice, an alert or the Start's expiry ends it; a fresh feature starts it.
-  let renderer: MusicRenderer;
-  try {
-    renderer = new MusicRenderer(command.recipe, command.layout, command.capture);
-  } catch {
-    await end('device', 'none', {kind: 'refused', code: 'unsupported-capability'});
-    return;
+  if (prepared !== undefined) {
+    const layout = projection(command.layout);
+    if (JSON.stringify(layout.line_groups) !== JSON.stringify(config.line_groups) ||
+        JSON.stringify(layout.line_positions) !== JSON.stringify(config.line_positions)) {
+      return end('refused', 'none', {kind: 'refused', code: 'unsupported-capability'});
+    }
+  }
+
+  // The live input supplies the first frame. A show can enter streaming when its local target arrives, even in a gap.
+  let renderer: MusicRenderer | undefined;
+  if ('capture' in command) {
+    try {
+      renderer = new MusicRenderer(command.recipe, command.layout, command.capture);
+    } catch {
+      return end('device', 'none', {kind: 'refused', code: 'unsupported-capability'});
+    }
   }
   const deadline = now() + FIRST_FEATURE_MS;
   let first: {sample: MusicSample; zones: readonly Zone[]} | undefined;
-  // The selection the light reported, read since the last checks: every check runs again after that read, and streaming
-  // is entered with no wait between the last check and the write. Nothing was shown yet, so an ending restores nothing.
-  // The light must still report the base's selection, so any other choice since the Start's read is a newer manual one.
-  // A colour base also reads `/state`: a colour picked in the app keeps `*Solid*`, so only the colour itself shows it.
-  let selection: {value: unknown; sameColor: boolean} | undefined;
+  let baseCheck: 'unchanged' | 'changed' | 'unreadable' | undefined;
   for (;;) {
+    if (stopping()) throw new Cancelled();
     const stop = stopRow();
-    if (stop !== undefined) return end('stopped', 'none', {kind: 'refused', code: 'cancelled'}, stop);
+    if (stop !== undefined) {
+      if (stopExpired(stop)) {
+        await expireStop(stop);
+        continue;
+      }
+      return end('stopped', 'none', {kind: 'refused', code: 'cancelled'}, stop);
+    }
     if (stale()) return end('manual', 'none');
     if (alerting(current())) return end('alert', 'none', {kind: 'refused', code: 'invalid-state'});
     if (now() >= row.expires * 1000) return end('expired', 'none', {kind: 'expired'});
-    const sample = input?.current(clock()) ?? null;
-    const answered = selection;
-    selection = undefined;
-    if (sample !== null && answered === undefined) {
-      // The light must still show its base: a scene chosen since the Start's read is a newer manual choice.
+    const position = prepared?.advance(clock().monotonicMs);
+    if (sourceLost() || position === 'source-lost') return end('source-lost', 'none', {kind: 'refused', code: 'unavailable'});
+    if (position === 'completed') return end('completed', 'none', {kind: 'unchanged'});
+    const sample = renderer === undefined ? null : input?.current(clock()) ?? null;
+    const ready = position === 'playing' || sample !== null;
+    const answered = baseCheck;
+    baseCheck = undefined;
+    if (ready && answered === undefined) {
+      // Check the base again after any wait. Run the interruption checks again when this read settles.
       try {
-        const value = await read('/effects/select');
-        selection = {value, sameColor: freeBase.kind !== 'color' || value !== freeBase.selection || sameColorOf(await read('/state'), freeBase.color)};
+        baseCheck = await read('/effects/select') === selectionOf(freeBase) ? 'unchanged' : 'changed';
+        if (baseCheck === 'unchanged' && (prepared !== undefined || freeBase.kind === 'color')) {
+          const state = await read('/state');
+          if (prepared !== undefined) {
+            if (!isObject(state) || !isObject(state.on) || typeof state.on.value !== 'boolean' ||
+                !isObject(state.brightness) || typeof state.brightness.value !== 'number') {
+              baseCheck = 'unreadable';
+            } else if (!state.on.value || state.brightness.value !== freeBase.brightness) {
+              baseCheck = 'changed';
+            }
+          }
+          if (baseCheck === 'unchanged' && freeBase.kind === 'color' && !sameColorOf(state, freeBase.color)) baseCheck = 'changed';
+        }
       } catch (error) {
         deviceFailure(error);
         return end('device', 'none', {kind: 'refused', code: 'unavailable'});
       }
       continue;
     }
-    if (sample !== null && answered !== undefined) {
-      if (answered.value !== selectionOf(freeBase) || !answered.sameColor) return end('manual', 'none');
-      let rendered: {zones: readonly Zone[]} | null;
-      try {
-        rendered = renderer.frame(sample);
-      } catch (error) {
-        if (error instanceof Rejected) return end('device', 'none', {kind: 'refused', code: error.code});
-        throw error;
-      }
-      if (rendered !== null) {
-        first = {sample, zones: rendered.zones};
-        break;
+    if (ready && answered !== undefined) {
+      if (answered === 'unreadable') return end('refused', 'none', {kind: 'refused', code: 'invalid-state'});
+      if (answered === 'changed') return end('manual', 'none');
+      if (position === 'playing') break;
+      if (sample !== null && renderer !== undefined) {
+        try {
+          const rendered = renderer.frame(sample);
+          if (rendered !== null) {
+            first = {sample, zones: rendered.zones};
+            break;
+          }
+        } catch (error) {
+          if (error instanceof Rejected) return end('device', 'none', {kind: 'refused', code: error.code});
+          throw error;
+        }
       }
     }
-    if (now() >= deadline) return end('source-lost', 'none', {kind: 'refused', code: 'unavailable'});
+    if (prepared === undefined && now() >= deadline) return end('source-lost', 'none', {kind: 'refused', code: 'unavailable'});
     await sleep(POLL_MS / 1000);
   }
   // The stream the light's kind takes: the Lines version 2 on its fixed port, the Panels version 1 on the port its
@@ -319,7 +422,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   const port = protocol.port(answer);
   if (port === undefined) return end('device', 'none', {kind: 'answered', code: 'unsupported-capability'});
   await transact(report => {
-    markPlaying(db, device, generation, report);
+    markPlaying(db, device, generation, report, prepared?.evidence);
     const start = journalRow(db, row.id);
     if (start !== undefined) finish(db, start, {kind: 'sent'}, report, now());
   });
@@ -338,21 +441,33 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     const base = freeBase;
     const writer = stop === undefined ? paint : new Execution(db, row.revision, stop.id, device, transact, now);
     let lost = false;
+    let sent = false;
+    const checkDeadline = (): void => {
+      if (!sent && stop !== undefined && stopExpired(stop)) throw new StopExpired();
+    };
     try {
-      return await restoreMusicBase(read, base, shown, stale, async (endpoint, body) => {
-        if (stale()) throw new Cancelled();
+      const restored = await restoreMusicBase(read, base, shown, stale, async (endpoint, body) => {
+        checkDeadline();
+        if (stopping() || stale()) throw new Cancelled();
         let result: unknown;
         try {
-          result = await writer.call(() => send(endpoint, body));
+          result = await writer.call(() => {
+            sent = true;
+            return send(endpoint, body);
+          });
         } catch (error) {
           // An answered refusal heard the write and did not apply it (`Execution` turns a Stop's into `Cancelled`).
           lost = !(error instanceof Cancelled) && !(error instanceof HttpError);
           throw error;
         }
-        if (stale()) throw new Cancelled();
+        if (stopping() || stale()) throw new Cancelled();
         return result;
-      }) ? 'restored' : 'skipped';
+      });
+      checkDeadline();
+      return restored ? 'restored' : 'skipped';
     } catch (error) {
+      if (error instanceof StopExpired) throw error;
+      checkDeadline();
       if (!(error instanceof Cancelled)) deviceFailure(error);
       return lost ? 'uncertain' : 'skipped';
     }
@@ -371,22 +486,47 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   };
   // The first frame waits behind every ending check, as each later frame does: a Stop, newer choice, alert or source
   // loss admitted while the entry write was out ends the session before any frame.
-  let unsent: readonly Zone[] | undefined = first.zones;
+  let unsent = first?.zones;
   let lastWrite = now() - FRAME_MS;
-  let lastSequence = first.sample.feature.sequence;
+  let lastSequence = first?.sample.feature.sequence;
+  let reportedMisses = prepared?.evidence.missedCues;
   let lastCheck = now();
   for (;;) {
-    await sleep(Math.max(POLL_MS, lastWrite + FRAME_MS - now()) / 1000);
+    // Check before sleeping as well as after. A backwards clock step during I/O must not be hidden by the next wait.
+    if (stopping()) throw new Cancelled();
+    if (prepared !== undefined && !prepared.readClock(clock().monotonicMs)) return end('source-lost', await restore(undefined));
+    const wait = prepared === undefined ? Math.max(POLL_MS, lastWrite + FRAME_MS - now()) : POLL_MS;
+    await sleep(wait / 1000);
+    if (stopping()) throw new Cancelled();
     const stop = stopRow();
-    if (stop !== undefined) return end('stopped', await restore(stop), undefined, stop);
+    if (stop !== undefined) {
+      if (stopExpired(stop)) {
+        await expireStop(stop);
+        continue;
+      }
+      try {
+        return end('stopped', await restore(stop), undefined, stop);
+      } catch (error) {
+        if (!(error instanceof StopExpired)) throw error;
+        await expireStop(stop);
+        continue;
+      }
+    }
     if (stale()) return end('manual', 'none');
     if (alerting(current())) return end('alert', await restore(undefined));
-    const observation = input === undefined ? undefined : clock();
-    const next = observation === undefined ? null : input?.current(observation) ?? null;
-    if (next === null) {
-      try {options.onInputLoss?.(command.capture.generation, observation === undefined ? undefined : input?.lossAt(observation));} catch { /* Diagnostics do not affect restoration. */ }
-      return end('source-lost', await restore(undefined));
+    if (sourceLost()) return end('source-lost', await restore(undefined));
+    let next: MusicSample | null = null;
+    if ('capture' in command) {
+      const observation = input === undefined ? undefined : clock();
+      next = observation === undefined ? null : input?.current(observation) ?? null;
+      if (next === null) {
+        try {options.onInputLoss?.(command.capture.generation, observation === undefined ? undefined : input?.lossAt(observation));} catch { /* Diagnostics do not affect restoration. */ }
+        return end('source-lost', await restore(undefined));
+      }
     }
+    const position = prepared?.advance(clock().monotonicMs);
+    if (position === 'source-lost') return end('source-lost', await restore(undefined));
+    if (position === 'completed') return end('completed', await restore(undefined));
     if (now() - lastCheck >= EXTERNAL_CHECK_MS) {
       lastCheck = now();
       let showing: boolean;
@@ -411,6 +551,39 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       // The read took time: every check runs again before the next frame.
       continue;
     }
+    if (prepared !== undefined) {
+      const control = journal(db, device, 'AND kind=?', MUSIC_TRANSPORT)[0];
+      if (control !== undefined) {
+        await transact(report => {
+          if (journalRow(db, control.id) === undefined) return;
+          const request = control.command as MusicTransport;
+          const at = now();
+          const valid = !stopping() && !stale() && !sourceLost() && stopRow() === undefined && request.generation === generation;
+          const applied = at < control.expires * 1000 && valid && prepared.transport(request, clock().monotonicMs);
+          if (applied) {
+            setShowProgress(db, device, generation, prepared.evidence, request.action === 'pause-show' ||
+              (request.action === 'seek-show' && position === 'paused'), report, true);
+          }
+          finish(db, control, at >= control.expires * 1000 ? {kind: 'expired'} : applied ? {kind: 'unchanged'}
+            : {kind: 'refused', code: 'invalid-state'}, report, at);
+        });
+        continue;
+      }
+      const evidence = prepared.evidence;
+      if (evidence.missedCues !== reportedMisses) {
+        reportedMisses = evidence.missedCues;
+        await transact(report => {setShowProgress(db, device, generation, evidence, position === 'paused', report);});
+        continue;
+      }
+      if (position !== 'playing' || now() - lastWrite < FRAME_MS) continue;
+      const frame = prepared.frame();
+      if (frame !== null) {
+        if (!await stream(frame)) return;
+        lastWrite = now();
+      }
+      continue;
+    }
+    if (renderer === undefined || next === null) continue;
     if (unsent !== undefined && next.feature.sequence === lastSequence) {
       // The sample the first frame rendered is still the newest fresh one.
       const zones = unsent;

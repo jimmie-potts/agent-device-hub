@@ -7,7 +7,11 @@ import type {HomeCardDefinition} from './home-catalog.ts';
 import type {HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 import {LightingWorkspace} from './lighting-workspace.tsx';
 import {DeviceDirectory} from './device-directory.tsx';
-import {NavLink, ShellNavigation, useRoute} from './navigation.tsx';
+import {NavLink, ShellNavigation, navigate, useRoute} from './navigation.tsx';
+import {JumpPalette} from './jump-palette.tsx';
+import {jumpEntries, jumpShortcut, rememberRoute, textInput} from './jump.ts';
+import {RailIcon, usePhone, useRail} from './rail.tsx';
+import {railAttribute} from './rail-preference.ts';
 import {InboxPanel, type InboxFocus} from './inbox.tsx';
 import {Timeline, TimelinePanel} from './timeline.tsx';
 import {MusicVisualizerCard} from './music-visualizer.tsx';
@@ -38,7 +42,7 @@ import {WisprWidget} from '@jimmie-potts/wispr/frontend';
 import {DuckWidget, ReachyWidget} from '@jimmie-potts/companions/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
-import {navigationDestination} from './routes.ts';
+import {navigationDestination, routeHash, type Route} from './routes.ts';
 import {age, sessionRows} from './sessions.ts';
 import {AgentSessions} from './agent-sessions.tsx';
 import {OperatorTools} from './operator-tools.tsx';
@@ -100,14 +104,22 @@ function SlotWidget({placement}: {placement: Placement}): React.JSX.Element {
   return <Widget id={placement.widget} size={placement.size}><p className="hint slot" data-slot={placement.widget}>{text}</p></Widget>;
 }
 
+/** The palette's shortcut as this computer's keyboard shows it. */
+const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+const jumpKey = mac ? '⌘K' : 'Ctrl K';
+
 const FEED_TEXT: Readonly<Record<DashboardState['feed'], string>> = {connecting: 'Connecting', connected: 'Feed connected', reconnecting: 'Reconnecting', ended: 'Signed out'};
 
-/** The link's health in one indicator; its details say what the page last synced, never that work succeeded. */
-function FeedIndicator({state, now}: {state: DashboardState; now: number}): React.JSX.Element {
+/**
+ * The link's health in one indicator; its details say what the page last synced and whether this session may send
+ * commands, never that work succeeded.
+ */
+function FeedIndicator({state, now, control}: {state: DashboardState; now: number; control: boolean}): React.JSX.Element {
   const {feed, sessions} = state;
   const healthy = feed === 'connected' && sessions.synced;
   const label = feed === 'connected' && !sessions.synced ? 'Syncing sessions' : FEED_TEXT[feed];
-  return <InfoTip warning={!healthy} label={<><span aria-hidden="true">{healthy ? '●' : '⚠'}</span> {label}</>}>
+  return <InfoTip warning={!healthy} label={<><span aria-hidden="true">{healthy ? '●' : '⚠'}</span><span className="rail-text"> {label}</span></>}>
+    <span className="tip-line">{feed === 'ended' ? 'Signed out' : control ? 'Control enabled' : 'Read-only'}</span>
     <span className="tip-line">Core sessions: {sessions.synced ? 'synced' : 'not synced'}</span>
     <span className="tip-line">Core revision: {sessions.revision ?? 'Unknown'}</span>
     <span className="tip-line">Last change: {sessions.changedAtMs === undefined ? 'Unknown' : `${age(Math.max(0, now - sessions.changedAtMs))} ago`}</span>
@@ -170,15 +182,97 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const route = useRoute();
   const [now, setNow] = useState(Date.now());
   const [inboxFocus, setInboxFocus] = useState<InboxFocus>();
+  const rail = useRail();
+  // On a phone the rail is a drawer. A chosen destination, Escape and an outside tap close it and hand focus back to its button.
+  // While it is open the page behind it is inert, so focus stays in the drawer or on its button.
+  const phone = usePhone();
+  const [drawerWanted, setDrawer] = useState(false);
+  const drawer = drawerWanted && phone;
+  useEffect(() => { if (!phone) setDrawer(false); }, [phone]);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const railElement = useRef<HTMLElement>(null);
+  const address = routeHash(route);
+  useEffect(() => { setDrawer(false); }, [address]);
+  useEffect(() => {
+    if (!drawer) return;
+    (railElement.current?.querySelector<HTMLElement>('a[aria-current]') ?? railElement.current?.querySelector<HTMLElement>('a'))?.focus();
+    const dismiss = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      setDrawer(false);
+      menuButton.current?.focus();
+    };
+    window.addEventListener('keydown', dismiss);
+    return () => { window.removeEventListener('keydown', dismiss); };
+  }, [drawer]);
   // The clock only ages what the page shows; it reads nothing.
   useEffect(() => {
     const clock = setInterval(() => { setNow(Date.now()); }, 1000);
     return () => { clearInterval(clock); };
   }, []);
   const rows = useMemo(() => sessionRows(state.sessions.records), [state.sessions.records]);
+  // The jump palette (#1888). jumpShortcut holds the keys that open it. jumpFrom is where focus goes when it closes:
+  // back to where it was, or to the page that was chosen.
+  const [jump, setJump] = useState(false);
+  const jumpFrom = useRef<Element | null>(null);
+  const recents = useRef<Route[]>([]);
+  const shownRoute = useRef(route);
+  useEffect(() => {
+    if (routeHash(shownRoute.current) !== address) {
+      recents.current = rememberRoute(recents.current, shownRoute.current);
+      // The browser's back or forward can change the page under an open palette; it closes rather than stay over a page it was not opened on.
+      setJump(false);
+    }
+    shownRoute.current = route;
+  }, [address, route]);
+  const openJump = (): void => {
+    if (jump) return;
+    // The phone drawer closes under the palette, so focus goes back to the button that opens the drawer.
+    jumpFrom.current = drawer ? menuButton.current : document.activeElement;
+    setDrawer(false);
+    setJump(true);
+  };
+  const closeJump = (): void => { setJump(false); };
+  const jumpTo = (to: Route): void => {
+    // A chosen page takes focus itself, as it does after the skip link.
+    jumpFrom.current = document.getElementById('main');
+    setJump(false);
+    navigate(to);
+  };
+  // The page is inert until the palette is gone, so focus moves once that render is in the page.
+  useEffect(() => {
+    if (jump) return;
+    const to = jumpFrom.current;
+    jumpFrom.current = null;
+    if (to instanceof HTMLElement && to.isConnected) to.focus();
+  }, [jump]);
+  // The palette's own functions, as the key listener reaches them: they change with each render, the listener does not.
+  const jumpActions = useRef({jump, openJump, closeJump});
+  jumpActions.current = {jump, openJump, closeJump};
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent): void => {
+      // A key that a component already handled is not the palette's.
+      if (event.defaultPrevented) return;
+      const palette = jumpActions.current, target = event.target instanceof Element ? event.target : null;
+      const action = jumpShortcut(event, {mac, open: palette.jump,
+        field: target instanceof HTMLElement && (target.isContentEditable || target.closest('textarea, select') !== null
+          || (target instanceof HTMLInputElement && textInput(target.type))),
+        owned: target !== null && target.closest('[role=dialog], dialog, [role=menu], [role=listbox]') !== null,
+        // Both are drawn above everything the shell renders, so the palette would open out of sight.
+        modal: document.querySelector('dialog:modal') !== null || document.fullscreenElement !== null});
+      if (action === undefined) return;
+      event.preventDefault();
+      // A held key opens or closes once.
+      if (event.repeat) return;
+      if (action === 'toggle' && palette.jump) palette.closeJump(); else palette.openJump();
+    };
+    window.addEventListener('keydown', shortcut);
+    return () => { window.removeEventListener('keydown', shortcut); };
+  }, []);
   const live = state.feed === 'connected' && state.sessions.synced;
   const notice = liveNotice(state);
   const runtime = state.runtime;
+  // The palette's list changes only with the catalog, the copies or the page, not with each tick of the shell's clock.
+  const jumpPlaces = useMemo(() => jump ? jumpEntries(runtime, recents.current, route) : [], [jump, runtime, route]);
   const devices = runtime.copies.filter(copy => copy.family === 'device').flatMap(copy => (copy.records as readonly DeviceRecord[]).map(record => ({record, copy})));
   const playback = runtime.copies.filter(copy => copy.family === 'playback').flatMap(copy => (copy.records as readonly PlaybackState[]).map(record => ({record, copy})));
   const operationsCopy = runtime.copies.find(copy => copy.family === 'operation');
@@ -196,9 +290,16 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedPlayback = route.kind === 'playback' && playback.some(({record}) => record.id === route.sourceId);
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
+  const workspace = selectedModule?.name === 'companions' && selectedPage?.id === 'assistant' && selectedPage.presentation === 'react';
   const known = route.kind === 'habitat' || route.kind === 'devices' || route.kind === 'settings' || route.kind === 'audio' || route.kind === 'visualizer' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const contextModule = route.kind === 'module' ? selectedModule : route.kind === 'lighting-brand' ? runtime.modules?.find(module => module.name === route.brand)
     : route.kind === 'component' ? runtime.modules?.find(module => devices.some(device => device.record.id === route.id && device.copy.owner === `bunny/modules/${module.name}`)) : undefined;
+  const featureNavigation = contextModule !== undefined && contextModule.pages.length > 0
+    ? <nav className="feature-navigation" aria-label={`${contextModule.name} pages`}>{contextModule.pages.map(page =>
+      <NavLink key={page.id} route={{kind: 'module', module: contextModule.name, page: page.id}} current={route}>{page.title}</NavLink>)}
+      {workspace && <NavLink route={{kind: 'devices'}}>All devices</NavLink>}
+    </nav>
+    : null;
   const deviceCard = ({record, copy}: (typeof devices)[number]): React.ReactNode => (moduleCard(runtime.modules, copy.owner, record.kind) === 'pixoo' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <>
             <ModuleFrontend module="pixoo" connection={connection} connected={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1 && !runtime.catalogFailed}
               control={runtime.control} operations={operations} operationsLive={operationsLive} Component={PixooDisplay}/>
@@ -260,20 +361,45 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   };
   const schedule = artScheduleCopy(runtime);
   const artNotice = scheduledArtNotice(schedule.record, state.feed === 'connected' && schedule.synced, operations, operationsLive, now);
-  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className="shell">
-    <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
-    <aside>
-      <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
+  // An ended session expands the rail at every width, so "Sign in again" is never squeezed into the icon rail.
+  const ended = state.feed === 'ended', railExpanded = rail.expanded || ended;
+  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className={workspace ? 'shell workspace-shell' : 'shell'}
+    data-rail-wide={ended ? 'expanded' : railAttribute(rail.saved.wide)} data-rail-narrow={ended ? 'expanded' : railAttribute(rail.saved.narrow)}
+    data-drawer={drawer ? 'open' : undefined} data-session={ended ? 'ended' : undefined}>
+    <a className="skip" href="#main" inert={drawer || jump} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
+    <header className="phone-bar" inert={jump}>
+      <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-expanded={drawer} aria-controls="rail"
+        onClick={() => { setDrawer(open => !open); }}><RailIcon name="menu"/></button>
+      <span className="phone-brand">B.U.N.N.Y.</span>
+      <button type="button" className="secondary rail-button phone-jump" aria-label="Jump to a page" aria-haspopup="dialog" onClick={openJump}><RailIcon name="search"/></button>
+      {ended && <button type="button" className="phone-sign-in" inert={drawer} onClick={signInAgain}>Sign in again</button>}
+    </header>
+    <aside id="rail" ref={railElement} inert={jump} onClick={event => {
+      if (!drawer || !(event.target instanceof Element) || event.target.closest('a') === null) return;
+      setDrawer(false);
+      menuButton.current?.focus();
+    }}>
+      <div className="rail-head">
+        <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
+        <button type="button" className="secondary rail-button rail-toggle" disabled={ended}
+          aria-label={railExpanded ? 'Collapse navigation' : 'Expand navigation'} title={railExpanded ? 'Collapse navigation' : 'Expand navigation'}
+          onClick={rail.toggle}><RailIcon name="sidebar"/></button>
+      </div>
+      <button type="button" className="secondary rail-jump" aria-label="Jump to a page" aria-haspopup="dialog" title="Jump to a page" onClick={openJump}>
+        <RailIcon name="search"/><span className="rail-text">Jump to…</span><kbd>{jumpKey}</kbd></button>
       <ShellNavigation route={route}/>
       <div className="sidebar-foot">
-        <FeedIndicator state={state} now={now}/>
+        <nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}><RailIcon name="settings"/><span className="rail-text">Settings</span></NavLink></nav>
+        <FeedIndicator state={state} now={now} control={runtime.control}/>
+        <p className="rail-text">{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</p>
         {state.feed === 'ended' && <button type="button" onClick={signInAgain}>Sign in again</button>}
       </div>
     </aside>
-    <main id="main" tabIndex={-1} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
-      <header className="top"><span>{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</span><nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}>Settings</NavLink></nav></header>
-      {navigationDestination(route) === 'devices' && route.kind !== 'devices' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'devices'}}>All devices</NavLink></nav>}
-      {contextModule !== undefined && contextModule.pages.length > 0 && <nav className="feature-navigation" aria-label={`${contextModule.name} pages`}>{contextModule.pages.map(page => <NavLink key={page.id} route={{kind: 'module', module: contextModule.name, page: page.id}} current={route}>{page.title}</NavLink>)}</nav>}
+    <div className="rail-scrim" onClick={() => { setDrawer(false); menuButton.current?.focus(); }}/>
+    {jump && <JumpPalette entries={jumpPlaces} onOpen={jumpTo} onClose={closeJump}/>}
+    <main id="main" tabIndex={-1} inert={drawer || jump} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
+      {!workspace && navigationDestination(route) === 'devices' && route.kind !== 'devices' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'devices'}}>All devices</NavLink></nav>}
+      {!workspace && featureNavigation}
       {route.kind === 'connections' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'settings'}}>Back to Settings</NavLink></nav>}
       {route.kind === 'home' && <section aria-label="Home">
         {notice !== undefined && <p role="alert" className="warning">{notice}</p>}
@@ -283,7 +409,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       <DeviceDirectory runtime={runtime} connected={state.feed === 'connected'} active={route.kind === 'devices'}/>
       {route.kind === 'settings' && <section aria-label="Settings"><header className="page"><h1>Settings</h1></header>
         <div className="settings-grid"><article className="card"><h2>Connections</h2><p className="hint">Connection evidence, running build and operator tools.</p><NavLink route={{kind: 'connections'}}>Connections</NavLink></article>
-          <article className="card"><h2>Browser session</h2><FeedIndicator state={state} now={now}/><div className="actions"><button type="button" className="secondary" onClick={disconnect}>Disconnect</button></div></article>
+          <article className="card"><h2>Browser session</h2><FeedIndicator state={state} now={now} control={runtime.control}/><div className="actions"><button type="button" className="secondary" onClick={disconnect}>Disconnect</button></div></article>
           <ArtThemeSettings/><article className="card"><PlacesNav links={links}/></article></div>
       </section>}
       {route.kind !== 'home' && <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
@@ -298,7 +424,10 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         </div>)}</div>
       </section>}
       {route.kind !== 'home' && <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
-      {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title}><header className="page"><h1>{selectedPage.title}</h1></header>
+      {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title} className={workspace ? 'workspace-page' : undefined}>
+        <header className={workspace ? 'workspace-page-header' : 'page'}><h1>{selectedPage.title}</h1>
+          {workspace && <details className="workspace-page-navigation"><summary>Companion pages</summary>{featureNavigation}</details>}
+        </header>
         <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
           connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>
       </section>}
@@ -310,7 +439,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         <h2>{route.kind === 'component' ? `No component named ${route.id}` : 'Nothing at this address'}</h2>
         <p>This address is not declared by the current runtime. <NavLink route={{kind: 'home'}}>Go to the home</NavLink>.</p>
       </div></section>}
-      <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>
+      {!workspace && <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>}
     </main>
   </div></DeviceModesProvider></ArtThemeProvider></ArtPresentationProvider>;
 }

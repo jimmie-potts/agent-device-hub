@@ -1,15 +1,113 @@
 /* Shared shell geometry; values and colors live in the runtime skin. */
 .shell{grid-template-columns:184px minmax(0,1fr);background:var(--shell-background)}
-.shell>aside{background:var(--shell-rail);padding:var(--space-xl) var(--space-m);gap:var(--space-xl)}
+.shell>main{padding:var(--space-l) var(--space-xl) 0;background:none}
+
+/* The rail (#1887): destinations at the top, Settings and the feed at the bottom. It stays in view while the page
+   scrolls, and its overflow is visible so the icon rail's names and the feed details can open beside it. */
+/* The skip link sits above the rail and the drawer, so it is visible whenever it has focus. */
+.skip{z-index:40}
+.shell>aside{position:sticky;top:0;z-index:10;align-self:start;block-size:100dvh;background:var(--shell-rail);padding:var(--space-m) 12px 12px;gap:var(--space-m)}
+/* The brand's second line is wider than the room the 44px toggle leaves in the rail's column, and wrapped beside
+   it. It stays on one line: the brand starts at the column's edge and the head borrows 8px of the rail's padding. */
+.rail-head{display:flex;align-items:center;justify-content:space-between;min-block-size:44px;margin-inline-end:-8px}
+.rail-head .brand small{white-space:nowrap}
 .brand{font-weight:500;color:var(--text);gap:var(--space-s);font-size:var(--type-brand);letter-spacing:.09em}
 .brand small{letter-spacing:0;font-weight:400}
 .rabbit{display:none}
-.primary-navigation{gap:var(--space-s)}
-.primary-navigation a{min-height:48px;padding:var(--space-m);border-radius:var(--radius)}
-.primary-navigation a[aria-current]{box-shadow:var(--shell-shadow);border-color:var(--edge-strong)}
-.shell>main{padding:0 var(--space-xl);background:none}
-.top{border:0;align-items:center;min-height:76px;letter-spacing:0;font-family:var(--font);font-size:var(--type-small)}
-.top nav a{min-height:44px;color:var(--text)}
+.shell .rail-button{display:inline-grid;place-items:center;flex:none;inline-size:44px;min-block-size:44px;padding:0;border-color:transparent;color:var(--muted-dense)}
+.shell .rail-button:hover:not(:disabled),.shell .rail-button[aria-expanded=true]{background:var(--raised);color:var(--text)}
+/* The toggle is a 44px target that draws a smaller box, so its hover and disabled states stand clear of the brand,
+   and its focus ring is drawn on that box for the same reason. The states are named because each sets its
+   background with the shorthand, which would reset the clip. */
+.shell .rail-toggle{padding:4px;outline-offset:-7px}
+.shell .rail-toggle,.shell .rail-toggle:hover:not(:disabled),.shell .rail-toggle:disabled{background-clip:content-box}
+.shell .rail-toggle:hover:not(:disabled),.shell .rail-toggle:disabled{border-color:transparent}
+.rail-icon{flex:none;display:block}
+/* The jump field (#1888) opens the palette; its key hint is for a hardware keyboard only. */
+.shell .rail-jump{display:flex;align-items:center;justify-content:flex-start;gap:10px;flex:none;inline-size:100%;min-block-size:44px;padding:0 var(--space-s) 0 12px;border-color:var(--edge-dense);background:var(--inset);color:var(--muted-dense);font-weight:400;text-align:start;white-space:nowrap}
+.shell .rail-jump:hover{border-color:var(--edge-strong);color:var(--text)}
+.rail-jump kbd,.jump-foot kbd{padding:2px 6px;border:1px solid var(--edge-dense);border-radius:6px;background:var(--panel);color:var(--muted-dense);font-family:var(--font);font-size:var(--type-label)}
+.rail-jump kbd{margin-inline-start:auto}
+.phone-jump{margin-inline-start:auto}
+@media(pointer:coarse){.rail-jump kbd,.jump-foot{display:none}}
+/* The palette is a modal list over the page; the shell makes everything behind it inert. It sits above everything
+   the shell draws, including the full-window visualizer. */
+.jump-scrim{position:fixed;inset:0;z-index:1100;background:var(--shell-scrim)}
+.jump-palette{position:fixed;inset-block-start:min(12dvh,88px);inset-inline:0;z-index:1101;display:flex;flex-direction:column;inline-size:min(580px,calc(100vw - 32px));max-block-size:min(76dvh,560px);margin-inline:auto;border:1px solid var(--edge-dense);border-radius:var(--light-radius);background:var(--panel);box-shadow:var(--shell-drawer-shadow);overflow:hidden;animation:jump-in 180ms cubic-bezier(.23,1,.32,1)}
+@keyframes jump-in{from{opacity:0;transform:scale(.97)}}
+.jump-search{display:flex;align-items:center;gap:10px;flex:none;padding:0 var(--space-m);border-block-end:1px solid var(--edge-faint);color:var(--muted-dense)}
+.jump-search:focus-within{border-block-end-color:var(--focus)}
+/* 16px keeps a phone from zooming the page when the field takes focus. */
+.shell .jump-search input{flex:1;min-inline-size:0;min-block-size:52px;padding:0;border:0;background:transparent;color:var(--text);font-size:max(16px,var(--type-body))}
+.shell .jump-search input:focus-visible{outline:none}
+.jump-list{overflow:auto;padding:6px;overscroll-behavior:contain}
+.jump-group{margin:0;padding:var(--space-s) 10px var(--space-xs);color:var(--muted-dense);font-size:var(--type-label);font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+/* The chosen row has a boundary as well as a tint; the tint alone is too faint to tell which page Enter opens. */
+.jump-option{display:flex;align-items:center;gap:10px;min-block-size:44px;padding:0 10px;border:1px solid transparent;border-radius:10px;cursor:pointer;white-space:nowrap}
+.jump-option[aria-selected=true]{background:var(--raised);border-color:var(--edge-strong);box-shadow:inset 3px 0 var(--edge-strong)}
+.jump-name{overflow:hidden;text-overflow:ellipsis}
+.jump-hint{flex:none;margin-inline-start:auto;color:var(--muted-dense);font-size:var(--type-small)}
+.jump-empty{margin:0;padding:var(--space-l);color:var(--muted-dense);text-align:center}
+.jump-foot{display:flex;align-items:center;gap:var(--space-s);flex:none;margin:0;padding:var(--space-s) var(--space-m);border-block-start:1px solid var(--edge-faint);color:var(--muted-dense);font-size:var(--type-label)}
+.shell>aside nav{display:grid;gap:var(--space-xs)}
+.shell>aside nav a{position:relative;justify-content:flex-start;gap:10px;min-block-size:44px;padding:0 12px;font-size:var(--type-body);white-space:nowrap}
+.shell>aside nav a[aria-current]{box-shadow:var(--shell-shadow);border-color:var(--edge-strong)}
+.shell>aside .sidebar-foot{position:relative;display:grid;gap:var(--space-s);justify-items:stretch;padding-block-start:var(--space-s);border-block-start:1px solid var(--edge-faint)}
+.shell>aside .sidebar-foot p{display:block;margin:0;padding-inline:12px;font-size:var(--type-label)}
+/* The feed details open beside the rail, level with its foot, so they never cover Settings. */
+.sidebar-foot .info-tip{position:static;justify-self:start}
+.sidebar-foot .info-popover{top:auto;right:auto;bottom:0;left:calc(100% + var(--space-m))}
+.phone-sign-in{display:none}
+.phone-bar,.rail-scrim{display:none}
+/* A window too short for the rail lets it scroll with the page, as it did before it was sticky. With the jump field
+   the rail needs about 531px, and an ended session's rail, which also holds "Sign in again", about 571px, so each
+   has its own height. The panel still runs the full height of the page, with the foot directly under the
+   destinations instead of at the page's end. The phone drawer is a fixed panel and keeps its own layout at any
+   height. */
+@media(max-height:560px) and (min-width:680.02px){.shell>aside{position:static;align-self:stretch;block-size:auto}.shell>aside .sidebar-foot{margin-block-start:0}}
+@media(max-height:590px) and (min-width:680.02px){.shell[data-session=ended]>aside{position:static;align-self:stretch;block-size:auto}.shell[data-session=ended]>aside .sidebar-foot{margin-block-start:0}}
+
+/* The icon rail keeps every name. A link's own label becomes the name shown beside its icon on hover or focus, so
+   the name is in the page once; the feed label and the control mode stay for assistive technology only. A name
+   fades in but hides at once, so collapsing the rail never flashes the names.
+   The window width picks the default here, in the stylesheet, so the layout never waits for a script: below 1200px
+   the icon rail applies unless the rail was expanded there, and from 1200px only when it was collapsed there. The
+   two blocks hold the same rules; rail-preference.test.ts checks that they stay the same. The lower bound meets
+   the phone rules at 680px with no gap for a fractional width. */
+@media(min-width:680.02px) and (max-width:1199.98px){
+  .shell:not([data-rail-narrow=expanded]){grid-template-columns:64px minmax(0,1fr)}
+  .shell:not([data-rail-narrow=expanded])>aside{padding-inline:10px}
+  .shell:not([data-rail-narrow=expanded]) .rail-head{justify-content:center;margin-inline-end:0}
+  .shell:not([data-rail-narrow=expanded]) .rail-toggle{padding:0;outline-offset:3px}
+  .shell:not([data-rail-narrow=expanded])>aside .brand{display:none}
+  .shell:not([data-rail-narrow=expanded])>aside :is(p.rail-text,.status-indicator .rail-text,.rail-jump .rail-text){position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .shell:not([data-rail-narrow=expanded])>aside nav a{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
+  .shell:not([data-rail-narrow=expanded]) .rail-jump{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
+  .shell:not([data-rail-narrow=expanded]) .rail-jump kbd{display:none}
+  .shell:not([data-rail-narrow=expanded])>aside .sidebar-foot{justify-items:center}
+  .shell:not([data-rail-narrow=expanded]) .sidebar-foot .info-tip{justify-self:center}
+  .shell:not([data-rail-narrow=expanded]) .sidebar-foot .status-indicator{inline-size:44px;min-block-size:44px;padding:0}
+  .shell:not([data-rail-narrow=expanded])>aside nav a .rail-text{position:absolute;top:50%;left:calc(100% + 12px);z-index:20;padding:6px 10px;border-radius:8px;background:var(--text);color:var(--bg);font-size:var(--type-label);font-weight:500;line-height:1.2;white-space:nowrap;opacity:0;pointer-events:none;transform:translate(-4px,-50%)}
+  .shell:not([data-rail-narrow=expanded])>aside nav a:focus-visible .rail-text{opacity:1;transform:translate(0,-50%);transition:opacity 120ms ease-out,transform 120ms ease-out}
+}
+@media(min-width:680.02px) and (max-width:1199.98px) and (hover:hover) and (pointer:fine){.shell:not([data-rail-narrow=expanded])>aside nav a:hover .rail-text{opacity:1;transform:translate(0,-50%);transition:opacity 120ms ease-out 250ms,transform 120ms ease-out 250ms}}
+@media(min-width:1200px){
+  .shell[data-rail-wide=collapsed]{grid-template-columns:64px minmax(0,1fr)}
+  .shell[data-rail-wide=collapsed]>aside{padding-inline:10px}
+  .shell[data-rail-wide=collapsed] .rail-head{justify-content:center;margin-inline-end:0}
+  .shell[data-rail-wide=collapsed] .rail-toggle{padding:0;outline-offset:3px}
+  .shell[data-rail-wide=collapsed]>aside .brand{display:none}
+  .shell[data-rail-wide=collapsed]>aside :is(p.rail-text,.status-indicator .rail-text,.rail-jump .rail-text){position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .shell[data-rail-wide=collapsed]>aside nav a{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
+  .shell[data-rail-wide=collapsed] .rail-jump{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
+  .shell[data-rail-wide=collapsed] .rail-jump kbd{display:none}
+  .shell[data-rail-wide=collapsed]>aside .sidebar-foot{justify-items:center}
+  .shell[data-rail-wide=collapsed] .sidebar-foot .info-tip{justify-self:center}
+  .shell[data-rail-wide=collapsed] .sidebar-foot .status-indicator{inline-size:44px;min-block-size:44px;padding:0}
+  .shell[data-rail-wide=collapsed]>aside nav a .rail-text{position:absolute;top:50%;left:calc(100% + 12px);z-index:20;padding:6px 10px;border-radius:8px;background:var(--text);color:var(--bg);font-size:var(--type-label);font-weight:500;line-height:1.2;white-space:nowrap;opacity:0;pointer-events:none;transform:translate(-4px,-50%)}
+  .shell[data-rail-wide=collapsed]>aside nav a:focus-visible .rail-text{opacity:1;transform:translate(0,-50%);transition:opacity 120ms ease-out,transform 120ms ease-out}
+}
+@media(min-width:1200px) and (hover:hover) and (pointer:fine){.shell[data-rail-wide=collapsed]>aside nav a:hover .rail-text{opacity:1;transform:translate(0,-50%);transition:opacity 120ms ease-out 250ms,transform 120ms ease-out 250ms}}
 .page{margin-bottom:var(--space-l)}
 .shell h1,.shell h2,.shell h3{font-family:var(--shell-heading-font);font-weight:500}
 .shell h4,.shell .nav-label,.shell .eyebrow{font-weight:500}
@@ -36,21 +134,87 @@
 .settings-grid .nav-label{margin:0 0 var(--space-m);color:var(--text);font-size:var(--type-heading);letter-spacing:0;font-family:var(--font)}
 .settings-grid .actions{margin-top:var(--space-m)}
 .shell>main>footer{border:0;padding:var(--space-l) 0}
-@media(max-width:900px){.shell{grid-template-columns:164px minmax(0,1fr)}.shell>main{padding:0 var(--space-l)}.shell>aside{padding:var(--space-l) var(--space-s)}}
+@media(max-width:900px){.shell>main{padding-inline:var(--space-l)}}
 @media(max-width:680px){
+  /* On a phone the rail is a drawer behind the menu button in a compact bar. */
   .shell{display:block}
-  .shell>aside{padding:var(--space-m);border:0;gap:var(--space-m)}
-  .brand{font-size:var(--type-subheading)}
-  .brand small{display:none}
-  .primary-navigation{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--space-xs);padding:var(--space-xs);background:var(--panel);border:1px solid var(--edge-dense);border-radius:var(--light-control-radius)}
-  .primary-navigation a{justify-content:center;text-align:center;padding:var(--space-s) var(--space-xxs);min-height:48px;font-size:var(--type-label)}
-  .primary-navigation a[aria-current]{background:var(--accent);color:var(--accent-ink);border-color:transparent;box-shadow:none}
-  .sidebar-foot{margin:0;gap:var(--space-s)}
-  .sidebar-foot .badge{font-size:var(--type-label)}
+  .phone-bar{position:sticky;top:0;z-index:8;display:flex;align-items:center;gap:var(--space-s);min-block-size:52px;padding:0 var(--space-m);background:var(--bg)}
+  .phone-brand{color:var(--text);font-size:var(--type-subheading);font-weight:500;letter-spacing:.09em}
+  /* An ended session offers its recovery in the bar, so it is visible without opening the drawer. The open drawer
+     offers its own, and the bar's copy is inert under it. */
+  .phone-sign-in{display:inline-flex;margin-inline-start:auto}
+  /* In the drawer the feed details open above the foot and are as wide as it, never wider than the drawer. */
+  .shell>aside .sidebar-foot .info-popover{right:0;bottom:calc(100% + var(--space-xs));left:0;inline-size:auto;max-inline-size:none}
+  .shell>aside{position:fixed;inset:0 auto 0 0;z-index:30;inline-size:min(82vw,300px);block-size:100dvh;border:0;gap:var(--space-m);overflow-y:auto;box-shadow:var(--shell-drawer-shadow);visibility:hidden;transform:translateX(-104%);transition:transform 180ms ease-out,visibility 0s linear 180ms}
+  .shell[data-drawer]>aside{visibility:visible;transform:none;transition:transform 240ms cubic-bezier(.23,1,.32,1),visibility 0s}
+  .rail-scrim{display:block;position:fixed;inset:0;z-index:29;background:var(--shell-scrim);opacity:0;visibility:hidden;transition:opacity 160ms ease-out,visibility 0s linear 160ms}
+  .shell[data-drawer] .rail-scrim{opacity:1;visibility:visible;transition:opacity 200ms ease-out,visibility 0s}
+  .shell .rail-toggle{display:none}
+  /* The drawer has no toggle, so its brand keeps the inset it had. */
+  .rail-head{margin-inline-end:0;padding-inline-start:10px}
+  .jump-palette{inset-block-start:var(--space-m);max-block-size:calc(100dvh - 2 * var(--space-m))}
   .shell>main{padding:0 var(--space-m)}
-  .top{min-height:60px;padding:var(--space-s) 0}
   .shell .card,.shell .widget,.directory-card{padding:var(--space-m)}
   .directory-grid,.settings-grid{grid-template-columns:minmax(0,1fr)}
   .directory-categories{width:100%}
   .directory-categories button{flex:1;padding:var(--space-s);font-size:var(--type-small)}
+}
+
+/* A workspace stretches with the shell. Intrinsic rows can still push the page past the viewport. */
+.shell.workspace-shell {
+  min-block-size: 100dvh;
+  grid-template-rows: minmax(min-content, 1fr);
+}
+.workspace-shell > main, .workspace-page {
+  display: flex;
+  flex-direction: column;
+}
+.workspace-shell > main {
+  padding-block-start: var(--space-s);
+}
+.workspace-page {
+  flex: 1;
+  gap: var(--space-s);
+  padding: 0 0 var(--space-m);
+}
+.workspace-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs) var(--space-m);
+}
+.workspace-page-header h1 {
+  font-size: var(--type-heading);
+}
+.workspace-page-navigation {
+  position: relative;
+}
+.workspace-page-navigation summary {
+  padding: var(--space-s);
+  min-block-size: 44px;
+  cursor: pointer;
+}
+.workspace-page-navigation .feature-navigation {
+  display: grid;
+  position: absolute;
+  inset-inline-end: 0;
+  z-index: 5;
+  min-inline-size: 12rem;
+  max-block-size: min(60dvh, 24rem);
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--edge-dense);
+  background: var(--panel);
+  box-shadow: var(--shell-shadow);
+}
+@media (max-width: 680px) {
+  .shell.workspace-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(min-content, 1fr);
+  }
+  .workspace-shell > main {
+    padding-block-start: 0;
+  }
 }

@@ -270,7 +270,7 @@ The operator SHALL explicitly place logical playback cards in zero or more exist
 
 ### Requirement: Five primary destinations with retained page addresses
 
-The main navigation SHALL contain exactly Home, Habitat, Rooms, Devices and Automation, in that order. Settings SHALL be a separate utility link reachable from every page. Home SHALL link Timeline. Nested brand, component, playback and declared module pages SHALL select Devices as their containing destination; Timeline SHALL select Home; Settings and Connections SHALL select the Settings utility. Existing Home aliases and brand, component, playback, module, Connections and Timeline addresses SHALL remain valid, including component aliases that match a built-in page name. Navigation links SHALL preserve ordinary anchors, modified clicks and browser history.
+The main navigation SHALL contain exactly Home, Habitat, Rooms, Devices and Automation, in that order. Settings SHALL be a separate utility link reachable from every page, placed below the destinations at the bottom of the rail. Home SHALL link Timeline. Nested brand, component, playback and declared module pages SHALL select Devices as their containing destination; Timeline SHALL select Home; Settings and Connections SHALL select the Settings utility. Existing Home aliases and brand, component, playback, module, Connections and Timeline addresses SHALL remain valid, including component aliases that match a built-in page name. Navigation links SHALL preserve ordinary anchors, modified clicks and browser history.
 
 #### Scenario: Open an existing bookmark
 - **WHEN** the operator opens a brand, module, component or Music bookmark and uses back/forward navigation
@@ -657,3 +657,97 @@ The visualizer SHALL offer Spectrum bars and Bass pulse. The chosen effect SHALL
 #### Scenario: Storage is unavailable
 - **WHEN** reading or writing the stored choice fails
 - **THEN** the visualizer uses the default effect and still switches effects for the page
+
+### Requirement: One rail that collapses and becomes a phone drawer
+
+The shell SHALL present the destinations, the Settings utility, the feed indicator and the session's control mode in one rail that stays in view while a page scrolls; a window too short to hold the rail SHALL let it scroll with the page. The skip link SHALL be visible above the rail whenever it has focus. A destination chosen from a navigation link SHALL open at the top of its page; the shell SHALL NOT set the scroll position on back or forward navigation. From 1200px wide the rail SHALL start expanded; below that it SHALL start as an icon rail in which every destination keeps its accessible name and shows that name on hover or keyboard focus. A toggle SHALL switch between the two, and the choice SHALL be kept in the browser separately for the two window sizes. Unavailable or damaged browser storage SHALL leave the defaults and a toggle that still works for the open page. At phone width the rail SHALL be a drawer opened from a menu button. Collapsing, expanding, opening and closing SHALL send no command, sync or provider request.
+
+#### Scenario: Default and remembered rail
+- **WHEN** the operator opens the dashboard in a wide window and in a narrower one, toggles the rail in one of them and reloads
+- **THEN** the wide window starts with the full rail and the narrower one with the icon rail, the toggled size keeps the operator's choice after the reload, and the other size keeps its own
+
+#### Scenario: Navigate while scrolled
+- **WHEN** the operator scrolls a long page and chooses a destination in the rail
+- **THEN** the rail is still in view to choose from, and the chosen page opens at its top
+
+#### Scenario: Icon rail
+- **WHEN** the rail is collapsed and the operator points at or focuses a destination
+- **THEN** the destination's name appears beside its icon, its accessible name is the destination name once, and Settings and the feed indicator remain reachable at the bottom of the rail
+
+#### Scenario: Phone drawer
+- **WHEN** the operator opens the menu button at phone width
+- **THEN** the destinations and Settings appear in a drawer over the page with focus inside it
+- **AND** the page behind it cannot be reached with the keyboard or the pointer
+- **AND** choosing a destination, pressing Escape or tapping outside closes it and returns focus to the menu button
+
+#### Scenario: Storage refused
+- **WHEN** the browser refuses to read or save the rail choice
+- **THEN** the defaults apply, the toggle still changes the rail for the open page, and nothing fails
+
+#### Scenario: Ended session
+- **WHEN** the browser session has ended while the rail would be collapsed
+- **THEN** the full rail is shown so that the sign-in recovery action is readable
+- **AND** at phone width the recovery action is shown beside the menu button without opening the drawer, and inside the drawer while it is open
+
+### Requirement: Jump palette that opens any page
+
+The shell SHALL offer a jump palette that lists, in this order, up to three pages visited most recently in the open page session, the hub's destinations with Timeline, Settings and Connections, and every page the device directory lists for a module the current catalog reports as running. The current page SHALL NOT be listed as recent, each address SHALL be listed once outside the recent group, and a module that is not running or an address the catalog does not declare SHALL NOT be offered. Recent pages SHALL be held in memory only.
+
+Command and K, or Control and K, SHALL open the palette from anywhere on the page and close it when it is open, except that on a Mac Control and K pressed in a text field SHALL keep its text-editing meaning. A slash SHALL open the palette only when it is pressed outside a text field and outside an open menu, list or dialog; a control that takes no typed text, such as a slider or a checkbox, SHALL NOT count as a text field. The rail SHALL hold a field that opens the palette, shown as an icon in the icon rail, and the phone bar SHALL hold a button that opens it. While a modal dialog is open or an element is shown full screen, the palette's keys SHALL do nothing.
+
+While the palette is open the page and the rail behind it SHALL be inert, and the palette SHALL be drawn above everything the page draws, including the full-window visualizer. The palette SHALL read its keys wherever focus is, and a press on a part of it that is not a row SHALL leave focus in its field. Typing SHALL narrow the list to the entries whose name or hint contains every typed word, with a name that starts with the query first. The chosen row SHALL be marked by a boundary with at least 3:1 contrast against the palette and against the row. The arrow keys SHALL move the choice, bring it into view and wrap at the ends; a list scrolled by touch or wheel SHALL otherwise stay where it was put, and Enter or a click SHALL open the chosen page at its top with focus on the page. An Enter still held from opening the palette SHALL NOT choose a row. Escape, the opening key again or a click outside SHALL close the palette and return focus to the element that had it; when it was opened from the phone drawer, focus SHALL return to the menu button. A page change made with the browser's back or forward while the palette is open SHALL close it. The palette SHALL fit a 320px window without horizontal overflow.
+
+The palette SHALL only navigate. Opening it, typing, moving the choice and closing it SHALL send no command, sync, upload or provider request.
+
+#### Scenario: Open from the keyboard
+- **WHEN** the operator presses Command and K, Control and K outside a text field, or a slash outside a text field
+- **THEN** the palette opens with focus in its field, listing recent pages, hub destinations and device pages
+- **AND** the page and the rail behind it cannot be reached with the keyboard or the pointer
+
+#### Scenario: A slash in a text field
+- **WHEN** the operator types a slash in the Conversation composer or another text field
+- **THEN** the slash is entered as text and the palette stays closed
+
+#### Scenario: Narrow and open
+- **WHEN** the operator types part of a page's name, moves the choice with the arrow keys and presses Enter
+- **THEN** the list holds only matching pages with the best name match first
+- **AND** the chosen page opens at its top with focus on the page, although the page left was scrolled
+
+#### Scenario: Close and return
+- **WHEN** the operator opens the palette from the Conversation composer with a draft in it and presses Escape
+- **THEN** the palette closes, focus is in the composer again and the draft is unchanged
+
+#### Scenario: Catalog change
+- **WHEN** the catalog the page holds reports a module as stopped
+- **THEN** that module's pages are not offered and the other pages still are
+
+#### Scenario: Phone
+- **WHEN** the operator taps the search button in the phone bar, or the field in the open drawer, at phone width
+- **THEN** the palette opens within the window with no horizontal overflow
+- **AND** closing it returns focus to the search button, or to the menu button when it was opened from the drawer
+
+#### Scenario: Modal dialog open
+- **WHEN** Conversation Details is open as a modal dialog and the operator presses Command and K or a slash
+- **THEN** the palette stays closed and the dialog stays open
+
+#### Scenario: Scroll the list
+- **WHEN** the operator scrolls the list by touch or wheel and the shell renders again
+- **THEN** the list stays where it was put
+- **AND** the next arrow key brings the choice into view
+
+#### Scenario: Focus leaves the field
+- **WHEN** the operator presses on a group heading or the footer of the palette, or focus is outside the field for another reason
+- **THEN** the arrow keys, Enter and Escape still act on the palette, typed text goes to the field and nothing behind the palette reacts
+
+#### Scenario: Over the full-window visualizer
+- **WHEN** the operator opens the palette on the full-window visualizer
+- **THEN** the palette is drawn above the visualizer, and Escape closes the palette and leaves the visualizer open
+- **AND** while an element is shown full screen the palette's keys do nothing
+
+#### Scenario: Back while open
+- **WHEN** the palette is open and the operator goes back in the browser's history
+- **THEN** the preceding page is shown, the palette is closed and the page can be used
+
+#### Scenario: Passive palette
+- **WHEN** the operator opens the palette, moves the choice, types and closes it
+- **THEN** no command, sync, upload or provider request is sent

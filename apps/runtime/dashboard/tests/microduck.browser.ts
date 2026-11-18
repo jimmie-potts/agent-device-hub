@@ -71,8 +71,13 @@ try {
   world.microduck.observation=()=>({...observe(),healthy});await pause(200);
   assert.equal(await panel.getByRole('button',{name:'Notice gesture',exact:true}).isDisabled(),true,'unhealthy policy cannot offer an enabled head control');
   healthy=true;await pause(200);
-  await panel.getByRole('button',{name:'Notice gesture',exact:true}).click();await panel.getByText(/Active notice outbound phase/).waitFor();await panel.getByText('No active program',{exact:true}).waitFor();
-  assert.deepEqual(world.microduck.effects.map(x=>x.yaw),[.1,0]);
+  await panel.getByRole('button',{name:'Notice gesture',exact:true}).click();
+  await panel.getByText(/Active notice outbound phase/).waitFor();
+  await expect.poll(() => world.microduck.effects.map(effect => effect.yaw), {
+    timeout: 2000,
+    message: 'Notice gesture must send the outbound and return inputs',
+  }).toEqual([0.1, 0]);
+  await panel.getByText('No active program',{exact:true}).waitFor();
   await pause(600);await panel.getByRole('button',{name:'Attention gesture',exact:true}).click();await panel.getByText(/Active attention outbound phase/).waitFor();
   const stop=panel.getByRole('button',{name:'Stop expression',exact:true});assert.equal(await stop.isEnabled(),true);await stop.click();
   const acknowledgment=panel.getByRole('checkbox',{name:/I acknowledge this held operation/});await acknowledgment.waitFor();

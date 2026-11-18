@@ -1,0 +1,41 @@
+import React, {useSyncExternalStore} from 'react';
+import {RAIL_WIDE_QUERY, RailPreferenceStore, railExpanded, type RailPreference, type RailSize} from './rail-preference.ts';
+
+const preference = new RailPreferenceStore(() => window.localStorage);
+try {window.addEventListener('storage', event => {preference.storageChanged(event.key, event.newValue);});} catch {/* No cross-tab follow. */}
+const wide = window.matchMedia(RAIL_WIDE_QUERY);
+const subscribeWide = (listener: () => void): (() => void) => {wide.addEventListener('change', listener); return () => {wide.removeEventListener('change', listener);};};
+
+const phone = window.matchMedia('(max-width: 680px)');
+const subscribePhone = (listener: () => void): (() => void) => {phone.addEventListener('change', listener); return () => {phone.removeEventListener('change', listener);};};
+/** Whether the window is at phone width, where the rail is a drawer. The width matches the shell stylesheet's phone rules. */
+export const usePhone = (): boolean => useSyncExternalStore(subscribePhone, () => phone.matches);
+
+/**
+ * The saved choices, which the shell publishes as attributes for the stylesheet; whether the rail is expanded at this
+ * window size, for the toggle's name; and the toggle, which remembers the choice for that size. The stylesheet, not
+ * this hook, decides the layout, so a resize never waits for a script.
+ */
+export function useRail(): {saved: RailPreference; expanded: boolean; toggle: () => void} {
+  const saved = useSyncExternalStore(preference.subscribe, preference.getSnapshot);
+  const size: RailSize = useSyncExternalStore(subscribeWide, () => wide.matches) ? 'wide' : 'narrow';
+  return {saved, expanded: railExpanded(saved, size), toggle: () => {preference.toggle(size);}};
+}
+
+const PATHS = {
+  home: <><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></>,
+  habitat: <><path d="M3 19h18"/><path d="M5 19a7 7 0 0 1 14 0"/><path d="M10 19v-2.5a2 2 0 0 1 4 0V19"/></>,
+  rooms: <><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M12 4.5V11"/><path d="M3.5 13.5H9"/><path d="M13 13.5h7.5"/></>,
+  devices: <><rect x="3" y="5" width="12" height="9" rx="1.5"/><path d="M6.5 18h5"/><path d="M9 14v4"/><rect x="17" y="9" width="4.5" height="9.5" rx="1.2"/></>,
+  automation: <path d="M13 3 5.5 13H11l-1 8 7.5-10H12l1-8Z"/>,
+  settings: <><path d="M4 7h9"/><path d="M19 7h1"/><circle cx="16" cy="7" r="2.5"/><path d="M4 17h1"/><path d="M11 17h9"/><circle cx="8" cy="17" r="2.5"/></>,
+  sidebar: <><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/></>,
+  menu: <><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></>,
+  search: <><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></>,
+} as const;
+
+/** A rail line icon. It is decoration: the control it sits in carries the name. */
+export function RailIcon({name}: {name: keyof typeof PATHS}): React.JSX.Element {
+  return <svg className="rail-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{PATHS[name]}</svg>;
+}

@@ -2,7 +2,8 @@
 // clone under another checkout's `.local/scratch/` neither nests `.local/scratch/.local/scratch/` nor puts the installed
 // consumer where a checkout's node_modules could resolve a dependency the package forgot to bundle.
 import assert from 'node:assert/strict';
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {execFileSync, spawnSync} from 'node:child_process';
+import {cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test} from 'node:test';
@@ -40,11 +41,23 @@ test('the scratch root is beside the outermost checkout, never inside a checkout
   assert.equal(scratchRootFor(outside, 'package-observability'), join(base, '.local/scratch/package-observability'), 'a directory in no checkout');
 });
 
-test('both packaging scripts take their scratch root from the helper', () => {
-  for (const script of ['scripts/package-hub.mjs', 'scripts/package-observability.mjs']) {
-    const text = readFileSync(join(root, script), 'utf8');
-    assert.match(text, /import \{scratchRoot\} from '\.\/scratch-root\.mjs';/, script);
-    assert.match(text, /scratchRoot\(root,'package-(hub|observability)'\)/, script);
-    assert.doesNotMatch(text, /--git-common-dir/, `${script} no longer finds its scratch root on its own`);
+test('both packagers allocate their scratch directory outside a nested review checkout', t => {
+  const base = mkdtempSync(join(tmpdir(), 'package-scratch-'));
+  t.after(() => rmSync(base, {recursive: true, force: true}));
+  const outer = join(base, 'main');
+  const review = join(outer, '.local', 'scratch', 'review');
+  mkdirSync(review, {recursive: true});
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  for (const cwd of [outer, review]) execFileSync('git', ['init', '--quiet'], {cwd, env});
+  cpSync(join(root, 'scripts'), join(review, 'scripts'), {recursive: true});
+  symlinkSync(join(root, 'node_modules'), join(review, 'node_modules'), 'dir');
+
+  // The checkout has no package inputs. Each command reaches scratch allocation before packaging stops.
+  for (const name of ['package-hub', 'package-observability']) {
+    const run = spawnSync(process.execPath, [join('scripts', name + '.mjs')], {cwd: review, env, encoding: 'utf8'});
+    assert.ifError(run.error);
+    assert.ok(statSync(join(base, '.local', 'scratch', name), {throwIfNoEntry: false})?.isDirectory(),
+      name + ' must stage outside the outer checkout');
+    assert.equal(existsSync(join(outer, '.local', 'scratch', '.local', 'scratch', name)), false);
   }
 });

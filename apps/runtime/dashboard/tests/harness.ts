@@ -1,5 +1,7 @@
 import {createArtModule, registration as artRegistration} from '@jimmie-potts/art';
 import {createWeatherModule, weatherSchemas} from '@jimmie-potts/weather';
+import {createPresenceModule,presenceSchemas} from '@jimmie-potts/presence-pro';
+import {SimulatedPresence,SYNTHETIC_SECTION as PRESENCE_SECTION} from '@jimmie-potts/presence-pro/testing';
 import {SYNTHETIC_SECTION as WEATHER_SECTION, pointsBody, hourlyBody, alertsBody, json as weatherJson} from '../../../../modules/weather/dist/src/simulated.js';
 import {SimulatedArt, simulatedProviders} from '../../../../modules/art/dist/src/simulated.js';
 import {createMicroDuckModule,SimulatedMicroDuck,MICRODUCK_SIMULATED_SECTION,microduckSchemas,type MicroDuckTransport} from '@jimmie-potts/microduck';
@@ -45,6 +47,8 @@ export const TOKEN_MARKER = 'tok_SYNTHETIC835';
 const HOOK_SOURCE = 'bunny/parts/hook';
 
 export type WorldOptions = {
+  /** Two fictional stock-report sources through the real Presence Pro owner. */
+  presence?:boolean;
   /** Synthetic art provider through the real catalog and ledger; no credentials or device routes. */
   art?: boolean;
   /**
@@ -107,6 +111,7 @@ export type WorldOptions = {
 };
 
 export type World = {
+  presence:SimulatedPresence;
   art: SimulatedArt;
   presentArt(artworkId: string, compositionId: string): Promise<void>;
   readonly readProducer?: string;
@@ -140,6 +145,7 @@ export type World = {
   readonly logs: LogRecord[];
   runtime(): Runtime;
   lifxState(): ReturnType<SimulatedLifx['state']>;
+  offlineLifx(address: string): void;
   pixooState(): SimulatedPixooState;
   pixooPlaylists(): Promise<readonly PlaylistRecord[]>;
   pixooMedia(): Promise<{items: {name: string; renditionId: string}[]; catalogRevision: number}>;
@@ -231,6 +237,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const art = new SimulatedArt();
   const roborock=new SimulatedRoborock();
   const volcano=new SimulatedVolcano();
+  const presence=new SimulatedPresence();
   let roborockModule:RoborockModule|undefined;
   const refreshRoborock=async():Promise<void>=>{assert.equal(options.roborock,true);const refresh=roborockModule?.refreshForTest;assert.ok(refresh!==undefined);await refresh();};
   const microduck=new SimulatedMicroDuck();
@@ -267,6 +274,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.reachy === true ? {'reachy-mini':REACHY_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
     ...options.volcano===true?{volcano:VOLCANO_SIMULATED_SECTION}:{},
+    ...options.presence===true?{'presence-pro':{sensors:PRESENCE_SECTION.sensors.map((sensor,index)=>({...sensor,roomId:'studio',zones:sensor.zones.map(zone=>({...zone,roomId:'reading'})),calibration:{...sensor.calibration,tx:index===0?2:4}}))}}:{},
     ...(wisprConfig === undefined ? {} : {wispr: {...wisprConfig, shareTextAggregates: options.wispr?.shareTextAggregates ?? false}}),
     ...withDevices ? {lifx: options.lighting === true ? {bulbs: [...['a', 'b', 'c'].map((suffix, index) => ({...LIFX_SIMULATED_SECTION.bulbs[0], id: `lamp-${suffix}`, address: `192.0.2.${42 + index}`})), LIFX_SIMULATED_SECTION.bulbs[1]]} : LIFX_SIMULATED_SECTION, sign: {...SIGN_SECTION, secrets: {token: signToken}}} : {},
     ...options.nanoleaf === true ? {nanoleaf: {...NANOLEAF_SECTION, devices: [...NANOLEAF_SECTION.devices,
@@ -313,6 +321,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   };
   const start = (port: number): Promise<Runtime> => startRuntime({
     modules: [
+      ...(options.presence===true?[createPresenceModule({native:presence.native})]:[]),
       core = createCoreModule(coreOptions), ...(options.artSchedule === undefined ? [] : [createWeatherModule({fetch: clock => url => Promise.resolve(
         url.includes('/points/') ? weatherJson(pointsBody()) : url.includes('/alerts/') ? weatherJson(alertsBody())
           : weatherJson(hourlyBody(clock.now(), [{shortForecast: 'Sunny', precipitation: 0}, {shortForecast: 'Chance Rain Showers', precipitation: 40}], clock.now() - 1000)))})]), ...(options.art === true ? [createArtModule({providers: simulatedProviders(art.call.bind(art))})] : []), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
@@ -322,7 +331,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request, datagram: lines.datagram})] : [])]
       .map(module => options.clock?.working === undefined ? module : holdingWorkers(module, options.clock.working)),
     ...(options.clock === undefined ? {} : {clock: options.clock.clock, scheduler: options.clock.scheduler}),
-    port, stateDir, configFile: config, edge: {schemas: {...(options.artSchedule === undefined ? {} : weatherSchemas),...(options.art === true ? artRegistration.schemas : {}),...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.roborock===true?roborockSchemas:{}, ...options.volcano===true?volcanoSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
+    port, stateDir, configFile: config, edge: {schemas: {...(options.artSchedule === undefined ? {} : weatherSchemas),...(options.art === true ? artRegistration.schemas : {}),...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.roborock===true?roborockSchemas:{}, ...options.volcano===true?volcanoSchemas:{}, ...options.presence===true?presenceSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',
   });
   let runtime: Runtime;
   try {
@@ -343,6 +352,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   let hook: RemoteParticipant | undefined;
   const connected = async (): Promise<RemoteParticipant> => hook ??= await connectRemote({url: runtime.url, source: HOOK_SOURCE, token, reconnectDelayMs: 50});
   return {
+    presence,
     art,
     presentArt: async (artworkId, compositionId) => {
       assert.equal(options.art, true);assert.ok(core.automation.art !== undefined);
@@ -418,6 +428,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       await response.arrayBuffer(); return response.status;
     },
     lifxState: () => bulbs.state(),
+    offlineLifx: address => { bulbs.offline(address); },
     pixooState: () => panel.state(),
     wisprPrivacy: (expose, text) => { wispr.privacy(expose, text); },
     readonlyWispr: async ref => {

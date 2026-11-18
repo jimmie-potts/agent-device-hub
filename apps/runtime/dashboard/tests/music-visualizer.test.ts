@@ -62,13 +62,20 @@ void test('the effect list holds both first effects, each with a unique id, a na
   assert.equal(effectById('not-an-effect'), spectrumBars, 'an unknown id falls back to the first effect');
 });
 
-void test('a third effect needs no change to the engine or the first two effects', () => {
-  const seen: number[] = [];
-  const third: VisualizerEffect = {id: 'test-level', name: 'Test level', resting: () => [{kind: 'rect', role: 'test', x: 0, y: 0, width: 1, height: 1, fill: '#000', alpha: 1}],
-    create: () => {let level = 0; return {step(levels) {level = levels.level; seen.push(level);}, scene: () => [{kind: 'rect', role: 'test', x: 0, y: 0, width: level, height: 1, fill: '#fff', alpha: 1}]};}};
-  const {states} = play(third, repeat({rms: 0.5}, 5));
-  assert.ok(states.includes('live')); assert.ok(seen.includes(0.5));
-  assert.deepEqual(play(spectrumBars, repeat({rms: 0.5, bass: 0.5}, 5)).scenes, play(spectrumBars, repeat({rms: 0.5, bass: 0.5}, 5)).scenes);
+void test('the engine renders a third effect with the live level from the stream', () => {
+  const third: VisualizerEffect = {
+    id: 'test-level', name: 'Test level', resting: () => [],
+    create() {
+      let width = 0;
+      return {
+        step(levels) { width = levels.level; },
+        scene: () => [{kind: 'rect', role: 'test', x: 0, y: 0, width, height: 1, fill: '#fff', alpha: 1}],
+      };
+    },
+  };
+  const {states, scenes} = play(third, repeat({rms: 0.5}, 5));
+  assert.equal(states.at(-1), 'live');
+  assert.deepEqual(scenes.at(-1), [{kind: 'rect', role: 'test', x: 0, y: 0, width: 0.5, height: 1, fill: '#fff', alpha: 1}]);
 });
 
 for (const effect of visualizerEffects) {

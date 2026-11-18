@@ -154,7 +154,9 @@ async function setup(t: TestContext, lines = new FakeLines(['wall']), directory?
     await progress({operationId: stop.data.operationId, generation: stop.data.generation, status: 'stopped'});
     await waitFor(async () => (await captureState()).session.status === 'idle');
   };
-  const control = (requestId: string, expectedRevision: number, data: {action: 'start'; capture: LightingCapture; presetId?: string} | {action: 'stop'}, target = 'wall') =>
+  const control = (requestId: string, expectedRevision: number, data: {action: 'start'; capture: LightingCapture; presetId?: string} |
+      Omit<Extract<LightingControl, {action: 'start-show'}>, 'requestId' | 'expectedRevision'> |
+      {action: 'stop' | 'pause-show' | 'resume-show' | 'seek-show'; generation?: string; positionMs?: number}, target = 'wall') =>
     core.operatorActions.dispatch({key: `bunny.cmd.music-lighting-control.${target}`, requestedBy: 'bunny/parts/operator', requestId,
       draft: {type: 'org.bunny.music-lighting.control.requested', subject: target, dataschema: schema('music-lighting-control'),
         data: {expectedRevision, ...(data.action === 'start' ? {presetId: PRESET, ...data} : data)}}});
@@ -448,7 +450,7 @@ void test('an expired, unadmitted, invalid or unqualified command saves nothing 
       } catch (error) {database.exec('ROLLBACK');return Promise.reject(error instanceof Error ? error : new Error('transaction'));}
     }});
   assert.deepEqual(part.states(['music-lighting-state']).map(state => state.data), [{id: 'wall', revision: 0, session: {status: 'idle'}, last: null}]);
-  const command = (requestId: string, patch: Partial<Command<LightingControl>> = {}, data: Partial<LightingControl> = {}): Command<LightingControl> => ({
+  const command = (requestId: string, patch: Partial<Command<LightingControl>> = {}, data: Partial<Extract<LightingControl, {action: 'start'}>> = {}): Command<LightingControl> => ({
     specversion: '1.0', bunnyprofile: '2.0', id: `message-${requestId}`, source: 'bunny/core', type: 'org.bunny.music-lighting.control.requested', subject: 'wall',
     time: new Date().toISOString(), expiresat: new Date(Date.now() + 5000).toISOString(), kind: 'command', datacontenttype: 'application/json',
     dataschema: schema('music-lighting-control'), traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
@@ -563,3 +565,161 @@ it('refused lighting work stays in history with no inbox item, and the inbox can
   assert.equal(h.lines.work.length, 2, 'nothing is sent again');
   assert.ok((await inbox()).some(candidate => candidate.id === item.id), 'the item stays for a person');
 });
+
+it('a standalone show extends only the Start work deadline and fences transports by revision and generation', async t => {
+  const {lines, control, light, status, captureState, operation} = await setup(t);
+  assert.equal((await captureState()).session.status, 'idle');
+  const start = {action: 'start-show', showId: 'show-almond', version: 2, positionMs: 40, startDelayMs: 30_000} as const;
+  const initial = await light();
+  assert.deepEqual(await control('saved-show', initial.revision, start), {status: 'accepted', requestId: 'saved-show'});
+  await waitFor(() => lines.work.length === 1);
+  const startWork = lines.work[0];assert.ok(startWork);
+  const generation = startWork.data.generation;
+  assert.deepEqual(startWork.data, {...start, generation, requestId: lightingWorkRequestId('saved-show', 'wall')});
+  assert.equal(Date.parse(startWork.expiresat ?? '') - Date.parse(startWork.time), 35_000);
+  const trackedStart = operation(startWork.data.requestId);assert.ok(trackedStart);
+  assert.equal(trackedStart.deadlineAtMs - trackedStart.sentAtMs, 60_000);
+  // An exact duplicate returns the earlier admission and does not send the work again.
+  assert.deepEqual(await control('saved-show', initial.revision, start), {status: 'accepted', requestId: 'saved-show'});
+
+  const show = {showId: start.showId, version: start.version, positionMs: start.positionMs, missedCues: 0};
+  await lines.publish('wall', {generation, status: 'playing', show});
+  await status('wall', 'active');
+  const active = await light();
+  assert.equal(codeOf(await control('stale-revision', initial.revision, {action: 'pause-show', generation})), 'revision-conflict');
+  assert.equal(codeOf(await control('stale-generation', active.revision, {action: 'seek-show', generation: OLD_GENERATION, positionMs: 500})), 'revision-conflict');
+  assert.equal(codeOf(await control('unbound-stop', active.revision, {action: 'stop'})), 'revision-conflict');
+  assert.equal(lines.work.length, 1);
+
+  assert.deepEqual(await control('show-pause', active.revision, {action: 'pause-show', generation}), {status: 'accepted', requestId: 'show-pause'});
+  await waitFor(() => lines.work.length === 2);
+  const pauseWork = lines.work[1];assert.ok(pauseWork);
+  assert.deepEqual(pauseWork.data, {action: 'pause-show', generation, requestId: lightingWorkRequestId('show-pause', 'wall')});
+  assert.equal(Date.parse(pauseWork.expiresat ?? '') - Date.parse(pauseWork.time), 5000);
+  assert.equal((await light()).session.status, 'active', 'only a device state report can change the displayed cursor state');
+  await lines.publish('wall', {generation, status: 'paused', show: {...show, positionMs: 500, missedCues: 2}});
+  await status('wall', 'paused');
+  const paused = await light();
+  assert.ok('show' in paused.session);
+  assert.deepEqual(paused.session.show, {...show, positionMs: 500, missedCues: 2});
+  assert.equal(codeOf(await control('raced-pause', active.revision, {action: 'resume-show', generation})), 'revision-conflict');
+
+  lines.reply = () => errorBody('invalid-state');
+  assert.deepEqual(await control('stop-after-completion', paused.revision, {action: 'stop', generation}),
+    {status: 'accepted', requestId: 'stop-after-completion'});
+  const stopWorkId = lightingWorkRequestId('stop-after-completion', 'wall');
+  await waitFor(() => operation(stopWorkId)?.reply === 'invalid-state');
+  const stopping = await light();
+  assert.equal(stopping.session.status, 'stopping');
+  const ending = {generation, reason: 'completed', restoration: 'restored', atMs: Date.now(), missedCues: 3} as const;
+  await lines.publish('wall', {generation, status: 'ended', ended: ending});
+  await status('wall', 'idle');
+  assert.deepEqual((await light()).last, ending);
+  assert.equal(lines.work.length, 3);
+});
+
+it('a paused show accepts transport again after its latest accepted Stop expires', async t => {
+  const {lines, control, light, status, operation} = await setup(t);
+  const start = {action: 'start-show', showId: 'show-almond', version: 2, positionMs: 40, startDelayMs: 0} as const;
+  assert.deepEqual(await control('saved-show', (await light()).revision, start), {status: 'accepted', requestId: 'saved-show'});
+  await waitFor(() => lines.work.length === 1);
+  const startWork = lines.work[0];assert.ok(startWork);
+  const {generation} = startWork.data;
+  const show = {showId: start.showId, version: start.version, positionMs: 500, missedCues: 2};
+  await lines.publish('wall', {generation, status: 'paused', show});
+  await status('wall', 'paused');
+
+  for (const requestId of ['first-stop', 'latest-stop']) {
+    assert.deepEqual(await control(requestId, (await light()).revision, {action: 'stop', generation}), {status: 'accepted', requestId});
+    await waitFor(() => operation(lightingWorkRequestId(requestId, 'wall'))?.reply === 'accepted');
+  }
+  const firstStop = lines.work[1], latestStop = lines.work[2];assert.ok(firstStop && latestStop);
+  await lines.outcome(firstStop, 'failed');
+  await waitFor(() => operation(firstStop.data.requestId)?.error?.code === 'expired');
+  assert.equal((await light()).session.status, 'stopping');
+  assert.equal(codeOf(await control('resume-while-stopping', (await light()).revision, {action: 'resume-show', generation})), 'invalid-state');
+
+  await lines.outcome(latestStop, 'failed');
+  await status('wall', 'paused');
+  const paused = await light();
+  assert.ok('show' in paused.session);
+  assert.deepEqual(paused.session.show, show);
+  assert.equal(lines.work.length, 3);
+  assert.deepEqual(await control('resume-after-expiry', paused.revision, {action: 'resume-show', generation}),
+    {status: 'accepted', requestId: 'resume-after-expiry'});
+  await waitFor(() => lines.work.length === 4);
+  assert.equal(lines.work[3]?.data.action, 'resume-show');
+});
+
+it('a prepared Stop with an unresolved effect fences transport despite continuing owner reports', async t => {
+  const {lines, control, light, status, operation} = await setup(t);
+  const start = {action: 'start-show', showId: 'show-almond', version: 2, positionMs: 40, startDelayMs: 0} as const;
+  assert.deepEqual(await control('saved-show', (await light()).revision, start), {status: 'accepted', requestId: 'saved-show'});
+  await waitFor(() => lines.work.length === 1);
+  const startWork = lines.work[0];assert.ok(startWork);
+  const {generation} = startWork.data;
+  const show = {showId: start.showId, version: start.version, positionMs: 500, missedCues: 2};
+  await lines.publish('wall', {generation, status: 'playing', show});
+  await status('wall', 'active');
+
+  assert.deepEqual(await control('stop-show', (await light()).revision, {action: 'stop', generation}), {status: 'accepted', requestId: 'stop-show'});
+  const stopId = lightingWorkRequestId('stop-show', 'wall');
+  await waitFor(() => operation(stopId)?.reply === 'accepted');
+  const stop = lines.work[1];assert.ok(stop);
+  await lines.outcome(stop, 'failed', 'unavailable');
+  await status('wall', 'uncertain');
+  const positionMs = 540;
+  await lines.publish('wall', {generation, status: 'playing', show: {...show, positionMs}});
+  await waitFor(async () => {
+    const {session} = await light();
+    return 'show' in session && session.show.positionMs === positionMs;
+  });
+  assert.equal((await light()).session.status, 'uncertain');
+  assert.equal(codeOf(await control('pause-while-uncertain', (await light()).revision, {action: 'pause-show', generation})), 'invalid-state');
+
+  const ending = {generation, reason: 'stopped', restoration: 'none', atMs: Date.now(), missedCues: 2} as const;
+  await lines.publish('wall', {generation, status: 'ended', ended: ending});
+  await status('wall', 'idle');
+  assert.deepEqual((await light()).last, ending);
+  assert.equal(lines.work.length, 2);
+});
+
+for (const proof of ['an expiry refusal', 'a late owner outcome with no acceptance reply'] as const) {
+  it(`a prepared Stop releases transport after ${proof}`, async t => {
+    const {lines, control, light, status, operation} = await setup(t);
+    const show = {showId: 'show-almond', version: 2, positionMs: 500, missedCues: 2};
+    assert.deepEqual(await control('saved-show', (await light()).revision, {action: 'start-show', showId: show.showId,
+      version: show.version, positionMs: show.positionMs, startDelayMs: 0}), {status: 'accepted', requestId: 'saved-show'});
+    await waitFor(() => lines.work.length === 1);
+    const startWork = lines.work[0];assert.ok(startWork);
+    const {generation} = startWork.data;
+    await lines.publish('wall', {generation, status: 'paused', show});
+    await status('wall', 'paused');
+
+    const held = deferred<Reply>();
+    t.after(() => {held.resolve({status: 'accepted'});});
+    lines.reply = () => proof === 'an expiry refusal' ? errorBody('expired') : held.promise;
+    assert.deepEqual(await control('stop-show', (await light()).revision, {action: 'stop', generation}), {status: 'accepted', requestId: 'stop-show'});
+    const stopId = lightingWorkRequestId('stop-show', 'wall');
+    await waitFor(() => lines.work.length === 2);
+    if (proof !== 'an expiry refusal') {
+      await waitFor(async () => (await light()).session.status === 'uncertain', 8000, 'the lost Stop reply');
+      const stop = lines.work[1];assert.ok(stop);
+      assert.equal(operation(stopId)?.reply, undefined);
+      assert.equal(codeOf(await control('resume-before-proof', (await light()).revision, {action: 'resume-show', generation})), 'invalid-state');
+      await lines.outcome(stop, 'failed');
+    }
+    await waitFor(() => operation(stopId)?.error?.code === 'expired');
+    await status('wall', 'paused');
+    const {session} = await light();
+    assert.ok(session.status === 'paused');
+    assert.equal(session.generation, generation);
+    assert.deepEqual(session.show, show);
+    assert.equal(lines.work.length, 2);
+    held.resolve({status: 'accepted'});
+    lines.reply = () => ({status: 'accepted'});
+    assert.deepEqual(await control('resume-after-proof', (await light()).revision, {action: 'resume-show', generation}),
+      {status: 'accepted', requestId: 'resume-after-proof'});
+    await waitFor(() => lines.work.length === 3);
+  }, 25_000);
+}

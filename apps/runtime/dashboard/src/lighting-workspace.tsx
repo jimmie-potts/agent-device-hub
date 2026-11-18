@@ -122,7 +122,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
       {!layoutLive && <p role="status">Layout records are unavailable or stale. Arrangement is read-only.</p>}
       {(layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status">Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
       {message !== '' && <p role="status">{message}</p>}
-      {roomView && <RoomModels connection={connection} connected={connected && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true} layout={layout} layoutLive={layoutLive} devices={devices}
+      {roomView && <RoomModels connection={connection} connected={connected && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true} layout={layout} layoutLive={layoutLive} devices={devices} copies={runtime.copies}
         renderLight={(anchor, roomId, currentObservationsOnly = false) => {
           const bound = roomBinding(anchor, roomId, layout, devices, layoutLive);
           if ('reason' in bound) return <p>{bound.reason}</p>;

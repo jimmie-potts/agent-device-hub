@@ -1,5 +1,15 @@
 # Development setup
 
+## Presence Pro source checks
+
+The stock Native API module uses the existing build/type checks and
+`npm run test:presence-pro:built` after `npm run build`. The runtime CI suite
+also runs that focused suite through `test:runtime:built`. It covers the two
+independent sources, unknown/reset behavior, calibration, actual loopback Native
+API packets and authenticated state/history reads. Run `npm run typecheck`,
+`npm run lint:js`, `npm run check:workflow` and `npm run test:workflow` too.
+Synthetic reports do not qualify physical devices; #1842 owns that pilot.
+
 Use Node 24 from `.nvmrc` and run `npm ci` at the repository root. Read the
 [delivery workflow](sdlc.md) before implementation. For current product work,
 start with [runtime development](../apps/runtime/DEVELOPMENT.md); use the owning
@@ -3054,7 +3064,16 @@ active/one pending candidate, priority cancellation, missing receipts, delayed
 policy, full disk and restart/outbox recovery. Runtime's `companion-speech.test.js`
 checks the internal tracked adapter; `speech-live.test.js` uses the real gateway
 and two SDK browser sessions to check selected output, Quiet/mute and no catch-up.
-Both are discovered by the existing runtime CI suite. The `speech-session`,
+Both are discovered by the existing runtime CI suite.
+Recovery after restart (#1853) stays in these existing suites: the coordinator
+regression covers unchanged uncertain history, atomic acknowledgement/revision,
+stale and live refusal, subsequent restart and new uncertainty; session tests
+cover local idle, cancellation failure, connection loss and no command retry.
+The browser speech journey exercises explicit recovery, fresh enablement and a
+new utterance without replay. Run the same event, SDK, runtime gateway, dashboard,
+companions, build/type/lint, contract and workflow commands listed here. Existing
+CI discovery includes the new cases; no separate job is added.
+ The `speech-session`,
 `speech-browser`, `speech-qualification` and `speech-qualification-file` unit
 files check immediate local cancellation, ordered receipt writes, late endpoint
 registration, failed browser hints and private receipt refusal. The existing

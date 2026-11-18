@@ -1,4 +1,5 @@
 import {APARTMENT_STRIDE,type ApartmentScene,type SceneBounds,type SceneMesh,type SceneWall,type Vec} from './apartment-scene.ts';
+import type {PresencePoint,RoomPresence} from './apartment-presence.ts';
 
 export type CameraView = 'dollhouse' | 'overhead';
 export type ProjectedFixture = {id:string;x:number;y:number;visible:boolean};
@@ -6,6 +7,7 @@ export type ApartmentRenderer = {
   frame:(room:string|null,view:CameraView,cutaway:boolean)=>void;
   zoom:(factor:number)=>void;
   lights:(selected:string|null,power:ReadonlyMap<string,boolean|undefined>)=>void;
+  presence:(rooms:ReadonlyMap<string,RoomPresence>,points:readonly PresencePoint[])=>void;
   artwork:(id:string,image:ImageBitmap)=>void;
   dispose:()=>void;
 };
@@ -28,7 +30,7 @@ void main(){ vPoint=aPoint; vNormal=aNormal; vColor=aColor; vUv=aUv; vFinish=aFi
 const FRAGMENT=`
 precision mediump float;
 varying vec3 vPoint; varying vec3 vNormal; varying vec3 vColor; varying vec2 vUv; varying float vFinish;
-uniform sampler2D uImage; uniform bool uPrint; uniform float uPower; uniform bool uSelected;
+uniform sampler2D uImage; uniform bool uPrint; uniform float uPower; uniform bool uSelected; uniform float uOccupancy;
 void main(){
   vec3 n=normalize(vNormal);
   float daylight=.80+.19*max(dot(n,vec3(-.35,.82,.45)),0.)+.08*max(dot(n,vec3(.64,.43,-.63)),0.);
@@ -38,6 +40,8 @@ void main(){
     float seam=1.-smoothstep(.011,.035,fract(vPoint.z*6.2));
     float end=1.-smoothstep(.006,.018,fract(vPoint.x*.72+board*.38));
     color*=.96+.035*cos(board*1.31)+.025*cos(vPoint.x*2.7+board)-.13*max(seam,end);
+    if(uOccupancy>.5)color=mix(color,vec3(.94,.63,.22),.56);
+    if(uOccupancy<-.5)color=mix(color,vec3(.34,.68,.67),.40);
   }
   if(uPrint){ vec4 ink=texture2D(uImage,vUv); color=mix(color,ink.rgb*max(.91,daylight),ink.a); }
   if(uPower>.5)color=mix(color,vec3(1.,.865,.52),.43);
@@ -50,8 +54,8 @@ void main(){
 type BufferMesh={buffer:WebGLBuffer;count:number};
 
 /** No network or authority enters the renderer. It owns its GL resources and camera gestures. */
-export function createApartmentRenderer({canvas,scene,unavailable,project}:{
-  canvas:HTMLCanvasElement;scene:ApartmentScene;unavailable:()=>void;project:(points:ProjectedFixture[])=>void;
+export function createApartmentRenderer({canvas,scene,unavailable,project,projectPresence}:{
+  canvas:HTMLCanvasElement;scene:ApartmentScene;unavailable:()=>void;project:(points:ProjectedFixture[])=>void;projectPresence:(points:ProjectedFixture[])=>void;
 }):ApartmentRenderer {
   const context=canvas.getContext('webgl',{alpha:true,antialias:true,premultipliedAlpha:false});
   if(context===null)throw new Error('apartment-webgl');
@@ -97,10 +101,11 @@ export function createApartmentRenderer({canvas,scene,unavailable,project}:{
   const attributes=[['aPoint',3,0],['aNormal',3,12],['aColor',3,24],['aUv',2,36],['aFinish',1,44]] as const;
   const layout=attributes.map(([name,size,offset])=>({location:gl.getAttribLocation(program,name),size,offset}));
   const uniform=(name:string):WebGLUniformLocation|null=>gl.getUniformLocation(program,name);
-  const matrix=uniform('uMatrix'),print=uniform('uPrint'),image=uniform('uImage'),power=uniform('uPower'),highlight=uniform('uSelected');
+  const matrix=uniform('uMatrix'),print=uniform('uPrint'),image=uniform('uImage'),power=uniform('uPower'),highlight=uniform('uSelected'),occupancy=uniform('uOccupancy');
   let room:string|null=null,view:CameraView='dollhouse',target:SceneBounds=scene.bounds,cutaway=true,
     yaw=.66,pitch=.79,magnification=1,selected:string|null=null,powers:ReadonlyMap<string,boolean|undefined>=new Map();
-  function draw(mesh:SceneMesh,texture?:WebGLTexture,lit?:boolean,selected=false):void {
+  let presenceRooms:ReadonlyMap<string,RoomPresence>=new Map(),presencePoints:readonly PresencePoint[]=[];
+  function draw(mesh:SceneMesh,texture?:WebGLTexture,lit?:boolean,selected=false,roomOccupancy=0):void {
     const data=buffers.get(mesh);if(data===undefined)return;
     gl.bindBuffer(gl.ARRAY_BUFFER,data.buffer);
     for(const {location,size,offset} of layout){
@@ -108,6 +113,7 @@ export function createApartmentRenderer({canvas,scene,unavailable,project}:{
       gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,size,gl.FLOAT,false,APARTMENT_STRIDE,offset);
     }
     gl.uniform1i(print,texture===undefined?0:1);gl.uniform1f(power,lit===undefined?0:lit?1:-1);gl.uniform1i(highlight,selected?1:0);
+    gl.uniform1f(occupancy,roomOccupancy);
     if(texture!==undefined)gl.bindTexture(gl.TEXTURE_2D,texture);
     gl.drawArrays(gl.TRIANGLES,0,data.count);
   }
@@ -132,22 +138,29 @@ export function createApartmentRenderer({canvas,scene,unavailable,project}:{
     const transform=cameraMatrix(eye,target.center,w,h,target.radius*1.12*magnification,depth);
     gl.viewport(0,0,width,height);gl.enable(gl.DEPTH_TEST);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
     gl.useProgram(program);gl.uniformMatrix4fv(matrix,false,transform);gl.activeTexture(gl.TEXTURE0);gl.uniform1i(image,0);
-    for(const [id,{mesh}] of scene.rooms)if(shown(id))draw(mesh);
+    for(const [id,{mesh}] of scene.rooms)if(shown(id)){
+      const state=presenceRooms.get(id)?.value;
+      draw(mesh,undefined,undefined,false,state==='occupied'?1:state==='vacant'?-1:0);
+    }
     for(const wall of scene.walls)if(room===null||wall.rooms.includes(room))draw(shorten(wall,eye)?wall.low:wall.full);
     for(const {item,mesh,print:panel} of scene.art)if(shown(item.roomId)){
       draw(mesh);
       const texture=item.asset===null?undefined:textures.get(item.asset);
       if(texture!==undefined)draw(panel,texture);
     }
+    const projected=(id:string,point:Vec):ProjectedFixture=>{
+      const px=((transform[0]??0)*point[0]+(transform[4]??0)*point[1]+(transform[8]??0)*point[2]+(transform[12]??0))*.5+.5;
+      const py=.5-((transform[1]??0)*point[0]+(transform[5]??0)*point[1]+(transform[9]??0)*point[2]+(transform[13]??0))*.5;
+      return {id,x:px*w,y:py*h,visible:px>.045&&px<.955&&py>.06&&py<.94};
+    };
     const points:ProjectedFixture[]=[];
     for(const {item,mesh,point} of scene.fixtures){
       if(!shown(item.roomId))continue;
       draw(mesh,undefined,powers.get(item.id),item.id===selected);
-      const px=((transform[0]??0)*point[0]+(transform[4]??0)*point[1]+(transform[8]??0)*point[2]+(transform[12]??0))*.5+.5;
-      const py=.5-((transform[1]??0)*point[0]+(transform[5]??0)*point[1]+(transform[9]??0)*point[2]+(transform[13]??0))*.5;
-      points.push({id:item.id,x:px*w,y:py*h,visible:px>.045&&px<.955&&py>.06&&py<.94});
+      points.push(projected(item.id,point));
     }
     project(points);
+    projectPresence(presencePoints.filter(point=>shown(point.roomId)).map(point=>projected(point.id,point.position)));
     canvas.dataset.rendered='true';canvas.dataset.yaw=String(yaw);canvas.dataset.distance=String(magnification*target.radius);
     canvas.dataset.frame=room??'apartment';canvas.dataset.camera=view;canvas.dataset.cutaway=String(cutaway);
   }
@@ -184,6 +197,7 @@ export function createApartmentRenderer({canvas,scene,unavailable,project}:{
     },
     zoom,
     lights:(chosen,reports)=>{selected=chosen;powers=reports;schedule();},
+    presence:(reports,points)=>{presenceRooms=reports;presencePoints=points;schedule();},
     artwork:(id,bitmap)=>{
       if(disposed||textures.has(id))return;
       const texture=gl.createTexture();if(texture===null)throw new Error('apartment-texture');

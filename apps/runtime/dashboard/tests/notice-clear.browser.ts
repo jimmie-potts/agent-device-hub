@@ -1,4 +1,4 @@
-import {openConnections} from './navigation-helpers.ts';
+import {destinationLink, openConnections} from './navigation-helpers.ts';
 // One focused confirmed Connections journey against the built synthetic runtime; no installed services or devices.
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
@@ -36,7 +36,7 @@ try {
     await page.getByText('Synced session acknowledgments: dashboard, nanoleaf, pixoo.', {exact: true}).waitFor();
     assert.equal(clears(), 1);
     await page.getByRole('button', {name: 'Close', exact: true}).click();
-    await page.getByRole('link', {name: /^Home/}).click();
+    await (await destinationLink(page, /^Home/)).click();
     await page.locator('article.session .chip', {hasText: 'Idle'}).waitFor();
     assert.equal(await page.getByRole('button', {name: /acknowledge/i}).count(), 0);
     world.dropDashboardStreams(); await feed(page, 'connected');

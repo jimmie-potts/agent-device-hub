@@ -6,6 +6,23 @@ Run commands from the repository root with Node 24 and the dependencies in
 
 ## Runtime checks
 
+Presence Pro uses `npm run test:presence-pro:built` and
+`node --test apps/runtime/dist/tests/presence-pro.test.js` after the root build.
+The latter is a disposable authenticated state/SDK/history exercise. Existing
+`test:runtime:built` discovery and aggregation run both in CI. Container profile
+admission remains covered by `node --test deploy/container/tests/entrypoint.test.mjs`.
+See the [module guide](../../modules/presence-pro/README.md) for the stock report
+and real loopback Native API checks. No household target is used by these tests.
+
+For local Codex title lookup, after `npm run build` run
+`node --test apps/runtime/tests/mac-codex-hook.test.mjs` and the built runtime
+`hook` and `remote-hooks` suites. The wrapper tests cover explicitly selected
+titles and renames, unavailable titles, supplied-field exclusion and the
+unversioned activity-only path using a synthetic Codex home and loopback receiver.
+The Container and operator checks CI job already runs this wrapper suite.
+Installed producer/receipt selection and the physical Tronbyt rows require
+separate readback; passing source tests changes neither.
+
 For retired standby options and settings history modes, use the focused
 refusal cases in `deploy/container/tests/entrypoint.test.mjs`,
 `scripts/tests/bunny.test.mjs` and `apps/runtime/tests/runtime-ownership.test.ts`.
@@ -801,6 +818,53 @@ navigation, retained page addresses, passive browsing and light/dark desktop/pho
 layout. The existing hosted smoke and full browser entries include this
 journey; synthetic browser proof does not establish actual-phone or device results.
 
+The rail (#1887) extends the same journey and the dashboard unit discovery.
+`node --test apps/runtime/dashboard/tests/rail-preference.test.ts` covers the
+collapse preference: the default for each window size, one remembered choice per
+size, damaged values, refused or missing storage and a change from another tab.
+`node apps/runtime/dashboard/tests/shell.browser.ts` checks that Settings, the
+feed indicator and the control mode sit at the bottom of a rail that stays in
+view; that the rail is expanded at 1440px and an icon rail at 1024px, with each
+destination's name kept once and shown on hover; that a toggle survives a reload
+for its own window size only and still works when the save is refused; and that
+at 390px the menu button opens a drawer which Escape, an outside tap and a chosen
+destination close. Journeys that navigate at phone width open the drawer through
+`destinationLink` or `openSettings` in
+`apps/runtime/dashboard/tests/navigation-helpers.ts`. Run every
+dashboard browser journey for a shell change, since the main column's width
+below 1200px depends on the rail.
+
+The jump palette (#1888) uses the same two entries.
+`node --test apps/runtime/dashboard/tests/jump.test.ts` covers the list (hub
+destinations, the pages of running modules once each, and recent pages without
+the current one), the filter's ranking over names and hints, which inputs
+count as text fields, and the key rules: Command or Control and K, the Mac
+exception for Control and K in a text field, the slash outside a field, menu,
+list or dialog, and no key while a modal dialog or a full-screen element covers
+the page.
+`node apps/runtime/dashboard/tests/shell.browser.ts` opens the palette from the
+keyboard, the rail's field, the phone bar and the phone drawer; checks the
+groups, arrow keys, narrowing, the empty result and that a stopped module's
+pages leave the list after a catalog read; checks that the page and the rail
+are inert behind it, that closing returns focus, that the browser's back button
+closes it, that a chosen page opens at its top with focus on the page from a
+scrolled one, and that it fits 390px and 320px windows; and records no command, sync, upload or provider request while
+it opens, narrows and closes. It also checks the chosen row's 3:1 boundary in
+both themes, that a scrolled list stays put when the shell renders, that the
+keys work and typing reaches the field with focus outside it, that a press on a
+heading or the footer keeps focus in the field, that the palette's stacking
+level is above the full-window visualizer's, that a stubbed full-screen element
+keeps it closed, that a slash on a slider opens it, that a held Enter opens it
+without choosing a row, that the toggle's box and focus ring stay clear of the
+brand, that a connected rail stays in view in a 580px window, and that an ended
+session's rail can be reached in 580px and 600px windows. It is opened there on the Devices directory,
+which mounts no module page, because a module page reads its copies with a sync
+request when it mounts.
+`node apps/runtime/dashboard/tests/conversation-workspace.browser.ts` checks
+that a slash typed in the composer is text, that the palette opened from the
+composer returns focus and the draft, and that it stays closed under the modal
+Details drawer.
+
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`
 for bounded metadata, operator admission, atomic revision guards and restart.
@@ -991,6 +1055,17 @@ simulator checks, not physical-display acceptance.
 The permanent `#/habitat` page is covered by `test:runtime-dashboard:built`, the full dashboard browser suite and the hosted smoke entry. For a focused run after `npm run build`, use `node apps/runtime/dashboard/tests/habitat.browser.ts` with a private outside-checkout `TMPDIR` as required by the runtime state contract. This exercises synthetic session lifecycle events through the disposable core and existing shell connection, not an installed runtime or physical device. The browser check includes dark/light desktop and 390 px layout, local settings transfer, reconnection and renderer cleanup. Allocation and preference failure cases live in `dashboard/tests/habitat.test.ts`.
 
 ### Furnished apartment checks
+
+Anonymous reported presence (#1837) uses the public Presence Pro contract and
+the existing dashboard SDK copies. After `npm run build`, run
+`node --test apps/runtime/dashboard/tests/apartment-presence.test.ts apps/runtime/dashboard/tests/runtime-feeds.test.ts`
+and `node apps/runtime/dashboard/tests/room-models.browser.ts`. Existing dashboard
+unit discovery and App verification's room-model journey include these checks.
+The synthetic real-owner journey covers room-only reports, separate sensors,
+held/unknown points, receipt-time limitations, loss/reconnect, desktop/phone and
+zero commands. Use a private outside-checkout `TMPDIR`; it contacts no hardware.
+Run the normal shared build/type/lint/contract/workflow and dashboard suites.
+Physical enrollment, manual placement checks and usefulness belong to #1842.
 
 After `npm run build`, run `node --test apps/runtime/dist/tests/apartment*.test.js`
 and the existing `node apps/runtime/dashboard/tests/room-models.browser.ts` journey.

@@ -556,6 +556,7 @@ and reaching a physical device remains #568's exact-target check.
 | Art | Outbound HTTPS to `api.openai.com` and `api.anthropic.com`, only for keys its section names. |
 | Companions | Outbound HTTPS to `api.anthropic.com` only when the section selects the Anthropic provider for the B.U.N.N.Y. conversation; the synthetic default makes no outbound connection. |
 | Weather | Outbound HTTPS to `api.weather.gov`. The section's coordinates go only there. |
+| Presence Pro | Outbound TCP to each exact configured Native API endpoint, normally port 6053, using its configured Noise/plaintext and optional password. Read-only subscriptions; no multicast discovery. |
 | Codex Desktop, companions | None. Remote Desktop evidence arrives through the private HTTPS route. |
 
 ## Diagnostics stack

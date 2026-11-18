@@ -50,6 +50,19 @@ Inputs SHALL use bounded authenticated upload staging with references bound to r
 - **WHEN** committed outcomes are republished after restart
 - **THEN** their original identity and trace survive and no task is activated by republishing
 
+#### Scenario: Recent and earlier private pages
+- **WHEN** an authorized reader requests the opt-in recent view of a saved conversation
+- **THEN** version 2 identifies the profile and conversation, returns the newest window of up to 16 complete messages in chronological order and at most 65,536 UTF-8 bytes including metadata, and supplies the latest task and saved question independently of the messages
+- **AND** an exclusive earlier cursor stays bound to that profile and conversation, advances below the oldest returned message, and terminates with a null cursor when no older message remains
+- **AND** an earlier page cannot supply a different current question, and the ordinary version 1 profile/after read retains its forward behavior
+
+#### Scenario: Invalid or oversized history read
+- **WHEN** a reader mixes history modes or supplies an invalid, unsafe or mismatched earlier cursor
+- **THEN** the existing invalid-request result refuses the read
+- **AND** denied reads keep the shared authorization refusal and owner read failures use unavailable
+- **AND** if even the first complete row and metadata cannot fit, the read returns capacity without skipping the row or returning a nonadvancing cursor
+- **AND** reads change no stored data and emit no lifecycle observations
+
 ### Requirement: Configured model provider
 
 The companions module SHALL run every task through one provider behind a tool-capable turn contract: a turn receives the fixed instructions, the task's own transcript, the permitted tool definitions, the current Hub mode and the prompt context, and answers with text, a question for the owner, tool calls or a refusal, plus reported usage or unknown. The module SHALL take a companions section, as every configured module does; with an empty section or one that names no provider, the provider SHALL be the labelled synthetic one, which makes no network call. A section whose `assistant.provider` is `anthropic` SHALL name the model, the effort and, under the section's `secrets`, the API key file; the module SHALL read the key once at start, never log, publish or store it, and SHALL refuse the section without the secret or with an unsupported provider. The `bunny` profile alone SHALL use the configured provider; other profiles SHALL keep the synthetic provider. The prompt SHALL contain only the owner's typed text, tool definitions, tool results, the fixed instructions, the current Hub mode and the prompt context: the task profile's curated persona and the owner's currently active explicit preferences, read from the module's own records at each model call and rendered as owner data that grants no tool, permission or device authority. No knowledge entry, conversation history, other task, inactive or historical preference or private context document SHALL enter the prompt. When the rendered prompt context exceeds 16 KiB the model call SHALL be refused before dispatch with a capacity outcome whose transcript message names the cause; nothing SHALL be truncated silently. A provider refusal, unavailability, rate limit or malformed answer SHALL end the task failed or unavailable with a registry code and no fallback to another model; a lost answer SHALL leave the call uncertain. Public state SHALL carry the provider, model and allowed tool names.
@@ -124,7 +137,7 @@ The core SHALL answer an `assistant-dispatch` command only from `bunny/modules/c
 
 ### Requirement: Conversation panel
 
-The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assistant` page: the provider and model, allowed and unavailable tools, the coding worker's availability, usage in tokens or unknown, the saved conversation with owner, assistant and tool messages, and explicit send, answer, approve, decline, resume and cancel controls. It SHALL carry the speech endpoint controls as spoken replies (enable in this tab, mute, stop speaking, playback and tracked operation) and a Speak control beside each saved assistant message within the spoken bound, stating that enabling makes the tab the one speaker and that stopping speech does not cancel the task. A delegation proposal SHALL show its repository, brief and bound revision; a waiting delegation SHALL say it waits for the worker and offer cancel, not an answer box. It SHALL label the synthetic provider as making no paid calls, preserve written context and saved questions on reload, and distinguish control receipts from task state. Disconnection SHALL be visible and prevent mutation against stale state. Assistant activation SHALL default off without affecting fixed-text Reachy or coding-session lifecycle ownership.
+The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assistant` page: the provider and model, allowed and unavailable tools, the coding worker's availability, reported usage in hosted tokens or synthetic units, and unknown when usage is unreported, the saved conversation with owner, assistant and tool messages, and explicit send, answer, approve, decline, resume and cancel controls. It SHALL carry the speech endpoint controls as spoken replies (enable in this tab, mute, stop speaking, playback and tracked operation) and a Read aloud control beside each saved assistant message within the spoken bound, stating that enabling makes the tab the one speaker and that stopping speech does not cancel the task. A delegation proposal SHALL show its repository, brief and bound revision; a waiting delegation SHALL say it waits for the worker and offer cancel, not an answer box. It SHALL label the synthetic provider as making no paid calls, preserve written context and saved questions on reload, and distinguish control receipts from task state. Disconnection SHALL be visible and prevent mutation against stale state. Assistant activation SHALL default off without affecting fixed-text Reachy or coding-session lifecycle ownership.
 
 #### Scenario: Approval by keyboard
 - **WHEN** a task waits for approval and the owner reloads the page and operates it by keyboard
@@ -135,12 +148,114 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 - **THEN** saved history stays readable, every mutating control is disabled, and the page says why
 
 #### Scenario: Spoken replies by keyboard
-- **WHEN** the owner enables spoken replies in the Conversation tab by keyboard, sends a request and activates Speak on the saved answer
-- **THEN** the question, result and replay are spoken through that tab and the Speak receipt is shown apart from the playback report
+- **WHEN** the owner enables spoken replies in the Conversation tab by keyboard, sends a request and activates Read aloud on the saved answer
+- **THEN** the question, result and replay are spoken through that tab and the Read aloud receipt is shown apart from the playback report
 
 #### Scenario: Delegation on the page
 - **WHEN** the model proposes a delegation and the owner approves it by keyboard
 - **THEN** the proposal shows the repository, brief and bound revision, the page then shows the delegated work waiting for the worker with cancel available, and the worker's result appears as a tool message
+
+#### Scenario: Open, refresh and page through recent history
+- **WHEN** a dashboard consumer opens a profile with the recent reader, refreshes it as new messages arrive, or explicitly loads an earlier page
+- **THEN** it opens at the newest window, displays loaded messages in chronological order without duplication or dropping previously loaded rows, and preserves the latest saved clarification, approval or delegation separately from pagination
+- **AND** a successful refresh does not fetch earlier pages automatically, and an explicit gap separates disjoint windows until the reader joins them
+- **AND** an obsolete or wrong-profile response cannot replace the selected profile's history, and a failed read may retain prior visible history while explicit retry repeats only the read
+
+#### Scenario: Read at a stable scroll position
+- **WHEN** the owner loads earlier saved messages or new saved messages arrive while they are reading above the latest exchange
+- **THEN** the viewed saved row stays in position and new arrivals offer a New messages action
+- **AND** a live state revision preserves a Load earlier request already in flight for that profile
+
+#### Scenario: Draft and task decisions in the composer
+- **WHEN** the owner changes profiles, opens Details, resizes the page or reconnects in the same mounted page
+- **THEN** the profile and question drafts remain in page memory, including text retained after submission
+- **AND** the composer blocks conflicting starts but allows browsing saved history and returning to the unfinished task
+- **AND** Enter submits eligible text outside IME composition, and Shift+Enter inserts a newline
+- **AND** full approval scope and active questions and waits remain visible outside collapsed routine facts
+
+#### Scenario: Compact composer and UTF-8 guidance
+- **WHEN** the owner composes a message or answers a saved clarification
+- **THEN** one input surface gives the text a Message or Answer identity and places the input action beside Voice
+- **AND** keyboard guidance and a short private-saving and model disclosure stay visible, while Conversation settings explains submitted and unsent text
+- **AND** the exact UTF-8 byte count appears at 80% of the 4,096-byte limit or above, and an over-limit draft shows a refusal and cannot submit
+
+#### Scenario: Retain a draft after a refused or lost reply
+- **WHEN** a submission is refused or its reply is lost
+- **THEN** the draft and tracked receipt remain visible and the page sends no retry
+
+#### Scenario: Guard an unavailable task decision
+- **WHEN** the assistant copy is removed or the current saved question is missing or refers to another question
+- **THEN** loaded messages remain readable and answer and approval actions remain unavailable
+- **AND** Refresh history makes one deliberate latest read when the current saved question or proposal is unavailable
+
+#### Scenario: Inspect labelled Details
+- **WHEN** a reader opens Details from the Conversation header
+- **THEN** Conversation details shows the selected profile and an explicit close action, with an independently scrolling panel beside the conversation at wide widths and an overlay at narrow widths
+- **AND** Capabilities, Task activity, Usage and Conversation settings start collapsed and expand independently, with the full saved values readable inside the panel
+- **AND** Close, Escape and tapping outside the narrow overlay return focus to Details, keep the draft and transcript position, and send no commands
+- **AND** closing Details gives the wide conversation its space back, and resizing preserves the open sections and viewed saved row
+- **AND** opening Details or Voice dismisses the other panel while keeping the original speech endpoint, and Stop speaking remains available during local playback with narrow Details open
+- **AND** provider and tool facts, worker availability, task identifiers and bounds, saved question and answer, diagnostic codes, successful control receipts and usage retain their meaning
+- **AND** retained assistant facts read as Last known, a missing worker copy reads as unknown, and usage distinguishes unknown, zero, synthetic units and hosted tokens without estimating billed cost
+- **AND** active decisions, task result cues, blockers, and unresolved or negative control outcomes remain visible by the relevant controls
+
+#### Scenario: Use existing conversation settings
+- **WHEN** the owner opens Conversation settings
+- **THEN** the section explains saved input and offers the current enable or disable action through the same guarded command
+- **AND** a reader or stale copy cannot mutate, and an unfinished task prevents disabling the conversation
+
+#### Scenario: Read saved conversation messages
+
+- **WHEN** the reader opens a saved exchange at desktop or narrow widths
+- **THEN** assistant replies use open text and owner messages use modest bubbles in a reading column aligned with the composer
+- **AND** paragraphs, long URLs and markup remain literal, wrap to fit and retain the complete saved text
+- **AND** each eligible assistant reply has a quiet labelled Read aloud action, and tool messages have a labelled Tool result disclosure
+
+#### Scenario: Start with empty history
+
+- **WHEN** the selected profile has a fresh, successful empty history read and can accept a new message
+- **THEN** the transcript offers a short invitation to send a message
+- **AND** while a read or a new message is unavailable, the page shows the applicable history state or blocker instead of the invitation
+
+#### Scenario: See ordinary completion and required decisions
+
+- **WHEN** a live task succeeds
+- **THEN** a compact completion cue appears by the composer, with task facts in Details
+- **AND** unresolved or unsuccessful outcomes, stale state, waits and decisions remain visible when they affect the next action
+
+#### Scenario: Expand saved tool text
+- **WHEN** the owner or reader opens a tool result on a saved transcript row
+- **THEN** the full inert text can be read without horizontal page overflow, and the row retains its original task association and message order
+- **AND** opening or closing the result does not fetch, send a command, or replay text or audio
+- **AND** loading earlier saved messages keeps the result open and preserves the current reading position within it
+
+#### Scenario: Compact spoken reply controls
+- **WHEN** the owner opens Voice on the Conversation page
+- **THEN** the titled Spoken replies panel explains browser output, shows the current blocker or Quiet suppression beside the existing Enable, Mute and eligible recovery actions, and keeps detailed requirements and playback evidence available in a disclosure
+- **AND** explicit close and Escape return keyboard focus to Voice, and clicking outside dismisses the panel without taking focus from the clicked control
+- **AND** opening or dismissing the panel preserves the draft and current speech endpoint without sending a command
+- **AND** an unresolved playback reservation disables Enable until it is cleared, and historical uncertainty remains in the playback disclosure without overriding a later successful Enable
+- **AND** Stop speaking remains available outside the panel during local playback and leaves the task and question unchanged
+- **AND** Read aloud uses the tracked command for the same saved assistant message within the speech limit, presents the command receipt separately from playback, and explains why a longer message stays written only
+
+### Requirement: Viewport-filling Conversation workspace
+
+The Conversation page SHALL use remaining viewport height for the transcript and keep the composer in view when the controls fit. The page SHALL retain the Hub navigation and existing companion page links, and distinguish the everyday B.U.N.N.Y. profile from the Reachy and MicroDuck demo chat profiles before selection.
+
+#### Scenario: Read and compose in the available viewport
+- **WHEN** the owner opens an empty or short conversation on desktop or a narrow phone viewport
+- **THEN** the selected profile, transcript and composer fit without scrolling the document, and additional viewport height increases the transcript height
+- **AND** a long decision or constrained viewport still allows scrolling to read its full text and reach every action
+
+#### Scenario: Browse profiles and companion pages
+- **WHEN** the owner inspects the chat choices or opens Companion pages
+- **THEN** both demos are labelled before selection and the device-management links remain distinct from the chat choices
+- **AND** the companion navigation retains its existing links and current page indication
+- **AND** switching to a demo while another profile has unfinished work allows inspection of its separate history without a conflicting start
+
+#### Scenario: Resize or open local navigation while reading
+- **WHEN** the owner resizes the viewport or opens and closes Companion pages without leaving Conversation
+- **THEN** the mounted conversation keeps the reading position and draft, and sends no command or additional speech endpoint registration
 
 ### Requirement: Spoken replies to typed requests
 
@@ -151,8 +266,8 @@ When a task turn ends with a result, a question for the owner or a refusal, the 
 - **THEN** the question and the result are each spoken once through the reserved endpoint with the saved text, and a restart between them speaks nothing
 
 #### Scenario: Speak replays a saved answer
-- **WHEN** the owner activates Speak beside a saved assistant message
-- **THEN** one accepted control receipt is recorded, the message is spoken again as its own utterance, a repeated request id speaks nothing more, and Speak on owner text or an unknown message is refused
+- **WHEN** the owner activates Read aloud beside a saved assistant message
+- **THEN** one accepted control receipt is recorded, the message is spoken again as its own utterance, a repeated request id speaks nothing more, and a direct speak request for owner text or an unknown message is refused
 
 #### Scenario: Stop without cancellation
 - **WHEN** the owner stops speech while a question is being spoken

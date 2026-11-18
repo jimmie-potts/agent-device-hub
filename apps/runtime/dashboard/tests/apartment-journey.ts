@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdir,unlink,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {Browser,Page} from 'playwright';
+import {PACKET} from '@jimmie-potts/lifx';
 import {apartmentArtPath,parseApartmentModel} from '../../src/apartment-model.ts';
 import {syntheticApartmentArtwork} from '../../dist/tests/fixtures/apartment.js';
 import {furnishedFixture} from './apartment-fixture.ts';
@@ -23,7 +24,8 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
   await mkdir(assets,{recursive:true,mode:0o700});
   await writeFile(join(folder,'active.json'),JSON.stringify(model),{mode:0o600});
   await writeFile(file,bytes,{mode:0o600});
-  const desktop=await browser.newContext({viewport:{width:1280,height:1000}});
+  // Keep the card's flip animation out of the guarded command and recovery checks.
+  const desktop=await browser.newContext({viewport:{width:1280,height:1000},reducedMotion:'reduce'});
   try{
     const page=await desktop.newPage();page.setDefaultTimeout(10_000);
     const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
@@ -80,6 +82,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await replaceLayout('apartment-assign-fixtures',layout);
     const view=panel(page),canvas=view.locator('canvas[data-rendered=true]'),frame=view.getByRole('combobox',{name:'Frame the apartment or a room'});
     await canvas.waitFor();
+    await view.getByText('No presence sensors configured or reports available.',{exact:true}).waitFor();
     assert.ok(Number(await canvas.getAttribute('width'))*Number(await canvas.getAttribute('height'))<=2_005_000);
     assert.equal(await canvas.getAttribute('data-frame'),'apartment');
     await view.getByText('Artwork unavailable: Reading room print.',{exact:true}).waitFor();
@@ -110,6 +113,14 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await world.restart();await page.reload();await feed(page,'connected');await selectLight(page,'Reading wall light');
     await report.filter({hasText:nextPower?'On · reported':'Off · reported'}).waitFor();
     assert.equal(sent.length,1,'reconnect shows the latest reading and does not repeat the command');
+    const deviceSnapshot=await page.request.get(world.url+'/api/v2/snapshot?families=device&owner=bunny%2Fmodules%2Flifx');
+    assert.equal(deviceSnapshot.status(),200);
+    const snapshot:unknown=await deviceSnapshot.json();
+    assert.ok(typeof snapshot==='object'&&snapshot!==null&&'records' in snapshot);
+    const {records}=snapshot;
+    assert.ok(typeof records==='object'&&records!==null&&'device' in records&&Array.isArray(records.device));
+    const target:unknown=records.device.find((device:unknown)=>typeof device==='object'&&device!==null&&'id' in device&&device.id==='lamp-b');
+    assert.ok(typeof target==='object'&&target!==null&&'configurationRevision' in target&&'generation' in target);
     await page.route('**/api/sdk/v1/stream',route=>route.abort());world.dropDashboardStreams();
     await view.locator('.apartment-selection').getByText('Room assignments are stale.').waitFor();
     await page.unroute('**/api/sdk/v1/stream');await feed(page,'connected');await card.waitFor();
@@ -117,12 +128,34 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await view.locator('.apartment-selection').getByText('This device is not assigned to this room.').waitFor();
     assert.equal(await card.count(),0);
     await replaceLayout('apartment-restore',layout);await card.waitFor();
-    world.loseDeviceReply();await card.getByRole('button',{name:nextPower?'Off':'On',exact:true}).click();
-    await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor();
+    const writes=()=>world.lifxState().packets.filter(packet=>packet.type!==PACKET.lightGet);
+    const wallPowerWrite={address:'192.0.2.43',type:PACKET.setPower};
+    assert.deepEqual(writes(),[wallPowerWrite],'reassignment and reconnect send no device write');
+    world.loseDeviceReply();
+    const [acceptance]=await Promise.all([
+      page.waitForResponse(reply=>reply.request().method()==='POST'&&reply.url()===world.url+'/api/v2/commands/power-set'),
+      card.getByRole('button',{name:nextPower?'Off':'On',exact:true}).click(),
+    ]);
+    const command:unknown=acceptance.request().postDataJSON();
+    assert.ok(typeof command==='object'&&command!==null&&'requestId' in command&&typeof command.requestId==='string'&&command.requestId.length>0);
+    assert.deepEqual(command,{target:'lamp-b',requestId:command.requestId,data:{on:!nextPower,
+      expectedConfigurationRevision:target.configurationRevision,expectedGeneration:target.generation}});
+    assert.equal(acceptance.status(),200);
+    assert.deepEqual(await acceptance.json(),{schema:'command-reply/2.0',status:'accepted',requestId:command.requestId});
+    assert.equal(sent.length,2,'one deliberate action sent the uncertain request');
+    // Hosted CI observed the terminal operation near 10s, with almost no time left to observe it in the card.
+    await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor({timeout:15_000});
+    assert.equal(world.lifxState().bulbs['192.0.2.43']?.power,!nextPower);
+    assert.equal(world.lifxState().bulbs['192.0.2.42']?.power,untouched);
+    const writesAfterUncertainty=[wallPowerWrite,wallPowerWrite,wallPowerWrite];
+    assert.deepEqual(writes(),writesAfterUncertainty,'the owner made its two allowed protocol attempts for the single lost-reply command');
+    // Keep recovery reads from changing availability during the later artwork checks.
+    world.offlineLifx(wallPowerWrite.address);
     await page.reload();await feed(page,'connected');await selectLight(page,'Reading wall light');
     await card.getByRole('status').filter({hasText:/Uncertain/}).waitFor();
     assert.equal(await card.getByRole('button',{name:'Off',exact:true}).isDisabled(),true);
     assert.equal(sent.length,2,'reload never retries a retained request with an uncertain result');
+    assert.deepEqual(writes(),writesAfterUncertainty,'reload does not replay the uncertain write');
     await page.waitForFunction(()=>window.apartmentTestResources.textures===1);
     await page.getByRole('link',{name:'Devices',exact:true}).click();
     await page.waitForFunction(()=>{const r=window.apartmentTestResources;return r.buffers===0&&r.textures===0&&r.programs===0;});
@@ -145,6 +178,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     await card.getByText('Brightness · requested',{exact:false}).waitFor();
     if(process.env.DASHBOARD_RECEIPTS!==undefined)await view.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/apartment-missing-art.png'});
     assert.equal(sent.length,2,'missing artwork and departure send no light command');
+    assert.deepEqual(writes(),writesAfterUncertainty);
     assert.deepEqual(errors,[]);
     const fallback=await desktop.newPage();
     await fallback.addInitScript(()=>{HTMLCanvasElement.prototype.getContext=()=>null;});

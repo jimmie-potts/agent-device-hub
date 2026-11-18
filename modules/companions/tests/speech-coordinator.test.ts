@@ -54,6 +54,9 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     control: (action: 'enable' | 'stop' | 'mute', endpoint = 'endpoint-one') => browser.request(`bunny.cmd.companion-speech-endpoint.${endpoint}`, {
       type: 'org.bunny.companion-speech.endpoint.requested', subject: endpoint, dataschema: 'https://bunny.invalid/events/companion-speech-endpoint/2.0',
       data: {requestId: `control-${++id}`, action, ...(action === 'enable' ? {available: true} : {})}}, {timeoutMs: 5000}),
+    recover: (operationId: string, expectedRevision = owner().inspect().revision) => browser.request('bunny.cmd.companion-speech-endpoint.endpoint-recovery', {
+      type: 'org.bunny.companion-speech.endpoint.requested', subject: 'endpoint-recovery', dataschema: 'https://bunny.invalid/events/companion-speech-endpoint/2.1',
+      data: {requestId: `recovery-${++id}`, action: 'recover', operationId, expectedRevision, previousPlaybackStopped: true}}, {timeoutMs: 5000}),
     report: async (playback: SpeechPlayback, endpoint = 'endpoint-one') => {outcomes.push(playback); await browser.publish(`bunny.event.companion-speech-playback.${endpoint}`, {
       kind: 'occurrence', type: 'org.bunny.companion-speech.playback.observed', subject: endpoint, dataschema: 'https://bunny.invalid/events/companion-speech-playback/2.0', data: playback}, {parent});},
     lost: (endpoint = 'endpoint-one') => gateway.publish(`bunny.event.companion-speech-lost.${endpoint}`, {kind: 'occurrence', type: 'org.bunny.companion-speech.endpoint-lost',
@@ -323,4 +326,67 @@ void test('a reply preempts a notice after confirmed stop, waits for active codi
   w.owner().offerReply(spoken('task-4', 'task-4-result', 'Expired.', now()), 'task-4-result', parent, w.owner().mark()); await w.advance();
   w.allow(false); w.owner().offerReply(spoken('task-5', 'task-5-result', 'Quiet.', now() + 60_000), 'task-5-result', parent, w.owner().mark()); await w.advance();
   assert.equal(w.outputs.length, 4);
+});
+
+void test('orphan recovery preserves uncertainty and deduplication, stays off across restart and permits only fresh speech', async t => {
+  const w = await world(t); await w.control('enable');
+  const old = w.card(); w.owner().offer(old, parent, w.owner().mark()); await w.advance(); await until(() => w.outputs.length === 1);
+  const operationId = w.outputs[0]?.data.operationId ?? assert.fail('operation');
+  await w.report({operationId, status: 'started', started: true});
+  const legacy = w.host().moduleDatabase(); assert.ok(legacy);
+  legacy.exec('DROP TABLE companion_speech_recovery');
+  await w.restart();
+  assert.equal((await w.control('enable')).status, 'rejected');
+  assert.equal((await w.recover(operationId)).status, 'accepted');
+  assert.equal(w.owner().inspect().availability, 'off'); assert.equal(w.owner().inspect().playback, null);
+  const db = w.host().moduleDatabase(); assert.ok(db);
+  assert.deepEqual({...db.prepare('SELECT playback, started FROM companion_speech WHERE operation_id=?').get(operationId)}, {playback: 'uncertain', started: 1});
+  assert.ok(w.reports.every(report => report.result === 'uncertain'));
+  await w.advance(); assert.equal(w.outputs.length, 1);
+  await w.restart(); assert.equal(w.owner().inspect().availability, 'off');
+  assert.equal((await w.control('enable', 'endpoint-two')).status, 'accepted');
+  assert.equal((await w.control('enable')).status, 'rejected');
+  w.owner().offer(old, parent, w.owner().mark()); await w.advance(); assert.equal(w.outputs.length, 1);
+  w.owner().offer(w.card(), parent, w.owner().mark()); await w.advance(); await until(() => w.outputs.length === 2);
+  assert.equal(w.outputs[1]?.subject, 'endpoint-two');
+  await w.restart(); assert.equal(w.owner().inspect().availability, 'unavailable');
+  assert.equal((await w.control('enable')).status, 'rejected', 'new uncertainty is not covered by an older recovery');
+});
+
+void test('recovery refuses live, stale and wrong-operation requests and rolls back acknowledgement on revision failure', async t => {
+  const w = await world(t); await w.control('enable');
+  assert.equal((await w.recover('missing-operation')).status, 'rejected');
+  w.owner().offer(w.card(), parent, w.owner().mark()); await w.advance(); await until(() => w.outputs.length === 1);
+  const operationId = w.outputs[0]?.data.operationId ?? assert.fail('operation');
+  await w.lost(); await until(() => w.owner().inspect().playback?.status === 'uncertain');
+  assert.equal((await w.recover(operationId)).status, 'rejected', 'a live attempt remains reserved after connection loss');
+  await w.restart(); const before = w.owner().inspect();
+  assert.equal(before.recoveryOperationId, operationId);
+  assert.equal((await w.recover('wrong-operation')).status, 'rejected');
+  assert.equal((await w.recover(operationId, before.revision - 1)).status, 'rejected');
+  const db = w.host().moduleDatabase(); assert.ok(db);
+  db.exec("CREATE TRIGGER fail_recovery_revision BEFORE UPDATE ON companions_revision BEGIN SELECT RAISE(FAIL,'SYNTHETIC_PRIVATE_RECOVERY_FAILURE'); END;");
+  const refused = await w.recover(operationId); assert.equal(refused.status, 'rejected');
+  if (refused.status === 'rejected') assert.equal(refused.error.error.code, 'internal');
+  assert.equal(db.prepare('SELECT count(*) AS n FROM companion_speech_recovery').get()?.n, 0);
+  assert.deepEqual(w.owner().inspect(), before);
+  db.exec('DROP TRIGGER fail_recovery_revision');
+  assert.equal((await w.recover(operationId)).status, 'accepted');
+  assert.equal((await w.recover(operationId)).status, 'rejected', 'duplicate acknowledgement never changes a second reservation');
+  assert.equal(w.outputs.length, 1);
+});
+
+void test('full disk refuses recovery without losing the orphan or committing an acknowledgement', async t => {
+  const w = await world(t); await w.control('enable');
+  w.owner().offer(w.card(), parent, w.owner().mark()); await w.advance(); await until(() => w.outputs.length === 1);
+  const operationId = w.outputs[0]?.data.operationId ?? assert.fail('operation');
+  await w.restart(); const before = w.owner().inspect(), db = w.host().moduleDatabase(); assert.ok(db);
+  db.exec('CREATE TABLE recovery_full_fixture(value BLOB); CREATE TRIGGER full_recovery BEFORE INSERT ON companion_speech_recovery BEGIN INSERT INTO recovery_full_fixture VALUES(zeroblob(65536)); END;');
+  const pages = Number(db.prepare('PRAGMA page_count').get()?.page_count); db.exec(`PRAGMA max_page_count=${String(pages + 2)}`);
+  const refused = await w.recover(operationId); assert.equal(refused.status, 'rejected');
+  if (refused.status === 'rejected') assert.equal(refused.error.error.code, 'capacity');
+  assert.equal(db.prepare('SELECT count(*) AS n FROM companion_speech_recovery').get()?.n, 0);
+  assert.deepEqual(w.owner().inspect(), before); assert.equal(w.outputs.length, 1);
+  db.exec('PRAGMA max_page_count=1073741823; DROP TRIGGER full_recovery');
+  assert.equal((await w.recover(operationId)).status, 'accepted');
 });

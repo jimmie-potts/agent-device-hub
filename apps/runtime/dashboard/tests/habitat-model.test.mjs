@@ -14,6 +14,7 @@ test('idle agents follow playback; blocked and unread agents keep their own dest
   assert.equal(roomFor({state:'idle'}, true, 'workshop'), 'music');
   assert.equal(roomFor({state:'approval'}, true, 'workshop'), 'mail');
   assert.equal(roomFor({state:'input'}, true, 'workshop'), 'mail');
+  assert.equal(roomFor({state:'finished'}, false, 'workshop'), 'mail');
   assert.equal(roomFor({state:'finished'}, true, 'workshop'), 'mail');
 });
 

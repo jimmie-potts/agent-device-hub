@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/companion-speech-endpoint/2.1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action",
+        "available"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "enable"
+        },
+        "available": {
+          "const": true
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "enum": [
+            "mute",
+            "stop"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "action",
+        "operationId",
+        "expectedRevision",
+        "previousPlaybackStopped"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "recover"
+        },
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "previousPlaybackStopped": {
+          "const": true
+        }
+      }
+    }
+  ]
+}

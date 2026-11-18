@@ -243,6 +243,7 @@ const scenarioSteps: Record<string, CaptureStep> = Object.fromEntries(SCENARIOS.
   description: `Runs the catalog scenario ${scenario.id} through the run adapter on a freshly seeded run`,
   scenario: scenario.id,
   fresh: true,
+  ...(scenario.id === 'assistant-task' ? {viewport: {width: 390, height: 844}, screenshotFullPage: false} : {}),
   timeoutMs: scenario.captureTimeoutMs ?? 120_000,
   run: scenario.capture !== undefined && scenario.keepCapturePage === true ? t => judge(t, scenario) : onHealth(t => judge(t, scenario)),
 } satisfies CaptureStep]));
