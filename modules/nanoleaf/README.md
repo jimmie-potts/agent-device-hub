@@ -170,7 +170,9 @@ supersedes admission ends the show before it can send more frames. The worker
 also checks that its loaded layout agrees with the one used to prepare the show.
 
 The worker waits until its local start target before entering external control.
-A late entry or wake samples the current cue at its elapsed time. Complete cues
+It reads the light again at that point and yields if the selection, power,
+brightness or known plain colour changed. A late entry or wake samples the
+current cue at its elapsed time. Complete cues
 that elapsed without a scheduled sample count as missed. The cursor reports
 distinct missed cue IDs as a cumulative count that survives restart. A seek
 sets a position before the show duration without counting crossed cues. An

@@ -683,3 +683,43 @@ it('a prepared Stop with an unresolved effect fences transport despite continuin
   assert.deepEqual((await light()).last, ending);
   assert.equal(lines.work.length, 2);
 });
+
+for (const proof of ['an expiry refusal', 'a late owner outcome with no acceptance reply'] as const) {
+  it(`a prepared Stop releases transport after ${proof}`, async t => {
+    const {lines, control, light, status, operation} = await setup(t);
+    const show = {showId: 'show-almond', version: 2, positionMs: 500, missedCues: 2};
+    assert.deepEqual(await control('saved-show', (await light()).revision, {action: 'start-show', showId: show.showId,
+      version: show.version, positionMs: show.positionMs, startDelayMs: 0}), {status: 'accepted', requestId: 'saved-show'});
+    await waitFor(() => lines.work.length === 1);
+    const startWork = lines.work[0];assert.ok(startWork);
+    const {generation} = startWork.data;
+    await lines.publish('wall', {generation, status: 'paused', show});
+    await status('wall', 'paused');
+
+    const held = deferred<Reply>();
+    t.after(() => {held.resolve({status: 'accepted'});});
+    lines.reply = () => proof === 'an expiry refusal' ? errorBody('expired') : held.promise;
+    assert.deepEqual(await control('stop-show', (await light()).revision, {action: 'stop', generation}), {status: 'accepted', requestId: 'stop-show'});
+    const stopId = lightingWorkRequestId('stop-show', 'wall');
+    await waitFor(() => lines.work.length === 2);
+    if (proof !== 'an expiry refusal') {
+      await waitFor(async () => (await light()).session.status === 'uncertain', 8000, 'the lost Stop reply');
+      const stop = lines.work[1];assert.ok(stop);
+      assert.equal(operation(stopId)?.reply, undefined);
+      assert.equal(codeOf(await control('resume-before-proof', (await light()).revision, {action: 'resume-show', generation})), 'invalid-state');
+      await lines.outcome(stop, 'failed');
+    }
+    await waitFor(() => operation(stopId)?.error?.code === 'expired');
+    await status('wall', 'paused');
+    const {session} = await light();
+    assert.ok(session.status === 'paused');
+    assert.equal(session.generation, generation);
+    assert.deepEqual(session.show, show);
+    assert.equal(lines.work.length, 2);
+    held.resolve({status: 'accepted'});
+    lines.reply = () => ({status: 'accepted'});
+    assert.deepEqual(await control('resume-after-proof', (await light()).revision, {action: 'resume-show', generation}),
+      {status: 'accepted', requestId: 'resume-after-proof'});
+    await waitFor(() => lines.work.length === 3);
+  }, 25_000);
+}

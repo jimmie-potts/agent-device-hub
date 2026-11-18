@@ -91,7 +91,7 @@ export class MusicLightingPart implements CorePart {
    * The tracker's change to one of this part's work commands, in that change's transaction. A Start the module never
    * admitted ends once its command can no longer be admitted; a Stop whose accepted work failed or timed out without a
    * device ending leaves the session uncertain. A prepared Stop that expired before acting can restore the owner's
-   * reported playing or paused state. Reply refusals and lost replies are settled from the reply instead.
+   * reported playing or paused state. Other reply refusals and lost replies are settled separately.
    */
   readonly tracked: Tracked = ({operation}, tx) => {
     if (operation.family !== 'music-lighting-work' || this.#database === undefined || this.#core === undefined || this.#closed) return;
@@ -100,11 +100,11 @@ export class MusicLightingPart implements CorePart {
     if (operation.requestId === row.notes.startWork) {
       const ending = session.status === 'starting' || session.status === 'uncertain' ? this.#unheard(row, tx.atMs) : undefined;
       if (ending !== undefined) this.#end(tx, row, ending, operation);
-    } else if (operation.requestId === row.notes.stopWork && operation.reply === 'accepted' &&
-      (session.status === 'stopping' || session.status === 'uncertain')) {
+    } else if (operation.requestId === row.notes.stopWork && (session.status === 'stopping' || session.status === 'uncertain')) {
       if ('show' in session && stopExpired(operation, row)) {
         if (this.#follower?.fresh === true) this.#heardFrom(tx, row, this.#devices.get(row.state.id)?.session ?? null, operation);
-      } else if (session.status === 'stopping' && (operation.result === Outcome.failed || operation.result === Outcome.uncertain)) {
+      } else if (session.status === 'stopping' && operation.reply === 'accepted' &&
+        (operation.result === Outcome.failed || operation.result === Outcome.uncertain)) {
         this.#save(tx, {...row.state, session: {...session, status: 'uncertain'}}, row.notes, operation);
       }
     }
@@ -464,11 +464,15 @@ export class MusicLightingPart implements CorePart {
   }
 }
 
-/** Only accepted work that definitively expired before acting can release a prepared Stop. */
 function stopExpired(operation: Operation | undefined, {state, notes}: Row): boolean {
-  return operation !== undefined && operation.requestId === notes.stopWork && operation.target === state.id &&
-    operation.family === 'music-lighting-work' && operation.data.action === 'stop' && state.session.status !== 'idle' &&
-    operation.data.generation === state.session.generation && operation.reply === 'accepted' &&
-    operation.status === 'completed' && operation.result === Outcome.failed &&
-    operation.evidence === Outcome.none && operation.error?.code === 'expired';
+  if (operation === undefined || operation.requestId !== notes.stopWork || operation.target !== state.id ||
+    operation.family !== 'music-lighting-work' || operation.data.action !== 'stop' || state.session.status === 'idle' ||
+    operation.data.generation !== state.session.generation || operation.result !== Outcome.failed ||
+    operation.evidence !== Outcome.none || operation.error?.code !== 'expired') return false;
+
+  // The tracker records an expired refusal only when admission was prevented.
+  if (operation.status === 'expired' && operation.reply === 'expired') return operation.outcomes.length === 0;
+  // The owner can prove it settled an expired Stop even if the acceptance reply never reached the tracker.
+  return operation.status === 'completed' && operation.outcomes.every(outcome => outcome.evidence === Outcome.none) &&
+    operation.outcomes.some(outcome => outcome.source === OWNER && outcome.result === Outcome.failed && outcome.error?.code === 'expired');
 }

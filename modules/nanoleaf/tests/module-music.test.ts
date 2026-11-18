@@ -1002,3 +1002,21 @@ test('a paused saved show refuses a seek to its exclusive end without restoring'
   assert.deepEqual({writes: lines(world)?.writes, frames: lines(world)?.streamed, show: showState(world)}, before);
   world.verifyMessages();
 });
+
+for (const manual of [{brightness: {value: 20}}, {on: {value: false}}]) {
+  const changed = 'brightness' in manual ? 'brightness' : 'power';
+  test(`a delayed saved Start yields to a direct ${changed} change before stream entry`, async context => {
+    const session = await lightsInFree(context);
+    const {world} = session;
+    await saveColorShow(world);
+    assert.deepEqual(await startColorShow(session, 'delayed-manual', 'wall', 1, 500), {status: 'accepted'});
+    await world.device.request({ip: LINES_ADDRESS, token: SYNTHETIC_TOKEN}, 'PUT', '/state', manual);
+    const before = lines(world)?.writes;
+    await world.advance(2000);
+    assert.equal(ended(world)?.reason, 'manual');
+    assert.equal(ended(world)?.restoration, 'none');
+    assert.equal(lines(world)?.writes, before);
+    assert.equal(lines(world)?.streamed, 0);
+    world.verifyMessages();
+  });
+}

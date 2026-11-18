@@ -8,6 +8,7 @@
 // failed write ends it with no restoration. Nothing retries, resends, resumes or falls back to another input or light.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {LightingCapture, LightingEndReason, LightingRestoration, LightingShow, LightingWork} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import {isObject} from './compat.js';
 import {Cancelled, Execution, Refused} from './controls.js';
 import {projection, type Element, type Kind, type LayoutEntry} from './devices.js';
 import {Rejected, type Zone} from './effects.js';
@@ -331,7 +332,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   }
   const deadline = now() + FIRST_FEATURE_MS;
   let first: {sample: MusicSample; zones: readonly Zone[]} | undefined;
-  let selection: {value: unknown; sameColor: boolean} | undefined;
+  let baseCheck: 'unchanged' | 'changed' | 'unreadable' | undefined;
   for (;;) {
     if (stopping()) throw new Cancelled();
     const stop = stopRow();
@@ -350,13 +351,24 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     if (position === 'completed') return end('completed', 'none', {kind: 'unchanged'});
     const sample = renderer === undefined ? null : input?.current(clock()) ?? null;
     const ready = position === 'playing' || sample !== null;
-    const answered = selection;
-    selection = undefined;
+    const answered = baseCheck;
+    baseCheck = undefined;
     if (ready && answered === undefined) {
       // Check the base again after any wait. Run the interruption checks again when this read settles.
       try {
-        const value = await read('/effects/select');
-        selection = {value, sameColor: freeBase.kind !== 'color' || value !== freeBase.selection || sameColorOf(await read('/state'), freeBase.color)};
+        baseCheck = await read('/effects/select') === selectionOf(freeBase) ? 'unchanged' : 'changed';
+        if (baseCheck === 'unchanged' && (prepared !== undefined || freeBase.kind === 'color')) {
+          const state = await read('/state');
+          if (prepared !== undefined) {
+            if (!isObject(state) || !isObject(state.on) || typeof state.on.value !== 'boolean' ||
+                !isObject(state.brightness) || typeof state.brightness.value !== 'number') {
+              baseCheck = 'unreadable';
+            } else if (!state.on.value || state.brightness.value !== freeBase.brightness) {
+              baseCheck = 'changed';
+            }
+          }
+          if (baseCheck === 'unchanged' && freeBase.kind === 'color' && !sameColorOf(state, freeBase.color)) baseCheck = 'changed';
+        }
       } catch (error) {
         deviceFailure(error);
         return end('device', 'none', {kind: 'refused', code: 'unavailable'});
@@ -364,7 +376,8 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       continue;
     }
     if (ready && answered !== undefined) {
-      if (answered.value !== selectionOf(freeBase) || !answered.sameColor) return end('manual', 'none');
+      if (answered === 'unreadable') return end('refused', 'none', {kind: 'refused', code: 'invalid-state'});
+      if (answered === 'changed') return end('manual', 'none');
       if (position === 'playing') break;
       if (sample !== null && renderer !== undefined) {
         try {

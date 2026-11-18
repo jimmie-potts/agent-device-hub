@@ -2045,7 +2045,7 @@ The core SHALL accept an explicit operator start of a saved revision for one lig
 - **WHEN** a valid decorative show is started while Music capture and the Music.app position source are unavailable
 - **THEN** it may run on the standalone runtime clock and its state does not imply synchronization to a recording
 
-#### Scenario: Accepted Stop expires before a write
+#### Scenario: Stop expires without effect
 
-- **WHEN** the latest accepted Stop for a prepared show reports expiry with no write, and a fresh device record for that generation still reports an active or paused show
-- **THEN** the core leaves the show in that reported transport state and retains the Stop's expired outcome. A lost outcome alone does not establish expiry without effect.
+- **WHEN** the tracker proves the latest Stop expired before admission or records the device owner's expired outcome with no effect, and a fresh device record still reports that generation playing or paused
+- **THEN** the core leaves the show in the reported transport state and retains the Stop's expiry. Losing an acknowledgment or outcome by itself leaves transport fenced.

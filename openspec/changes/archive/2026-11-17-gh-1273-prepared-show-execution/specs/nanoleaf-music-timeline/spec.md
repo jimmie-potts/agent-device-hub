@@ -9,6 +9,11 @@ The Nanoleaf module SHALL resolve an exact saved show revision and validate ever
 - **WHEN** a saved show is missing, malformed or incompatible with the current layout, including an NL22 panel ID outside its stream range
 - **THEN** admission returns a typed refusal before writing to the light
 
+#### Scenario: Manual change before a delayed Start
+
+- **WHEN** the light's selection, power, brightness or known plain colour changes during a scheduled Start's delay
+- **THEN** an observed change to the base ends the Start without entering streaming
+
 #### Scenario: Independent playback
 
 - **WHEN** the operator starts the same revision on both lights while both base reads are in flight, then saves another version
