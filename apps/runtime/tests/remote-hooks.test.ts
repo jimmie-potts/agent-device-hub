@@ -15,8 +15,9 @@ import {normalizeHook, type SourceConfiguration} from '@jimmie-potts/agent-state
 import {DESKTOP_METADATA_SCHEMA, desktopFeedId, sessionEntityId, type DesktopFeed, type DesktopMetadataSnapshot, type LifecycleObservation, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {prepareMessage, publishOnce, traceFields} from '@jimmie-potts/sdk';
-import {lifecycleMessage, observationOf, producerCredentialId, producerSource, runHook} from '../src/hook/index.js';
+import {lifecycleMessage, producerCredentialId, producerSource, runHook} from '../src/hook/index.js';
 import {createCoreModule, revokeCredential, tokenDigest} from '../src/index.js';
+import {observationOf} from './fixtures/retained-hook.js';
 import {edgeConfig, fixture, it, run, waitFor} from './support.js';
 
 const HOOK = fileURLToPath(new URL('../../bin/monitor-hook.mjs', import.meta.url));

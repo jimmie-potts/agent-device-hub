@@ -22,9 +22,10 @@ import {registerCoreFamilies, sessionEntityId, type Identity, type SessionRecord
 import {REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, prepareMessage, publishOnce} from '@jimmie-potts/sdk';
 import {toEnvelope} from '../src/core/mapping.js';
 import {
-  HOOK_BUDGET_MS, LIFECYCLE_SCHEMA, lifecycleMessage, observationOf, producerCredentialId, producerSource, readProducer, runHook,
+  HOOK_BUDGET_MS, LIFECYCLE_SCHEMA, lifecycleMessage, producerCredentialId, producerSource, readProducer, runHook,
 } from '../src/hook/index.js';
 import {convertHubEdge, createCoreModule, tokenDigest, type LogRecord, type Runtime} from '../src/index.js';
+import {observationOf} from './fixtures/retained-hook.js';
 import {edgeConfig, it, run} from './support.js';
 
 const HOOK = fileURLToPath(new URL('../../bin/monitor-hook.mjs', import.meta.url));

@@ -3,10 +3,10 @@
 // hook was (apps/hub/bin/monitor-hook.mjs): no output protocol, no permission decision, no retry, no device and no child
 // process. It fails open: every refusal, fault or lost answer ends the hook quietly, and the agent never waits for the
 // runtime past the hook's budget. `bin/monitor-hook.mjs` runs it, and owns the process's exit and its hard deadline.
-import {enrichHook, normalizeHook, type SourceConfiguration} from '@jimmie-potts/agent-state/providers';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {prepareMessage, publishOnce, traceFields} from '@jimmie-potts/sdk';
-import {lifecycleMessage, observationOf} from './observation.js';
+import {enrichHook, normalizeHook} from './adapter.js';
+import {lifecycleMessage} from './observation.js';
 import {readProducer} from './producer.js';
 
 /** How long one hook process may run, from its start: the clients' hook settings give it 3 s. */
@@ -34,7 +34,7 @@ export type HookOptions = {
 
 /**
  * How one hook ended, for tests and measurements; the process reports nothing. `skipped` sent nothing: the producer file
- * may not emit, the input is not a hook the normalizers map, or no time was left. `published`, `rejected` and `uncertain`
+ * may not emit, the input is not a hook the adapter maps, or no time was left. `published`, `rejected` and `uncertain`
  * are the publication's result, with its trace.
  */
 export type HookResult =
@@ -76,13 +76,12 @@ async function publishHook({producer: path, input, deadline = HOOK_BUDGET_MS, no
   if (producer === undefined || (requireMetadataOnly && producer.lifecycleVersion !== undefined)) return {status: 'skipped', reason: 'producer'};
   const raw = await readInput(input);
   if (!isFields(raw) || typeof raw.hook_event_name !== 'string') return {status: 'skipped', reason: 'input'};
-  // The normalizers check the source configuration themselves, and refuse a hook they do not map.
-  const source = {...producer.configuration, hook: raw.hook_event_name} as unknown as SourceConfiguration;
+  // The adapter checks the source configuration against the supported-source definition, and refuses a hook it does not map.
+  const hook = raw.hook_event_name;
   const observedAtMs = now();
-  const envelope = producer.lifecycleVersion === undefined ? normalizeHook(raw, source, observedAtMs)
-    : await enrichHook(raw, source, observedAtMs, {lifecycleVersion: producer.lifecycleVersion, ...(environment === undefined ? {} : {environment})});
-  const observation = envelope === null ? undefined : observationOf(envelope);
-  if (observation === undefined) return {status: 'skipped', reason: 'event'};
+  const observation = producer.lifecycleVersion === undefined ? normalizeHook(raw, producer.configuration, hook, observedAtMs)
+    : await enrichHook(raw, producer.configuration, hook, observedAtMs, {lifecycleVersion: producer.lifecycleVersion, ...(environment === undefined ? {} : {environment})});
+  if (observation === null) return {status: 'skipped', reason: 'event'};
   const {key, draft} = lifecycleMessage(observation);
   // The message starts a trace, which the runtime's records of its intake carry.
   const message = prepareMessage(producer.source, draft, {now: () => observedAtMs});
