@@ -1,4 +1,4 @@
-// Golden hook output (Hub #1865, tasks 2.1 and 2.2). Every hook fixture below, at each producer lifecycle version and
+// Golden hook output (Hub #1865, tasks 2.1 and 2.2), and what the hook's module loads. Every hook fixture below, at each producer lifecycle version and
 // with each title source, runs through `runHook` as a client's hook command runs it, against a loopback edge that keeps
 // the bytes of each publication. Beside it runs the retained path: agent-state's `normalizeHook`, or `enrichHook` for a
 // producer that selected 1.1 or 1.2, then the earlier mapping (`fixtures/retained-hook.ts`). The hook's publication must
@@ -8,7 +8,7 @@
 // Every identity, title, path, token and payload here is synthetic, and the Codex home is a new directory: no test reads
 // a real client's transcript, Codex home or environment.
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {once} from 'node:events';
 import {readFileSync} from 'node:fs';
 import {chmod, mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
@@ -385,3 +385,25 @@ it('every hook fixture, lifecycle version and title source publishes the golden 
     [[true, true, true], [false, true, true]], 'the bound keeps a 2048-byte envelope\'s title and drops a 2049-byte one\'s');
   for (const secret of [CANARY, TOKEN]) assert.equal(published.some(body => body.includes(secret)), false, 'a dropped field or the token was published');
 }, 120_000);
+
+/** Loads a module in a new Node process and prints every module it loaded, by URL. */
+const LIST_LOADED = `
+import {registerHooks} from 'node:module';
+const loaded = [];
+registerHooks({load(url, context, next) { loaded.push(url); return next(url, context); }});
+await import(process.argv[1]);
+process.stdout.write(JSON.stringify(loaded));
+`;
+
+it('the hook\'s module loads its adapter, the SDK and the contracts, and no other runtime code or agent-state', () => {
+  const hookModule = new URL('../src/hook/index.js', import.meta.url).href;
+  const ran = spawnSync(process.execPath, ['--input-type=module', '-e', LIST_LOADED, hookModule], {encoding: 'utf8', timeout: 10_000});
+  assert.equal(ran.status, 0, ran.stderr);
+  const loaded = (JSON.parse(ran.stdout) as string[]).filter(url => url.startsWith('file:'));
+  const runtime = new URL('../', import.meta.url).href;
+  const hookDir = new URL('../src/hook/', import.meta.url).href;
+  assert.deepEqual(loaded.filter(url => url.startsWith(runtime) && !url.startsWith(hookDir)), [], 'runtime code outside src/hook');
+  assert.ok(loaded.includes(new URL('../src/hook/adapter.js', import.meta.url).href), 'the adapter');
+  const packages = [...new Set(loaded.flatMap(url => /\/packages\/([^/]+)\//.exec(url)?.[1] ?? []))].sort();
+  assert.deepEqual(packages, ['event-contracts', 'lifecycle-contracts', 'sdk'], 'the workspace packages the hook loads');
+});

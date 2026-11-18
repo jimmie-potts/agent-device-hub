@@ -880,12 +880,16 @@ JSON on stdin. For each hook it:
 
 1. reads the client's existing lifecycle 1.x producer file, or an explicitly
    qualified private HTTPS producer;
-2. normalizes the hook with agent-state's normalizers: `normalizeHook`, or
-   `enrichHook` for a producer that selected lifecycle 1.1 or 1.2;
-3. turns the 1.x envelope into the 2.0 `lifecycle` observation that
+2. builds the 2.0 `lifecycle` observation that
    [MAPPING.md](../../packages/event-contracts/MAPPING.md#lifecycle-observation)
-   describes;
-4. publishes it as `org.bunny.lifecycle.observed` on
+   describes with the runtime's own adapter (`src/hook/adapter.ts`, #1865):
+   `normalizeHook`, or `enrichHook` for a producer that selected lifecycle 1.1
+   or 1.2, which adds the title (`src/hook/title.ts`), the project and, at 1.2,
+   the host session. The adapter checks the producer's source against the
+   supported-source definition (`@jimmie-potts/event-contracts/v2/sources`).
+   Its output is byte-identical to that of agent-state's normalizers followed
+   by the earlier mapping, which `tests/hook-golden.test.ts` checks;
+3. publishes it as `org.bunny.lifecycle.observed` on
    `bunny.event.lifecycle.<session ID>` in one call to the gateway's SDK edge,
    with no stream, through the SDK's
    [`publishOnce`](../../packages/sdk/README.md#one-publication-without-a-stream).
@@ -933,7 +937,7 @@ none of the rest of the runtime.
   device or child process. A 2.9 s deadline, armed before anything loads, ends
   the process inside the clients' 3 s hook timeout whatever the runtime does,
   and the publication gets what is left of it. A stopped runtime, a refused or revoked credential, a lost answer,
-  an unusable producer file or input the normalizers do not map end the hook
+  an unusable producer file or input the adapter does not map end the hook
   quietly. The observation is then lost, as hooks fail open, and the session's
   freshness shows the gap. Input over 8 MiB is dropped.
 - **Stalled native work.** For lifecycle 1.1 and 1.2, `enrichHook` reads the
@@ -960,7 +964,7 @@ none of the rest of the runtime.
 - **Trace.** Each observation starts a new sampled trace, carried in the message
   and in the call's `traceparent` header. The core's `message.received` record
   of it carries that trace.
-- **What leaves the hook.** Only what the normalizers' allowlist keeps: no
+- **What leaves the hook.** Only what the adapter's allowlist keeps: no
   prompt, response, tool input or transcript (#425), and the token only in the
   `authorization` header.
 

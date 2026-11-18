@@ -15,10 +15,10 @@ Each numbered group is one pull request on its own `gh-1865-<step>` branch, with
 
 ## 2. Hook adapter in the runtime
 
-- [ ] 2.1 Add golden tests that run every hook fixture, producer lifecycle version and title source through today's path (`normalizeHook` or `enrichHook`, then `observationOf`) and record the observation bytes. Evidence: the golden files.
-- [ ] 2.2 Move the normalizer and title reader into `apps/runtime/src/hook/`. Build the observation directly from the supported-source definition and drop the runtime's import of `@jimmie-potts/agent-state/providers` and `observationOf`. Evidence: the golden tests pass byte for byte, `@jimmie-potts/runtime/hook` still loads no other runtime code, and the hook latency check passes.
-- [ ] 2.3 Keep `mac-codex-hook.mjs`, the producer file reader and the read-receipt helpers' producer handling unchanged. Evidence: the runtime hook and remote-hook suites pass unchanged.
-- [ ] 2.4 Coordinate with #1847's owner: the pull request names the moved title code and confirms identical output.
+- [x] 2.1 Add golden tests that run every hook fixture, producer lifecycle version and title source through today's path (`normalizeHook` or `enrichHook`, then `observationOf`) and record the observation bytes. Evidence: the golden files.
+- [x] 2.2 Move the normalizer and title reader into `apps/runtime/src/hook/`. Build the observation directly from the supported-source definition and drop the runtime's import of `@jimmie-potts/agent-state/providers` and `observationOf`. Evidence: the golden tests pass byte for byte, `@jimmie-potts/runtime/hook` still loads no other runtime code, and the hook latency check passes.
+- [x] 2.3 Keep `mac-codex-hook.mjs`, the producer file reader and the read-receipt helpers' producer handling unchanged. Evidence: the runtime hook and remote-hook suites pass unchanged.
+- [x] 2.4 Coordinate with #1847's owner: the pull request names the moved title code and confirms identical output.
 
 ## 3. Readers: Nanoleaf, Pixoo, Tidbyt and LIFX
 
