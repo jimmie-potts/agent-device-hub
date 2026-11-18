@@ -419,11 +419,12 @@ it('a malformed message is refused, and its record is written with only its well
   // `run` also checks that the writer dropped no record.
 });
 
-it('a restart with stored sessions on a full disk keeps the core running: syncs wait for room, intake is refused, and both recover', async context => {
+it('a restart with a stored working session on a full disk keeps the core running: syncs wait for room, intake is refused, and both recover', async context => {
   const dir = await stateDir(context);
   const first = fixture('hook');
   const {runtime: before, logs: earlier} = await run(context, {modules: [createCoreModule(), first], stateDir: dir});
-  await publish(contextOf(first).sdk, sessionStarted, Date.now());
+  // Running work, which the restart's start transaction marks unconfirmed (#1865 step 8).
+  await publish(contextOf(first).sdk, turnStarted, Date.now());
   await waitFor(() => received(earlier, 'accepted').length === 1, 5000, 'the stored session');
   await before.stop();
 
@@ -433,7 +434,7 @@ it('a restart with stored sessions on a full disk keeps the core running: syncs 
   assert.equal(entry((await health(runtime.url)).body, 'core').state, 'running', 'the core runs');
   const sync = (): ReturnType<Sdk['sync']> => contextOf(reader).sdk.sync(['session'], () => {}, {timeoutMs: 5000});
   const refused = await sync();
-  assert.equal(refused.status === 'rejected' && refused.error.error.code, 'unavailable', 'no sync until the restart\'s uncertainty is published');
+  assert.equal(refused.status === 'rejected' && refused.error.error.code, 'unavailable', 'no sync until the start transaction has marked the work');
   await publish(contextOf(hook).sdk, sessionStarted, Date.now(), {identity: OTHER});
   await waitFor(() => received(logs, 'rejected').length === 1, 5000, 'the refused observation');
   assert.equal(received(logs, 'rejected')[0]?.attributes['bunny.code'], 'capacity');

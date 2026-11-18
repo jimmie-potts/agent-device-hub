@@ -112,7 +112,9 @@ it('a committed receipt survives restart, while an old view revision remains unu
   const restarted = world.store.records()[0]; assert.ok(restarted);
   assert.equal(restarted.read, 'read');
   assert.deepEqual(restarted.readReceipt, read.readReceipt);
-  assert.equal(restarted.restartUncertain, true);
+  // #1865 step 8: the finished session had no running work for the restart to leave unconfirmed, so it is not republished.
+  assert.equal(restarted.restartUncertain, false);
+  assert.equal(restarted.revision, read.revision);
   assert.equal(restarted.lastEvidenceAtMs, read.lastEvidenceAtMs);
   assert.equal(await world.store.readReceipt(message, qualification), false);
   world.since(0);
