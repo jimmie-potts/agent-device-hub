@@ -943,3 +943,62 @@ test('a late wake skips obsolete cues and an alert ends a paused saved show with
   assert.equal(lines(world)?.streamed, framesBefore);
   world.verifyMessages();
 });
+
+test('overlapping saved Starts on Lines and NL22 both admit their own light', async context => {
+  const session = await bothInFree(context);
+  const {world} = session;
+  await saveColorShow(world);
+  world.device.hold();
+  try {
+    const linesStart = startColorShow(session, 'parallel-lines');
+    const panelsStart = startColorShow(session, 'parallel-panels', 'nl22');
+    await world.until(() => world.device.state().held === 2, 1000, 'both in-flight base reads');
+    world.device.release();
+    assert.deepEqual(await Promise.all([linesStart, panelsStart]), [{status: 'accepted'}, {status: 'accepted'}]);
+  } finally {world.device.release();}
+  await world.until(() => (lines(world)?.streamed ?? 0) > 0 && (panelsOf(world)?.streamed ?? 0) > 0, 2000, 'one frame on each light');
+  world.verifyMessages();
+});
+
+test('an expired saved-show Stop writes nothing after its held restoration read and preserves Pause', async context => {
+  const session = await lightsInFree(context);
+  const {world} = session;
+  await saveColorShow(world);
+  assert.deepEqual(await startColorShow(session, 'expiry-start'), {status: 'accepted'});
+  await world.until(() => (lines(world)?.streamed ?? 0) > 0, 2000, 'one playing frame');
+  assert.deepEqual(await work(session, {requestId: 'expiry-pause', generation: generation(1), action: 'pause-show'}), {status: 'accepted'});
+  await world.until(() => deviceState(world)?.session?.status === 'paused', 1000, 'paused');
+  const before = {writes: lines(world)?.writes, frames: lines(world)?.streamed};
+  world.device.hold();
+  try {
+    assert.deepEqual(await ask(world, session.core, 'bunny.cmd.music-lighting-work.wall', {
+      type: 'org.bunny.music-lighting.work.requested', subject: 'wall',
+      dataschema: 'https://bunny.invalid/events/music-lighting-work/2.0',
+      data: {requestId: 'expiring-restoration', generation: generation(1), action: 'stop'},
+    }, 300), {status: 'accepted'});
+    await world.until(() => world.device.state().held === 1, 250, 'the held restoration read');
+    await world.advance(350);
+  } finally {world.device.release();}
+  await world.until(() => outcome(world, 'expiring-restoration') !== undefined, 1000, 'the Stop outcome');
+  assert.deepEqual(outcome(world, 'expiring-restoration')?.error?.code, 'expired');
+  assert.equal(deviceState(world)?.session?.status, 'paused');
+  assert.deepEqual({writes: lines(world)?.writes, frames: lines(world)?.streamed}, before);
+  world.verifyMessages();
+});
+
+test('a paused saved show refuses a seek to its exclusive end without restoring', async context => {
+  const session = await lightsInFree(context);
+  const {world} = session;
+  await saveColorShow(world);
+  assert.deepEqual(await startColorShow(session, 'end-seek-start'), {status: 'accepted'});
+  await world.until(() => (lines(world)?.streamed ?? 0) > 0, 2000, 'one playing frame');
+  assert.deepEqual(await work(session, {requestId: 'end-seek-pause', generation: generation(1), action: 'pause-show'}), {status: 'accepted'});
+  await world.until(() => deviceState(world)?.session?.status === 'paused', 1000, 'paused');
+  const before = {writes: lines(world)?.writes, frames: lines(world)?.streamed, show: showState(world)};
+  assert.deepEqual(await work(session, {requestId: 'end-seek', generation: generation(1), action: 'seek-show',
+    positionMs: COLOR_SHOW.durationMs}), {status: 'rejected', code: 'invalid-request'});
+  await world.advance(200);
+  assert.equal(deviceState(world)?.session?.status, 'paused');
+  assert.deepEqual({writes: lines(world)?.writes, frames: lines(world)?.streamed, show: showState(world)}, before);
+  world.verifyMessages();
+});

@@ -173,9 +173,10 @@ The worker waits until its local start target before entering external control.
 A late entry or wake samples the current cue at its elapsed time. Complete cues
 that elapsed without a scheduled sample count as missed. The cursor reports
 distinct missed cue IDs as a cumulative count that survives restart. A seek
-sets the new position without counting crossed cues. Pause and gaps hold the last
-frame while the worker continues checking for interruption. A paused seek
-changes the position without sending a frame until Resume.
+sets a position before the show duration without counting crossed cues. An
+out-of-range position is refused. Pause and gaps hold the last frame while the
+worker continues checking for interruption. A paused seek changes the position
+and sends its next frame on Resume.
 
 The worker samples canonical RGB endpoints in software and sends at most one
 datagram per 100 ms, through the existing Lines or Panels encoder. A sent
@@ -185,8 +186,10 @@ A backward clock step or loss of the alert feed ends the show and applies the
 guarded base return. Music.app position, route-delay alignment and replay UI
 belong to [#723](https://github.com/jimmie-potts/agent-device-hub/issues/723).
 
-Stop, an alert and completion use the existing base restoration guard. A
-detectable manual change wins without restoration. After any ending, start the
+Stop, an alert and completion use the existing base restoration guard. If a
+saved show's Stop expires before its first restoration write, the worker reports
+`expired` and the show retains its current transport state. A detectable manual
+change wins without restoration. After any ending, start the
 light explicitly again. See the streaming limits below for the NL22's
 indistinguishable unsaved effects. Installed and physical acceptance belong to
 [#725](https://github.com/jimmie-potts/agent-device-hub/issues/725).
@@ -295,10 +298,11 @@ light's ending never writes, holds or ends the other.
   `*Static*`, `*Dynamic*` or `*ExtControl*`), or `a selection not saved on the light`.
   Bounded moments keep the named-scene rule. The read is the work command's first
   device call in its trace. If a mode or configuration change, or any journaled command
-  (even one that already ran), lands during the read, the Start is refused
-  `revision-conflict`, so a Start sent again reads afresh. The check uses the journal's
-  shared counter, so a command for another light during the read also refuses. Accepted, the Start journals `music.play` with the command's
-  expiry. It freezes the preset's recipe, the layout and the Free base, saves the session
+  for the selected light lands during the read, the Start is refused
+  `revision-conflict`. A new Start reads the base again. The admission connection
+  keeps each light's latest journal insert in temporary state, including commands
+  that already finished. An admitted Start journals `music.play` with the
+  command's expiry. It freezes the preset's recipe, the layout and the Free base, saves the session
   as `starting` and opens an in-memory `MusicInput` for the capture binding.
 - **Features** arrive only through the module's subscription to
   `bunny.event.music-capture-features.*`, and each input takes only its own endpoint and

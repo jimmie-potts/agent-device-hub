@@ -32,7 +32,7 @@ import {saveShow, showCatalog, ShowFailure, SHOW_ERRORS} from '../music-shows.js
 import {SHOW_TARGET} from '../music-show-data.js';
 import {favoriteEdit, Failure, validFavoriteEdit} from '../favorites.js';
 import {writeJson} from '../jsonfile.js';
-import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, type Report, type Transact} from '../journal.js';
+import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, type Report, type Transact, initJournalAdmissionMarks, journalAdmissionMark} from '../journal.js';
 import {changeMode} from '../modes.js';
 import {Metadata} from '../project-map.js';
 import {admitMoment, initMoments, momentRevision, readFreeBase, type FreeBase} from '../moments.js';
@@ -200,6 +200,7 @@ export class NanoleafRuntime {
     const db = context.database();
     const directory = context.files();
     initialize(db, () => context.clock.now() / 1000);
+    initJournalAdmissionMarks(db);
     db.exec(MODULE_TABLES);
     initMoments(db);
     execute(db, "INSERT OR IGNORE INTO nanoleaf_module VALUES ('epoch', ?)", randomBytes(16).toString('hex'));
@@ -946,7 +947,7 @@ export class NanoleafRuntime {
     };
     // What the read must not overlap: a mode or configuration change, or any journaled command, even one that already
     // ran (a scene shown during the read would leave the Free base stale, and a finished row is no longer in the journal).
-    const control = controlState(this.#db, device), revision = momentRevision(this.#db, device), journaled = journalHighWater(this.#db);
+    const control = controlState(this.#db, device), revision = momentRevision(this.#db, device), journaled = journalAdmissionMark(this.#db, device);
     try {
       checkOwnershipFeed();
       checkMusicStart(this.#db, device, start, savedLayout(this.#directory, device), clock.now(), expiresMs(command, clock.now()), ownershipEpoch);
@@ -989,9 +990,8 @@ export class NanoleafRuntime {
     const base = read.base;
     return this.#admit(command, report => {
       const latest = controlState(this.#db, device);
-      // The read is stale, not the light's state wrong: `revision-conflict` says a Start sent again reads it afresh. The
-      // journal's high-water mark is shared by every light, so a command for another light during the read also refuses.
-      if (latest.revision !== control.revision || momentRevision(this.#db, device) !== revision || journalHighWater(this.#db) !== journaled) {
+      // A completed command still invalidates the read if it changed this light's admission mark.
+      if (latest.revision !== control.revision || momentRevision(this.#db, device) !== revision || journalAdmissionMark(this.#db, device) !== journaled) {
         throw new CommandRefused('revision-conflict', 'a command or change reached the light during the read of its scene');
       }
       checkOwnershipFeed();
@@ -1165,9 +1165,6 @@ function expiresMs(command: {expiresat?: string}, nowMs: number): number {
 }
 
 const ended = (signal: AbortSignal): boolean => signal.aborted;
-
-/** The control journal's highest sequence ever issued, finished rows included (its AUTOINCREMENT counter). */
-const journalHighWater = (db: Db): number => Number(first(db, "SELECT seq FROM sqlite_sequence WHERE name='control_journal'")?.[0] ?? 0);
 
 /** Fixed text for each refusal of a control or an animation the port decides; the port's own messages are not repeated. */
 const PORT_REFUSALS: Partial<Readonly<Record<ErrorCode, string>>> = {

@@ -853,8 +853,9 @@ explicitly to play there too.
 
 When the device reports the show playing or paused, use the current record's
 revision and session `generation` for `pause-show`, `resume-show`, `seek-show`,
-or `stop`. Seek takes `positionMs`. Stop can also cancel a scheduled Start.
-Resume applies to the same paused session. After Stop, an alert, source loss,
+or `stop`. Seek takes `positionMs` before the show duration. Stop can also cancel
+a scheduled Start. A Stop that expires before its first write leaves the show in
+its current transport state. Resume applies to the same paused session. After Stop, an alert, source loss,
 manual takeover or completion, playback requires a new Start.
 
 The device record reports the position at its last scheduling or transport

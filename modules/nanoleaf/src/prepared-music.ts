@@ -67,7 +67,7 @@ export class PreparedMusic {
       if (status !== 'paused') return false;
       this.#track(this.#cursor.resume(input));
     } else if (control.action === 'seek-show') {
-      if (control.positionMs > this.timeline.durationMs) return false;
+      if (control.positionMs >= this.timeline.durationMs) return false;
       this.#nextUnsettled = this.#firstUnelapsed(control.positionMs);
       this.#scheduled.clear();
       this.#track(this.#cursor.seek({...input, positionMs: control.positionMs}));

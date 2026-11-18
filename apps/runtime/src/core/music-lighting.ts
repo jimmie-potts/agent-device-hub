@@ -11,7 +11,7 @@ import {Outcome, fullDisk, recordLog, type Cancel, type Command, type ModuleSche
 import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';
 import type {ModeParticipant} from './mode-participants.js';
-import {pending} from './operations.js';
+import {pending, type Operation} from './operations.js';
 import type {CoreTransaction} from './store.js';
 import type {CompletedOutcome, Tracked} from './tracker.js';
 
@@ -90,7 +90,8 @@ export class MusicLightingPart implements CorePart {
   /**
    * The tracker's change to one of this part's work commands, in that change's transaction. A Start the module never
    * admitted ends once its command can no longer be admitted; a Stop whose accepted work failed or timed out without a
-   * device ending leaves the session uncertain. Reply refusals and lost replies are settled from the reply instead.
+   * device ending leaves the session uncertain. A prepared Stop that expired before acting can restore the owner's
+   * reported playing or paused state. Reply refusals and lost replies are settled from the reply instead.
    */
   readonly tracked: Tracked = ({operation}, tx) => {
     if (operation.family !== 'music-lighting-work' || this.#database === undefined || this.#core === undefined || this.#closed) return;
@@ -99,9 +100,13 @@ export class MusicLightingPart implements CorePart {
     if (operation.requestId === row.notes.startWork) {
       const ending = session.status === 'starting' || session.status === 'uncertain' ? this.#unheard(row, tx.atMs) : undefined;
       if (ending !== undefined) this.#end(tx, row, ending, operation);
-    } else if (operation.requestId === row.notes.stopWork && session.status === 'stopping' && operation.reply === 'accepted' &&
-      (operation.result === Outcome.failed || operation.result === Outcome.uncertain)) {
-      this.#save(tx, {...row.state, session: {...session, status: 'uncertain'}}, row.notes, operation);
+    } else if (operation.requestId === row.notes.stopWork && operation.reply === 'accepted' &&
+      (session.status === 'stopping' || session.status === 'uncertain')) {
+      if ('show' in session && stopExpired(operation, row)) {
+        if (this.#follower?.fresh === true) this.#heardFrom(tx, row, this.#devices.get(row.state.id)?.session ?? null, operation);
+      } else if (session.status === 'stopping' && (operation.result === Outcome.failed || operation.result === Outcome.uncertain)) {
+        this.#save(tx, {...row.state, session: {...session, status: 'uncertain'}}, row.notes, operation);
+      }
     }
   };
 
@@ -394,14 +399,14 @@ export class MusicLightingPart implements CorePart {
   }
 
   /** The session's next record from its own generation's device record, or undefined when it does not change it. */
-  #settled(record: LightingState, device: LightingDeviceState['session']): LightingState | undefined {
+  #settled(record: LightingState, device: LightingDeviceState['session'], stopPending: boolean): LightingState | undefined {
     const session = record.session;
     if (session.status === 'idle' || device === null || device.generation !== session.generation) return undefined;
     if (device.status === 'ended') return {...record, session: {status: 'idle'}, last: showEnding(session, device.ended)};
     if ('show' in session) {
       if (!('show' in device) || session.show.showId !== device.show.showId || session.show.version !== device.show.version) return undefined;
       const show = {...device.show, missedCues: Math.max(session.show.missedCues, device.show.missedCues)};
-      const status = session.status === 'stopping' || device.status === 'starting' ? session.status : device.status === 'paused' ? 'paused' : 'active';
+      const status = stopPending || device.status === 'starting' ? session.status : device.status === 'paused' ? 'paused' : 'active';
       if (status === session.status && show.positionMs === session.show.positionMs && show.missedCues === session.show.missedCues) return undefined;
       return {...record, session: {...session, status, show}};
     }
@@ -425,10 +430,17 @@ export class MusicLightingPart implements CorePart {
   #heardFrom(tx: CoreTransaction, row: Row, device: LightingDeviceState['session'], parent?: TraceContext): boolean {
     const session = row.state.session;
     if (session.status === 'idle' || device === null || device.generation !== session.generation) return false;
-    const notes = row.notes.reported === true ? row.notes : {...row.notes, reported: true};
-    const next = this.#settled(row.state, device);
-    if (next !== undefined) this.#save(tx, next, notes, parent);
-    else if (notes !== row.notes) this.#note(row.state.id, notes);
+    const stopWork = row.notes.stopWork;
+    const stoppingShow = 'show' in session && stopWork !== undefined &&
+      (session.status === 'stopping' || session.status === 'uncertain');
+    const expired = stoppingShow && this.#follower?.fresh === true &&
+      stopExpired(this.#core?.operation(stopWork), row);
+    const notes = {...row.notes, reported: true};
+    const next = this.#settled(row.state, device, stoppingShow && !expired);
+    if (next !== undefined) {
+      if (expired && (next.session.status === 'active' || next.session.status === 'paused')) delete notes.stopWork;
+      this.#save(tx, next, notes, parent);
+    } else if (row.notes.reported !== true) this.#note(row.state.id, notes);
     return true;
   }
 
@@ -450,4 +462,13 @@ export class MusicLightingPart implements CorePart {
       }
     });
   }
+}
+
+/** Only accepted work that definitively expired before acting can release a prepared Stop. */
+function stopExpired(operation: Operation | undefined, {state, notes}: Row): boolean {
+  return operation !== undefined && operation.requestId === notes.stopWork && operation.target === state.id &&
+    operation.family === 'music-lighting-work' && operation.data.action === 'stop' && state.session.status !== 'idle' &&
+    operation.data.generation === state.session.generation && operation.reply === 'accepted' &&
+    operation.status === 'completed' && operation.result === Outcome.failed &&
+    operation.evidence === Outcome.none && operation.error?.code === 'expired';
 }

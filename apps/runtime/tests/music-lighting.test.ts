@@ -617,3 +617,69 @@ it('a standalone show extends only the Start work deadline and fences transports
   assert.deepEqual((await light()).last, ending);
   assert.equal(lines.work.length, 3);
 });
+
+it('a paused show accepts transport again after its latest accepted Stop expires', async t => {
+  const {lines, control, light, status, operation} = await setup(t);
+  const start = {action: 'start-show', showId: 'show-almond', version: 2, positionMs: 40, startDelayMs: 0} as const;
+  assert.deepEqual(await control('saved-show', (await light()).revision, start), {status: 'accepted', requestId: 'saved-show'});
+  await waitFor(() => lines.work.length === 1);
+  const startWork = lines.work[0];assert.ok(startWork);
+  const {generation} = startWork.data;
+  const show = {showId: start.showId, version: start.version, positionMs: 500, missedCues: 2};
+  await lines.publish('wall', {generation, status: 'paused', show});
+  await status('wall', 'paused');
+
+  for (const requestId of ['first-stop', 'latest-stop']) {
+    assert.deepEqual(await control(requestId, (await light()).revision, {action: 'stop', generation}), {status: 'accepted', requestId});
+    await waitFor(() => operation(lightingWorkRequestId(requestId, 'wall'))?.reply === 'accepted');
+  }
+  const firstStop = lines.work[1], latestStop = lines.work[2];assert.ok(firstStop && latestStop);
+  await lines.outcome(firstStop, 'failed');
+  await waitFor(() => operation(firstStop.data.requestId)?.error?.code === 'expired');
+  assert.equal((await light()).session.status, 'stopping');
+  assert.equal(codeOf(await control('resume-while-stopping', (await light()).revision, {action: 'resume-show', generation})), 'invalid-state');
+
+  await lines.outcome(latestStop, 'failed');
+  await status('wall', 'paused');
+  const paused = await light();
+  assert.ok('show' in paused.session);
+  assert.deepEqual(paused.session.show, show);
+  assert.equal(lines.work.length, 3);
+  assert.deepEqual(await control('resume-after-expiry', paused.revision, {action: 'resume-show', generation}),
+    {status: 'accepted', requestId: 'resume-after-expiry'});
+  await waitFor(() => lines.work.length === 4);
+  assert.equal(lines.work[3]?.data.action, 'resume-show');
+});
+
+it('a prepared Stop with an unresolved effect fences transport despite continuing owner reports', async t => {
+  const {lines, control, light, status, operation} = await setup(t);
+  const start = {action: 'start-show', showId: 'show-almond', version: 2, positionMs: 40, startDelayMs: 0} as const;
+  assert.deepEqual(await control('saved-show', (await light()).revision, start), {status: 'accepted', requestId: 'saved-show'});
+  await waitFor(() => lines.work.length === 1);
+  const startWork = lines.work[0];assert.ok(startWork);
+  const {generation} = startWork.data;
+  const show = {showId: start.showId, version: start.version, positionMs: 500, missedCues: 2};
+  await lines.publish('wall', {generation, status: 'playing', show});
+  await status('wall', 'active');
+
+  assert.deepEqual(await control('stop-show', (await light()).revision, {action: 'stop', generation}), {status: 'accepted', requestId: 'stop-show'});
+  const stopId = lightingWorkRequestId('stop-show', 'wall');
+  await waitFor(() => operation(stopId)?.reply === 'accepted');
+  const stop = lines.work[1];assert.ok(stop);
+  await lines.outcome(stop, 'failed', 'unavailable');
+  await status('wall', 'uncertain');
+  const positionMs = 540;
+  await lines.publish('wall', {generation, status: 'playing', show: {...show, positionMs}});
+  await waitFor(async () => {
+    const {session} = await light();
+    return 'show' in session && session.show.positionMs === positionMs;
+  });
+  assert.equal((await light()).session.status, 'uncertain');
+  assert.equal(codeOf(await control('pause-while-uncertain', (await light()).revision, {action: 'pause-show', generation})), 'invalid-state');
+
+  const ending = {generation, reason: 'stopped', restoration: 'none', atMs: Date.now(), missedCues: 2} as const;
+  await lines.publish('wall', {generation, status: 'ended', ended: ending});
+  await status('wall', 'idle');
+  assert.deepEqual((await light()).last, ending);
+  assert.equal(lines.work.length, 2);
+});

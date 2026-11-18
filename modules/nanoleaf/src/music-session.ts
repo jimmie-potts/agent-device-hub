@@ -41,6 +41,7 @@ export const EXTERNAL_CHECK_MS = 1000;
 export const POLL_MS = 25;
 /** A Music session yields to everything a moment yields to, and to a newer moment. */
 const NEWER_THAN_MUSIC = [...NEWER_CHOICES, 'moment.play'] as const;
+class StopExpired extends Error {}
 
 /** A Start as the journal keeps it: the frozen recipe and layout, the Free base and what it was admitted over. */
 type AdmittedSource = {capture: LightingCapture; presetId: string; recipe: MusicRecipeV1}
@@ -207,8 +208,8 @@ export function admitMusicTransport(db: Db, device: string, command: MusicTransp
       (command.action === 'pause-show' && session.paused) || (command.action === 'resume-show' && !session.paused)) {
     throw new Refused('invalid-state', 'The current show cannot take this transport control.');
   }
-  if (command.action === 'seek-show' && (session.durationMs === undefined || command.positionMs > session.durationMs)) {
-    throw new Refused('invalid-request', 'The seek position exceeds this show.');
+  if (command.action === 'seek-show' && (session.durationMs === undefined || command.positionMs >= session.durationMs)) {
+    throw new Refused('invalid-request', 'The seek position must fall before the end of this show.');
   }
   if (nowMs >= expiresMs) throw new Refused('expired', 'The transport control expired.');
   if (journal(db, device, 'AND kind IN (?, ?)', MUSIC_STOP, MUSIC_TRANSPORT).length > 0) {
@@ -283,6 +284,11 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   const stale = (): boolean => !liveSession(db, device, generation) || held(db, row.revision, device) || newerChoice(db, device, since, NEWER_THAN_MUSIC);
   const stopRow = (): JournalRow | undefined =>
     journal(db, device, 'AND kind=?', MUSIC_STOP).find(stop => (stop.command as MusicStop).generation === generation);
+  const stopExpired = (stop: JournalRow): boolean => prepared !== undefined && now() >= stop.expires * 1000;
+  const expireStop = (stop: JournalRow): Promise<void> => transact(report => {
+    const pending = journalRow(db, stop.id);
+    if (pending !== undefined) finish(db, pending, {kind: 'expired'}, report, now());
+  });
   /** Rethrows anything but a device request's failure while the module runs. */
   const deviceFailure = (error: unknown): void => {
     if (!deviceFailed || stopping()) throw error;
@@ -330,8 +336,8 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     if (stopping()) throw new Cancelled();
     const stop = stopRow();
     if (stop !== undefined) {
-      if (prepared !== undefined && now() >= stop.expires * 1000) {
-        await transact(report => {if (journalRow(db, stop.id) !== undefined) finish(db, stop, {kind: 'expired'}, report, now());});
+      if (stopExpired(stop)) {
+        await expireStop(stop);
         continue;
       }
       return end('stopped', 'none', {kind: 'refused', code: 'cancelled'}, stop);
@@ -421,12 +427,20 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     const base = freeBase;
     const writer = stop === undefined ? paint : new Execution(db, row.revision, stop.id, device, transact, now);
     let lost = false;
+    let sent = false;
+    const checkDeadline = (): void => {
+      if (!sent && stop !== undefined && stopExpired(stop)) throw new StopExpired();
+    };
     try {
-      return await restoreMusicBase(read, base, shown, stale, async (endpoint, body) => {
+      const restored = await restoreMusicBase(read, base, shown, stale, async (endpoint, body) => {
+        checkDeadline();
         if (stopping() || stale()) throw new Cancelled();
         let result: unknown;
         try {
-          result = await writer.call(() => send(endpoint, body));
+          result = await writer.call(() => {
+            sent = true;
+            return send(endpoint, body);
+          });
         } catch (error) {
           // An answered refusal heard the write and did not apply it (`Execution` turns a Stop's into `Cancelled`).
           lost = !(error instanceof Cancelled) && !(error instanceof HttpError);
@@ -434,8 +448,12 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
         }
         if (stopping() || stale()) throw new Cancelled();
         return result;
-      }) ? 'restored' : 'skipped';
+      });
+      checkDeadline();
+      return restored ? 'restored' : 'skipped';
     } catch (error) {
+      if (error instanceof StopExpired) throw error;
+      checkDeadline();
       if (!(error instanceof Cancelled)) deviceFailure(error);
       return lost ? 'uncertain' : 'skipped';
     }
@@ -468,11 +486,17 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     if (stopping()) throw new Cancelled();
     const stop = stopRow();
     if (stop !== undefined) {
-      if (prepared !== undefined && now() >= stop.expires * 1000) {
-        await transact(report => {if (journalRow(db, stop.id) !== undefined) finish(db, stop, {kind: 'expired'}, report, now());});
+      if (stopExpired(stop)) {
+        await expireStop(stop);
         continue;
       }
-      return end('stopped', await restore(stop), undefined, stop);
+      try {
+        return end('stopped', await restore(stop), undefined, stop);
+      } catch (error) {
+        if (!(error instanceof StopExpired)) throw error;
+        await expireStop(stop);
+        continue;
+      }
     }
     if (stale()) return end('manual', 'none');
     if (alerting(current())) return end('alert', await restore(undefined));

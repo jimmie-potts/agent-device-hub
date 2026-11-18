@@ -88,8 +88,8 @@ The Nanoleaf module SHALL resolve an exact saved show revision and validate ever
 
 #### Scenario: Independent playback
 
-- **WHEN** the two lights admit the same revision and the owner subsequently saves another version
-- **THEN** each worker runs the admitted revision and one worker's failure or ending leaves the other worker's schedule and device alone
+- **WHEN** the operator starts the same revision on both lights while both base reads are in flight, then saves another version
+- **THEN** both admissions can proceed and each worker runs the admitted revision independently. A journaled change on the same light during its read still invalidates that admission.
 
 ### Requirement: Schedule only the current cue
 
@@ -105,6 +105,11 @@ A prepared session SHALL sample the existing timeline cursor on its local runtim
 - **WHEN** a prepared show pauses, seeks while paused, then explicitly resumes
 - **THEN** the pause holds the last frame, the worker keeps checking for interruption, and resume schedules only from the new position
 
+#### Scenario: Seek at the end while paused
+
+- **WHEN** an operator seeks to the show duration or later while paused
+- **THEN** the command is refused and the paused show keeps its position and presentation
+
 ### Requirement: End under the saved-show participation policy
 
 The worker SHALL apply the existing guard for manual takeover and guarded base restoration. Stop, alert, source loss and natural completion SHALL end the session and attempt guarded restoration. A manual choice SHALL end it without a restoration write. A stopped or interrupted session SHALL never replay after restart. The NL22's existing observation limit remains in effect. If the light reports the same selection, power and brightness after an unsaved effect, the worker can still attempt base restoration on Stop.
@@ -113,6 +118,11 @@ The worker SHALL apply the existing guard for manual takeover and guarded base r
 
 - **WHEN** an alert, Stop, newer choice or clock discontinuity occurs while a status read is outstanding
 - **THEN** no further frame sends after the worker sees the interruption, and restoration follows the ending and the existing ownership guards
+
+#### Scenario: Stop deadline during restoration read
+
+- **WHEN** a prepared Stop expires during a restoration read before its first write
+- **THEN** the Stop reports expiry without sending a restoration write or changing the show's transport state
 
 #### Scenario: Unanswered device operation
 

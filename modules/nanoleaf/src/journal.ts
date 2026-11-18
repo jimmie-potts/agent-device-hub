@@ -124,6 +124,24 @@ export function initJournal(db: Db): void {
   initMusicSessions(db);
 }
 
+/**
+ * An in-flight base read can only span admissions on the module's own connection. Keep each light's latest committed
+ * insert there even after the worker settles it. TEMP state shares the admission transaction and leaves the store intact.
+ */
+export function initJournalAdmissionMarks(db: Db): void {
+  db.exec(`CREATE TEMP TABLE IF NOT EXISTS control_journal_admission_marks (device TEXT PRIMARY KEY, seq INTEGER NOT NULL);
+    CREATE TEMP TRIGGER IF NOT EXISTS mark_control_admission AFTER INSERT ON main.control_journal
+    BEGIN
+      INSERT INTO control_journal_admission_marks (device, seq) VALUES (NEW.device, NEW.seq)
+      ON CONFLICT(device) DO UPDATE SET seq=excluded.seq;
+    END`);
+}
+
+export function journalAdmissionMark(db: Db, device: string): number {
+  const row = first(db, 'SELECT seq FROM temp.control_journal_admission_marks WHERE device=?', device);
+  return row === undefined ? 0 : number(row, 0);
+}
+
 const COLUMNS = 'seq,id,device,kind,command,mode_revision,phase,completed,uncertain,expires';
 
 function rowOf(row: Row): JournalRow {
