@@ -1,4 +1,5 @@
 import React, {useSyncExternalStore} from 'react';
+import {RailIcon} from './rail.tsx';
 import {navigationDestination, parseRoute, routeHash, type Route} from './routes.ts';
 
 const listeners = new Set<() => void>();
@@ -24,6 +25,6 @@ export function ShellNavigation({route}: {route: Route}): React.JSX.Element {
   const destination = navigationDestination(route);
   return <nav className="primary-navigation" aria-label="Main navigation">
     {([['home', 'Home'], ['habitat', 'Habitat'], ['rooms', 'Rooms'], ['devices', 'Devices'], ['automation', 'Automation']] as const).map(([kind, label]) =>
-      <NavLink key={kind} route={{kind}} selected={destination === kind}>{label}</NavLink>)}
+      <NavLink key={kind} route={{kind}} selected={destination === kind}><RailIcon name={kind}/><span className="rail-text">{label}</span></NavLink>)}
   </nav>;
 }

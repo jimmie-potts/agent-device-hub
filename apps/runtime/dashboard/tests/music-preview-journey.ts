@@ -5,6 +5,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {expect} from 'playwright/test';
 import type {Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {destinationLink} from './navigation-helpers.ts';
 
 /** Actual disposable host and module, fixed generated input and simulated controllers only. */
 export async function musicPreviewJourney(browser: Browser): Promise<void> {
@@ -135,7 +136,7 @@ export async function musicPreviewJourney(browser: Browser): Promise<void> {
       }
     }
     const beforeExit = reads.length;
-    await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: /^Home/}).click();
+    await (await destinationLink(page, /^Home/)).click();
     await expect(preview).toHaveCount(0);
     await page.goto(`${world.url}/#/module/nanoleaf/wall`); await feed(page, 'connected');
     await preview.locator('summary').click(); await expect(preview.locator('figure')).toHaveCount(0);

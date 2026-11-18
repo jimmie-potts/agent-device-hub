@@ -5,6 +5,7 @@ import {chromium, expect} from 'playwright/test';
 import {changes, feed, startWorld} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {approvalPrompt, approvalResolved} from '../../dist/tests/fixtures/agents.js';
+import {destinationLink} from './navigation-helpers.ts';
 
 const world = await startWorld({lighting: true, pixooPages: true});
 const browser = await chromium.launch({headless: true});
@@ -20,7 +21,7 @@ try {
   await page.goto(`${world.url}/#/rooms`);await feed(page, 'connected');
   await page.getByText('Manage rooms', {exact: true}).click();await page.getByLabel('New room name', {exact: true}).fill('Studio');
   await page.getByRole('button', {name: 'Create room', exact: true}).click();await page.getByRole('heading', {name: 'Studio', exact: true}).waitFor();
-  await page.getByRole('link', {name: /^Home/}).first().click();await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
+  await (await destinationLink(page, /^Home/)).click();await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   sent.length = 0;
   assert.equal(await page.getByText('YOUR SPACE', {exact: true}).count(), 0);assert.equal(await page.getByText('Desktop layout', {exact: true}).count(), 0);
   const original = await order();

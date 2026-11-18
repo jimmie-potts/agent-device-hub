@@ -66,6 +66,8 @@
   --shell-background:radial-gradient(ellipse at 0 0,light-dark(#cbd9f4,#293650),transparent 65%),radial-gradient(ellipse at 100% 100%,light-dark(#ebdcde,#302b3f),transparent 65%),var(--bg);
   --shell-rail:light-dark(#e2e9f5,#1b2436);
   --shell-shadow:0 12px 28px light-dark(#50628016,#00000030),inset 0 1px 0 light-dark(#ffffff,#ffffff14);
+  --shell-drawer-shadow:0 20px 44px light-dark(#3b4c6e2e,#00000075);
+  --shell-scrim:light-dark(#25314b47,#05080f99);
   --shell-heading-font:var(--font);
   --chip-surface:#162235;
   --light-surface:var(--panel);

@@ -5,6 +5,7 @@ import {chromium, expect} from 'playwright/test';
 import {changes, feed, startWorld} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import type {HistoryRow} from '../src/timeline-model.ts';
+import {destinationLink} from './navigation-helpers.ts';
 
 const world = await startWorld({inbox: true}), browser = await chromium.launch({headless: true});
 try {
@@ -40,7 +41,7 @@ try {
   await card.getByRole('button', {name: 'Apply filters'}).click();await expect(card.getByRole('status')).toContainText('history entries.');
 
   // Add the identical card through the existing editor and persist its shape and order.
-  await page.getByRole('link', {name: /^Home/}).first().click();
+  await (await destinationLink(page, /^Home/)).click();
   assert.equal(await card.count(), 0, 'Timeline is opt-in');
   await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
   await page.getByRole('button', {name: 'Add card', exact: true}).click();

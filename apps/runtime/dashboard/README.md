@@ -65,10 +65,17 @@ Actual phone/certificate verification is separate from desktop browser tests.
 
 ## Pages, routes and widgets
 
-The primary rail has **Home, Habitat, Rooms, Devices and Automation**. Settings is a
-separate corner link; it contains Connections (including build/operator tools),
-Places and Disconnect. An ended browser session still offers **Sign in again**
-globally. Home links Timeline. Devices groups catalog-derived Lighting,
+The rail has **Home, Habitat, Rooms, Devices and Automation**, each with an icon.
+Settings, the feed indicator and the control mode sit at the bottom of the rail
+(#1887); Settings contains Connections (including build/operator tools), Places
+and Disconnect. The rail stays in view while a page scrolls. Its toggle
+collapses it to icons that keep their names for assistive technology and show
+them on hover or focus. It starts collapsed below 1200px and expanded from
+1200px up, and the toggle's choice is kept in this browser for each of those two
+window sizes (`rail-preference.ts`); it is never core or module state. At phone
+width the rail is a drawer behind a menu button, closed by a chosen destination,
+Escape or an outside tap. An ended browser session shows the full rail and still
+offers **Sign in again** globally. Home links Timeline. Devices groups catalog-derived Lighting,
 Displays, Audio and Other destinations; module pages keep their sibling links
 locally. The category choice survives navigation within the open page without
 being saved as a new preference. Unknown modules use Other, and unavailable
@@ -76,7 +83,7 @@ catalog or observation evidence stays explicit. Browsing sends no device command
 
 `navigation.tsx` shares native anchor navigation and containing-destination
 selection. `directory.ts` projects the existing copies without acquiring state.
-`skins/quiet-glass.css` supplies light/dark semantic values over the retained
+`rail.tsx` owns the rail's collapse state and icons. `skins/quiet-glass.css` supplies light/dark semantic values over the retained
 fixed attention/art tokens; `shell.css` owns shared responsive geometry. The
 legacy dashboard and documentation keep their own skins. Settings can follow
 displayed art colors, lock the current colors or restore Quiet glass. These

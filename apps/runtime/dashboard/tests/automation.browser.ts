@@ -7,6 +7,7 @@ import {chromium, type Browser, type Page} from 'playwright';
 import {expect} from 'playwright/test';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {feed, startWorld} from './harness.ts';
+import {destinationLink} from './navigation-helpers.ts';
 
 const world = await startWorld({nanoleaf: true,devices:true});
 let browser: Browser | undefined;
@@ -93,7 +94,7 @@ try {
     await expect(automation().getByRole('button', {name: 'New routine', exact: true})).toBeFocused();
     await expect(draftName).toBeHidden();
     assert.equal(writes.length, explicit, 'draft typing, tabs, cancel and reconnect do not mutate or replay');
-    await page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: /Home/}).click();
+    await (await destinationLink(page, /Home/)).click();
     const mode = page.locator('[data-widget="hub-mode"]');
     await mode.getByRole('button', {name: 'Work', exact: true}).click();
     await mode.getByText('Selection completed. Device results are separate.', {exact: true}).waitFor();

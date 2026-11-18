@@ -818,6 +818,21 @@ navigation, retained page addresses, passive browsing and light/dark desktop/pho
 layout. The existing hosted smoke and full browser entries include this
 journey; synthetic browser proof does not establish actual-phone or device results.
 
+The rail (#1887) extends the same journey and the dashboard unit discovery.
+`node --test apps/runtime/dashboard/tests/rail-preference.test.ts` covers the
+collapse preference: the default for each window size, one remembered choice per
+size, damaged values, refused or missing storage and a change from another tab.
+`node apps/runtime/dashboard/tests/shell.browser.ts` checks that Settings, the
+feed indicator and the control mode sit at the bottom of a rail that stays in
+view; that the rail is expanded at 1440px and an icon rail at 1024px, with each
+destination's name kept once and shown on hover; that a toggle survives a reload
+for its own window size only and still works when the save is refused; and that
+at 390px the menu button opens a drawer which Escape, an outside tap and a chosen
+destination close. Journeys that navigate at phone width open the drawer through
+`destinationLink` or `openSettings` in `tests/navigation-helpers.ts`. Run every
+dashboard browser journey for a shell change, since the main column's width
+below 1200px depends on the rail.
+
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`
 for bounded metadata, operator admission, atomic revision guards and restart.
