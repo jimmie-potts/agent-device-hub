@@ -47,6 +47,102 @@
         },
         "action": {
           "const": "stop"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "action",
+        "showId",
+        "version",
+        "positionMs",
+        "startDelayMs"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "action": {
+          "const": "start-show"
+        },
+        "showId": {
+          "$ref": "#/$defs/showId"
+        },
+        "version": {
+          "$ref": "#/$defs/showVersion"
+        },
+        "positionMs": {
+          "$ref": "#/$defs/positionMs"
+        },
+        "startDelayMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 30000
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "generation",
+        "action"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "action": {
+          "enum": [
+            "pause-show",
+            "resume-show"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "expectedRevision",
+        "generation",
+        "action",
+        "positionMs"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "expectedRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "action": {
+          "const": "seek-show"
+        },
+        "positionMs": {
+          "$ref": "#/$defs/positionMs"
         }
       }
     }
@@ -117,6 +213,21 @@
           "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorCode"
         }
       }
+    },
+    "showId": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^show-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "showVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
+    },
+    "positionMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1800000
     }
   }
 }

@@ -8,7 +8,7 @@
 // (Hub #975); Python's hold had none.
 import {errorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {DEFAULT, metaKey} from './devices.js';
-import {initMusicSessions, liveSession, MUSIC_PLAY, MUSIC_STOP, startEnded} from './music-store.js';
+import {initMusicSessions, liveSession, MUSIC_PLAY, MUSIC_STOP, MUSIC_TRANSPORT, startEnded} from './music-store.js';
 import {execute, first, number, rows, text, transaction, type Db, type Row, type Synchronous} from './sqlite.js';
 import {Outcome as OutcomeWord} from '@jimmie-potts/sdk';
 
@@ -124,6 +124,24 @@ export function initJournal(db: Db): void {
   initMusicSessions(db);
 }
 
+/**
+ * An in-flight base read can only span admissions on the module's own connection. Keep each light's latest committed
+ * insert there even after the worker settles it. TEMP state shares the admission transaction and leaves the store intact.
+ */
+export function initJournalAdmissionMarks(db: Db): void {
+  db.exec(`CREATE TEMP TABLE IF NOT EXISTS control_journal_admission_marks (device TEXT PRIMARY KEY, seq INTEGER NOT NULL);
+    CREATE TEMP TRIGGER IF NOT EXISTS mark_control_admission AFTER INSERT ON main.control_journal
+    BEGIN
+      INSERT INTO control_journal_admission_marks (device, seq) VALUES (NEW.device, NEW.seq)
+      ON CONFLICT(device) DO UPDATE SET seq=excluded.seq;
+    END`);
+}
+
+export function journalAdmissionMark(db: Db, device: string): number {
+  const row = first(db, 'SELECT seq FROM temp.control_journal_admission_marks WHERE device=?', device);
+  return row === undefined ? 0 : number(row, 0);
+}
+
 const COLUMNS = 'seq,id,device,kind,command,mode_revision,phase,completed,uncertain,expires';
 
 function rowOf(row: Row): JournalRow {
@@ -226,13 +244,15 @@ export function finish(db: Db, row: JournalRow, end: End, report: Report, nowMs?
   report(outcome);
   if (row.kind !== MUSIC_PLAY) return;
   const generation = startEnded(db, row, end, nowMs ?? row.expires * 1000, report);
-  if (generation !== undefined) finishMusicStops(db, row.device, generation, {kind: 'refused', code: 'invalid-state'}, report, nowMs);
+  if (generation !== undefined) finishMusicControls(db, row.device, generation, {kind: 'refused', code: 'invalid-state'}, report, nowMs);
 }
 
-/** Ends every queued Music stop for `generation` (#1272): its session ended, so nothing is left for it to stop. */
-export function finishMusicStops(db: Db, device: string, generation: string, end: End, report: Report, nowMs?: number): void {
-  for (const stop of journal(db, device, 'AND kind=?', MUSIC_STOP)) {
-    if ((stop.command as {generation?: unknown}).generation === generation) finish(db, stop, end, report, nowMs);
+/** Settles queued controls whose session ended. */
+export function finishMusicControls(db: Db, device: string, generation: string, end: End, report: Report, nowMs?: number): void {
+  for (const control of journal(db, device, 'AND kind IN (?,?)', MUSIC_STOP, MUSIC_TRANSPORT)) {
+    if ((control.command as {generation?: unknown}).generation !== generation) continue;
+    const result = control.kind === MUSIC_STOP ? end : {kind: 'refused', code: 'invalid-state'} as const;
+    finish(db, control, result, report, nowMs);
   }
 }
 

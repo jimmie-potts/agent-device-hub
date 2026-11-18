@@ -1,5 +1,5 @@
-// #1272: the core owns each Nanoleaf light's Music lighting session (design D3, first-trial policy in #40). Saving an
-// explicit Start or Stop completes the operator command; the light's module then gets one tracked work command. The
+// The core owns a Music lighting session per Nanoleaf light (#1272, #1273, #40). It completes the operator command
+// when it saves the request, then dispatches one tracked work command to the light's module. The
 // session settles from the work reply and from the module's synced `music-lighting-device` record. Nothing here ever
 // resumes, resends or picks another light or input: work goes out only in direct answer to an operator command.
 import {createHash, randomUUID} from 'node:crypto';
@@ -11,7 +11,7 @@ import {Outcome, fullDisk, recordLog, type Cancel, type Command, type ModuleSche
 import {Backoff} from './backoff.js';
 import type {CoreHandle, CorePart} from './core.js';
 import type {ModeParticipant} from './mode-participants.js';
-import {pending} from './operations.js';
+import {pending, type Operation} from './operations.js';
 import type {CoreTransaction} from './store.js';
 import type {CompletedOutcome, Tracked} from './tracker.js';
 
@@ -43,6 +43,9 @@ type Follower = {fresh: boolean; pending: Promise<void>; retry: Backoff; cancel?
  */
 type Notes = {startWork?: string; stopWork?: string; reported?: boolean};
 type Row = {state: LightingState; notes: Notes};
+const isStart = (work: LightingWork): boolean => work.action === 'start' || work.action === 'start-show';
+const showEnding = (session: LightingState['session'], ended: LightingEnded): LightingEnded =>
+  'show' in session ? {...ended, missedCues: Math.max(session.show.missedCues, ended.missedCues ?? 0)} : ended;
 
 export class MusicLightingPart implements CorePart {
   readonly families = ['music-lighting-state'] as const;
@@ -87,7 +90,8 @@ export class MusicLightingPart implements CorePart {
   /**
    * The tracker's change to one of this part's work commands, in that change's transaction. A Start the module never
    * admitted ends once its command can no longer be admitted; a Stop whose accepted work failed or timed out without a
-   * device ending leaves the session uncertain. Reply refusals and lost replies are settled from the reply instead.
+   * device ending leaves the session uncertain. A prepared Stop that expired before acting can restore the owner's
+   * reported playing or paused state. Other reply refusals and lost replies are settled separately.
    */
   readonly tracked: Tracked = ({operation}, tx) => {
     if (operation.family !== 'music-lighting-work' || this.#database === undefined || this.#core === undefined || this.#closed) return;
@@ -96,9 +100,13 @@ export class MusicLightingPart implements CorePart {
     if (operation.requestId === row.notes.startWork) {
       const ending = session.status === 'starting' || session.status === 'uncertain' ? this.#unheard(row, tx.atMs) : undefined;
       if (ending !== undefined) this.#end(tx, row, ending, operation);
-    } else if (operation.requestId === row.notes.stopWork && session.status === 'stopping' && operation.reply === 'accepted' &&
-      (operation.result === Outcome.failed || operation.result === Outcome.uncertain)) {
-      this.#save(tx, {...row.state, session: {...session, status: 'uncertain'}}, row.notes, operation);
+    } else if (operation.requestId === row.notes.stopWork && (session.status === 'stopping' || session.status === 'uncertain')) {
+      if ('show' in session && stopExpired(operation, row)) {
+        if (this.#follower?.fresh === true) this.#heardFrom(tx, row, this.#devices.get(row.state.id)?.session ?? null, operation);
+      } else if (session.status === 'stopping' && operation.reply === 'accepted' &&
+        (operation.result === Outcome.failed || operation.result === Outcome.uncertain)) {
+        this.#save(tx, {...row.state, session: {...session, status: 'uncertain'}}, row.notes, operation);
+      }
     }
   };
 
@@ -164,7 +172,7 @@ export class MusicLightingPart implements CorePart {
     this.#db().prepare('UPDATE music_lighting SET notes = ? WHERE id = ?').run(JSON.stringify(notes), id);
   }
   #end(tx: CoreTransaction, row: Row, last: LightingEnded, parent?: TraceContext): void {
-    this.#save(tx, {...row.state, session: {status: 'idle'}, last}, row.notes, parent);
+    this.#save(tx, {...row.state, session: {status: 'idle'}, last: showEnding(row.state.session, last)}, row.notes, parent);
   }
   /** Whether the copy is fresh and the module holds no session of this generation. */
   #absent(id: string, generation: string): boolean {
@@ -172,7 +180,7 @@ export class MusicLightingPart implements CorePart {
   }
   /** Whether the module ever held this session: it reported the generation, or accepted its Start. */
   #heard({state, notes}: Row): boolean {
-    if (notes.reported === true || state.session.status === 'active') return true;
+    if (notes.reported === true || state.session.status === 'active' || state.session.status === 'paused') return true;
     return notes.startWork !== undefined && this.#core?.operation(notes.startWork)?.reply === 'accepted';
   }
   /**
@@ -248,25 +256,47 @@ export class MusicLightingPart implements CorePart {
       const row = this.#row(target), current = row.state;
       if (data.expectedRevision !== current.revision) return errorBody('revision-conflict', {detail: 'the light\'s music lighting session changed; read it again'});
       let session: LightingState['session'], notes: Notes;
-      if (data.action === 'start') {
-        if (current.session.status !== 'idle') return errorBody('invalid-state', {detail: 'a music lighting session is already under way on this light'});
-        const capture = this.#capture();
-        if (capture === undefined) return errorBody('unavailable', {detail: 'no Music capture session is active'});
-        if (capture.input !== 'music') return errorBody('unsupported-capability', {detail: 'live lighting renders the Music capture only, never a microphone'});
-        if (capture.endpointId !== data.capture.endpointId || capture.generation !== data.capture.generation) {
-          return errorBody('revision-conflict', {detail: 'the Music capture session changed; read it again'});
+      const previous = current.session;
+      if (data.action === 'start' || data.action === 'start-show') {
+        if (previous.status !== 'idle') return errorBody('invalid-state', {detail: 'a music lighting session is already under way on this light'});
+        const generation = randomUUID();
+        const starting = {status: 'starting', generation, operationId: data.requestId, startedAtMs: tx.atMs} as const;
+        if (data.action === 'start-show') {
+          const {showId, version, positionMs, startDelayMs} = data;
+          session = {...starting, show: {showId, version, positionMs, missedCues: 0}};
+          work = {requestId, generation, action: 'start-show', showId, version, positionMs, startDelayMs};
+        } else {
+          const capture = this.#capture();
+          if (capture === undefined) return errorBody('unavailable', {detail: 'no Music capture session is active'});
+          if (capture.input !== 'music') return errorBody('unsupported-capability', {detail: 'live lighting renders the Music capture only, never a microphone'});
+          if (capture.endpointId !== data.capture.endpointId || capture.generation !== data.capture.generation) {
+            return errorBody('revision-conflict', {detail: 'the Music capture session changed; read it again'});
+          }
+          const bound = {endpointId: capture.endpointId, generation: capture.generation};
+          session = {...starting, capture: bound, presetId: data.presetId};
+          work = {requestId, generation, action: 'start', capture: bound, presetId: data.presetId};
         }
-        const generation = randomUUID(), bound = {endpointId: capture.endpointId, generation: capture.generation};
-        session = {status: 'starting', generation, operationId: data.requestId, capture: bound, presetId: data.presetId, startedAtMs: tx.atMs};
-        work = {requestId, generation, action: 'start', capture: bound, presetId: data.presetId};
         notes = {startWork: requestId, reported: false};
       } else {
-        const previous = current.session;
-        // A Stop while stopping is a new explicit command with its own work: a stop row can expire unseen.
-        if (previous.status === 'idle') return errorBody('invalid-state', {detail: 'no music lighting session can be stopped on this light'});
-        session = {...previous, status: 'stopping', operationId: data.requestId};
-        work = {requestId, generation: previous.generation, action: 'stop'};
-        notes = {...row.notes, stopWork: requestId};
+        if (previous.status === 'idle') return errorBody('invalid-state', {detail: 'no music lighting session is under way on this light'});
+        if (data.generation !== previous.generation && (data.generation !== undefined || 'show' in previous)) {
+          return errorBody('revision-conflict', {detail: 'the light has a different music lighting generation; read it again'});
+        }
+        const generation = previous.generation;
+        if (data.action === 'stop') {
+          // A Stop while stopping is a new explicit command with its own work: a stop row can expire unseen.
+          session = {...previous, status: 'stopping', operationId: data.requestId};
+          work = {requestId, generation, action: 'stop'};
+          notes = {...row.notes, stopWork: requestId};
+        } else {
+          if (!('show' in previous) || (previous.status !== 'active' && previous.status !== 'paused')) {
+            return errorBody('invalid-state', {detail: 'prepared transport requires the light to report an active or paused show'});
+          }
+          session = {...previous, operationId: data.requestId};
+          work = data.action === 'seek-show' ? {requestId, generation, action: data.action, positionMs: data.positionMs}
+            : {requestId, generation, action: data.action};
+          notes = row.notes;
+        }
       }
       this.#save(tx, {...current, session}, notes, command);
       tx.take(command);
@@ -286,13 +316,14 @@ export class MusicLightingPart implements CorePart {
     try {
       const answer = await core.dispatch({key: `bunny.cmd.music-lighting-work.${target}`, requestedBy: core.sdk.source, requestId: work.requestId, parent,
         draft: {type: 'org.bunny.music-lighting.work.requested', subject: target, dataschema: WORK_SCHEMA, data: work}});
-      if (work.action === 'start') this.#expireAt(target, work.generation, work.requestId);
+      if (isStart(work)) this.#expireAt(target, work.generation, work.requestId);
       if (!('error' in answer)) return;
       code = answer.error.code;
     } catch {
       code = 'uncertain-result';
     }
-    await this.#serial(() => this.#replied(target, work, code, parent)).catch(() => {this.#failed();});
+    // Transport commands are tracked separately. The synced device record owns their actual effect on the show.
+    if (isStart(work) || work.action === 'stop') await this.#serial(() => this.#replied(target, work, code, parent)).catch(() => {this.#failed();});
   }
 
   async #replied(target: string, work: LightingWork, code: ErrorCode, parent: TraceContext): Promise<void> {
@@ -301,7 +332,7 @@ export class MusicLightingPart implements CorePart {
     await this.#required().transaction(tx => {
       const row = this.#row(target), current = row.state, session = current.session;
       if (session.status === 'idle' || session.generation !== work.generation) return;
-      if (work.action === 'start') {
+      if (isStart(work)) {
         if (session.status !== 'starting' || row.notes.startWork !== work.requestId) return;
         if (lost) this.#save(tx, {...current, session: {...session, status: 'uncertain'}}, row.notes, parent);
         else this.#end(tx, row, {generation: work.generation, reason: code === 'expired' ? 'expired' : 'refused', restoration: 'none', atMs: tx.atMs, code}, parent);
@@ -310,8 +341,11 @@ export class MusicLightingPart implements CorePart {
       // Only the latest Stop's reply decides; a superseded one changes nothing.
       if (session.status !== 'stopping' || row.notes.stopWork !== work.requestId) return;
       if (code !== 'invalid-state') {this.#save(tx, {...current, session: {...session, status: 'uncertain'}}, row.notes, parent);return;}
-      // The module has no such session any more: its record decides, and without an ending the Stop stands.
       const device = this.#devices.get(target)?.session;
+      // A prepared show may complete as Stop arrives. Preserve its terminal cursor evidence when the owner's
+      // latest synced record still names this generation and the ending has yet to arrive.
+      if ('show' in session && device?.generation === work.generation && device.status !== 'ended') return;
+      // The module has no such session any more: its record decides, and without an ending the Stop stands.
       this.#end(tx, row, device?.status === 'ended' && device.generation === work.generation ? device.ended
         : {generation: work.generation, reason: 'stopped', restoration: 'none', atMs: tx.atMs}, parent);
     });
@@ -365,10 +399,18 @@ export class MusicLightingPart implements CorePart {
   }
 
   /** The session's next record from its own generation's device record, or undefined when it does not change it. */
-  #settled(record: LightingState, device: LightingDeviceState['session']): LightingState | undefined {
+  #settled(record: LightingState, device: LightingDeviceState['session'], stopPending: boolean): LightingState | undefined {
     const session = record.session;
     if (session.status === 'idle' || device === null || device.generation !== session.generation) return undefined;
-    if (device.status === 'ended') return {...record, session: {status: 'idle'}, last: device.ended};
+    if (device.status === 'ended') return {...record, session: {status: 'idle'}, last: showEnding(session, device.ended)};
+    if ('show' in session) {
+      if (!('show' in device) || session.show.showId !== device.show.showId || session.show.version !== device.show.version) return undefined;
+      const show = {...device.show, missedCues: Math.max(session.show.missedCues, device.show.missedCues)};
+      const status = stopPending || device.status === 'starting' ? session.status : device.status === 'paused' ? 'paused' : 'active';
+      if (status === session.status && show.positionMs === session.show.positionMs && show.missedCues === session.show.missedCues) return undefined;
+      return {...record, session: {...session, status, show}};
+    }
+    if ('show' in device) return undefined;
     if (device.status === 'playing' && (session.status === 'starting' || session.status === 'uncertain')) return {...record, session: {...session, status: 'active'}};
     return undefined;
   }
@@ -388,10 +430,17 @@ export class MusicLightingPart implements CorePart {
   #heardFrom(tx: CoreTransaction, row: Row, device: LightingDeviceState['session'], parent?: TraceContext): boolean {
     const session = row.state.session;
     if (session.status === 'idle' || device === null || device.generation !== session.generation) return false;
-    const notes = row.notes.reported === true ? row.notes : {...row.notes, reported: true};
-    const next = this.#settled(row.state, device);
-    if (next !== undefined) this.#save(tx, next, notes, parent);
-    else if (notes !== row.notes) this.#note(row.state.id, notes);
+    const stopWork = row.notes.stopWork;
+    const stoppingShow = 'show' in session && stopWork !== undefined &&
+      (session.status === 'stopping' || session.status === 'uncertain');
+    const expired = stoppingShow && this.#follower?.fresh === true &&
+      stopExpired(this.#core?.operation(stopWork), row);
+    const notes = {...row.notes, reported: true};
+    const next = this.#settled(row.state, device, stoppingShow && !expired);
+    if (next !== undefined) {
+      if (expired && (next.session.status === 'active' || next.session.status === 'paused')) delete notes.stopWork;
+      this.#save(tx, next, notes, parent);
+    } else if (row.notes.reported !== true) this.#note(row.state.id, notes);
     return true;
   }
 
@@ -413,4 +462,17 @@ export class MusicLightingPart implements CorePart {
       }
     });
   }
+}
+
+function stopExpired(operation: Operation | undefined, {state, notes}: Row): boolean {
+  if (operation === undefined || operation.requestId !== notes.stopWork || operation.target !== state.id ||
+    operation.family !== 'music-lighting-work' || operation.data.action !== 'stop' || state.session.status === 'idle' ||
+    operation.data.generation !== state.session.generation || operation.result !== Outcome.failed ||
+    operation.evidence !== Outcome.none || operation.error?.code !== 'expired') return false;
+
+  // The tracker records an expired refusal only when admission was prevented.
+  if (operation.status === 'expired' && operation.reply === 'expired') return operation.outcomes.length === 0;
+  // The owner can prove it settled an expired Stop even if the acceptance reply never reached the tracker.
+  return operation.status === 'completed' && operation.outcomes.every(outcome => outcome.evidence === Outcome.none) &&
+    operation.outcomes.some(outcome => outcome.source === OWNER && outcome.result === Outcome.failed && outcome.error?.code === 'expired');
 }

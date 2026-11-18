@@ -42,6 +42,19 @@ void test('only the core\'s own valid lighting record is shown', () => {
   }
 });
 
+void test('a paused standalone show stays visible and can be stopped without Music capture', () => {
+  const show = {showId: 'show-almond', version: 2, positionMs: 400, missedCues: 3};
+  const paused: LightingState = {...idle,
+    session: {status: 'paused', generation: 'session-one', operationId: 'show-pause', startedAtMs: 1000, show}};
+  assert.deepEqual(lightingRecord(message(paused)), paused);
+  assert.match(sessionText(paused.session), /^Paused/);
+  assert.equal(stopBlocked(ready({record: paused, capture: undefined, captureLive: false, presets: catalog(0)})), undefined);
+  assert.equal(lightingRecord(message({...paused, session: {...paused.session, show: {...show, missedCues: 257}}})), undefined);
+  const completed = {generation: 'session-one', reason: 'completed', restoration: 'restored', atMs: 2000, missedCues: 4} as const;
+  assert.deepEqual(lightingRecord(message({...idle, last: completed}))?.last, completed);
+  assert.match(endingText(completed), /saved show completed.*Missed cues: 4/);
+});
+
 void test('Start binds the current active Music.app capture only, and every blocked Start explains why', () => {
   assert.equal(startBlocked(ready()), undefined);
   assert.deepEqual(startCapture(musicCapture(), true), capture);

@@ -953,7 +953,7 @@ covers both versions.
 
 ### Music lighting sessions (`music-lighting-*/2.0`)
 
-`registerMusicLightingFamilies` registers four new families, all at 2.0, for the first live Music lighting trial (#1272, #722, policy in #40). The browser-safe `v2/music-lighting-data` export owns their types and reason lists.
+`registerMusicLightingFamilies` registers four families, all at 2.0, for the live Music lighting trial (#1272, #722, policy in #40). The browser-safe `v2/music-lighting-data` export owns their types and reason lists.
 
 | Family | Kind | Sender to owner | Subject |
 |---|---|---|---|
@@ -970,5 +970,22 @@ State records name their own light. An ending is `{generation, reason, restorati
 - Restorations: `restored`, `skipped`, `none` or `uncertain` (a restoration write's answer was lost).
 - An optional `code`, an error code, names the refusal or failure behind a `refused`, `expired` or `device` ending.
 
-A device record's ending must name its session's generation. The tests are in `tests/music-lighting.test.mjs`.
+A device record's ending must name its session's generation.
+
+For standalone saved shows (#1273), `start-show` names a `showId`, exact
+`version`, initial `positionMs` and `startDelayMs` from 0 to 30,000.
+The light uses its runtime clock to schedule the delay. `pause-show`,
+`resume-show`, `seek-show` and Stop require the current core record revision
+and prepared session generation. Seek names a new `positionMs`. Control Stop
+from an existing live Music client may omit the generation for live sessions.
+
+Prepared core and device session records carry a `show` object with
+`showId`, `version`, `positionMs` and `missedCues`. They report a paused
+show as `paused`. A prepared ending carries the last recorded count, and
+natural completion uses `completed`. The count describes how many distinct
+cues wholly elapsed without a scheduled sample. The records provide timing and
+transport state for the standalone show. The light does not report physical
+display timing through this contract.
+
+The tests are in `tests/music-lighting.test.mjs`.
 

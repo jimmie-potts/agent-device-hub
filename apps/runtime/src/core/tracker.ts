@@ -27,6 +27,7 @@ import {compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDe
 import {ART_MODULE_SOURCE, EXTENDED_ART_STAGE_SCHEMA} from '@jimmie-potts/event-contracts/v2/art';
 import {extendedArtStageSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {CORE_SOURCE, coreValidator} from '@jimmie-potts/event-contracts/v2/families';
+import {LIGHTING_SHOW_LIMITS} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {PrivateRequestDigest, SdkError,
   acknowledgmentOf, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing, Outcome} from '@jimmie-potts/sdk';
@@ -405,6 +406,10 @@ export class Tracker {
     if (this.#stopped || this.#statements === undefined || !store.open) return refuse('unavailable', 'the core is not taking actions now');
     const kind = kindOf(family);
     const data = withoutRequestId(draft.data);
+    // The worker must enter at the requested local target while the command still has its normal execution budget.
+    const delay = data.startDelayMs;
+    const startDelayMs = family === 'music-lighting-work' && data.action === 'start-show' &&
+      typeof delay === 'number' && Number.isInteger(delay) && delay >= 0 && delay <= LIGHTING_SHOW_LIMITS.startDelayMs ? delay : 0;
     // The dispatcher serves the action as a request of its own: a server span, which the command's request continues.
     const fields = {'bunny.participant': action.requestedBy, 'bunny.routing.key': action.key, ...requestField(requestId)};
     const served = startSpan(this.#options.trace, 'bunny.command.request', {kind: 'server', parent: action.parent, attributes: fields});
@@ -412,7 +417,7 @@ export class Tracker {
     const now = clock.now();
     const sent: Operation = {
       requestId, kind, key: action.key, family, command: draft.type, dataschema: draft.dataschema, target, data, requestedBy: action.requestedBy,
-      status: 'sent', outcomes: [], sentAtMs: now, deadlineAtMs: now + DEADLINES[kind].outcomeMs, updatedAtMs: now, traceparent: span.traceparent,
+      status: 'sent', outcomes: [], sentAtMs: now, deadlineAtMs: now + DEADLINES[kind].outcomeMs + startDelayMs, updatedAtMs: now, traceparent: span.traceparent,
     };
     // Recorded as sent before anything is sent: a refused commit sends nothing, and a crash after it leaves the action
     // pending, so it ends uncertain at its deadline and is never sent again.
@@ -462,7 +467,7 @@ export class Tracker {
     this.#record('command.queued', {...fields, 'bunny.outcome': 'queued'}, span);
     let result: RequestResult;
     try {
-      result = await sdk.request(action.key, {...draft, data}, {timeoutMs: DEADLINES[kind].replyMs, requestId, parent: span});
+      result = await sdk.request(action.key, {...draft, data}, {timeoutMs: DEADLINES[kind].replyMs + startDelayMs, requestId, parent: span});
     } finally {
       // A running responder owns cleanup even after the SDK deadline; a waiting command can no longer be admitted.
       if (admission !== undefined && admission.commandId === undefined && this.#admitted.get(requestId) === admission) this.#admitted.delete(requestId);
