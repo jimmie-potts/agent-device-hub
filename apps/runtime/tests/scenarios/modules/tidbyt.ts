@@ -66,7 +66,8 @@ const gaps = (h: Harness, installation: string): number[] => {
  * core's sessions, and a burst of changes inside the 15-second gate makes one later push of the latest state; the
  * now-playing tile follows the playback module's record through play and pause, each tile behind its own gate, and is
  * removed when the music stops. A restart while the card has stood past its gate, with the Move answering late, neither
- * removes nor pushes it, and brings the status rows back dimmed as uncertain. The reader holds the Tidbyt's device
+ * removes nor pushes it, and leaves the waiting session's row undimmed: a restart makes only running work unconfirmed,
+ * never a session that waits for the owner (Hub #1865). The reader holds the Tidbyt's device
  * record with no control, and neither the API key nor the cloud device appears anywhere.
  */
 const tidbytTiles: Scenario = {
@@ -112,7 +113,8 @@ const tidbytTiles: Scenario = {
     holds('through the restart and the Move\'s slow first read, the card is never removed or pushed again', h => cardStood(h), 3000),
     expect('the reader\'s playback record shows the song playing on the Move', h => playbackShows(h, 'available playing "Move Song" [pause,next,previous]')),
     act('the Move answers at once again', h => { void h.simulate({device: 'playback', speaker: 'sonos', action: 'answer'}); }),
-    expect('once its gate opens, the status tile shows the session dimmed as uncertain after the restart', h => statusShown(h, 3), 18_000),
+    holds('past its gate after the restart, the status tile still shows the session waiting, undimmed, and is not pushed again', h => statusShown(h, 2),
+      18_000),
     act('the phone pauses the Move', h => { void h.simulate({device: 'playback', speaker: 'sonos', action: 'pause'}); }),
     expect('the reader\'s playback record shows the song paused', h => playbackShows(h, 'available paused "Move Song" [play,next,previous]'), 6000),
     expect('once its gate opens, the now-playing tile shows the pause marker', h => cardShown(h, 2), 18_000),
