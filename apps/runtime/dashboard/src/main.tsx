@@ -41,7 +41,7 @@ import {moduleCard} from './module-cards.ts';
 import {PixooDisplay} from '@jimmie-potts/pixoo/frontend';
 import {TidbytDisplay} from '@jimmie-potts/tidbyt/frontend';
 import {WisprWidget} from '@jimmie-potts/wispr/frontend';
-import {DuckWidget, ReachyWidget} from '@jimmie-potts/companions/frontend';
+import {ConversationRail, DuckWidget, ReachyWidget, useConversationWaiting} from '@jimmie-potts/companions/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
 import {navigationDestination, routeHash, type Route} from './routes.ts';
@@ -121,6 +121,7 @@ function FeedIndicator({state, now, control}: {state: DashboardState; now: numbe
   const healthy = feed === 'connected' && sessions.synced;
   const label = feed === 'connected' && !sessions.synced ? 'Syncing sessions' : FEED_TEXT[feed];
   return <InfoTip warning={!healthy} label={<><span aria-hidden="true">{healthy ? '●' : '⚠'}</span><span className="rail-text"> {label}</span></>}>
+    <span className="tip-line tip-feed">{label}</span>
     <span className="tip-line">{feed === 'ended' ? 'Signed out' : control ? 'Control enabled' : 'Read-only'}</span>
     <span className="tip-line">Core sessions: {sessions.synced ? 'synced' : 'not synced'}</span>
     <span className="tip-line">Core revision: {sessions.revision ?? 'Unknown'}</span>
@@ -319,13 +320,18 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
   const workspace = selectedModule?.name === 'companions' && selectedPage?.id === 'assistant' && selectedPage.presentation === 'react';
+  // The rail's conversation group (#1890) is the companions frontend's own component in its own module scope. It is
+  // shown while the catalog declares the Conversation page of a running companions module. The shell imports the
+  // group and the hook below and nothing else of that module's conversation.
+  const conversations = runtime.modules?.some(module => module.name === 'companions' && module.state === 'running'
+    && module.pages.some(page => page.id === 'assistant' && page.presentation === 'react')) === true;
+  const conversationWaiting = useConversationWaiting() && conversations;
   const known = route.kind === 'habitat' || route.kind === 'devices' || route.kind === 'settings' || route.kind === 'audio' || route.kind === 'visualizer' || route.kind === 'rooms' || (route.kind === 'lighting-brand' && runtime.modules?.some(module => module.name === route.brand && module.serves.includes('device')) === true) || route.kind === 'timeline' || route.kind === 'automation' || route.kind === 'home' || route.kind === 'connections' || selectedDevice || selectedPlayback || selectedPage !== undefined;
   const contextModule = route.kind === 'module' ? selectedModule : route.kind === 'lighting-brand' ? runtime.modules?.find(module => module.name === route.brand)
     : route.kind === 'component' ? runtime.modules?.find(module => devices.some(device => device.record.id === route.id && device.copy.owner === `bunny/modules/${module.name}`)) : undefined;
   const featureNavigation = contextModule !== undefined && contextModule.pages.length > 0
     ? <nav className="feature-navigation" aria-label={`${contextModule.name} pages`}>{contextModule.pages.map(page =>
       <NavLink key={page.id} route={{kind: 'module', module: contextModule.name, page: page.id}} current={route}>{page.title}</NavLink>)}
-      {workspace && <NavLink route={{kind: 'devices'}}>All devices</NavLink>}
     </nav>
     : null;
   const deviceCard = ({record, copy}: (typeof devices)[number]): React.ReactNode => (moduleCard(runtime.modules, copy.owner, record.kind) === 'pixoo' && (route.kind === 'home' || route.kind === 'component' && record.id === route.id) ? <>
@@ -396,8 +402,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     data-drawer={drawer ? 'open' : undefined} data-rail-short={railShort ? '' : undefined}>
     <a className="skip" href="#main" inert={drawer || jump} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <header className="phone-bar" inert={jump}>
-      <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-expanded={drawer} aria-controls="rail"
-        onClick={() => { setDrawer(open => !open); }}><RailIcon name="menu"/></button>
+      <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-description={conversationWaiting ? 'A conversation needs your answer' : undefined}
+        aria-expanded={drawer} aria-controls="rail" onClick={() => { setDrawer(open => !open); }}><RailIcon name="menu"/>{conversationWaiting && <span className="rail-attention"/>}</button>
       <span className="phone-brand">B.U.N.N.Y.</span>
       <button type="button" className="secondary rail-button phone-jump" aria-label="Jump to a page" aria-haspopup="dialog" onClick={openJump}><RailIcon name="search"/></button>
       {ended && <button type="button" className="phone-sign-in" inert={drawer} onClick={signInAgain}>Sign in again</button>}
@@ -415,12 +421,16 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div>
       <button type="button" className="secondary rail-jump" aria-label="Jump to a page" aria-haspopup="dialog" title="Jump to a page" onClick={openJump}>
         <RailIcon name="search"/><span className="rail-text">Jump to…</span><kbd>{jumpKey}</kbd></button>
-      <ShellNavigation route={route} devices={{open: menu, menuId: 'devices-menu', button: devicesRow, ownRow: pinnable.has(address),
+      <ShellNavigation route={route} devices={{open: menu, menuId: 'devices-menu', button: devicesRow, ownRow: pinnable.has(address) || (workspace && conversations),
         toggle: () => { if (menu) closeMenu('row'); else setMenu(true); }, show: () => { setMenu(true); }}}/>
       <PinnedPages route={route} fallback={devicesRow}/>
+      {conversations && <div className="rail-conversations"><ModuleFrontend module="companions" connection={connection} connected={state.feed === 'connected' && !runtime.catalogFailed}
+        control={false} operations={[]} operationsLive={false} Component={ConversationRail}/></div>}
       <div className="sidebar-foot">
-        <nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}><RailIcon name="settings"/><span className="rail-text">Settings</span></NavLink></nav>
-        <FeedIndicator state={state} now={now} control={runtime.control}/>
+        <div className="rail-foot-row">
+          <nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}><RailIcon name="settings"/><span className="rail-text">Settings</span></NavLink></nav>
+          <FeedIndicator state={state} now={now} control={runtime.control}/>
+        </div>
         <p className="rail-text">{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</p>
         {state.feed === 'ended' && <button type="button" onClick={signInAgain}>Sign in again</button>}
       </div>
@@ -456,9 +466,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </section>}
       {route.kind !== 'home' && <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
       {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title} className={workspace ? 'workspace-page' : undefined}>
-        <header className={workspace ? 'workspace-page-header' : 'page'}><h1>{selectedPage.title}</h1>
+        {/* The Conversation page names the open conversation in its own header row (#1890); the page's title stays as its heading and is not drawn. */}
+        <header className={workspace ? 'vh' : 'page'}><h1>{selectedPage.title}</h1>
           {!workspace && <PinToggle route={route}/>}
-          {workspace && <details className="workspace-page-navigation"><summary>Companion pages</summary>{featureNavigation}</details>}
         </header>
         <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
           connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>

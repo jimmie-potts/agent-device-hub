@@ -228,10 +228,23 @@ no network call and no paid usage. Activation defaults to off. The three
 profiles keep separate conversation histories, with one unfinished task across
 all of them and one graph invocation at a time.
 
-Choose the everyday B.U.N.N.Y. assistant or a Reachy or MicroDuck demo in the
-profile list. On a narrow screen, use **Companion profile**. The **Companion
-pages** menu opens the separate module pages, including the Reachy and MicroDuck
-device controls.
+Choose the everyday B.U.N.N.Y. assistant or a Reachy or MicroDuck demo under
+**Conversations** in the dashboard's rail, from any page (Hub #1890). On a
+phone, open the menu button first. Both demos are labelled Demo there, and the
+page's one header row names the open profile beside **Details**. A dot on a
+profile in the rail means that conversation needs your answer or approval. A
+wait on the coding worker shows none, and neither does a conversation whose
+state the page cannot read now. The Reachy and MicroDuck device controls and
+the other companion pages are in the rail's **Devices** menu.
+
+The rail's group is this module's own component (`ConversationRail`, exported
+from the frontend entry beside the Home widgets). It follows `assistant-state`
+through a read-only copy and reads a profile's recent history once for each
+pending question, to tell a question for you from delegated work. The open
+Conversation page shares what it has already read. The group sends no command
+and opens no speech endpoint. The selected profile is kept in the page's memory
+(`conversation-rail.ts`): returning to Conversation shows it again, and a
+reload starts on B.U.N.N.Y.
 
 The transcript takes the available height and scrolls above the composer. When
 the screen is short or a decision needs more room, scroll the page to reach the

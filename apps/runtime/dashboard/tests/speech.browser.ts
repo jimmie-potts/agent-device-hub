@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser, type Page, type Request} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {chooseConversation, openDeviceMenu} from './navigation-helpers.ts';
 import {installSyntheticSpeech} from '../../dist/verify/speech-fixture.js';
 import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 
@@ -17,27 +18,30 @@ function isStopCall(request: Request, kind: 'control' | 'receipt'): boolean {
   return typeof data === 'object' && data !== null && (kind === 'control' ? 'action' in data && data.action === 'stop' : 'status' in data && data.status === 'stopped');
 }
 
-async function assertNarrowProfile(page: Page, expected: string): Promise<void> {
+/**
+ * At phone width the open profile is named in the conversation's one header row (Hub #1890): the name, the Demo label
+ * for a demo, and Details at the row's end. The name is whole, nothing covers it and the page does not overflow.
+ */
+async function assertNarrowProfile(page: Page, expected: string, demo = false): Promise<void> {
   const trigger = page.getByRole('button', {name: 'Details', exact: true});
   assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
-  const profile = page.getByRole('combobox', {name: 'Companion profile', exact: true});
-  const measured = await profile.evaluate(node => {
-    if (!(node instanceof HTMLSelectElement)) throw new Error('Expected a native profile selector');
-    const canvas = document.createElement('canvas').getContext('2d');
-    if (canvas === null) throw new Error('Could not measure the selected profile');
-    const style = getComputedStyle(node);
-    const text = node.selectedOptions[0]?.textContent ?? '';
-    const visibleIdentity = node.value === 'bunny' ? text.replace(/ · Everyday assistant$/, '') : text;
-    canvas.font = style.font;
-    // Leave space for the browser's native select arrow as well as the declared padding.
-    const available = node.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd) - 24;
-    const box = node.getBoundingClientRect();
-    const pickerExposed = document.elementFromPoint(box.left + box.width / 2, box.bottom - 2) === node;
-    return {text, width: canvas.measureText(visibleIdentity).width, available, pickerExposed, overflow: document.documentElement.scrollWidth - innerWidth};
+  const header = page.locator('.conversation-header');
+  const measured = await header.evaluate(node => {
+    const name = node.querySelector('h2'), details = node.querySelector('button');
+    if (name === null || details === null) throw new Error('Expected a profile name and Details in the header row');
+    const text = document.createRange();
+    text.selectNodeContents(name);
+    const box = name.getBoundingClientRect(), button = details.getBoundingClientRect();
+    const exposed = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return {text: name.textContent, lines: text.getClientRects().length, tag: node.querySelector('.conversation-demo-tag')?.textContent ?? '',
+      nameExposed: exposed !== null && name.contains(exposed), sameRow: box.top + box.height / 2 > button.top && box.top + box.height / 2 < button.bottom,
+      clear: box.right <= button.left, overflow: document.documentElement.scrollWidth - innerWidth};
   });
   assert.equal(measured.text, expected);
-  assert.ok(measured.available >= measured.width, `Selected profile identity fits: ${JSON.stringify(measured)}`);
-  assert.ok(measured.pickerExposed, 'the selected profile stays visible over its full height');
+  assert.equal(measured.tag, demo ? 'Demo' : '');
+  assert.equal(measured.lines, 1, `the profile name is on one line: ${JSON.stringify(measured)}`);
+  assert.ok(measured.nameExposed, 'the profile name stays visible');
+  assert.ok(measured.sameRow && measured.clear, `the profile name and Details share one row without touching: ${JSON.stringify(measured)}`);
   assert.ok(measured.overflow <= 1, 'profile and conversation controls fit the viewport');
   await trigger.click({trial: true});
 }
@@ -269,16 +273,15 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     assert.ok(await otherPage.getByRole('button', {name: 'Enable', exact: true}).isDisabled());
     const unavailable = otherPage.getByRole('button', {name: 'Voice · Unavailable', exact: true});
     await unavailable.click();
-    const otherProfile = otherPage.getByRole('combobox', {name: 'Companion profile', exact: true});
     for (const width of [390, 320]) {
       await other.setViewportSize({width, height: 844});
       await unavailable.click({trial: true});
-      await assertNarrowProfile(other, 'B.U.N.N.Y. · Everyday assistant');
+      await assertNarrowProfile(other, 'B.U.N.N.Y.');
       if (receipts !== undefined) await other.screenshot({path: `${receipts}/profile-bunny-voice-unavailable-${width}.png`});
-      await otherProfile.selectOption('microduck');
-      await assertNarrowProfile(other, 'MicroDuck · Demo');
+      await chooseConversation(other, 'microduck');
+      await assertNarrowProfile(other, 'MicroDuck', true);
       if (receipts !== undefined) await other.screenshot({path: `${receipts}/profile-microduck-voice-unavailable-${width}.png`});
-      await otherProfile.selectOption('bunny');
+      await chooseConversation(other, 'bunny');
     }
     await other.setViewportSize({width: 1280, height: 1000});
     if (receipts !== undefined) await page.screenshot({path: `${receipts}/voice-desktop.png`, fullPage: true});
@@ -355,14 +358,15 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await reflow();
     const heldAnchor = await readingAnchor();
     assert.equal(typeof heldAnchor, 'string');
-    const companionPages = page.getByText('Companion pages', {exact: true});
-    await companionPages.press('Enter');
-    await page.getByRole('navigation', {name: 'companions pages', exact: true}).waitFor();
-    await companionPages.press('Enter');
+    // The other companion pages are in the Devices menu (Hub #1889). Opening and closing it leaves the page as it was.
+    const deviceMenu = await openDeviceMenu(page);
+    await deviceMenu.getByRole('menuitem', {name: 'Reachy', exact: true}).waitFor();
+    await page.keyboard.press('Escape');
+    await deviceMenu.waitFor({state: 'detached'});
     await reflow();
-    assert.equal(await readingAnchor(), heldAnchor, 'local navigation preserves the reading anchor');
+    assert.equal(await readingAnchor(), heldAnchor, 'the Devices menu preserves the reading anchor');
     assert.equal(await draft.inputValue(), savedDraft);
-    assert.deepEqual(registrations, heldEndpoint, 'local navigation keeps the speaking endpoint');
+    assert.deepEqual(registrations, heldEndpoint, 'the Devices menu keeps the speaking endpoint');
     for (const width of [390, 320, 1280]) {
       await page.setViewportSize({width, height: 900});
       await reflow();
@@ -382,17 +386,17 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     const toolbarStop = assistant.getByRole('button', {name: 'Stop speaking', exact: true});
     for (const width of [390, 320]) {
       await page.setViewportSize({width, height: 844});
-      await assertNarrowProfile(page, 'B.U.N.N.Y. · Everyday assistant');
+      await assertNarrowProfile(page, 'B.U.N.N.Y.');
       await toolbarStop.click({trial: true});
       if (receipts !== undefined) await page.screenshot({path: `${receipts}/profile-bunny-stop-${width}.png`});
     }
     await page.setViewportSize({width: 320, height: 790});
-    const profile = assistant.getByRole('combobox', {name: /Companion profile/});
-    await profile.selectOption('reachy'); await voiceState('Speaking').waitFor();
+    // A profile chosen in the rail's drawer keeps the page, its draft and its one speech endpoint.
+    await chooseConversation(page, 'reachy'); await voiceState('Speaking').waitFor();
     await detailsToggle.click();
     await details.locator('.conversation-details-profile').getByText('Reachy', {exact: true}).waitFor();
     await closeDetails.click();
-    await profile.selectOption('bunny'); await voiceState('Speaking').waitFor();
+    await chooseConversation(page, 'bunny'); await voiceState('Speaking').waitFor();
     assert.equal(await draft.inputValue(), savedDraft);
     assert.deepEqual(registrations, heldEndpoint, 'panel, viewport and profile changes keep the original speech endpoint');
     assert.equal(await count(), 4);
@@ -488,7 +492,7 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     for (const width of [390, 320]) {
       await other.setViewportSize({width, height: 844});
       await confirmation.click({trial: true});
-      await assertNarrowProfile(other, 'B.U.N.N.Y. · Everyday assistant');
+      await assertNarrowProfile(other, 'B.U.N.N.Y.');
       if (receipts !== undefined) await other.screenshot({path: `${receipts}/profile-bunny-voice-recovery-${width}.png`});
     }
     await confirmation.check();

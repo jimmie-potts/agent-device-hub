@@ -44,6 +44,47 @@ export async function openDirectory(page: Page): Promise<void> {
   await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
 }
 
+/** The rail's link for a chat profile (Hub #1890), with the phone drawer opened when the rail is one. */
+export async function conversationLink(page: Page, profile: 'bunny' | 'reachy' | 'microduck'): Promise<Locator> {
+  await showRail(page);
+  return page.getByRole('navigation', {name: 'Conversations', exact: true}).locator(`a[data-profile="${profile}"]`);
+}
+
+const CONVERSATION_NAMES = {bunny: 'B.U.N.N.Y.', reachy: 'Reachy', microduck: 'MicroDuck'} as const;
+/** Chooses a chat profile in the rail and waits for the Conversation page to show it. A phone's drawer closes behind the choice. */
+export async function chooseConversation(page: Page, profile: keyof typeof CONVERSATION_NAMES): Promise<void> {
+  const drawer = await page.getByRole('button', {name: 'Open navigation', exact: true}).isVisible();
+  await (await conversationLink(page, profile)).click();
+  await page.locator('.conversation-header').getByRole('heading', {name: CONVERSATION_NAMES[profile], exact: true}).waitFor();
+  if (drawer) await page.locator('.shell>aside').waitFor({state: 'hidden'});
+}
+
+/** One module of the catalog the page reads. */
+export type CatalogModule = {name: string; state: string; pages: {id: string}[]};
+/**
+ * Lets a journey change what the page reads as its module catalog. It installs one route for the page's lifetime and
+ * returns a setter: pass a function to change every module the page reads from then on, or nothing to read the real
+ * catalog again. The route is never removed while the page is in use. The dashboard reads its catalog again whenever
+ * the runtime reports a change, so removing a route can catch a request in flight, and that request's handler then
+ * fails with "Route is already handled". A reload cancels a request in flight as well; the next page asks again.
+ */
+export async function routeCatalog(page: Page): Promise<(change?: (module: CatalogModule) => CatalogModule) => void> {
+  let current: ((module: CatalogModule) => CatalogModule) | undefined;
+  await page.route('**/api/v2/modules', async route => {
+    const change = current;
+    try {
+      const response = await route.fetch();
+      if (change === undefined) {await route.fulfill({response}); return;}
+      const catalog = await response.json() as {modules: CatalogModule[]};
+      await route.fulfill({response, json: {...catalog, modules: catalog.modules.map(change)}});
+    } catch (error) {
+      // Only a request that a reload or a closing page cancelled is let go; anything else is a real failure.
+      if (!page.isClosed() && !/already handled|has been closed|disposed|aborted|cancell?ed/i.test(String(error))) throw error;
+    }
+  });
+  return change => {current = change;};
+}
+
 export async function directoryLink(page: Page, category: string, name: string): Promise<Locator> {
   await openDirectory(page);
   await page.getByRole('group', {name: 'Device categories'}).getByRole('button', {name: category, exact: true}).click();

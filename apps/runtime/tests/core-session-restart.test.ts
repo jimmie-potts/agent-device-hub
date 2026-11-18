@@ -187,14 +187,15 @@ it('after a restart an approval can be recovered only where the restart left wor
     assert.equal(await take(w, who, started, {turn: 'r1'}), 'applied');
     assert.equal(await take(w, who, approval, {turn: 'r1'}), 'applied');
   }
-  assert.equal(await take(w, halted, {kind: 'turn-interrupted'}, {turn: 'r1'}), 'applied');
+  // An unordered interruption after a start conflicts with it, so the work is unknown, not running.
+  assert.equal(await take(w, halted, {kind: 'turn-interrupted'}, {turn: 'r1'}), 'ambiguous');
   w.clock.advance(10_000);
   await w.crashAndRestart();
   const recover = async (who: Identity): Promise<string> => {
     const result = await w.recoverApproval(who, 'r1');
     return result.ok ? result.outcome : result.code;
   };
-  assert.equal(record(w, halted).restartUncertain, false, 'interrupted work is not running');
+  assert.deepEqual([record(w, halted).activity, record(w, halted).restartUncertain], ['unknown', false], 'work that is not running is not marked');
   assert.equal(await recover(halted), 'invalid-state');
   assert.equal(await recover(RUNNING), 'ambiguous', 'recovered');
   assert.equal(record(w, RUNNING).attention.length, 0);
