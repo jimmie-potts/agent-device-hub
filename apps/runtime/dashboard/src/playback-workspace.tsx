@@ -7,6 +7,7 @@ import {useAttempt} from './command-control.tsx';
 import type {DashboardConnection} from './connection.ts';
 import type {RuntimeData} from './runtime-feeds.ts';
 import type {Route} from './routes.ts';
+import {PinToggle} from './pins.tsx';
 import {MusicCaptureCard} from './music-capture-card.tsx';
 import {MusicVisualizerFullView, MusicVisualizerPanel} from './music-visualizer.tsx';
 
@@ -69,7 +70,7 @@ export function PlaybackWorkspace({runtime, connected, operations, operationsLiv
   const wallPage = !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'nanoleaf' && module.state === 'running' && module.pages.some(page => page.id === 'wall')) === true;
   const selected = homeSource !== undefined ? players.filter(player => player.copy.owner === homeSource.owner && player.record.id === homeSource.instance) : route.kind === 'playback' ? players.filter(player => player.record.id === route.sourceId) : players;
   return <section className="music-workspace" aria-label="Music">
-    {route.kind === 'audio' ? <header className="page"><h1>Audio</h1></header> : route.kind === 'home' && homeSource === undefined ? <h2>Music</h2> : null}
+    {route.kind === 'audio' ? <header className="page"><h1>Audio</h1><PinToggle route={route}/></header> : route.kind === 'home' && homeSource === undefined ? <h2>Music</h2> : null}
     {route.kind === 'audio' && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'nanoleaf' && module.state === 'running'
       && module.pages.some(page => page.id === 'shows')) === true && <p><a href="#/module/nanoleaf/shows">Decorative shows</a> · Prepare private cue plans. Replay is unavailable.</p>}
     {route.kind === 'audio' && wallPage && <p><a href="#/module/nanoleaf/wall">Music effect preview</a> · Compare generated examples in the Wall page.</p>}

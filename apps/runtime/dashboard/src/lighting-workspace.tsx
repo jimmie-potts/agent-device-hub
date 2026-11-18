@@ -10,6 +10,7 @@ import {LightCard} from './light-card.tsx';
 import {DeviceModeChoice} from './device-mode.tsx';
 import {brandName, cardsFor, emptyLightingLayout, groupCards, lightCapabilities, lightingDevices, prepareLighting, resolveCard, selectionKey, ungroupCard, type LightingCard, type LightingDevice, type LightingIntent} from './lighting.ts';
 import './lighting.css';
+import {PinToggle} from './pins.tsx';
 import {RoomModels} from './room-models.tsx';
 import {roomBinding} from './room-bindings.ts';
 type Bindings = Map<string, FrontendCommand>;
@@ -105,7 +106,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
   return <>
     {[...new Set(devices.map(device => device.record.id))].map(target => <AttemptBinding key={target} target={target} operations={operations} operationsLive={operationsLive} bindings={bindings.current} changed={changed}/>)}
     {active && <section className="lighting-workspace" aria-label={home ? 'Lights' : roomView ? 'Rooms' : `${brandName(brand ?? '')} lights`}>
-      {homeSelection === undefined && <header className="lighting-heading"><h2>{home ? 'Lights' : roomView ? 'Rooms' : brandName(brand ?? '')}</h2><details className="lighting-organize"><summary>{roomView ? 'Manage rooms' : 'Arrange'}</summary><div>
+      {homeSelection === undefined && <header className="lighting-heading"><h2>{home ? 'Lights' : roomView ? 'Rooms' : brandName(brand ?? '')}</h2>{route.kind === 'lighting-brand' && <PinToggle route={route}/>}<details className="lighting-organize"><summary>{roomView ? 'Manage rooms' : 'Arrange'}</summary><div>
         <form onSubmit={event => {
           event.preventDefault(); const form = event.currentTarget; const field = new FormData(form).get('room'); const name = typeof field === 'string' ? field.trim() : '';
           if (name === '') return; const next = structuredClone(layout); next.rooms.push({id: crypto.randomUUID(), name}); save(next); form.reset();

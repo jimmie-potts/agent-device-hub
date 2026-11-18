@@ -66,6 +66,7 @@ Actual phone/certificate verification is separate from desktop browser tests.
 ## Pages, routes and widgets
 
 The rail has **Home, Habitat, Rooms, Devices and Automation**, each with an icon.
+Four are links; Devices is a button that opens the Devices menu (#1889).
 Settings, the feed indicator and the control mode sit at the bottom of the rail
 (#1887); Settings contains Connections (including build/operator tools), Places
 and Disconnect. The rail stays in view while a page scrolls, and a destination chosen from a
@@ -78,7 +79,7 @@ width the rail is a drawer behind a menu button, closed by a chosen destination,
 Escape or an outside tap, each of which returns focus to the button; the page
 behind the open drawer is inert. An ended browser session shows the full rail
 and still offers **Sign in again** globally, in the phone bar when the rail is a
-drawer. A window too short for the rail lets it scroll with the page. Home links Timeline. Devices groups catalog-derived Lighting,
+drawer. A window too short for the rail lets it scroll with the page. Home links Timeline. The Devices directory groups catalog-derived Lighting,
 Displays, Audio and Other destinations; module pages keep their sibling links
 locally. The category choice survives navigation within the open page without
 being saved as a new preference. Unknown modules use Other, and unavailable
@@ -106,9 +107,41 @@ in storage. Its keys do nothing while a modal dialog is open or an element is
 shown full screen, since it could only open out of sight. A key pressed inside a framed module page does not reach
 the shell, so there the field and the button are the way in.
 
+The Devices row (#1889) opens a menu of every page the Devices directory lists,
+grouped as the directory groups them: Lighting, Displays and Audio in one
+column and Other in the second. A module with several pages is a heading over
+them, and a module with one page is that page under the module's name. A
+module that is not running is named with its state and offers no page there,
+and one whose observations are stale says so; the directory keeps the full
+warnings. **All devices** opens the directory, which keeps its address. The
+menu opens with focus on the open page's entry. The arrow keys, Home and End
+move through it, Escape closes it with focus on the row, and a press outside
+it, a chosen page or focus moving elsewhere closes it too. A chosen page opens
+at its top with focus on the page. At phone width the menu covers the drawer as
+one scrolling column with its own close button, which leaves the drawer open.
+The row stays marked as the containing destination on every page under
+Devices.
+
+Device, lighting-brand, Audio and module pages have a **Pin to rail** toggle in
+their header; the Conversation page does not. Pinned pages are listed in the
+rail under the destinations in the order they were pinned, each with a
+two-letter mark, its name and, for a page of a module with several pages, the
+module's name. A pinned row shows an unpin button when it is pointed at or the
+button has keyboard focus. The page that is open and not pinned is a dashed
+temporary row with a pin button. The list scrolls inside the rail when it is
+longer than the room above the foot, and the rail always has room for the
+list's heading and one row. In the icon rail a pinned page is its mark, named
+by the link's title, and unpinning uses the page's own toggle. Pins are saved
+in this browser (`pins.ts`) and follow a change from another tab; they are
+never core or module state. Refused or missing storage leaves them working for
+the open page. A pin whose page the catalog does not declare now is not shown
+and stays saved, so it returns with the page. The menu and the pins navigate,
+or change that list, and nothing else: they send no command, sync, upload or
+provider request.
+
 `navigation.tsx` shares native anchor navigation and containing-destination
 selection. `directory.ts` projects the existing copies without acquiring state.
-`rail.tsx` owns the rail's collapse state and icons. `jump.ts` projects the palette's list and holds its key rules; `jump-palette.tsx` is the list. `skins/quiet-glass.css` supplies light/dark semantic values over the retained
+`rail.tsx` owns the rail's collapse state and icons. `jump.ts` projects the palette's list and holds its key rules; `jump-palette.tsx` is the list. `device-menu.ts` projects the Devices menu and holds its key steps; `device-menu.tsx` is the menu. `pins.ts` holds the pinned list and the pages it can name; `pins.tsx` is the rail's list and the header toggle. `skins/quiet-glass.css` supplies light/dark semantic values over the retained
 fixed attention/art tokens; `shell.css` owns shared responsive geometry. The
 legacy dashboard and documentation keep their own skins. Settings can follow
 displayed art colors, lock the current colors or restore Quiet glass. These

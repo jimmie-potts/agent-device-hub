@@ -32,10 +32,14 @@ const PATHS = {
   sidebar: <><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/></>,
   menu: <><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></>,
   search: <><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></>,
+  chevron: <path d="m9.5 6 6 6-6 6"/>,
+  pin: <><path d="M9 3.5h6l-.8 6.2 3.3 3.3h-11l3.3-3.3L9 3.5Z"/><path d="M12 13v7.5"/></>,
+  close: <><path d="m6 6 12 12"/><path d="M18 6 6 18"/></>,
+  check: <path d="m5 12.5 4.5 4.5L19 7.5"/>,
 } as const;
 
 /** A rail line icon. It is decoration: the control it sits in carries the name. */
-export function RailIcon({name}: {name: keyof typeof PATHS}): React.JSX.Element {
-  return <svg className="rail-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+export function RailIcon({name, size = 18}: {name: keyof typeof PATHS; size?: number}): React.JSX.Element {
+  return <svg className="rail-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
     strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{PATHS[name]}</svg>;
 }

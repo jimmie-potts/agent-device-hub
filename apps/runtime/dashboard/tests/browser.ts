@@ -299,6 +299,7 @@ try {
 // The same focused journey runs in hosted smoke and the full local browser suite.
 await import('./tidbyt-card.browser.ts');
 await import('./shell.browser.ts');
+await import('./devices-menu.browser.ts');
 
 await import('./home-layout.browser.ts');
 // Idle stability of Home's list cards at every width (#1672 F18); long, so in the full suite only, not hosted smoke.
