@@ -94,7 +94,11 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
 
 test('the real GitHub Actions configuration enumerates the expected jobs and routes Markdown-only changes', () => {
   assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'codeql.yml', 'integration.yml', 'music-native.yml', 'release-qualification.yml', 'workflow.yml']);
-  assert.equal(fs.existsSync(path.join(root, DEPOT.directory)), false, 'Depot workflows are retired (#870)');
+  const depot = path.join(root, DEPOT.directory);
+  const depotWorkflows = fs.existsSync(depot)
+    ? fs.readdirSync(depot, {withFileTypes: true}).filter(entry => entry.isFile() && /\.ya?ml$/.test(entry.name)).map(entry => entry.name)
+    : [];
+  assert.deepEqual(depotWorkflows, [], 'a Depot workflow would select the retired CI provider');
   const workflows = Object.entries(WORKFLOW_FILES).map(([file, text]) => parseWorkflow(file, text));
   const source = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['scripts/a.mjs'], filesComplete: true }, ACTIONS);
   // GitHub Actions names each check run after its job alone.
