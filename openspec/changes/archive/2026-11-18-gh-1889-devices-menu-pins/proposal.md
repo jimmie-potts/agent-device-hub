@@ -8,7 +8,7 @@ A device page is reached from the Devices directory: one click for the directory
 - Device, lighting-brand, Audio and module pages get a "Pin to rail" toggle in their header. The Conversation page does not.
 - The rail lists the pinned pages under the destinations. The page that is open and not pinned is a temporary row with a pin button.
 - Pins are saved in this browser only.
-- The short-window rule for an ended session reads the state the page already publishes, and the shell root's `data-session` attribute is removed (finding R17 from the review of PR 1898).
+- The shell measures whether the rail fits its window, instead of using one fixed height for a connected session and another for an ended one. The shell root's `data-session` attribute, which the ended session's rule used, is removed (finding R17 from the review of PR 1898).
 
 ## Capabilities
 

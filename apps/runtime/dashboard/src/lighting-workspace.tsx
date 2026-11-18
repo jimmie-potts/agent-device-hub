@@ -106,7 +106,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
   return <>
     {[...new Set(devices.map(device => device.record.id))].map(target => <AttemptBinding key={target} target={target} operations={operations} operationsLive={operationsLive} bindings={bindings.current} changed={changed}/>)}
     {active && <section className="lighting-workspace" aria-label={home ? 'Lights' : roomView ? 'Rooms' : `${brandName(brand ?? '')} lights`}>
-      {homeSelection === undefined && <header className="lighting-heading"><h2>{home ? 'Lights' : roomView ? 'Rooms' : brandName(brand ?? '')}</h2>{route.kind === 'lighting-brand' && <PinToggle route={route}/>}<details className="lighting-organize"><summary>{roomView ? 'Manage rooms' : 'Arrange'}</summary><div>
+      {homeSelection === undefined && <header className="lighting-heading"><h2>{home ? 'Lights' : roomView ? 'Rooms' : brandName(brand ?? '')}</h2><div className="lighting-heading-actions">{route.kind === 'lighting-brand' && <PinToggle route={route}/>}<details className="lighting-organize"><summary>{roomView ? 'Manage rooms' : 'Arrange'}</summary><div>
         <form onSubmit={event => {
           event.preventDefault(); const form = event.currentTarget; const field = new FormData(form).get('room'); const name = typeof field === 'string' ? field.trim() : '';
           if (name === '') return; const next = structuredClone(layout); next.rooms.push({id: crypto.randomUUID(), name}); save(next); form.reset();
@@ -119,7 +119,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
         <h3>Room assignments</h3>{devices.map(device => <label key={`${device.owner}/${device.record.id}`}>{device.record.label ?? device.record.id}<select aria-label={`Assign ${device.record.label ?? device.record.id} to room`} value={layout.assignments.find(item => item.device === device.record.id)?.room ?? ''} disabled={!editable} onChange={event => {
           const next = structuredClone(layout); next.assignments = next.assignments.filter(item => item.device !== device.record.id); if (event.target.value !== '') next.assignments.push({device: device.record.id, room: event.target.value}); save(next);
         }}><option value="">Unassigned</option>{layout.rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label>)}
-      </div></details></header>}
+      </div></details></div></header>}
       {!layoutLive && <p role="status">Layout records are unavailable or stale. Arrangement is read-only.</p>}
       {(layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status">Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
       {message !== '' && <p role="status">{message}</p>}

@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {chromium, type Request} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 import {destinationLink, destinationNames, openDirectory, openSettings} from './navigation-helpers.ts';
+import {PINS_KEY} from '../src/pins.ts';
 import {RAIL_PREFERENCE_KEY} from '../src/rail-preference.ts';
 
 const world = await startWorld({devices: true, pixooPages: true, tidbyt: true});
@@ -44,6 +45,40 @@ const contrastRatio = (foreground: string, background: string): number => {
   const fg = channels(foreground), bg = channels(background), alpha = fg[3] ?? 1;
   const first = luminance(fg.slice(0, 3).map((value, index) => value * alpha + (bg[index] ?? 0) * (1 - alpha))), second = luminance(bg);
   return (Math.max(first, second) + .05) / (Math.min(first, second) + .05);
+};
+/** Pins one page, or none, as another tab of this browser would: the rail follows the stored list with no reload. */
+const pinOnly = async (address: string | null): Promise<void> => {
+  await page.evaluate(([key, value]) => {
+    if (key === null || key === undefined) return;
+    if (value === null || value === undefined) localStorage.removeItem(key); else localStorage.setItem(key, value);
+    window.dispatchEvent(new StorageEvent('storage', {key, newValue: value ?? null, storageArea: localStorage}));
+  }, [PINS_KEY, address === null ? null : JSON.stringify([address])]);
+  await page.locator('.rail-pin').waitFor({state: address === null ? 'detached' : 'attached'});
+};
+/** The full rail in this window: whether it stays in view, and whether its foot and its whole pinned list, or the hint, are inside the window. */
+const railFit = (): Promise<{position: string; footInWindow: boolean; pinsWhole: boolean; width: number}> => page.locator('.shell>aside').evaluate(element => {
+  const foot = element.querySelector('.sidebar-foot'), pins = element.querySelector('.rail-pins'), list = pins?.querySelector('nav') ?? null;
+  if (foot === null || pins === null) throw new Error('The rail has its pinned pages and a foot.');
+  return {position: getComputedStyle(element).position, footInWindow: foot.getBoundingClientRect().bottom <= innerHeight + 1,
+    pinsWhole: pins.scrollHeight <= pins.clientHeight + 1 && (list === null || list.scrollHeight <= list.clientHeight + 1), width: Math.round(element.getBoundingClientRect().width)};
+});
+/**
+ * The window height the rail needs here, read from the laid-out rail in a window that holds it: the window's height
+ * less what the pinned pages have to spare beyond their heading and one row, or the hint. Fonts wrap the rail's text
+ * differently from one computer to the next, so the journey measures the height instead of naming one.
+ */
+const railNeeds = (): Promise<number> => page.locator('.shell>aside').evaluate(element => {
+  const pins = element.querySelector('.rail-pins'), label = pins?.querySelector('.rail-label') ?? null, hint = pins?.querySelector('.rail-hint') ?? null, list = pins?.querySelector('nav') ?? null;
+  if (pins === null || pins === undefined || label === null || getComputedStyle(element).position !== 'sticky') throw new Error('The rail is in view with its pinned pages.');
+  const outer = (part: Element): number => {const style = getComputedStyle(part); return part.getBoundingClientRect().height + Number.parseFloat(style.marginTop) + Number.parseFloat(style.marginBottom);};
+  // The list's box is one row and the room for its focus ring above and below it; the room above overlaps the heading's margin.
+  const smallest = outer(label) + (list !== null ? list.scrollHeight - 6 : hint !== null ? outer(hint) : 0);
+  return Math.ceil(innerHeight - pins.getBoundingClientRect().height + smallest);
+});
+/** The shell measures the rail when the window is resized; two frames later the layout has followed. */
+const resized = async (width: number, height: number): Promise<void> => {
+  await page.setViewportSize({width, height});
+  await page.evaluate(() => new Promise<void>(resolve => {requestAnimationFrame(() => {requestAnimationFrame(() => {resolve();});});}));
 };
 const category = async (name: string): Promise<void> => {await page.getByRole('group', {name: 'Device categories'}).getByRole('button', {name, exact: true}).click();};
 const checks: string[] = [];
@@ -203,21 +238,29 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight > 100), true, 'Home is taller than the window, so it could have opened scrolled');
   assert.equal(await page.evaluate(() => scrollY), 0, 'a chosen destination opens at its top');
   // A window too short for the rail lets it scroll with the page, and its panel still runs the page's full height.
-  await page.setViewportSize({width: 1024, height: 500});
+  await resized(1024, 500);
   assert.deepEqual(await page.locator('.shell>aside').evaluate(element => {
     const total = document.documentElement.scrollHeight, height = element.getBoundingClientRect().height;
     return {position: getComputedStyle(element).position, tallerPage: total > innerHeight + 100, fullHeight: Math.abs(height - total) <= 1};
   }), {position: 'static', tallerPage: true, fullHeight: true}, 'in a short window the rail scrolls with the page and its panel runs the full height');
-  // The rail holds the heading of the pinned pages and one of them, about 608px in all: a 600px window lets it scroll
-  // with the page too, and a 640px one holds it, so it stays in view there. An ended session's rail is taller.
-  await page.setViewportSize({width: 1024, height: 600});
-  assert.equal(await page.locator('.shell>aside').evaluate(element => getComputedStyle(element).position), 'static', 'a connected rail scrolls with the page in a 600px window');
-  await page.setViewportSize({width: 1024, height: 640});
-  assert.deepEqual(await page.locator('.shell>aside').evaluate(element => {
-    const foot = element.querySelector('.sidebar-foot'), pins = element.querySelector('.rail-pins');
-    if (foot === null || pins === null) throw new Error('The rail has pinned pages and a foot.');
-    return {position: getComputedStyle(element).position, footInWindow: foot.getBoundingClientRect().bottom <= innerHeight + 1, pinsWhole: pins.scrollHeight <= pins.clientHeight + 1};
-  }), {position: 'sticky', footInWindow: true, pinsWhole: true}, 'a connected rail stays in view in a 640px window and fits it');
+  // The shell measures whether the rail fits, so the height at which it stops staying in view is exactly the height
+  // it needs: its parts, and of the pinned pages their heading with one row, or with the hint when nothing is pinned.
+  // One pixel less and it scrolls with the page. The rail is full from 1200px wide.
+  await pinOnly('#/lights/lifx');
+  await resized(1280, 1000);
+  const rowNeed = await railNeeds();
+  assert.equal(rowNeed > 560 && rowNeed < 720, true, `a full rail with one pinned page needs a plausible height: ${String(rowNeed)}`);
+  await resized(1280, rowNeed - 1);
+  assert.deepEqual([(await railFit()).position, (await railFit()).width], ['static', 184], `a connected full rail scrolls with the page in a window one pixel too short (${String(rowNeed - 1)}px)`);
+  await resized(1280, rowNeed);
+  assert.deepEqual(await railFit(), {position: 'sticky', footInWindow: true, pinsWhole: true, width: 184}, `a connected full rail stays in view in the window that just holds it (${String(rowNeed)}px), with a pinned row whole`);
+  await pinOnly(null);
+  await resized(1280, 1000);
+  const hintNeed = await railNeeds();
+  await resized(1280, hintNeed - 1);
+  assert.equal((await railFit()).position, 'static', `with nothing pinned the rail scrolls with the page in a window one pixel too short for its hint (${String(hintNeed - 1)}px)`);
+  await resized(1280, hintNeed);
+  assert.deepEqual(await railFit(), {position: 'sticky', footInWindow: true, pinsWhole: true, width: 184}, `and stays in view, with the hint whole, in the window that just holds it (${String(hintNeed)}px)`);
   await page.setViewportSize({width: 1440, height: 1000});
   await open('Devices'); await category('Displays');
 
@@ -335,18 +378,26 @@ try {
   assert.equal(await railWidth(), 184, 'an ended session shows the full rail where the icon rail is the default');
   assert.equal(await toggle.isDisabled(), true);
   assert.equal(await again.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight + 1), true, 'the recovery is inside the rail and the window');
-  await page.setViewportSize({width: 1024, height: 500});
+  await resized(1024, 500);
   await again.scrollIntoViewIfNeeded();
   assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= -1 && box.bottom <= innerHeight + 1;}), true, 'a window too short for the rail can scroll the recovery into view');
-  // With the pinned pages the ended rail needs about 648px: a 640px window lets it scroll too, and a 660px one holds it.
-  await page.setViewportSize({width: 1024, height: 640});
-  assert.equal(await page.locator('.shell>aside').evaluate(element => getComputedStyle(element).position), 'static', 'an ended rail scrolls with the page in a 640px window');
-  await again.scrollIntoViewIfNeeded();
-  assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= -1 && box.bottom <= innerHeight + 1;}), true, 'a 640px window can scroll the recovery into view');
-  await page.setViewportSize({width: 1024, height: 660});
+  // An ended session's rail also holds "Sign in again", so it needs more room than a connected one. In a window one
+  // pixel too short it scrolls with the page and the recovery can be scrolled into view; the window that just holds
+  // it keeps it in view with a pinned row and the recovery whole.
+  await pinOnly('#/lights/lifx');
+  await resized(1024, 1000);
   await page.evaluate(() => {window.scrollTo(0, 0);});
-  assert.equal(await page.locator('.shell>aside').evaluate(element => getComputedStyle(element).position), 'sticky');
-  assert.equal(await again.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight + 1), true, 'a 660px window holds the whole ended rail');
+  const endedNeed = await railNeeds();
+  assert.equal(endedNeed > rowNeed && endedNeed < 780, true, `an ended rail needs more room than a connected one: ${String(endedNeed)} against ${String(rowNeed)}`);
+  await resized(1024, endedNeed - 1);
+  assert.deepEqual([(await railFit()).position, (await railFit()).width], ['static', 184], `an ended rail scrolls with the page in a window one pixel too short (${String(endedNeed - 1)}px)`);
+  await again.scrollIntoViewIfNeeded();
+  assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= -1 && box.bottom <= innerHeight + 1;}), true, 'that window can scroll the recovery into view');
+  await resized(1024, endedNeed);
+  await page.evaluate(() => {window.scrollTo(0, 0);});
+  assert.deepEqual(await railFit(), {position: 'sticky', footInWindow: true, pinsWhole: true, width: 184}, `the window that just holds an ended rail (${String(endedNeed)}px) keeps it in view with a pinned row whole`);
+  assert.equal(await again.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight + 1), true, 'and its recovery');
+  await pinOnly(null);
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await drawer.isVisible(), false);
   assert.equal(await again.count(), 1, 'a phone offers one recovery action');

@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useRef} from 'react';
+import React, {useEffect, useLayoutEffect, useMemo, useRef} from 'react';
 import {deviceMenu, menuStep} from './device-menu.ts';
 import {NavLink} from './navigation.tsx';
 import {RailIcon} from './rail.tsx';
@@ -11,16 +11,26 @@ export type DeviceMenuClose = 'row' | 'page' | 'stay';
 /**
  * The Devices menu (Hub #1889): every device and module page, grouped as the directory groups them, with "All
  * devices" leading to the directory. It only navigates. It is not modal: Escape, a press outside it, a chosen page
- * or focus moving elsewhere closes it. While it is open it reads Escape and the arrow keys wherever focus is in it,
- * so the phone drawer under it does not close with it.
+ * or focus moving elsewhere closes it, and so does focus moving into a framed module page, which the shell sees only
+ * as its window losing focus. While it is open it reads Escape and the arrow keys wherever focus is in it, so the
+ * phone drawer under it does not close with it.
  */
-export function DeviceMenu({id, runtime, pins, route, row, onClose}: {
+export function DeviceMenu({id, runtime, pins, route, row, onClose, onDropped}: {
   id: string; runtime: RuntimeData; pins: readonly string[]; route: Route; row: React.RefObject<HTMLElement | null>; onClose: (focus: DeviceMenuClose) => void;
+  /** Called when the menu is removed while focus is still inside it, before that focus is lost. */
+  onDropped: () => void;
 }): React.JSX.Element {
   const columns = useMemo(() => deviceMenu(runtime), [runtime]);
   const root = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
+  const dropped = useRef(onDropped);
+  dropped.current = onDropped;
+  // A layout effect is cleaned up while the menu is still in the page, so focus inside it can still be seen.
+  useLayoutEffect(() => {
+    const menu = root.current;
+    return () => { if (menu?.contains(document.activeElement) === true) dropped.current(); };
+  }, []);
   useEffect(() => {
     const items = (): HTMLElement[] => [...root.current?.querySelectorAll<HTMLElement>('[role=menuitem]') ?? []];
     const inside = (target: EventTarget | null): boolean => target instanceof Node && (root.current?.contains(target) === true || row.current?.contains(target) === true);
@@ -30,8 +40,10 @@ export function DeviceMenu({id, runtime, pins, route, row, onClose}: {
         event.preventDefault(); event.stopPropagation(); close.current('row');
         return;
       }
+      // Focus can be on nothing while the menu is open, for example after Tab from its last stop in the phone drawer;
+      // the arrow keys then start from the ends.
       const active = document.activeElement;
-      if (event.metaKey || event.ctrlKey || event.altKey || !inside(active)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey || (active !== null && active !== document.body && !inside(active))) return;
       const list = items(), at = active instanceof HTMLElement ? list.indexOf(active) : -1;
       if (event.key === ' ' && at >= 0) {
         event.preventDefault(); event.stopPropagation(); list[at]?.click();
@@ -44,11 +56,15 @@ export function DeviceMenu({id, runtime, pins, route, row, onClose}: {
     };
     const press = (event: PointerEvent): void => { if (!inside(event.target)) close.current('stay'); };
     const moved = (event: FocusEvent): void => { if (!inside(event.target)) close.current('stay'); };
+    // A press or a focus move inside a frame never reaches this document. The window loses focus to the frame instead.
+    const framed = (): void => { if (document.activeElement instanceof HTMLIFrameElement) close.current('stay'); };
     window.addEventListener('keydown', keys, true);
+    window.addEventListener('blur', framed);
     document.addEventListener('pointerdown', press, true);
     document.addEventListener('focusin', moved);
     return () => {
       window.removeEventListener('keydown', keys, true);
+      window.removeEventListener('blur', framed);
       document.removeEventListener('pointerdown', press, true);
       document.removeEventListener('focusin', moved);
     };
@@ -63,7 +79,7 @@ export function DeviceMenu({id, runtime, pins, route, row, onClose}: {
     </NavLink>;
   };
   const note = runtime.catalogFailed ? 'The module catalog is unavailable.' : runtime.modules === undefined ? 'Loading device pages.' : columns.length === 0 ? 'No device pages are declared.' : undefined;
-  // A press on a heading must not take focus from the entry that has it, or the keys would stop.
+  // A press on a heading does not take focus from the entry that has it.
   return <div ref={root} id={id} className="device-menu"
     onMouseDown={event => { if (!(event.target instanceof Element) || event.target.closest('a, button') === null) event.preventDefault(); }}>
     <div className="device-menu-head"><strong>Devices</strong>

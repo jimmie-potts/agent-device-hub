@@ -117,12 +117,18 @@ void test('every page the directory lists can be pinned, and so can a light\'s o
     '#/component/vacuum = Roborock [Ro]',
     '#/audio = Music [Mu]',
     '#/module/companions/preferences = Companions · Preferences [CP]',
-    '#/module/wispr/analytics = Wispr [Wi]',
+    '#/module/wispr/analytics = Wispr · failed [Wi]',
     '#/component/pendant-1 = LIFX · Pendant [LP]',
   ]);
   assert.equal(targets.has('#/module/companions/assistant'), false, 'the Conversation page has no pin');
   assert.equal(targets.has('#/module/pixoo/player'), false, 'a page the catalog does not declare cannot be shown as a pin');
-  assert.deepEqual(targets.get('#/module/pixoo/library'), {hash: '#/module/pixoo/library', route: library, name: 'Library', group: 'Pixoo', mono: 'PL'});
+  assert.deepEqual(targets.get('#/module/pixoo/library'), {hash: '#/module/pixoo/library', route: library, name: 'Library', group: 'Pixoo', mono: 'PL', note: ''});
+  assert.equal(targets.get('#/module/wispr/analytics')?.note, 'failed', 'a page of a module that is not running carries the module\'s state');
+  const stopped = pinTargets({...runtime, modules: runtime.modules?.map(module => module.name === 'lifx' ? {...module, state: 'stopped'} : module)});
+  assert.deepEqual([stopped.get('#/lights/lifx')?.note, stopped.get('#/component/pendant-1')?.note, stopped.get('#/component/pixoo-1')?.note], ['stopped', 'stopped', ''],
+    'a stopped module marks its brand page and its lights\' own pages, and no other module\'s');
+  const unlisted = pinTargets({...runtime, modules: runtime.modules?.filter(module => module.name !== 'lifx')});
+  assert.equal(unlisted.get('#/component/pendant-1')?.note, '', 'a device whose owner the catalog does not list has no state to show');
   assert.equal(JSON.stringify(runtime), before, 'the projection does not change the runtime copies');
   assert.equal(pinTargets({...runtime, modules: undefined, copies: []}).size, 0, 'nothing is declared until the catalog is read');
 });
@@ -135,4 +141,6 @@ void test('a page has a short mark for the icon rail', () => {
   assert.equal(monogram('…', ''), '·', 'a name with no letter still has a mark');
   assert.equal(pinName({name: 'Wall', group: 'Nanoleaf'}), 'Nanoleaf · Wall');
   assert.equal(pinName({name: 'Roborock', group: ''}), 'Roborock');
+  assert.equal(pinName({name: 'Wall', group: 'Nanoleaf', note: 'stopped'}), 'Nanoleaf · Wall · stopped');
+  assert.equal(pinName({name: 'Roborock', group: '', note: ''}), 'Roborock');
 });

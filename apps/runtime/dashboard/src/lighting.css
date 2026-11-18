@@ -1,5 +1,7 @@
 .lighting-workspace{margin-block:var(--space-xl);font-family:var(--font);color:var(--text)}
-.lighting-heading{display:flex;justify-content:space-between;align-items:center;gap:var(--space-m);margin-bottom:var(--space-l)}
+/* The heading's actions move under the name as one group when the row is too narrow for both, so the name is never squeezed. */
+.lighting-heading{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:var(--space-m);margin-bottom:var(--space-l)}
+.lighting-heading-actions{display:flex;align-items:center;gap:var(--space-m);margin-inline-start:auto}
 .lighting-heading h2{margin:0;font-size:var(--type-title)}
 .lighting-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:var(--space-l);align-items:start}
 .light-card{position:relative;min-width:0;border:1px solid var(--light-edge);border-radius:var(--light-radius);background:var(--light-surface);box-shadow:var(--light-shadow);backdrop-filter:blur(20px);padding:var(--space-l)}

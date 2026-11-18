@@ -79,7 +79,9 @@ width the rail is a drawer behind a menu button, closed by a chosen destination,
 Escape or an outside tap, each of which returns focus to the button; the page
 behind the open drawer is inert. An ended browser session shows the full rail
 and still offers **Sign in again** globally, in the phone bar when the rail is a
-drawer. A window too short for the rail lets it scroll with the page. Home links Timeline. The Devices directory groups catalog-derived Lighting,
+drawer. A window too short for the rail lets it scroll with the page; the shell
+measures whether the rail fits, because fonts wrap its text differently from
+one computer to the next. Home links Timeline. The Devices directory groups catalog-derived Lighting,
 Displays, Audio and Other destinations; module pages keep their sibling links
 locally. The category choice survives navigation within the open page without
 being saved as a new preference. Unknown modules use Other, and unavailable
@@ -116,11 +118,14 @@ and one whose observations are stale says so; the directory keeps the full
 warnings. **All devices** opens the directory, which keeps its address. The
 menu opens with focus on the open page's entry. The arrow keys, Home and End
 move through it, Escape closes it with focus on the row, and a press outside
-it, a chosen page or focus moving elsewhere closes it too. A chosen page opens
+it, a chosen page or focus moving elsewhere closes it too; a press inside a
+framed module page counts as outside. A page change under the open menu closes
+it and hands its focus to the row. A chosen page opens
 at its top with focus on the page. At phone width the menu covers the drawer as
 one scrolling column with its own close button, which leaves the drawer open.
 The row stays marked as the containing destination on every page under
-Devices.
+Devices; its box moves to the page's own row when the page has one among the
+pinned pages.
 
 Device, lighting-brand, Audio and module pages have a **Pin to rail** toggle in
 their header; the Conversation page does not. Pinned pages are listed in the
@@ -128,7 +133,8 @@ rail under the destinations in the order they were pinned, each with a
 two-letter mark, its name and, for a page of a module with several pages, the
 module's name. A pinned row shows an unpin button when it is pointed at or the
 button has keyboard focus. The page that is open and not pinned is a dashed
-temporary row with a pin button. The list scrolls inside the rail when it is
+temporary row with a pin button. A row for a page whose module is not running
+shows that module's state. The list scrolls inside the rail when it is
 longer than the room above the foot, and the rail always has room for the
 list's heading and one row. In the icon rail a pinned page is its mark, named
 by the link's title, and unpinning uses the page's own toggle. Pins are saved
@@ -141,7 +147,7 @@ provider request.
 
 `navigation.tsx` shares native anchor navigation and containing-destination
 selection. `directory.ts` projects the existing copies without acquiring state.
-`rail.tsx` owns the rail's collapse state and icons. `jump.ts` projects the palette's list and holds its key rules; `jump-palette.tsx` is the list. `device-menu.ts` projects the Devices menu and holds its key steps; `device-menu.tsx` is the menu. `pins.ts` holds the pinned list and the pages it can name; `pins.tsx` is the rail's list and the header toggle. `skins/quiet-glass.css` supplies light/dark semantic values over the retained
+`rail.tsx` owns the rail's collapse state, its icons and the measurement of whether it fits the window. `jump.ts` projects the palette's list and holds its key rules; `jump-palette.tsx` is the list. `device-menu.ts` projects the Devices menu and holds its key steps; `device-menu.tsx` is the menu. `pins.ts` holds the pinned list and the pages it can name; `pins.tsx` is the rail's list and the header toggle. `skins/quiet-glass.css` supplies light/dark semantic values over the retained
 fixed attention/art tokens; `shell.css` owns shared responsive geometry. The
 legacy dashboard and documentation keep their own skins. Settings can follow
 displayed art colors, lock the current colors or restore Quiet glass. These

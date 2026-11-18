@@ -1,4 +1,4 @@
-import React, {useSyncExternalStore} from 'react';
+import React, {useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore} from 'react';
 import {RAIL_WIDE_QUERY, RailPreferenceStore, railExpanded, type RailPreference, type RailSize} from './rail-preference.ts';
 
 const preference = new RailPreferenceStore(() => window.localStorage);
@@ -20,6 +20,60 @@ export function useRail(): {saved: RailPreference; expanded: boolean; toggle: ()
   const saved = useSyncExternalStore(preference.subscribe, preference.getSnapshot);
   const size: RailSize = useSyncExternalStore(subscribeWide, () => wide.matches) ? 'wide' : 'narrow';
   return {saved, expanded: railExpanded(saved, size), toggle: () => {preference.toggle(size);}};
+}
+
+const px = (value: string): number => {const number = Number.parseFloat(value); return Number.isNaN(number) ? 0 : number;};
+const outer = (element: Element | null): number => {
+  if (element === null) return 0;
+  const style = getComputedStyle(element);
+  return element.getBoundingClientRect().height + px(style.marginTop) + px(style.marginBottom);
+};
+/** The room under a pinned row that its focus ring is drawn in. It matches the pinned list's padding in the stylesheet. */
+const RING = 6;
+
+/**
+ * The height the rail needs to show everything in it: its head, the jump field, the destinations, the foot, and of
+ * the pinned pages their heading with one row, or with the hint when nothing is pinned. A longer pinned list scrolls
+ * inside the rail and asks for no more. The Devices menu is fixed to the window and takes no room in the rail.
+ */
+export function railNeed(rail: Element): number {
+  const style = getComputedStyle(rail);
+  let need = px(style.paddingTop) + px(style.paddingBottom), parts = 0;
+  for (const child of rail.children) {
+    if (child.classList.contains('device-menu')) continue;
+    parts += 1;
+    if (!child.classList.contains('rail-pins')) {
+      need += child.getBoundingClientRect().height;
+      continue;
+    }
+    const row = child.querySelector('.rail-pin');
+    need += outer(child.querySelector('.rail-label')) + (row === null ? outer(child.querySelector('.rail-hint')) : row.getBoundingClientRect().height + RING);
+  }
+  return need + Math.max(0, parts - 1) * px(style.rowGap);
+}
+
+/**
+ * Whether the window is too short to hold the rail, in which case the stylesheet lets the rail scroll with the page
+ * instead of staying in view. It is measured, not a fixed height: what the rail needs depends on the fonts, which wrap
+ * its text differently from one computer to the next, on the session, whose ended state adds "Sign in again", and on
+ * what is pinned. Everything in the rail is rendered by the shell, which renders at least once a second, so measuring
+ * after each render follows every change; a resized window is measured at once. The phone drawer is a fixed panel
+ * and is never short.
+ */
+export function useRailShort(rail: React.RefObject<Element | null>, phone: boolean): boolean {
+  const [short, setShort] = useState(false);
+  const measure = useRef<() => void>(() => {});
+  measure.current = () => {
+    const element = rail.current;
+    setShort(!phone && element !== null && railNeed(element) > window.innerHeight);
+  };
+  useLayoutEffect(() => { measure.current(); });
+  useEffect(() => {
+    const resized = (): void => { measure.current(); };
+    window.addEventListener('resize', resized);
+    return () => { window.removeEventListener('resize', resized); };
+  }, []);
+  return short;
 }
 
 const PATHS = {

@@ -53,7 +53,7 @@
 .shell>aside nav a{position:relative;justify-content:flex-start;gap:10px;min-block-size:44px;padding:0 12px;font-size:var(--type-body);white-space:nowrap}
 .shell>aside nav a[aria-current]{box-shadow:var(--shell-shadow);border-color:var(--edge-strong)}
 /* Devices (#1889) is a button that opens the menu of every device page, and looks like the links beside it. On a
-   page under Devices it is marked lightly, because that page has its own row among the pinned pages. */
+   page that has its own row among the pinned pages it is marked lightly, so the rail boxes one row. */
 .shell>aside nav .rail-devices{position:relative;display:flex;align-items:center;justify-content:flex-start;gap:10px;inline-size:100%;min-block-size:44px;padding:0 12px;border:1px solid transparent;border-radius:var(--radius);background:transparent;color:var(--muted-dense);font-size:var(--type-body);font-weight:500;text-align:start;white-space:nowrap}
 .shell>aside nav .rail-devices:hover,.shell>aside nav .rail-devices[aria-expanded=true]{background:var(--raised)}
 .shell>aside nav .rail-devices[aria-current]{border-color:var(--edge-strong);background:var(--nav-selected);box-shadow:var(--shell-shadow);color:var(--emphasis-text)}
@@ -61,8 +61,8 @@
 .shell>aside nav .rail-devices[data-ancestor]:hover,.shell>aside nav .rail-devices[data-ancestor][aria-expanded=true]{background:var(--raised)}
 .rail-go{display:inline-grid;margin-inline-start:auto}
 /* Pinned pages (#1889) take the room between the destinations and the foot and scroll inside it when there are more
-   than fit. The short-window heights below leave them room for their heading and one row. The list's padding
-   leaves room for a row's focus ring, which a scroll container would otherwise cut. */
+   than fit. A window that cannot hold their heading and one row lets the whole rail scroll with the page instead.
+   The list's padding leaves room for a row's focus ring, which a scroll container would otherwise cut. */
 .rail-pins{display:flex;flex-direction:column;flex:1 1 auto;min-block-size:0}
 .rail-label{flex:none;margin:0 12px var(--space-xs);color:var(--muted-dense);font-size:var(--type-label);font-weight:600;letter-spacing:.12em;text-transform:uppercase}
 .rail-hint{margin:0;padding:2px 12px;color:var(--muted-dense);font-size:var(--type-label);line-height:1.45}
@@ -76,7 +76,8 @@
    the module's name. The page that is open and not pinned is a dashed row whose button, always shown, pins it. */
 .shell .rail-pin-button{position:absolute;inset-block-start:50%;inset-inline-end:6px;display:grid;place-items:center;inline-size:24px;block-size:24px;min-block-size:0;margin-block-start:-12px;padding:0;border:0;border-radius:8px;background:var(--raised);color:var(--muted-dense);opacity:0;pointer-events:none}
 .rail-pin.visiting .rail-pin-button,.shell .rail-pin-button:focus-visible{opacity:1;pointer-events:auto}
-.rail-pin.visiting .rail-pin-group{display:none}
+.rail-pin.visiting .rail-pin-group:not(.rail-pin-state){display:none}
+.shell>aside .rail-pin a .rail-pin-state{color:var(--pending-text)}
 .rail-pin:has(.rail-pin-button:focus-visible) .rail-pin-group{visibility:hidden}
 .shell>aside .rail-pin.visiting a{padding-inline-end:34px;border:1px dashed var(--edge-strong);background:transparent;box-shadow:none}
 @media(hover:hover) and (pointer:fine){
@@ -106,7 +107,6 @@
 /* The toggle in a page's header that pins the page to the rail. */
 .shell .pin-toggle{display:inline-flex;align-items:center;gap:var(--space-s);flex:none}
 .shell .pin-toggle[aria-pressed=true]{border-color:var(--edge-strong);background:var(--raised)}
-.lighting-heading .pin-toggle{margin-inline-start:auto}
 .shell>aside .sidebar-foot{position:relative;display:grid;gap:var(--space-s);justify-items:stretch;padding-block-start:var(--space-s);border-block-start:1px solid var(--edge-faint)}
 .shell>aside .sidebar-foot p{display:block;margin:0;padding-inline:12px;font-size:var(--type-label)}
 /* The feed details open beside the rail, level with its foot, so they never cover Settings. */
@@ -114,15 +114,14 @@
 .sidebar-foot .info-popover{top:auto;right:auto;bottom:0;left:calc(100% + var(--space-m))}
 .phone-sign-in{display:none}
 .phone-bar,.rail-scrim{display:none}
-/* A window too short for the rail lets it scroll with the page, as it did before it was sticky. The rail holds
-   its head, the jump field, the destinations, the heading of the pinned pages with one of them, and the foot: about
-   608px, and about 648px for an ended session, whose foot also holds "Sign in again". Each has its own height, so
-   a rail that fits stays in view. A longer list of pinned pages scrolls inside the rail and never makes it taller.
-   The panel still runs the full height of the page, with the foot directly under the pinned pages instead of at
-   the page's end. The ended session is read from the state the page already publishes. The phone drawer is a fixed
-   panel and keeps its own layout at any height. */
-@media(max-height:610px) and (min-width:680.02px){.shell>aside{position:static;align-self:stretch;block-size:auto}.shell>aside .sidebar-foot{margin-block-start:0}}
-@media(max-height:650px) and (min-width:680.02px){.shell:has(>main[data-feed=ended])>aside{position:static;align-self:stretch;block-size:auto}.shell:has(>main[data-feed=ended])>aside .sidebar-foot{margin-block-start:0}}
+/* A window too short for the rail lets it scroll with the page, as it did before it was sticky. The shell measures
+   whether the rail fits (rail.tsx) and marks the shell when it does not, because what the rail needs depends on the
+   fonts, the session and what is pinned. The rail holds its head, the jump field, the destinations, the heading of
+   the pinned pages with one of them or the hint, and the foot; a longer list of pinned pages scrolls inside the rail
+   and never makes it taller. The panel still runs the full height of the page, with the foot directly under the
+   pinned pages instead of at the page's end. The phone drawer is a fixed panel and keeps its own layout at any
+   height. */
+@media(min-width:680.02px){.shell[data-rail-short]>aside{position:static;align-self:stretch;block-size:auto}.shell[data-rail-short]>aside .sidebar-foot{margin-block-start:0}}
 
 /* The icon rail keeps every name. A link's own label becomes the name shown beside its icon on hover or focus, so
    the name is in the page once; the feed label and the control mode stay for assistive technology only. A name
@@ -226,6 +225,9 @@
      short phone scrolls the drawer before it squeezes the pinned pages below their heading and one row. */
   .rail-pins{min-block-size:70px}
   .shell>aside .rail-pin a{min-block-size:44px}
+  /* The temporary row's pin button is always shown, so here it is a full touch target at the row's end. */
+  .shell .rail-pin-button{inset-inline-end:0;inline-size:44px;block-size:44px;margin-block-start:-22px;border-radius:12px;background:transparent}
+  .shell>aside .rail-pin.visiting a{padding-inline-end:44px}
   .device-menu{inset:8px auto 8px 8px;inline-size:calc(min(82vw,300px) - 16px);max-block-size:none;animation-name:device-menu-over}
   .device-menu-head{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 2px 10px}
   .device-menu-columns{grid-template-columns:minmax(0,1fr)}

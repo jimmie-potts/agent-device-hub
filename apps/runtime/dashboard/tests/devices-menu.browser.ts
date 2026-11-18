@@ -85,11 +85,18 @@ try {
     const style = getComputedStyle(element);
     return element.matches(':focus-visible') && style.outlineStyle === 'solid' && Number.parseFloat(style.outlineWidth) >= 2 && Number.parseFloat(style.outlineOffset) < 0;
   }), true, 'a focused item has a visible ring inside the row');
-  // A press on a part of the menu that is not an item leaves the keys working.
+  // A press on a part of the menu that is not an item leaves focus on the entry that had it.
   await menu.locator('.device-menu-category').first().click();
   await menu.waitFor();
-  await page.keyboard.press('Home');
-  assert.equal(await focused(), 'LIFX', 'a press on a heading does not take the keys from the menu');
+  assert.equal(await focused(), 'All devices', 'a press on a heading does not take focus from the entry');
+  // With focus on nothing while the menu is open, the arrow keys start from the ends.
+  await page.evaluate(() => {if (document.activeElement instanceof HTMLElement) document.activeElement.blur();});
+  assert.equal(await page.evaluate(() => document.activeElement === document.body), true);
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await focused(), 'LIFX', 'down with focus on nothing starts at the first entry');
+  await page.evaluate(() => {if (document.activeElement instanceof HTMLElement) document.activeElement.blur();});
+  await page.keyboard.press('ArrowUp');
+  assert.equal(await focused(), 'All devices', 'up with focus on nothing starts at the last entry');
   await page.keyboard.press('Escape');
   await menu.waitFor({state: 'detached'});
   assert.deepEqual([await focused(), await devices.getAttribute('aria-expanded'), await devices.getAttribute('aria-controls')], ['Devices', 'false', null], 'Escape closes the menu with focus on the row');
@@ -98,6 +105,7 @@ try {
   await menu.waitFor();
   await devices.click();
   await menu.waitFor({state: 'detached'});
+  assert.equal(await focused(), 'Devices', 'the row pressed again closes the menu with focus on the row');
   // A press outside the menu closes it. The brand takes no focus, so here it is the press that closes it.
   await devices.click(); await menu.waitFor();
   await page.locator('.rail-head .brand').click();
@@ -122,6 +130,7 @@ try {
   await devices.click(); await menu.waitFor();
   await page.setViewportSize({width: 390, height: 700});
   await menu.waitFor({state: 'detached'});
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Open navigation');
   await page.getByRole('button', {name: 'Open navigation', exact: true}).click();
   await page.locator('.shell>aside').waitFor();
   assert.equal(await menu.count(), 0, 'narrowing the window closes the menu for good');
@@ -160,7 +169,8 @@ try {
   await page.goBack();
   await page.getByRole('region', {name: 'Rooms', exact: true}).waitFor();
   await menu.waitFor({state: 'detached'});
-  assert.equal(hash(), '#/rooms', 'the browser\'s back button changes the page and closes the menu');
+  await page.waitForFunction(() => document.activeElement?.textContent === 'Devices' && document.activeElement.closest('.primary-navigation') !== null);
+  assert.equal(hash(), '#/rooms', 'the browser\'s back button changes the page and closes the menu, with focus handed to the Devices row');
   checks.push('the Devices row opens a menu of every device page; the arrow keys, Home, End, Escape, an outside press and Tab work; "All devices" opens the directory');
 
   // A page under Devices: the row is marked lightly, and the open page is a temporary row with a pin button.
@@ -237,9 +247,21 @@ try {
   await page.goto(`${world.url}/#/component/pendant-1`);
   await page.locator('[data-device=pendant-1]').waitFor();
   assert.deepEqual([await toggle.textContent(), await rowNames()], ['Pin to rail', ['LIFX', 'Pixoo · Library', 'LIFX · pendant-1']], 'a light\'s own page can be pinned, although the directory reaches it through its brand page');
+  // A press inside a framed module page is outside the menu too. It never reaches the shell's document; the shell
+  // sees its window lose focus to the frame.
+  await choose('Sign preview');
+  const frameHeading = page.frameLocator('iframe.module-page').getByRole('heading', {name: 'hello'});
+  await frameHeading.waitFor();
+  await devices.click(); await menu.waitFor();
+  await frameHeading.click();
+  await menu.waitFor({state: 'detached'});
+  assert.equal(await devices.getAttribute('aria-expanded'), 'false', 'a press inside a framed page closes the menu');
   await choose('Conversation');
   await page.getByRole('heading', {name: 'Conversation', level: 1, exact: true}).waitFor();
   assert.deepEqual([await toggle.count(), await rowNames()], [0, ['LIFX', 'Pixoo · Library']], 'the Conversation page has no pin toggle and no temporary row');
+  // A page under Devices with no row of its own leaves the box on the Devices row, so the rail still boxes one row.
+  assert.deepEqual([await devices.getAttribute('aria-current'), await devices.getAttribute('data-ancestor'), await devices.evaluate(element => getComputedStyle(element).borderTopColor !== 'rgba(0, 0, 0, 0)'),
+    await page.locator('.shell>aside a[aria-current]').count()], ['page', null, true, 0], 'on the Conversation page the Devices row is the boxed row');
   await openDirectory(page);
   assert.equal(await toggle.count(), 0, 'the directory is not a page to pin');
   // Both pins survive a reload, in order; an unpinned page stays unpinned.
@@ -280,7 +302,8 @@ try {
   assert.deepEqual([await menu.locator('.device-menu-module').filter({hasText: /^sign · stopped$/}).count(), await menu.getByRole('menuitem', {name: /Sign preview|sign-1/}).count()], [1, 0],
     'a stopped module is named with its state in the menu and offers no page');
   await page.keyboard.press('Escape');
-  assert.deepEqual(await rowNames(), ['sign · Sign preview'], 'a pinned page of a stopped module keeps its row; the page says why it is unavailable');
+  assert.deepEqual([await rowNames(), await rows.first().locator('.rail-pin-state').textContent(), await rows.first().getByRole('link').getAttribute('title')],
+    [['sign · Sign preview · stopped'], 'stopped', 'sign · Sign preview · stopped'], 'a pinned page of a stopped module keeps its row, which shows the module\'s state in its text, its name and its title');
   await page.unroute('**/api/v2/modules');
   await page.route('**/api/v2/modules', async route => {
     const response = await route.fetch();
@@ -362,6 +385,30 @@ try {
     await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
     await drawer.waitFor({state: 'hidden'});
     assert.deepEqual([await menu.count(), await focused()], [0, 'Open navigation'], 'a page chosen in the menu closes it and the drawer');
+    // The lighting page's heading keeps its name on one line beside the pin toggle, which is at its widest when the
+    // page is not pinned; the heading's actions move under the name when the row is too narrow.
+    await page.goto(`${world.url}/#/lights/lifx`);
+    await page.getByRole('region', {name: 'LIFX lights', exact: true}).waitFor();
+    if (await toggle.textContent() === 'Pinned') await toggle.click();
+    assert.deepEqual(await page.locator('.lighting-heading').evaluate(header => {
+      const lines = (element: Element | null): number => {
+        if (element === null) return 0;
+        const range = document.createRange(); range.selectNodeContents(element);
+        return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size;
+      };
+      return {toggle: header.querySelector('.pin-toggle')?.textContent, name: lines(header.querySelector('h2')), label: lines(header.querySelector('.pin-toggle span')), arrange: lines(header.querySelector('summary')),
+        fits: document.documentElement.scrollWidth <= innerWidth};
+    }), {toggle: 'Pin to rail', name: 1, label: 1, arrange: 1, fits: true}, `at ${String(width)}px the lighting heading keeps its name, its toggle and Arrange on one line each`);
+    // The temporary row's pin button is always shown, so in the drawer it is a full touch target.
+    await drawerButton.click(); await drawer.waitFor();
+    assert.deepEqual(await rows.locator('.rail-pin-button').last().evaluate(button => {
+      const box = button.getBoundingClientRect(), row = button.closest('.rail-pin')?.getBoundingClientRect();
+      return {label: button.getAttribute('aria-label'), target: box.width >= 44 && box.height >= 44, inRow: row !== undefined && box.right <= row.right + 1 && box.left >= row.left};
+    }), {label: 'Pin LIFX', target: true, inRow: true}, 'the temporary row\'s pin button is a full touch target in the drawer');
+    await rows.locator('.rail-pin-button').last().click();
+    assert.equal(await toggle.textContent(), 'Pinned', 'and it pins the page');
+    await page.keyboard.press('Escape');
+    await drawer.waitFor({state: 'hidden'});
     // A link opened in a new tab from the menu closes the drawer, as any link in the drawer does; the menu goes with it.
     await drawerButton.click(); await drawer.waitFor();
     await devices.click(); await menu.waitFor();

@@ -71,8 +71,11 @@ export class PinStore {
   #notify(): void {for (const listener of this.#listeners) listener();}
 }
 
-/** A page that can be pinned now: its address, its name, the module it belongs to when it is one of several pages, and a short mark for the icon rail. */
-export type PinTarget = {hash: string; route: Route; name: string; group: string; mono: string};
+/**
+ * A page that can be pinned now: its address, its name, the module it belongs to when it is one of several pages, a
+ * short mark for the icon rail, and the state of its module when that module is not running.
+ */
+export type PinTarget = {hash: string; route: Route; name: string; group: string; mono: string; note: string};
 
 const letters = (text: string): string => text.replace(/[^\p{L}\p{N}]/gu, '');
 /** Two characters that stand for a page in the icon rail: the module's and the page's initials, or the start of a lone name. */
@@ -80,30 +83,34 @@ export function monogram(name: string, group: string): string {
   const mark = group === '' ? letters(name).slice(0, 2) : `${letters(group).slice(0, 1)}${letters(name).slice(0, 1)}`.toUpperCase();
   return mark === '' ? '·' : mark;
 }
-/** The whole name of a pinned page, as a title and an accessible name give it. */
-export const pinName = (target: Pick<PinTarget, 'name' | 'group'>): string => target.group === '' ? target.name : `${target.group} · ${target.name}`;
+/** The whole name of a pinned page, as a title and an accessible name give it, with its module's state when the module is not running. */
+export const pinName = (target: Pick<PinTarget, 'name' | 'group'> & {note?: string}): string =>
+  `${target.group === '' ? target.name : `${target.group} · ${target.name}`}${target.note === undefined || target.note === '' ? '' : ` · ${target.note}`}`;
 
 /**
  * Every page that can be pinned now, by address: each page the Devices directory lists, and each device's own page,
  * which for a light is reached from its brand page and not from the directory. It is a projection of the catalog and
- * the device records the page already holds. A saved pin with no entry here is not shown.
+ * the device records the page already holds. A saved pin with no entry here is not shown. A page of a module that is
+ * not running is still a page, and carries that module's state so that its row never looks available.
  */
 export function pinTargets(runtime: RuntimeData): ReadonlyMap<string, PinTarget> {
   const targets = new Map<string, PinTarget>();
-  const add = (route: Route, name: string, group: string): void => {
+  const add = (route: Route, name: string, group: string, state: string): void => {
     const hash = routeHash(route);
-    if (pinnableRoute(route) && !targets.has(hash)) targets.set(hash, {hash, route, name, group, mono: monogram(name, group)});
+    if (pinnableRoute(route) && !targets.has(hash)) targets.set(hash, {hash, route, name, group, mono: monogram(name, group), note: state === 'running' ? '' : state});
   };
   for (const entry of directoryEntries(runtime)) {
     for (const link of entry.links) {
       const one = entry.links.length === 1 || link.label.toLowerCase() === entry.label.toLowerCase();
-      add(link.route, one ? entry.label : link.label, one ? '' : entry.label);
+      add(link.route, one ? entry.label : link.label, one ? '' : entry.label, entry.state);
     }
   }
   for (const copy of runtime.copies) {
     if (copy.family !== 'device') continue;
-    const group = moduleLabel(copy.owner.slice(copy.owner.lastIndexOf('/') + 1));
-    for (const device of copy.records as readonly DeviceRecord[]) add({kind: 'component', id: device.id}, device.label ?? device.id, group);
+    const module = copy.owner.slice(copy.owner.lastIndexOf('/') + 1);
+    // A device whose owner the catalog does not list has no module state to show.
+    const state = runtime.modules?.find(entry => entry.name === module)?.state ?? 'running';
+    for (const device of copy.records as readonly DeviceRecord[]) add({kind: 'component', id: device.id}, device.label ?? device.id, moduleLabel(module), state);
   }
   return targets;
 }
