@@ -282,7 +282,7 @@ Step numbers in this design follow `tasks.md`. Step 7 here is the owner plan's s
 
 Holding the 30-second window in memory comes from the coordinator's plan, not from an owner decision. This design adopts it as a design choice (decision 10).
 
-The owner's plan lands decision 2 in step 3. Its code is in the companions module, the core's companion part and the opportunity contract, which belong to step 4's reader group. No step 3 reader has a freshness-based priority rule. This design therefore lands decision 2 in step 4 and leaves the step 3 attention gates unchanged. The coordinator confirms this placement before step 3 or 4 starts.
+The owner's plan lands decision 2 in step 3. Its code is in the companions module, the core's companion part and the opportunity contract, which belong to step 4's reader group. No step 3 reader has a freshness-based priority rule. This design therefore lands decision 2 in step 4 and leaves the step 3 attention gates unchanged. The coordinator confirmed this placement on #1865 before step 3 or 4 started.
 
 ## Requirements from the pre-implementation review
 
@@ -347,7 +347,7 @@ Step 9 gets no focused second review. It changes no writer exclusion, emits no n
 
 ## Open questions
 
-1. **Decision 2 placement (coordinator).** Confirm that decision 2 lands in step 4 with the companions, as set out above.
+None. Decision 2's placement in step 4 with the companions was confirmed by the coordinator on #1865 (comment 6984552157, 2026-11-18).
 
 ## Validation
 
