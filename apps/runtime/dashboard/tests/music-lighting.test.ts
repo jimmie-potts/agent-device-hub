@@ -6,7 +6,7 @@ import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lightin
 import type {ReactiveCatalogView} from '@jimmie-potts/nanoleaf/reactive-presets';
 import type {SyncedCopy, SyncHandler, SyncOptions, SyncResult} from '@jimmie-potts/sdk/remote';
 import {lightingWorkRequestId} from '../../dist/src/core/music-lighting.js';
-import {MusicLightingFeed, NANOLEAF_OWNER, type PresetFollower} from '../src/music-lighting-feed.ts';
+import {MusicLightingFeed, NANOLEAF_OWNER, type PresetFollower, type ShowFollower} from '../src/music-lighting-feed.ts';
 import {baseText, controlText, endingText, lightBase, lightingRecord, lightingWorkId, sessionBaseText, sessionText, startBlocked, startCapture, stopBlocked,
   workText, type LightingControls} from '../src/music-lighting-model.ts';
 
@@ -139,18 +139,24 @@ function world(states: () => Message<unknown>[]) {
     show(catalog(1));
     return () => {disposed += 1;};
   };
-  const feed = new MusicLightingFeed({participant: {sync} as unknown as ConstructorParameters<typeof MusicLightingFeed>[0]['participant'], follow});
+  const followShows: ShowFollower = (showSync, show) => {
+    void showSync(() => {}, {onRestarted: () => {}});
+    show({value: {id: 'shows', revision: 1, shows: []}, live: true, pending: false, failed: false});
+    return () => {};
+  };
+  const feed = new MusicLightingFeed({participant: {sync} as unknown as ConstructorParameters<typeof MusicLightingFeed>[0]['participant'], follow, followShows});
   return {feed, syncs, counts: () => ({closed, follows, disposed}), hangCloses: () => {closeHangs = true;}};
 }
 
-void test('the lighting scope only reads both owners, and closes every copy it opened', async () => {
+void test('the lighting scope only reads the session and catalogs from their owners, and closes every copy it opened', async () => {
   const records = [message(running('active')), message({...idle, id: 'lines'}, {subject: 'lines'})];
   const {feed, syncs, counts} = world(() => records);
   assert.equal(await feed.refresh(), true);
-  assert.deepEqual(syncs.map(sync => [sync.families, sync.owner]), [[['nanoleaf-reactive-presets'], NANOLEAF_OWNER], [['music-lighting-state'], 'bunny/core']]);
+  assert.deepEqual(syncs.map(sync => [sync.families, sync.owner]), [[['nanoleaf-reactive-presets'], NANOLEAF_OWNER], [['nanoleaf-shows'], NANOLEAF_OWNER], [['music-lighting-state'], 'bunny/core']]);
   assert.deepEqual(feed.getSnapshot().records.map(record => record.id), ['lines', 'wall']);
   assert.equal(feed.getSnapshot().presets.live, true);
-  const lighting = syncs[1];
+  assert.equal(feed.getSnapshot().shows.live, true);
+  const lighting = syncs[2];
   assert.ok(lighting !== undefined);
   lighting.options.onRestarted?.(); assert.equal(feed.getSnapshot().synced, false, 'a restarted copy is stale until it syncs again');
   await lighting.handler({type: 'synced'} as Parameters<SyncHandler<LightingState>>[0]); assert.equal(feed.getSnapshot().synced, true);
@@ -158,7 +164,7 @@ void test('the lighting scope only reads both owners, and closes every copy it o
   assert.equal(feed.getSnapshot().records.length, 2, 'the last records stay visible as last known');
   assert.equal(await feed.refresh(), true); assert.deepEqual(counts(), {closed: 1, follows: 2, disposed: 1});
   await feed.close(); assert.deepEqual(counts(), {closed: 2, follows: 2, disposed: 2});
-  assert.equal(await feed.refresh(), false); assert.equal(syncs.length, 4);
+  assert.equal(await feed.refresh(), false); assert.equal(syncs.length, 6);
 });
 
 void test('a refresh does not wait for the replaced copy to finish closing', async () => {

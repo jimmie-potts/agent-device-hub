@@ -2,19 +2,19 @@ import React, {useEffect, useId, useState, useSyncExternalStore} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import {followShows, type ShowCatalogView} from '@jimmie-potts/nanoleaf/frontend';
 import {followReactivePresets} from '@jimmie-potts/nanoleaf/reactive-presets';
 import type {ReactiveCatalogView} from '@jimmie-potts/nanoleaf/reactive-presets';
 import {useAttempt} from './command-control.tsx';
 import type {DashboardConnection} from './connection.ts';
 import {operationView} from './devices.ts';
 import type {MusicCaptureView} from './music-capture-feed.ts';
-import {NANOLEAF_OWNER, type MusicLightingFeed, type MusicLightingView} from './music-lighting-feed.ts';
-import {baseText, controlText, endingText, lightBase, lightingWorkId, sessionBaseText, sessionText, startBlocked, startCapture, stopBlocked, workText,
+import {emptyLightingView, NANOLEAF_OWNER, type MusicLightingFeed, type MusicLightingView} from './music-lighting-feed.ts';
+import {baseText, controlText, endingText, lightBase, lightingWorkId, savedStartBlocked, sessionBaseText, sessionText, startBlocked, startCapture, stopBlocked, workText,
   type LightBase} from './music-lighting-model.ts';
 
-const empty: MusicLightingView = {synced: false, records: [], presets: {value: undefined, live: false, pending: true, failed: false}};
 const emptySubscribe = (): (() => void) => () => {};
-const emptySnapshot = (): MusicLightingView => empty;
+const emptySnapshot = (): MusicLightingView => emptyLightingView;
 const time = (atMs: number): string => new Date(atMs).toLocaleTimeString();
 
 /** The core's tracked work for one operator request, found by the ID the core derives; nothing is sent here. */
@@ -30,9 +30,9 @@ function useWork(target: string, requestId: string | undefined, operations: read
   return operations.find(operation => operation.requestId === derived.workId && operation.family === 'music-lighting-work' && operation.target === target);
 }
 
-function LightingTarget({record, device, base, baseLive, live, control, operations, operationsLive, capture, captureLive, presets}: {
+function LightingTarget({record, device, base, baseLive, live, control, operations, operationsLive, capture, captureLive, presets, shows}: {
   record: LightingState; device: DeviceRecord | undefined; base: LightBase | undefined; baseLive: boolean; live: boolean; control: boolean;
-  operations: readonly OperationRecord[]; operationsLive: boolean; capture: MusicCaptureView; captureLive: boolean; presets: ReactiveCatalogView;
+  operations: readonly OperationRecord[]; operationsLive: boolean; capture: MusicCaptureView; captureLive: boolean; presets: ReactiveCatalogView; shows: ShowCatalogView;
 }): React.JSX.Element {
   const label = device?.label ?? record.id;
   const selected = operations.filter(operation => operation.family === 'music-lighting-control' && operation.target === record.id);
@@ -41,6 +41,13 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
   const startWork = useWork(record.id, start.requestId, operations), stopWork = useWork(record.id, stop.requestId, operations);
   const [choice, setChoice] = useState<string>();
   const presetId = useId();
+  const [showChoice, setShowChoice] = useState('');
+  const showId = useId();
+  const versions = (shows.value?.shows ?? []).flatMap(show => show.versions.map(version => ({
+    key: `${show.id}:${String(version.version)}`, showId: show.id, version: version.version,
+    label: `${show.name} · v${String(version.version)} · ${version.versionName}`,
+  })));
+  const saved = versions.find(version => version.key === showChoice);
   const list = presets.value?.presets ?? [];
   const chosen = list.some(preset => preset.presetId === choice) ? choice : list[0]?.presetId;
   const controls = {record, recordsLive: live, control, operationsLive, capture: capture.state, captureLive, presets, presetId: chosen,
@@ -50,6 +57,10 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
   const activePreset = 'presetId' in session ? session.presetId : undefined;
   const inUse = list.find(preset => preset.presetId === activePreset)?.name;
   const mode = device?.desired.mode;
+  const modeBlocked = mode?.status === 'known' && mode.value !== 'free';
+  const pending = selected.some(operation => operation.status === 'sent' || operation.status === 'accepted');
+  const savedControls = {...controls, startLocked: start.locked || pending};
+  const savedReason = savedStartBlocked(savedControls, shows, saved !== undefined, modeBlocked);
   // What an ending puts back (#1614), from the light module's own record: the session's base when it names this
   // generation, otherwise the light's last read selection before a Start.
   const sessionBase = session.status !== 'idle' && base?.musicBase?.generation === session.generation ? base.musicBase.restores : undefined;
@@ -71,7 +82,8 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
       {record.last !== null && <p>{endingText(record.last, endedBase)} Ended at {time(record.last.atMs)}.</p>}
     </div>
     {session.status === 'idle' && base !== undefined && <p className="music-note">{stale}{baseText(fresh, fresh === null ? '' : time(fresh.readAtMs))}</p>}
-    {mode?.status === 'known' && mode.value !== 'free' && <p className="music-note">This light&apos;s saved mode is not Free, so a Start would be refused. Starting never switches the mode; choose Free first.</p>}
+    {modeBlocked && <p className="music-note">This light&apos;s saved mode is not Free, so a Start would be refused. Starting never switches the mode; choose Free first.</p>}
+    <h4>Live Music.app lighting</h4>
     <label htmlFor={presetId}>Saved reactive preset</label>
     <select id={presetId} value={chosen ?? ''} disabled={list.length === 0 || session.status !== 'idle' || start.locked}
       onChange={event => {setChoice(event.currentTarget.value);}}>
@@ -85,13 +97,31 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
         void start.run({family: 'music-lighting-control', target: record.id, requestId: crypto.randomUUID(),
           data: {action: 'start', expectedRevision: record.revision, capture: bound, presetId: chosen}});
       }}>Start Music lighting</button>
+    </div>
+    {session.status === 'idle' && startReason !== undefined && <p className="music-note">Start unavailable: {startReason}</p>}
+    <h4>Saved decorative show</h4>
+    <label htmlFor={showId}>Saved show and version</label>
+    <select id={showId} value={saved?.key ?? ''} disabled={!shows.live || versions.length === 0 || session.status !== 'idle' || start.locked || stop.locked}
+      onChange={event => {setShowChoice(event.currentTarget.value);}}>
+      <option value="">{versions.length === 0 && shows.live ? 'No saved versions' : 'Choose a saved version'}</option>
+      {versions.map(version => <option key={version.key} value={version.key}>{version.label}</option>)}
+    </select>
+    <div className="music-capture-actions">
+      <button type="button" disabled={savedReason !== undefined} onClick={() => {
+        if (savedStartBlocked(savedControls, shows, saved !== undefined, modeBlocked) !== undefined || saved === undefined) return;
+        void start.run({family: 'music-lighting-control', target: record.id, requestId: crypto.randomUUID(), data: {
+          action: 'start-show', expectedRevision: record.revision, showId: saved.showId, version: saved.version, positionMs: 0, startDelayMs: 0,
+        }});
+      }}>Start saved show</button>
+    </div>
+    {session.status === 'idle' && savedReason !== undefined && <p className="music-note">{savedReason}</p>}
+    <div className="music-capture-actions">
       <button type="button" disabled={stopReason !== undefined} onClick={() => {
         if (stopBlocked(controls) !== undefined) return;
         void stop.run({family: 'music-lighting-control', target: record.id, requestId: crypto.randomUUID(), data: {action: 'stop', expectedRevision: record.revision, ...('show' in session ? {generation: session.generation} : {})}});
       }}>Stop Music lighting</button>
     </div>
-    {session.status === 'idle' ? startReason !== undefined && <p className="music-note">Start unavailable: {startReason}</p>
-      : stopReason !== undefined && <p className="music-note">Stop unavailable: {stopReason}</p>}
+    {session.status !== 'idle' && stopReason !== undefined && <p className="music-note">Stop unavailable: {stopReason}</p>}
     {start.requestId !== undefined && <p role="status">Start request: {controlText(start.text)}</p>}
     {startWork !== undefined && <p role="status">Start light work: {workText(operationView(startWork).text)}</p>}
     {stop.requestId !== undefined && <p role="status">Stop request: {controlText(stop.text)}</p>}
@@ -110,7 +140,7 @@ export function MusicLightingCard({connection, connected, coreLive, control, ope
     setScope(undefined);
     if (!connected || !coreLive) return;
     let current: MusicLightingFeed;
-    try {current = connection.openMusicLighting(followReactivePresets);} catch {return;}
+    try {current = connection.openMusicLighting(followReactivePresets, followShows);} catch {return;}
     setScope(current); void current.refresh();
     return () => {void current.close();};
   }, [connection, connected, coreLive]);
@@ -119,29 +149,31 @@ export function MusicLightingCard({connection, connected, coreLive, control, ope
   const shell = useSyncExternalStore(connection.subscribe, connection.getState, connection.getState);
   const walls = shell.runtime.copies.find(copy => copy.owner === NANOLEAF_OWNER && copy.family === 'nanoleaf-wall');
   // After a disconnect or a failed read, keep showing the last fresh records as last known, with every control disabled.
-  const [kept, setKept] = useState<MusicLightingView>(empty);
+  const [kept, setKept] = useState<MusicLightingView>(emptyLightingView);
   useEffect(() => {if (current.synced) setKept(current);}, [current]);
   const view = current.synced || current.records.length > 0 ? current
     : {...kept, synced: false, presets: current.presets.value !== undefined ? current.presets : {...kept.presets, live: false, pending: false}};
   const live = connected && coreLive && view.synced;
   const presets = view.presets;
+  const shows = current.shows;
   const refresh = async (): Promise<void> => {
     if (scope === undefined || refreshing) return;
     setRefreshing(true); try {await scope.refresh();} finally {setRefreshing(false);}
   };
   return <article className="music-capture-card music-lighting-card" aria-label="Music lighting">
     <h2>Music lighting</h2>
-    <p className="music-note">Renders the active Music.app measurement on a light with a saved reactive preset. Start needs the light on and already in
+    <p className="music-note">Choose live Music.app lighting or play a saved decorative show. Saved shows run from the beginning without music capture or song synchronization.
+      Only saved versions appear here. Start needs the light on and already in
       Free mode; a light outside Free is refused, never switched. Whatever the light shows can be the starting point: an ending puts back a scene
       saved on the light or a plain colour, and leaves anything else on the last Music frame. An alert, a manual change on the light or lost Music
       input ends the session, and nothing restarts automatically. The microphone is never used.</p>
     {!live && <p role="status">Lighting status is stale or unavailable. Controls are disabled until a fresh read.</p>}
     {live && view.records.length === 0 && <p>No qualified Nanoleaf light is configured for Music lighting.</p>}
     {presets.live && presets.value?.presets.length === 0 && <p className="music-note">No saved reactive presets yet. Save one in the{' '}
-      {presetPage ? <a href="#/module/nanoleaf/wall">Music effect preview</a> : 'Music effect preview'} on the Wall page; Start stays disabled until then.</p>}
+      {presetPage ? <a href="#/module/nanoleaf/wall">Music effect preview</a> : 'Music effect preview'} on the Wall page to enable live Music.app lighting.</p>}
     {!presets.live && view.records.length > 0 && <p className="music-note">{presets.failed ? 'The saved preset library is unavailable.' : 'The saved preset library is stale or still loading.'}</p>}
     {view.records.map(record => <LightingTarget key={record.id} record={record} live={live} control={control} operations={operations} operationsLive={operationsLive}
-      device={devices.find(device => device.id === record.id)} capture={capture} captureLive={captureLive} presets={presets}
+      device={devices.find(device => device.id === record.id)} capture={capture} captureLive={captureLive} presets={presets} shows={shows}
       base={lightBase(walls?.records.find(wall => wall.id === record.id))} baseLive={connected && walls?.synced === true}/>)}
     <button type="button" className="secondary" disabled={!connected || !coreLive || scope === undefined || refreshing} onClick={() => {void refresh();}}>Refresh lighting status</button>
   </article>;

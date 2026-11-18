@@ -521,7 +521,8 @@ drift or Warm rise, edit the cue timing, effect, palette and intensity, then
 select **Save new version**. Opening a starter and moving the storyboard's
 position control change only the browser draft. The storyboard shows semantic
 intervals, gaps and palettes, with no exact-frame or audible synchronization
-claim. Replay is unavailable.
+claim. To play an immutable version, open Audio and choose **Start saved show**
+under the target light. Playback starts from the beginning of the saved timeline.
 
 Each save supplies a show ID, `expectedVersion` with zero for creation, show
 name, version name and timeline. The fixed `shows` target takes
