@@ -10,10 +10,13 @@ import {fileURLToPath} from 'node:url';
 import {prepareMessage, publishOnce} from '@jimmie-potts/sdk';
 import {READ_RECEIPT_SCHEMA} from '@jimmie-potts/event-contracts/v2/read-receipts';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {readSession} from '@jimmie-potts/event-contracts/v2/session';
+import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
 import {createCoreModule} from '../src/core/core.js';
 import {producerSource, runHook} from '../src/hook/index.js';
 import {runReadHelper, type ReadHelperResult} from '../src/read-receipts/helper.js';
 import {CLAUDE_RECEIPT_FEED, CLAUDE_TERMINAL_VERSION, receiptSource} from '../src/read-receipts/qualification.js';
+import {asSession30, current, servedSessions} from './fixtures/session-owner.js';
 import {edgeConfig, it, run, waitFor} from './support.js';
 
 const FEED = {provider: 'claude', client: 'code', hostId: 'test-host', sourceId: 'test-hooks'} as const;
@@ -132,6 +135,39 @@ it('a publication without a matching owner commit remains unconfirmed and is not
   assert.deepEqual((await world.records())[0], before);
   assert.deepEqual(await runReadHelper(world.producer, readInput(bound.target)), {status: 'confirmed'});
   assert.equal((await runReadHelper(world.producer, readInput(target))).status, 'unavailable', 'another generation cannot inherit a confirmed receipt');
+});
+
+it('the helper binds only a record readSession accepts; another version gives no receipt and its ordinary refusal (Hub #1865)', async context => {
+  // A finished Claude root from the shared cases, served as session/2.0 and as session/3.0 by a stand-in core.
+  const found = loadSessionCases().cases.find(item => item.id === 'restart')?.checks[0]?.messages
+    .find(message => message.data.identity.client === 'code' && message.data.parent.status !== 'known');
+  assert.ok(found);
+  const state = current(found);
+  const {identity, turn} = state.data;
+  assert.ok(turn.status === 'known');
+  const feed = {provider: identity.provider, client: identity.client, hostId: identity.hostId, sourceId: identity.sourceId};
+  const bind = {...BIND, sessionId: identity.sessionId, promptId: turn.id};
+  const runs = [];
+  for (const message of [state, asSession30(state)]) {
+    const world = await servedSessions(context, receiptSource(feed), {...feed, feed: CLAUDE_RECEIPT_FEED}, [message]);
+    runs.push({accepted: readSession(message) !== undefined, world, bound: await runReadHelper(world.producer, bind)})
+  }
+  const ready = runs.filter(item => item.accepted);
+  assert.equal(ready.length, 1, 'readSession reads exactly one of the two versions');
+  const target = ready[0]?.bound;
+  assert.equal(target?.status, 'ready', JSON.stringify(target));
+  assert.ok(target?.status === 'ready');
+  assert.deepEqual([target.target.data.event.generation, target.target.data.turn], [state.data.generation, turn]);
+  for (const {world, bound} of runs.filter(item => !item.accepted)) {
+    assert.equal(bound.status, 'unavailable');
+    assert.ok(bound.status === 'unavailable');
+    assert.equal(bound.error.code, 'invalid-state', 'the pane offers no action, as for a session the core does not hold');
+    const read = await runReadHelper(world.producer, readInput(target.target));
+    assert.equal(read.status, 'unavailable');
+    assert.ok(read.status === 'unavailable');
+    assert.equal(read.error.code, 'revision-conflict', 'a pane bound earlier publishes nothing');
+    assert.deepEqual(world.received, [], 'no receipt reaches the core');
+  }
 });
 
 it('the executable bounds open stdin and rejects oversized input without stderr or a permission decision', async () => {

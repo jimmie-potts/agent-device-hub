@@ -1,0 +1,62 @@
+// The shared synthetic session cases (Hub #1865, design decision 10) through the module's read rules. The module reads
+// each session through `readSession` and settles on the view's work state. For every case's expected copy, the evidence
+// it gives over the views equals what today's rule over the records gives, with the Desktop session listed or not, and
+// read at the check's instant or once the flag has had time to appear.
+import assert from 'node:assert/strict';
+import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {readSession} from '@jimmie-potts/event-contracts/v2/session';
+import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
+import {READ_SETTLE_MS, readEvidence, type DesktopSource} from '../src/index.js';
+import {it} from './support.js';
+
+/** Today's rule over `session/2.0` records, as the module applied it before it read views. */
+function recordEvidence(records: readonly SessionRecord[], unread: ReadonlySet<string>, source: DesktopSource, nowMs: number): string[] {
+  return records.flatMap(record => {
+    const {identity} = record;
+    if (identity.provider !== 'codex' || identity.client !== 'desktop' || identity.hostId !== source.hostId || identity.sourceId !== source.sourceId ||
+      record.parent.status === 'known') return [];
+    const settled = record.read === 'unknown' && record.activity !== 'active' && nowMs - record.lastEvidenceAtMs >= READ_SETTLE_MS;
+    const state = unread.has(identity.sessionId) ? 'unread' : record.read === 'unread' || settled ? 'read' : undefined;
+    return state !== undefined && state !== record.read ? [`${identity.sessionId} ${state}`] : [];
+  });
+}
+
+it('every shared case gives the same read evidence through the view as today\'s rule over its records', () => {
+  const cases = loadSessionCases();
+  const desktop = cases.sessions.desktop?.identity;
+  assert.ok(desktop);
+  const source: DesktopSource = {hostId: desktop.hostId, sourceId: desktop.sourceId};
+  const given = new Set<string>();
+  for (const sessionCase of cases.cases) for (const check of sessionCase.checks) {
+    const views = check.messages.flatMap(message => readSession(message) ?? []);
+    assert.equal(views.length, check.messages.length, `${sessionCase.id}: readSession reads every expected record`);
+    const records = check.messages.map(message => message.data);
+    for (const nowMs of [cases.startAtMs + check.atMs, cases.startAtMs + check.atMs + READ_SETTLE_MS]) {
+      for (const unread of [new Set<string>(), new Set([desktop.sessionId])]) {
+        const evidence = readEvidence(views, unread, source, nowMs).map(item => `${item.session.identity.sessionId} ${item.state}`);
+        assert.deepEqual(evidence, recordEvidence(records, unread, source, nowMs), `${sessionCase.id} after ${check.after} at ${nowMs}`);
+        for (const item of evidence) given.add(`${sessionCase.id} ${item}`);
+      }
+    }
+  }
+  // The cases reach both states: a listed session is unread, and an unlisted one settles to read.
+  assert.ok([...given].some(item => item.endsWith(' unread')) && [...given].some(item => item.endsWith(' read')), [...given].join(', '));
+});
+
+it('the settle rule waits on the view\'s active work, whatever the record\'s age', () => {
+  const cases = loadSessionCases();
+  const desktop = cases.sessions.desktop?.identity;
+  assert.ok(desktop);
+  const message = cases.cases.flatMap(sessionCase => sessionCase.checks.flatMap(check => check.messages))
+    .find(item => item.data.identity.client === 'desktop' && item.data.read === 'unknown');
+  assert.ok(message);
+  const view = readSession(message);
+  assert.ok(view);
+  const source: DesktopSource = {hostId: desktop.hostId, sourceId: desktop.sourceId};
+  const later = view.lastEvidenceAtMs + READ_SETTLE_MS;
+  assert.deepEqual(readEvidence([view], new Set(), source, later - 1).map(item => item.state), [], 'the flag has not had time to appear');
+  assert.deepEqual(readEvidence([view], new Set(), source, later).map(item => item.state), ['read']);
+  const working = {...view, work: {...view.work, state: 'active' as const}};
+  assert.deepEqual(readEvidence([working], new Set(), source, later + 600_000), [], 'a known running turn waits');
+  assert.deepEqual(readEvidence([working], new Set([desktop.sessionId]), source, later).map(item => item.state), ['unread']);
+});

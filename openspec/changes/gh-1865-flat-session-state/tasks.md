@@ -49,9 +49,9 @@ Each numbered group is one pull request on its own `gh-1865-<step>` branch, with
 
 ## 6. Readers: Codex Desktop and the read-receipt helpers
 
-- [ ] 6.1 Codex Desktop module: read through `readSession` with the same settle rule. Evidence: `test:codex-desktop:built` passes unchanged and runs the shared cases.
-- [ ] 6.2 Read-receipt helpers: accept what `readSession` accepts and keep generation, turn, notice and receipt matching. Evidence: the helper and observer suites pass, and a record they do not accept yields no receipt and no error to the client.
-- [ ] 6.3 `decideReadReceipt` (`packages/event-contracts/src/v2/read-receipts.ts`) reads the view's work state instead of the record's `activity`. Evidence: the read-receipt contract tests and the core store's receipt tests pass.
+- [x] 6.1 Codex Desktop module: read through `readSession` with the same settle rule. Evidence: `test:codex-desktop:built` passes unchanged and runs the shared cases.
+- [x] 6.2 Read-receipt helpers: accept what `readSession` accepts and keep generation, turn, notice and receipt matching. Evidence: the helper and observer suites pass, and a record they do not accept yields no receipt and no error to the client.
+- [x] 6.3 `decideReadReceipt` (`packages/event-contracts/src/v2/read-receipts.ts`) reads the view's work state instead of the record's `activity`. Evidence: the read-receipt contract tests and the core store's receipt tests pass.
 
 ## 7. Core: session logic and storage (focused second review: storage migration, writer exclusion, device-command safety)
 

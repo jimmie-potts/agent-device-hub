@@ -13,7 +13,8 @@
 import {createHash} from 'node:crypto';
 import {setImmediate as yieldToBus} from 'node:timers/promises';
 import type {ErrorCode, Message} from '@jimmie-potts/event-contracts/v2';
-import {sessionEntityId, type Identity, type Title, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type Identity, type Title} from '@jimmie-potts/event-contracts/v2/families';
+import {readSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog, DeviceAvailability, Outcome, errorType, type BunnyModule, type Cancel, type ModuleContext, type SyncedCopy} from '@jimmie-potts/sdk';
 import {configureCodexDesktop, type CodexDesktopConfig, type DesktopSourceConfig} from './configuration.js';
 import {readEvidence, readObservation, type Evidence} from './evidence.js';
@@ -163,7 +164,7 @@ class ModuleStart {
 /** The module's copy of the core's sessions, synced again with capped backoff when it is lost. */
 class SessionFeed {
   readonly #context: ModuleContext<CodexDesktopConfig>;
-  #copy: SyncedCopy<SessionRecord> | undefined;
+  #copy: SyncedCopy<object> | undefined;
   #resync: Cancel | undefined;
   #resyncDelayMs = RESYNC_FIRST_MS;
   #feedDown = false;
@@ -173,9 +174,9 @@ class SessionFeed {
     this.#context = context;
   }
 
-  /** The core's session records now, or none while the copy is lost. */
-  states(): SessionRecord[] {
-    return this.#copy?.states().map(message => message.data) ?? [];
+  /** The core's sessions now, as `readSession` reads them, or none while the copy is lost. A record it does not read is skipped. */
+  states(): SessionView[] {
+    return this.#copy?.states().flatMap(message => readSession(message) ?? []) ?? [];
   }
 
   /** The entity IDs of the sessions the copy holds now. */
@@ -204,7 +205,7 @@ class SessionFeed {
     this.#resync = undefined;
     let result;
     try {
-      result = await this.#context.sdk.sync<SessionRecord>(['session'], change => {
+      result = await this.#context.sdk.sync<object>(['session'], change => {
         if (change.type !== 'failed') return;
         // The copy stopped following the core: no evidence until a new sync.
         this.#copy = undefined;
@@ -472,7 +473,7 @@ class DesktopRun {
   }
 
   /** Whether a session is one of this source's top-level Codex Desktop sessions. */
-  #owns(session: SessionRecord): boolean {
+  #owns(session: SessionView): boolean {
     const {identity} = session;
     return identity.provider === 'codex' && identity.client === 'desktop' && identity.hostId === this.#source.hostId &&
       identity.sourceId === this.#source.sourceId && session.parent.status !== 'known';
