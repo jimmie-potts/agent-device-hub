@@ -1,13 +1,49 @@
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import type {Browser,Page} from 'playwright';
+import type {Browser,Page,Response} from 'playwright';
 import {syntheticApartmentArtwork} from '../../dist/tests/fixtures/apartment.js';
 import {furnishedFixture} from './apartment-fixture.ts';
 import {changes,feed,type World} from './harness.ts';
 
 const panel=(page:Page)=>page.getByRole('region',{name:'Reported anonymous presence',exact:true});
 const marker=(page:Page)=>page.locator('[data-presence-marker]:visible');
+
+async function watchDocumentReload(page:Page,url:string):Promise<()=>Promise<Response|null>> {
+  const session=await page.context().newCDPSession(page);
+  await Promise.all([session.send('Page.enable'),session.send('Network.enable')]);
+  const document=new URL('/',url).href;
+  let reloading=false,started=false,committed=false,requestId:string|undefined,status:number|undefined,failed=false;
+  session.on('Page.frameStartedNavigating',event=>{
+    if(reloading&&event.navigationType==='reload')started=true;
+  });
+  session.on('Page.frameNavigated',event=>{
+    if(reloading&&event.frame.parentId===undefined)committed=true;
+  });
+  session.on('Network.requestWillBeSent',event=>{
+    if(reloading&&event.type==='Document'&&event.request.url===document)requestId=event.requestId;
+  });
+  session.on('Network.responseReceived',event=>{
+    if(event.requestId===requestId)status=event.response.status;
+  });
+  session.on('Network.loadingFailed',event=>{
+    if(event.requestId===requestId)failed=true;
+  });
+  return async()=>{
+    // The connected feed and room controls are the readiness checks after the new document commits.
+    reloading=true;
+    try{
+      return await page.reload({waitUntil:'commit'});
+    }catch(error){
+      const runtimeStatus=await fetch(document,{signal:AbortSignal.timeout(1000)})
+        .then(async response=>{await response.arrayBuffer();return response.status;})
+        .catch(()=>null);
+      const browser={started,requested:requestId!==undefined,status:status??null,failed,committed};
+      console.error(JSON.stringify({journey:'anonymous-apartment-presence',step:'reload after restart',browser,runtimeStatus}));
+      throw error;
+    }finally{reloading=false;}
+  };
+}
 
 /** Real stock-report owner, authenticated SDK copies and apartment renderer over fictional inputs. */
 export async function apartmentPresenceJourney(browser:Browser,world:World):Promise<void> {
@@ -27,6 +63,7 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
   const desktop=await browser.newContext({viewport:{width:1280,height:1000}});
   try{
     const page=await desktop.newPage();page.setDefaultTimeout(10_000);
+    const reload=await watchDocumentReload(page,world.url);
     const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
     const sent=changes(page);await page.goto(world.url+'/#/rooms');await feed(page,'connected');
     const layout={rooms:[{id:'studio',name:'Studio'},{id:'reading',name:'Reading room'}],assignments:[],groups:[],home:null};
@@ -82,8 +119,7 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]:not([hidden])').length===1);
     assert.equal(await view.locator('[data-presence-room=studio]').count(),0);
     await world.restart();
-    // The connected feed and room controls are the readiness checks after the new document commits.
-    const reloaded=await page.reload({waitUntil:'commit'});
+    const reloaded=await reload();
     assert.equal(reloaded?.status(),200,'the restarted runtime serves the dashboard document');
     await feed(page,'connected');
     await studio.locator('strong').getByText('Studio · vacant',{exact:true}).waitFor();
