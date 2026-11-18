@@ -465,6 +465,9 @@ async function railInDashboard(browser: Browser): Promise<void> {
       await feed(page, 'connected');
       await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
       await page.locator('.rail-pins .rail-label').waitFor({state: 'attached'});
+      // The page has read this catalog: its directory lists another module's page. A page with no catalog at all
+      // would show no conversation group either, and would not show this.
+      await page.getByRole('link', {name: 'LIFX', exact: true}).waitFor();
       assert.equal(await conversations.count(), 0, `${reason}: the rail has no conversation group`);
       assert.equal(await page.locator('.rail-conversations').count(), 0, `${reason}: and leaves no empty group behind`);
     }
