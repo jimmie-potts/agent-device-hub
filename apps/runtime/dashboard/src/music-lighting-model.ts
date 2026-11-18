@@ -203,6 +203,14 @@ const STARTED_OVER: Record<Restores, string> = {
 /** During a session: what its ending puts back, from the light module's record for that session. */
 export const sessionBaseText = (base: Restores): string => `${STARTED_OVER[base]} ${MANUAL}`;
 
+export function savedShowBaseText(base: Restores): string {
+  switch (base) {
+    case 'scene': return 'This show started over a scene saved on the light. Stop, an alert or completion can restore it at its previous brightness.';
+    case 'color': return 'This show started over a plain colour. Stop, an alert or completion can restore it at its previous brightness.';
+    case 'nothing': return 'This show started over a selection the light cannot restore. The light keeps the last frame unless you change it.';
+  }
+}
+
 const CONTROL_HINTS: Partial<Record<string, string>> = {
   unavailable: 'Music capture is not active, or this is not a qualified light.',
   'revision-conflict': 'The light\'s session or the Music capture changed. Review the current state before trying again.',

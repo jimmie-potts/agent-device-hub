@@ -320,6 +320,13 @@ try {
   assert.deepEqual(selectedControl.data, {action: 'start-show', expectedRevision: beforeShow.revision,
     showId: saved.showId, version: 1, positionMs: 0, startDelayMs: 0});
   await light.getByText(/Saved show show-audio-test, version 1/).waitFor();
+  const savedRestoration = light.getByText(/^This show started over a scene saved on the light\. Stop, an alert or completion can restore it at its previous brightness\./);
+  await expect(savedRestoration).toBeVisible();
+  await expect(light.getByText(/This session started over.*lost Music input/)).toHaveCount(0);
+  await capture.getByRole('button', {name: 'Stop measuring', exact: true}).click();
+  await capture.getByText(/Stop: Completed: succeeded/).waitFor();
+  await expect(showActive).toBeVisible();
+
   await light.screenshot({path: join(artifacts, 'saved-show-active-desktop.png')});
   await page.reload(); await feed(page, 'connected');
   await expect(showActive).toBeVisible();

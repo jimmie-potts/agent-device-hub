@@ -10,7 +10,7 @@ import type {DashboardConnection} from './connection.ts';
 import {operationView} from './devices.ts';
 import type {MusicCaptureView} from './music-capture-feed.ts';
 import {emptyLightingView, NANOLEAF_OWNER, type MusicLightingFeed, type MusicLightingView} from './music-lighting-feed.ts';
-import {baseText, controlText, endingText, lightBase, lightingWorkId, savedStartBlocked, sessionBaseText, sessionText, startBlocked, startCapture, stopBlocked, workText,
+import {baseText, controlText, endingText, lightBase, lightingWorkId, savedShowBaseText, savedStartBlocked, sessionBaseText, sessionText, startBlocked, startCapture, stopBlocked, workText,
   type LightBase} from './music-lighting-model.ts';
 
 const emptySubscribe = (): (() => void) => () => {};
@@ -78,12 +78,12 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
       {session.status !== 'idle' && ('show' in session
         ? <p>Saved show {session.show.showId}, version {session.show.version}. Missed cues: {session.show.missedCues}.</p>
         : <p>Preset: {inUse ?? `${session.presetId} (not in the current library snapshot)`}. Started at {time(session.startedAtMs)}.</p>)}
-      {sessionBase !== undefined && <p>{stale}{sessionBaseText(sessionBase)}</p>}
+      {sessionBase !== undefined && <p>{stale}{'show' in session ? savedShowBaseText(sessionBase) : sessionBaseText(sessionBase)}</p>}
       {record.last !== null && <p>{endingText(record.last, endedBase)} Ended at {time(record.last.atMs)}.</p>}
     </div>
-    {session.status === 'idle' && base !== undefined && <p className="music-note">{stale}{baseText(fresh, fresh === null ? '' : time(fresh.readAtMs))}</p>}
     {modeBlocked && <p className="music-note">This light&apos;s saved mode is not Free, so a Start would be refused. Starting never switches the mode; choose Free first.</p>}
     <h4>Live Music.app lighting</h4>
+    {session.status === 'idle' && base !== undefined && <p className="music-note">{stale}{baseText(fresh, fresh === null ? '' : time(fresh.readAtMs))}</p>}
     <label htmlFor={presetId}>Saved reactive preset</label>
     <select id={presetId} value={chosen ?? ''} disabled={list.length === 0 || session.status !== 'idle' || start.locked}
       onChange={event => {setChoice(event.currentTarget.value);}}>
@@ -162,11 +162,8 @@ export function MusicLightingCard({connection, connected, coreLive, control, ope
   };
   return <article className="music-capture-card music-lighting-card" aria-label="Music lighting">
     <h2>Music lighting</h2>
-    <p className="music-note">Choose live Music.app lighting or play a saved decorative show. Saved shows run from the beginning without music capture or song synchronization.
-      Only saved versions appear here. Start needs the light on and already in
-      Free mode; a light outside Free is refused, never switched. Whatever the light shows can be the starting point: an ending puts back a scene
-      saved on the light or a plain colour, and leaves anything else on the last Music frame. An alert, a manual change on the light or lost Music
-      input ends the session, and nothing restarts automatically. The microphone is never used.</p>
+    <p className="music-note">Both starts require the light on and in Free mode. Live lighting follows Music.app measurement and ends if that input is lost.
+      Saved decorative shows play from the beginning using their own clock. Neither uses the microphone. Nothing restarts automatically.</p>
     {!live && <p role="status">Lighting status is stale or unavailable. Controls are disabled until a fresh read.</p>}
     {live && view.records.length === 0 && <p>No qualified Nanoleaf light is configured for Music lighting.</p>}
     {presets.live && presets.value?.presets.length === 0 && <p className="music-note">No saved reactive presets yet. Save one in the{' '}
