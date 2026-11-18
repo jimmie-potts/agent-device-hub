@@ -77,13 +77,21 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     assert.equal(await page.locator('[data-presence-marker]').count(),0);
     source('presence-a','online');source('presence-b','online');
     await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]').length===2);
-    await page.getByRole('combobox',{name:'Frame the apartment or a room'}).selectOption({label:'Reading room'});
+    const frame=page.getByRole('combobox',{name:'Frame the apartment or a room'});
+    await frame.selectOption({label:'Reading room'});
     await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]:not([hidden])').length===1);
     assert.equal(await view.locator('[data-presence-room=studio]').count(),0);
-    await world.restart();await page.reload();await feed(page,'connected');
-    await panel(page).locator('[data-presence-room=studio] strong').getByText('Studio · vacant',{exact:true}).waitFor();
-    assert.equal(sent.length,baseline,'reports, camera, loss and restart send zero new commands');
+    await world.restart();
+    // The connected feed and room controls are the readiness checks after the new document commits.
+    const reloaded=await page.reload({waitUntil:'commit'});
+    assert.equal(reloaded?.status(),200,'the restarted runtime serves the dashboard document');
+    await feed(page,'connected');
+    await studio.locator('strong').getByText('Studio · vacant',{exact:true}).waitFor();
     await capture(page,'presence-desktop.png');
+    await frame.selectOption({label:'Reading room'});
+    await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]:not([hidden])').length===1);
+    assert.equal(await studio.count(),0,'the restored Reading room frame hides the Studio');
+    assert.equal(sent.length,baseline,'reports, camera, loss and restart send zero new commands');
     const fallback=await desktop.newPage();await fallback.addInitScript(()=>{HTMLCanvasElement.prototype.getContext=()=>null;});
     const fallbackSent=changes(fallback);await fallback.goto(world.url+'/#/rooms');await feed(fallback,'connected');
     await fallback.getByText('3D rendering is unavailable. The fixture list and lighting controls remain available.',{exact:true}).waitFor();
