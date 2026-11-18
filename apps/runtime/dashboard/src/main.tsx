@@ -305,7 +305,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-expanded={drawer} aria-controls="rail"
         onClick={() => { setDrawer(open => !open); }}><RailIcon name="menu"/></button>
       <span className="phone-brand">B.U.N.N.Y.</span>
-      {ended && <button type="button" className="phone-sign-in" onClick={signInAgain}>Sign in again</button>}
+      {ended && <button type="button" className="phone-sign-in" inert={drawer} onClick={signInAgain}>Sign in again</button>}
     </header>
     <aside id="rail" ref={railElement} onClick={event => {
       if (!drawer || !(event.target instanceof Element) || event.target.closest('a') === null) return;

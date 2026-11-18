@@ -10,8 +10,8 @@ export const useRoute = (): Route => parseRoute(useSyncExternalStore(subscribe, 
 
 /**
  * A real anchor keeps modified clicks native; ordinary clicks notify the shell before hashchange. The chosen page opens
- * at its top: the rail stays in view (Hub #1887), so a destination can be chosen while the page is scrolled. Back and
- * forward keep the browser's own scroll restoration.
+ * at its top: the rail stays in view (Hub #1887), so a destination can be chosen while the page is scrolled. The shell
+ * does nothing to scroll on back and forward; that is left to the browser.
  */
 export function NavLink({route, current, selected, children}: {
   route: Route; current?: Route; selected?: boolean; children: React.ReactNode;

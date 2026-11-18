@@ -660,7 +660,7 @@ The visualizer SHALL offer Spectrum bars and Bass pulse. The chosen effect SHALL
 
 ### Requirement: One rail that collapses and becomes a phone drawer
 
-The shell SHALL present the destinations, the Settings utility, the feed indicator and the session's control mode in one rail that stays in view while a page scrolls; a window too short to hold the rail SHALL let it scroll with the page. The skip link SHALL be visible above the rail whenever it has focus. A destination chosen from a navigation link SHALL open at the top of its page, and history navigation SHALL keep the browser's own scroll position. From 1200px wide the rail SHALL start expanded; below that it SHALL start as an icon rail in which every destination keeps its accessible name and shows that name on hover or keyboard focus. A toggle SHALL switch between the two, and the choice SHALL be kept in the browser separately for the two window sizes. Unavailable or damaged browser storage SHALL leave the defaults and a toggle that still works for the open page. At phone width the rail SHALL be a drawer opened from a menu button. Collapsing, expanding, opening and closing SHALL send no command, sync or provider request.
+The shell SHALL present the destinations, the Settings utility, the feed indicator and the session's control mode in one rail that stays in view while a page scrolls; a window too short to hold the rail SHALL let it scroll with the page. The skip link SHALL be visible above the rail whenever it has focus. A destination chosen from a navigation link SHALL open at the top of its page; the shell SHALL NOT set the scroll position on back or forward navigation. From 1200px wide the rail SHALL start expanded; below that it SHALL start as an icon rail in which every destination keeps its accessible name and shows that name on hover or keyboard focus. A toggle SHALL switch between the two, and the choice SHALL be kept in the browser separately for the two window sizes. Unavailable or damaged browser storage SHALL leave the defaults and a toggle that still works for the open page. At phone width the rail SHALL be a drawer opened from a menu button. Collapsing, expanding, opening and closing SHALL send no command, sync or provider request.
 
 #### Scenario: Default and remembered rail
 - **WHEN** the operator opens the dashboard in a wide window and in a narrower one, toggles the rail in one of them and reloads
@@ -687,4 +687,4 @@ The shell SHALL present the destinations, the Settings utility, the feed indicat
 #### Scenario: Ended session
 - **WHEN** the browser session has ended while the rail would be collapsed
 - **THEN** the full rail is shown so that the sign-in recovery action is readable
-- **AND** at phone width the recovery action is shown beside the menu button without opening the drawer
+- **AND** at phone width the recovery action is shown beside the menu button without opening the drawer, and inside the drawer while it is open

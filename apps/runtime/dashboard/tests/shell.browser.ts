@@ -148,18 +148,20 @@ try {
   });
   assert.deepEqual({after: order.after, inView: order.inView}, {after: true, inView: true}, 'Settings follows the destinations and the rail fits the window');
   assert.match(order.status, /Control enabled · Local/, 'the control mode is stated beside the feed');
-  await open('Devices'); await category('Displays');
+  // In a 1024x600 window Settings and Home are both well over a window tall, so each of them can scroll.
+  await page.setViewportSize({width: 1024, height: 600});
+  await settings();
+  await page.getByRole('heading', {name: 'Settings', level: 1, exact: true}).waitFor();
   await page.evaluate(() => {window.scrollTo(0, document.documentElement.scrollHeight);});
+  assert.equal(await page.evaluate(() => scrollY > 100), true, 'Settings scrolls in this window');
   assert.equal(await page.locator('.shell>aside').evaluate(element => element.getBoundingClientRect().top), 0, 'the rail stays in view while the page scrolls');
-  // A destination chosen while the page is scrolled opens at its top; Back keeps the browser's own position.
+  // A destination chosen while the page is scrolled opens at its top, on a page that could have stayed scrolled.
   await open('Home');
   await page.getByRole('button', {name: 'Edit Home', exact: true}).waitFor();
-  assert.equal(await page.evaluate(() => document.documentElement.scrollHeight > innerHeight), true, 'Home is taller than the window here');
-  await page.evaluate(() => {window.scrollTo(0, document.documentElement.scrollHeight);});
-  assert.equal(await page.evaluate(() => scrollY > 0), true);
-  await open('Devices');
-  await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight > 100), true, 'Home is taller than the window, so it could have opened scrolled');
   assert.equal(await page.evaluate(() => scrollY), 0, 'a chosen destination opens at its top');
+  await page.setViewportSize({width: 1440, height: 1000});
+  await open('Devices'); await category('Displays');
 
   // From here to the reload nothing opens a page, so any command, sync, upload or provider request would be the rail's own.
   const railWrites = recordWrites();
@@ -264,12 +266,18 @@ try {
   assert.equal(await toggle.isDisabled(), true);
   assert.equal(await again.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight), true, 'the recovery is inside the rail and the window');
   await page.setViewportSize({width: 1024, height: 500});
+  assert.equal(await page.locator('.shell>aside').evaluate(element => element.getBoundingClientRect().height >= innerHeight), true, 'the rail still fills the window when it scrolls with the page');
   await again.scrollIntoViewIfNeeded();
   assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight;}), true, 'a window too short for the rail can scroll the recovery into view');
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await drawer.isVisible(), false);
   assert.equal(await again.count(), 1, 'a phone offers one recovery action');
   assert.equal(await again.isVisible(), true, 'the phone bar offers the recovery without opening the drawer');
+  await menu.click(); await drawer.waitFor();
+  assert.equal(await drawer.getByRole('button', {name: 'Sign in again', exact: true}).isVisible(), true, 'the open drawer offers the recovery itself');
+  assert.equal(await page.locator('.phone-sign-in').evaluate(element => element.hasAttribute('inert')), true, 'the copy under the open drawer leaves the tab order');
+  await page.keyboard.press('Escape');
+  await drawer.waitFor({state: 'hidden'});
   await again.click();
   await feed(page, 'connected');
   await page.setViewportSize({width: 1440, height: 1000});
