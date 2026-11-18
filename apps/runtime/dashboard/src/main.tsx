@@ -9,7 +9,7 @@ import {LightingWorkspace} from './lighting-workspace.tsx';
 import {DeviceDirectory} from './device-directory.tsx';
 import {NavLink, ShellNavigation, navigate, useRoute} from './navigation.tsx';
 import {JumpPalette} from './jump-palette.tsx';
-import {jumpEntries, jumpShortcut, rememberRoute} from './jump.ts';
+import {jumpEntries, jumpShortcut, rememberRoute, textInput} from './jump.ts';
 import {RailIcon, usePhone, useRail} from './rail.tsx';
 import {railAttribute} from './rail-preference.ts';
 import {InboxPanel, type InboxFocus} from './inbox.tsx';
@@ -254,9 +254,11 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       if (event.defaultPrevented) return;
       const palette = jumpActions.current, target = event.target instanceof Element ? event.target : null;
       const action = jumpShortcut(event, {mac, open: palette.jump,
-        field: target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select') !== null),
+        field: target instanceof HTMLElement && (target.isContentEditable || target.closest('textarea, select') !== null
+          || (target instanceof HTMLInputElement && textInput(target.type))),
         owned: target !== null && target.closest('[role=dialog], dialog, [role=menu], [role=listbox]') !== null,
-        modal: document.querySelector('dialog:modal') !== null});
+        // Both are drawn above everything the shell renders, so the palette would open out of sight.
+        modal: document.querySelector('dialog:modal') !== null || document.fullscreenElement !== null});
       if (action === undefined) return;
       event.preventDefault();
       // A held key opens or closes once.
@@ -269,6 +271,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const live = state.feed === 'connected' && state.sessions.synced;
   const notice = liveNotice(state);
   const runtime = state.runtime;
+  // The palette's list changes only with the catalog, the copies or the page, not with each tick of the shell's clock.
+  const jumpPlaces = useMemo(() => jump ? jumpEntries(runtime, recents.current, route) : [], [jump, runtime, route]);
   const devices = runtime.copies.filter(copy => copy.family === 'device').flatMap(copy => (copy.records as readonly DeviceRecord[]).map(record => ({record, copy})));
   const playback = runtime.copies.filter(copy => copy.family === 'playback').flatMap(copy => (copy.records as readonly PlaybackState[]).map(record => ({record, copy})));
   const operationsCopy = runtime.copies.find(copy => copy.family === 'operation');
@@ -392,7 +396,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div>
     </aside>
     <div className="rail-scrim" onClick={() => { setDrawer(false); menuButton.current?.focus(); }}/>
-    {jump && <JumpPalette entries={jumpEntries(runtime, recents.current, route)} onOpen={jumpTo} onClose={closeJump}/>}
+    {jump && <JumpPalette entries={jumpPlaces} onOpen={jumpTo} onClose={closeJump}/>}
     <main id="main" tabIndex={-1} inert={drawer || jump} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
       {!workspace && navigationDestination(route) === 'devices' && route.kind !== 'devices' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'devices'}}>All devices</NavLink></nav>}
       {!workspace && featureNavigation}

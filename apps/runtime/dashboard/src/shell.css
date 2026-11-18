@@ -16,6 +16,11 @@
 .rabbit{display:none}
 .shell .rail-button{display:inline-grid;place-items:center;flex:none;inline-size:44px;min-block-size:44px;padding:0;border-color:transparent;color:var(--muted-dense)}
 .shell .rail-button:hover:not(:disabled),.shell .rail-button[aria-expanded=true]{background:var(--raised);color:var(--text)}
+/* The toggle is a 44px target that draws a smaller box, so its hover and disabled states stand clear of the brand.
+   The states are named because each sets its background with the shorthand, which would reset the clip. */
+.shell .rail-toggle{padding:4px}
+.shell .rail-toggle,.shell .rail-toggle:hover:not(:disabled),.shell .rail-toggle:disabled{background-clip:content-box}
+.shell .rail-toggle:hover:not(:disabled),.shell .rail-toggle:disabled{border-color:transparent}
 .rail-icon{flex:none;display:block}
 /* The jump field (#1888) opens the palette; its key hint is for a hardware keyboard only. */
 .shell .rail-jump{display:flex;align-items:center;justify-content:flex-start;gap:10px;flex:none;inline-size:100%;min-block-size:44px;padding:0 var(--space-s) 0 12px;border-color:var(--edge-dense);background:var(--inset);color:var(--muted-dense);font-weight:400;text-align:start;white-space:nowrap}
@@ -24,9 +29,10 @@
 .rail-jump kbd{margin-inline-start:auto}
 .phone-jump{margin-inline-start:auto}
 @media(pointer:coarse){.rail-jump kbd,.jump-foot{display:none}}
-/* The palette is a modal list over the page; the shell makes everything behind it inert. */
-.jump-scrim{position:fixed;inset:0;z-index:50;background:var(--shell-scrim)}
-.jump-palette{position:fixed;inset-block-start:min(12dvh,88px);inset-inline:0;z-index:51;display:flex;flex-direction:column;inline-size:min(580px,calc(100vw - 32px));max-block-size:min(76dvh,560px);margin-inline:auto;border:1px solid var(--edge-dense);border-radius:var(--light-radius);background:var(--panel);box-shadow:var(--shell-drawer-shadow);overflow:hidden;animation:jump-in 180ms cubic-bezier(.23,1,.32,1)}
+/* The palette is a modal list over the page; the shell makes everything behind it inert. It sits above everything
+   the shell draws, including the full-window visualizer. */
+.jump-scrim{position:fixed;inset:0;z-index:1100;background:var(--shell-scrim)}
+.jump-palette{position:fixed;inset-block-start:min(12dvh,88px);inset-inline:0;z-index:1101;display:flex;flex-direction:column;inline-size:min(580px,calc(100vw - 32px));max-block-size:min(76dvh,560px);margin-inline:auto;border:1px solid var(--edge-dense);border-radius:var(--light-radius);background:var(--panel);box-shadow:var(--shell-drawer-shadow);overflow:hidden;animation:jump-in 180ms cubic-bezier(.23,1,.32,1)}
 @keyframes jump-in{from{opacity:0;transform:scale(.97)}}
 .jump-search{display:flex;align-items:center;gap:10px;flex:none;padding:0 var(--space-m);border-block-end:1px solid var(--edge-faint);color:var(--muted-dense)}
 .jump-search:focus-within{border-block-end-color:var(--focus)}
@@ -35,8 +41,9 @@
 .shell .jump-search input:focus-visible{outline:none}
 .jump-list{overflow:auto;padding:6px;overscroll-behavior:contain}
 .jump-group{margin:0;padding:var(--space-s) 10px var(--space-xs);color:var(--muted-dense);font-size:var(--type-label);font-weight:600;letter-spacing:.12em;text-transform:uppercase}
-.jump-option{display:flex;align-items:center;gap:10px;min-block-size:44px;padding:0 10px;border-radius:10px;cursor:pointer;white-space:nowrap}
-.jump-option[aria-selected=true]{background:var(--raised)}
+/* The chosen row has a boundary as well as a tint; the tint alone is too faint to tell which page Enter opens. */
+.jump-option{display:flex;align-items:center;gap:10px;min-block-size:44px;padding:0 10px;border:1px solid transparent;border-radius:10px;cursor:pointer;white-space:nowrap}
+.jump-option[aria-selected=true]{background:var(--raised);border-color:var(--edge-strong);box-shadow:inset 3px 0 var(--edge-strong)}
 .jump-name{overflow:hidden;text-overflow:ellipsis}
 .jump-hint{flex:none;margin-inline-start:auto;color:var(--muted-dense);font-size:var(--type-small)}
 .jump-empty{margin:0;padding:var(--space-l);color:var(--muted-dense);text-align:center}
@@ -52,10 +59,10 @@
 .phone-sign-in{display:none}
 .phone-bar,.rail-scrim{display:none}
 /* A window too short for the rail lets it scroll with the page, as it did before it was sticky. The height covers
-   the rail of an ended session, which also holds "Sign in again". The panel still runs the full height of the page,
-   with the foot directly under the destinations instead of at the page's end. The phone drawer is a fixed panel and
-   keeps its own layout at any height. */
-@media(max-height:540px) and (min-width:680.02px){.shell>aside{position:static;align-self:stretch;block-size:auto}.shell>aside .sidebar-foot{margin-block-start:0}}
+   the rail of an ended session, which holds the jump field and "Sign in again" and needs about 571px. The panel
+   still runs the full height of the page, with the foot directly under the destinations instead of at the page's
+   end. The phone drawer is a fixed panel and keeps its own layout at any height. */
+@media(max-height:590px) and (min-width:680.02px){.shell>aside{position:static;align-self:stretch;block-size:auto}.shell>aside .sidebar-foot{margin-block-start:0}}
 
 /* The icon rail keeps every name. A link's own label becomes the name shown beside its icon on hover or focus, so
    the name is in the page once; the feed label and the control mode stay for assistive technology only. A name
@@ -68,6 +75,7 @@
   .shell:not([data-rail-narrow=expanded]){grid-template-columns:64px minmax(0,1fr)}
   .shell:not([data-rail-narrow=expanded])>aside{padding-inline:10px}
   .shell:not([data-rail-narrow=expanded]) .rail-head{justify-content:center;margin-inline-end:0}
+  .shell:not([data-rail-narrow=expanded]) .rail-toggle{padding:0}
   .shell:not([data-rail-narrow=expanded])>aside .brand{display:none}
   .shell:not([data-rail-narrow=expanded])>aside :is(p.rail-text,.status-indicator .rail-text,.rail-jump .rail-text){position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .shell:not([data-rail-narrow=expanded])>aside nav a{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
@@ -84,6 +92,7 @@
   .shell[data-rail-wide=collapsed]{grid-template-columns:64px minmax(0,1fr)}
   .shell[data-rail-wide=collapsed]>aside{padding-inline:10px}
   .shell[data-rail-wide=collapsed] .rail-head{justify-content:center;margin-inline-end:0}
+  .shell[data-rail-wide=collapsed] .rail-toggle{padding:0}
   .shell[data-rail-wide=collapsed]>aside .brand{display:none}
   .shell[data-rail-wide=collapsed]>aside :is(p.rail-text,.status-indicator .rail-text,.rail-jump .rail-text){position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .shell[data-rail-wide=collapsed]>aside nav a{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
@@ -138,6 +147,8 @@
   .rail-scrim{display:block;position:fixed;inset:0;z-index:29;background:var(--shell-scrim);opacity:0;visibility:hidden;transition:opacity 160ms ease-out,visibility 0s linear 160ms}
   .shell[data-drawer] .rail-scrim{opacity:1;visibility:visible;transition:opacity 200ms ease-out,visibility 0s}
   .shell .rail-toggle{display:none}
+  /* The drawer has no toggle, so its brand keeps the inset it had. */
+  .rail-head{margin-inline-end:0;padding-inline-start:10px}
   .jump-palette{inset-block-start:var(--space-m);max-block-size:calc(100dvh - 2 * var(--space-m))}
   .shell>main{padding:0 var(--space-m)}
   .shell .card,.shell .widget,.directory-card{padding:var(--space-m)}

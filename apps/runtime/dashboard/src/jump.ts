@@ -24,8 +24,9 @@ export const JUMP_RECENTS = 3;
 
 /**
  * Every place the palette offers: the pages visited most recently in this page session, the hub's own destinations,
- * then each page a running module declares. A module that is not running is left out, as are addresses the catalog
- * no longer declares, so the palette never offers a page that would open as unavailable or not found.
+ * then each page the Devices directory lists for a running module. A module that is not running is left out, as are
+ * addresses the catalog no longer declares. Like the directory, it does not ask whether a listed page can be shown
+ * right now: a framed page still opens as unavailable while the feed is down.
  */
 export function jumpEntries(runtime: RuntimeData, recents: readonly Route[], current: Route): JumpEntry[] {
   const places: JumpEntry[] = HUB.map(place => ({group: 'Hub', ...place}));
@@ -50,9 +51,9 @@ export function jumpEntries(runtime: RuntimeData, recents: readonly Route[], cur
 }
 
 /**
- * The entries a typed query leaves, best match first. Every word must appear in an entry's name, hint or group. A name
- * that starts with the query ranks above one that only contains it, and that above a match in the hint or group. A
- * query drops the Recent copies, so a page appears once.
+ * The entries a typed query leaves, best match first. Every word must appear in an entry's name or hint, the two things
+ * a narrowed row shows. A name that starts with the query ranks above one that only contains it, and that above a match
+ * in the hint. A query drops the Recent copies, so a page appears once.
  */
 export function filterJump(entries: readonly JumpEntry[], query: string): JumpEntry[] {
   const text = query.trim().toLowerCase();
@@ -62,17 +63,23 @@ export function filterJump(entries: readonly JumpEntry[], query: string): JumpEn
     const label = entry.label.toLowerCase();
     return label.startsWith(text) ? 0 : label.includes(text) ? 1 : 2;
   };
-  return entries.filter(entry => entry.group !== 'Recent' && words.every(word => `${entry.label} ${entry.hint} ${entry.group}`.toLowerCase().includes(word)))
+  return entries.filter(entry => entry.group !== 'Recent' && words.every(word => `${entry.label} ${entry.hint}`.toLowerCase().includes(word)))
     .map((entry, index) => ({entry, index}))
     .sort((a, b) => {const byRank = rank(a.entry) - rank(b.entry); return byRank !== 0 ? byRank : a.index - b.index;})
     .map(item => item.entry);
 }
 
+/** Input types that take no typed text. A slash pressed on one of them is not text, so it can open the palette. */
+const KEYLESS_INPUTS = new Set(['button', 'checkbox', 'color', 'file', 'image', 'radio', 'range', 'reset', 'submit']);
+/** Whether an `input` of this type is a text field for the palette's keys. */
+export const textInput = (type: string): boolean => !KEYLESS_INPUTS.has(type.toLowerCase());
+
 /** The parts of a key press the palette reads. */
 export type JumpKeyPress = {key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean};
 /**
  * Where a key was pressed: on a Mac or not, with the palette open or not, in a text field (`field`), inside an open
- * menu, list or dialog that reads its own keys (`owned`), or while a modal dialog is open (`modal`).
+ * menu, list or dialog that reads its own keys (`owned`), or while a modal dialog or a full-screen element covers the
+ * page (`modal`).
  */
 export type JumpKeyPlace = {mac: boolean; open: boolean; field: boolean; owned: boolean; modal: boolean};
 
@@ -80,8 +87,8 @@ export type JumpKeyPlace = {mac: boolean; open: boolean; field: boolean; owned: 
  * What a key press means to the palette. Command and K, or Control and K, opens or closes it from anywhere on the
  * page, with one exception: on a Mac, Control and K in a text field is the system's key for deleting to the end of the
  * line and stays that. A slash opens the palette, but not in a text field and not inside an open menu, list or dialog,
- * where the slash is theirs. While a modal dialog is open the palette could only open underneath it, so every key is
- * left alone.
+ * where the slash is theirs. Under a modal dialog or a full-screen element the palette could only open out of sight,
+ * so every key is left alone.
  */
 export function jumpShortcut(press: JumpKeyPress, place: JumpKeyPlace): 'toggle' | 'open' | undefined {
   if (place.modal) return undefined;

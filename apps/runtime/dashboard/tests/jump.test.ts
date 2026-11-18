@@ -2,7 +2,7 @@
 // declared pages, with no reads or commands of its own.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {JUMP_RECENTS, filterJump, jumpEntries, jumpShortcut, rememberRoute, type JumpKeyPlace, type JumpKeyPress} from '../src/jump.ts';
+import {JUMP_RECENTS, filterJump, jumpEntries, jumpShortcut, rememberRoute, textInput, type JumpKeyPlace, type JumpKeyPress} from '../src/jump.ts';
 import type {RuntimeData} from '../src/runtime-feeds.ts';
 import {routeHash, type Route} from '../src/routes.ts';
 
@@ -63,7 +63,7 @@ void test('leaving a page remembers it at the front, once, and never a missing a
   assert.deepEqual(recents[0], {kind: 'lighting-brand', brand: 'f'});
 });
 
-void test('a query keeps entries whose name, hint or group holds every word, best name match first', () => {
+void test('a query keeps entries whose name or hint holds every word, best name match first', () => {
   const entries = jumpEntries(runtime, [{kind: 'audio'}], home);
   assert.deepEqual(names(filterJump(entries, '')), names(entries), 'an empty query changes nothing');
   assert.deepEqual(names(filterJump(entries, '  ')), names(entries));
@@ -74,6 +74,16 @@ void test('a query keeps entries whose name, hint or group holds every word, bes
   assert.deepEqual(names(filterJump(entries, 'companions pref')), ['Device pages: Companions · Preferences'], 'every word must match');
   assert.deepEqual(names(filterJump(entries, 'home')), ['Hub: Home', 'Hub: Timeline'], 'a hint match ranks after a name match');
   assert.deepEqual(filterJump(entries, 'no such page'), []);
+  // A narrowed list shows no group headings, so a group's label is not searched: "pa" must not keep every device page.
+  assert.deepEqual(names(filterJump(entries, 'device pages')), []);
+  assert.deepEqual(names(filterJump(entries, 'hub')), []);
+  assert.equal(filterJump(entries, 'pa').every(entry => /pa/i.test(`${entry.label} ${entry.hint}`)), true);
+  assert.equal(filterJump(entries, 'pa').length < entries.filter(entry => entry.group === 'Device pages').length, true);
+});
+
+void test('only an input that takes typed text counts as a text field', () => {
+  for (const type of ['text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date', 'time', '', 'unknown', 'TEXT']) assert.equal(textInput(type), true, type);
+  for (const type of ['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'color', 'image', 'RANGE']) assert.equal(textInput(type), false, type);
 });
 
 const press = (key: string, held: Partial<JumpKeyPress> = {}): JumpKeyPress => ({key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...held});
@@ -106,7 +116,7 @@ void test('a slash opens the palette only outside a text field, an open menu, li
   assert.equal(jumpShortcut(press('?', {shiftKey: true}), place()), undefined, 'another key is not the palette\'s');
 });
 
-void test('no key reaches the palette while a modal dialog is open', () => {
+void test('no key reaches the palette while a modal dialog or a full-screen element covers the page', () => {
   for (const [key, held] of [['k', {metaKey: true}], ['k', {ctrlKey: true}], ['/', {}]] as const) {
     assert.equal(jumpShortcut(press(key, held), place({modal: true})), undefined, key);
     assert.equal(jumpShortcut(press(key, held), place({modal: true, mac: true, open: true})), undefined, key);

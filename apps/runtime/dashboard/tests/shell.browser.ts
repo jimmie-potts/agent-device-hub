@@ -35,6 +35,16 @@ const recordWrites = (): {stop: () => string[]} => {
   page.on('request', listen);
   return {stop: () => {page.off('request', listen); return seen;}};
 };
+/** The contrast ratio of two computed colors; a translucent foreground is laid over the background first. */
+const contrastRatio = (foreground: string, background: string): number => {
+  const channels = (value: string): number[] => (value.match(/[\d.]+/g) ?? []).map(Number);
+  const luminance = (rgb: number[]): number => rgb.slice(0, 3).map(value => {
+    const scaled = value / 255; return scaled <= .04045 ? scaled / 12.92 : ((scaled + .055) / 1.055) ** 2.4;
+  }).reduce((sum, value, index) => sum + value * ([0.2126, 0.7152, 0.0722][index] ?? 0), 0);
+  const fg = channels(foreground), bg = channels(background), alpha = fg[3] ?? 1;
+  const first = luminance(fg.slice(0, 3).map((value, index) => value * alpha + (bg[index] ?? 0) * (1 - alpha))), second = luminance(bg);
+  return (Math.max(first, second) + .05) / (Math.min(first, second) + .05);
+};
 const category = async (name: string): Promise<void> => {await page.getByRole('group', {name: 'Device categories'}).getByRole('button', {name, exact: true}).click();};
 const checks: string[] = [];
 try {
@@ -123,6 +133,14 @@ try {
   assert.equal(await railState(), 'expanded', 'a wide window starts with the full rail');
   assert.equal(await railWidth(), 184, 'the full rail keeps its width, so pages keep theirs in a wide window');
   assert.equal(await page.locator('.top').count(), 0, 'the separate top utility row is gone');
+  assert.equal(await page.locator('.rail-head').evaluate(head => {
+    const line = head.querySelector('.brand small'), button = head.querySelector('.rail-toggle');
+    if (line === null || button === null) throw new Error('The rail head holds the brand and the toggle.');
+    const text = document.createRange(); text.selectNodeContents(line);
+    const style = getComputedStyle(button);
+    const drawn = button.getBoundingClientRect().left + Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(style.paddingLeft);
+    return text.getClientRects().length === 1 && drawn - line.getBoundingClientRect().right >= 4;
+  }), true, 'the brand\'s second line is on one line, clear of the box the toggle draws');
   const skip = page.getByRole('link', {name: 'Skip to content', exact: true});
   await skip.focus();
   assert.equal(await skip.evaluate(element => {
@@ -282,6 +300,14 @@ try {
   await page.setViewportSize({width: 1024, height: 500});
   await again.scrollIntoViewIfNeeded();
   assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= -1 && box.bottom <= innerHeight + 1;}), true, 'a window too short for the rail can scroll the recovery into view');
+  // With the jump field the ended rail needs about 571px: a 560px window lets it scroll too, and a 600px one holds it.
+  await page.setViewportSize({width: 1024, height: 560});
+  await again.scrollIntoViewIfNeeded();
+  assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= -1 && box.bottom <= innerHeight + 1;}), true, 'a 560px window can scroll the recovery into view');
+  await page.setViewportSize({width: 1024, height: 600});
+  await page.evaluate(() => {window.scrollTo(0, 0);});
+  assert.equal(await page.locator('.shell>aside').evaluate(element => getComputedStyle(element).position), 'sticky');
+  assert.equal(await again.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight + 1), true, 'a 600px window holds the whole ended rail');
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await drawer.isVisible(), false);
   assert.equal(await again.count(), 1, 'a phone offers one recovery action');
@@ -337,6 +363,53 @@ try {
   assert.equal(await jumpOptions.nth(1).getAttribute('aria-selected'), 'true', 'the arrow keys move the choice');
   await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
   assert.equal(await jumpOptions.last().getAttribute('aria-selected'), 'true', 'the choice wraps at the ends');
+  // The chosen row has a boundary that stands out from the panel and from the row's own tint, in both themes.
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({colorScheme});
+    const row = await palette.locator('.jump-option[aria-selected=true]').evaluate(element => {
+      const panel = element.closest('.jump-palette');
+      if (panel === null) throw new Error('The chosen row is inside the palette.');
+      return {edge: getComputedStyle(element).borderLeftColor, tint: getComputedStyle(element).backgroundColor, panel: getComputedStyle(panel).backgroundColor};
+    });
+    const boundary = Math.min(contrastRatio(row.edge, row.panel), contrastRatio(row.edge, row.tint));
+    assert(boundary >= 3, `${colorScheme} chosen row boundary has 3:1 contrast: ${String(boundary)}`);
+  }
+  // A list scrolled by touch or wheel stays where it was put. The first row is chosen and then scrolled out of view,
+  // as a finger would leave it; a change of the saved rail choice from another tab then renders the whole shell twice.
+  const jumpList = palette.getByRole('listbox');
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await jumpOptions.first().getAttribute('aria-selected'), 'true');
+  assert.equal(await jumpList.evaluate(element => element.scrollTop), 0, 'the first choice shows the list from its top, with its group heading');
+  await jumpList.evaluate(element => {element.scrollTo(0, 400);});
+  const scrolledTo = await jumpList.evaluate(element => element.scrollTop);
+  assert.equal(scrolledTo >= 300, true, `the list is long enough to scroll: ${String(scrolledTo)}`);
+  const savedRail = await page.evaluate(key => localStorage.getItem(key), RAIL_PREFERENCE_KEY);
+  for (const newValue of ['{"wide":false,"narrow":true}', savedRail]) {
+    await page.evaluate(({key, value}) => {window.dispatchEvent(new StorageEvent('storage', {key, newValue: value}));}, {key: RAIL_PREFERENCE_KEY, value: newValue});
+    await page.waitForFunction(width => Math.round(document.querySelector('.shell>aside')?.getBoundingClientRect().width ?? 0) === width, newValue === savedRail ? 184 : 64);
+  }
+  assert.equal(await jumpList.evaluate(element => element.scrollTop), scrolledTo, 'a scrolled list is not pulled back to the choice when the shell renders');
+  // The keys still bring the choice into view.
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await jumpOptions.nth(1).evaluate(element => {
+    const row = element.getBoundingClientRect(), list = element.closest('.jump-list')?.getBoundingClientRect();
+    return list !== undefined && row.top >= list.top - 1 && row.bottom <= list.bottom + 1;
+  }), true, 'a choice moved with the keys is scrolled into view');
+  await page.keyboard.press('ArrowUp');
+  assert.equal(await jumpList.evaluate(element => element.scrollTop), 0);
+  // A press on a part of the palette that is not a row leaves focus in the field, and the list is not a Tab stop.
+  await palette.locator('.jump-group').first().click();
+  await palette.locator('.jump-foot').click();
+  assert.equal(await jumpField.evaluate(element => element === document.activeElement), true, 'a press on a heading or the footer leaves focus in the field');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement?.closest('.jump-list, #main, .shell>aside, .phone-bar') === null), true, 'Tab reaches neither the list nor anything behind the palette');
+  // Wherever focus went, the palette still owns its keys, and typing goes to the field.
+  await page.evaluate(() => {if (document.activeElement instanceof HTMLElement) document.activeElement.blur();});
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await jumpOptions.nth(1).getAttribute('aria-selected'), 'true', 'the arrow keys work with focus outside the field');
+  await page.keyboard.type('s');
+  assert.equal(await jumpField.inputValue(), 's', 'a typed character goes to the field');
+  assert.equal(await jumpField.evaluate(element => element === document.activeElement), true);
   await jumpField.fill('sign');
   const narrowed = await jumpOptions.allTextContents();
   assert.equal(narrowed.length > 0 && narrowed.length < offered.length && narrowed.every(text => /sign/i.test(text)) && narrowed.some(text => text.includes('Sign preview')), true,
@@ -345,6 +418,8 @@ try {
   await jumpField.fill('no such page');
   await palette.getByText('No page matches “no such page”.', {exact: true}).waitFor();
   assert.equal(await jumpOptions.count(), 0);
+  // Escape closes it with focus outside the field too.
+  await page.evaluate(() => {if (document.activeElement instanceof HTMLElement) document.activeElement.blur();});
   await page.keyboard.press('Escape');
   await palette.waitFor({state: 'detached'});
   await page.waitForFunction(() => document.activeElement?.textContent === 'Devices' && document.activeElement.closest('.primary-navigation') !== null);
@@ -356,7 +431,12 @@ try {
   // A click outside the palette closes it as well.
   await page.keyboard.press('Control+k');
   await palette.waitFor();
-  await page.mouse.click(1400, 980);
+  // The click is aimed at the rail's Home link, which the scrim covers, so the link is not followed.
+  const homeBox = await primary.getByRole('link', {name: 'Home', exact: true}).boundingBox();
+  assert.ok(homeBox !== null);
+  const behind = {x: homeBox.x + homeBox.width / 2, y: homeBox.y + homeBox.height / 2};
+  assert.equal(await page.evaluate(({x, y}) => document.elementFromPoint(x, y)?.className, behind), 'jump-scrim', 'the scrim covers what is behind the palette');
+  await page.mouse.click(behind.x, behind.y);
   await palette.waitFor({state: 'detached'});
   assert.equal(await devicesLink.evaluate(element => element === document.activeElement), true, 'a click outside closes the palette and returns focus');
   assert.equal(new URL(page.url()).hash, '#/devices', 'the click outside reaches nothing behind the palette');
@@ -397,6 +477,44 @@ try {
   assert.deepEqual([await inert('#main'), await inert('.shell>aside')], [false, false], 'the page is released when the palette closes on a page change');
   await page.goForward();
   await page.getByRole('button', {name: 'Edit Home', exact: true}).waitFor();
+  // The palette is drawn above the full-window visualizer, and Escape closes the palette, not the visualizer.
+  await page.goto(`${world.url}/#/audio/visualizer`); await feed(page, 'connected');
+  const exitFull = page.getByRole('button', {name: 'Exit full view', exact: true});
+  await exitFull.waitFor();
+  await page.keyboard.press('Control+k');
+  await palette.waitFor();
+  // The page is inert under the palette, so hit testing cannot tell which of the two is drawn on top. Their stacking
+  // levels can: the palette and its scrim are above every level used inside the page, the visualizer's included.
+  assert.deepEqual(await palette.evaluate(element => {
+    const level = (node: Element): number => {const value = Number(getComputedStyle(node).zIndex); return Number.isNaN(value) ? 0 : value;};
+    const scrim = document.querySelector('.jump-scrim'), full = document.querySelector('.music-visualizer-full');
+    if (scrim === null || full === null) throw new Error('The scrim and the full-window visualizer must be present.');
+    const page = Math.max(...[...document.querySelectorAll('#main *')].map(level));
+    return {visualizerIsTopOfPage: level(full) === page && getComputedStyle(full).position === 'fixed', scrimAbovePage: level(scrim) > page, paletteAboveScrim: level(element) > level(scrim),
+      siblings: element.parentElement === scrim.parentElement && element.parentElement === document.querySelector('#main')?.parentElement};
+  }), {visualizerIsTopOfPage: true, scrimAbovePage: true, paletteAboveScrim: true, siblings: true}, 'the palette is drawn above the full-window visualizer');
+  await page.keyboard.press('Escape');
+  await palette.waitFor({state: 'detached'});
+  assert.equal(await exitFull.isVisible() && new URL(page.url()).hash === '#/audio/visualizer', true, 'Escape closes the palette and leaves the visualizer open');
+  // In the browser's full-screen mode only the full-screen element is drawn, so the palette's keys do nothing there.
+  await page.evaluate(() => {Object.defineProperty(document, 'fullscreenElement', {configurable: true, get: () => document.body});});
+  await page.keyboard.press('Control+k');
+  await page.keyboard.press('/');
+  assert.equal(await palette.count(), 0, 'the palette stays closed while an element is full screen');
+  await page.evaluate(() => {Reflect.deleteProperty(document, 'fullscreenElement');});
+  await page.keyboard.press('/');
+  await palette.waitFor();
+  await page.keyboard.press('Escape');
+  await palette.waitFor({state: 'detached'});
+  // A slash pressed on a slider is not text, so it opens the palette there, and closing returns focus to the slider.
+  await page.goto(`${world.url}/#/component/pendant-1`); await feed(page, 'connected');
+  const slider = page.getByRole('slider').first();
+  await slider.focus();
+  await page.keyboard.press('/');
+  await palette.waitFor();
+  await page.keyboard.press('Escape');
+  await palette.waitFor({state: 'detached'});
+  assert.equal(await slider.evaluate(element => element === document.activeElement), true, 'a slash on a slider opens the palette, and closing returns focus to the slider');
   // A slash typed into a field is text.
   await open('Home');
   const find = page.getByPlaceholder('Find a session');
@@ -425,6 +543,7 @@ try {
   }
   // The drawer's own field opens it as well. The drawer closes underneath, so focus returns to the menu button.
   await page.getByRole('button', {name: 'Open navigation', exact: true}).click();
+  assert.equal(await page.locator('.rail-head .brand').evaluate(element => Math.round(element.getBoundingClientRect().left)), 22, 'the drawer\'s brand keeps its inset');
   await page.locator('.shell>aside .rail-jump').click();
   await palette.waitFor();
   await page.locator('.shell>aside').waitFor({state: 'hidden'});

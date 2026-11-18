@@ -837,9 +837,11 @@ below 1200px depends on the rail.
 The jump palette (#1888) uses the same two entries.
 `node --test apps/runtime/dashboard/tests/jump.test.ts` covers the list (hub
 destinations, the pages of running modules once each, and recent pages without
-the current one), the filter's ranking, and the key rules: Command or Control
-and K, the Mac exception for Control and K in a text field, the slash outside a
-field, menu, list or dialog, and no key while a modal dialog is open.
+the current one), the filter's ranking over names and hints, which inputs
+count as text fields, and the key rules: Command or Control and K, the Mac
+exception for Control and K in a text field, the slash outside a field, menu,
+list or dialog, and no key while a modal dialog or a full-screen element covers
+the page.
 `node apps/runtime/dashboard/tests/shell.browser.ts` opens the palette from the
 keyboard, the rail's field, the phone bar and the phone drawer; checks the
 groups, arrow keys, narrowing, the empty result and that a stopped module's
@@ -847,7 +849,13 @@ pages leave the list after a catalog read; checks that the page and the rail
 are inert behind it, that closing returns focus, that the browser's back button
 closes it, that a chosen page opens at its top with focus on the page from a
 scrolled one, and that it fits 390px and 320px windows; and records no command, sync, upload or provider request while
-it opens, narrows and closes. It is opened there on the Devices directory,
+it opens, narrows and closes. It also checks the chosen row's 3:1 boundary in
+both themes, that a scrolled list stays put when the shell renders, that the
+keys work and typing reaches the field with focus outside it, that a press on a
+heading or the footer keeps focus in the field, that the palette's stacking
+level is above the full-window visualizer's, that a stubbed full-screen element
+keeps it closed, that a slash on a slider opens it, and that an ended session's
+rail can be reached in 560px and 600px windows. It is opened there on the Devices directory,
 which mounts no module page, because a module page reads its copies with a sync
 request when it mounts.
 `node apps/runtime/dashboard/tests/conversation-workspace.browser.ts` checks

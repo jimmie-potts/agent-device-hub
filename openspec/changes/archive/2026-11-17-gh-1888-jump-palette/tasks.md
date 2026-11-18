@@ -13,3 +13,13 @@
 - [x] 2.3 Remove each guarded behavior once and confirm the journey fails.
 - [x] 2.4 Run the dashboard unit tests, every dashboard browser journey, lint and the shared build, type, contract and workflow checks.
 - [x] 2.5 Update the dashboard README and the runtime checks guide, and synchronize the `runtime-dashboard` spec.
+
+## 3. Review round one
+
+- [x] 3.1 Keep a list scrolled by touch or wheel where it was put, and show the first row with its heading.
+- [x] 3.2 Read the palette's keys wherever focus is, keep focus in the field on a press inside the palette, and take the list out of the Tab order.
+- [x] 3.3 Draw the palette above the full-window visualizer and leave its keys alone in full screen.
+- [x] 3.4 Raise the short-window height for the taller rail.
+- [x] 3.5 Search names and hints only, count only text-taking inputs as text fields, and give the chosen row a boundary.
+- [x] 3.6 Keep the toggle's drawn box clear of the brand and the drawer's brand where it was.
+- [x] 3.7 Add a journey check for each of these and confirm each fails without its fix.

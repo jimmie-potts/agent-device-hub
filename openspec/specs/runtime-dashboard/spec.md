@@ -693,9 +693,9 @@ The shell SHALL present the destinations, the Settings utility, the feed indicat
 
 The shell SHALL offer a jump palette that lists, in this order, up to three pages visited most recently in the open page session, the hub's destinations with Timeline, Settings and Connections, and every page the device directory lists for a module the current catalog reports as running. The current page SHALL NOT be listed as recent, each address SHALL be listed once outside the recent group, and a module that is not running or an address the catalog does not declare SHALL NOT be offered. Recent pages SHALL be held in memory only.
 
-Command and K, or Control and K, SHALL open the palette from anywhere on the page and close it when it is open, except that on a Mac Control and K pressed in a text field SHALL keep its text-editing meaning. A slash SHALL open the palette only when it is pressed outside a text field and outside an open menu, list or dialog. The rail SHALL hold a field that opens the palette, shown as an icon in the icon rail, and the phone bar SHALL hold a button that opens it. While a modal dialog is open, the palette's keys SHALL do nothing.
+Command and K, or Control and K, SHALL open the palette from anywhere on the page and close it when it is open, except that on a Mac Control and K pressed in a text field SHALL keep its text-editing meaning. A slash SHALL open the palette only when it is pressed outside a text field and outside an open menu, list or dialog; a control that takes no typed text, such as a slider or a checkbox, SHALL NOT count as a text field. The rail SHALL hold a field that opens the palette, shown as an icon in the icon rail, and the phone bar SHALL hold a button that opens it. While a modal dialog is open or an element is shown full screen, the palette's keys SHALL do nothing.
 
-While the palette is open the page and the rail behind it SHALL be inert. Typing SHALL narrow the list to the entries in which every typed word appears, with a name that starts with the query first. The arrow keys SHALL move the choice and wrap at the ends, and Enter or a click SHALL open the chosen page at its top with focus on the page. Escape, the opening key again or a click outside SHALL close the palette and return focus to the element that had it; when it was opened from the phone drawer, focus SHALL return to the menu button. A page change made with the browser's back or forward while the palette is open SHALL close it. The palette SHALL fit a 320px window without horizontal overflow.
+While the palette is open the page and the rail behind it SHALL be inert, and the palette SHALL be drawn above everything the page draws, including the full-window visualizer. The palette SHALL read its keys wherever focus is, and a press on a part of it that is not a row SHALL leave focus in its field. Typing SHALL narrow the list to the entries whose name or hint contains every typed word, with a name that starts with the query first. The chosen row SHALL be marked by a boundary with at least 3:1 contrast against the palette and against the row. The arrow keys SHALL move the choice, bring it into view and wrap at the ends; a list scrolled by touch or wheel SHALL otherwise stay where it was put, and Enter or a click SHALL open the chosen page at its top with focus on the page. Escape, the opening key again or a click outside SHALL close the palette and return focus to the element that had it; when it was opened from the phone drawer, focus SHALL return to the menu button. A page change made with the browser's back or forward while the palette is open SHALL close it. The palette SHALL fit a 320px window without horizontal overflow.
 
 The palette SHALL only navigate. Opening it, typing, moving the choice and closing it SHALL send no command, sync, upload or provider request.
 
@@ -729,6 +729,20 @@ The palette SHALL only navigate. Opening it, typing, moving the choice and closi
 #### Scenario: Modal dialog open
 - **WHEN** Conversation Details is open as a modal dialog and the operator presses Command and K or a slash
 - **THEN** the palette stays closed and the dialog stays open
+
+#### Scenario: Scroll the list
+- **WHEN** the operator scrolls the list by touch or wheel and the shell renders again
+- **THEN** the list stays where it was put
+- **AND** the next arrow key brings the choice into view
+
+#### Scenario: Focus leaves the field
+- **WHEN** the operator presses on a group heading or the footer of the palette, or focus is outside the field for another reason
+- **THEN** the arrow keys, Enter and Escape still act on the palette, typed text goes to the field and nothing behind the palette reacts
+
+#### Scenario: Over the full-window visualizer
+- **WHEN** the operator opens the palette on the full-window visualizer
+- **THEN** the palette is drawn above the visualizer, and Escape closes the palette and leaves the visualizer open
+- **AND** while an element is shown full screen the palette's keys do nothing
 
 #### Scenario: Back while open
 - **WHEN** the palette is open and the operator goes back in the browser's history
