@@ -61,7 +61,7 @@ notice acknowledgment, attention nor lifecycle freshness.
 | `observedAtMs`, `lastEvidenceAtMs` | `session /observedAtMs`, `/lastEvidenceAtMs` | Unchanged. |
 | `observationAgeMs` | derived | This is read context, not record content: it changes every millisecond. A consumer computes `now - lastEvidenceAtMs`. Decided by the coordinator, 2026-10-06: not published; consumers derive it. |
 | `freshness` | `session /freshness` | Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). Freshness must match the envelope `time`, as 1.x's matched `asOfMs`: `uncertain` exactly when the owner restarted since the last evidence or five minutes or more have passed (validator). An owner computes freshness at the envelope `time` of each message it sends, sync re-sends included, and when freshness has changed it bumps the revision before sending. The core (#831) publishes the record again on a timer when it turns uncertain, and brings freshness up to date before it serves a sync. |
-| `restartUncertain` | `session /restartUncertain` | Unchanged. |
+| `restartUncertain` | `session /restartUncertain` | From #1865 step 8, true only while running work is unconfirmed since a core start: the start marks every session whose activity is `active`, and fresh `turn-started`, `activity-observed` or `attention-resolved` evidence on the current turn, produced at or after the start, ends it. Other sessions keep their status across a restart. |
 | `children`, `children.active`, `children.uncertain` | `session /children` | The owner's count. The owner republishes the parent when a child changes the count. The cross-record count check in `validateSnapshot` belongs to the owner, because one record cannot check it. |
 | `generation` | `session /generation` | Required, and never after the record's `revision` (validator). Snapshot 1.0 records read as 0. |
 | `label`, `labelOrigin` | `session /label` `{value, origin}` | Snapshots 1.0 and 1.1 hid agent labels, and 1.2 added `labelOrigin`. 2.0 always carries the winning label with its origin. Precedence holds: the owner never lets an agent label replace a user label, and the display order is the label, then the title, then a neutral fallback (`sessionTitle`). The label uses the lifecycle 1.1 credential check, which `setLabel` already applies. |
@@ -139,7 +139,8 @@ is the reference):
 
 | Event kind | Session record | Occurrence |
 | --- | --- | --- |
-| `session-started`, `activity-observed`, `turn-interrupted` | created or updated; activity `active`, or `interrupted` | none of its own; see turn selection below |
+| `session-started` with a known parent (a child start), `activity-observed`, `turn-interrupted` | created or updated; activity `active`, or `interrupted` | none of its own; see turn selection below |
+| `session-started` without a known parent (a root start, #397) | a new root is created idle with an unknown turn, whatever turn the start carries; a known root keeps its activity and turn | none |
 | `turn-started` | activity `active`; see turn selection below | none of its own; see turn selection below |
 | `question-continuing`, `attention-input`, `attention-approval` | the attention item added on the observation's turn | `attention-raised`, whose `attention.turn` is the observation's turn |
 | `attention-resolved` | With a known ID on a known turn, the correlated item is removed, and so is every approval without a request ID on that turn. Otherwise attention is marked ambiguous and nothing is removed. | `attention-cleared` with cause `resolved` for each removed item |
@@ -183,7 +184,8 @@ a committed change. The session's state at its new revision is the evidence; no
 outcome follows, and it is not a tracked kind.
 
 In the rules below, an activity observation is a `session-started`,
-`turn-started`, `activity-observed`, `turn-ended` or `turn-interrupted`.
+`turn-started`, `activity-observed`, `turn-ended` or `turn-interrupted`. A root
+start never selects, adopts or retires a turn (#1865 step 8).
 
 An observation whose known turn is already retired never selects a turn, and an
 activity observation on a retired turn is stale. An observation whose known
