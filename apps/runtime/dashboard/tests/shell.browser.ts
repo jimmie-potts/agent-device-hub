@@ -143,7 +143,7 @@ try {
     const rail = document.querySelector('.shell>aside'), main = rail?.querySelector('nav[aria-label="Main navigation"]'), utilities = rail?.querySelector('nav[aria-label="Utilities"]');
     if (rail === null || rail === undefined || main === null || main === undefined || utilities === null || utilities === undefined) throw new Error('The rail holds both navigation groups.');
     const box = rail.getBoundingClientRect(), settingsBox = utilities.getBoundingClientRect();
-    return {after: (main.compareDocumentPosition(utilities) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0, inView: box.top === 0 && box.bottom <= innerHeight && settingsBox.bottom <= innerHeight,
+    return {after: (main.compareDocumentPosition(utilities) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0, inView: Math.abs(box.top) < 1 && box.bottom <= innerHeight + 1 && settingsBox.bottom <= innerHeight + 1,
       status: rail.querySelector('.sidebar-foot')?.textContent ?? ''};
   });
   assert.deepEqual({after: order.after, inView: order.inView}, {after: true, inView: true}, 'Settings follows the destinations and the rail fits the window');
@@ -154,12 +154,19 @@ try {
   await page.getByRole('heading', {name: 'Settings', level: 1, exact: true}).waitFor();
   await page.evaluate(() => {window.scrollTo(0, document.documentElement.scrollHeight);});
   assert.equal(await page.evaluate(() => scrollY > 100), true, 'Settings scrolls in this window');
-  assert.equal(await page.locator('.shell>aside').evaluate(element => element.getBoundingClientRect().top), 0, 'the rail stays in view while the page scrolls');
+  // A scrolled position can be a fraction of a pixel, so the rail's top is compared within one pixel.
+  assert.equal(await page.locator('.shell>aside').evaluate(element => Math.abs(element.getBoundingClientRect().top) < 1), true, 'the rail stays in view while the page scrolls');
   // A destination chosen while the page is scrolled opens at its top, on a page that could have stayed scrolled.
   await open('Home');
   await page.getByRole('button', {name: 'Edit Home', exact: true}).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight > 100), true, 'Home is taller than the window, so it could have opened scrolled');
   assert.equal(await page.evaluate(() => scrollY), 0, 'a chosen destination opens at its top');
+  // A window too short for the rail lets it scroll with the page, and its panel still runs the page's full height.
+  await page.setViewportSize({width: 1024, height: 500});
+  assert.deepEqual(await page.locator('.shell>aside').evaluate(element => {
+    const total = document.documentElement.scrollHeight, height = element.getBoundingClientRect().height;
+    return {position: getComputedStyle(element).position, tallerPage: total > innerHeight + 100, fullHeight: Math.abs(height - total) <= 1};
+  }), {position: 'static', tallerPage: true, fullHeight: true}, 'in a short window the rail scrolls with the page and its panel runs the full height');
   await page.setViewportSize({width: 1440, height: 1000});
   await open('Devices'); await category('Displays');
 
@@ -245,6 +252,12 @@ try {
   await drawer.waitFor({state: 'hidden'});
   assert.equal(await menu.getAttribute('aria-expanded'), 'false', 'choosing a destination closes the drawer');
   assert.equal(await menu.evaluate(element => element === document.activeElement), true, 'a chosen destination returns focus to the menu button');
+  // A short phone keeps the drawer's foot at its bottom; the short-window rule is for the desktop rail only.
+  await page.setViewportSize({width: 390, height: 520});
+  await menu.click(); await drawer.waitFor();
+  assert.equal(await drawer.evaluate(element => {const foot = element.querySelector('.sidebar-foot')?.getBoundingClientRect(); return foot !== undefined && innerHeight - foot.bottom >= 0 && innerHeight - foot.bottom <= 16;}), true, 'a short phone drawer keeps its foot at the bottom');
+  await page.keyboard.press('Escape');
+  await drawer.waitFor({state: 'hidden'});
   // In the narrowest drawer the feed details open above the foot and fit inside it.
   await page.setViewportSize({width: 320, height: 844});
   await menu.click(); await drawer.waitFor();
@@ -264,11 +277,10 @@ try {
   await again.waitFor();
   assert.equal(await railWidth(), 184, 'an ended session shows the full rail where the icon rail is the default');
   assert.equal(await toggle.isDisabled(), true);
-  assert.equal(await again.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight), true, 'the recovery is inside the rail and the window');
+  assert.equal(await again.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight + 1), true, 'the recovery is inside the rail and the window');
   await page.setViewportSize({width: 1024, height: 500});
-  assert.equal(await page.locator('.shell>aside').evaluate(element => element.getBoundingClientRect().height >= innerHeight), true, 'the rail still fills the window when it scrolls with the page');
   await again.scrollIntoViewIfNeeded();
-  assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight;}), true, 'a window too short for the rail can scroll the recovery into view');
+  assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= -1 && box.bottom <= innerHeight + 1;}), true, 'a window too short for the rail can scroll the recovery into view');
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await drawer.isVisible(), false);
   assert.equal(await again.count(), 1, 'a phone offers one recovery action');
@@ -292,7 +304,7 @@ try {
     const sliding = phone.locator('.shell>aside'), opener = phone.getByRole('button', {name: 'Open navigation', exact: true});
     await opener.click();
     await sliding.waitFor();
-    await phone.waitForFunction(() => document.querySelector('.shell>aside')?.getBoundingClientRect().left === 0);
+    await phone.waitForFunction(() => Math.abs(document.querySelector('.shell>aside')?.getBoundingClientRect().left ?? -1) < 1);
     await phone.keyboard.press('Escape');
     await sliding.waitFor({state: 'hidden'});
     assert.equal(await opener.evaluate(element => element === document.activeElement), true);
