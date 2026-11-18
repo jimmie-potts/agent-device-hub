@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import {execFileSync, spawnSync} from 'node:child_process';
 import {once} from 'node:events';
 import {readFileSync} from 'node:fs';
-import {chmod, mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
+import {chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
 import {tmpdir} from 'node:os';
@@ -72,7 +72,10 @@ type Case = {
   nowMs?: number;
 };
 
-type Files = {root: string; codexHome: string; emptyCodexHome: string; bigCodexHome: string; transcript: (name: string) => string; fifo: string};
+type Files = {
+  root: string; codexHome: string; emptyCodexHome: string; bigCodexHome: string; linkedCodexHome: string; transcript: (name: string) => string; fifo: string;
+  linkedTranscript: string;
+};
 
 /** A hook payload with the fields every client sends and some that the allowlist drops. */
 function payload(provider: 'claude' | 'codex', hook: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -174,6 +177,8 @@ function cases(files: Files): Case[] {
     ['a transcript that is not JSONL', files.transcript('not-jsonl.txt')], ['a relative transcript path', 'transcripts/titled.jsonl'],
     ['a transcript path with a control character', `${titled}\u0007`], ['a FIFO transcript', files.fifo], ['a directory transcript', join(files.root, 'transcripts', 'directory.jsonl')],
     ['a Windows transcript path', 'C:\\synthetic-bunny-1865\\missing.jsonl'], ['a numeric transcript path', 7], ['no transcript path', undefined],
+    // The reader opens without following a link, so a titled transcript behind one gives no title.
+    ['a symlinked transcript', files.linkedTranscript],
   ];
   for (const version of ['1.1', '1.2'] as const) {
     for (const [what, path] of claudeTitles) {
@@ -185,6 +190,7 @@ function cases(files: Files): Case[] {
       ['a thread name with a control character', 'codex-control', undefined], ['a numeric thread name', 'codex-numeric', undefined],
       ['a row without a thread name', 'codex-unnamed', undefined], ['no session index', 'codex-titled', files.emptyCodexHome],
       ['a thread name before a 1 MiB tail', 'codex-early', files.bigCodexHome], ['a thread name inside a 1 MiB tail', 'codex-late', files.bigCodexHome],
+      ['a symlinked session index', 'codex-titled', files.linkedCodexHome],
     ] as const) {
       add({name: `codex ${version} title from ${what}`, configuration: CODEX_CLI, version, input: payload('codex', 'SessionStart', {session_id: sessionId, transcript_path: titled}),
         ...(home === undefined ? {} : {codexHome: home})});
@@ -268,6 +274,8 @@ async function writeFiles(root: string): Promise<Files> {
   await mkdir(join(transcripts, 'directory.jsonl'));
   const fifo = join(transcripts, 'fifo.jsonl');
   execFileSync('mkfifo', ['-m', '600', fifo]);
+  const linkedTranscript = join(transcripts, 'linked.jsonl');
+  await symlink(transcript('titled'), linkedTranscript);
 
   const codexHome = join(root, 'codex');
   await mkdir(codexHome, {mode: 0o700});
@@ -282,7 +290,11 @@ async function writeFiles(root: string): Promise<Files> {
   const bigCodexHome = join(root, 'codex-big');
   await mkdir(bigCodexHome, {mode: 0o700});
   await writePrivate(join(bigCodexHome, 'session_index.jsonl'), row('codex-early', 'Early thread') + row('codex-filler', 'f'.repeat(1000)).repeat(1100) + row('codex-late', 'Late thread'));
-  return {root, codexHome, emptyCodexHome, bigCodexHome, transcript, fifo};
+  // A Codex home whose session index is a link to the titled one.
+  const linkedCodexHome = join(root, 'codex-linked');
+  await mkdir(linkedCodexHome, {mode: 0o700});
+  await symlink(join(codexHome, 'session_index.jsonl'), join(linkedCodexHome, 'session_index.jsonl'));
+  return {root, codexHome, emptyCodexHome, bigCodexHome, linkedCodexHome, transcript, fifo, linkedTranscript};
 }
 
 /** One producer file per source configuration and version, without a receipt, as the earlier migration API left it. */
@@ -400,9 +412,11 @@ it('the hook\'s module loads its adapter, the SDK and the contracts, and no othe
   const ran = spawnSync(process.execPath, ['--input-type=module', '-e', LIST_LOADED, hookModule], {encoding: 'utf8', timeout: 10_000});
   assert.equal(ran.status, 0, ran.stderr);
   const loaded = (JSON.parse(ran.stdout) as string[]).filter(url => url.startsWith('file:'));
-  const runtime = new URL('../', import.meta.url).href;
-  const hookDir = new URL('../src/hook/', import.meta.url).href;
-  assert.deepEqual(loaded.filter(url => url.startsWith(runtime) && !url.startsWith(hookDir)), [], 'runtime code outside src/hook');
+  // Everything loaded is the hook's own code, one of three workspace packages or a third-party dependency: no other
+  // runtime code, no module, no other app and no other workspace package.
+  const root = new URL('../../../../', import.meta.url).href;
+  const allowed = [new URL('../src/hook/', import.meta.url).href, ...['event-contracts', 'lifecycle-contracts', 'sdk'].map(name => `${root}packages/${name}/`), `${root}node_modules/`];
+  assert.deepEqual(loaded.filter(url => !allowed.some(prefix => url.startsWith(prefix))), [], 'code outside src/hook, the three packages and node_modules');
   assert.ok(loaded.includes(new URL('../src/hook/adapter.js', import.meta.url).href), 'the adapter');
   const packages = [...new Set(loaded.flatMap(url => /\/packages\/([^/]+)\//.exec(url)?.[1] ?? []))].sort();
   assert.deepEqual(packages, ['event-contracts', 'lifecycle-contracts', 'sdk'], 'the workspace packages the hook loads');
