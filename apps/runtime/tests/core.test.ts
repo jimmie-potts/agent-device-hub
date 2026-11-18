@@ -296,7 +296,7 @@ it('the core starts first: a module that syncs and republishes in its own start 
   assert.equal(logs.filter(record => record.attributes['bunny.module'] === 'bridge' && record.event_name === 'runtime.module.failed').length, 0);
 });
 
-it('a stop that comes while the core still starts waits for it, shuts its owner down and lets the next start take the lease', async context => {
+it('a stop that comes while the core still starts waits for it, closes its store and lets the next start take the lease', async context => {
   const dir = await stateDir(context);
   // Another owner holds the lease, so the core's start waits for it.
   const blocker = await World.open(context, {file: join(dir, 'core.sqlite')});
@@ -306,7 +306,6 @@ it('a stop that comes while the core still starts waits for it, shuts its owner 
   const starting = first.start().finally(() => { settled = true; });
   await new Promise(resolve => { setTimeout(resolve, 100); });
   const stopping = first.stop();
-  await blocker.owner?.shutdown();
   blocker.store.close();
   await stopping;
   assert.equal(settled, true, 'the stop waited for the start');
@@ -430,7 +429,7 @@ it('a restart with stored sessions on a full disk keeps the core running: syncs 
   assert.equal(entry((await health(runtime.url)).body, 'core').state, 'running');
 });
 
-it('maintenance that falls due on a full disk leaves the core running, refusing intake, and it opens its owner again on a capped backoff', async context => {
+it('an expiry that falls due on a full disk leaves the core running, refusing intake, and tries the due change again on a capped backoff', async context => {
   // On a real full disk even a change that frees space fails, since its rollback journal needs room; the page limit lets
   // such a change through. This part fails every change that publishes as SQLite does then, with SQLITE_FULL.
   let full = false;
@@ -444,24 +443,24 @@ it('maintenance that falls due on a full disk leaves the core running, refusing 
   await publish(sdk, sessionStarted, START);
   await waitFor(() => received(logs, 'accepted').length === 1, 5000, 'the first session');
   // A day later the first session is due to expire, and the disk is full.
-  clock.advance(86_400_001);
-  await flush();
   full = true;
-  const reopens = (): number => logs.filter(record => record.event_name === 'operation.failed' && record.attributes['bunny.operation'] === 'storage' && record.severity_text === 'DEBUG').length;
+  const attempts = (): number => logs.filter(record => record.event_name === 'operation.failed' && record.attributes['bunny.operation'] === 'status' && record.severity_text === 'DEBUG').length;
+  clock.advance(86_400_001);
+  await waitFor(() => attempts() === 1, 5000, 'the refused expiry');
   await publish(sdk, sessionStarted, clock.now(), {identity: OTHER});
   await waitFor(() => received(logs, 'rejected').length === 1, 5000, 'the refusal');
-  assert.equal(reopens(), 1, 'opening the owner again ran its maintenance, which the full disk refused');
   await publish(sdk, sessionStarted, clock.now(), {identity: OTHER});
   await waitFor(() => received(logs, 'rejected').length === 2, 5000, 'the second refusal');
-  assert.equal(reopens(), 1, 'within the backoff the core does not try again');
+  assert.equal(attempts(), 1, 'within the backoff the core\'s timer does not try the due change again');
   assert.deepEqual(received(logs, 'rejected').map(record => record.attributes['bunny.code']), ['capacity', 'capacity']);
   assert.equal(entry((await health(runtime.url)).body, 'core').state, 'running');
 
   full = false;
   clock.advance(1000);
+  await waitFor(() => logs.some(record => record.event_name === 'operation.completed' && record.attributes['bunny.operation'] === 'storage'), 5000, 'the condition to end');
   await publish(sdk, sessionStarted, clock.now(), {identity: OTHER});
   await waitFor(() => received(logs, 'accepted').length === 2, 5000, 'the observation after room is freed');
-  assert.ok(logs.some(record => record.event_name === 'operation.completed' && record.attributes['bunny.operation'] === 'storage'), 'the condition ended');
+  assert.equal(attempts(), 1, 'the retry after the backoff succeeded');
 });
 
 it('a restart whose start-up maintenance falls on a full disk starts the core anyway, refusing intake until it has room', async context => {

@@ -1,31 +1,25 @@
 import {decideReadReceipt, type ReadReceiptObservation, type ReadReceiptQualification} from '@jimmie-potts/event-contracts/v2/read-receipts';
 import {viewRevision} from '../read-receipts/qualification.js';
-// The core's store (Hub #831): agent-state's storage adapter, with the core's outbox, history and published records in
-// the same SQLite file, so each change and the messages it publishes commit in one transaction (ADR 0012, "Ownership and
-// publication").
+// The core's store (Hub #831, #1865): the core's sessions, retirement guards, outbox, history and published records in
+// the core module's own database, `modules/core.sqlite`, so each change and the messages it publishes commit in one
+// transaction (ADR 0012, "Ownership and publication").
 //
-// Provenance: the lease, `load` and `commit` are copied from the old Hub's adapter, apps/hub/src/storage.ts, at main
-// 9f3d60f, which keeps running on it until #839. They keep its format: the durable 2.1 state as one JSON row in the table
-// `state`, checked by agent-state's `validateExport` on every load and commit, under a compare-and-swap on the revision,
-// and the lease as an exclusive transaction held open on a separate lock database. What differs:
-// - The store lives in the core module's own database, `modules/core.sqlite`, not a directory of its own, and its lock
-//   database sits beside it as `core.sqlite-owner`, with no rollback journal, so taking the lock writes nothing. A second
-//   holder, in another process or this one, is waited for until agent-state's deadline instead of refused at once, so a
-//   runtime that restarts in the same process takes over. The runtime opens the store's file with exclusive locking
-//   (Hub #972), so a second runtime's core is refused when it opens the file, before it reaches the lease.
-// - The lock lasts from the first lease until the core stops, not one lease: an owner opened again after a failed
-//   commit takes a new lease on the store it never let go of.
-// - The Hub's fence and automation tables are the old Hub's own and are not copied.
+// - Sessions: one row per stored session in `core_sessions` and one per retirement guard in `core_session_guards`
+//   (#1865). The session logic in `session/` computes each change; the store commits its whole result, with the
+//   records it publishes, in one transaction, and derives no cause and no occurrence of its own.
+// - Opening: `open` runs in the core's start, before the core serves a sync or republishes. It borrows the runtime's
+//   ownership of the lease on `core.sqlite-owner`, or takes that lease when no ownership was passed, then creates every
+//   core part's tables, runs the one-time session reset when the old agent-state `state` table is still there, and
+//   loads its caches. The lease and SQLite exclusive locking (Hub #972) keep one writer: a second runtime is refused at
+//   the lease, or when it opens the file. The lock lasts until the core stops.
 // - Each commit also derives the 2.0 messages it publishes and writes them, the published records, the history rows and
 //   the (source, id) of the intake it took, in the commit's own transaction, through the SDK's outbox. History (#782)
 //   keeps every message the core publishes, a state as a compact change event, and what a part records.
-// - Each save of the state block is measured, and a costly one is recorded (Hub #976; see `SAVE_COST`).
+// - Each save of session rows is timed, and a slow one is recorded (Hub #976; see `SAVE_COST`).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import {validateExport, type Commit, type DurableState, type Session, type Storage, type StorageLease} from '@jimmie-potts/agent-state';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  coreValidator, type AgentOccurrence, type Attention, type AttentionCleared, type AttentionRaised, type KnownId, type LifecycleObservation,
-  type SessionRecord, type TurnEnded,
+  coreValidator, sessionEntityId, type Identity, type LifecycleObservation, type SessionRecord, type Title,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {
   fullDisk, Outbox, recordLog, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
@@ -35,22 +29,18 @@ import {takeLock, type Lock} from './lock.js';
 import {borrowRuntimeOwnership, type CoreOwnership} from '../runtime-ownership.js';
 import {History, type HistoryEntry, type HistoryRules, type WrittenChange, type OperationStep} from './history.js';
 import {HistoryAlarm, type HistoryDevice} from './history-alarm.js';
-import {
-  REMOVAL_SCHEMA, sessionSchema, attentionAdded, changed, entityOf, project, turnsUncertainAt,
-} from './mapping.js';
+import {REMOVAL_SCHEMA, sessionSchema, changed, project, turnsUncertainAt} from './mapping.js';
+import {DEFAULT_CONSUMERS, SESSION_LIMITS, type Consumer, type RetirementGuard, type StoredSession} from './session/model.js';
+import {deadlineOf, transition, type Occurrence, type SessionInput, type TransitionResult} from './session/transition.js';
 
 export {takeLock, type Lock} from './lock.js';
 
 /**
- * What the core is doing when a change commits: a hook's observation, whose occurrences, `(source, id)` and trace the
- * change it causes takes, or a command, such as an acknowledgment, whose trace the change joins.
+ * What the core is doing when a change commits: a hook's observation, whose `(source, id)` and trace the change takes,
+ * or a command, such as an acknowledgment, whose trace the change joins.
  */
 export type Cause = {
   readonly message: Message<unknown>;
-  /** The journal kind of the change it causes, such as `turn.ended` or `notice.acknowledged`. */
-  readonly kind: string;
-  /** Its session's entity ID. */
-  readonly entity: string;
   /** The hook's observation, when a lifecycle observation causes the change. */
   readonly observation?: LifecycleObservation;
 };
@@ -86,6 +76,9 @@ export interface CoreTransaction {
 /** Rows a part derives from a committed core change, in the change's own transaction. */
 export type Deriver = (change: CoreChange, tx: CoreTransaction) => void;
 
+/** Work a session change's caller completes in that change's own transaction, such as a tracked operator action. */
+export type Completion = (change: CoreChange, tx: CoreTransaction) => void;
+
 export type StoreOptions = {
   /** Internal early-runtime ownership; only the bound core can consume it, once. */
   ownership?: CoreOwnership;
@@ -94,9 +87,13 @@ export type StoreOptions = {
   /** The core's participant: the outbox publishes with `publishMessage`, so a message keeps its stored `id` and `time`. */
   sdk: Pick<Sdk, 'source' | 'publishMessage'>;
   clock: Clock;
+  /** The consumers acknowledgments are recorded for: `DEFAULT_CONSUMERS` by default. */
+  consumers?: readonly Consumer[];
+  /** Whether current archive evidence covers a Codex Desktop identity or one of its ancestors (Hub #990). */
+  archived?: (identity: Identity, ancestors: readonly Identity[]) => boolean;
   /**
    * The core's logger and tracing, which its outbox records with (Hub #949): a refused publish, committed and awaiting
-   * publication, as `outbox.deferred`, once per run of refusals. The store records a costly save with it (Hub #976).
+   * publication, as `outbox.deferred`, once per run of refusals. The store records a slow save and the reset with it.
    */
   log?: Logger;
   trace?: SpanRecorder;
@@ -111,7 +108,7 @@ export type StoreOptions = {
   beforePublish?: () => void;
   /** New commits only; returned cleanup runs when their original publication batch ends. Never called by republication or sync. */
   committed?: (change: CoreChange) => void | (() => void);
-  /** When a save is costly: `SAVE_COST` by default. */
+  /** When a save is slow: `SAVE_COST` by default. */
   saveCost?: SaveCost;
   /** Monotonic milliseconds that saves are timed with: `performance.now` by default. */
   timer?: () => number;
@@ -121,83 +118,65 @@ export type StoreOptions = {
   historyDevices?: readonly HistoryDevice[];
 };
 
-/** When a save of the state block is costly: past `stateBytes` of state, or past `saveMs` of work. */
-export type SaveCost = {readonly stateBytes: number; readonly saveMs: number};
+/** When a save of session rows is slow: past `saveMs` of work. */
+export type SaveCost = {readonly saveMs: number};
 
 /** Why the last commit failed: the disk was full, or something else. */
 export type StoreFailure = 'full' | 'failed';
 
-/** The core's revision of a family's records, the same counter for every family it serves. */
+/** What a session change did: taken with its outcome at the core's revision, or refused, changing nothing. */
+export type SessionOutcome = {ok: true; revision: number; outcome: 'applied' | 'duplicate' | 'stale' | 'ambiguous'} |
+  {ok: false; code: NonNullable<TransitionResult['refusal']> | 'invalid-request' | 'storage-failed'};
+
+/** What one commit writes and publishes, and what it installs in memory once it has committed. */
 type Plan = {
-  durable: DurableState | undefined;
+  /** The revision the commit publishes at, or undefined when it publishes nothing. */
   revision: number | undefined;
   records: SessionRecord[];
   removed: string[];
-  restarted: Set<string>;
-  hostSessions: Map<string, string>;
   messages: {key: string; draft: Draft<object>}[];
   cause: Cause | undefined;
+  /** Writes the plan's session and guard rows, in the transaction. */
+  write?: (statements: Statements) => void;
+  /** Installs the plan's sessions after the commit, before publication. */
+  install?: () => void;
+  completing?: Completion | undefined;
 };
 
-const ID = /^[A-Za-z0-9_.-]{1,128}$/;
-const MAX_STATE_BYTES = 16 * 1024 * 1024;
 /**
- * A save is costly (Hub #976) once the state block passes half of `MAX_STATE_BYTES`, which refuses it whole, or once
- * one save takes longer than 100 ms of the event loop, which every module and the gateway share. A save is agent-state's
- * commit through the lease: it applies the change to the whole last committed state, which clones, validates and
- * serializes it, plans the messages, and commits the one transaction, the parts' rows, history and outbox included.
- * Publication follows the commit and is not part of it.
+ * A save is slow (Hub #976) once it takes longer than 100 ms of the event loop, which every module and the gateway share.
+ * A save is one session change's commit: it serializes the changed session rows, plans the messages, and commits the one
+ * transaction, the parts' rows, history and outbox included. Publication follows the commit and is not part of it. With
+ * one row per session and at most 128 sessions, no save can approach the size the old state block was bounded by, so
+ * the size condition retired with that block (#1865).
  */
-export const SAVE_COST: SaveCost = Object.freeze({stateBytes: MAX_STATE_BYTES / 2, saveMs: 100});
+export const SAVE_COST: SaveCost = Object.freeze({saveMs: 100});
 /** A record's durations are bounded to one day, as the diagnostic contract bounds them. */
 const MAX_DURATION_MS = 86_400_000;
-const JOURNAL_ROWS = 10_000;
-const LEASE_POLL_MS = 20;
-const wait = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms); });
-const sameTurn = (a: KnownId, b: KnownId): boolean => a.status === 'known' && b.status === 'known' && a.id === b.id;
+/** How long the core's start waits for the lease that another holder, in this process or another, has. */
+export const LEASE_WAIT_MS = 3000;
 const occurrenceKey = (family: string, entity: string): string => `bunny.event.${family}.${entity}`;
 const sessionKey = (entity: string): string => `bunny.state.session.${entity}`;
-const identityKey = (session: Pick<Session, 'identity'>): string => {
-  const {provider, client, hostId, sourceId, sessionId} = session.identity;
-  return JSON.stringify([provider, client, hostId, sourceId, sessionId]);
-};
+/** The routing-key prefixes of the session family's messages, whose pending copies the one-time reset deletes. */
+const SESSION_ROUTING = ['bunny.state.session.', 'bunny.event.attention-raised.', 'bunny.event.attention-cleared.', 'bunny.event.turn-ended.', 'bunny.event.session-ended.'];
 
-/** The durable state after `change`, applied to the last committed state as the Hub's adapter applies it. */
-function apply(prior: DurableState | undefined, change: Commit, ownerId: string): DurableState {
-  if ((prior?.revision ?? null) !== change.expectedRevision) throw new Error('revision-conflict');
-  let next: DurableState;
-  if (change.replace !== undefined) next = structuredClone(change.replace);
-  else {
-    if (prior === undefined) throw new Error('missing-state');
-    next = structuredClone(prior);
-    const {session, journal} = change;
-    if (session !== undefined) {
-      const index = next.sessions.findIndex(item => identityKey(item) === identityKey(session));
-      if (index < 0) next.sessions.push(structuredClone(session));
-      else next.sessions[index] = structuredClone(session);
-    }
-    if (journal !== undefined) next.journal.push(structuredClone(journal));
-    next.revision = change.revision;
-    next.lastCommitAtMs = change.atMs;
-  }
-  next.journal = next.journal.filter(row => row.atMs > change.pruneBeforeMs).slice(-JOURNAL_ROWS);
-  const checked = validateExport(next);
-  if (!checked.ok || next.ownerId !== ownerId || next.revision !== change.revision) throw new Error('invalid-state');
-  return next;
-}
-
-export class CoreStore implements Storage {
+export class CoreStore {
   readonly #db: DatabaseSync;
   readonly #options: StoreOptions;
   readonly #validator = coreValidator();
-  #opened: {outbox: Outbox; statements: Statements; history: History} | undefined;
-  #leased = false;
-  /** The store's lock, held from the first lease until `close`. */
+  readonly #consumers: readonly Consumer[];
+  /**
+   * The store's tables, outbox, statements and history once open has created them. Nothing uses them until `#opened`
+   * is set, which happens only after the reset and the cache load have succeeded too.
+   */
+  #tables: Opened | undefined;
+  #opened: Opened | undefined;
+  /** The store's lock, held from its open until `close`. */
   #lock: Lock | undefined;
-  /** The owner's current lease, if any. */
-  #lease: {released: boolean} | undefined;
-  /** The last committed agent-state, as the lease loaded and committed it. */
-  #durable: DurableState | undefined;
+  /** The stored sessions, by entity ID, in the order they were first stored. */
+  #sessions = new Map<string, StoredSession>();
+  /** The retirement guards, oldest first. */
+  #guards: RetirementGuard[] = [];
   /** The published session records, by entity ID. */
   #records = new Map<string, SessionRecord>();
   #revision = 0;
@@ -205,11 +184,8 @@ export class CoreStore implements Storage {
   #commits = 0;
   /** Sessions loaded at the core's start that have had no fresh lifecycle evidence since: restart uncertainty. */
   #restarted = new Set<string>();
-  #loaded = false;
-  /** Each root session's latest host session ID, kept with its record. */
-  #hostSessions = new Map<string, string>();
-  #cause: Cause | undefined;
-  #completing: ((change: CoreChange, tx: CoreTransaction) => void) | undefined;
+  /** The latest instant a session change took: a change's instant never goes back before it. */
+  #floorMs = 0;
   /** The instant every message of the transaction under way is stamped with. */
   #frozen: number | undefined;
   #failure: StoreFailure | undefined;
@@ -217,13 +193,13 @@ export class CoreStore implements Storage {
   readonly #sending = new Set<Promise<unknown>>();
   readonly #timer: () => number;
   readonly #historyAlarm: HistoryAlarm | undefined;
-  /** Whether the last save's state block was past its limit, and whether the save took too long: each is recorded once a run. */
-  #large = false;
+  /** Whether the last save took too long: recorded once a run. */
   #slow = false;
 
   constructor(options: StoreOptions) {
     this.#db = options.database;
     this.#options = options;
+    this.#consumers = options.consumers ?? DEFAULT_CONSUMERS;
     this.#timer = options.timer ?? (() => performance.now());
     this.#historyAlarm = options.log === undefined ? undefined : new HistoryAlarm(options.log, options.historyDevices ?? []);
   }
@@ -238,8 +214,16 @@ export class CoreStore implements Storage {
     return [...this.#records.values()];
   }
 
-  /** Whether the store is open, so parts may use it: not before it opens, and not once its database closed, as a crash closes it. */
-  get open(): boolean {
+  /** The stored sessions, private bookkeeping included, as copies. */
+  sessions(): StoredSession[] {
+    return structuredClone([...this.#sessions.values()]);
+  }
+
+  /**
+   * Whether the store is open, so parts may use it: not before its open has fully succeeded, and not once its database
+   * closed, as a crash closes it.
+   */
+  get isOpen(): boolean {
     return this.#opened !== undefined && this.#db.isOpen;
   }
 
@@ -262,36 +246,99 @@ export class CoreStore implements Storage {
     return failure;
   }
 
-  /** Runs `work` in the cause's trace; optional completion joins only its matching owner save transaction. */
-  async during<T>(cause: Cause, work: () => Promise<T>, completing?: (change: CoreChange, tx: CoreTransaction) => void): Promise<T> {
-    this.#cause = cause;
-    this.#completing = completing;
+  /**
+   * Opens the store, once: borrows the runtime's ownership of the lease, or takes the lease, waiting for another holder
+   * until `signal` aborts; then creates every core part's tables, runs the one-time session reset when it applies, and
+   * loads the revision, commit count, sessions, guards and records. Every stored session starts restart-uncertain. A
+   * store that cannot open, as on a full disk at a first start or at the reset, rejects with its failure named and can
+   * be opened again. Until an open succeeds whole, the store exposes nothing: its intake, transactions, history and
+   * republication refuse with `unavailable`, so nothing it holds goes out and nothing commits before the reset.
+   */
+  async open(signal: AbortSignal = AbortSignal.timeout(LEASE_WAIT_MS)): Promise<void> {
+    if (this.#opened !== undefined) return;
+    this.#failure = undefined;
     try {
-      return await work();
-    } finally {
-      this.#cause = undefined;
-      this.#completing = undefined;
+      this.#lock ??= this.#options.ownership === undefined
+        ? await takeLock(this.#db.location(), signal) : borrowRuntimeOwnership(this.#options.ownership, this.#db.location());
+      const tables = this.#tables ??= this.#openTables();
+      this.#reset();
+      this.#loadCaches(tables.statements);
+      this.#opened = tables;
+    } catch (error) {
+      // A store that cannot create its tables or run its reset on a full disk, as at a first start, is full, not broken (Hub #972).
+      if (fullDisk(error)) this.#failure = 'full';
+      throw new Error('storage-unavailable', {cause: error});
     }
   }
 
-  /** The next instant a current record turns uncertain, or undefined when none will. */
-  nextTurn(): number | undefined {
+  /** The next instant a current record turns uncertain, a session expires or a guard lapses, or undefined when none will. */
+  nextDue(): number | undefined {
     const instants = [...this.#records.values()].flatMap(record => turnsUncertainAt(record) ?? []);
+    const deadline = deadlineOf(this.#sessions.values(), this.#guards);
+    if (deadline !== undefined) instants.push(deadline);
     return instants.length === 0 ? undefined : Math.min(...instants);
   }
 
   /**
-   * Publishes each record whose freshness or children changed by now, at a new revision, in one core transaction. Owners
-   * compute freshness at each message's envelope time and raise the revision first when it changed (MAPPING.md). True
-   * when it published.
+   * Commits what has fallen due by now, each in its own core transaction: the sessions a day without lifecycle evidence
+   * expire with the guards a day old, then each record whose freshness or children changed is published at a new
+   * revision. Owners compute freshness at each message's envelope time and raise the revision first when it changed
+   * (MAPPING.md). True when it published. Rejects, changing nothing more, when the store refuses a commit.
    */
   async refresh(): Promise<boolean> {
-    if (this.#durable === undefined) return false;
+    if (this.#opened === undefined) return false;
+    const expired = await this.#expire();
+    if (expired === 'failed') throw new Error('the core store refused the expiry');
     const atMs = this.#options.clock.now();
-    const plan = this.#plan(undefined, atMs);
-    if (plan.revision === undefined) return false;
+    const plan = this.#plan(undefined, atMs, undefined);
+    if (plan.revision === undefined) return expired === 'published';
     await this.#commit(plan, atMs, () => {});
     return true;
+  }
+
+  /** Expires what is due, in its own transaction, as the core does before every observation. */
+  async #expire(): Promise<'published' | 'nothing' | 'failed'> {
+    const due = deadlineOf(this.#sessions.values(), this.#guards);
+    if (due === undefined || due > this.#nowMs()) return 'nothing';
+    const before = this.#revision;
+    const outcome = await this.#change({kind: 'expiry'}, undefined);
+    if (!outcome.ok) return 'failed';
+    return this.#revision > before ? 'published' : 'nothing';
+  }
+
+  /** Takes one lifecycle observation through the session logic, after expiring what is due. */
+  async observe(message: Message<LifecycleObservation>): Promise<SessionOutcome> {
+    const observation = message.data;
+    if (Buffer.byteLength(JSON.stringify(observation)) > SESSION_LIMITS.observationBytes) return {ok: false, code: 'invalid-request'};
+    // Expire before admission, so a freed slot or a fresh record replaces the expired one.
+    if (await this.#expire() === 'failed') return {ok: false, code: 'storage-failed'};
+    return this.#change({kind: 'observation', observation}, {message, observation});
+  }
+
+  /** Provider title evidence from the Codex Desktop module: display metadata only. */
+  title(message: Message<LifecycleObservation>, title: Title): Promise<SessionOutcome> {
+    const observation = message.data;
+    return this.#change({kind: 'title', id: sessionEntityId(observation.identity), title, observedAtMs: observation.observedAtMs}, {message, observation});
+  }
+
+  /** Sets or clears a session's user label, completing `completing` in the same transaction. */
+  label(command: Message<unknown>, id: string, label: string | null, completing?: Completion): Promise<SessionOutcome> {
+    return this.#change({kind: 'label', id, label}, {message: command}, completing);
+  }
+
+  /** Records one consumer's acknowledgment of a notice. */
+  acknowledge(command: Message<unknown>, id: string, noticeId: string, consumerId: string): Promise<SessionOutcome> {
+    return this.#change({kind: 'acknowledge', id, noticeId, consumerId}, {message: command});
+  }
+
+  /** Acknowledges the session's latest notice for every configured consumer, completing `completing` in the same transaction. */
+  acknowledgeAll(command: Message<unknown>, id: string, noticeId: string, completing?: Completion): Promise<SessionOutcome> {
+    return this.#change({kind: 'acknowledge-all', id, noticeId}, {message: command}, completing);
+  }
+
+  /** Retires the one approval marker without an attention ID on `turnId`, while the session's evidence is uncertain. */
+  recoverApproval(command: Message<unknown>, id: string, turnId: string): Promise<SessionOutcome> {
+    return this.#change({kind: 'recover-approval', id, turnId}, {message: command});
   }
 
   /** The core calls this on its serialized intake. No await separates target checking from the SQLite commit. */
@@ -308,27 +355,130 @@ export class CoreStore implements Storage {
         previous.receipt.kind === 'provider-client' && previous.receipt.seenRevision === receipt.seenRevision &&
         previous.receipt.acceptedRevision === receipt.acceptedRevision) return false;
     }
-    const record: SessionRecord = {...before, revision: this.#revision + 1, read: 'read',
-      readReceipt: {noticeId: observation.event.noticeId, observedAtMs: observation.observedAtMs, source: message.source,
-        receipt: structuredClone(observation.event.receipt)}};
-    const plan: Plan = {durable: undefined, revision: record.revision, records: [record], removed: [],
-      restarted: this.#restarted, hostSessions: this.#hostSessions,
-      messages: [{key: sessionKey(record.id), draft: stateDraft(record)}],
-      cause: {message, kind: 'read-receipt-observed', entity: record.id}};
-    await this.#commit(plan, atMs, tx => {
-      if (this.#records.get(record.id)?.revision !== before.revision) throw new Error('read-target-changed');
+    const provenance = {noticeId: observation.event.noticeId, observedAtMs: observation.observedAtMs, source: message.source, receipt: structuredClone(receipt)};
+    const outcome = await this.#change({kind: 'read-receipt', id: before.id, receipt: provenance}, {message}, undefined, tx => {
+      if (this.#records.get(before.id)?.revision !== before.revision) throw new Error('read-target-changed');
       tx.take(message, TAKEN_LIFECYCLE_MS);
     });
+    if (!outcome.ok) throw new Error('the core store did not commit the read receipt');
     return true;
+  }
+
+  /** A session change's instant: the clock, never before an earlier change's. */
+  #nowMs(): number {
+    return Math.max(this.#options.clock.now(), this.#floorMs);
+  }
+
+  /**
+   * Runs one input through the session logic and commits its result in one transaction: the session and guard rows, the
+   * records and messages it publishes, its history and the intake it took. A refusal or an input that changes nothing
+   * commits nothing. A commit that fails changes nothing, here or in memory, and is reported as `storage-failed`.
+   */
+  async #change(input: SessionInput, cause: Cause | undefined, completing?: Completion, extra: (tx: CoreTransaction) => void = () => {}): Promise<SessionOutcome> {
+    const began = this.#timer();
+    const atMs = this.#options.clock.now();
+    const nowMs = Math.max(atMs, this.#floorMs);
+    const result = transition({sessions: this.#sessions, guards: this.#guards, revision: this.#revision, restarted: this.#restarted}, input, {
+      nowMs, wallMs: atMs, consumers: this.#consumers, ...(this.#options.archived === undefined ? {} : {archived: this.#options.archived}),
+    });
+    if (result.outcome === 'refused') return {ok: false, code: result.refusal ?? 'capacity'};
+    if (result.changed.length === 0 && result.removed.length === 0 && result.guards === undefined) {
+      return {ok: true, revision: this.#revision, outcome: result.outcome};
+    }
+    const plan = this.#plan(result, atMs, cause, completing);
+    const install = plan.install;
+    plan.install = () => {
+      install?.();
+      this.#floorMs = Math.max(this.#floorMs, nowMs);
+    };
+    try {
+      const committedAt = await this.#commit(plan, atMs, extra);
+      this.#saved(committedAt - began);
+    } catch {
+      return {ok: false, code: 'storage-failed'};
+    }
+    return {ok: true, revision: this.#revision, outcome: result.outcome === 'ambiguous' ? 'ambiguous' : 'applied'};
+  }
+
+  /**
+   * What a session change, or a freshness refresh when `result` is undefined, writes and publishes at `atMs`: the
+   * `session-ended` occurrences, then the removals, then every record whose public content changed, then the attention and
+   * turn occurrences, all at one new revision, which is raised only for a change that publishes something.
+   */
+  #plan(result: TransitionResult | undefined, atMs: number, cause: Cause | undefined, completing?: Completion): Plan {
+    const sessions = new Map(this.#sessions);
+    const restarted = new Set(this.#restarted);
+    const reasons = new Map<string, 'expired' | 'retired'>();
+    for (const {id, reason} of result?.removed ?? []) {
+      sessions.delete(id);
+      restarted.delete(id);
+      reasons.set(id, reason);
+    }
+    for (const session of result?.changed ?? []) sessions.set(session.id, session);
+    for (const id of result?.fresh ?? []) restarted.delete(id);
+    const projected = project(sessions.values(), restarted, atMs);
+    const updated = [...projected.values()].filter(record => changed(this.#records.get(record.id), record));
+    const removed = [...this.#records.keys()].filter(id => !projected.has(id));
+    const revision = this.#revision + 1;
+    const draft = ({family, data}: Occurrence): Draft<object> & {subject: string} => occurrence(family, {...data, revision});
+    const ended = (result?.ended ?? []).map(draft);
+    const occurrences = (result?.occurrences ?? []).map(draft);
+    const removals = removed.map(id => ({
+      key: sessionKey(id),
+      draft: {kind: 'removal', type: 'org.bunny.session.removed', subject: id, dataschema: REMOVAL_SCHEMA,
+        data: {entity: {family: 'session', id}, revision, reason: reasons.get(id) ?? 'expired'}} satisfies Draft<object>,
+    }));
+    const publishes = updated.length + removed.length + ended.length + occurrences.length > 0;
+    // The revision follows the ID, as the session family lists it.
+    const records = updated.map(({id, ...rest}): SessionRecord => ({id, revision, ...rest}));
+    const written = result?.changed ?? [], guards = result?.guards;
+    return {
+      revision: publishes ? revision : undefined, records, removed, cause, completing,
+      messages: [
+        ...ended.map(item => ({key: occurrenceKey(familyOf(item), item.subject), draft: item})),
+        ...removals,
+        ...records.map(record => ({key: sessionKey(record.id), draft: stateDraft(record)})),
+        ...occurrences.map(item => ({key: occurrenceKey(familyOf(item), item.subject), draft: item})),
+      ],
+      ...(result === undefined ? {} : {
+        write: (statements: Statements): void => {
+          const at = publishes ? revision : this.#revision;
+          for (const session of written) statements.writeSession.run(session.id, at, session.generation, JSON.stringify(session));
+          for (const id of reasons.keys()) statements.deleteSession.run(id);
+          if (guards !== undefined) {
+            statements.clearGuards.run();
+            for (const guard of guards) statements.writeGuard.run(guard.id, guard.atMs, JSON.stringify(guard));
+          }
+        },
+        install: (): void => {
+          this.#sessions = sessions;
+          if (guards !== undefined) this.#guards = [...guards];
+          this.#restarted = restarted;
+        },
+      }),
+    };
+  }
+
+  /** What a committed save cost (Hub #976): a WARN once one save takes too long, once per run, and an INFO once one is quick again. */
+  #saved(ms: number): void {
+    const limits = this.#options.saveCost ?? SAVE_COST;
+    const holds = ms > limits.saveMs;
+    if (holds === this.#slow) return;
+    this.#slow = holds;
+    // Whole milliseconds rounded up, so a recorded time is past the limit exactly when the save was.
+    const fields: LogFields = {'bunny.operation': 'storage', 'bunny.save.duration_ms': Math.min(MAX_DURATION_MS, Math.ceil(Math.max(0, ms)))};
+    try {
+      if (this.#options.log !== undefined) recordLog(this.#options.log, holds ? 'storage.cost.high' : 'storage.cost.normal', fields);
+    } catch {
+      // Telemetry never changes a save that committed.
+    }
   }
 
   /** Runs a part's `work` in one core transaction; its messages go out after the commit. */
   async transaction<R>(work: (tx: CoreTransaction) => R): Promise<R> {
     const atMs = this.#options.clock.now();
     let result: R | undefined;
-    const plan: Plan = {
-      durable: undefined, revision: undefined, records: [], removed: [], restarted: this.#restarted, hostSessions: this.#hostSessions, messages: [], cause: undefined,
-    };
+    const plan: Plan = {revision: undefined, records: [], removed: [], messages: [], cause: undefined};
     await this.#commit(plan, atMs, tx => { result = work(tx); });
     return result as R;
   }
@@ -347,103 +497,21 @@ export class CoreStore implements Storage {
     while (this.#sending.size > 0) await Promise.allSettled([...this.#sending]);
   }
 
-  /**
-   * Gives agent-state's owner a lease on the store. The store takes its lock on the first one and keeps it until
-   * `close`, so the core can open its owner again after a failed commit without letting go of the store, and without
-   * writing anything: another runtime waiting for the lock never gets it while this core runs. Every lease reloads the
-   * store's revision, commit count and records from the file, and the store's tables are written only once the file is
-   * known to be this owner's or empty.
-   */
-  async acquire(ownerId: string, signal: AbortSignal): Promise<StorageLease> {
-    if (!ID.test(ownerId)) throw new Error('storage-unavailable');
-    // One lease at a time: an attempt still under way, or a lease not yet released, is waited for.
-    while (this.#leased) {
-      signal.throwIfAborted();
-      await wait(LEASE_POLL_MS);
-    }
-    signal.throwIfAborted();
-    this.#leased = true;
-    this.#failure = undefined;
-    try {
-      this.#lock ??= this.#options.ownership === undefined
-        ? await takeLock(this.#db.location(), signal) : borrowRuntimeOwnership(this.#options.ownership, this.#db.location());
-      this.#checkOwner(ownerId);
-      this.#openTables();
-      this.#loadCaches();
-    } catch (error) {
-      this.#leased = false;
-      // A store that cannot create its tables on a full disk, as at a first start, is full, not broken (Hub #972).
-      if (fullDisk(error)) this.#failure = 'full';
-      throw new Error('storage-unavailable', {cause: error});
-    }
-    const lease = {released: false};
-    this.#lease = lease;
-    const check = (abort?: AbortSignal): void => {
-      abort?.throwIfAborted();
-      if (lease.released) throw new Error('store-released');
-    };
-    return {
-      load: abort => {
-        check(abort);
-        return Promise.resolve(this.#load(ownerId));
-      },
-      commit: async (change, abort) => {
-        check(abort);
-        await this.#commitChange(change, ownerId);
-      },
-      release: () => {
-        this.#endLease(lease);
-        return Promise.resolve();
-      },
-    };
-  }
-
-  /**
-   * Ends the owner's lease without letting go of the store, as after a faulted owner whose own release did not finish,
-   * so a new owner can take the next lease.
-   */
-  abandonLease(): void {
-    if (this.#lease !== undefined) this.#endLease(this.#lease);
-  }
-
   /** Ends storage use; an early runtime owner's borrowed lock remains held until process exit. */
   close(): void {
-    this.abandonLease();
     this.#lock?.release();
     this.#lock = undefined;
   }
 
-  #endLease(lease: {released: boolean}): void {
-    if (lease.released) return;
-    lease.released = true;
-    if (this.#lease === lease) this.#lease = undefined;
-    this.#leased = false;
-  }
-
-  /** Refuses a file that holds another owner's state before anything is written to it. */
-  #checkOwner(ownerId: string): void {
-    const table = this.#db.prepare('SELECT 1 FROM sqlite_master WHERE type = \'table\' AND name = \'state\'').get();
-    if (table === undefined) return;
-    const row = this.#db.prepare('SELECT payload FROM state WHERE id = 1').get() as {payload: unknown} | undefined;
-    if (row === undefined) return;
-    let stored: unknown;
-    try {
-      stored = typeof row.payload === 'string' ? JSON.parse(row.payload) : undefined;
-    } catch {
-      stored = undefined;
-    }
-    const owner = typeof stored === 'object' && stored !== null && 'ownerId' in stored ? stored.ownerId : undefined;
-    if (owner !== ownerId) throw new Error('invalid-store');
-  }
-
-  #openTables(): void {
-    if (this.#opened !== undefined) return;
+  /** Creates the store's and every core part's tables, its outbox and history, once. */
+  #openTables(): Opened {
     const db = this.#db;
     db.exec(`PRAGMA busy_timeout = 0;
-      CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS core_revision (only INTEGER PRIMARY KEY CHECK (only = 1), value INTEGER NOT NULL, commits INTEGER NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS core_records (family TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, record TEXT NOT NULL,
         PRIMARY KEY (family, id)) STRICT;
+      CREATE TABLE IF NOT EXISTS core_sessions (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, generation INTEGER NOT NULL, session TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS core_session_guards (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, at_ms INTEGER NOT NULL, guard TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS core_taken (source TEXT NOT NULL, id TEXT NOT NULL, message TEXT NOT NULL, expires_at_ms INTEGER,
         PRIMARY KEY (source, id)) STRICT;
       CREATE INDEX IF NOT EXISTS core_taken_expiry ON core_taken (expires_at_ms) WHERE expires_at_ms IS NOT NULL`);
@@ -459,22 +527,66 @@ export class CoreStore implements Storage {
       // Every message of one transaction carries the instant its freshness was computed at.
       clock: {now: () => this.#frozen ?? this.#options.clock.now()},
     });
-    this.#opened = {outbox, statements, history};
+    return {outbox, statements, history};
   }
 
-  /** The revision, commit count and published records as the file holds them. */
-  #loadCaches(): void {
-    const statements = this.#statements();
+  /**
+   * The one-time session reset (#1865, design decision 12): the first open that finds agent-state's old `state` table
+   * drops it, empties the core's session and guard tables, and deletes the session family's published records, its
+   * latest-history and span rows and the pending outbox messages of session states, removals and agent occurrences, in
+   * one transaction. It raises the core's revision by one and publishes nothing, so the next sync serves the empty session
+   * family at a revision no earlier payload carried. The old data's presence is its only key: once the table is gone, a
+   * later open finds nothing to drop. Every other table and row stays, history fact rows and taken `(source, id)`s too.
+   */
+  #reset(): void {
+    const db = this.#db;
+    if (db.prepare('SELECT 1 FROM sqlite_master WHERE type = \'table\' AND name = \'state\'').get() === undefined) return;
+    const routing = SESSION_ROUTING.map(prefix => `routing_key GLOB '${prefix}*'`).join(' OR ');
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec(`DROP TABLE state;
+        DELETE FROM core_sessions;
+        DELETE FROM core_session_guards;
+        DELETE FROM core_records WHERE family = 'session';
+        DELETE FROM core_history_latest WHERE family = 'session';
+        DELETE FROM core_history_span WHERE family = 'session';
+        DELETE FROM bunny_outbox WHERE ${routing};
+        INSERT INTO core_revision VALUES (1, 1, 1) ON CONFLICT (only) DO UPDATE SET value = value + 1, commits = commits + 1`);
+      db.exec('COMMIT');
+    } catch (error) {
+      if (db.isTransaction) db.exec('ROLLBACK');
+      throw error;
+    }
+    try {
+      if (this.#options.log !== undefined) recordLog(this.#options.log, 'operation.completed', {'bunny.operation': 'storage'});
+    } catch {
+      // Telemetry never changes a reset that committed.
+    }
+  }
+
+  /** The revision, commit count, sessions, guards and published records as the file holds them. */
+  #loadCaches(statements: Statements): void {
     const stored = statements.revision.get() as {value: number; commits: number} | undefined;
-    this.#revision = stored?.value ?? 0;
-    this.#commits = stored?.commits ?? 0;
-    this.#records = new Map();
-    this.#hostSessions = new Map();
+    const revision = stored?.value ?? 0, commits = stored?.commits ?? 0;
+    const records = new Map<string, SessionRecord>();
     for (const row of statements.records.all() as {record: string}[]) {
       const record = JSON.parse(row.record) as SessionRecord;
-      this.#records.set(record.id, record);
-      if (record.hostSessionId !== undefined) this.#hostSessions.set(record.id, record.hostSessionId);
+      records.set(record.id, record);
     }
+    const sessions = new Map<string, StoredSession>();
+    for (const row of statements.sessions.all() as {session: string}[]) {
+      const session = JSON.parse(row.session) as StoredSession;
+      sessions.set(session.id, session);
+    }
+    const guards = (statements.guards.all() as {guard: string}[]).map(row => JSON.parse(row.guard) as RetirementGuard);
+    this.#revision = revision;
+    this.#commits = commits;
+    this.#records = records;
+    this.#sessions = sessions;
+    this.#guards = guards;
+    // The open is the core's start: every stored session is uncertain until fresh evidence.
+    this.#restarted = new Set(sessions.keys());
+    this.#floorMs = Math.max(0, ...[...sessions.values()].map(session => session.lastEvidenceAtMs), ...guards.map(guard => guard.atMs));
   }
 
   #statements(): Statements {
@@ -485,67 +597,6 @@ export class CoreStore implements Storage {
   #outbox(): Outbox {
     if (this.#opened === undefined) throw new SdkError(errorBody('unavailable', {detail: 'the core store is not open'}));
     return this.#opened.outbox;
-  }
-
-  #load(ownerId: string): DurableState | null {
-    const row = this.#statements().state.get() as {payload: unknown} | undefined;
-    let loaded: DurableState | undefined;
-    if (row !== undefined) {
-      if (typeof row.payload !== 'string' || Buffer.byteLength(row.payload) > MAX_STATE_BYTES) throw new Error('invalid-state');
-      const checked = validateExport(JSON.parse(row.payload));
-      if (!checked.ok || checked.value.ownerId !== ownerId) throw new Error('invalid-state');
-      loaded = structuredClone(checked.value);
-    }
-    this.#durable = loaded;
-    // The first load is the core's start: every stored session is uncertain until fresh evidence, as agent-state's
-    // snapshots say after a restart. Reopening the owner later, after a failed commit, is no restart.
-    if (!this.#loaded) {
-      this.#loaded = true;
-      this.#restarted = new Set((loaded?.sessions ?? []).map(entityOf));
-    }
-    return loaded === undefined ? null : structuredClone(loaded);
-  }
-
-  /** One save: agent-state's commit through the lease, measured from applying the change to its commit (`SAVE_COST`). */
-  async #commitChange(change: Commit, ownerId: string): Promise<void> {
-    const began = this.#timer();
-    const next = apply(this.#durable, change, ownerId);
-    const payload = JSON.stringify(next);
-    const bytes = Buffer.byteLength(payload);
-    if (bytes > MAX_STATE_BYTES) throw new Error('state-capacity');
-    const atMs = this.#options.clock.now();
-    const plan = this.#plan({change, next}, atMs);
-    const statements = this.#statements();
-    const committedAt = await this.#commit(plan, atMs, () => {
-      const stored = statements.stateRevision.get() as {revision: number} | undefined;
-      if ((stored?.revision ?? null) !== change.expectedRevision) throw new Error('revision-conflict');
-      statements.writeState.run(next.revision, payload);
-    });
-    this.#saved(bytes, committedAt - began);
-  }
-
-  /**
-   * What a committed save cost (Hub #976): a WARN once the state block passes its limit, or one save its time, once per
-   * run of the condition, and an INFO once a save is back within it. Each record carries the size in bytes or the time,
-   * never the state's content. A logger that throws loses its record, and the save stands.
-   */
-  #saved(bytes: number, ms: number): void {
-    const limits = this.#options.saveCost ?? SAVE_COST;
-    this.#large = this.#cost(this.#large, bytes > limits.stateBytes, {'bunny.state.bytes': bytes});
-    // Whole milliseconds rounded up, so a recorded time is past the limit exactly when the save was.
-    this.#slow = this.#cost(this.#slow, ms > limits.saveMs, {'bunny.save.duration_ms': Math.min(MAX_DURATION_MS, Math.ceil(Math.max(0, ms)))});
-  }
-
-  /** Records one condition's change, a WARN as it starts and an INFO as it ends, and returns whether it holds now. */
-  #cost(held: boolean, holds: boolean, fields: LogFields): boolean {
-    if (holds === held) return holds;
-    const log = this.#options.log;
-    try {
-      if (log !== undefined) recordLog(log, holds ? 'storage.cost.high' : 'storage.cost.normal', {'bunny.operation': 'storage', ...fields});
-    } catch {
-      // Telemetry never changes a save that committed.
-    }
-    return holds;
   }
 
   /**
@@ -601,16 +652,17 @@ export class CoreStore implements Storage {
           if (!checked.ok) throw new SdkError({error: checked.error});
           added.push(message);
         }
+        plan.write?.(statements);
         for (const record of plan.records) statements.writeRecord.run('session', record.id, record.revision, JSON.stringify(record));
         for (const id of plan.removed) statements.deleteRecord.run('session', id);
         const observation = plan.cause?.observation;
         if (plan.cause !== undefined && observation !== undefined) {
           statements.prune.run(atMs);
-          // Kept as long as agent-state still admits the observation, which it judges by the hook's own instant.
+          // Kept as long as the session logic still admits the observation, which it judges by the hook's own instant.
           tx.take(plan.cause.message, Math.max(0, observation.observedAtMs - atMs) + TAKEN_LIFECYCLE_MS);
         }
-        // Only the matched operator save completes its action; tracked projections must be staged before derivation.
-        if (plan.cause !== undefined && plan.cause === this.#cause) this.#completing?.({revision: revision ?? this.#revision, messages: added}, tx);
+        // Only the operator's own save completes its action; tracked projections must be staged before derivation.
+        plan.completing?.({revision: revision ?? this.#revision, messages: added}, tx);
         if (added.length > 0 || revision !== undefined) {
           const change: CoreChange = {revision: tx.revision(), messages: added};
           for (const derive of this.#options.derivers ?? []) derive(change, tx);
@@ -656,12 +708,10 @@ export class CoreStore implements Storage {
       throw new Error('the core store did not commit');
     }
     this.#commits = commits;
-    if (plan.durable !== undefined) this.#durable = plan.durable;
     if (revision !== undefined) this.#revision = revision;
     for (const record of plan.records) this.#records.set(record.id, record);
     for (const id of plan.removed) this.#records.delete(id);
-    this.#restarted = plan.restarted;
-    this.#hostSessions = plan.hostSessions;
+    plan.install?.();
     for (const apply of afterCommit) {
       try { apply(); }
       catch (error) {
@@ -682,139 +732,37 @@ export class CoreStore implements Storage {
     });
     return committedAt;
   }
-
-  /** What a commit, or a refresh when `committed` is undefined, changes and publishes at `atMs`. */
-  #plan(committed: {change: Commit; next: DurableState} | undefined, atMs: number): Plan {
-    const prior = this.#durable;
-    const next = committed?.next ?? prior;
-    const change = committed?.change;
-    const restarted = new Set(this.#restarted);
-    const hostSessions = new Map(this.#hostSessions);
-    const cause = change === undefined ? undefined : this.#matches(change, prior, committed?.next);
-    const intake = cause?.observation === undefined ? undefined : {...cause, observation: cause.observation};
-    const before = new Map((prior?.sessions ?? []).map(session => [entityOf(session), session]));
-    const after = new Map((next?.sessions ?? []).map(session => [entityOf(session), session]));
-    if (intake !== undefined && intake.kind !== 'metadata.observed' && change?.replace === undefined) {
-      const session = after.get(intake.entity), old = before.get(intake.entity);
-      if (session !== undefined) {
-        // Fresh lifecycle evidence ends restart uncertainty; read evidence and a repeat that refreshed nothing do not.
-        const fresh = intake.kind !== 'read.observed' &&
-          (old === undefined || session.lastEvidenceAtMs !== old.lastEvidenceAtMs || session.observedAtMs !== old.observedAtMs);
-        if (fresh) restarted.delete(intake.entity);
-        // As agent-state keeps it in memory: a committed 1.2 observation sets the host session ID when present and clears
-        // it when absent, and a record whose parent is known never carries one. The core keeps it with the record.
-        const host = intake.observation.hostSessionId;
-        if (session.parent.status === 'known' || host === undefined) hostSessions.delete(intake.entity);
-        else hostSessions.set(intake.entity, host);
-      }
-    }
-    for (const id of [...restarted]) if (!after.has(id)) restarted.delete(id);
-    for (const id of [...hostSessions.keys()]) if (!after.has(id)) hostSessions.delete(id);
-    const projected = project([...after.values()], {restarted, hostSessions}, atMs);
-    for (const [id, record] of projected) {
-      const old = this.#records.get(id), receipt = old?.readReceipt;
-      if (receipt !== undefined && old !== undefined && old.generation === record.generation && sameTurn(old.turn, record.turn) &&
-        record.parent.status !== 'known' && (record.activity === 'idle' || record.activity === 'interrupted') &&
-        record.notices.some(notice => notice.id === receipt.noticeId && sameTurn(notice.turn, record.turn)) &&
-        !(intake?.entity === id && intake.kind === 'read.observed')) {
-        projected.set(id, {...record, read: 'read', readReceipt: receipt});
-      }
-    }
-    const updated = [...projected.values()].filter(record => changed(this.#records.get(record.id), record));
-    const removed = [...this.#records.keys()].filter(id => !projected.has(id));
-    const ended: Draft<object>[] = [];
-    const occurrences: Draft<object>[] = [];
-    // The revision is raised only for a change that publishes something.
-    const revision = Math.max(this.#revision + 1, change?.revision ?? 0);
-    if (intake !== undefined && change?.replace !== undefined) {
-      const session = before.get(intake.entity);
-      if (session !== undefined) ended.push(occurrence('session-ended', 'org.bunny.session.ended', observed(intake, session, revision)));
-    }
-    for (const [id, session] of after) {
-      const old = before.get(id);
-      const raised = attentionAdded(old?.attention ?? [], session.attention);
-      const cleared = attentionAdded(session.attention, old?.attention ?? []);
-      if (intake !== undefined && change?.replace === undefined && id === intake.entity) {
-        const base = observed(intake, session, revision);
-        const turn = intake.observation.turn;
-        for (const attention of raised) occurrences.push(occurrence('attention-raised', 'org.bunny.attention.raised', {...base, attention} satisfies AttentionRaised));
-        for (const attention of cleared) {
-          occurrences.push(occurrence('attention-cleared', 'org.bunny.attention.cleared', {...base, attention, cause: causeOf(intake.kind, attention, turn)} satisfies AttentionCleared));
-        }
-        if (intake.kind === 'turn.ended') {
-          const noticeId = noticeOf(old?.notices ?? [], session.notices, turn);
-          occurrences.push(occurrence('turn-ended', 'org.bunny.turn.ended', {...base, ...(noticeId === undefined ? {} : {noticeId})} satisfies TurnEnded));
-        }
-      } else if (old !== undefined && cleared.length > 0 && change !== undefined) {
-        // No observation started this change: an explicit approval recovery, or startup settling approvals on retired
-        // turns. See ownerStarted for what such an occurrence carries.
-        const cause = change.replace === undefined && change.journal?.kind === 'attention.resolved' ? 'recovered' : 'turn-retired';
-        for (const attention of cleared) {
-          occurrences.push(occurrence('attention-cleared', 'org.bunny.attention.cleared', {...ownerStarted(session, change.atMs, revision), attention, cause} satisfies AttentionCleared));
-        }
-      }
-    }
-    const removals = removed.map(id => {
-      const retired = (next?.retirements ?? []).some(item => entityOf(item) === id && item.atMs === change?.atMs);
-      return {
-        key: sessionKey(id),
-        draft: {kind: 'removal', type: 'org.bunny.session.removed', subject: id, dataschema: REMOVAL_SCHEMA,
-          data: {entity: {family: 'session', id}, revision, reason: retired ? 'retired' : 'expired'}} satisfies Draft<object>,
-      };
-    });
-    const publishes = updated.length + removed.length + ended.length + occurrences.length > 0;
-    // The revision follows the ID, as the session family lists it.
-    const records = updated.map(({id, ...rest}): SessionRecord => ({id, revision, ...rest}));
-    return {
-      durable: committed?.next, revision: publishes ? revision : undefined, records, removed, restarted, hostSessions, cause,
-      messages: [
-        ...ended.map(draft => ({key: occurrenceKey(familyOf(draft), draft.subject), draft})),
-        ...removals,
-        ...records.map(record => ({key: sessionKey(record.id), draft: stateDraft(record)})),
-        ...occurrences.map(draft => ({key: occurrenceKey(familyOf(draft), draft.subject), draft})),
-      ],
-    };
-  }
-
-  /** The cause this commit answers, if any: the change its kind names, on its session. */
-  #matches(change: Commit, prior: DurableState | undefined, next: DurableState | undefined): Cause | undefined {
-    const intake = this.#cause;
-    if (intake === undefined) return undefined;
-    if (change.replace === undefined) {
-      const metadata = intake.observation;
-      if (intake.kind === 'metadata.observed' && change.journal === undefined && change.session !== undefined && entityOf(change.session) === intake.entity &&
-        metadata?.event.kind === 'metadata-observed' && metadata.title !== undefined && change.session.metadataObservedAtMs === metadata.observedAtMs &&
-        change.session.title?.value === metadata.title.value && change.session.title.source === metadata.title.source) return intake;
-      return change.session !== undefined && entityOf(change.session) === intake.entity && change.journal?.kind === intake.kind ? intake : undefined;
-    }
-    // A runtime end retires the session's tree in one replacement, with a retirement guard at the commit's instant.
-    const ended = intake.kind === 'runtime.ended' && (prior?.sessions ?? []).some(session => entityOf(session) === intake.entity) &&
-      !(next?.sessions ?? []).some(session => entityOf(session) === intake.entity) &&
-      (next?.retirements ?? []).some(item => entityOf(item) === intake.entity && item.atMs === change.atMs);
-    return ended ? intake : undefined;
-  }
 }
 
 /** How long the core keeps a lifecycle observation's `(source, id)`: as long as an observation can still be admitted. */
 const TAKEN_LIFECYCLE_MS = 86_400_000;
 
+type Opened = {outbox: Outbox; statements: Statements; history: History};
+
 type Statements = {
-  state: StatementSync; stateRevision: StatementSync; writeState: StatementSync; revision: StatementSync; writeRevision: StatementSync;
+  revision: StatementSync; writeRevision: StatementSync;
   records: StatementSync; writeRecord: StatementSync; deleteRecord: StatementSync;
+  sessions: StatementSync; writeSession: StatementSync; deleteSession: StatementSync;
+  guards: StatementSync; clearGuards: StatementSync; writeGuard: StatementSync;
   taken: StatementSync; take: StatementSync; prune: StatementSync;
 };
 
-// Statements are prepared once for the lease's life: per-call preparation keeps native allocations until GC notices.
+// Statements are prepared once for the store's life: per-call preparation keeps native allocations until GC notices.
 function prepare(db: DatabaseSync): Statements {
   return {
-    state: db.prepare('SELECT payload FROM state WHERE id = 1'),
-    stateRevision: db.prepare('SELECT revision FROM state WHERE id = 1'),
-    writeState: db.prepare('INSERT INTO state VALUES (1, ?, ?) ON CONFLICT (id) DO UPDATE SET revision = excluded.revision, payload = excluded.payload'),
     revision: db.prepare('SELECT value, commits FROM core_revision WHERE only = 1'),
     writeRevision: db.prepare('INSERT INTO core_revision VALUES (1, ?, ?) ON CONFLICT (only) DO UPDATE SET value = excluded.value, commits = excluded.commits'),
     records: db.prepare('SELECT record FROM core_records WHERE family = \'session\' ORDER BY id'),
     writeRecord: db.prepare('INSERT INTO core_records VALUES (?, ?, ?, ?) ON CONFLICT (family, id) DO UPDATE SET revision = excluded.revision, record = excluded.record'),
     deleteRecord: db.prepare('DELETE FROM core_records WHERE family = ? AND id = ?'),
+    // Sessions keep the order they were first stored in, which their records are published in.
+    sessions: db.prepare('SELECT session FROM core_sessions ORDER BY rowid'),
+    writeSession: db.prepare(`INSERT INTO core_sessions VALUES (?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET revision = excluded.revision,
+      generation = excluded.generation, session = excluded.session`),
+    deleteSession: db.prepare('DELETE FROM core_sessions WHERE id = ?'),
+    guards: db.prepare('SELECT guard FROM core_session_guards ORDER BY seq'),
+    clearGuards: db.prepare('DELETE FROM core_session_guards'),
+    writeGuard: db.prepare('INSERT INTO core_session_guards (id, at_ms, guard) VALUES (?, ?, ?)'),
     taken: db.prepare('SELECT message FROM core_taken WHERE source = ? AND id = ?'),
     take: db.prepare('INSERT INTO core_taken VALUES (?, ?, ?, ?)'),
     prune: db.prepare('DELETE FROM core_taken WHERE expires_at_ms IS NOT NULL AND expires_at_ms <= ?'),
@@ -827,35 +775,12 @@ function stateDraft(record: SessionRecord): Draft<SessionRecord> {
   return {kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchema(record), data: record};
 }
 
-function occurrence<T extends object>(family: string, type: string, data: T & {session: string}): Draft<T> {
-  return {kind: 'occurrence', type, subject: data.session, dataschema: `https://bunny.invalid/events/${family}/2.0`, data};
-}
+/** Each agent occurrence family's message type. */
+const OCCURRENCE_TYPES: Record<Occurrence['family'], string> = {
+  'attention-raised': 'org.bunny.attention.raised', 'attention-cleared': 'org.bunny.attention.cleared', 'turn-ended': 'org.bunny.turn.ended',
+  'session-ended': 'org.bunny.session.ended',
+};
 
-/** What an occurrence of an observation carries: its session, identity, turn, evidence and the committing revision. */
-function observed(intake: {observation: LifecycleObservation}, session: Session, revision: number): AgentOccurrence {
-  const {turn, observedAtMs, occurredAtMs, ordering} = intake.observation;
-  return {session: entityOf(session), identity: session.identity, turn, observedAtMs, ...(occurredAtMs === undefined ? {} : {occurredAtMs}), ordering, revision};
-}
-
-/**
- * What an owner-started clearing carries as its observation (Hub #831's decision, MAPPING.md): no observation started
- * it, so its `turn` is the session's current turn when the owner cleared the item, its `observedAtMs` the owner's
- * instant of the change, and its `ordering` unknown, because the owner is no provider and has no sequence to claim.
- */
-function ownerStarted(session: Session, atMs: number, revision: number): AgentOccurrence {
-  return {session: entityOf(session), identity: session.identity, turn: session.turn, observedAtMs: atMs, ordering: {status: 'unknown'}, revision};
-}
-
-/** Why a reduction cleared an item: its own turn's resolution or end, or a newer turn retiring the item's turn. */
-function causeOf(kind: string, item: Attention, turn: KnownId): AttentionCleared['cause'] {
-  if (sameTurn(item.turn, turn) && kind === 'attention.resolved') return 'resolved';
-  if (sameTurn(item.turn, turn) && kind === 'turn.ended') return 'turn-ended';
-  return 'turn-retired';
-}
-
-/** The notice a turn end retained: the one it added, or the one already held for its known turn. */
-function noticeOf(before: Session['notices'], after: Session['notices'], turn: KnownId): string | undefined {
-  const added = after.filter(notice => !before.some(old => old.id === notice.id));
-  if (added.length === 1) return added[0]?.id;
-  return after.find(notice => sameTurn(notice.turn, turn))?.id;
+function occurrence<T extends object>(family: Occurrence['family'], data: T & {session: string}): Draft<T> & {subject: string} {
+  return {kind: 'occurrence', type: OCCURRENCE_TYPES[family], subject: data.session, dataschema: `https://bunny.invalid/events/${family}/2.0`, data};
 }

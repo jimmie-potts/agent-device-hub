@@ -1,6 +1,6 @@
 export {CORE_MODULE, contain, sourceOf, type ModuleHealth, type ModuleState, type Reason} from './host.js';
 export {
-  DEFAULT_CONSUMERS, OWNER_ID, consumerOf, createCoreModule, isCoreModule, type CoreHandle, type CoreModule, type CoreOptions, type CorePart,
+  DEFAULT_CONSUMERS, consumerOf, createCoreModule, isCoreModule, type CoreHandle, type CoreModule, type CoreOptions, type CorePart,
 } from './core/core.js';
 export {type CoreChange, type CoreTransaction, type Deriver} from './core/store.js';
 export {

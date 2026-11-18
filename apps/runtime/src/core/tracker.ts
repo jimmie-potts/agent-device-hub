@@ -278,7 +278,7 @@ export class Tracker {
 
   /** The tracked action with this request ID, if any. */
   operation(requestId: string): Operation | undefined {
-    if (this.#statements === undefined || !this.#options.store.open) return undefined;
+    if (this.#statements === undefined || !this.#options.store.isOpen) return undefined;
     return this.#read(requestId);
   }
 
@@ -403,7 +403,7 @@ export class Tracker {
       return refuse('invalid-request', 'the identity of a command with an omitted payload is invalid');
     }
     await ready;
-    if (this.#stopped || this.#statements === undefined || !store.open) return refuse('unavailable', 'the core is not taking actions now');
+    if (this.#stopped || this.#statements === undefined || !store.isOpen) return refuse('unavailable', 'the core is not taking actions now');
     const kind = kindOf(family);
     const data = withoutRequestId(draft.data);
     // The worker must enter at the requested local target while the command still has its normal execution budget.
@@ -523,7 +523,7 @@ export class Tracker {
       while (this.#waiting.length > 0) {
         // What the bus delivers until the next turn joins this group, and between groups the event loop runs.
         await nextTurn();
-        if (this.#stopped || this.#statements === undefined || !store.open) break;
+        if (this.#stopped || this.#statements === undefined || !store.isOpen) break;
         await this.#group();
         this.#makeRoom();
       }
@@ -737,7 +737,7 @@ export class Tracker {
   async #transaction<R>(work: (tx: CoreTransaction) => R): Promise<R> {
     const {store, storage} = this.#options;
     // A store that is not open, or whose database a crash closed, takes nothing; it is not a store failure.
-    if (!store.open) throw new Refused('unavailable', 'the core store is not open');
+    if (!store.isOpen) throw new Refused('unavailable', 'the core store is not open');
     try {
       const result = await store.transaction(work);
       storage?.recovered();
@@ -768,7 +768,7 @@ export class Tracker {
   #schedule(): void {
     this.#timer?.();
     this.#timer = undefined;
-    if (this.#stopped || this.#statements === undefined || !this.#options.store.open) return;
+    if (this.#stopped || this.#statements === undefined || !this.#options.store.isOpen) return;
     const {next} = this.#statements.next.get() as {next: number | null};
     if (next === null) return;
     const delay = Math.min(MAX_DELAY_MS, Math.max(0, next - this.#options.clock.now()));
@@ -777,7 +777,7 @@ export class Tracker {
 
   /** Every pending action past its deadline ends uncertain, in one transaction; a refused commit tries again later. */
   async #sweep(): Promise<void> {
-    if (this.#stopped || this.#statements === undefined || !this.#options.store.open) return;
+    if (this.#stopped || this.#statements === undefined || !this.#options.store.isOpen) return;
     const atMs = this.#options.clock.now();
     let ended: Operation[];
     try {

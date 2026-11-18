@@ -263,8 +263,7 @@ it('a label survives restart and repeating its request ID never sends a command 
   assert.equal(second.handle.operation('req-label')?.status, 'completed');
 });
 
-it('owner maintenance queued after the read guard changes the parent revision and refuses the label atomically', async context => {
-  context.mock.timers.enable({apis: ['setTimeout']});
+it('a due expiry queued ahead of the label changes the parent revision and refuses the label atomically', async context => {
   const world = await labels(context);
   const child = observation(sessionStarted, world.clock.now(), {identity: CHILD, parent: {status: 'known', identity: IDENTITY}});
   await world.hook.publish(child.key, child.draft);
@@ -274,22 +273,13 @@ it('owner maintenance queued after the read guard changes the parent revision an
   await world.hook.publish(fresh.key, fresh.draft);
   const before = await world.record();
   assert.equal(before.children.uncertain, 1);
-  const records = Object.getOwnPropertyDescriptor(CoreStore.prototype, 'records')?.value as (this: CoreStore) => SessionRecord[];
-  let intervene = true;
-  context.mock.method(CoreStore.prototype, 'records', function (this: CoreStore): SessionRecord[] {
-    const held = records.call(this);
-    if (intervene) {
-      intervene = false;
-      world.clock.advance(2);
-      // The owner's real maintenance timer queues before setLabel; the core's mutation queue is already occupied.
-      context.mock.timers.tick(2);
-    }
-    return held;
-  });
+  // The child's day ends after the operator read the parent: the core's timer queues the expiry ahead of the label, which
+  // still names the revision the operator read.
+  world.clock.advance(2);
   const answer = await world.module.operatorActions.dispatch(labelAction('Must conflict', before.revision));
   assert.equal((answer as {error: {code: string}}).error.code, 'revision-conflict');
   const after = await world.record();
-  assert.equal(after.children.uncertain, 0, 'the actual owner maintenance expired the child');
+  assert.equal(after.children.uncertain, 0, 'the expiry removed the child');
   assert.ok(after.revision > before.revision);
   assert.equal(after.label, undefined);
   assert.deepEqual(world.handle.operation('req-label')?.outcomes, []);
@@ -390,12 +380,10 @@ it('the transaction refuses another command ID or an invalid core outcome before
     context.after(async () => { await sdk.close(); await tracker.stop(); });
     const record = world.store.records()[0];
     assert.ok(record);
-    const before = world.rows('SELECT * FROM state');
+    const before = world.rows('SELECT * FROM core_sessions');
     await sdk.respond<{requestId: string; label: string; expectedRevision: number}>('bunny.cmd.session-label-set.*', async command => {
       assert.equal(tracker.admitOperator(command), true);
-      assert.ok(world.owner);
-      const result = await world.store.during({message: command, kind: 'label', entity: SESSION_ID},
-        () => { assert.ok(world.owner); return world.owner.setLabel(IDENTITY, 'Rejected transaction'); },
+      const result = await world.store.label(command, SESSION_ID, 'Rejected transaction',
         (_change, tx) => tracker.completeCore(tx, fault === 'command-id' ? {...command, id: 'not-the-admitted-command'} : command,
           {result: 'succeeded', evidence: fault === 'outcome' ? 'invalid-evidence' : 'observed'} as Omit<CompletedOutcome, 'requestId'>));
       tracker.endOperator(command);
@@ -404,7 +392,7 @@ it('the transaction refuses another command ID or an invalid core outcome before
     });
     const answer = await tracker.dispatchOperator(labelAction('Rejected transaction', record.revision, `req-${fault}`));
     assert.equal((answer as {error: {code: string}}).error.code, 'internal');
-    assert.deepEqual(world.rows('SELECT * FROM state'), before);
+    assert.deepEqual(world.rows('SELECT * FROM core_sessions'), before);
     assert.equal(world.store.records()[0]?.label, undefined);
     assert.deepEqual(tracker.operation(`req-${fault}`)?.outcomes, []);
     assert.equal(world.db.prepare("SELECT count(*) AS count FROM core_history WHERE type = 'org.bunny.session-label.set.completed'").get()?.count, 0);

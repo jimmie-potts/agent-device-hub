@@ -9,7 +9,6 @@ import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCoreModule, type CoreHandle, type CoreOptions} from '../src/index.js';
 import type {Action} from '../src/core/tracker.js';
 import {CHILD, IDENTITY, SESSION_ID, observation, sessionStarted, turnStarted, turnEnded} from './fixtures/agents.js';
-import {CoreStore} from '../src/core/store.js';
 import {it, manualClock, stateDir} from './support.js';
 
 const clearAction = (noticeId: string | null, expectedRevision: number, requestId = 'req-clear'): Action => ({
@@ -142,8 +141,7 @@ it('a failed participating projection rolls back every acknowledgment and comple
   assert.equal(world.db.prepare("SELECT count(*) AS count FROM core_history WHERE type = 'org.bunny.notice.clear.completed'").get()?.count, 0);
 });
 
-it('owner maintenance between admission and save refuses the override at save time', async context => {
-  context.mock.timers.enable({apis: ['setTimeout']});
+it('a due expiry queued ahead of the override changes the session revision and refuses it', async context => {
   const world = await notices(context);
   let observed = observation(sessionStarted, world.clock.now(), {identity: CHILD, parent: {status: 'known', identity: IDENTITY}});
   await world.hook.publish(observed.key, observed.draft); await world.record();
@@ -151,17 +149,12 @@ it('owner maintenance between admission and save refuses the override at save ti
   observed = observation(turnStarted, world.clock.now(), {turn: 'turn-fresh'}); await world.hook.publish(observed.key, observed.draft);
   observed = observation(turnEnded, world.clock.now(), {turn: 'turn-fresh'}); await world.hook.publish(observed.key, observed.draft);
   const before = await world.record(), id = before.notices.at(-1)?.id; assert.ok(id !== undefined);
-  const records = Object.getOwnPropertyDescriptor(CoreStore.prototype, 'records')?.value as (this: CoreStore) => SessionRecord[];
-  let intervene = true;
-  context.mock.method(CoreStore.prototype, 'records', function (this: CoreStore): SessionRecord[] {
-    const held = records.call(this);
-    if (intervene) {intervene = false; world.clock.advance(2); context.mock.timers.tick(2);}
-    return held;
-  });
+  // The child's day ends after the operator read the session: the core's timer queues its expiry ahead of the override.
+  world.clock.advance(2);
   const answer = await world.module.operatorActions.dispatch(clearAction(id, before.revision));
   assert.equal((answer as {error: {code: string}}).error.code, 'revision-conflict');
   const after = await world.record();
-  assert.equal(after.children.uncertain, 0, 'real owner maintenance expired the child');
+  assert.equal(after.children.uncertain, 0, 'the expiry removed the child');
   assert.deepEqual(after.notices.at(-1)?.acknowledgedBy, []);
   assert.deepEqual(world.handle.operation('req-clear')?.outcomes, []);
 });

@@ -127,6 +127,7 @@ import {deviceRecord,deviceState} from './fixtures/device.js';
 import {IDENTITY,SESSION_ID,observation,sessionStarted,turnStarted,turnEnded,approvalPrompt,approvalResolved} from './fixtures/agents.js';
 import {manualClock,stateDir,flush} from './support.js';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {join} from 'node:path';
 
 void test('owner-qualified device copies sync initially and recover a dropped available state without replay',async context=>{
   const bus=new InProcessBus(),core=bus.connect('bunny/core'),owner=bus.connect('bunny/modules/nanoleaf');
@@ -325,6 +326,61 @@ void test('actual core commit and bus intake dispatch once; old publication, syn
   assert.equal(moments.length,1);
 });
 
+
+void test('the one-time session reset at the cutover publishes no occurrence, evaluates no rule and dispatches no moment (#1865)',async context=>{
+  const clock=manualClock(),directory=await stateDir(context),bus=new InProcessBus({now:clock.now});
+  const nano=bus.connect('bunny/modules/nanoleaf'),hook=bus.connect('bunny/parts/hook'),watch=bus.connect('bunny/test/watch');
+  const moments:Message[]=[];const occurrences:Message[]=[];
+  await nano.respond('bunny.cmd.moment-play.wall',command=>{moments.push(command);return {status:'accepted'};});
+  for(const family of ['attention-raised','attention-cleared','turn-ended','session-ended']) await watch.subscribe(`bunny.event.${family}.*`,message=>{occurrences.push(message);});
+  const device=deviceRecord('wall',1,'nanoleaf','available');
+  device.desired.mode={status:'known',value:'work'};
+  device.capabilities.moments={supported:true,moods:['celebrate','setback','reminder'],maxDurationMs:10000,coversStatus:true};
+  await nano.serveSync(['device'],()=>({revision:device.revision,states:[deviceState(device)]}));
+  // The first core's live occurrences cannot be published, so they are still pending in its outbox at the upgrade.
+  let refuse=true;
+  const first=createCoreModule();
+  let harness=new CoreHarness({manifest:first.manifest,stop:()=>first.stop(),start:context=>first.start({...context,sdk:{...context.sdk,
+    publishMessage:async(key,message)=>{if(refuse&&message.kind==='occurrence') throw new Error('synthetic publish refusal');return context.sdk.publishMessage(key,message);}}})},
+    {bus,stateDir:directory,clock:{now:clock.now}});
+  context.after(async()=>{await harness.stop();await hook.close();await nano.close();await watch.close();});
+  await harness.start();first.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);
+  await nano.publish('bunny.state.device.wall',{kind:'state',...deviceState(device)});await flush();
+  await first.automation.replaceInterruptSet({kinds:['turn-ended','attention-raised','attention-cleared','session-ended']});
+  for(const kind of ['turn-ended','attention-raised','attention-cleared','session-ended'] as const)
+    await first.automation.create({...rule,name:kind,trigger:{source:'core',kind},action:{...rule.action,priorityClass:'event',targets:['wall']}},true);
+  for(const event of [sessionStarted,turnStarted,approvalPrompt('approval-1865'),approvalResolved('approval-1865'),turnEnded]) {
+    clock.advance(10);const {key,draft}=observation(event,clock.now());await hook.publish(key,draft);await flush();
+  }
+  await first.automation.settled();
+  const logged=first.automation.log(50).length;
+  assert.equal(moments.length,0,'the refused live publications launched nothing');
+  assert.equal(occurrences.length,0);
+  await harness.stop();
+  // The store as the release before #1865 group 7 left it: the old agent-state state row is still there.
+  const db=new DatabaseSync(join(directory,'core.sqlite'));
+  assert.ok((db.prepare('SELECT COUNT(*) AS count FROM bunny_outbox').get() as {count:number}).count>0,'occurrences are pending at the upgrade');
+  db.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, payload TEXT NOT NULL); INSERT INTO state VALUES (1, 9, \'{}\')');
+  db.close();
+  refuse=false;
+  const core=createCoreModule();
+  harness=new CoreHarness(core,{bus,stateDir:directory,clock:{now:clock.now}});
+  await harness.start();core.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);await flush();
+  await core.automation.settled();await flush();
+  assert.deepEqual(occurrences,[],'the reset published no occurrence and the deleted publications never went out');
+  assert.equal(moments.length,0,'no moment was dispatched');
+  assert.equal(core.automation.log(50).length,logged,'no rule was evaluated');
+  const synced=await watch.sync(['session'],()=>{}, {owner:harness.source,timeoutMs:1000});
+  assert.equal(synced.status,'synced');
+  if(synced.status==='synced'){assert.deepEqual(synced.copy.states(),[],'the next sync serves no session');await synced.copy.close();}
+  // The rules still hold: the next live turn end launches its moment.
+  await core.automation.replaceSettings({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,deviceSpacingMs:0}});
+  for(const event of [turnStarted,turnEnded]) {
+    clock.advance(10);const {key,draft}=observation(event,clock.now(),{turn:'turn-2'});await hook.publish(key,draft);await flush();
+  }
+  await core.automation.settled();await flush();
+  assert.equal(moments.length,1);
+});
 
 void test('uncertain dispatch keeps its operation link and is never retried',async()=>{
   const w=world(new DatabaseSync(':memory:'),true);

@@ -14,7 +14,7 @@ import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {connectRemote} from '@jimmie-potts/sdk';
-import {UsageError, parseArguments, shippedModules, type LogRecord} from '../src/index.js';
+import {UsageError, holdRuntimeLease, parseArguments, shippedModules, type LogRecord} from '../src/index.js';
 import {SPANS_FILE, readSpanFile} from '../src/span-file.js';
 import {writeSimulatedConfiguration} from './fixtures/simulated.js';
 import {edgeConfig, entry, health, it, stateDir, waitFor} from './support.js';
@@ -404,7 +404,7 @@ it('a kill between the core\'s commit and its publish loses and duplicates nothi
   assert.deepEqual(heard(crashed, 'accepted'), [], 'nothing was published before the kill');
   const database = new DatabaseSync(join(dir, 'modules', 'core.sqlite'), {readOnly: true});
   const stored = database.prepare('SELECT id, kind FROM bunny_outbox ORDER BY seq').all().map(row => ({...row}) as {id: string; kind: string});
-  const committed = (database.prepare('SELECT revision FROM state').get() as {revision: number} | undefined)?.revision;
+  const committed = (database.prepare('SELECT revision FROM core_sessions').get() as {revision: number} | undefined)?.revision;
   database.close();
   assert.deepEqual(stored.map(row => row.kind), ['state', 'occurrence'], 'the session and its attention-raised, committed and unpublished');
   assert.ok((committed ?? 0) > 0);
@@ -430,7 +430,7 @@ it('a core that fails ends the runtime with a failure exit, so the service manag
   await mkdir(join(dir, 'modules'), {mode: 0o700});
   const file = join(dir, 'modules', 'core.sqlite');
   const database = new DatabaseSync(file);
-  database.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, payload TEXT NOT NULL); INSERT INTO state VALUES (1, 1, \'{"not": "a store"}\')');
+  database.exec('CREATE TABLE core_sessions (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, generation INTEGER NOT NULL, session TEXT NOT NULL) STRICT; INSERT INTO core_sessions VALUES (\'session\', 1, 1, \'not a session\')');
   database.close();
   await chmod(file, 0o600);
   const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir]);
@@ -452,6 +452,17 @@ it('a second runtime on the same state directory cannot take the core\'s lease: 
   assert.equal(entry(report.body, 'core').state, 'running');
   first.child.kill('SIGTERM');
   assert.deepEqual(await exitOf(first, STOP_BOUND_MS, 'the first runtime to stop'), {code: 0, signal: null});
+}, LEASE_BUDGET_MS);
+
+it('an offline tool that holds the runtime\'s lease stops a runtime from starting: its core fails at the lease, and it exits', async context => {
+  const dir = await stateDir(context);
+  // The tool's lease, as the Pixoo or Nanoleaf migration holds it while it runs (Hub #931).
+  const lease = await holdRuntimeLease(dir);
+  context.after(() => lease.release());
+  const runtime = spawnRuntime(context, MAIN, ['--port', '0', '--state-dir', dir]);
+  assert.deepEqual(await exitOf(runtime, START_BOUND_MS, 'the refusal at the lease'), {code: 1, signal: null}, 'the core waited for the lease and failed');
+  assert.equal(runtime.records().find(record => record.event_name === 'runtime.failed')?.attributes['error.code'], 'core-failed');
+  assert.equal(runtime.stdout(), '', 'no ready line');
 }, LEASE_BUDGET_MS);
 
 it('the shipped entry point runs with --simulate and --edge, and a remote part with a run grant reaches the edge', async context => {

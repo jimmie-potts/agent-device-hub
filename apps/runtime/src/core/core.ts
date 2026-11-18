@@ -1,7 +1,8 @@
 import {readReceiptValidator, type Lifecycle21Observation} from '@jimmie-potts/event-contracts/v2/read-receipts';
 import {isReadReceipt, receiptQualification} from '../read-receipts/qualification.js';
 // The agent-session core (Hub #831, ADR 0012): the one owner of agent sessions in the runtime, as the source `bunny/core`.
-// It runs agent-state's owner on the core store, takes hooks' 2.0 `lifecycle` observations into the reducer, publishes
+// It keeps the sessions in the core store, takes hooks' 2.0 `lifecycle` observations through its session logic (#1865,
+// `session/`), publishes
 // each committed change as `session` state, removal and occurrence messages, serves `session` through sync and answers
 // `notice-acknowledge` and tracked operator labels. It is first in the runtime's module list and registers everything
 // on the bus before its first
@@ -10,7 +11,6 @@ import {isReadReceipt, receiptQualification} from '../read-receipts/qualificatio
 // stories add, such as #923's inbox, join through `CorePart` and derive their rows from each tracked action's change.
 // Its own `operation` family (Hub #922, operation-records.ts) is the first such part: each tracked action's latest state.
 import type {DatabaseSync} from 'node:sqlite';
-import {createAgentState, type Consumer, type Outcome} from '@jimmie-potts/agent-state';
 import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
   sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
@@ -43,25 +43,16 @@ import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
 import {CORE_MODULE} from '../host.js';
 import {Backoff} from './backoff.js';
-import {LIFECYCLE_TYPE, sessionSchema, reducedKind, toEnvelope} from './mapping.js';
-import {CoreStore, type CoreTransaction, type Deriver} from './store.js';
+import {LIFECYCLE_TYPE, sessionSchema} from './mapping.js';
+import {DEFAULT_CONSUMERS, type Consumer} from './session/model.js';
+import {CoreStore, type CoreTransaction, type Deriver, type SessionOutcome} from './store.js';
 import {admitRuntimeOwnership, assertRuntimeOwnership, bindRuntimeOwnership, ownershipUnavailable, type CoreOwnership, type RuntimeOwnership} from '../runtime-ownership.js';
 import {readRoomContent} from './room-models.js';
 import {readApartmentContent} from '../apartment/content.js';
 
-export {CORE_MODULE};
-/** The agent-state owner ID the core persists with its store. */
-export const OWNER_ID = 'bunny-core';
+export {CORE_MODULE, DEFAULT_CONSUMERS, type Consumer};
 /**
- * The consumers whose notice acknowledgments the core records, and whether a new turn clears a consumer's earlier
- * notices: the old Hub's integrated verification set. agent-state persists the list with the store and refuses a store
- * whose list differs, so it changes only with an explicit migration.
- */
-export const DEFAULT_CONSUMERS: readonly Consumer[] = Object.freeze([
-  {id: 'dashboard', clearOnNewTurn: false}, {id: 'nanoleaf', clearOnNewTurn: true}, {id: 'pixoo', clearOnNewTurn: true},
-]);
-/**
- * The first wait before the core tries again after a failed commit, to publish freshness or to open its owner; each
+ * The first wait before the core tries again after a failed commit, to publish freshness or to open its store; each
  * further failure doubles it, up to `RETRY_MAX_MS`.
  */
 export const REFRESH_RETRY_MS = 1000;
@@ -78,7 +69,7 @@ export interface CoreHandle {
   readonly sdk: Sdk;
   readonly log: Logger;
   readonly clock: Clock;
-  /** Resolves once the core's store and owner are open. */
+  /** Resolves once the core's store is open. */
   readonly ready: Promise<void>;
   /** How the core took a message with this `(source, id)` before: `new`, an exact `duplicate`, or a `conflict`. */
   received(message: Message<unknown>): 'new' | 'duplicate' | 'conflict';
@@ -141,7 +132,6 @@ export type CoreOptions = {
 /** The consumer a source may acknowledge for: the last segment of its source, such as `pixoo` for `bunny/modules/pixoo`. */
 export const consumerOf = (source: string): string => source.slice(source.lastIndexOf('/') + 1);
 
-type AgentState = Awaited<ReturnType<typeof createAgentState>>;
 type Refusal = {code: ErrorCode; detail: string};
 
 /** Each registry code's registered reason, as the runtime's records name it (src/runtime.ts `REGISTRY_REASONS`). */
@@ -357,11 +347,10 @@ class Core {
   readonly #ready: Promise<void>;
   #opened: () => void = () => {};
   #failed: (error: unknown) => void = () => {};
-  #owner: AgentState | undefined;
   /** Current positive Desktop archive evidence only; it expires when its module stops confirming it. */
   readonly #archived = new Map<string, {observedAtMs: number; untilMs: number}>();
-  /** Why the owner is not open, while it is not, and when to try again. */
-  #ownerDown: ErrorCode = 'unavailable';
+  /** Why the store is not open, while it is not, and when to try again. */
+  #storeDown: ErrorCode = 'unavailable';
   readonly #reopen = new Backoff(REFRESH_RETRY_MS, RETRY_MAX_MS);
   readonly #freshness = new Backoff(REFRESH_RETRY_MS, RETRY_MAX_MS);
   /** Since when the store has refused durable work, and when that was last summarized. */
@@ -373,7 +362,7 @@ class Core {
   #queue: Promise<unknown> = Promise.resolve();
   #timer: Cancel | undefined;
   #stopped = false;
-  /** The start under way, which a stop waits for so that an owner it opens late is shut down too. */
+  /** The start under way, which a stop waits for so that a store it opens late is closed too. */
   #starting: Promise<void> | undefined;
 
   constructor(context: ModuleContext, {parts: added = [], consumers = DEFAULT_CONSUMERS, beforePublish, operationLimit, artScheduleChoice, monotonic, history}: CoreOptions, historyDevices: readonly HistoryDevice[], ownership: CoreOwnership | undefined,
@@ -435,7 +424,17 @@ class Core {
     // A start that fails leaves the handlers waiting on `ready` to fail with it, not an unhandled rejection.
     this.#ready.catch(() => {});
     this.#store = new CoreStore({
-      database: context.database(), clock: context.clock,
+      database: context.database(), clock: context.clock, consumers,
+      // Archive admission evidence stays specific to Codex Desktop conversations, and lapses when the module stops confirming it.
+      archived: (identity, ancestors) => [identity, ...ancestors].some(item => {
+        const key = sessionEntityId(item), evidence = this.#archived.get(key);
+        if (evidence === undefined) return false;
+        if (this.#clock.now() >= evidence.untilMs) {
+          this.#archived.delete(key);
+          return false;
+        }
+        return true;
+      }),
       ...(ownership === undefined ? {} : {ownership}),
       sdk: {source:context.sdk.source,publishMessage:async(key,message)=>{
         const failed=this.#automation.publishing(message);
@@ -498,14 +497,14 @@ class Core {
       try {
         await Promise.all(registered);
         try {
-          await this.#open();
+          await this.#store.open();
         } catch (error) {
-          // A full disk at the start, as when maintenance fell due, leaves the core up, refusing durable work until it
+          // A full disk at the start, as when the reset fell on one, leaves the core up, refusing durable work until it
           // has room. Anything else, such as a store it cannot read or a lease another runtime holds, fails it.
           if (this.#store.takeFailure() !== 'full') throw error;
-          this.#ownerFailed('capacity');
+          this.#storeFailed('capacity');
         }
-        // A stop that came meanwhile shuts the owner down; whatever waits on `ready` finds the core stopped.
+        // A stop that came meanwhile closes the store; whatever waits on `ready` finds the core stopped.
         if (this.#stopped) {
           this.#opened();
           return;
@@ -544,9 +543,6 @@ class Core {
     await this.#music.close();
     await this.#lighting.close();
     await this.#tracker.stop();
-    const owner = this.#owner;
-    this.#owner = undefined;
-    await owner?.shutdown().catch(() => {});
     await this.#store.drain();
     this.#store.close();
   }
@@ -558,85 +554,69 @@ class Core {
     return result;
   }
 
-  async #open(): Promise<void> {
-    this.#owner = await createAgentState({storage: this.#store, ownerId: OWNER_ID, consumers: this.#consumers.map(consumer => ({...consumer})), clock: () => this.#clock.now(),
-      isArchived: (identity, _signal, ancestors) => Promise.resolve([identity, ...ancestors].some(item => {
-        const key = sessionEntityId(item), evidence = this.#archived.get(key);
-        if (evidence === undefined) return false;
-        if (this.#clock.now() >= evidence.untilMs) { this.#archived.delete(key); return false; }
-        return true;
-      })),
-    });
-    this.#reopen.reset();
-  }
-
-  /** The owner could not be opened: refuse with `code` meanwhile, and try again after a capped backoff. */
-  #ownerFailed(code: ErrorCode): void {
-    this.#ownerDown = code;
+  /** The store could not be opened: refuse with `code` meanwhile, and try again after a capped backoff. */
+  #storeFailed(code: ErrorCode): void {
+    this.#storeDown = code;
     this.#reopen.failed(this.#clock.now());
     this.#degraded(code);
   }
 
   /**
-   * The open owner, or why there is none. After a commit that failed, as on a full disk, agent-state's owner is faulted;
-   * the core opens it again on the store, which keeps its lock throughout and holds exactly what committed. Opening
-   * writes nothing unless maintenance fell due; if it fails, the core stays up and tries again after a capped backoff.
+   * Why the store is not open, or undefined when it is. A store that could not open, as at a first start on a full disk,
+   * is opened again once its backoff allows; opening writes nothing unless the one-time reset applies, and if it fails,
+   * the core stays up and tries again after a capped backoff.
    */
-  async #ensureOwner(): Promise<AgentState | Refusal> {
-    if (this.#owner !== undefined) return this.#owner;
-    const refusal = (): Refusal => ({code: this.#ownerDown, detail: this.#ownerDown === 'capacity' ? 'the core store is full' : 'the core is not taking changes now'});
+  async #ensureStore(): Promise<Refusal | undefined> {
+    if (this.#store.isOpen) return undefined;
+    const refusal = (): Refusal => ({code: this.#storeDown, detail: this.#storeDown === 'capacity' ? 'the core store is full' : 'the core is not taking changes now'});
     if (!this.#reopen.ready(this.#clock.now())) return refusal();
     try {
-      await this.#open();
+      await this.#store.open();
+      this.#reopen.reset();
     } catch {
-      this.#ownerFailed(this.#store.takeFailure() === 'full' ? 'capacity' : 'unavailable');
-      this.#log.debug('operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': 'unavailable', 'bunny.code': this.#ownerDown});
+      this.#storeFailed(this.#store.takeFailure() === 'full' ? 'capacity' : 'unavailable');
+      this.#log.debug('operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': 'unavailable', 'bunny.code': this.#storeDown});
       return refusal();
     }
-    return this.#owner ?? refusal();
+    return this.#store.isOpen ? undefined : refusal();
   }
 
-  /** Calls the owner, mapping a refusal to the registry's terms, and opens a faulted owner again. */
-  async #call(work: (owner: AgentState) => Promise<Outcome>, saveRefusal?: () => Refusal | undefined): Promise<Extract<Outcome, {ok: true}> | {ok: false; refusal: Refusal}> {
+  /**
+   * Runs one session change on the open store, mapping a refusal to the registry's terms. A commit the store refused
+   * changed nothing, and the store stays open, holding its lock, for the next change.
+   */
+  async #session(work: () => Promise<SessionOutcome>, saveRefusal?: () => Refusal | undefined): Promise<Extract<SessionOutcome, {ok: true}> | {ok: false; refusal: Refusal}> {
     if (this.#stopped) return {ok: false, refusal: {code: 'unavailable', detail: 'the core is stopping'}};
-    const owner = await this.#ensureOwner();
-    if (!('ingest' in owner)) return {ok: false, refusal: owner};
-    const result = await work(owner);
+    const down = await this.#ensureStore();
+    if (down !== undefined) return {ok: false, refusal: down};
+    const result = await work();
     if (result.ok) {
       if (result.outcome === 'applied' || result.outcome === 'ambiguous') this.#recovered();
       return result;
     }
     const guarded = saveRefusal?.();
-    const refusal = guarded ?? this.#refusal(result);
+    const refusal = guarded ?? this.#refusal(result.code);
     if (guarded !== undefined) this.#store.takeFailure();
-    if ((result.code === 'storage-failed' || result.code === 'unavailable') && !this.#stopped) {
-      if (result.code === 'storage-failed' && guarded === undefined) this.#degraded(refusal.code);
-      // The faulted owner lets go of its lease only: the store keeps its lock, so no other runtime can take it.
-      this.#owner = undefined;
-      await owner.shutdown().catch(() => {});
-      this.#store.abandonLease();
-      await this.#ensureOwner();
-    }
+    if (result.code === 'storage-failed' && guarded === undefined && !this.#stopped) this.#degraded(refusal.code);
     return {ok: false, refusal};
   }
 
-  /** Why a refused owner call was refused, in the registry's terms. */
-  #refusal(result: Extract<Outcome, {ok: false}>): Refusal {
-    switch (result.code) {
+  /** Why a refused session change was refused, in the registry's terms. */
+  #refusal(code: Extract<SessionOutcome, {ok: false}>['code']): Refusal {
+    switch (code) {
       case 'capacity':
         return {code: 'capacity', detail: 'the core holds as many sessions as it can'};
       case 'storage-failed':
         // Nothing committed: the store refused the change before anything reported it accepted.
         return this.#store.takeFailure() === 'full' ? {code: 'capacity', detail: 'the core store is full'} : {code: 'internal', detail: 'the core store failed'};
-      case 'unavailable':
-        // A faulted owner: its own maintenance may have failed on a full disk.
-        return this.#store.takeFailure() === 'full' ? {code: 'capacity', detail: 'the core store is full'} : {code: 'unavailable', detail: 'the core is not taking changes now'};
-      case 'invalid-event':
+      case 'invalid-request':
         return {code: 'invalid-request', detail: 'the observation is not one the core admits'};
-      case 'invalid-operation':
+      case 'not-found':
         return {code: 'not-found', detail: 'no such session or notice'};
       case 'revision-conflict':
         return {code: 'revision-conflict', detail: 'the core changed meanwhile'};
+      case 'invalid-state':
+        return {code: 'invalid-state', detail: 'the session\'s state does not allow it'};
     }
   }
 
@@ -675,8 +655,8 @@ class Core {
   }
 
   /**
-   * Brings freshness up to date. A refusal is not fatal: the next attempt waits a capped, doubling backoff, and each one
-   * is logged at DEBUG only. True when the records are up to date.
+   * Commits what has fallen due: expiry, and freshness brought up to date. A refusal is not fatal: the next attempt waits
+   * a capped, doubling backoff, and each one is logged at DEBUG only. True when the records are up to date.
    */
   async #refresh(): Promise<boolean> {
     try {
@@ -704,14 +684,12 @@ class Core {
         recordLog(this.#log, 'message.received', {...fields, ...refused(checked.ok ? 'invalid-message' : checked.error.code)});
         return;
       }
-      // A store that could not open, as on a first start on a full disk, holds nothing to check against: the owner
-      // opens it, or the observation is refused with the owner's code.
-      if (!this.#store.open) {
-        const owner = await this.#ensureOwner();
-        if (!('ingest' in owner)) {
-          recordLog(this.#log, 'message.received', {...fields, ...refused(owner.code)}, message);
-          return;
-        }
+      // A store that could not open, as on a first start on a full disk, holds nothing to check against: it opens now,
+      // or the observation is refused with the store's code.
+      const down = await this.#ensureStore();
+      if (down !== undefined) {
+        recordLog(this.#log, 'message.received', {...fields, ...refused(down.code)}, message);
+        return;
       }
       const verdict = this.#store.received(message);
       if (verdict === 'duplicate') {
@@ -758,13 +736,11 @@ class Core {
           this.#log.debug('message.received', {...fields, 'bunny.outcome': 'accepted'}, message);
           return;
         }
-        const cause = {message, kind: 'metadata.observed', entity: key, observation};
-        const result = await this.#store.during(cause, () => this.#call(owner => owner.setTitle(observation.identity, title, observation.observedAtMs)));
+        const result = await this.#session(() => this.#store.title({...message, data: observation}, title));
         recordLog(this.#log, 'message.received', {...fields, ...(result.ok ? {'bunny.outcome': result.outcome === 'applied' ? 'accepted' : result.outcome} : refused(result.refusal.code))}, message);
         return;
       }
-      const cause = {message, kind: reducedKind(observation), entity: sessionEntityId(observation.identity), observation};
-      const result = await this.#store.during(cause, () => this.#call(owner => owner.ingest(toEnvelope(observation))));
+      const result = await this.#session(() => this.#store.observe({...message, data: observation}));
       if (result.ok) {
         const outcome = result.outcome === 'duplicate' ? 'duplicate' : result.outcome === 'stale' ? 'stale' : 'accepted';
         const record = {...fields, 'bunny.outcome': outcome, 'bunny.state.revision': this.#store.revision, ...(outcome === 'stale' ? {'bunny.reason': 'stale'} : {})};
@@ -779,7 +755,7 @@ class Core {
   }
 
   /**
-   * Answers `notice-acknowledge` (#918) through agent-state's `acknowledge`. A consumer acknowledges for itself only: its
+   * Answers `notice-acknowledge` (#918) through the session logic. A consumer acknowledges for itself only: its
    * source's last segment must be the consumer ID. The acknowledgment commits before the reply, so `accepted` reports a
    * committed change; the session's state at its new revision is its evidence, and no outcome follows.
    */
@@ -803,8 +779,7 @@ class Core {
       if (record === undefined) return refuse('not-found', 'no such session');
       if (!record.notices.some(notice => notice.id === noticeId)) return refuse('not-found', 'no such notice');
       // The session's new revision joins the command's trace.
-      const cause = {message: command, kind: 'notice.acknowledged', entity: record.id};
-      const result = await this.#store.during(cause, () => this.#call(owner => owner.acknowledge(record.identity, noticeId, consumerId)));
+      const result = await this.#session(() => this.#store.acknowledge(command, record.id, noticeId, consumerId));
       if (!result.ok) return refuse(result.refusal.code, result.refusal.detail);
       recordLog(this.#log, 'command.completed', {...fields, 'bunny.outcome': result.outcome === 'duplicate' ? 'duplicate' : 'accepted', 'bunny.state.revision': this.#store.revision}, command);
       return {status: 'accepted'};
@@ -821,11 +796,11 @@ class Core {
   inbox(): ReturnType<InboxRecords['records']> { return this.#inbox.records(); }
   /** In-process history rows without span lookups. */
   history(filter: HistoryFilter): HistoryRow[] | ErrorBody {
-    return this.#store.open ? this.#store.history.read(filter) : errorBody('unavailable', {detail: 'the core history is unavailable'});
+    return this.#store.isOpen ? this.#store.history.read(filter) : errorBody('unavailable', {detail: 'the core history is unavailable'});
   }
   /** History's rows with the open spans of the entities that have a change row among them (#1773): the gateway's read. */
   historyPage(filter: HistoryFilter): HistoryPage | ErrorBody {
-    if (!this.#store.open) return errorBody('unavailable', {detail: 'the core history is unavailable'});
+    if (!this.#store.isOpen) return errorBody('unavailable', {detail: 'the core history is unavailable'});
     const page = this.#store.history.page(filter);
     if (page.rows.some(row => row.source === this.#sdk.source &&
       isAutomationDefinitionType(row.type) && this.holdsAutomationSecret(row.record))) {
@@ -846,7 +821,7 @@ class Core {
     return this.#tracker.dispatchOperator(action);
   }
 
-  /** Sets or clears one user label and completes the tracked action in that same owner transaction. */
+  /** Sets or clears one user label and completes the tracked action in that same session transaction. */
   async #label(command: Command<SessionLabelSetRequest>): Promise<Reply> {
     if (!this.#tracker.admitOperator(command)) return errorBody('forbidden', {detail: 'this command has no operator admission'});
     // Keep the admitted command facts stable while its queued owner work waits.
@@ -855,8 +830,8 @@ class Core {
       await this.#ready;
       if (this.#stopped) return errorBody('unavailable', {detail: 'the core is stopping'});
       return await this.#run(async () => {
-        const owner = await this.#ensureOwner();
-        if (!('ingest' in owner)) return errorBody(owner.code, {detail: owner.detail});
+        const down = await this.#ensureStore();
+        if (down !== undefined) return errorBody(down.code, {detail: down.detail});
         const {label, expectedRevision} = command.data;
         const current = (): SessionRecord | undefined => this.#store.records().find(record => record.id === command.subject);
         const guard = (): Refusal | undefined => current() === undefined ? {code: 'not-found', detail: 'no such session'} :
@@ -875,14 +850,12 @@ class Core {
           }
         } else {
           let intervened: Refusal | undefined;
-          const result = await this.#store.during({message: command, kind: 'label', entity: record.id},
-            () => this.#call(selected => selected.setLabel(record.identity, label, 'user'), () => intervened),
-            (_change, tx) => {
-              // Owner maintenance has its own queue. Compare the prior committed record inside this save's transaction.
+          const result = await this.#session(() => this.#store.label(command, record.id, label, (_change, tx) => {
+              // Compare the prior committed record inside this save's transaction, as a due change may have come first.
               intervened = guard();
               if (intervened !== undefined) throw new Error('label-revision-conflict');
               complete(tx);
-            });
+            }), () => intervened);
           if (!result.ok) {
             const failed = intervened ?? result.refusal;
             return errorBody(failed.code, {detail: failed.detail});
@@ -898,7 +871,7 @@ class Core {
     }
   }
 
-  /** One operator override: all configured acknowledgments and completion share the owner's save. */
+  /** One operator override: all configured acknowledgments and completion share one session save. */
   async #clearNotice(command: Command<NoticeClearRequest>): Promise<Reply> {
     if (!this.#tracker.admitOperator(command)) return errorBody('forbidden', {detail: 'this command has no operator admission'});
     command = {...command, data: structuredClone(command.data)};
@@ -906,8 +879,8 @@ class Core {
       await this.#ready;
       if (this.#stopped) return errorBody('unavailable', {detail: 'the core is stopping'});
       return await this.#run(async () => {
-        const owner = await this.#ensureOwner();
-        if (!('ingest' in owner)) return errorBody(owner.code, {detail: owner.detail});
+        const down = await this.#ensureStore();
+        if (down !== undefined) return errorBody(down.code, {detail: down.detail});
         const {noticeId, expectedRevision} = command.data;
         const current = (): SessionRecord | undefined => this.#store.records().find(record => record.id === command.subject);
         const guard = (): Refusal | undefined => {
@@ -928,13 +901,11 @@ class Core {
           catch { return errorBody(this.#store.takeFailure() === 'full' ? 'capacity' : 'internal', {detail: 'the core could not complete the notice action'}); }
         } else {
           let intervened: Refusal | undefined;
-          const result = await this.#store.during({message: command, kind: 'notice.acknowledged', entity: record.id},
-            () => this.#call(selected => selected.acknowledgeAll(record.identity, noticeId), () => intervened),
-            (_change, tx) => {
+          const result = await this.#session(() => this.#store.acknowledgeAll(command, record.id, noticeId, (_change, tx) => {
               intervened = guard();
               if (intervened !== undefined) throw new Error('notice-revision-conflict');
               complete(tx);
-            });
+            }), () => intervened);
           if (!result.ok) {
             const failed = intervened ?? result.refusal;
             return errorBody(failed.code, {detail: failed.detail});
@@ -950,12 +921,12 @@ class Core {
 
   /** The sessions the core holds at its revision, once its store is open and while it runs; undefined otherwise. */
   sessions(): {revision: number; sessions: readonly SessionRecord[]} | undefined {
-    if (this.#owner === undefined || this.#stopped) return undefined;
+    if (!this.#store.isOpen || this.#stopped) return undefined;
     return {revision: this.#store.revision, sessions: this.#store.records()};
   }
 
   /**
-   * Answers `approval-recover` (Hub #835), the old Hub's operator recovery, through agent-state's `recoverApproval`: it
+   * Answers `approval-recover` (Hub #835), the old Hub's operator recovery, through the session logic: it
    * retires the one approval marker without an attention ID that the session holds on `turnId`, only while the
    * session's evidence is uncertain. `expectedRevision` must be the session record's revision, so an operator who read a
    * record that has changed since is refused with `revision-conflict` and reads again. The change commits before the
@@ -977,14 +948,13 @@ class Core {
       const record: SessionRecord | undefined = this.#store.records().find(item => item.id === command.subject);
       if (record === undefined) return refuse('not-found', 'no such session');
       if (record.revision !== expectedRevision) return refuse('revision-conflict', 'the session changed since it was read; read it again');
-      const cause = {message: command, kind: 'attention.resolved', entity: record.id};
-      // The operator's guard is the record's revision; agent-state's own is taken as the core runs this change alone.
-      const result = await this.#store.during(cause, () => this.#call(owner => owner.recoverApproval(record.identity, turnId, owner.snapshot().revision)));
+      // The operator's guard is the record's revision, checked above as the core runs this change alone.
+      const result = await this.#session(() => this.#store.recoverApproval(command, record.id, turnId));
       if (!result.ok) {
         const {code, detail} = result.refusal;
-        // agent-state refuses a recovery whose preconditions do not hold as an invalid operation, which the core maps to
-        // `not-found`; the session exists, so it is the session's state that does not allow it.
-        return code === 'not-found' ? refuse('invalid-state', 'the session holds no uncertain approval without an ID on that turn') : refuse(code, detail);
+        // The session exists, so a recovery whose preconditions do not hold is refused for the session's state.
+        return code === 'not-found' || code === 'invalid-state'
+          ? refuse('invalid-state', 'the session holds no uncertain approval without an ID on that turn') : refuse(code, detail);
       }
       recordLog(this.#log, 'command.completed', {...fields, 'bunny.outcome': 'accepted', 'bunny.state.revision': this.#store.revision}, command);
       return {status: 'accepted'};
@@ -992,8 +962,8 @@ class Core {
   }
 
   /**
-   * Serves a sync: the core's records at its revision. Freshness is brought up to date first, at a new revision when it
-   * changed, so each record's freshness holds at the sync's time.
+   * Serves a sync: the core's records at its revision. What has fallen due commits first, at a new revision when it
+   * changed something, so each record's freshness holds at the sync's time and one revision always carries one payload.
    */
   async #serve(request: Message<SyncRequest>): Promise<Snapshot | ErrorBody> {
     try {await this.#ready;} catch {
@@ -1002,8 +972,8 @@ class Core {
     }
     if (this.#stopped) return errorBody('unavailable', {detail: 'the core is stopping'});
     return this.#run(async () => {
-      // A store that could not open, as at a first start on a full disk, has nothing to serve until the owner opens it.
-      if ((!this.#store.open && !('ingest' in await this.#ensureOwner())) || !await this.#refresh()) {
+      // A store that could not open, as at a first start on a full disk, has nothing to serve until it opens.
+      if (await this.#ensureStore() !== undefined || !await this.#refresh()) {
         this.#schedule();
         return errorBody('unavailable', {detail: 'the core cannot bring its sessions up to date now'});
       }
@@ -1028,14 +998,14 @@ class Core {
   }
 
   /**
-   * Publishes freshness when the next current record turns uncertain, at a new revision (MAPPING.md, `freshness`). After
-   * a refresh the store refused, the next attempt waits its backoff instead.
+   * Runs the core's next due change on its scheduler: a record turning uncertain (MAPPING.md, `freshness`), a session
+   * expiring or a guard lapsing. After a refresh the store refused, the next attempt waits its backoff instead.
    */
   #schedule(): void {
     this.#timer?.();
     this.#timer = undefined;
     if (this.#stopped) return;
-    const at = this.#freshness.pending ? this.#freshness.next : this.#store.nextTurn();
+    const at = this.#freshness.pending ? this.#freshness.next : this.#store.nextDue();
     if (at === undefined) return;
     const delay = Math.min(MAX_DELAY_MS, Math.max(0, at - this.#clock.now()));
     this.#timer = this.#scheduler.after(delay, () => this.#run(async () => {

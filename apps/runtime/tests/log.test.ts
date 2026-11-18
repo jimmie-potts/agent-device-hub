@@ -4,10 +4,14 @@
 import assert from 'node:assert/strict';
 import {spawn, type ChildProcess} from 'node:child_process';
 import {once} from 'node:events';
+import {chmod, mkdir} from 'node:fs/promises';
+import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {parseRecord, type DiagnosticRecord} from '@jimmie-potts/bunny-observability';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
+import {sessionEntityId} from '@jimmie-potts/event-contracts/v2/families';
 import {SdkError} from '@jimmie-potts/sdk';
 import {SAVE_COST} from '../src/core/store.js';
 import {shippedModules, startRuntime, type LogRecord} from '../src/index.js';
@@ -123,8 +127,28 @@ it('every stderr line of a runtime process is a contract record carrying the run
   assert.notEqual(instances[0], instances[1], 'another process has another instance ID');
 }, TWO_PROCESSES_BUDGET_MS);
 
+/**
+ * A state directory whose core store holds one synthetic session a day without evidence, so the core's start commits its
+ * expiry: one session save.
+ */
+async function expiringSession(context: TestContext): Promise<string> {
+  const dir = await stateDir(context);
+  await mkdir(join(dir, 'modules'), {mode: 0o700});
+  const file = join(dir, 'modules', 'core.sqlite');
+  const db = new DatabaseSync(file);
+  const identity = {provider: 'claude', client: 'code', hostId: 'synthetic-host', sourceId: 'claude-hooks', sessionId: 'synthetic-expiring'} as const;
+  const session = {id: sessionEntityId(identity), generation: 1, identity, parent: {status: 'top-level'}, turn: {status: 'unknown'}, activity: 'unknown',
+    attention: [], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'}, observedAtMs: 0, lastEvidenceAtMs: 0,
+    retiredTurns: [], seen: [], watermarks: []};
+  db.exec('CREATE TABLE core_sessions (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, generation INTEGER NOT NULL, session TEXT NOT NULL) STRICT');
+  db.prepare('INSERT INTO core_sessions VALUES (?, 1, 1, ?)').run(session.id, JSON.stringify(session));
+  db.close();
+  await chmod(file, 0o600);
+  return dir;
+}
+
 it('a startup save slower than its limit adds only its own contract record to the lifecycle on stderr', async context => {
-  const runtime = start(context, MAIN, await runtimeArgs(context, 'development'), false, SLOW_SAVE);
+  const runtime = start(context, MAIN, ['--port', '0', '--state-dir', await expiringSession(context)], false, SLOW_SAVE);
   await ready(runtime);
   const records = await stopped(runtime, 'development');
   assert.deepEqual(records.filter(costly).map(record => record.event_name), ['storage.cost.high'], 'the slow save is recorded once');

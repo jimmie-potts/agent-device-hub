@@ -165,27 +165,29 @@ republishes to it in its own start therefore finds it listening. If the core
 fails, the runtime ends: the process writes `runtime.failed` with `core-failed`
 and exits 1, and the service manager restarts it whole.
 
-- **Owner and store.** It runs `@jimmie-potts/agent-state`'s owner on the core
-  store in its own SQLite file, `modules/core.sqlite`. The store adapter
-  (`src/core/store.ts`) is copied from the old Hub's `apps/hub/src/storage.ts`
-  and keeps its format: the durable 2.1 state as one JSON row in `state`. Its
-  lease is an exclusive transaction on the lock database `core.sqlite-owner`
-  beside it, which has no rollback journal, so taking it writes nothing. The
-  core holds it from its start until it stops, including while it opens
-  agent-state's owner again after a failed commit. A second runtime on the same
-  state directory cannot open the core's database, which the first keeps to
-  itself (see [State](#state)), so its core fails at once; an owner that
-  reaches a held lease waits for it until agent-state's three-second deadline.
-  A file that holds another owner's state is refused before anything is written
-  to it.
+- **Session logic and store** (#1865). Its own session logic
+  (`src/core/session/`) reduces each observation and command in one pure
+  transition, and the core store (`src/core/store.ts`) commits the result in its
+  own SQLite file, `modules/core.sqlite`: one row per session in `core_sessions`
+  and one per retirement guard in `core_session_guards`. The store opens in the
+  core's start, before the core serves a sync or republishes: it takes the lease,
+  an exclusive transaction on the lock database `core.sqlite-owner` beside it,
+  which has no rollback journal, so taking it writes nothing; then it creates
+  every core part's tables, runs the one-time session reset when the old `state`
+  table is still there (see [UPGRADE.md](UPGRADE.md#one-time-session-reset)),
+  and loads its caches. The core holds the lease from its start until it stops,
+  through any failed commit. A second runtime on the same state directory cannot
+  open the core's database, which the first keeps to itself (see
+  [State](#state)), so its core fails at once; a start that reaches a held lease,
+  such as an offline tool's, waits for it for three seconds and then fails.
 - **Intake.** It subscribes to `bunny.event.lifecycle.*`, checks each message
   against profile 2.0, drops a duplicate by `(source, id)` and refuses the same
   `(source, id)` with other content as `duplicate-conflict`, then reduces the
-  observation as the lifecycle 1.2 envelope that
+  observation with its session logic, as
   [MAPPING.md](../../packages/event-contracts/MAPPING.md) describes. It keeps
   each observation's `(source, id)` in the same store for 24 hours past the
   later of the commit and the observation's own `observedAtMs`, as long as
-  agent-state still admits it, so a duplicate after a restart, or from a hook
+  the session logic still admits it, so a duplicate after a restart, or from a hook
   whose clock runs ahead, is still dropped. A duplicate is logged at DEBUG.
 - **Publication.** Each change derives its `session` state, removal and
   occurrence messages. One SQLite transaction commits the change with those
@@ -202,11 +204,13 @@ and exits 1, and the service manager restarts it whole.
   `rejected` with `capacity` (an acknowledgment is refused with `capacity`).
   The store uses the SDK's `fullDisk(error)` classifier, which also recognizes
   a filesystem `ENOSPC` wrapped as a cause.
-  The core then opens agent-state's faulted owner again on what committed,
-  keeping its lease. The core never fails on a full disk:
-  - if opening the owner fails, as when maintenance falls due, the core refuses
-    durable work with `capacity` or `unavailable` and tries again on demand
-    after a backoff that doubles from 1 s to 60 s;
+  The store stays open on what committed, keeping its lease. The core never
+  fails on a full disk:
+  - if its store cannot open, as at a first start or when the one-time reset
+    falls on a full disk, the core refuses durable work with `capacity` or
+    `unavailable` and tries again on demand after a backoff that doubles from
+    1 s to 60 s, and a due expiry or freshness change it cannot commit is tried
+    again on the same backoff;
   - at the start, a full disk leaves the core running in that state, and a
     failed refresh of the restart's uncertainty makes syncs answer `unavailable`
     until a later attempt, on the same backoff, succeeds. This holds on a real
@@ -222,33 +226,31 @@ and exits 1, and the service manager restarts it whole.
   the change stands, and its messages go out at the next commit or start, with
   their stored `id`, `time` and trace context. A crash between a commit and its
   publication sends them at the next start, once.
-- **Save cost.** Each save rewrites agent-state's whole state block, so the
-  store measures every save that commits (Hub #976). A save is agent-state's
-  commit through the store's lease: applying the change to the last committed
-  state, which clones, validates and serializes all of it, then the one
-  transaction with its records, history, intake and outbox rows, up to its
-  `COMMIT`. Publication comes after and is not counted. The intake's grouped
-  transactions for other participants' messages (Hub #782) and freshness
-  refreshes do not write the state block and are not timed. The store logs
-  `storage.cost.high` at WARN once the block passes half of the 16 MiB limit
-  (`bunny.state.bytes`) or once a save takes longer than 100 ms
+- **Save cost.** The store times every save that commits session rows (Hub
+  #976): one session change, from computing it and serializing its rows to the
+  `COMMIT` of its one transaction with records, history, intake and outbox rows.
+  Publication comes after and is not counted. Parts' transactions and freshness
+  refreshes write no session row and are not timed. The store logs
+  `storage.cost.high` at WARN once a save takes longer than 100 ms
   (`bunny.save.duration_ms`, whole milliseconds rounded up), and
-  `storage.cost.normal` at INFO with the size or time of the first save back
-  within the limit. Each condition is recorded once per run, and a restart
-  starts a new run. Both records carry `bunny.operation` `storage` and never
-  the state's content, and a logger that throws never changes a save. The
-  16 MiB limit still refuses a larger block with `state-capacity`.
+  `storage.cost.normal` at INFO with the time of the first save back within the
+  limit. The condition is recorded once per run, and a restart starts a new run.
+  Both records carry `bunny.operation` `storage` and never a session's content,
+  and a logger that throws never changes a save. The size condition and its
+  `bunny.state.bytes` record retired with the old state block (#1865): with one
+  row per session and at most 128 sessions, no save comes near its limit.
 - **Freshness.** Each record's `freshness` holds at the `time` of the message
   that carries it. A timer publishes a record again, at a new revision, when it
   turns uncertain five minutes after its last evidence, and a sync brings
-  freshness up to date first. After a restart every stored session is
+  freshness up to date first. The same timer, on the core's scheduler, expires a
+  session after a day without lifecycle evidence. After a restart every stored session is
   `restartUncertain` until fresh lifecycle evidence. One limit: a sync provider
   cannot name the time the SDK stamps on its answer, a microtask after the core
   computed the records, so a record that turns uncertain within that
   millisecond can disagree with its envelope by one millisecond. The core's
   timer usually publishes the change first.
 - **Approval recovery.** It answers `approval-recover` (#835), the old Hub's
-  operator recovery, through agent-state's `recoverApproval`. The command's
+  operator recovery, through its session logic. The command's
   subject is the session's `id`, and its `expectedRevision` is the session
   record's `revision` that the operator read. The core retires the one approval
   marker without an attention ID that the session holds on `turnId`, only while
@@ -279,15 +281,14 @@ and exits 1, and the service manager restarts it whole.
   provider's and those whose label, title, project or session ID contains `q`,
   ignoring case.
 - **Sync and acknowledgment.** It serves `session` through sync, and answers
-  `notice-acknowledge` through agent-state's `acknowledge` with `accepted`,
+  `notice-acknowledge` through its session logic with `accepted`,
   `not-found` for an unknown session or notice, `invalid-request` for an unknown
   consumer, and `forbidden` when the sender's source does not end in that
   consumer ID: a consumer acknowledges for itself only. The acknowledgment
   commits before the reply, and the session's state at its new revision, in the
   command's trace, is its evidence; no outcome follows. The consumers are
-  `DEFAULT_CONSUMERS` (`dashboard`, `nanoleaf` and `pixoo`). agent-state keeps that list with the
-  store and refuses a store whose list differs, so changing it needs a
-  migration.
+  `DEFAULT_CONSUMERS` (`dashboard`, `nanoleaf` and `pixoo`), a constant of the
+  code that the store does not keep.
 - **Session labels** (#1006). The authenticated control action route and
   `core_send_command` accept `session-label-set`, targeting the qualified
   session ID with `{label, expectedRevision}`; null clears the label. The
