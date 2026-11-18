@@ -37,7 +37,7 @@ Each numbered group is one pull request on its own `gh-1865-<step>` branch, with
 - [x] 4.3 `read_sessions` reports the shared status class and detail. Evidence: the assistant tool test.
 - [x] 4.4 Reachy and MicroDuck: use `opportunityMatches` plus their own device conditions. Remove the freshness terms and MicroDuck's session-count rule. Evidence: MicroDuck gestures for one matching session among several (red before), and no gesture for a mismatched generation, a cleared attention item, an expired opportunity, Quiet or takeover.
 - [x] 4.5 Coordinate with #627's owner before editing the robot modules. No coordination was needed: the owner recorded that no session is working on #627 ([#1865 comment 6992287211](https://github.com/jimmie-potts/agent-device-hub/issues/1865#issuecomment-6992287211), 2026-11-18). #627's robot guards still block a gesture: generation, cleared attention, expired opportunity, Quiet and takeover.
-- [ ] 4.6 Run `test:companions:built`, `test:reachy:built`, `test:microduck:built` and their browser suites, `test:runtime:built`, and a disposable acceptance exercise showing that progress and reconnect produce no duplicate speech or gesture.
+- [x] 4.6 Run `test:companions:built`, `test:reachy:built`, `test:microduck:built` and their browser suites, `test:runtime:built`, and a disposable acceptance exercise showing that progress and reconnect produce no duplicate speech or gesture.
 
 ## 5. Readers: dashboard, gateway, MCP and core parts
 
