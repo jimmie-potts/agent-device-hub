@@ -834,6 +834,37 @@ destination close. Journeys that navigate at phone width open the drawer through
 dashboard browser journey for a shell change, since the main column's width
 below 1200px depends on the rail.
 
+The jump palette (#1888) uses the same two entries.
+`node --test apps/runtime/dashboard/tests/jump.test.ts` covers the list (hub
+destinations, the pages of running modules once each, and recent pages without
+the current one), the filter's ranking over names and hints, which inputs
+count as text fields, and the key rules: Command or Control and K, the Mac
+exception for Control and K in a text field, the slash outside a field, menu,
+list or dialog, and no key while a modal dialog or a full-screen element covers
+the page.
+`node apps/runtime/dashboard/tests/shell.browser.ts` opens the palette from the
+keyboard, the rail's field, the phone bar and the phone drawer; checks the
+groups, arrow keys, narrowing, the empty result and that a stopped module's
+pages leave the list after a catalog read; checks that the page and the rail
+are inert behind it, that closing returns focus, that the browser's back button
+closes it, that a chosen page opens at its top with focus on the page from a
+scrolled one, and that it fits 390px and 320px windows; and records no command, sync, upload or provider request while
+it opens, narrows and closes. It also checks the chosen row's 3:1 boundary in
+both themes, that a scrolled list stays put when the shell renders, that the
+keys work and typing reaches the field with focus outside it, that a press on a
+heading or the footer keeps focus in the field, that the palette's stacking
+level is above the full-window visualizer's, that a stubbed full-screen element
+keeps it closed, that a slash on a slider opens it, that a held Enter opens it
+without choosing a row, that the toggle's box and focus ring stay clear of the
+brand, that a connected rail stays in view in a 580px window, and that an ended
+session's rail can be reached in 580px and 600px windows. It is opened there on the Devices directory,
+which mounts no module page, because a module page reads its copies with a sync
+request when it mounts.
+`node apps/runtime/dashboard/tests/conversation-workspace.browser.ts` checks
+that a slash typed in the composer is text, that the palette opened from the
+composer returns focus and the draft, and that it stays closed under the modal
+Details drawer.
+
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`
 for bounded metadata, operator admission, atomic revision guards and restart.

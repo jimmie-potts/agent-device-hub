@@ -84,9 +84,31 @@ locally. The category choice survives navigation within the open page without
 being saved as a new preference. Unknown modules use Other, and unavailable
 catalog or observation evidence stays explicit. Browsing sends no device command.
 
+The jump palette (#1888) opens any page from the keyboard. **Command and K** or
+**Control and K** opens it from anywhere, and so does a **slash** typed outside
+a text field and outside an open menu, list or dialog. A slider or a checkbox
+is not a text field. On a Mac, Control and K
+in a text field keeps its meaning there, deleting to the end of the line. The
+rail's **Jump to…** field and the phone bar's search button open it as well. It
+lists up to three pages visited most recently in this page session, the hub's
+destinations with Timeline, Settings and Connections, and every page the device
+directory lists for a running module. Typing narrows the list to names and
+hints that contain every typed word, the arrow keys move the choice and bring
+it into view, Enter opens the page at its top, and Escape, the same key again or a
+click outside closes it and returns focus to where it was. The page behind it
+is inert while it is open, and the browser's back or forward closes it. While
+open it reads its keys wherever focus is, keeps focus in its field when a
+heading or the footer is pressed, and leaves a list scrolled by touch or wheel
+where it was put. It is drawn above everything the page draws, including the
+full-window visualizer. The palette only navigates: it sends no command,
+sync, upload or provider request, and the recent pages are held in memory, not
+in storage. Its keys do nothing while a modal dialog is open or an element is
+shown full screen, since it could only open out of sight. A key pressed inside a framed module page does not reach
+the shell, so there the field and the button are the way in.
+
 `navigation.tsx` shares native anchor navigation and containing-destination
 selection. `directory.ts` projects the existing copies without acquiring state.
-`rail.tsx` owns the rail's collapse state and icons. `skins/quiet-glass.css` supplies light/dark semantic values over the retained
+`rail.tsx` owns the rail's collapse state and icons. `jump.ts` projects the palette's list and holds its key rules; `jump-palette.tsx` is the list. `skins/quiet-glass.css` supplies light/dark semantic values over the retained
 fixed attention/art tokens; `shell.css` owns shared responsive geometry. The
 legacy dashboard and documentation keep their own skins. Settings can follow
 displayed art colors, lock the current colors or restore Quiet glass. These
