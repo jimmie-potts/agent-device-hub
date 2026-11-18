@@ -4,6 +4,7 @@
 - [x] 1.2 Add destination icons, the collapse toggle and the per-window-size browser preference with its unit test.
 - [x] 1.3 Keep the rail in view while the page scrolls, with a fallback for a short window.
 - [x] 1.4 Replace the phone link row with a drawer and a menu button.
+- [x] 1.5 Open a chosen destination at the top of its page.
 
 ## 2. Evidence
 

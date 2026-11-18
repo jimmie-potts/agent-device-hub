@@ -93,6 +93,6 @@ void test('the stylesheet gives the icon rail the same rules at both window size
   const narrow = rules('.shell:not([data-rail-narrow=expanded])'), wide = rules('.shell[data-rail-wide=collapsed]');
   assert.ok(narrow.length >= 10, 'the icon rail rules are present');
   assert.deepEqual(narrow, wide);
-  assert.match(css, /@media\(min-width:681px\) and \(max-width:1199\.98px\)\{/, 'narrower windows default to the icon rail');
+  assert.match(css, /@media\(min-width:680\.02px\) and \(max-width:1199\.98px\)\{/, 'narrower windows default to the icon rail, from just above the phone width');
   assert.match(css, /@media\(min-width:1200px\)\{/, 'wide windows collapse only by choice');
 });

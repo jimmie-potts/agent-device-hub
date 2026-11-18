@@ -660,11 +660,15 @@ The visualizer SHALL offer Spectrum bars and Bass pulse. The chosen effect SHALL
 
 ### Requirement: One rail that collapses and becomes a phone drawer
 
-The shell SHALL present the destinations, the Settings utility, the feed indicator and the session's control mode in one rail that stays in view while a page scrolls. From 1200px wide the rail SHALL start expanded; below that it SHALL start as an icon rail in which every destination keeps its accessible name and shows that name on hover or keyboard focus. A toggle SHALL switch between the two, and the choice SHALL be kept in the browser separately for the two window sizes. Unavailable or damaged browser storage SHALL leave the defaults and a toggle that still works for the open page. At phone width the rail SHALL be a drawer opened from a menu button. Collapsing, expanding, opening and closing SHALL send no command, sync or provider request.
+The shell SHALL present the destinations, the Settings utility, the feed indicator and the session's control mode in one rail that stays in view while a page scrolls; a window too short to hold the rail SHALL let it scroll with the page. The skip link SHALL be visible above the rail whenever it has focus. A destination chosen from a navigation link SHALL open at the top of its page, and history navigation SHALL keep the browser's own scroll position. From 1200px wide the rail SHALL start expanded; below that it SHALL start as an icon rail in which every destination keeps its accessible name and shows that name on hover or keyboard focus. A toggle SHALL switch between the two, and the choice SHALL be kept in the browser separately for the two window sizes. Unavailable or damaged browser storage SHALL leave the defaults and a toggle that still works for the open page. At phone width the rail SHALL be a drawer opened from a menu button. Collapsing, expanding, opening and closing SHALL send no command, sync or provider request.
 
 #### Scenario: Default and remembered rail
 - **WHEN** the operator opens the dashboard in a wide window and in a narrower one, toggles the rail in one of them and reloads
 - **THEN** the wide window starts with the full rail and the narrower one with the icon rail, the toggled size keeps the operator's choice after the reload, and the other size keeps its own
+
+#### Scenario: Navigate while scrolled
+- **WHEN** the operator scrolls a long page and chooses a destination in the rail
+- **THEN** the rail is still in view to choose from, and the chosen page opens at its top
 
 #### Scenario: Icon rail
 - **WHEN** the rail is collapsed and the operator points at or focuses a destination
@@ -673,7 +677,8 @@ The shell SHALL present the destinations, the Settings utility, the feed indicat
 #### Scenario: Phone drawer
 - **WHEN** the operator opens the menu button at phone width
 - **THEN** the destinations and Settings appear in a drawer over the page with focus inside it
-- **AND** choosing a destination, pressing Escape or tapping outside closes it, and Escape and an outside tap return focus to the menu button
+- **AND** the page behind it cannot be reached with the keyboard or the pointer
+- **AND** choosing a destination, pressing Escape or tapping outside closes it and returns focus to the menu button
 
 #### Scenario: Storage refused
 - **WHEN** the browser refuses to read or save the rail choice
@@ -682,3 +687,4 @@ The shell SHALL present the destinations, the Settings utility, the feed indicat
 #### Scenario: Ended session
 - **WHEN** the browser session has ended while the rail would be collapsed
 - **THEN** the full rail is shown so that the sign-in recovery action is readable
+- **AND** at phone width the recovery action is shown beside the menu button without opening the drawer

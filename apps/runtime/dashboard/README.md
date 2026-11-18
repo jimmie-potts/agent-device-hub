@@ -68,14 +68,17 @@ Actual phone/certificate verification is separate from desktop browser tests.
 The rail has **Home, Habitat, Rooms, Devices and Automation**, each with an icon.
 Settings, the feed indicator and the control mode sit at the bottom of the rail
 (#1887); Settings contains Connections (including build/operator tools), Places
-and Disconnect. The rail stays in view while a page scrolls. Its toggle
+and Disconnect. The rail stays in view while a page scrolls, and a destination chosen from a
+navigation link opens at the top of its page. Its toggle
 collapses it to icons that keep their names for assistive technology and show
 them on hover or focus. It starts collapsed below 1200px and expanded from
 1200px up, and the toggle's choice is kept in this browser for each of those two
 window sizes (`rail-preference.ts`); it is never core or module state. At phone
 width the rail is a drawer behind a menu button, closed by a chosen destination,
-Escape or an outside tap. An ended browser session shows the full rail and still
-offers **Sign in again** globally. Home links Timeline. Devices groups catalog-derived Lighting,
+Escape or an outside tap, each of which returns focus to the button; the page
+behind the open drawer is inert. An ended browser session shows the full rail
+and still offers **Sign in again** globally, in the phone bar when the rail is a
+drawer. A window too short for the rail lets it scroll with the page. Home links Timeline. Devices groups catalog-derived Lighting,
 Displays, Audio and Other destinations; module pages keep their sibling links
 locally. The category choice survives navigation within the open page without
 being saved as a new preference. Unknown modules use Other, and unavailable

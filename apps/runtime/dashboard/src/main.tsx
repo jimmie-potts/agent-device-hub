@@ -177,7 +177,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const [now, setNow] = useState(Date.now());
   const [inboxFocus, setInboxFocus] = useState<InboxFocus>();
   const rail = useRail();
-  // On a phone the rail is a drawer. It closes when a destination is chosen, and Escape hands focus back to its button.
+  // On a phone the rail is a drawer. A chosen destination, Escape and an outside tap close it and hand focus back to its button.
   // While it is open the page behind it is inert, so focus stays in the drawer or on its button.
   const phone = usePhone();
   const [drawerWanted, setDrawer] = useState(false);
@@ -300,13 +300,18 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className={workspace ? 'shell workspace-shell' : 'shell'}
     data-rail-wide={ended ? 'expanded' : railAttribute(rail.saved.wide)} data-rail-narrow={ended ? 'expanded' : railAttribute(rail.saved.narrow)}
     data-drawer={drawer ? 'open' : undefined}>
-    <a className="skip" href="#main" onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
+    <a className="skip" href="#main" inert={drawer} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <header className="phone-bar">
       <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-expanded={drawer} aria-controls="rail"
         onClick={() => { setDrawer(open => !open); }}><RailIcon name="menu"/></button>
       <span className="phone-brand">B.U.N.N.Y.</span>
+      {ended && <button type="button" className="phone-sign-in" onClick={signInAgain}>Sign in again</button>}
     </header>
-    <aside id="rail" ref={railElement} onClick={event => { if (event.target instanceof Element && event.target.closest('a') !== null) setDrawer(false); }}>
+    <aside id="rail" ref={railElement} onClick={event => {
+      if (!drawer || !(event.target instanceof Element) || event.target.closest('a') === null) return;
+      setDrawer(false);
+      menuButton.current?.focus();
+    }}>
       <div className="rail-head">
         <div className="brand"><span className="rabbit">◈</span><div>B.U.N.N.Y.<small>LOCAL INTEGRATION</small></div></div>
         <button type="button" className="secondary rail-button rail-toggle" disabled={ended}

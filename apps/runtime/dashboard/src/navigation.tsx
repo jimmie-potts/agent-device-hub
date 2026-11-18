@@ -8,7 +8,11 @@ addEventListener('hashchange', emit);
 const subscribe = (listener: () => void): (() => void) => {listeners.add(listener); return () => {listeners.delete(listener);};};
 export const useRoute = (): Route => parseRoute(useSyncExternalStore(subscribe, () => location.hash));
 
-/** A real anchor keeps modified clicks native; ordinary clicks notify the shell before hashchange. */
+/**
+ * A real anchor keeps modified clicks native; ordinary clicks notify the shell before hashchange. The chosen page opens
+ * at its top: the rail stays in view (Hub #1887), so a destination can be chosen while the page is scrolled. Back and
+ * forward keep the browser's own scroll restoration.
+ */
 export function NavLink({route, current, selected, children}: {
   route: Route; current?: Route; selected?: boolean; children: React.ReactNode;
 }): React.JSX.Element {
@@ -17,6 +21,7 @@ export function NavLink({route, current, selected, children}: {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     if (location.hash !== href) location.hash = href;
+    window.scrollTo(0, 0);
     emit();
   }}>{children}</a>;
 }

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
-import {chromium} from 'playwright';
+import {chromium, type Request} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 import {destinationLink, openSettings} from './navigation-helpers.ts';
 import {RAIL_PREFERENCE_KEY} from '../src/rail-preference.ts';
@@ -24,6 +24,17 @@ const railWidth = (): Promise<number> => page.locator('.shell>aside').evaluate(e
 // The stylesheet decides the rail's state from the window width, so it is read from the layout with no wait after a resize.
 const railState = async (): Promise<string> => {const width = await railWidth(); return width === 184 ? 'expanded' : width === 64 ? 'collapsed' : `unexpected ${String(width)}px`;};
 const FIVE = ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation'];
+/** Records the POSTs that would be a command, sync, upload or provider request; the rail and the drawer must send none. */
+const recordWrites = (): {stop: () => string[]} => {
+  const seen: string[] = [];
+  const listen = (request: Request): void => {
+    if (request.method() !== 'POST') return;
+    const path = new URL(request.url()).pathname;
+    if (/^\/api\/sdk\/v1\/(request|respond|sync|upload|publish)$/.test(path) || path.startsWith('/api/v2/commands/')) seen.push(path);
+  };
+  page.on('request', listen);
+  return {stop: () => {page.off('request', listen); return seen;}};
+};
 const category = async (name: string): Promise<void> => {await page.getByRole('group', {name: 'Device categories'}).getByRole('button', {name, exact: true}).click();};
 const checks: string[] = [];
 try {
@@ -112,6 +123,22 @@ try {
   assert.equal(await railState(), 'expanded', 'a wide window starts with the full rail');
   assert.equal(await railWidth(), 184, 'the full rail keeps its width, so pages keep theirs in a wide window');
   assert.equal(await page.locator('.top').count(), 0, 'the separate top utility row is gone');
+  const skip = page.getByRole('link', {name: 'Skip to content', exact: true});
+  await skip.focus();
+  assert.equal(await skip.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return document.elementFromPoint(box.left + 4, box.top + 4) === element && document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) === element;
+  }), true, 'the focused skip link is painted above the rail');
+  await skip.evaluate(element => {element.blur();});
+  const indicator = page.locator('.sidebar-foot .status-indicator');
+  await indicator.focus();
+  const feedDetails = page.getByRole('tooltip').filter({hasText: 'Control enabled'});
+  await feedDetails.waitFor();
+  assert.equal(await feedDetails.evaluate(element => {
+    const box = element.getBoundingClientRect(), rail = document.querySelector('.shell>aside')?.getBoundingClientRect();
+    return rail !== undefined && box.left >= rail.right && box.top >= 0 && box.bottom <= innerHeight;
+  }), true, 'the feed details state the control mode and open beside the rail, over none of it');
+  await page.keyboard.press('Escape');
   const order = await page.evaluate(() => {
     const rail = document.querySelector('.shell>aside'), main = rail?.querySelector('nav[aria-label="Main navigation"]'), utilities = rail?.querySelector('nav[aria-label="Utilities"]');
     if (rail === null || rail === undefined || main === null || main === undefined || utilities === null || utilities === undefined) throw new Error('The rail holds both navigation groups.');
@@ -124,8 +151,18 @@ try {
   await open('Devices'); await category('Displays');
   await page.evaluate(() => {window.scrollTo(0, document.documentElement.scrollHeight);});
   assert.equal(await page.locator('.shell>aside').evaluate(element => element.getBoundingClientRect().top), 0, 'the rail stays in view while the page scrolls');
-  await page.evaluate(() => {window.scrollTo(0, 0);});
+  // A destination chosen while the page is scrolled opens at its top; Back keeps the browser's own position.
+  await open('Home');
+  await page.getByRole('button', {name: 'Edit Home', exact: true}).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollHeight > innerHeight), true, 'Home is taller than the window here');
+  await page.evaluate(() => {window.scrollTo(0, document.documentElement.scrollHeight);});
+  assert.equal(await page.evaluate(() => scrollY > 0), true);
+  await open('Devices');
+  await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
+  assert.equal(await page.evaluate(() => scrollY), 0, 'a chosen destination opens at its top');
 
+  // From here to the reload nothing opens a page, so any command, sync, upload or provider request would be the rail's own.
+  const railWrites = recordWrites();
   await page.setViewportSize({width: 1024, height: 1000});
   assert.equal(await railWidth(), 64, 'a narrower window starts with the icon rail, with no wait for a script');
   assert.deepEqual(await primary.getByRole('link').allTextContents(), FIVE, 'the icon rail keeps every destination name');
@@ -134,11 +171,20 @@ try {
   await rooms.hover();
   await page.waitForFunction(() => {const name = document.querySelector('.primary-navigation a:hover .rail-text'); return name !== null && getComputedStyle(name).opacity === '1';});
   assert.equal(await rooms.evaluate(element => (element.querySelector('.rail-text')?.getBoundingClientRect().left ?? 0) >= element.getBoundingClientRect().right), true, 'the name opens beside the icon, outside the rail');
+  await page.mouse.move(600, 500);
+  await toggle.focus(); await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => {
+    const link = document.activeElement;
+    if (link === null || link.closest('.primary-navigation') === null) return 'focus is not on a destination';
+    const name = link.querySelector('.rail-text');
+    return name !== null && link.matches(':focus-visible') ? getComputedStyle(name).opacity : 'no visible keyboard focus';
+  }), '1', 'a keyboard-focused icon shows its name');
   assert.equal(await page.getByText('Control enabled · Local', {exact: true}).isVisible(), true, 'the control mode stays readable to assistive technology');
   await toggle.click();
   assert.equal(await railState(), 'expanded');
   assert.equal(await toggle.getAttribute('aria-label'), 'Collapse navigation');
   assert.deepEqual(JSON.parse(await page.evaluate(key => localStorage.getItem(key), RAIL_PREFERENCE_KEY) ?? 'null'), {wide: null, narrow: true});
+  assert.deepEqual(railWrites.stop(), [], 'resizing, hovering, focusing and toggling the rail send no command, sync, upload or provider request');
   await page.reload(); await feed(page, 'connected');
   assert.equal(await railState(), 'expanded', 'the choice for a narrower window survives a reload');
   await page.setViewportSize({width: 1440, height: 1000});
@@ -165,6 +211,7 @@ try {
   await page.setViewportSize({width: 390, height: 844});
   const menu = page.getByRole('button', {name: 'Open navigation', exact: true}), drawer = page.locator('.shell>aside');
   await menu.waitFor();
+  const drawerWrites = recordWrites();
   assert.equal(await drawer.isVisible(), false, 'the drawer starts closed');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await menu.click();
@@ -173,6 +220,7 @@ try {
   assert.deepEqual(await primary.getByRole('link').allTextContents(), FIVE);
   assert.equal(await drawer.evaluate(element => element.contains(document.activeElement)), true, 'opening moves focus into the drawer');
   assert.equal(await page.locator('#main').evaluate(element => element.hasAttribute('inert')), true, 'the page behind the open drawer is inert');
+  assert.equal(await skip.evaluate(element => element.hasAttribute('inert')), true, 'the skip link, hidden behind the drawer, leaves the tab order');
   assert.equal(await page.getByRole('navigation', {name: 'Utilities'}).getByRole('link', {name: 'Settings', exact: true}).isVisible(), true);
   await page.keyboard.press('Escape');
   await drawer.waitFor({state: 'hidden'});
@@ -188,13 +236,62 @@ try {
   await menu.click(); await drawer.waitFor();
   await page.locator('.rail-scrim').click({position: {x: 370, y: 400}});
   await drawer.waitFor({state: 'hidden'});
+  assert.equal(await menu.evaluate(element => element === document.activeElement), true, 'an outside tap returns focus to the menu button');
   await menu.click(); await drawer.waitFor();
   await primary.getByRole('link', {name: 'Rooms', exact: true}).click();
   await page.getByRole('region', {name: 'Rooms', exact: true}).waitFor();
   await drawer.waitFor({state: 'hidden'});
   assert.equal(await menu.getAttribute('aria-expanded'), 'false', 'choosing a destination closes the drawer');
+  assert.equal(await menu.evaluate(element => element === document.activeElement), true, 'a chosen destination returns focus to the menu button');
+  // In the narrowest drawer the feed details open above the foot and fit inside it.
+  await page.setViewportSize({width: 320, height: 844});
+  await menu.click(); await drawer.waitFor();
+  await indicator.focus();
+  await page.getByRole('tooltip').filter({hasText: 'Control enabled'}).waitFor();
+  assert.equal(await drawer.evaluate(element => element.scrollWidth <= element.clientWidth), true, 'the feed details fit inside the 320px drawer');
+  await page.keyboard.press('Escape');
+  await drawer.waitFor({state: 'hidden'});
+  assert.deepEqual(drawerWrites.stop(), [], 'the drawer sends no command, sync, upload or provider request');
+  checks.push('the phone drawer opens from the menu button and closes on Escape, an outside tap and a chosen destination, with focus back on the button');
+
+  // An ended session keeps its recovery in view: the full rail at a desktop width, and the bar on a phone.
+  await page.setViewportSize({width: 1024, height: 1000});
+  await world.restart();
+  await feed(page, 'ended');
+  const again = page.getByRole('button', {name: 'Sign in again', exact: true});
+  await again.waitFor();
+  assert.equal(await railWidth(), 184, 'an ended session shows the full rail where the icon rail is the default');
+  assert.equal(await toggle.isDisabled(), true);
+  assert.equal(await again.evaluate(element => element.getBoundingClientRect().bottom <= innerHeight), true, 'the recovery is inside the rail and the window');
+  await page.setViewportSize({width: 1024, height: 500});
+  await again.scrollIntoViewIfNeeded();
+  assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight;}), true, 'a window too short for the rail can scroll the recovery into view');
+  await page.setViewportSize({width: 390, height: 844});
+  assert.equal(await drawer.isVisible(), false);
+  assert.equal(await again.count(), 1, 'a phone offers one recovery action');
+  assert.equal(await again.isVisible(), true, 'the phone bar offers the recovery without opening the drawer');
+  await again.click();
+  await feed(page, 'connected');
   await page.setViewportSize({width: 1440, height: 1000});
-  checks.push('the phone drawer opens from the menu button and closes on Escape, an outside tap and a chosen destination');
+  checks.push('an ended session shows the full rail, and its recovery on a phone without opening the drawer');
+
+  // The journey above runs with reduced motion. With motion allowed, the drawer's slide and its delayed hiding still finish.
+  const moving = await browser.newContext({viewport: {width: 390, height: 844}});
+  try {
+    const phone = await moving.newPage();
+    phone.setDefaultTimeout(15_000);
+    await phone.goto(world.url); await feed(phone, 'connected');
+    const sliding = phone.locator('.shell>aside'), opener = phone.getByRole('button', {name: 'Open navigation', exact: true});
+    await opener.click();
+    await sliding.waitFor();
+    await phone.waitForFunction(() => document.querySelector('.shell>aside')?.getBoundingClientRect().left === 0);
+    await phone.keyboard.press('Escape');
+    await sliding.waitFor({state: 'hidden'});
+    assert.equal(await opener.evaluate(element => element === document.activeElement), true);
+  } finally {
+    await moving.close();
+  }
+  checks.push('with motion allowed the drawer slides fully open and hides after it closes');
 
   for (const address of ['#/component/pendant-1', signAddress, '#/connections']) {
     assert.notEqual(address, null);
