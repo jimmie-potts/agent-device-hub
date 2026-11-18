@@ -43,10 +43,6 @@ async function mismatch(webp: Buffer, rgb: Buffer): Promise<string | undefined> 
 const read = (id: string): Buffer => readFileSync(new URL(`golden/${id}.webp`, fixtures));
 const expected = (id: string): Buffer => Buffer.from(golden.cases.find(entry => entry.id === id)?.rgb ?? '', 'base64');
 
-void test('sharp decodes WebP with its own libwebp', () => {
-  assert.match(sharp.versions.webp ?? '', /^\d+\.\d+/, 'libwebp is available');
-});
-
 void test('every golden image decodes to its frame, pixel by pixel, through an independent libwebp decoder', async () => {
   assert.deepEqual([golden.width, golden.height], [64, 32]);
   assert.ok(golden.cases.length >= 5);

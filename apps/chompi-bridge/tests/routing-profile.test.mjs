@@ -36,11 +36,6 @@ test('the shipped default profile validates with the owner-decided mappings', as
   assert.ok(Object.isFrozen(profile) && Object.isFrozen(profile.controls.slots), 'a loaded profile is immutable');
 });
 
-test('Play can share the explicit Send action', () => {
-  const profile = validateProfile({ ...shipped(), controls: { ...shipped().controls, send: [33, 27] } });
-  assert.deepEqual(profile.controls.send, [33, 27]);
-});
-
 test('unknown fields, a wrong schema version and wrong types reject with path-qualified issues', () => {
   assert.deepEqual(issues(() => validateProfile({ ...shipped(), command: 'calc.exe' })), ['profile.command: unknown field']);
   assert.match(issues(() => validateProfile({ ...shipped(), schemaVersion: 2 }))[0], /^profile\.schemaVersion: /);

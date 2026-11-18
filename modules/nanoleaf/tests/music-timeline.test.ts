@@ -247,15 +247,16 @@ test('phase location reports an unknown initial origin and exact unequal pulse b
   const prepared = prepareMusicCueFrames(phaseCue(), layout('lines'));
   assert.deepEqual(zonePhase(prepared, 0), {kind: 'transition', frameIndex: 0, cycle: 0,
     origin: {kind: 'unknown'}, target: [64, 32, 16], elapsedMs: 0, remainingMs: 100});
-  assert.deepEqual(zonePhase(prepared, 99.5), {kind: 'transition', frameIndex: 0, cycle: 0,
-    origin: {kind: 'unknown'}, target: [64, 32, 16], elapsedMs: 99.5, remainingMs: 0.5});
+  const beforeBoundary = {kind: 'transition', frameIndex: 0, cycle: 0,
+    origin: {kind: 'unknown'}, target: [64, 32, 16], elapsedMs: 99.5, remainingMs: 0.5};
+  assert.deepEqual(zonePhase(prepared, 99.5), beforeBoundary);
   assert.deepEqual(zonePhase(prepared, 100), {kind: 'transition', frameIndex: 1, cycle: 0,
     origin: {kind: 'endpoint', color: [64, 32, 16]}, target: [6, 3, 2], elapsedMs: 0, remainingMs: 800});
   assert.deepEqual(zonePhase(prepared, 900), {kind: 'transition', frameIndex: 0, cycle: 1,
     origin: {kind: 'endpoint', color: [6, 3, 2]}, target: [64, 32, 16], elapsedMs: 0, remainingMs: 100});
   const later = zonePhase(prepared, 2750);
   assert.equal(later.kind === 'transition' && later.cycle, 3);
-  assert.deepEqual(zonePhase(prepared, 99.5), zonePhase(prepared, 99.5));
+  assert.deepEqual(zonePhase(prepared, 99.5), beforeBoundary, 'seeking back from a later cycle restores the earlier phase');
   assert.ok(Object.isFrozen(locateMusicCuePhase(prepared, 100)));
 });
 

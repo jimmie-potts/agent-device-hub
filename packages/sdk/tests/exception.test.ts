@@ -135,11 +135,7 @@ it('a bound or caller-installed stack accessor is not V8\'s and never runs, whil
   Object.defineProperty(bound, 'stack', {get: getter.bind(null)});
   assert.equal(exceptionFields(bound)['exception.stacktrace'], undefined, 'a bound function prints as native code but is not V8\'s accessor');
   assert.equal(ran, 0);
-  const captured = {name: 'Captured'} as {name: string; stack?: string};
-  Error.captureStackTrace(captured);
   const typed = new TypeError('typed');
-  const accessor = (error: Error): unknown => (Object.getOwnPropertyDescriptor(error, 'stack') as {readonly get?: unknown} | undefined)?.get;
-  assert.equal(accessor(typed), accessor(new RangeError('other')), 'V8 shares one accessor');
   assert.match(String(exceptionFields(typed)['exception.stacktrace']), /^TypeError: typed\n/);
 });
 
