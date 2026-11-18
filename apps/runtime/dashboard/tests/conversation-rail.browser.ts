@@ -267,24 +267,31 @@ async function railInDashboard(browser: Browser): Promise<void> {
     assert.deepEqual(await page.locator('.shell>aside').evaluate(rail => [...rail.children].map(child => child.className.split(' ')[0])),
       ['rail-head', 'secondary', 'primary-navigation', 'rail-pins', 'rail-conversations', 'sidebar-foot']);
     assert.deepEqual(historyReads, [], 'with no question pending the rail reads no history');
-    // A row is as wide as the rail and no wider, with the name and the Demo label on one line. With a font too wide
-    // for one line the label moves under the name inside the row, and neither is cut.
-    const fit = (): Promise<{inRail: boolean; whole: boolean; lines: number[]}> => conversations.evaluate(group => {
+    // A row is as wide as the rail and no wider. The name and the Demo label share a line where they fit; with a font
+    // too wide for one line the label moves under the name inside the row, and neither is cut. Which of the two a row
+    // shows depends on the computer's fonts: the Linux container's are wider than a Mac's, and "MicroDuck" with its
+    // label does not fit one line there. So `lines` is what each row shows and `room` what its own widths call for.
+    const fit = (): Promise<{inRail: boolean; whole: boolean; lines: number[]; room: number[]}> => conversations.evaluate(group => {
       const inside = group.getBoundingClientRect(), links = [...group.querySelectorAll('a')];
+      const parts = links.map(link => ({row: link.getBoundingClientRect(), text: link.querySelector('.rail-text'), name: link.querySelector('.rail-text > span')?.getBoundingClientRect(),
+        tag: link.querySelector('.rail-tag')?.getBoundingClientRect()}));
       return {inRail: links.every(link => link.getBoundingClientRect().right <= inside.right + 0.5 && link.getBoundingClientRect().width <= inside.width + 0.5),
         whole: links.every(link => link.scrollWidth <= link.clientWidth + 1 && [...link.querySelectorAll('.rail-text > *')].every(part => part.scrollWidth <= part.clientWidth + 1 || getComputedStyle(part).position === 'absolute')),
-        lines: links.map(link => {
-          const name = link.querySelector('.rail-text > span')?.getBoundingClientRect(), tag = link.querySelector('.rail-tag')?.getBoundingClientRect(), row = link.getBoundingClientRect();
-          if (name === undefined) return 0;
-          return tag === undefined ? 1 : tag.top >= name.bottom - 2 && tag.bottom <= row.bottom ? 2 : tag.left >= name.right ? 1 : 0;
+        lines: parts.map(({row, name, tag}) => name === undefined ? 0 : tag === undefined ? 1 : tag.top >= name.bottom - 2 && tag.bottom <= row.bottom ? 2 : tag.left >= name.right ? 1 : 0),
+        room: parts.map(({text, name, tag}) => {
+          if (text === null || name === undefined) return 0;
+          return tag === undefined || name.width + Number.parseFloat(getComputedStyle(text).columnGap) + tag.width <= text.getBoundingClientRect().width + 0.01 ? 1 : 2;
         })};
     });
-    assert.deepEqual(await fit(), {inRail: true, whole: true, lines: [1, 1, 1]}, 'each conversation row fits the rail on one line');
+    const natural = await fit();
+    assert.deepEqual([natural.inRail, natural.whole, natural.lines, natural.lines[0]], [true, true, natural.room, 1],
+      `each conversation row fits the rail, on one line where its name and label have the room: ${JSON.stringify(natural)}`);
     // The page's content security policy refuses an added stylesheet, so the wider font is set on the rows themselves.
     const fontSize = (size: string): Promise<void> => conversations.evaluate((group, value) => {for (const link of group.querySelectorAll('a')) link.style.fontSize = value;}, size);
     await fontSize('1.3rem');
     const wider = await fit();
-    assert.deepEqual([wider.inRail, wider.whole, wider.lines[0], wider.lines[2]], [true, true, 1, 2], `with a wider font the longest name's Demo label moves under it and nothing is cut: ${JSON.stringify(wider)}`);
+    assert.deepEqual([wider.inRail, wider.whole, wider.lines, wider.lines[0], wider.lines[2]], [true, true, wider.room, 1, 2],
+      `with a wider font the longest name's Demo label moves under it and nothing is cut: ${JSON.stringify(wider)}`);
     await fontSize('');
 
     // From Home, Rooms and a device page, one click opens that profile with its own history.
