@@ -11,7 +11,7 @@
 - One shared read function in the contracts package is the only way readers interpret a session record. It reads `session/2.x` until the final step and `session/3.0` after it. A shared synthetic case set, including occurrence sequences, runs against the core and every reader.
 - A core restart marks running work unconfirmed. New roots start idle (#397). The 128-session limit applies to roots from any source.
 - On its first start, the step that moves session data into core tables drops the old session data, the session family's latest-history pointer and pending session publications. It emits no occurrence and runs no automation.
-- Readers adopt the accepted policies: Nanoleaf Lines keep a waiting task's indication, a question has a 30-second priority window over background cards and automatic speech, and MicroDuck loses its blanket session-count rule.
+- Readers adopt the accepted policies: Nanoleaf follows the hub's shared status with no session rule of its own, so waiting and unread tasks keep their indication until that status changes, a question has a 30-second priority window over background cards and automatic speech, and MicroDuck loses its blanket session-count rule.
 
 ## Capabilities
 
@@ -26,7 +26,7 @@ None.
 - `runtime-agent-hooks`: the hook builds the observation with the runtime's own adapter.
 - `runtime-dashboard`: session rows and their uncertainty come from the shared status.
 - `runtime-tidbyt`: the status tile marks only unknown status and unconfirmed work.
-- `nanoleaf-module`: reads sessions through the shared read function and keeps a waiting task's indication.
+- `nanoleaf-module`: the Lines follow the hub's shared status through the shared read function, with no session rule of their own.
 - `bunny-pixoo-module`: the Monitor's uncertainty marker follows the shared status.
 - `bunny-microduck` and `bunny-reachy`: automatic expression matches opportunities without session freshness or a session count.
 - `bunny-companions`: cards, speech and suggestions use opportunity matching and the 30-second question window.

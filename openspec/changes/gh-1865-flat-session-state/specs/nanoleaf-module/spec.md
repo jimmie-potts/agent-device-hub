@@ -26,13 +26,21 @@ The module SHALL follow the core's `session` records through the SDK's sync, nev
 
 ## ADDED Requirements
 
-### Requirement: Waiting tasks keep their Lines indication
+### Requirement: Lines follow the hub's shared status
 
-A task whose status needs the owner SHALL keep its Lines alert indication for as long as the attention stays, whatever the silence, subject to the module's mode and connection rules. Only a status that rests on unconfirmed work SHALL count as stale at the feed boundary, so a working task whose work turned unconfirmed SHALL hold steady as before. Reconnection or resync SHALL NOT replay an arrival wave or a comet.
+The module SHALL keep no session rule of its own. At its feed boundary it SHALL give each task the hub's status through the shared session read function, with Nanoleaf's acknowledgment and read policy: `blocked` for a member that needs the owner with an approval or input, `question` for a member that needs the owner with a question, `working` for a working root or member, `unread` for a root that is finished for Nanoleaf, and `idle` for a quiet root. A task SHALL be held steady only when its hub status is `unknown`, or `working` with no working member whose work is confirmed; a task whose hub status is `unknown` SHALL keep its last displayed status, held steady, until the hub reports a known one. No evidence age, member freshness or retained status SHALL otherwise change what a task shows. Waiting and unread tasks SHALL keep their indication until the hub's status changes, subject to the module's mode and connection rules. Effects, wave epochs, source reservations and the frozen state of a lost copy SHALL stay unchanged, and reconnection or resync SHALL NOT replay an arrival wave or a comet.
 
 #### Scenario: A question left waiting
 - **WHEN** a task raises a question in Work and stays silent for ten minutes
 - **THEN** its Line keeps the question's alert animation throughout, and a working task silent for the same time holds steady once its work is unconfirmed
+
+#### Scenario: An unread finished task
+- **WHEN** a task's turn ends in Work and nobody reads or acknowledges it for ten minutes
+- **THEN** its Line keeps its unread indication throughout, and it turns idle at once when Nanoleaf acknowledges the notice, read evidence arrives or a new turn starts
+
+#### Scenario: Unknown status
+- **WHEN** a task shown as working turns `unknown` in the hub's status
+- **THEN** its Line keeps the working status held steady, and the next known status replaces it
 
 #### Scenario: Reconnect while waiting
 - **WHEN** the module's copy is lost and synced again while a task waits on an approval

@@ -122,11 +122,11 @@ The core SHALL answer the `approval-recover` command on `bunny.cmd.approval-reco
 
 ### Requirement: Core save cost
 
-The core store SHALL measure each save that commits: one transition's commit, from before it serializes the changed session rows until the outbox's transaction has committed, before any of its messages is published. A save's size SHALL be the byte length of the session rows it writes, and its time SHALL be read from a monotonic clock. The store SHALL log `storage.cost.high` at WARN as one save's session rows pass 8 MiB, carrying the size in `bunny.state.bytes`, and as one save takes longer than 100 ms, carrying its time in whole milliseconds rounded up in `bunny.save.duration_ms`; each condition SHALL be recorded once per run, and the first save back within its limit SHALL log `storage.cost.normal` at INFO with that save's size or time. Both records SHALL carry `bunny.operation` `storage` and no other field, never a session's content. A save that does not commit SHALL change neither condition, the runs SHALL be kept in memory only, and a logger that throws SHALL lose only its record: the save SHALL stand. Part transactions that write no session row SHALL NOT be measured.
+The core store SHALL measure each save that commits: one transition's commit, from before it serializes the changed session rows until the outbox's transaction has committed, before any of its messages is published. A save's time SHALL be read from a monotonic clock. The store SHALL log `storage.cost.high` at WARN as one save takes longer than 100 ms, carrying its time in whole milliseconds rounded up in `bunny.save.duration_ms`; the condition SHALL be recorded once per run, and the first save back within its limit SHALL log `storage.cost.normal` at INFO with that save's time. The size condition and its `bunny.state.bytes` record SHALL be retired with the state block, since one row per session and at most 128 sessions keep every save far below the old limit. Both records SHALL carry `bunny.operation` `storage` and no other field, never a session's content. A save that does not commit SHALL change neither condition, the runs SHALL be kept in memory only, and a logger that throws SHALL lose only its record: the save SHALL stand. Part transactions that write no session row SHALL NOT be measured.
 
 #### Scenario: A state block past its limit
-- **WHEN** a save under a lowered limit writes session rows past it, a further save stays past it, and two more saves stay within it
-- **THEN** the store logs one `storage.cost.high` WARN with the size of the first save past the limit and one `storage.cost.normal` INFO with the size of the first save back within it, and each is written whole as a profile 1.5 module record of the core
+- **WHEN** the core holds 128 sessions with the largest notices and attention its limits allow, and saves change each of them
+- **THEN** no save logs a size record, because no state block exists, and only the time condition can record a costly save
 
 #### Scenario: A slow save
 - **WHEN** saves take 5 ms, exactly 100 ms, 100.25 ms, 250 ms, 5 ms and 5 ms of work in their transactions, and each message's publication after its commit takes a second
@@ -223,6 +223,18 @@ The core SHALL own fresh event rules, interrupt sets, quiet hours and budgets in
 - **WHEN** the core first starts on a store holding old session data and pending session publications, with rules enabled for every agent occurrence
 - **THEN** no occurrence is published, no rule is evaluated and no moment is dispatched
 
+### Requirement: Agent hooks and Codex Desktop in the catalog and disposable runs
+
+The harness contract SHALL include a `hook` call that runs the 2.0 hook script (`runtime-agent-hooks`) once, as a client's hook command does, with an unchanged lifecycle 1.x producer file naming the runtime's port and a payload on stdin, and that, asked with `runtime: 'stopped'`, runs it while the runtime is stopped and starts the runtime again on the same state directory and port afterwards. Each execution adapter SHALL grant the agent hooks' converted producer credential (`PRODUCER`, with `ingest` alone, under a run-generated token in the Hub's form with the synthetic prefix `tok_SYNTHETIC835`) beside the parts' credentials, and its `gateway` call SHALL also act as that producer. The hook's environment SHALL carry no Claude Code variable and no `CODEX_HOME` of the process that runs it. The catalog SHALL also cover the agent hooks through the 2.0 hook script and the Codex Desktop module with a simulated marker (`runtime-codex-desktop`). In a disposable run the supervisor SHALL write the producer file once it knows the runtime's port, at `<data>/config/producer/producer.json`, owner-only; its harness API SHALL drive the simulated marker, and its restart SHALL take an optional `holdMs`, a whole number of milliseconds up to 10,000, for which it keeps the runtime stopped before it starts it again; the runtime's child SHALL reach the simulated marker over its IPC channel without a path; and the served candidate SHALL include the hook script and the module's build, whose sources `build-current` watches.
+
+#### Scenario: Agent hooks on both transports and in a run
+- **WHEN** `agent-hooks` runs in process, through the edge and in a disposable run: the hook script reports a Claude Code session's start, a prompt with a private canary, a permission dialog, the tool that ends it and the turn's end; the producer's credential sends a command and reads; a hook runs while the runtime is stopped; and the next hook runs after the restart
+- **THEN** each hook exits 0 within 3 s and writes nothing; the session appears quiet with its project, holds the turn, raises the approval prompt and clears it as resolved, and ends finished with its notice; the producer's command and read are `forbidden` and its authority is `ingest`; the hook while the runtime is stopped is lost, so after the restart the session keeps its turn and its finished status, with no work to mark unconfirmed, until the next hook starts a new turn and confirms work on it; and no record, message or answer holds the canary or a token
+
+#### Scenario: Codex Desktop's marker on both transports and in a run
+- **WHEN** `codex-desktop-read` runs in process, through the edge and in a disposable run
+- **THEN** it passes as `runtime-codex-desktop` "Simulated marker and acceptance tiers" requires, and every message the parts see follows profile 2.0
+
 ## ADDED Requirements
 
 ### Requirement: Session claims, status and aging
@@ -283,11 +295,15 @@ The core SHALL hold at most 128 sessions, roots and children from any source tog
 
 ### Requirement: One-time session reset at the first start after the cutover
 
-When the core store opens and finds the old agent-state `state` table, it SHALL, in one transaction before the core serves a sync or republishes, drop that table and delete the session family's published records, the session family's latest-history and span rows, and pending outbox messages of session states, session removals and agent occurrences. The reset SHALL publish nothing and SHALL write no history row. It SHALL keep every other part's tables and rows, history fact rows, the core's revision and the taken `(source, id)` records. A start that finds no `state` table SHALL change nothing. The reset SHALL record one existing `operation.completed` storage record and no session content.
+When the core store opens and finds the old agent-state `state` table, it SHALL, in one transaction before the core serves a sync or republishes, drop that table, empty the core's own session and retirement-guard tables, and delete the session family's published records, the session family's latest-history and span rows, and pending outbox messages of session states, session removals and agent occurrences. The reset SHALL raise the core's revision by one, SHALL publish nothing and SHALL write no history row, so the next sync serves the empty session family at a revision no earlier payload carried. It SHALL keep every other part's tables and rows, history fact rows and the taken `(source, id)` records. A start that finds no `state` table SHALL change nothing. The reset SHALL record one existing `operation.completed` storage record and no session content.
 
 #### Scenario: A store shaped like an installed one
-- **WHEN** the core first starts on a synthetic store holding an old `state` row, session records, session latest-history and span rows, pending session and occurrence outbox rows, and another part's records and outbox rows
-- **THEN** the core serves an empty session family at a revision above the stored one, the other part's rows and messages are intact, no session message goes out, and a second start changes nothing
+- **WHEN** the core first starts on a synthetic store holding an old `state` row, session records, rows in the core's session and guard tables, session latest-history and span rows, pending session and occurrence outbox rows, and another part's records and outbox rows
+- **THEN** the core serves an empty session family at the stored revision plus one, the other part's rows and messages are intact, no session message goes out, and a second start changes nothing
+
+#### Scenario: A release before the reset in between
+- **WHEN** a release that predates the reset runs on a reset store and writes a `state` row, and the core then starts again
+- **THEN** the reset runs again and empties the core's session and guard tables too, so no session from before it returns
 
 #### Scenario: A crash during the reset
 - **WHEN** the process dies while the reset's transaction is open
