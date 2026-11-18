@@ -6,7 +6,7 @@ export async function showRail(page: Page): Promise<void> {
   if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
 }
 
-/** A main destination's link in the rail, with the phone drawer opened when the rail is one. */
+/** A main destination's link in the rail, with the phone drawer opened when the rail is one. Devices is not a link: use `openDirectory`. */
 export async function destinationLink(page: Page, name: string | RegExp): Promise<Locator> {
   await showRail(page);
   return page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', typeof name === 'string' ? {name, exact: true} : {name});
@@ -23,8 +23,29 @@ export async function openConnections(page: Page): Promise<void> {
   await page.getByRole('link', {name: 'Connections', exact: true}).click();
 }
 
+/** The five destinations' names in order: four links and the Devices button (Hub #1889). */
+export function destinationNames(page: Page): Promise<string[]> {
+  return page.getByRole('navigation', {name: 'Main navigation'}).locator('a, button').allTextContents();
+}
+
+/** The Devices row opens the menu of every device page (Hub #1889). */
+export async function openDeviceMenu(page: Page): Promise<Locator> {
+  await showRail(page);
+  const row = page.getByRole('navigation', {name: 'Main navigation'}).getByRole('button', {name: 'Devices', exact: true});
+  const menu = page.getByRole('menu', {name: 'Device pages', exact: true});
+  if (await row.getAttribute('aria-expanded') !== 'true') await row.click();
+  await menu.waitFor();
+  return menu;
+}
+
+/** Opens the Devices directory, which is behind the menu's "All devices". */
+export async function openDirectory(page: Page): Promise<void> {
+  await (await openDeviceMenu(page)).getByRole('menuitem', {name: 'All devices', exact: true}).click();
+  await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
+}
+
 export async function directoryLink(page: Page, category: string, name: string): Promise<Locator> {
-  await (await destinationLink(page, 'Devices')).click();
+  await openDirectory(page);
   await page.getByRole('group', {name: 'Device categories'}).getByRole('button', {name: category, exact: true}).click();
   return page.getByRole('link', {name, exact: true});
 }

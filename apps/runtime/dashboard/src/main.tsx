@@ -9,8 +9,10 @@ import {LightingWorkspace} from './lighting-workspace.tsx';
 import {DeviceDirectory} from './device-directory.tsx';
 import {NavLink, ShellNavigation, navigate, useRoute} from './navigation.tsx';
 import {JumpPalette} from './jump-palette.tsx';
+import {DeviceMenu, type DeviceMenuClose} from './device-menu.tsx';
+import {PinTargetsProvider, PinToggle, PinnedPages, usePinTargets, usePins} from './pins.tsx';
 import {jumpEntries, jumpShortcut, rememberRoute, textInput} from './jump.ts';
-import {RailIcon, usePhone, useRail} from './rail.tsx';
+import {RailIcon, usePhone, useRail, useRailShort} from './rail.tsx';
 import {railAttribute} from './rail-preference.ts';
 import {InboxPanel, type InboxFocus} from './inbox.tsx';
 import {Timeline, TimelinePanel} from './timeline.tsx';
@@ -191,11 +193,34 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   useEffect(() => { if (!phone) setDrawer(false); }, [phone]);
   const menuButton = useRef<HTMLButtonElement>(null);
   const railElement = useRef<HTMLElement>(null);
+  const railShort = useRailShort(railElement, phone);
   const address = routeHash(route);
-  useEffect(() => { setDrawer(false); }, [address]);
+  // The Devices menu (#1889) opens from its row in the rail. On a phone it covers the drawer, so it is shown only while
+  // the drawer is. A page change and a change between phone and wider layouts close it. A drawer that closes under it
+  // moves focus to the drawer's button, and the menu closes when focus leaves it.
+  const [menuWanted, setMenu] = useState(false);
+  const menu = menuWanted && (!phone || drawer);
+  const devicesRow = useRef<HTMLButtonElement>(null);
+  const pins = usePins();
+  useEffect(() => { setDrawer(false); setMenu(false); }, [address]);
+  useEffect(() => { setMenu(false); }, [phone]);
+  // A menu taken away while it holds focus, by a page change or a change of layout, hands focus on instead of
+  // dropping it on the page: to its row, or at phone width to the drawer's button, since the drawer closes with it.
+  // The hand-off never scrolls. In a short window the rail scrolls with the page, and bringing the row into view
+  // would move the page under a press that is still landing, or under the browser's own return to a scroll position.
+  const narrow = useRef(phone);
+  narrow.current = phone;
+  const menuDropped = (): void => { (narrow.current ? menuButton.current : devicesRow.current)?.focus({preventScroll: true}); };
+  const closeMenu = (focus: DeviceMenuClose): void => {
+    setMenu(false);
+    if (focus === 'row') devicesRow.current?.focus();
+    // A chosen page takes focus itself, as it does after the palette. Under the phone drawer the page is inert, and
+    // the drawer hands focus to its own button.
+    else if (focus === 'page') document.getElementById('main')?.focus();
+  };
   useEffect(() => {
     if (!drawer) return;
-    (railElement.current?.querySelector<HTMLElement>('a[aria-current]') ?? railElement.current?.querySelector<HTMLElement>('a'))?.focus();
+    (railElement.current?.querySelector<HTMLElement>('nav [aria-current]') ?? railElement.current?.querySelector<HTMLElement>('nav a'))?.focus();
     const dismiss = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return;
       setDrawer(false);
@@ -226,9 +251,11 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   }, [address, route]);
   const openJump = (): void => {
     if (jump) return;
-    // The phone drawer closes under the palette, so focus goes back to the button that opens the drawer.
-    jumpFrom.current = drawer ? menuButton.current : document.activeElement;
+    // The phone drawer closes under the palette, so focus goes back to the button that opens the drawer. The Devices
+    // menu closes too, so focus goes back to its row.
+    jumpFrom.current = drawer ? menuButton.current : menu ? devicesRow.current : document.activeElement;
     setDrawer(false);
+    setMenu(false);
     setJump(true);
   };
   const closeJump = (): void => { setJump(false); };
@@ -271,6 +298,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const live = state.feed === 'connected' && state.sessions.synced;
   const notice = liveNotice(state);
   const runtime = state.runtime;
+  const pinnable = usePinTargets(runtime);
   // The palette's list changes only with the catalog, the copies or the page, not with each tick of the shell's clock.
   const jumpPlaces = useMemo(() => jump ? jumpEntries(runtime, recents.current, route) : [], [jump, runtime, route]);
   const devices = runtime.copies.filter(copy => copy.family === 'device').flatMap(copy => (copy.records as readonly DeviceRecord[]).map(record => ({record, copy})));
@@ -363,9 +391,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const artNotice = scheduledArtNotice(schedule.record, state.feed === 'connected' && schedule.synced, operations, operationsLive, now);
   // An ended session expands the rail at every width, so "Sign in again" is never squeezed into the icon rail.
   const ended = state.feed === 'ended', railExpanded = rail.expanded || ended;
-  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className={workspace ? 'shell workspace-shell' : 'shell'}
+  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><PinTargetsProvider targets={pinnable}><div className={workspace ? 'shell workspace-shell' : 'shell'}
     data-rail-wide={ended ? 'expanded' : railAttribute(rail.saved.wide)} data-rail-narrow={ended ? 'expanded' : railAttribute(rail.saved.narrow)}
-    data-drawer={drawer ? 'open' : undefined} data-session={ended ? 'ended' : undefined}>
+    data-drawer={drawer ? 'open' : undefined} data-rail-short={railShort ? '' : undefined}>
     <a className="skip" href="#main" inert={drawer || jump} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
     <header className="phone-bar" inert={jump}>
       <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-expanded={drawer} aria-controls="rail"
@@ -387,13 +415,16 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div>
       <button type="button" className="secondary rail-jump" aria-label="Jump to a page" aria-haspopup="dialog" title="Jump to a page" onClick={openJump}>
         <RailIcon name="search"/><span className="rail-text">Jump to…</span><kbd>{jumpKey}</kbd></button>
-      <ShellNavigation route={route}/>
+      <ShellNavigation route={route} devices={{open: menu, menuId: 'devices-menu', button: devicesRow, ownRow: pinnable.has(address),
+        toggle: () => { if (menu) closeMenu('row'); else setMenu(true); }, show: () => { setMenu(true); }}}/>
+      <PinnedPages route={route} fallback={devicesRow}/>
       <div className="sidebar-foot">
         <nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}><RailIcon name="settings"/><span className="rail-text">Settings</span></NavLink></nav>
         <FeedIndicator state={state} now={now} control={runtime.control}/>
         <p className="rail-text">{state.feed === 'ended' ? 'Signed out' : runtime.control ? 'Control enabled' : 'Read-only'} · Local</p>
         {state.feed === 'ended' && <button type="button" onClick={signInAgain}>Sign in again</button>}
       </div>
+      {menu && <DeviceMenu id="devices-menu" runtime={runtime} pins={pins} route={route} row={devicesRow} onClose={closeMenu} onDropped={menuDropped}/>}
     </aside>
     <div className="rail-scrim" onClick={() => { setDrawer(false); menuButton.current?.focus(); }}/>
     {jump && <JumpPalette entries={jumpPlaces} onOpen={jumpTo} onClose={closeJump}/>}
@@ -414,7 +445,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </section>}
       {route.kind !== 'home' && <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
       {route.kind === 'component' && <section aria-label="Devices">
-        {selectedDevice && route.kind === 'component' && <header className="page"><h1>{devices.find(({record}) => record.id === route.id)?.record.label ?? route.id}</h1></header>}
+        {selectedDevice && route.kind === 'component' && <header className="page"><h1>{devices.find(({record}) => record.id === route.id)?.record.label ?? route.id}</h1><PinToggle route={route}/></header>}
         {runtime.catalogFailed && <p role="alert">The module catalog is unavailable. Retrying the read; controls stay unavailable.</p>}
         {runtime.modules?.filter(module => module.state === 'failed' || module.state === 'refused').map(module => <p className="warning" key={module.name}>{module.name}: {module.state}. Its devices are unavailable.</p>)}
         {runtime.copies.filter(copy => copy.family === 'device' && !copy.synced).map(copy => <p className="warning" key={copy.owner}>{copy.owner}: device records unavailable or stale{copy.refused === undefined ? '' : ` (${copy.refused})`}.</p>)}
@@ -426,6 +457,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       {route.kind !== 'home' && <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
       {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title} className={workspace ? 'workspace-page' : undefined}>
         <header className={workspace ? 'workspace-page-header' : 'page'}><h1>{selectedPage.title}</h1>
+          {!workspace && <PinToggle route={route}/>}
           {workspace && <details className="workspace-page-navigation"><summary>Companion pages</summary>{featureNavigation}</details>}
         </header>
         <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
@@ -441,7 +473,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div></section>}
       {!workspace && <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>}
     </main>
-  </div></DeviceModesProvider></ArtThemeProvider></ArtPresentationProvider>;
+  </div></PinTargetsProvider></DeviceModesProvider></ArtThemeProvider></ArtPresentationProvider>;
 }
 
 /** Where sign-in stands: checking, signed in with a connection, or signed out with the reason the page shows. */

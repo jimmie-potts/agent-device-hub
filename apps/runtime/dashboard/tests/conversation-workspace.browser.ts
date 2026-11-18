@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
 import {feed, startWorld} from './harness.ts';
-import {showRail} from './navigation-helpers.ts';
+import {destinationNames, openDirectory, showRail} from './navigation-helpers.ts';
 
 export async function conversationWorkspaceJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, speech: true});
@@ -74,8 +74,8 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     const navigation = page.getByRole('navigation', {name: 'Main navigation'});
     // At this width the rail is a drawer (Hub #1887), so the destinations are checked with it open.
     await showRail(page);
-    assert.deepEqual(await navigation.getByRole('link').allTextContents(), ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation']);
-    const labelLines = await navigation.getByRole('link').evaluateAll(links => links.map(link => {
+    assert.deepEqual(await destinationNames(page), ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation']);
+    const labelLines = await navigation.locator('a, button').evaluateAll(links => links.map(link => {
       const label = link.querySelector('.rail-text'), text = document.createRange();
       if (label === null) return 0;
       text.selectNodeContents(label);
@@ -138,8 +138,7 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
 
     await navigation.getByRole('link', {name: 'Home', exact: true}).click();
     await page.getByRole('region', {name: 'Home', exact: true}).waitFor();
-    await navigation.getByRole('link', {name: 'Devices', exact: true}).click();
-    await page.getByRole('heading', {name: 'Devices', exact: true}).waitFor();
+    await openDirectory(page);
     await page.getByRole('button', {name: 'Other', exact: true}).click();
     await page.getByRole('link', {name: 'Conversation', exact: true}).click();
     await pages.click();

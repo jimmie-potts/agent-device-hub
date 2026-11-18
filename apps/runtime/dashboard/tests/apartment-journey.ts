@@ -7,6 +7,7 @@ import {apartmentArtPath,parseApartmentModel} from '../../src/apartment-model.ts
 import {syntheticApartmentArtwork} from '../../dist/tests/fixtures/apartment.js';
 import {furnishedFixture} from './apartment-fixture.ts';
 import {changes,feed,type World} from './harness.ts';
+import {openDirectory} from './navigation-helpers.ts';
 
 declare global {
   interface Window {
@@ -157,7 +158,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     assert.equal(sent.length,2,'reload never retries a retained request with an uncertain result');
     assert.deepEqual(writes(),writesAfterUncertainty,'reload does not replay the uncertain write');
     await page.waitForFunction(()=>window.apartmentTestResources.textures===1);
-    await page.getByRole('link',{name:'Devices',exact:true}).click();
+    await openDirectory(page);
     await page.waitForFunction(()=>{const r=window.apartmentTestResources;return r.buffers===0&&r.textures===0&&r.programs===0;});
     await page.route('**/modules/core/content/apartment-art-*',async route=>{
       // Keep the response body incomplete while leaving the route, then release the test interception.
@@ -166,7 +167,7 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     });
     await page.getByRole('link',{name:'Rooms',exact:true}).click();await canvas.waitFor();
     await page.waitForFunction(()=>window.apartmentTestResources.pending===1);
-    await page.getByRole('link',{name:'Devices',exact:true}).click();
+    await openDirectory(page);
     await page.waitForFunction(()=>{const r=window.apartmentTestResources;return r.aborted===1&&r.buffers===0&&r.textures===0&&r.programs===0;});
     await page.unrouteAll({behavior:'wait'});
     await unlink(file);

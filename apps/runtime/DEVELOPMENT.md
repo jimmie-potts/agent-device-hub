@@ -856,14 +856,43 @@ heading or the footer keeps focus in the field, that the palette's stacking
 level is above the full-window visualizer's, that a stubbed full-screen element
 keeps it closed, that a slash on a slider opens it, that a held Enter opens it
 without choosing a row, that the toggle's box and focus ring stay clear of the
-brand, that a connected rail stays in view in a 580px window, and that an ended
-session's rail can be reached in 580px and 600px windows. It is opened there on the Devices directory,
+brand, and the height at which the rail stops staying in view. The journey reads the height the full rail needs from the laid-out rail, since fonts differ between a Mac and the Linux container, and checks that the rail scrolls with the page in a window one pixel shorter and stays in view, whole, in a window of exactly that height: with one pinned page, with the hint, and for an ended
+session, whose rail needs more and whose recovery can be scrolled into view. It is opened there on the Devices directory,
 which mounts no module page, because a module page reads its copies with a sync
 request when it mounts.
 `node apps/runtime/dashboard/tests/conversation-workspace.browser.ts` checks
 that a slash typed in the composer is text, that the palette opened from the
 composer returns focus and the draft, and that it stays closed under the modal
 Details drawer.
+
+The Devices menu and the pinned pages (#1889) add two unit files and one
+journey. `node --test apps/runtime/dashboard/tests/device-menu.test.ts` covers
+the menu's columns and categories, a module with one page and with several, an
+address listed once, a module that is not running, stale observations, an
+unread or failed catalog and the arrow, Home and End steps.
+`node --test apps/runtime/dashboard/tests/pins.test.ts` covers which addresses
+can be pinned, a damaged saved list, pinning and unpinning across a reload,
+refused or missing storage, a change from another tab, and the pages that can
+be named as pins with their marks.
+`node apps/runtime/dashboard/tests/devices-menu.browser.ts` opens the menu from
+the Devices row in the full rail and the icon rail; checks its groups, the
+keys with focus on an entry and on nothing, the focused entry's ring, Escape,
+a press outside, a press inside a framed page, Tab, the palette's key, a
+narrowed window, a short window, the browser's back button with focus handed
+to the row, and "All devices"; pins and unpins from a page header and
+from the rail's rows with the keyboard, across a reload; checks the temporary
+row, the Conversation page, a light's own page, a pin whose page is not
+declared, a stopped module and its state on a pinned row, the Devices row's
+box on the Conversation page, a list longer than the rail and the icon rail's
+marks; checks at 390px and 320px that the menu covers the drawer, scrolls and
+closes with its own button while the drawer stays open, that the lighting
+heading keeps its name on one line, and that the temporary row's pin button is
+a full touch target; checks pins with
+storage refused; and records no command, sync, upload or provider request
+while the menu and the pins are used. The hosted smoke and full browser entries
+include it. The menu slides in, so the journey measures its box after its
+animation has finished. Devices is not a link, so journeys open the directory
+through `openDirectory` in `apps/runtime/dashboard/tests/navigation-helpers.ts`.
 
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`

@@ -8,6 +8,8 @@ export const DEVICE_CATEGORIES = ['Lighting', 'Displays', 'Audio', 'Other'] as c
 export type DeviceCategory = typeof DEVICE_CATEGORIES[number];
 export type DirectoryEntry = {id: string; label: string; category: DeviceCategory; state: string; stale: boolean; links: {label: string; route: Route}[]};
 const LABELS: Readonly<Record<string, string>> = {pixoo: 'Pixoo', tidbyt: 'Tidbyt', wemo: 'Wemo', roborock: 'Roborock', volcano: 'Volcano', wispr: 'Wispr', companions: 'Companions'};
+/** The name a module is shown under, outside the Audio category, where every module is Music. */
+export const moduleLabel = (name: string): string => LABELS[name] ?? brandName(name);
 
 /** Projects existing declarations and observations; no discovery, reads or device actions live here. */
 export function directoryEntries(runtime: RuntimeData): DirectoryEntry[] {
@@ -22,7 +24,7 @@ export function directoryEntries(runtime: RuntimeData): DirectoryEntry[] {
     if (category === 'Audio') links.push({label: 'Audio', route: {kind: 'audio'}});
     if (!lighting) for (const device of devices) links.push({label: device.label ?? device.id, route: {kind: 'component', id: device.id}});
     for (const page of module.pages) links.push({label: page.title, route: {kind: 'module', module: module.name, page: page.id}});
-    return {id: module.name, label: category === 'Audio' ? 'Music' : LABELS[module.name] ?? brandName(module.name), category, state: module.state,
+    return {id: module.name, label: category === 'Audio' ? 'Music' : moduleLabel(module.name), category, state: module.state,
       stale: copies.some(copy => !copy.synced), links};
   }).filter(entry => entry.links.length > 0 || entry.state !== 'running' || entry.stale);
 }
