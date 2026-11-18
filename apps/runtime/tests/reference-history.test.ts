@@ -10,7 +10,7 @@ import type {TestContext} from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {Identity, LifecycleEvent, LifecycleObservation, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {World, lifecycleMessage} from './fixtures/store-world.js';
-import {START, it} from './support.js';
+import {START, it, manualClock} from './support.js';
 
 const FIXTURES = new URL('../../fixtures/v2/families.json', import.meta.resolve('@jimmie-potts/event-contracts/v2'));
 type Fixtures = {valid: Record<string, Message>; invalid: {name: string; base: string; set: Record<string, unknown>}[]};
@@ -31,7 +31,9 @@ const root = (event: LifecycleEvent, observedAtMs: number, rest: Partial<Lifecyc
  * owner published under each fixture's name.
  */
 async function replay(context: TestContext, fixtures: Fixtures): Promise<Map<string, Message>> {
-  const world = await World.open(context);
+  // The core started before the history's first evidence, so that evidence confirms its work (#1865 step 8).
+  const world = await World.open(context, {clock: manualClock(START - 10_000)});
+  world.clock.advance(10_000);
   const named = new Map<string, Message>();
   const step = async (observation: LifecycleObservation, id?: string): Promise<Message[]> => {
     const from = world.published.length;
@@ -45,8 +47,9 @@ async function replay(context: TestContext, fixtures: Fixtures): Promise<Map<str
     return found;
   };
   const rootId = fixtures.valid.session?.subject ?? '';
-  // The root session starts on turn 7, and its hook reports that it cannot see parentage.
-  await step(root({kind: 'session-started'}, START - 9000, {ordering: ordered(38)}));
+  // The root session's first prompt starts turn 7, and its hook reports that it cannot see parentage. Since #1865 step 8
+  // a root's start alone claims no work (#397), so the history opens with the prompt that the fixtures show working.
+  await step(root({kind: 'turn-started'}, START - 9000, {ordering: ordered(38)}));
   named.set('session-at-2', last(await step(root({kind: 'evidence-unavailable', dimension: 'parent', reason: 'unsupported'}, START - 8500, {ordering: ordered(39)})), 'org.bunny.session.updated'));
   // A subagent starts under it, with the label the agent gave it.
   const child = await step({identity: CHILD, turn: {status: 'unknown'}, parent: {status: 'known', identity: ROOT}, event: {kind: 'session-started'},

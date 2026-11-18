@@ -187,9 +187,9 @@ it('an unchanged 1.x producer file drives the 2.0 hook at each lifecycle version
 
     await send('SessionStart');
     const started = await until(world, sessionId, () => true, `${version}: the session`);
-    // Lifecycle 1.0 carries no project.
+    // Lifecycle 1.0 carries no project. A start claims no work (#397).
     assert.deepEqual({activity: started.activity, project: started.project, identity: started.identity},
-      {activity: 'active', project: version === '1.0' ? undefined : 'demo', identity: identityOf(sessionId)}, version);
+      {activity: 'idle', project: version === '1.0' ? undefined : 'demo', identity: identityOf(sessionId)}, version);
     await send('UserPromptSubmit', {prompt_id: 'prompt-1', prompt: CANARY});
     await until(world, sessionId, record => record.turn.status === 'known' && record.turn.id === 'prompt-1', `${version}: the turn`);
     await send('PermissionRequest', {prompt_id: 'prompt-1', tool_name: 'Bash', tool_input: {command: CANARY}});

@@ -8,7 +8,7 @@ import {closeSync, mkdirSync, openSync, rmSync, writeSync} from 'node:fs';
 import {join} from 'node:path';
 import type {Sdk} from '@jimmie-potts/sdk';
 import {createCoreModule, startRuntime, type LogRecord, type Runtime} from '../../src/index.js';
-import {IDENTITY, observation, sessionStarted} from './agents.js';
+import {IDENTITY, observation, turnStarted} from './agents.js';
 
 const mount = process.argv[2] ?? '';
 if (mount === '') throw new Error('usage: full-disk.js <tmpfs mount>');
@@ -37,11 +37,14 @@ const taken = (hosted: Hosted): string[] => hosted.records
   .filter(record => record.attributes['bunny.module'] === 'core' && record.event_name === 'message.received')
   .map(record => [record.attributes['bunny.outcome'], record.attributes['bunny.code']].filter(part => part !== undefined).map(String).join('/'));
 let sessions = 0;
-/** Sends one new session's observation and waits up to 5 s for the core to take it or refuse it; a failed core never does. */
+/**
+ * Sends one new session's observation and waits up to 5 s for the core to take it or refuse it; a failed core never does.
+ * Its work runs, so a restart's start transaction has a session to mark unconfirmed and needs room to commit (#1865).
+ */
 async function observe(hosted: Hosted): Promise<void> {
   sessions += 1;
   const before = taken(hosted).length;
-  const {key, draft} = observation(sessionStarted, Date.now(), {identity: {...IDENTITY, sessionId: `session-full-${String(sessions)}`}});
+  const {key, draft} = observation(turnStarted, Date.now(), {identity: {...IDENTITY, sessionId: `session-full-${String(sessions)}`}});
   await hosted.hook.publish(key, draft);
   for (let waited = 0; taken(hosted).length === before && waited < 5000; waited += 20) await wait(20);
 }
