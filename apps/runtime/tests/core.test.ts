@@ -277,6 +277,29 @@ it('a full disk refuses an observation before anything reports it accepted, chan
   assert.deepEqual(storage(core.logs).map(record => [record.event_name, record.severity_text]), [['operation.failed', 'WARN'], ['operation.completed', 'INFO']], 'and its recovery');
 });
 
+it('at the session limit a root of either source with nothing to displace is refused with capacity, silently to its hook (#1865)', async context => {
+  const clock = manualClock();
+  const core = await coreRun(context, {clock: {now: clock.now}, scheduler: clock.scheduler});
+  const codex = (sessionId: string): typeof IDENTITY => ({provider: 'codex', client: 'local', hostId: 'host-sim', sourceId: 'codex-hooks', sessionId});
+  for (let index = 0; index < 128; index++) {
+    clock.advance(1);
+    await publish(core.hook, sessionStarted, clock.now(), {identity: index % 2 === 0 ? {...IDENTITY, sessionId: `filler-${index}`} : codex(`filler-${index}`)});
+  }
+  await waitFor(() => core.sessions().length === 128, 5000, 'the full core');
+  const seen = core.seen.length;
+  for (const identity of [{...IDENTITY, sessionId: 'refused'}, codex('refused')]) {
+    clock.advance(1);
+    // The hook's publication is accepted at the edge, as every hook's is: nothing comes back to it.
+    const sent = await publish(core.hook, sessionStarted, clock.now(), {identity});
+    assert.equal(sent.source, 'bunny/modules/hook');
+  }
+  await waitFor(() => received(core.logs, 'rejected').length === 2, 5000, 'both refusals');
+  assert.deepEqual(received(core.logs, 'rejected').map(record => [record.attributes['bunny.code'], record.severity_text]), [['capacity', 'WARN'], ['capacity', 'WARN']]);
+  assert.deepEqual(core.seen.slice(seen).filter(message => message.source === 'bunny/core'), [], 'nothing published');
+  assert.equal(core.sessions().length, 128);
+  assert.deepEqual(storage(core.logs), [], 'a full core is no storage condition');
+});
+
 it('the core starts first: a module that syncs and republishes in its own start finds it listening', async context => {
   const dir = await stateDir(context);
   // The first runtime has no core: the bridge's outcome is published to nobody and stays in its outbox, unacknowledged.

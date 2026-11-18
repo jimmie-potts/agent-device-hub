@@ -509,7 +509,7 @@ class Core {
           this.#opened();
           return;
         }
-        // A restart leaves every stored session uncertain until fresh evidence, and the records say so at once. If the
+        // The start transaction marks running work unconfirmed (#1865 step 8), and the records say so at once. If the
         // store refuses, syncs answer `unavailable` until a later refresh succeeds.
         await this.#refresh();
         // What a crash kept from going out goes out now, with its stored `id` and `time`.

@@ -1,9 +1,8 @@
-// The shared session case set on the core store (Hub #1865, design decision 10): every case today's core and this step
-// pin (`since` "now" and "step 7") runs through the store as the core takes its input, on the runtime's manual clock, and
-// must leave each check's expected records, removals and occurrences. Revisions and generations count steps in the case
-// set, so their order is compared. A notice on an unknown turn is named from the observation's semantic key, whose form
-// this step changed, so such notices are compared by their turn. Cases that need step 8's restart marking, root starts
-// or capacity statement wait for that step.
+// The shared session case set on the core store (Hub #1865, design decision 10): every case (`since` "now", "step 7" and
+// "step 8") runs through the store as the core takes its input, on the runtime's manual clock, and must leave each
+// check's expected records, removals and occurrences. Revisions and generations count steps in the case set, so their
+// order is compared. A notice on an unknown turn is named from the observation's semantic key, whose form step 7
+// changed, so such notices are compared by their turn.
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
@@ -100,11 +99,12 @@ async function run(item: SessionCase, context: Parameters<Parameters<typeof it>[
   }
 }
 
-for (const item of cases.cases.filter(found => found.since === 'now' || found.since === 'step 7')) {
+for (const item of cases.cases) {
   it(`the core store gives the case set's records and occurrences: ${item.id}`, async context => { await run(item, context); });
 }
 
-it('the case set pins this step\'s reset and today\'s behavior, and leaves step 8\'s cases for that step', () => {
+it('the core runs every case of the set, step 8\'s restart, root starts and capacity among them', () => {
   assert.deepEqual(cases.cases.filter(item => item.since === 'step 8').map(item => item.id).sort(), ['capacity', 'clear-resume', 'launch', 'restart']);
   assert.ok(cases.cases.some(item => item.since === 'step 7' && item.id === 'reset'));
+  assert.deepEqual([...new Set(cases.cases.map(item => item.since))].sort(), ['now', 'step 7', 'step 8']);
 });
