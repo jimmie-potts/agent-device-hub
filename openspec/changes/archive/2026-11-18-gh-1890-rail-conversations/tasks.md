@@ -26,3 +26,11 @@
 - [x] 4.3 Remove each guarded behavior once and confirm a test fails.
 - [x] 4.4 Run the companions and dashboard unit tests, every dashboard browser journey, the verification captures, lint and the shared build, type and workflow checks, natively and the smoke run in the Linux container.
 - [x] 4.5 Update the dashboard README, the companions README and the runtime checks guide, and synchronize the `runtime-dashboard` and `bunny-assistant-tasks` specs.
+
+## 5. Review round one
+
+- [x] 5.1 Check a conversation row's fit from its own widths, so the journey holds under the Linux runner's wider fonts, where a label moves under its name.
+- [x] 5.2 Say in the spec, the design and the code when a failed read is made again, and check each case in the journey.
+- [x] 5.3 Say in the spec that the icon rail stacks Settings and the feed indicator.
+- [x] 5.4 Keep a short rail's parts together at the top of the page, and check it with and without the conversations.
+- [x] 5.5 Run the companions browser entry and the rest of the hosted App verification steps in the Linux test container.

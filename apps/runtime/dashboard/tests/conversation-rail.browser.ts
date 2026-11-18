@@ -50,6 +50,8 @@ async function railGroupFixture(browser: Browser): Promise<void> {
       speech: {open: async () => {fixture.speech += 1; throw new Error('no synthetic speech endpoint');}},
       read: async path => {
         const url = new URL(path, location.href), profile = url.searchParams.get('profile');
+        // The page also reads content that is not a conversation; only history reads are counted and failed.
+        if (profile === null) return {};
         fixture.reads.push(profile);
         if (fixture.failReads > 0) {fixture.failReads -= 1; throw new Error('synthetic read failure');}
         const task = tasks[profile], question = questions[profile];
@@ -230,6 +232,34 @@ async function railGroupFixture(browser: Browser): Promise<void> {
     await heading.getByText('Reachy', {exact: true}).waitFor();
     assert.deepEqual(await page.evaluate(() => {const fixture = (window as unknown as {railFixture: Fixture}).railFixture; return [fixture.commands.length, fixture.speech];}), [0, 0],
       'the group and choosing a profile send no command and open no speech endpoint');
+    // A failed read is made again without a state change in two cases, and in no other: when the state copy is live
+    // again, and when the open Conversation page stops showing that profile.
+    await call(fixture => {fixture.page(false);});
+    const readsOf = async (profile: string): Promise<number> => (await reads()).filter(read => read === profile).length;
+    const readsReach = (profile: string, count: number) => page.waitForFunction(([name, wanted]) =>
+      (window as unknown as {railFixture: Fixture}).railFixture.reads.filter(read => read === name).length === wanted, [profile, count] as const);
+    const duckReads = await readsOf('microduck');
+    await call(fixture => {fixture.failReads = 1; fixture.ask('microduck', 'q8', 'clarification');});
+    await readsReach('microduck', duckReads + 1);
+    await call(() => {});
+    assert.equal(await marked('microduck').count(), 0, 'the failed read claims nothing');
+    await call(fixture => {fixture.fail();});
+    await call(fixture => {fixture.resync();});
+    await marked('microduck').waitFor({state: 'attached'});
+    assert.equal(await readsOf('microduck'), duckReads + 2, 'a copy that is live again reads the question once more');
+    await page.locator('aside a[data-profile="bunny"]').click();
+    const bunnyReads = await readsOf('bunny');
+    await call(fixture => {fixture.failReads = 2; fixture.ask('bunny', 'q9', 'clarification');});
+    await readsReach('bunny', bunnyReads + 1);
+    await call(fixture => {fixture.page(true);});
+    await readsReach('bunny', bunnyReads + 2);
+    await call(() => {});
+    await page.clock.runFor(120_000);
+    await call(() => {});
+    assert.deepEqual([await marked('bunny').count(), await readsOf('bunny')], [0, bunnyReads + 2], 'the group and then the open page failed to read the question: nothing is claimed and nothing is read again');
+    await page.locator('aside a[data-profile="reachy"]').click();
+    await marked('bunny').waitFor({state: 'attached'});
+    assert.equal(await readsOf('bunny'), bunnyReads + 3, 'when the page stops showing the profile the group reads its question once more');
     // A group that is taken out of the rail takes its claim with it: nothing is said to wait without it.
     await call(fixture => {fixture.page(false);});
     assert.equal(await elsewhere(), true);
@@ -267,6 +297,19 @@ async function railInDashboard(browser: Browser): Promise<void> {
     assert.deepEqual(await page.locator('.shell>aside').evaluate(rail => [...rail.children].map(child => child.className.split(' ')[0])),
       ['rail-head', 'secondary', 'primary-navigation', 'rail-pins', 'rail-conversations', 'sidebar-foot']);
     assert.deepEqual(historyReads, [], 'with no question pending the rail reads no history');
+    // In a window too short for the rail it scrolls with the page. Its parts stay together at the top: the
+    // conversations and the foot are directly under the pinned pages, not at the end of a long page.
+    await page.setViewportSize({width: 1280, height: 600});
+    await page.waitForFunction(() => document.querySelector('.shell')?.hasAttribute('data-rail-short') === true);
+    assert.deepEqual(await page.locator('.shell>aside').evaluate(rail => {
+      const gap = Number.parseFloat(getComputedStyle(rail).rowGap), total = document.documentElement.scrollHeight;
+      const [pins, group, foot] = ['.rail-pins', '.rail-conversations', '.sidebar-foot'].map(part => rail.querySelector(part)?.getBoundingClientRect());
+      if (pins === undefined || group === undefined || foot === undefined) throw new Error('The rail has its pinned pages, its conversations and a foot.');
+      return {position: getComputedStyle(rail).position, tallerPage: total > innerHeight + 100, together: Math.abs(group.top - pins.bottom - gap) <= 1 && Math.abs(foot.top - group.bottom - gap) <= 1,
+        footAtPageEnd: total - (foot.bottom + scrollY) < 40};
+    }), {position: 'static', tallerPage: true, together: true, footAtPageEnd: false}, 'a short window keeps the conversations and the foot directly under the pinned pages');
+    await page.setViewportSize({width: 1440, height: 1000});
+    await page.waitForFunction(() => document.querySelector('.shell')?.hasAttribute('data-rail-short') === false);
     // A row is as wide as the rail and no wider. The name and the Demo label share a line where they fit; with a font
     // too wide for one line the label moves under the name inside the row, and neither is cut. Which of the two a row
     // shows depends on the computer's fonts: the Linux container's are wider than a Mac's, and "MicroDuck" with its

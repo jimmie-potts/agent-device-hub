@@ -61,8 +61,9 @@ export function ConversationRail({context}: {context: FrontendContext}): React.J
   useEffect(() => {conversationRail.setWaiting(waitingKey === '' ? [] : waitingKey.split(' ') as AssistantProfile[]);}, [waitingKey]);
   useEffect(() => () => {conversationRail.setWaiting([]);}, []);
   // One bounded read of the recent history tells a question for the owner from a wait on the coding worker. It is
-  // made once for a pending question at a state revision: a read that fails, or that returns another question, is
-  // made again only when the state copy next changes, never on a timer.
+  // never repeated on a timer. A read that fails, or that returns another question, is made again when the state copy
+  // next changes or is live again, or when the open Conversation page stops showing that profile: each of those
+  // changes what this effect depends on, and nothing else does.
   const reading = questionToRead(pending, rail);
   const readProfile = reading?.profile, readTask = reading?.taskId, readQuestion = reading?.questionId, revision = state?.revision;
   useEffect(() => {

@@ -875,14 +875,20 @@ The first mounts the companions frontend's rail group over a synthetic module
 scope with the page's clock held: it checks one history read for each pending
 question, the marker for a clarification and an approval and none for delegated
 work, no marker and no read from a state copy that is removed, failed,
-restarted, unavailable or disconnected, a failed read that is made again on the
-next state change and not on a timer, the kind shared by the open Conversation
-page, a modified click, and that the group sends no command and opens no speech
-endpoint. The second opens the real dashboard: it opens a profile from Home,
-Rooms and a device page, checks each profile's own history, the marker on every
+restarted, unavailable or disconnected, a failed read that is not repeated on a
+timer and is made again on the next state change, when the copy is live again
+and when the open Conversation page moves to another profile, the kind shared
+by the open Conversation page, a modified click, and that the group sends no
+command and opens no speech endpoint. The second opens the real dashboard: it opens a profile from Home,
+Rooms and a device page, checks that each row fits the rail, on one line where
+its own widths allow it, that a short window keeps the conversations and the
+foot directly under the pinned pages, each profile's own history, the marker on every
 page and after a reload, the phone menu button, the drawer's rows, the icon
 rail's label, a failed history read, and a catalog with companions stopped or
-without the Conversation page. The companions browser entry runs it.
+without the Conversation page. The companions browser entry runs it, and the
+hosted smoke entry does not: run `npm run test:companions:browser` in the Linux
+test container when the rail's text or sizes change, because the container's
+fonts are wider than a Mac's.
 `conversation-workspace.browser.ts` now also checks the one header row, the
 920px measure with the composer's width at 1024px, 1280px and 1440px, a
 profile chosen in the rail with its own history and draft, and the companion

@@ -68,7 +68,8 @@ Actual phone/certificate verification is separate from desktop browser tests.
 The rail has **Home, Habitat, Rooms, Devices and Automation**, each with an icon.
 Four are links; Devices is a button that opens the Devices menu (#1889).
 Settings, the feed indicator and the control mode sit at the bottom of the rail
-(#1887). Settings and the indicator share one row there (#1890): the indicator
+(#1887). Settings and the indicator share one row there in the full rail and
+the drawer, and the indicator sits under Settings in the icon rail (#1890): it
 is an icon whose details name the feed first. Settings contains Connections
 (including build/operator tools), Places and Disconnect. The rail stays in view while a page scrolls, and a destination chosen from a
 navigation link opens at the top of its page. Its toggle
@@ -80,7 +81,8 @@ width the rail is a drawer behind a menu button, closed by a chosen destination,
 Escape or an outside tap, each of which returns focus to the button; the page
 behind the open drawer is inert. An ended browser session shows the full rail
 and still offers **Sign in again** globally, in the phone bar when the rail is a
-drawer. A window too short for the rail lets it scroll with the page; the shell
+drawer. A window too short for the rail lets it scroll with the page, with its
+parts kept together at the top of the page; the shell
 measures whether the rail fits, because fonts wrap its text differently from
 one computer to the next. Home links Timeline. The Devices directory groups catalog-derived Lighting,
 Displays, Audio and Other destinations; module pages keep their sibling links

@@ -140,11 +140,12 @@
 /* A window too short for the rail lets it scroll with the page, as it did before it was sticky. The shell measures
    whether the rail fits (rail.tsx) and marks the shell when it does not, because what the rail needs depends on the
    fonts, the session and what is pinned. The rail holds its head, the jump field, the destinations, the heading of
-   the pinned pages with room for one of them, and the foot; a longer list of pinned pages scrolls inside the rail
-   and never makes it taller. The panel still runs the full height of the page, with the foot directly under the
-   pinned pages instead of at the page's end. The phone drawer is a fixed panel and keeps its own layout at any
-   height. */
-@media(min-width:680.02px){.shell[data-rail-short]>aside{position:static;align-self:stretch;block-size:auto}.shell[data-rail-short]>aside .sidebar-foot{margin-block-start:0}}
+   the pinned pages with room for one of them, the conversations and the foot; a longer list of pinned pages scrolls
+   inside the rail and never makes it taller. The panel still runs the full height of the page. Its parts stay
+   together at the top: the pinned pages take their own height and do not stretch, so the conversations and the foot
+   sit directly under them and not at the page's end. The phone drawer is a fixed panel and keeps its own layout at
+   any height. */
+@media(min-width:680.02px){.shell[data-rail-short]>aside{position:static;align-self:stretch;block-size:auto}.shell[data-rail-short]>aside .rail-pins{flex:none}.shell[data-rail-short]>aside .sidebar-foot{margin-block-start:0}}
 
 /* The icon rail keeps every name. A link's own label becomes the name shown beside its icon on hover or focus, so
    the name is in the page once; the feed label and the control mode stay for assistive technology only. A name

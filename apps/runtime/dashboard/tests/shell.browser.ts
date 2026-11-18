@@ -253,10 +253,16 @@ try {
   assert.equal(await page.evaluate(() => scrollY), 0, 'a chosen destination opens at its top');
   // A window too short for the rail lets it scroll with the page, and its panel still runs the page's full height.
   await resized(1024, 500);
+  // Its parts stay together at the top: the pinned pages do not stretch down the page, so the foot is directly under
+  // them and not at the page's end.
   assert.deepEqual(await page.locator('.shell>aside').evaluate(element => {
     const total = document.documentElement.scrollHeight, height = element.getBoundingClientRect().height;
-    return {position: getComputedStyle(element).position, tallerPage: total > innerHeight + 100, fullHeight: Math.abs(height - total) <= 1};
-  }), {position: 'static', tallerPage: true, fullHeight: true}, 'in a short window the rail scrolls with the page and its panel runs the full height');
+    const pins = element.querySelector('.rail-pins')?.getBoundingClientRect(), foot = element.querySelector('.sidebar-foot')?.getBoundingClientRect();
+    if (pins === undefined || foot === undefined) throw new Error('The rail has its pinned pages and a foot.');
+    return {position: getComputedStyle(element).position, tallerPage: total > innerHeight + 100, fullHeight: Math.abs(height - total) <= 1,
+      footUnderPins: Math.abs(foot.top - pins.bottom - Number.parseFloat(getComputedStyle(element).rowGap)) <= 1, footAtPageEnd: total - (foot.bottom + scrollY) < 40};
+  }), {position: 'static', tallerPage: true, fullHeight: true, footUnderPins: true, footAtPageEnd: false},
+  'in a short window the rail scrolls with the page, its panel runs the full height and its foot stays directly under the pinned pages');
   // The shell measures whether the rail fits, so the height at which it stops staying in view is exactly the height
   // it needs: its parts, and of the pinned pages their heading with one row, or with the room for one when nothing is pinned.
   // One pixel less and it scrolls with the page. The rail is full from 1200px wide.
