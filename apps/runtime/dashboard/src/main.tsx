@@ -206,9 +206,11 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   useEffect(() => { setMenu(false); }, [phone]);
   // A menu taken away while it holds focus, by a page change or a change of layout, hands focus on instead of
   // dropping it on the page: to its row, or at phone width to the drawer's button, since the drawer closes with it.
+  // The hand-off never scrolls. In a short window the rail scrolls with the page, and bringing the row into view
+  // would move the page under a press that is still landing, or under the browser's own return to a scroll position.
   const narrow = useRef(phone);
   narrow.current = phone;
-  const menuDropped = (): void => { (narrow.current ? menuButton.current : devicesRow.current)?.focus(); };
+  const menuDropped = (): void => { (narrow.current ? menuButton.current : devicesRow.current)?.focus({preventScroll: true}); };
   const closeMenu = (focus: DeviceMenuClose): void => {
     setMenu(false);
     if (focus === 'row') devicesRow.current?.focus();

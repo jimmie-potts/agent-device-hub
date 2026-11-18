@@ -77,7 +77,8 @@
 .shell .rail-pin-button{position:absolute;inset-block-start:50%;inset-inline-end:6px;display:grid;place-items:center;inline-size:24px;block-size:24px;min-block-size:0;margin-block-start:-12px;padding:0;border:0;border-radius:8px;background:var(--raised);color:var(--muted-dense);opacity:0;pointer-events:none}
 .rail-pin.visiting .rail-pin-button,.shell .rail-pin-button:focus-visible{opacity:1;pointer-events:auto}
 .rail-pin.visiting .rail-pin-group:not(.rail-pin-state){display:none}
-.shell>aside .rail-pin a .rail-pin-state{color:var(--pending-text)}
+/* A module's state is never the part that is cut: the page's name gives way to it. */
+.shell>aside .rail-pin a .rail-pin-state{flex:none;color:var(--pending-text)}
 .rail-pin:has(.rail-pin-button:focus-visible) .rail-pin-group{visibility:hidden}
 .shell>aside .rail-pin.visiting a{padding-inline-end:34px;border:1px dashed var(--edge-strong);background:transparent;box-shadow:none}
 @media(hover:hover) and (pointer:fine){

@@ -137,6 +137,17 @@ try {
   await page.keyboard.press('Escape');
   await page.locator('.shell>aside').waitFor({state: 'hidden'});
   await page.setViewportSize({width: 1440, height: 1000});
+  // The same with focus on nothing while the menu is open: there is no focus to hand on, and the menu still does not come back.
+  await devices.click(); await menu.waitFor();
+  await page.evaluate(() => {if (document.activeElement instanceof HTMLElement) document.activeElement.blur();});
+  await page.setViewportSize({width: 390, height: 700});
+  await menu.waitFor({state: 'detached'});
+  await page.getByRole('button', {name: 'Open navigation', exact: true}).click();
+  await page.locator('.shell>aside').waitFor();
+  assert.equal(await menu.count(), 0, 'narrowing the window closes the menu when focus is not in it');
+  await page.keyboard.press('Escape');
+  await page.locator('.shell>aside').waitFor({state: 'hidden'});
+  await page.setViewportSize({width: 1440, height: 1000});
   // In a window too short for the menu, it stays inside the window and scrolls.
   await page.setViewportSize({width: 1024, height: 420});
   await devices.click(); await menu.waitFor();
@@ -171,6 +182,20 @@ try {
   await menu.waitFor({state: 'detached'});
   await page.waitForFunction(() => document.activeElement?.textContent === 'Devices' && document.activeElement.closest('.primary-navigation') !== null);
   assert.equal(hash(), '#/rooms', 'the browser\'s back button changes the page and closes the menu, with focus handed to the Devices row');
+  // In a window too short for the rail, the rail scrolls with the page. A press outside the menu there closes it
+  // without moving the page: the focus the menu hands on must not scroll its row into view.
+  await (await destinationLink(page, 'Home')).click();
+  await page.getByRole('button', {name: 'Edit Home', exact: true}).waitFor();
+  await page.setViewportSize({width: 1280, height: 480});
+  await page.waitForFunction(() => {const rail = document.querySelector('.shell>aside'); return rail !== null && getComputedStyle(rail).position === 'static';});
+  await devices.focus(); await page.keyboard.press('Enter'); await menu.waitFor();
+  await page.evaluate(() => {window.scrollTo(0, 500);});
+  assert.equal(await page.evaluate(() => scrollY), 500, 'Home scrolls under the open menu in this window');
+  await page.mouse.click(1272, 240);
+  await menu.waitFor({state: 'detached'});
+  assert.equal(await page.evaluate(() => scrollY), 500, 'a press outside the menu leaves the page where it was scrolled');
+  await page.evaluate(() => {window.scrollTo(0, 0);});
+  await page.setViewportSize({width: 1440, height: 1000});
   checks.push('the Devices row opens a menu of every device page; the arrow keys, Home, End, Escape, an outside press and Tab work; "All devices" opens the directory');
 
   // A page under Devices: the row is marked lightly, and the open page is a temporary row with a pin button.
@@ -304,6 +329,12 @@ try {
   await page.keyboard.press('Escape');
   assert.deepEqual([await rowNames(), await rows.first().locator('.rail-pin-state').textContent(), await rows.first().getByRole('link').getAttribute('title')],
     [['sign · Sign preview · stopped'], 'stopped', 'sign · Sign preview · stopped'], 'a pinned page of a stopped module keeps its row, which shows the module\'s state in its text, its name and its title');
+  assert.deepEqual(await rows.first().evaluate(row => {
+    const state = row.querySelector('.rail-pin-state'), name = row.querySelector('.rail-pin-name'), link = row.querySelector('a');
+    if (state === null || name === null || link === null) throw new Error('A pinned row of a stopped module holds its name and the state.');
+    const box = state.getBoundingClientRect(), inside = link.getBoundingClientRect();
+    return {whole: box.width >= state.scrollWidth - 1 && box.width > 20, inRow: box.left >= name.getBoundingClientRect().right - 1 && box.right <= inside.right, nameCut: name.scrollWidth > name.clientWidth};
+  }), {whole: true, inRow: true, nameCut: true}, 'the state is whole on the screen in the full rail; the longer page name is the part that is cut');
   await page.unroute('**/api/v2/modules');
   await page.route('**/api/v2/modules', async route => {
     const response = await route.fetch();

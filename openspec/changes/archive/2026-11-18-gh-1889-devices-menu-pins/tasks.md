@@ -30,3 +30,9 @@
 - [x] 4.6 Show a module's state on the row of a pinned page whose module is not running.
 - [x] 4.7 Make the temporary row's pin button a full touch target in the phone drawer.
 - [x] 4.8 Add a check for each of these and confirm each fails without its fix.
+
+## 5. Review round two
+
+- [x] 5.1 Hand focus on from a removed menu without scrolling the page.
+- [x] 5.2 Keep a module's state whole on a pinned row and let a long page name be cut instead.
+- [x] 5.3 Check in the journey that a narrowed window closes the menu when focus is not in it.
