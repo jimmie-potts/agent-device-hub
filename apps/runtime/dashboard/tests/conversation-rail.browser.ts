@@ -314,16 +314,24 @@ async function railInDashboard(browser: Browser): Promise<void> {
     // too wide for one line the label moves under the name inside the row, and neither is cut. Which of the two a row
     // shows depends on the computer's fonts: the Linux container's are wider than a Mac's, and "MicroDuck" with its
     // label does not fit one line there. So `lines` is what each row shows and `room` what its own widths call for.
+    // `room` uses the width of the name's and the label's own text, not of their laid-out boxes, so a style that
+    // stretched the label onto a line of its own would not pass for a label with no room.
     const fit = (): Promise<{inRail: boolean; whole: boolean; lines: number[]; room: number[]}> => conversations.evaluate(group => {
       const inside = group.getBoundingClientRect(), links = [...group.querySelectorAll('a')];
+      const written = (element: Element | null): number => {
+        if (element === null) return 0;
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return range.getBoundingClientRect().width;
+      };
       const parts = links.map(link => ({row: link.getBoundingClientRect(), text: link.querySelector('.rail-text'), name: link.querySelector('.rail-text > span')?.getBoundingClientRect(),
-        tag: link.querySelector('.rail-tag')?.getBoundingClientRect()}));
+        tag: link.querySelector('.rail-tag')?.getBoundingClientRect(), nameText: written(link.querySelector('.rail-text > span')), tagText: written(link.querySelector('.rail-tag'))}));
       return {inRail: links.every(link => link.getBoundingClientRect().right <= inside.right + 0.5 && link.getBoundingClientRect().width <= inside.width + 0.5),
         whole: links.every(link => link.scrollWidth <= link.clientWidth + 1 && [...link.querySelectorAll('.rail-text > *')].every(part => part.scrollWidth <= part.clientWidth + 1 || getComputedStyle(part).position === 'absolute')),
         lines: parts.map(({row, name, tag}) => name === undefined ? 0 : tag === undefined ? 1 : tag.top >= name.bottom - 2 && tag.bottom <= row.bottom ? 2 : tag.left >= name.right ? 1 : 0),
-        room: parts.map(({text, name, tag}) => {
+        room: parts.map(({text, name, tag, nameText, tagText}) => {
           if (text === null || name === undefined) return 0;
-          return tag === undefined || name.width + Number.parseFloat(getComputedStyle(text).columnGap) + tag.width <= text.getBoundingClientRect().width + 0.01 ? 1 : 2;
+          return tag === undefined || nameText + Number.parseFloat(getComputedStyle(text).columnGap) + tagText <= text.getBoundingClientRect().width + 0.01 ? 1 : 2;
         })};
     });
     const natural = await fit();
