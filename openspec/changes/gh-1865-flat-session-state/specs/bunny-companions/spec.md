@@ -37,16 +37,16 @@ Suggestions SHALL reuse Reachy enablement/category mute, the exact synced sessio
 ## ADDED Requirements
 
 ### Requirement: Thirty-second question priority
-An unanswered question, input request or approval SHALL take priority over background cards, simulated social cards, suggestions and automatic speech for 30 seconds from the core's commit instant of the `attention-raised` occurrence that raised it, carried as the opportunity's `receivedAtMs`. The window SHALL be held in memory from admitted coding-attention opportunities and SHALL end early when the attention item clears. The question SHALL stay visible afterward. Unrelated progress SHALL NOT renew the window, and a restart SHALL start no new window. Explicitly requested assistant answers SHALL stay outside this rule. A host clock that differs from the core's SHALL NOT shorten or lengthen the window.
+An unanswered question, input request or approval SHALL take priority over background cards, simulated social cards, suggestions and automatic speech for 30 seconds from its own evidence instant on the reporting host's clock, as the existing opportunity's validity sets it. The window SHALL be held in memory from admitted coding-attention opportunities and SHALL end early when the attention item clears. The question SHALL stay visible afterward. Unrelated progress SHALL NOT renew the window, and a restart SHALL start no new window. Explicitly requested assistant answers SHALL stay outside this rule. When the reporting host's clock runs ahead of the hub's, the core SHALL drop that question's opportunity as today, so the question gets no priority window while status devices still show it.
 
 #### Scenario: Inside and after the window
-- **WHEN** a question is raised and a background card waits, and the clock moves to 29 s and then 30 s after the commit
+- **WHEN** a question is raised and a background card waits, and the clock moves to 29 s and then 30 s after the question's evidence instant
 - **THEN** the card is refused with `attention-priority` at 29 s and admitted at 30 s, while the question stays shown
 
 #### Scenario: Progress and restart
 - **WHEN** unrelated progress arrives 20 s after a question, and the runtime restarts while the question is still open
 - **THEN** progress does not extend the window, and after the restart no window is open and no card or speech replays
 
-#### Scenario: A host clock behind the core
-- **WHEN** the observing host's clock runs two minutes behind the core's
-- **THEN** the opportunity is still valid for 30 s from the core's commit instant
+#### Scenario: A host clock ahead of the hub
+- **WHEN** the reporting host's clock runs a minute ahead of the hub's and the host reports a question
+- **THEN** the core raises no opportunity for it, no priority window opens, and the session still needs the owner on every status device

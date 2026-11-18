@@ -31,7 +31,7 @@ Each numbered group is one pull request on its own `gh-1865-<step>` branch, with
 
 ## 4. Readers: companions, Reachy and MicroDuck (focused second review: device-command safety)
 
-- [ ] 4.1 Add `companion-opportunity/2.1` with `receivedAtMs`. The core's companion part raises coding opportunities without freshness terms, anchored on the occurrence message's `time`. Evidence: a host clock two minutes behind still yields a 30-second opportunity (red before), and 2.0 messages still validate.
+- [ ] 4.1 The core's companion part raises coding opportunities without its freshness and restart terms, with the existing `companion-opportunity/2.0` contract and host-clock checks unchanged. Evidence: a question raised by a session whose work is unconfirmed yields an opportunity (red before), and a host clock ahead of the hub's still drops the opportunity, as the design's known limit states.
 - [ ] 4.2 Companions: replace the freshness and session-age terms with `opportunityMatches`, and apply the 30-second question window from admitted coding-attention opportunities in the module, the browser speech check and the suggestion model. Evidence: mock-clock cases show priority at 29 s and none at 30 s, no renewal from unrelated progress, no new window after a restart, and the question stays visible.
 - [ ] 4.3 `read_sessions` reports the shared status class and detail. Evidence: the assistant tool test.
 - [ ] 4.4 Reachy and MicroDuck: use `opportunityMatches` plus their own device conditions. Remove the freshness terms and MicroDuck's session-count rule. Evidence: MicroDuck gestures for one matching session among several (red before), and no gesture for a mismatched generation, a cleared attention item, an expired opportunity, Quiet or takeover.
