@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useId, useLayoutEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore} from 'react';
 import type {AssistantProfile, AssistantState, AssistantStatus} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
@@ -11,13 +11,9 @@ import type {SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
 import {ConversationDetails, useDetailsOverlay} from './conversation-details.js';
 import {ConversationTranscript} from './conversation-transcript.js';
+import {conversationRail, profiles} from './conversation-rail.js';
 import './conversation.css';
 
-const profiles = {
-  bunny: {name: 'B.U.N.N.Y.', kind: 'Everyday assistant'},
-  reachy: {name: 'Reachy', kind: 'Demo'},
-  microduck: {name: 'MicroDuck', kind: 'Demo'},
-} satisfies Record<AssistantProfile, {name: string; kind: string}>;
 const finished = (status: string): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
 const taskCue: Readonly<Record<AssistantStatus, string>> = {
   running: 'Working', waiting: 'Task waiting', paused: 'Paused', succeeded: 'Task completed', failed: 'Task failed',
@@ -137,7 +133,12 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const [state, setState] = useState<AssistantState>();
   const [unavailable, setUnavailable] = useState(true);
   const [historyApi, setHistoryApi] = useState<FrontendContext['api']>();
-  const [profile, setProfile] = useState<AssistantProfile>('bunny');
+  // The selected profile is shared with the rail's conversation group (Hub #1890), which chooses it from any page.
+  const profile = useSyncExternalStore(conversationRail.subscribe, () => conversationRail.getSnapshot().profile);
+  useEffect(() => {
+    conversationRail.setOpen(true);
+    return () => {conversationRail.setOpen(false);};
+  }, []);
   const [history, setHistory] = useState<ConversationHistory>();
   const historyRef = useRef<ConversationHistory>(undefined);
   const historyAttempt = useRef<HistoryAttempt>(undefined);
@@ -262,12 +263,16 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   useEffect(() => {
     if (historyApi === api) readHistory();
   }, [api, historyApi, readHistory, state?.revision]);
-  const pickProfile = (value: string): void => {
-    if (value === profile || (value !== 'bunny' && value !== 'reachy' && value !== 'microduck')) return;
+  // A profile chosen here or in the rail shows as loading before it is painted, never as another profile's result.
+  useLayoutEffect(() => {
     historyAttempt.current?.controller.abort();
     setHistoryStatus('loading');
-    setProfile(value);
-  };
+  }, [profile]);
+  // The rail marks a conversation that needs the owner. The page shares the kind of question it has already read.
+  useEffect(() => {
+    const task = history?.currentTask;
+    if (history !== undefined && task?.question != null) conversationRail.learn(history.profile, {taskId: task.taskId, questionId: task.question.id, kind: task.question.kind});
+  }, [history]);
   const live = connected && !unavailable && state !== undefined && state.available;
   const task = state?.tasks.find(value => value.profile === profile);
   const unfinished = state?.tasks.find(value => !finished(value.status));
@@ -278,7 +283,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const activeClarification = pendingQuestion && currentQuestion?.kind === 'clarification' ? currentQuestion : undefined;
   let cue = task === undefined ? undefined : taskCue[task.status];
   if (task?.status === 'waiting' && pendingQuestion) cue = activeClarification && 'Needs your answer';
-  const {Command, Facts, Select} = context.ui;
+  const {Command, Facts} = context.ui;
   return <section aria-label="B.U.N.N.Y. conversation" className="conversation-page">
     <Command context={context} target="assistant">{command => {
       const locked = command.locked || !live || !context.control || !context.operationsLive;
@@ -293,20 +298,11 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           data: {action, expectedRevision: state.revision}});
       };
       return <div className="conversation-layout">
-        <nav className="conversation-profiles conversation-profiles-wide" aria-label="Conversation profiles">
-          {Object.entries(profiles).map(([value, {name, kind}]) => <button type="button" className="secondary" key={value}
-            aria-pressed={value === profile} onClick={() => {pickProfile(value);}}>
-            <span>{name}</span> <small>{kind}</small>
-          </button>)}
-        </nav>
         <div className="conversation-main">
           <div className="conversation-context">
             <header className="conversation-header">
               <h2>{profiles[profile].name}</h2>
-              <nav className="conversation-profiles conversation-profiles-narrow" aria-label="Conversation profiles">
-                <Select label="Companion profile" value={profile} onChange={pickProfile}
-                  options={Object.entries(profiles).map(([value, {name, kind}]) => ({value, label: `${name} · ${kind}`}))}/>
-              </nav>
+              {profile !== 'bunny' && <small className="conversation-demo-tag">{profiles[profile].kind}</small>}
               <button type="button" className="secondary conversation-details-trigger" ref={detailsTrigger}
                 aria-expanded={detailsOpen} aria-controls={detailsId} onClick={() => {
                   if (detailsOpen) closeDetails();
@@ -339,7 +335,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           <div className="conversation-compose">
             {state !== undefined && !state.enabled && <p>Conversation is off. <button type="button" disabled={locked} onClick={() => {present('enable');}}>Enable conversation</button></p>}
             {unfinished !== undefined && unfinished.profile !== profile && <p>One task is still unfinished. <button type="button"
-              onClick={() => {pickProfile(unfinished.profile);}}>Go to {profiles[unfinished.profile].name} task</button></p>}
+              onClick={() => {conversationRail.select(unfinished.profile);}}>Go to {profiles[unfinished.profile].name} task</button></p>}
             {cue !== undefined && <p role="status" className={live && task?.status === 'succeeded' ? 'conversation-completed' : undefined}>
               {cue}{!live ? ' (Last known)' : ''}
             </p>}

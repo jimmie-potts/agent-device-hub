@@ -41,6 +41,9 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     await proposal.getByText(/Delegation to the coding worker in repository/).waitFor();
     await proposal.getByText('agent-device-hub', {exact: true}).waitFor();
     await proposal.getByText(/Bound to coding worker revision \d+/).waitFor();
+    // The rail marks a conversation that needs the owner (Hub #1890): an approval does, the wait on the worker does not.
+    const railMarker = page.getByRole('navigation', {name: 'Conversations', exact: true}).locator('a[data-profile="bunny"] .rail-attention');
+    await railMarker.waitFor();
     assert.equal(await send.count(), 0, 'a proposal has only explicit decision actions');
     await assistant.getByRole('button', {name: /^Voice /}).waitFor();
     const approve = proposal.getByRole('button', {name: 'Approve proposal', exact: true});
@@ -60,6 +63,10 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     await page.locator('html').evaluate(node => {node.style.zoom = '';});
     await page.setViewportSize({width: 1280, height: 1000});
     await assistant.getByRole('article', {name: 'Delegated work', exact: true}).getByText(/Waiting for the coding worker/).waitFor();
+    // The page that shows the wait has read its kind and shared it, so the rail has what it needs to decide. The marker
+    // is also gone for a moment while the approval is saved, which is why this is checked once the wait is on the page.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await railMarker.count(), 0, 'a wait on the coding worker does not mark the conversation');
     // The page shows the wait as soon as the task records it; the worker's copy of the hand-off arrives by its own round trip.
     for (let waited = 0; work.length === 0 && waited < 100; waited += 1) await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal(work.length, 1); const started = work[0]; assert.ok(started?.action === 'start');

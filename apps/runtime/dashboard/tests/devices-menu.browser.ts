@@ -29,7 +29,8 @@ const primary = page.getByRole('navigation', {name: 'Main navigation', exact: tr
 const devices = primary.getByRole('button', {name: 'Devices', exact: true});
 const menu = page.getByRole('menu', {name: 'Device pages', exact: true}), items = menu.getByRole('menuitem');
 const pinned = page.getByRole('navigation', {name: 'Pinned pages', exact: true}), rows = pinned.locator('.rail-pin');
-const hint = page.getByText('Pin a device page to keep it one click away.', {exact: true});
+// With nothing to list the Pinned heading stands alone: no line of explanation sits under it.
+const pinnedParts = (): Promise<(string | null)[]> => page.locator('.rail-pins').evaluate(pins => [...pins.children].map(child => child.textContent));
 const toggle = page.getByRole('button', {name: /^(Pin to rail|Pinned)$/});
 const hash = (): string => new URL(page.url()).hash;
 const saved = (): Promise<unknown> => page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? 'null') as unknown, PINS_KEY);
@@ -46,7 +47,7 @@ try {
   await page.goto(`${world.url}/#/devices`); await feed(page, 'connected');
   await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
   await page.getByRole('link', {name: 'LIFX', exact: true}).waitFor();
-  assert.equal(await hint.isVisible(), true, 'with no pins the rail says how to pin a page');
+  assert.deepEqual(await pinnedParts(), ['Pinned'], 'with no pins the rail shows the Pinned heading and nothing under it');
   assert.equal(await pinned.count(), 0);
   assert.deepEqual([await devices.getAttribute('aria-haspopup'), await devices.getAttribute('aria-expanded'), await devices.getAttribute('aria-current')], ['menu', 'false', 'page'],
     'the Devices row is a menu button, marked current on the directory');
@@ -284,9 +285,15 @@ try {
   await choose('Conversation');
   await page.getByRole('heading', {name: 'Conversation', level: 1, exact: true}).waitFor();
   assert.deepEqual([await toggle.count(), await rowNames()], [0, ['LIFX', 'Pixoo · Library']], 'the Conversation page has no pin toggle and no temporary row');
+  // The open conversation has its own row in the rail (#1890), so the rail boxes that row and marks Devices lightly.
+  const devicesMark = async (): Promise<unknown[]> => [await devices.getAttribute('aria-current'), await devices.getAttribute('data-ancestor'),
+    await devices.evaluate(element => getComputedStyle(element).borderTopColor !== 'rgba(0, 0, 0, 0)'),
+    await page.locator('.shell>aside a[aria-current]').evaluateAll(links => links.map(link => link.getAttribute('data-profile') ?? link.textContent))];
+  assert.deepEqual(await devicesMark(), ['page', '', false, ['bunny']], 'on the Conversation page the open conversation is the boxed row');
   // A page under Devices with no row of its own leaves the box on the Devices row, so the rail still boxes one row.
-  assert.deepEqual([await devices.getAttribute('aria-current'), await devices.getAttribute('data-ancestor'), await devices.evaluate(element => getComputedStyle(element).borderTopColor !== 'rgba(0, 0, 0, 0)'),
-    await page.locator('.shell>aside a[aria-current]').count()], ['page', null, true, 0], 'on the Conversation page the Devices row is the boxed row');
+  await page.goto(`${world.url}/#/component/not-declared`);
+  await page.getByRole('heading', {name: 'No component named not-declared', exact: true}).waitFor();
+  assert.deepEqual(await devicesMark(), ['page', null, true, []], 'on a page with no row of its own the Devices row is the boxed row');
   await openDirectory(page);
   assert.equal(await toggle.count(), 0, 'the directory is not a page to pin');
   // Both pins survive a reload, in order; an unpinned page stays unpinned.
@@ -303,7 +310,7 @@ try {
   await rows.first().getByRole('button').focus();
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.activeElement?.textContent === 'Devices' && document.activeElement.closest('.primary-navigation') !== null);
-  assert.deepEqual([await saved(), await hint.isVisible(), await pinned.count()], [[], true, 0], 'with the last pin gone the hint returns and focus is on the Devices row');
+  assert.deepEqual([await saved(), await pinnedParts(), await pinned.count()], [[], ['Pinned'], 0], 'with the last pin gone the heading stands alone and focus is on the Devices row');
   checks.push('device, Audio and module pages can be pinned, the Conversation page cannot, and pins survive a reload');
 
   // A pin whose page the catalog no longer declares is not shown, and stays saved. A module that is not running is
@@ -345,8 +352,8 @@ try {
   await devices.click(); await menu.waitFor();
   await menu.getByRole('menuitem', {name: 'Library', exact: true}).waitFor();
   await page.keyboard.press('Escape');
-  assert.deepEqual([await pinned.count(), await hint.count(), await saved()], [0, 0, ['#/module/sign/preview', '#/module/pixoo/retired']],
-    'when the catalog no longer declares the page its pin is hidden, kept, and not mistaken for an empty list');
+  assert.deepEqual([await pinned.count(), await pinnedParts(), await saved()], [0, ['Pinned'], ['#/module/sign/preview', '#/module/pixoo/retired']],
+    'when the catalog no longer declares the page its pin is hidden and kept');
   await page.unroute('**/api/v2/modules');
   await page.reload(); await feed(page, 'connected');
   await rows.first().waitFor();
@@ -358,7 +365,8 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(every.length >= 12, true, `the world declares enough pages for a long list: ${String(every.length)}`);
   await page.evaluate(([key, pins]) => {localStorage.setItem(key ?? '', pins ?? '[]');}, [PINS_KEY, JSON.stringify(every)]);
-  await page.setViewportSize({width: 1440, height: 700});
+  // This world's rail also holds the conversations (#1890), so it needs a taller window to stay in view than a rail without them.
+  await page.setViewportSize({width: 1440, height: 800});
   await page.reload(); await feed(page, 'connected');
   await rows.nth(every.length - 1).waitFor();
   const list = (): Promise<{scrolls: boolean; lastInView: boolean; footInWindow: boolean; sticky: boolean; ringRoom: boolean}> => pinned.evaluate(element => {
@@ -372,7 +380,7 @@ try {
   await rows.last().getByRole('link').focus();
   assert.deepEqual(await list(), {scrolls: true, lastInView: true, footInWindow: true, sticky: true, ringRoom: true}, 'focus brings the last pinned row into view inside the list');
   // In the icon rail a pinned page is its monogram, named by its title; the unpin button needs the full rail.
-  await page.setViewportSize({width: 1024, height: 700});
+  await page.setViewportSize({width: 1024, height: 800});
   assert.deepEqual(await rows.first().evaluate(element => {
     const link = element.querySelector('a'), name = element.querySelector('.rail-pin-name'), button = element.querySelector('.rail-pin-button'), mono = element.querySelector('.rail-mono');
     if (link === null || name === null || button === null || mono === null) throw new Error('A pinned row holds a link, a name, a button and a monogram.');

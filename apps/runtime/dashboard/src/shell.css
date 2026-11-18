@@ -65,11 +65,10 @@
    The list's padding leaves room for a row's focus ring, which a scroll container would otherwise cut. */
 .rail-pins{display:flex;flex-direction:column;flex:1 1 auto;min-block-size:0}
 .rail-label{flex:none;margin:0 12px var(--space-xs);color:var(--muted-dense);font-size:var(--type-label);font-weight:600;letter-spacing:.12em;text-transform:uppercase}
-.rail-hint{margin:0;padding:2px 12px;color:var(--muted-dense);font-size:var(--type-label);line-height:1.45}
 .shell>aside .rail-pins nav{grid-template-columns:minmax(0,1fr);align-content:start;gap:2px;min-block-size:0;margin:-6px;padding:6px;overflow:hidden auto;overscroll-behavior:contain;scrollbar-width:thin}
 .rail-pin{position:relative;display:flex}
 .shell>aside .rail-pin a{flex:1;min-inline-size:0;min-block-size:36px;border-radius:12px;font-size:var(--type-small)}
-.rail-mono{display:grid;place-items:center;flex:none;inline-size:24px;block-size:24px;border:1px solid var(--edge-dense);border-radius:7px;background:var(--inset);font-size:.66rem;font-weight:600;letter-spacing:0}
+.rail-mono{position:relative;display:grid;place-items:center;flex:none;inline-size:24px;block-size:24px;border:1px solid var(--edge-dense);border-radius:7px;background:var(--inset);font-size:.66rem;font-weight:600;letter-spacing:0}
 .rail-pin-name{overflow:hidden;text-overflow:ellipsis}
 .shell>aside .rail-pin a .rail-pin-group{flex:0 9999 auto;min-inline-size:0;margin-inline-start:auto;overflow:hidden;text-overflow:ellipsis;font-weight:400}
 /* A row's own button unpins it. It shows when the row is pointed at or the button has keyboard focus, in place of
@@ -105,24 +104,48 @@
 .device-menu-mark{display:inline-grid;flex:none;margin-inline-start:auto;color:var(--muted-dense)}
 .device-menu-mark+.device-menu-mark{margin-inline-start:0}
 .device-menu .device-menu-all{justify-content:space-between;min-block-size:40px;border-block-start:1px solid var(--edge-faint);border-radius:0 0 10px 10px;color:var(--link);font-weight:500}
+/* Conversations (#1890). The companions frontend renders the group and the rail draws it: a heading and one link
+   for each chat profile, with a tile, the name and the Demo label. The dot on a tile says the conversation needs
+   the owner's answer. The words are part of the link's name, and the icon rail shows them beside the tile on hover
+   or focus. On the phone bar the same dot on the menu button says a conversation other than the open one waits. */
+.rail-conversations{display:flex;flex-direction:column;flex:none}
+/* A row is as wide as the rail and no wider. The name and the Demo label share a line where the fonts allow it;
+   where they do not, the label moves under the name inside the same row, so neither is ever cut. */
+.shell>aside .rail-conversations nav{gap:2px}
+.shell>aside .rail-conversations nav a{min-block-size:36px;padding-inline-end:6px;border-radius:12px;font-size:var(--type-small)}
+.rail-conversations .rail-text{display:flex;flex-wrap:wrap;align-items:baseline;flex:1;min-inline-size:0;gap:0 var(--space-xs);line-height:1.2}
+.rail-tag{margin-inline-start:auto;color:var(--muted-dense);font-size:.75rem;font-weight:400}
+.rail-need{position:absolute;inline-size:1px;block-size:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.rail-attention{position:absolute;inset-block-start:-3px;inset-inline-end:-3px;inline-size:8px;block-size:8px;border-radius:50%;background:var(--pending);box-shadow:0 0 0 2px var(--shell-rail)}
+.phone-bar .rail-button{position:relative}
+.phone-bar .rail-attention{inset-block-start:9px;inset-inline-end:9px;box-shadow:0 0 0 2px var(--bg)}
 /* The toggle in a page's header that pins the page to the rail. */
 .shell .pin-toggle{display:inline-flex;align-items:center;gap:var(--space-s);flex:none}
 .shell .pin-toggle[aria-pressed=true]{border-color:var(--edge-strong);background:var(--raised)}
 .shell>aside .sidebar-foot{position:relative;display:grid;gap:var(--space-s);justify-items:stretch;padding-block-start:var(--space-s);border-block-start:1px solid var(--edge-faint)}
 .shell>aside .sidebar-foot p{display:block;margin:0;padding-inline:12px;font-size:var(--type-label)}
-/* The feed details open beside the rail, level with its foot, so they never cover Settings. */
-.sidebar-foot .info-tip{position:static;justify-self:start}
+/* Settings and the feed indicator share a row (#1890), which leaves the rail room for the conversations. The
+   indicator is an icon there, and its name is the first line of its details. The details open beside the rail,
+   level with its foot, so they never cover Settings. */
+.rail-foot-row{display:flex;align-items:center;gap:var(--space-xs)}
+.rail-foot-row nav{flex:1;min-inline-size:0}
+.sidebar-foot .info-tip{position:static}
+.shell>aside .sidebar-foot .status-indicator{inline-size:44px;min-block-size:44px;padding:0}
+.shell>aside .sidebar-foot .status-indicator .rail-text{position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.tip-feed{display:none}
+.shell>aside .tip-feed{display:block;font-weight:600}
 .sidebar-foot .info-popover{top:auto;right:auto;bottom:0;left:calc(100% + var(--space-m))}
 .phone-sign-in{display:none}
 .phone-bar,.rail-scrim{display:none}
 /* A window too short for the rail lets it scroll with the page, as it did before it was sticky. The shell measures
    whether the rail fits (rail.tsx) and marks the shell when it does not, because what the rail needs depends on the
    fonts, the session and what is pinned. The rail holds its head, the jump field, the destinations, the heading of
-   the pinned pages with one of them or the hint, and the foot; a longer list of pinned pages scrolls inside the rail
-   and never makes it taller. The panel still runs the full height of the page, with the foot directly under the
-   pinned pages instead of at the page's end. The phone drawer is a fixed panel and keeps its own layout at any
-   height. */
-@media(min-width:680.02px){.shell[data-rail-short]>aside{position:static;align-self:stretch;block-size:auto}.shell[data-rail-short]>aside .sidebar-foot{margin-block-start:0}}
+   the pinned pages with room for one of them, the conversations and the foot; a longer list of pinned pages scrolls
+   inside the rail and never makes it taller. The panel still runs the full height of the page. Its parts stay
+   together at the top: the pinned pages take their own height and do not stretch, so the conversations and the foot
+   sit directly under them and not at the page's end. The phone drawer is a fixed panel and keeps its own layout at
+   any height. */
+@media(min-width:680.02px){.shell[data-rail-short]>aside{position:static;align-self:stretch;block-size:auto}.shell[data-rail-short]>aside .rail-pins{flex:none}.shell[data-rail-short]>aside .sidebar-foot{margin-block-start:0}}
 
 /* The icon rail keeps every name. A link's own label becomes the name shown beside its icon on hover or focus, so
    the name is in the page once; the feed label and the control mode stay for assistive technology only. A name
@@ -139,9 +162,9 @@
   .shell:not([data-rail-narrow=expanded]) .rail-head{justify-content:center;margin-inline-end:0}
   .shell:not([data-rail-narrow=expanded]) .rail-toggle{padding:0;outline-offset:3px}
   .shell:not([data-rail-narrow=expanded])>aside .brand{display:none}
-  .shell:not([data-rail-narrow=expanded])>aside :is(p.rail-text,.status-indicator .rail-text,.rail-jump .rail-text){position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .shell:not([data-rail-narrow=expanded])>aside :is(p.rail-text,.rail-jump .rail-text){position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .shell:not([data-rail-narrow=expanded])>aside nav :is(a,.rail-devices){justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
-  .shell:not([data-rail-narrow=expanded])>aside :is(.rail-go,.rail-hint,.rail-pin-name,.rail-pin-group,.rail-pin-button){display:none}
+  .shell:not([data-rail-narrow=expanded])>aside :is(.rail-go,.rail-pin-name,.rail-pin-group,.rail-pin-button){display:none}
   .shell:not([data-rail-narrow=expanded]) .rail-label{block-size:1px;margin:6px 10px;overflow:hidden;background:var(--edge-faint);font-size:0}
   .shell:not([data-rail-narrow=expanded])>aside .rail-pin.visiting a{padding:0}
   .shell:not([data-rail-narrow=expanded]) .device-menu{inset-inline-start:72px;inline-size:min(468px,calc(100vw - 80px))}
@@ -149,8 +172,11 @@
   .shell:not([data-rail-narrow=expanded]) .rail-jump{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
   .shell:not([data-rail-narrow=expanded]) .rail-jump kbd{display:none}
   .shell:not([data-rail-narrow=expanded])>aside .sidebar-foot{justify-items:center}
-  .shell:not([data-rail-narrow=expanded]) .sidebar-foot .info-tip{justify-self:center}
-  .shell:not([data-rail-narrow=expanded]) .sidebar-foot .status-indicator{inline-size:44px;min-block-size:44px;padding:0}
+  .shell:not([data-rail-narrow=expanded]) .rail-foot-row{flex-direction:column}
+  .shell:not([data-rail-narrow=expanded]) .rail-conversations .rail-text{flex-wrap:nowrap}
+  .shell:not([data-rail-narrow=expanded]) .rail-conversations .rail-tag{margin:0;color:inherit}
+  .shell:not([data-rail-narrow=expanded]) .rail-conversations .rail-need{position:static;inline-size:auto;block-size:auto;margin:0;overflow:visible;clip-path:none}
+  .shell:not([data-rail-narrow=expanded]) .rail-conversations :is(.rail-tag,.rail-need)::before{content:'· '}
   .shell:not([data-rail-narrow=expanded])>aside nav :is(a,.rail-devices) .rail-text{position:absolute;top:50%;left:calc(100% + 12px);z-index:20;padding:6px 10px;border-radius:8px;background:var(--text);color:var(--bg);font-size:var(--type-label);font-weight:500;line-height:1.2;white-space:nowrap;opacity:0;pointer-events:none;transform:translate(-4px,-50%)}
   .shell:not([data-rail-narrow=expanded])>aside nav :is(a,.rail-devices):focus-visible .rail-text{opacity:1;transform:translate(0,-50%);transition:opacity 120ms ease-out,transform 120ms ease-out}
 }
@@ -161,9 +187,9 @@
   .shell[data-rail-wide=collapsed] .rail-head{justify-content:center;margin-inline-end:0}
   .shell[data-rail-wide=collapsed] .rail-toggle{padding:0;outline-offset:3px}
   .shell[data-rail-wide=collapsed]>aside .brand{display:none}
-  .shell[data-rail-wide=collapsed]>aside :is(p.rail-text,.status-indicator .rail-text,.rail-jump .rail-text){position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .shell[data-rail-wide=collapsed]>aside :is(p.rail-text,.rail-jump .rail-text){position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .shell[data-rail-wide=collapsed]>aside nav :is(a,.rail-devices){justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
-  .shell[data-rail-wide=collapsed]>aside :is(.rail-go,.rail-hint,.rail-pin-name,.rail-pin-group,.rail-pin-button){display:none}
+  .shell[data-rail-wide=collapsed]>aside :is(.rail-go,.rail-pin-name,.rail-pin-group,.rail-pin-button){display:none}
   .shell[data-rail-wide=collapsed] .rail-label{block-size:1px;margin:6px 10px;overflow:hidden;background:var(--edge-faint);font-size:0}
   .shell[data-rail-wide=collapsed]>aside .rail-pin.visiting a{padding:0}
   .shell[data-rail-wide=collapsed] .device-menu{inset-inline-start:72px;inline-size:min(468px,calc(100vw - 80px))}
@@ -171,8 +197,11 @@
   .shell[data-rail-wide=collapsed] .rail-jump{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
   .shell[data-rail-wide=collapsed] .rail-jump kbd{display:none}
   .shell[data-rail-wide=collapsed]>aside .sidebar-foot{justify-items:center}
-  .shell[data-rail-wide=collapsed] .sidebar-foot .info-tip{justify-self:center}
-  .shell[data-rail-wide=collapsed] .sidebar-foot .status-indicator{inline-size:44px;min-block-size:44px;padding:0}
+  .shell[data-rail-wide=collapsed] .rail-foot-row{flex-direction:column}
+  .shell[data-rail-wide=collapsed] .rail-conversations .rail-text{flex-wrap:nowrap}
+  .shell[data-rail-wide=collapsed] .rail-conversations .rail-tag{margin:0;color:inherit}
+  .shell[data-rail-wide=collapsed] .rail-conversations .rail-need{position:static;inline-size:auto;block-size:auto;margin:0;overflow:visible;clip-path:none}
+  .shell[data-rail-wide=collapsed] .rail-conversations :is(.rail-tag,.rail-need)::before{content:'· '}
   .shell[data-rail-wide=collapsed]>aside nav :is(a,.rail-devices) .rail-text{position:absolute;top:50%;left:calc(100% + 12px);z-index:20;padding:6px 10px;border-radius:8px;background:var(--text);color:var(--bg);font-size:var(--type-label);font-weight:500;line-height:1.2;white-space:nowrap;opacity:0;pointer-events:none;transform:translate(-4px,-50%)}
   .shell[data-rail-wide=collapsed]>aside nav :is(a,.rail-devices):focus-visible .rail-text{opacity:1;transform:translate(0,-50%);transition:opacity 120ms ease-out,transform 120ms ease-out}
 }
@@ -229,6 +258,7 @@
   /* The temporary row's pin button is always shown, so here it is a full touch target at the row's end. */
   .shell .rail-pin-button{inset-inline-end:0;inline-size:44px;block-size:44px;margin-block-start:-22px;border-radius:12px;background:transparent}
   .shell>aside .rail-pin.visiting a{padding-inline-end:44px}
+  .shell>aside .rail-conversations nav a{min-block-size:44px}
   .device-menu{inset:8px auto 8px 8px;inline-size:calc(min(82vw,300px) - 16px);max-block-size:none;animation-name:device-menu-over}
   .device-menu-head{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 2px 10px}
   .device-menu-columns{grid-template-columns:minmax(0,1fr)}
@@ -256,37 +286,6 @@
   flex: 1;
   gap: var(--space-s);
   padding: 0 0 var(--space-m);
-}
-.workspace-page-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-xs) var(--space-m);
-}
-.workspace-page-header h1 {
-  font-size: var(--type-heading);
-}
-.workspace-page-navigation {
-  position: relative;
-}
-.workspace-page-navigation summary {
-  padding: var(--space-s);
-  min-block-size: 44px;
-  cursor: pointer;
-}
-.workspace-page-navigation .feature-navigation {
-  display: grid;
-  position: absolute;
-  inset-inline-end: 0;
-  z-index: 5;
-  min-inline-size: 12rem;
-  max-block-size: min(60dvh, 24rem);
-  overflow: auto;
-  margin: 0;
-  border: 1px solid var(--edge-dense);
-  background: var(--panel);
-  box-shadow: var(--shell-shadow);
 }
 @media (max-width: 680px) {
   .shell.workspace-shell {

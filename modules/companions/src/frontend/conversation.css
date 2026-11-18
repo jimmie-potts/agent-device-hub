@@ -5,53 +5,20 @@
   padding: 0;
 }
 
+/* The chat profiles are chosen in the dashboard's rail (Hub #1890), so the page is one column, with Details beside
+   it when a wide window has it open. */
 .conversation-layout {
   display: grid;
   flex: 1;
   min-inline-size: 0;
-  grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(min-content, 1fr);
   gap: 0.5rem 1rem;
 }
 
-.conversation-profiles {
-  min-inline-size: 0;
-  background: var(--inset);
-  border: 1px solid var(--edge-faint);
-  border-radius: 12px;
-  padding: 0.75rem;
-  overflow-wrap: anywhere;
-}
-
-.conversation-profiles-wide {
-  grid-column: 1;
-  grid-row: 1;
-  align-self: start;
-  display: grid;
-  gap: 0.4rem;
-}
-
-.conversation-profiles-wide button {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.125rem 0.5rem;
-  text-align: start;
-}
-
-.conversation-profiles-wide small, .conversation-demo-note {
+.conversation-demo-tag, .conversation-demo-note {
   color: var(--muted-dense);
   font-size: var(--type-small);
-}
-
-.conversation-profiles-wide button[aria-pressed="true"] {
-  background: var(--raised);
-  color: var(--text);
-  border-color: var(--edge-strong);
-}
-
-.conversation-profiles-narrow {
-  display: none;
 }
 
 .conversation-details {
@@ -139,9 +106,9 @@
 }
 
 .conversation-main {
-  --conversation-measure: 760px;
+  --conversation-measure: 920px;
   --conversation-reading-gutter: 0.375rem;
-  grid-column: 2;
+  grid-column: 1;
   grid-row: 1;
   display: grid;
   grid-template-rows: auto minmax(min-content, 1fr) auto;
@@ -399,12 +366,12 @@
 
 @media (min-width: 1120px) {
   .conversation-layout:has(> .conversation-details[open]) {
-    grid-template-columns: minmax(9rem, 12rem) minmax(0, 1fr) clamp(17rem, 23vw, 20.25rem);
+    grid-template-columns: minmax(0, 1fr) clamp(17rem, 23vw, 20.25rem);
   }
 
   .conversation-details {
     position: static;
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 1;
     margin: 0;
     inline-size: 100%;
@@ -435,47 +402,22 @@
   }
 }
 
-@media (max-width: 760px) {
-  .conversation-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .conversation-profiles {
-    padding: 0;
-    background: none;
-    border: 0;
-  }
-
-  .conversation-profiles-wide {
-    display: none;
-  }
-
-  .conversation-profiles-narrow {
-    display: block;
-    flex: 1;
-  }
-
-  .conversation-profiles-narrow select {
-    width: 100%;
-    padding-inline: var(--space-xs);
-    font-size: var(--type-label);
-  }
-
-  .conversation-header h2 {
-    display: none;
-  }
-
-  .conversation-main {
-    grid-column: 1;
-  }
-}
-
+/* One header row: the profile's name, its Demo label and Details at the row's end. */
 .conversation-header {
   min-inline-size: 0;
   display: flex;
-  align-items: end;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--space-s);
+}
+
+.conversation-header h2 {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.conversation-header .conversation-details-trigger {
+  flex: none;
+  margin-inline-start: auto;
 }
 
 .conversation-voice-actions {

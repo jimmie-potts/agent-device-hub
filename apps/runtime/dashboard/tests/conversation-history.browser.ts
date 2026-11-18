@@ -4,6 +4,7 @@ import {build} from 'esbuild';
 import {chromium, type Browser} from 'playwright';
 import type * as HistoryReader from '../../../../modules/companions/dist/src/frontend/conversation-history.js';
 import {changes, feed, startWorld} from './harness.ts';
+import {chooseConversation, conversationLink} from './navigation-helpers.ts';
 
 export async function conversationHistoryJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true});
@@ -74,7 +75,8 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     assert.ok(Math.abs(after - before) <= 2, 'Load earlier preserves the reading anchor');
     const answerDraft = panel.getByRole('textbox', {name: 'Answer', exact: true});
     await answerDraft.fill('Synthetic answer draft');
-    await panel.getByRole('button', {name: 'Reachy Demo', exact: true}).click();
+    // The profiles are chosen in the rail (Hub #1890).
+    await chooseConversation(page, 'reachy');
     await panel.getByText('No saved messages for this profile yet.', {exact: true}).waitFor();
     assert.equal(await panel.getByRole('button', {name: 'Send', exact: true}).isDisabled(), true);
     await panel.getByRole('button', {name: 'Go to B.U.N.N.Y. task', exact: true}).click();
@@ -87,7 +89,7 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     }, {times: 1});
     const held = page.waitForRequest(request => request.url().includes('profile=reachy&view=recent'));
     try {
-      await panel.getByRole('button', {name: 'Reachy Demo', exact: true}).click();
+      await (await conversationLink(page, 'reachy')).click();
       await held;
       await panel.getByRole('button', {name: 'Go to B.U.N.N.Y. task', exact: true}).click();
       await answerDraft.waitFor();
@@ -99,7 +101,7 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     assert.equal(await answerDraft.inputValue(), 'Synthetic answer draft', 'a late response cannot overwrite the selected profile');
     await transcript.getByText('Synthetic history fixture 19', {exact: true}).waitFor();
     await page.setViewportSize({width: 390, height: 844});
-    await panel.locator('.conversation-profiles-narrow select').waitFor();
+    await panel.locator('.conversation-header h2').waitFor();
     assert.equal(await answerDraft.inputValue(), 'Synthetic answer draft');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
     const output = process.env.DASHBOARD_RECEIPTS;

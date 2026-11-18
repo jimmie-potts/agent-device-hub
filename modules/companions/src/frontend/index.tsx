@@ -4,6 +4,7 @@ import {CodingSuggestions} from './suggestions.js';
 import {KnowledgePage} from './knowledge.js';
 import {DuckConversation, DuckWidget} from './duck.js';
 export {DuckWidget} from './duck.js';
+export {ConversationRail, useConversationWaiting} from './conversation-rail-group.js';
 import {PreferencesPage} from './preferences.js';
 import {AssistantPage} from './assistant.js';
 import React, {useEffect, useRef, useState} from 'react';

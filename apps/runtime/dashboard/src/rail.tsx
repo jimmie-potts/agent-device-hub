@@ -30,11 +30,14 @@ const outer = (element: Element | null): number => {
 };
 /** The room under a pinned row that its focus ring is drawn in. It matches the pinned list's padding in the stylesheet. */
 const RING = 6;
+/** A pinned row's height while none is laid out to measure. It matches the row's minimum height in the stylesheet. */
+const ROW = 36;
 
 /**
- * The height the rail needs to show everything in it: its head, the jump field, the destinations, the foot, and of
- * the pinned pages their heading with one row, or with the hint when nothing is pinned. A longer pinned list scrolls
- * inside the rail and asks for no more. The Devices menu is fixed to the window and takes no room in the rail.
+ * The height the rail needs to show everything in it: its head, the jump field, the destinations, the conversations,
+ * the foot, and of the pinned pages their heading with one row. A longer pinned list scrolls inside the rail and
+ * asks for no more. With no row laid out the room for one is still counted, so opening a page that shows a temporary
+ * row never changes whether the rail fits. The Devices menu is fixed to the window and takes no room in the rail.
  */
 export function railNeed(rail: Element): number {
   const style = getComputedStyle(rail);
@@ -47,7 +50,7 @@ export function railNeed(rail: Element): number {
       continue;
     }
     const row = child.querySelector('.rail-pin');
-    need += outer(child.querySelector('.rail-label')) + (row === null ? outer(child.querySelector('.rail-hint')) : row.getBoundingClientRect().height + RING);
+    need += outer(child.querySelector('.rail-label')) + (row?.getBoundingClientRect().height ?? ROW) + RING;
   }
   return need + Math.max(0, parts - 1) * px(style.rowGap);
 }
@@ -56,9 +59,9 @@ export function railNeed(rail: Element): number {
  * Whether the window is too short to hold the rail, in which case the stylesheet lets the rail scroll with the page
  * instead of staying in view. It is measured, not a fixed height: what the rail needs depends on the fonts, which wrap
  * its text differently from one computer to the next, on the session, whose ended state adds "Sign in again", and on
- * what is pinned. Everything in the rail is rendered by the shell, which renders at least once a second, so measuring
- * after each render follows every change; a resized window is measured at once. The phone drawer is a fixed panel
- * and is never short.
+ * what is pinned. The shell renders at least once a second, so measuring after each render follows every change in
+ * the rail, including the conversation group a module renders inside it; a resized window is measured at once. The
+ * phone drawer is a fixed panel and is never short.
  */
 export function useRailShort(rail: React.RefObject<Element | null>, phone: boolean): boolean {
   const [short, setShort] = useState(false);
