@@ -78,13 +78,23 @@ The core computes `status` with one pure function from the claims. It lives in t
 
 1. Attention items present: `needs-owner`, with the highest-ranked kind as detail (`approval`, then `input`, then `question`, as `apps/runtime/dashboard/src/sessions.ts:56` ranks them).
 2. Work active: `working`, detail `confirmed` or `unconfirmed`. Otherwise a working child: `working`, detail `subagent`.
-3. The latest notice belongs to the current turn: `finished`, detail `turn-ended`. The class ignores acknowledgments and read evidence. #505 adds details such as `failed` and `cancelled` without a schema change.
+3. A notice still describes the finished turn: `finished`, detail `turn-ended`. The class ignores acknowledgments and read evidence. #505 adds details such as `failed` and `cancelled` without a schema change. Which notices count goes to the owner (see "Rule 3 pending the owner" below). Until the answer, one function, `noticeCounts`, applies the dashboard's rule: a notice counts unless a known later turn superseded it.
 4. Work idle or interrupted: `quiet`, detail `idle` or `interrupted`.
 5. Otherwise `unknown`, with the activity's unavailable reason as detail, or `unknown`.
 
 A reader switches on the class and may use the detail. A detail it does not know falls back to its class. Unknown action semantics never grant eligibility (decision 10). Per-consumer acknowledgment stays on the record. The shared read function applies each reader's own acknowledgment and read policy to retire `finished` to `quiet` for that reader (detail `acknowledged` or `read`).
 
 The `session/3.0` validator keeps today's record checks: entity ID, parentage, ordering authority, unique notices and dimensions, generation not after revision, and receipt provenance on an idle or interrupted root's current turn. It drops the freshness check and adds the status check: `status` must equal the function of the record's claims.
+
+Step 1 settled the schema mechanics as follows:
+
+- The record type is `Session30Record` (`families.ts`), and `schemas/v2/families/session.3.0.schema.json` defines its own identity and building blocks, so a later minor can widen the identity alone.
+- `status.detail` uses the blocks' kebab-case `enumValue`. Because the validator requires the status the function gives, a detail the function never gives is refused. A reader therefore meets an unknown detail only from a newer function than its own, and the case set exercises that fallback on the view.
+- `work.reasons` holds `deadline`, `restart`, `ambiguous` or `lost`. Confirmed work has no reason, and unconfirmed work has at least one. A claim's dimensions are: work, `activity`; attention, `attention`; outcome, `read`; relationships, `parent`.
+- Rule 3 and each reader's retirement use the notices `noticeCounts` keeps. `finished` retires to `quiet` with detail `acknowledged` once each of them is acknowledged under the reader's policy, or with detail `read` when read evidence counts for that reader and the outcome is read.
+- Read provenance makes the outcome `read` and requires a known turn, idle or interrupted work and a root. Without provenance, only Codex Desktop records read evidence.
+
+**Rule 3 pending the owner.** The design's first wording, "the latest notice belongs to the current turn", hides a recorded outcome whenever turn evidence is missing or conflicting. Today's reducer produces such records: a Stop for a turn whose prompt start was lost (both notices kept, the turn ambiguous), a Stop without a turn ID after a known running turn, and a notice with an unknown turn followed by a next turn that starts and is interrupted. The 1.x helper, LIFX, the Tidbyt tile and the dashboard's `finishedUnread` (`apps/runtime/dashboard/src/sessions.ts:66-69`) all show these as finished, and that wording would not. The owner decides the rule. The coordinator's recommendation, applied until then, is the dashboard's: a notice counts unless its turn and the session's turn are both known and differ. Under it the view agrees with the 1.x helper for every case in the case set and differs only where a known later turn superseded an unacknowledged notice, which the core acknowledges for Nanoleaf and Pixoo at that turn's start. `noticeCounts` is the one place to change if the owner chooses otherwise. The live helper in `status.ts` keeps today's rule in group 1 (decision 10). The copied 1.x cases in `status.test.mjs` place their notices on a known turn other than their record's, so they pass against `status.ts` but would rank differently over the view; the step that moves a live reader onto the view revisits that scenario with the owner's answer.
 
 ### 4. Aging, restart and clocks
 
@@ -105,7 +115,7 @@ The core owns every time-driven change of meaning and publishes it. One aging ta
 - At start, one core transaction marks every stored active work claim `unconfirmed` (reason `restart`) and publishes the changed records. It emits no occurrence. Questions, recorded outcomes and read evidence stay as stored.
 - Explicit uncertainty, such as lost or conflicting evidence, publishes at once.
 
-Until step 9 the core still publishes `session/2.x`, whose validator enforces the five-minute freshness rule. Steps 7 and 8 therefore keep today's republication at five minutes. From step 8, `restartUncertain` is true only for sessions whose work claim the restart made unconfirmed. The shared read function maps `session/2.x` to the same claims: active work is unconfirmed while `freshness` is `uncertain` or `restartUncertain` is true. Children map as `working = children.active` and `unconfirmed = children.uncertain`.
+Until step 9 the core still publishes `session/2.x`, whose validator enforces the five-minute freshness rule. Steps 7 and 8 therefore keep today's republication at five minutes. From step 8, `restartUncertain` is true only for sessions whose work claim the restart made unconfirmed. The shared read function maps `session/2.x` to the same claims: active work is unconfirmed while `freshness` is `uncertain` or `restartUncertain` is true, and while an `ambiguous` or `lost` activity entry exists, with that entry's reason after any `deadline` or `restart`. Children map as `working = children.active` and `unconfirmed = children.uncertain`. Every claim takes the record's `lastEvidenceAtMs` as its evidence time, and ambiguous or lost evidence marks the attention, outcome and relationship claims by their dimensions too. A waiting session whose turn is still running under its question therefore keeps `needs-owner` while its work becomes unconfirmed.
 
 ### 5. The transition result and publication
 
@@ -165,7 +175,11 @@ From step 7 a new session's `generation` is the core revision of the transaction
 - `highestStatus`, `sessionState` and `STATUS_COLORS`: kept with their names and ranking, now over the view.
 - `opportunityMatches(view, opportunity, consumer)`: the opportunity is still current for this session. Generation, identity and turn match, and the attention item is still present, or the notice is still present and not acknowledged by `consumer`. A reader adds only its own device conditions.
 
+Step 1 placed everything but `readSession` in `session-view.ts`, whose only runtime import is the import-free `status.ts`, so a browser part can bundle it; `session.ts` re-exports it and adds `readSession`, which needs the validator. Group 1 is inert: `status.ts` keeps today's helper over records unchanged, and LIFX and the Tidbyt tile keep calling it. The view's `sessionState` and `highestStatus` take views only and share `status.ts`'s colors and ranking; each reader's step moves the reader onto them. `sessionView(record)` gives the view of a record its copy already validated. The case set's inertness test checks the live helper against the 1.x helper on every case and against main's results where a check pins them. The attention item matches by kind, ID and turn. A view whose status detail this version does not know (`knownDetail`) matches no opportunity.
+
 `packages/event-contracts/fixtures/v2/session-cases.json` (step 1) is the shared synthetic case set. Each case holds an input sequence (observations, commands, clock advances and restarts), the expected records and the expected occurrence sequence. It also holds expected reader outputs: status per consumer policy, the Tronbyt row, the Pixoo row, the Nanoleaf task status, the dashboard chip, the LIFX color and opportunity matches. The core's tests and every reader's tests run it. The cases include: launch, clear and resume without a prompt; mid-turn compaction; an approval raised and resolved; a question silent for more than five minutes; working silent for more than five minutes; restart with a question, an outcome and running work; a stale delayed start; parent and child updates; a child-only working root; duplicates and collisions; out-of-order evidence; ambiguous ordering; capacity; 24-hour expiry; runtime-end retirement; per-consumer acknowledgment; an unknown detail token; and the cutover reset.
+
+The loader is `loadSessionCases()` in `@jimmie-potts/event-contracts/v2/session-cases`. It expands the compact cases into messages the core families accept: each step's observation or command, and each check's expected copy as `session/2.0` records until step 9 rewrites them as `session/3.0`. Revisions and generations count steps, so the core compares their order. Each case names in `since` the first step whose core produces it: today's core, step 7 (the reset) or step 8 (root starts, restart marking and capacity). Each check also holds the removals and the occurrences since the previous check. The contracts suite checks the hub status, each named policy (`default`, `dashboard`, `nanoleaf`), `highestStatus` and opportunity matching with the package's functions, and the Tronbyt, Pixoo, Nanoleaf and dashboard outputs against a reference of this decision's reader rules that each reader's step replaces with its own code. Its expected records for today's behavior equal what today's reducer and projection produce. The cases include the three records of "Rule 3 pending the owner" with today's live results, a notice a known later turn superseded, lost activity evidence on running work, an unsynced copy, and the Pixoo children marker. Today's hook subagents never become idle, because a child's unknown turn makes its stop ambiguous, so the capacity case gives its child a known turn.
 
 Every reader moves onto the function. Only the function and the core change at the switch.
 
@@ -269,7 +283,7 @@ Step numbers in this design follow `tasks.md`. Step 7 here is the owner plan's s
 
 Holding the 30-second window in memory comes from the coordinator's plan, not from an owner decision. This design adopts it as a design choice (decision 10).
 
-The owner's plan lands decision 2 in step 3. Its code is in the companions module, the core's companion part and the opportunity contract, which belong to step 4's reader group. No step 3 reader has a freshness-based priority rule. This design therefore lands decision 2 in step 4 and leaves the step 3 attention gates unchanged. The coordinator confirms this placement before step 3 or 4 starts.
+The owner's plan lands decision 2 in step 3. Its code is in the companions module, the core's companion part and the opportunity contract, which belong to step 4's reader group. No step 3 reader has a freshness-based priority rule. This design therefore lands decision 2 in step 4 and leaves the step 3 attention gates unchanged. The coordinator confirmed this placement on #1865 before step 3 or 4 started.
 
 ## Requirements from the pre-implementation review
 
@@ -334,7 +348,7 @@ Step 9 gets no focused second review. It changes no writer exclusion, emits no n
 
 ## Open questions
 
-1. **Decision 2 placement (coordinator).** Confirm that decision 2 lands in step 4 with the companions, as set out above.
+None. Decision 2's placement in step 4 with the companions was confirmed by the coordinator on #1865 (comment 6984552157, 2026-11-18).
 
 ## Validation
 

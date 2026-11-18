@@ -1,0 +1,745 @@
+{
+ "description": "The shared synthetic session case set (Hub #1865, design decision 10). Each case is an input sequence and checks. Steps are at `atMs` after `startAtMs`: an observation (`observe`), a transport repeat of an earlier step (`again`), a different message under an earlier step's message ID (`conflict`), a consumer's notice acknowledgment, a clock advance, a core restart, the one-time cutover reset, or launch-only roots that fill the session limit (`fill`). A check holds, after `after` steps and at `atMs`, the expected copy as session/2.0 records, the removals, the occurrences since the previous check in publication order, and each reader's expected output. Records name sessions, turns and notices by name, and the loader in src/v2/session-cases.ts expands them into messages the core families accept. Revisions and generations count steps: the core compares their order, not their values. `since` names the first step of #1865 whose core produces the case: `now` is today's core, `step 7` the storage step and `step 8` the restart, root-start and capacity step. Reader outputs follow design decision 10 and hold for the shared read function from step 1, with status rule 3 as `noticeCounts` defines it pending the owner's decision. `live`, where a check gives it, is what the live 2.x helper in status.ts gives today, which group 1 leaves unchanged. Everything here is synthetic.",
+ "startAtMs": 1791288000000,
+ "sessions": {
+  "claude": {"identity": {"provider": "claude", "client": "code", "hostId": "synthetic-host", "sourceId": "claude-hooks", "sessionId": "synthetic-claude"}, "parent": "unknown"},
+  "claude-agent": {"identity": {"provider": "claude", "client": "code", "hostId": "synthetic-host", "sourceId": "claude-hooks", "sessionId": "synthetic-claude-agent"}, "parent": "claude"},
+  "claude-b": {"identity": {"provider": "claude", "client": "code", "hostId": "synthetic-host", "sourceId": "claude-hooks", "sessionId": "synthetic-claude-b"}, "parent": "unknown"},
+  "codex": {"identity": {"provider": "codex", "client": "local", "hostId": "synthetic-host", "sourceId": "codex-hooks", "sessionId": "synthetic-codex"}, "parent": "unknown"},
+  "codex-agent": {"identity": {"provider": "codex", "client": "local", "hostId": "synthetic-host", "sourceId": "codex-hooks", "sessionId": "synthetic-codex-agent"}, "parent": "codex"},
+  "desktop": {"identity": {"provider": "codex", "client": "desktop", "hostId": "synthetic-host", "sourceId": "codex-desktop", "sessionId": "synthetic-desktop"}, "parent": "top-level"}
+ },
+ "policies": {
+  "default": {},
+  "dashboard": {"read": true},
+  "nanoleaf": {"acknowledgingConsumers": ["nanoleaf"], "read": true}
+ },
+ "cases": [
+  {
+   "id": "launch",
+   "name": "launch without a prompt stays quiet",
+   "covers": "design decision 6 (#397): a start creates an unknown root idle, with no work turn",
+   "since": "step 8",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": null, "event": {"kind": "session-started"}}}
+   ],
+   "checks": [
+    {"after": 1, "atMs": 1000,
+     "records": [
+      {"session": "claude", "revision": 1, "generation": 1, "turn": null, "activity": "idle", "unavailable": [["turn", "missing"], ["ordering", "missing"]], "observedAtMs": 0, "lastEvidenceAtMs": 0}
+     ],
+     "readers": {
+      "status": {"claude": "quiet/idle"}, "lifx": "idle", "tronbyt": [], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "idle"}, "steady": []}, "dashboard": {"claude": "idle"}
+     }}
+   ]
+  },
+  {
+   "id": "clear-resume",
+   "name": "resume and clear without a prompt stay quiet",
+   "covers": "design decision 6 (#397): a start keeps a known root's work and turn, and /clear's new session starts idle",
+   "since": "step 8",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": null, "event": {"kind": "session-started"}}},
+    {"atMs": 3000, "observe": {"session": "claude-b", "turn": null, "event": {"kind": "session-started"}}}
+   ],
+   "checks": [
+    {"after": 4, "atMs": 4000,
+     "records": [
+      {"session": "claude", "revision": 3, "generation": 1, "turn": "p1", "activity": "idle", "notices": [{"turn": "p1", "acknowledgedBy": []}],
+       "unavailable": [["turn", "missing"], ["ordering", "missing"]], "observedAtMs": 2000, "lastEvidenceAtMs": 2000},
+      {"session": "claude-b", "revision": 4, "generation": 4, "turn": null, "activity": "idle", "unavailable": [["turn", "missing"], ["ordering", "missing"]], "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
+     "readers": {
+      "status": {"claude": "finished/turn-ended", "claude-b": "quiet/idle"}, "lifx": "done", "tronbyt": [["DONE", false]],
+      "pixoo": {"claude": true, "claude-b": true}, "nanoleaf": {"tasks": {"claude": "unread", "claude-b": "idle"}, "steady": []},
+      "dashboard": {"claude": "finished", "claude-b": "idle"}
+     }}
+   ]
+  },
+  {
+   "id": "compaction",
+   "name": "mid-turn compaction keeps the active turn",
+   "covers": "design decision 6 (#397): a start on a known root keeps its running turn",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 60000, "observe": {"session": "claude", "turn": null, "event": {"kind": "session-started"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 61000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "active", "unavailable": [["turn", "missing"], ["ordering", "missing"]], "observedAtMs": 60000, "lastEvidenceAtMs": 60000}
+     ],
+     "readers": {
+      "status": {"claude": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working"}
+     }}
+   ]
+  },
+  {
+   "id": "approval",
+   "name": "an approval raised and resolved",
+   "covers": "design decision 3: attention needs the owner; a tool result resolves the turn's approval",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "attention-approval", "attention": {"status": "unknown"}}}},
+    {"atMs": 3000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "attention-resolved", "attention": {"status": "known", "id": "tool-1"}}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "active", "attention": [{"kind": "approval", "id": null, "turn": "p1"}],
+       "unavailable": [["ordering", "missing"], ["attention", "ambiguous"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "occurrences": [{"kind": "attention-raised", "session": "claude", "attention": {"kind": "approval", "id": null, "turn": "p1"}}],
+     "readers": {
+      "status": {"claude": "needs-owner/approval"}, "lifx": "attention", "tronbyt": [["ASK", false]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "blocked"}, "steady": []}, "dashboard": {"claude": "approval"},
+      "opportunities": [{"session": "claude", "for": "attention", "raisedAt": 0, "consumer": "microduck", "matches": true}]
+     }},
+    {"after": 3, "atMs": 4000,
+     "records": [
+      {"session": "claude", "revision": 3, "generation": 1, "turn": "p1", "activity": "active", "unavailable": [["attention", "ambiguous"], ["ordering", "missing"]],
+       "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "occurrences": [{"kind": "attention-cleared", "session": "claude", "attention": {"kind": "approval", "id": null, "turn": "p1"}, "cause": "resolved"}],
+     "readers": {
+      "status": {"claude": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working"},
+      "opportunities": [{"session": "claude", "for": "attention", "raisedAt": 0, "consumer": "microduck", "matches": false}]
+     }}
+   ]
+  },
+  {
+   "id": "question-silent",
+   "name": "a question silent for more than five minutes",
+   "covers": "design decision 4: silence makes only the running work unconfirmed; the question keeps its meaning",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "codex", "turn": "t1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "codex", "turn": "t1", "event": {"kind": "question-continuing", "attention": {"status": "known", "id": "q1"}}}},
+    {"atMs": 361000, "advance": true}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "codex", "revision": 2, "generation": 1, "turn": "t1", "activity": "active", "attention": [{"kind": "question", "id": "q1", "turn": "t1"}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "occurrences": [{"kind": "attention-raised", "session": "codex", "attention": {"kind": "question", "id": "q1", "turn": "t1"}}],
+     "readers": {
+      "status": {"codex": "needs-owner/question"}, "lifx": "attention", "tronbyt": [["ASK", false]], "pixoo": {"codex": false},
+      "nanoleaf": {"tasks": {"codex": "question"}, "steady": []}, "dashboard": {"codex": "question"},
+      "opportunities": [{"session": "codex", "for": "attention", "raisedAt": 0, "consumer": "microduck", "matches": true}]
+     }},
+    {"after": 3, "atMs": 361000,
+     "records": [
+      {"session": "codex", "revision": 3, "generation": 1, "turn": "t1", "activity": "active", "attention": [{"kind": "question", "id": "q1", "turn": "t1"}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "readers": {
+      "status": {"codex": "needs-owner/question"}, "lifx": "attention", "tronbyt": [["ASK", false]], "pixoo": {"codex": false},
+      "nanoleaf": {"tasks": {"codex": "question"}, "steady": []}, "dashboard": {"codex": "question"},
+      "opportunities": [{"session": "codex", "for": "attention", "raisedAt": 0, "consumer": "microduck", "matches": true}]
+     }}
+   ]
+  },
+  {
+   "id": "working-silent",
+   "name": "working silent for more than five minutes",
+   "covers": "design decision 4: active work becomes unconfirmed five minutes after its last evidence",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 360000, "advance": true}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 360000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 0, "lastEvidenceAtMs": 0}
+     ],
+     "readers": {
+      "status": {"claude": "working/unconfirmed"}, "lifx": "working", "tronbyt": [["RUN", true]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": ["claude"]}, "dashboard": {"claude": "working"}
+     }}
+   ]
+  },
+  {
+   "id": "restart",
+   "name": "a restart with a question, an outcome and running work",
+   "covers": "design decision 4: a restart makes only running work unconfirmed and publishes no occurrence",
+   "since": "step 8",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "codex", "turn": "t1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "codex", "turn": "t1", "event": {"kind": "question-continuing", "attention": {"status": "known", "id": "q1"}}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 3000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 4000, "observe": {"session": "claude-b", "turn": "r1", "event": {"kind": "turn-started"}}},
+    {"atMs": 10000, "restart": true}
+   ],
+   "checks": [
+    {"after": 5, "atMs": 5000,
+     "records": [
+      {"session": "codex", "revision": 2, "generation": 1, "turn": "t1", "activity": "active", "attention": [{"kind": "question", "id": "q1", "turn": "t1"}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000},
+      {"session": "claude", "revision": 4, "generation": 3, "turn": "p1", "activity": "idle", "notices": [{"turn": "p1", "acknowledgedBy": []}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 3000, "lastEvidenceAtMs": 3000},
+      {"session": "claude-b", "revision": 5, "generation": 5, "turn": "r1", "activity": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 4000, "lastEvidenceAtMs": 4000}
+     ],
+     "occurrences": [
+      {"kind": "attention-raised", "session": "codex", "attention": {"kind": "question", "id": "q1", "turn": "t1"}},
+      {"kind": "turn-ended", "session": "claude", "notice": "p1"}
+     ],
+     "readers": {
+      "status": {"codex": "needs-owner/question", "claude": "finished/turn-ended", "claude-b": "working/confirmed"}, "lifx": "attention",
+      "tronbyt": [["ASK", false], ["RUN", false], ["DONE", false]], "pixoo": {"codex": false, "claude": false, "claude-b": false},
+      "nanoleaf": {"tasks": {"codex": "question", "claude": "unread", "claude-b": "working"}, "steady": []},
+      "dashboard": {"codex": "question", "claude": "finished", "claude-b": "working"},
+      "opportunities": [{"session": "codex", "for": "attention", "raisedAt": 0, "consumer": "microduck", "matches": true}]
+     }},
+    {"after": 6, "atMs": 11000,
+     "records": [
+      {"session": "codex", "revision": 6, "generation": 1, "turn": "t1", "activity": "active", "attention": [{"kind": "question", "id": "q1", "turn": "t1"}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "restartUncertain": true},
+      {"session": "claude", "revision": 4, "generation": 3, "turn": "p1", "activity": "idle", "notices": [{"turn": "p1", "acknowledgedBy": []}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 3000, "lastEvidenceAtMs": 3000},
+      {"session": "claude-b", "revision": 6, "generation": 5, "turn": "r1", "activity": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 4000, "lastEvidenceAtMs": 4000,
+       "restartUncertain": true}
+     ],
+     "readers": {
+      "status": {"codex": "needs-owner/question", "claude": "finished/turn-ended", "claude-b": "working/unconfirmed"}, "lifx": "attention",
+      "tronbyt": [["ASK", false], ["RUN", true], ["DONE", false]], "pixoo": {"codex": false, "claude": false, "claude-b": true},
+      "nanoleaf": {"tasks": {"codex": "question", "claude": "unread", "claude-b": "working"}, "steady": ["claude-b"]},
+      "dashboard": {"codex": "question", "claude": "finished", "claude-b": "working"},
+      "opportunities": [{"session": "codex", "for": "attention", "raisedAt": 0, "consumer": "microduck", "matches": true}]
+     }}
+   ]
+  },
+  {
+   "id": "stale-start",
+   "name": "a stale delayed start cannot replace a newer turn",
+   "covers": "design decisions 6 and 8: a start for a retired turn is stale",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-started"}}},
+    {"atMs": 3000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "session-started"}}}
+   ],
+   "checks": [
+    {"after": 4, "atMs": 4000,
+     "records": [
+      {"session": "claude", "revision": 3, "generation": 1, "turn": "p2", "activity": "active", "notices": [{"turn": "p1", "acknowledgedBy": ["nanoleaf", "pixoo"]}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 2000, "lastEvidenceAtMs": 2000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
+     "readers": {
+      "status": {"claude": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working"}
+     }}
+   ]
+  },
+  {
+   "id": "parent-child",
+   "name": "parent and child updates",
+   "covers": "design decisions 3 and 6: a child start is child work, and a child counts as working only while its own work is confirmed",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude-agent", "turn": null, "event": {"kind": "session-started"}}},
+    {"atMs": 3000, "observe": {"session": "claude-agent", "turn": null, "event": {"kind": "turn-ended"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 0, "lastEvidenceAtMs": 0, "children": [1, 0]},
+      {"session": "claude-agent", "revision": 2, "generation": 2, "turn": null, "activity": "active", "unavailable": [["turn", "missing"], ["ordering", "missing"]],
+       "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "readers": {
+      "status": {"claude": "working/confirmed", "claude-agent": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": false},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working", "claude-agent": "working"}
+     }},
+    {"after": 3, "atMs": 4000,
+     "records": [
+      {"session": "claude", "revision": 3, "generation": 1, "turn": "p1", "activity": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 0, "lastEvidenceAtMs": 0, "children": [0, 1]},
+      {"session": "claude-agent", "revision": 3, "generation": 2, "turn": null, "activity": "unknown",
+       "notices": [{"turn": null, "acknowledgedBy": [], "id": "589a0209d7321f39b91485fb57e2f05e73d34cbe22f5bd86477f38f677507f77"}],
+       "unavailable": [["turn", "missing"], ["ordering", "missing"], ["activity", "ambiguous"]], "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude-agent", "notice": "589a0209d7321f39b91485fb57e2f05e73d34cbe22f5bd86477f38f677507f77"}],
+     "readers": {
+      "status": {"claude": "working/confirmed", "claude-agent": "finished/turn-ended"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working", "claude-agent": "finished"}
+     }}
+   ]
+  },
+  {
+   "id": "child-only",
+   "name": "a root that works only through its child",
+   "covers": "design decisions 3 and 10: a working child makes its idle root working until the child's own work is unconfirmed",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude-agent", "turn": null, "event": {"kind": "session-started"}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 302000, "advance": true}
+   ],
+   "checks": [
+    {"after": 3, "atMs": 3000,
+     "records": [
+      {"session": "claude", "revision": 3, "generation": 1, "turn": "p1", "activity": "idle", "notices": [{"turn": "p1", "acknowledgedBy": []}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "children": [1, 0]},
+      {"session": "claude-agent", "revision": 2, "generation": 2, "turn": null, "activity": "active", "unavailable": [["turn", "missing"], ["ordering", "missing"]],
+       "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
+     "readers": {
+      "status": {"claude": "working/subagent", "claude-agent": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": false},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working", "claude-agent": "working"}
+     }},
+    {"after": 4, "atMs": 302000,
+     "records": [
+      {"session": "claude", "revision": 4, "generation": 1, "turn": "p1", "activity": "idle", "notices": [{"turn": "p1", "acknowledgedBy": []}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "children": [0, 1]},
+      {"session": "claude-agent", "revision": 4, "generation": 2, "turn": null, "activity": "active", "unavailable": [["turn", "missing"], ["ordering", "missing"]],
+       "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "readers": {
+      "status": {"claude": "finished/turn-ended", "claude-agent": "working/unconfirmed"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": ["claude"]}, "dashboard": {"claude": "finished", "claude-agent": "working"}
+     }}
+   ]
+  },
+  {
+   "id": "duplicates",
+   "name": "transport duplicates, semantic duplicates and a collision",
+   "covers": "design decision 8: a repeat is a duplicate, other content under the same message ID a conflict, and a native event ID with new content ambiguous ordering",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "nativeEventId": "e1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "again": 0},
+    {"atMs": 2000, "conflict": 0, "observe": {"session": "claude", "turn": "p2", "nativeEventId": "e2", "event": {"kind": "turn-started"}}},
+    {"atMs": 3000, "observe": {"session": "claude", "turn": "p1", "nativeEventId": "e1", "observedAtMs": 0, "event": {"kind": "turn-started"}}},
+    {"atMs": 4000, "observe": {"session": "claude", "turn": "p1", "nativeEventId": "e1", "event": {"kind": "activity-observed"}}}
+   ],
+   "checks": [
+    {"after": 5, "atMs": 5000,
+     "records": [
+      {"session": "claude", "revision": 5, "generation": 1, "turn": "p1", "activity": "active", "unavailable": [["ordering", "ambiguous"]], "observedAtMs": 0, "lastEvidenceAtMs": 0}
+     ],
+     "readers": {
+      "status": {"claude": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working"}
+     }}
+   ]
+  },
+  {
+   "id": "out-of-order",
+   "name": "out-of-order evidence",
+   "covers": "design decision 8: an observation behind its dimension's watermark is stale",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "codex", "turn": "t1", "ordering": {"epoch": "run-1", "sequence": 1}, "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "codex", "turn": "t1", "ordering": {"epoch": "run-1", "sequence": 3}, "event": {"kind": "turn-ended"}}},
+    {"atMs": 2000, "observe": {"session": "codex", "turn": "t1", "ordering": {"epoch": "run-1", "sequence": 2}, "event": {"kind": "activity-observed"}}}
+   ],
+   "checks": [
+    {"after": 3, "atMs": 3000,
+     "records": [
+      {"session": "codex", "revision": 2, "generation": 1, "turn": "t1", "activity": "idle", "notices": [{"turn": "t1", "acknowledgedBy": []}],
+       "ordering": {"epoch": "run-1", "sequence": 3}, "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "codex", "notice": "t1"}],
+     "readers": {
+      "status": {"codex": "finished/turn-ended"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"codex": false},
+      "nanoleaf": {"tasks": {"codex": "unread"}, "steady": []}, "dashboard": {"codex": "finished"}
+     }}
+   ]
+  },
+  {
+   "id": "ambiguous",
+   "name": "ambiguous ordering leaves the status unknown",
+   "covers": "design decision 3: unknown work with no other claim is unknown, detailed by the activity's reason",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "activity-observed"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": null, "activity": "unknown",
+       "unavailable": [["turn", "ambiguous"], ["ordering", "ambiguous"], ["activity", "ambiguous"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "readers": {
+      "status": {"claude": "unknown/ambiguous"}, "lifx": "idle", "tronbyt": [], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "idle"}, "steady": []}, "dashboard": {"claude": "unknown"}
+     }}
+   ]
+  },
+  {
+   "id": "capacity",
+   "name": "the session limit with roots of two sources",
+   "covers": "design decision 7: a new root displaces one finished child subtree; a new child, or a root with nothing to displace, is refused",
+   "since": "step 8",
+   "steps": [
+    {"atMs": 0, "fill": {"count": 126}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 2000, "observe": {"session": "claude-agent", "turn": "c1", "event": {"kind": "session-started"}}},
+    {"atMs": 3000, "observe": {"session": "claude-agent", "turn": "c1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 4000, "observe": {"session": "codex", "turn": null, "event": {"kind": "session-started"}}},
+    {"atMs": 5000, "observe": {"session": "codex-agent", "turn": null, "event": {"kind": "session-started"}}},
+    {"atMs": 6000, "observe": {"session": "claude-b", "turn": null, "event": {"kind": "session-started"}}}
+   ],
+   "checks": [
+    {"after": 7, "atMs": 7000, "fill": {"revision": 1},
+     "records": [
+      {"session": "claude", "revision": 3, "generation": 2, "turn": "p1", "activity": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000},
+      {"session": "codex", "revision": 5, "generation": 5, "turn": null, "activity": "idle", "unavailable": [["turn", "missing"], ["ordering", "missing"]], "observedAtMs": 4000, "lastEvidenceAtMs": 4000}
+     ],
+     "removed": [{"session": "claude-agent", "reason": "retired"}],
+     "occurrences": [{"kind": "turn-ended", "session": "claude-agent", "notice": "c1"}],
+     "readers": {
+      "status": {"claude": "working/confirmed", "codex": "quiet/idle"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false, "codex": true}, "pixooChildren": {"claude": false, "codex": false},
+      "nanoleaf": {"tasks": {"claude": "working", "codex": "idle"}, "steady": []}, "dashboard": {"claude": "working", "codex": "idle"}
+     }}
+   ]
+  },
+  {
+   "id": "expiry",
+   "name": "24-hour expiry",
+   "covers": "design decision 4: a session is removed as expired 24 hours after its last lifecycle evidence",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 82800000, "observe": {"session": "claude-b", "turn": "r1", "event": {"kind": "turn-started"}}},
+    {"atMs": 86461000, "advance": true}
+   ],
+   "checks": [
+    {"after": 4, "atMs": 86461000,
+     "records": [
+      {"session": "claude-b", "revision": 4, "generation": 3, "turn": "r1", "activity": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 82800000, "lastEvidenceAtMs": 82800000}
+     ],
+     "removed": [{"session": "claude", "reason": "expired"}],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
+     "readers": {
+      "status": {"claude-b": "working/unconfirmed"}, "lifx": "working", "tronbyt": [["RUN", true]], "pixoo": {"claude-b": true},
+      "nanoleaf": {"tasks": {"claude-b": "working"}, "steady": ["claude-b"]}, "dashboard": {"claude-b": "working"}
+     }}
+   ]
+  },
+  {
+   "id": "runtime-end",
+   "name": "a runtime end retires the session tree",
+   "covers": "design decision 5: session-ended comes before the tree's removals, and a later child event is stale",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude-agent", "turn": null, "event": {"kind": "session-started"}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": null, "event": {"kind": "runtime-ended"}}},
+    {"atMs": 3000, "observe": {"session": "claude-agent", "turn": null, "event": {"kind": "turn-ended"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 0, "lastEvidenceAtMs": 0, "children": [1, 0]},
+      {"session": "claude-agent", "revision": 2, "generation": 2, "turn": null, "activity": "active", "unavailable": [["turn", "missing"], ["ordering", "missing"]],
+       "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "readers": {
+      "status": {"claude": "working/confirmed", "claude-agent": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": false},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working", "claude-agent": "working"}
+     }},
+    {"after": 4, "atMs": 4000,
+     "records": [],
+     "removed": [{"session": "claude", "reason": "retired"}, {"session": "claude-agent", "reason": "retired"}],
+     "occurrences": [{"kind": "session-ended", "session": "claude"}],
+     "readers": {
+      "status": {}, "lifx": "idle", "tronbyt": [], "pixoo": {}, "nanoleaf": {"tasks": {}, "steady": []}, "dashboard": {}
+     }}
+   ]
+  },
+  {
+   "id": "acknowledgment",
+   "name": "per-consumer acknowledgment and read evidence",
+   "covers": "design decision 3: acknowledgments stay per consumer, and each reader's policy retires finished",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "desktop", "turn": "t1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "desktop", "turn": "t1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 3000, "acknowledge": {"session": "desktop", "consumer": "pixoo", "notice": "t1"}},
+    {"atMs": 5000, "observe": {"session": "desktop", "turn": "t1", "event": {"kind": "read-observed", "state": "read"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "desktop", "revision": 2, "generation": 1, "turn": "t1", "activity": "idle", "notices": [{"turn": "t1", "acknowledgedBy": []}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "desktop", "notice": "t1"}],
+     "readers": {
+      "status": {"desktop": "finished/turn-ended"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"desktop": false},
+      "nanoleaf": {"tasks": {"desktop": "unread"}, "steady": []}, "dashboard": {"desktop": "finished"},
+      "opportunities": [{"session": "desktop", "for": "notice", "raisedAt": 0, "consumer": "pixoo", "matches": true}]
+     }},
+    {"after": 3, "atMs": 4000,
+     "records": [
+      {"session": "desktop", "revision": 3, "generation": 1, "turn": "t1", "activity": "idle", "notices": [{"turn": "t1", "acknowledgedBy": ["pixoo"]}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "readers": {
+      "status": {"desktop": "finished/turn-ended"},
+      "policies": {"default": {"desktop": "quiet/acknowledged"}, "dashboard": {"desktop": "quiet/acknowledged"}},
+      "lifx": "idle", "tronbyt": [], "pixoo": {"desktop": false},
+      "nanoleaf": {"tasks": {"desktop": "unread"}, "steady": []}, "dashboard": {"desktop": "idle"},
+      "opportunities": [
+       {"session": "desktop", "for": "notice", "raisedAt": 0, "consumer": "pixoo", "matches": false},
+       {"session": "desktop", "for": "notice", "raisedAt": 0, "consumer": "reachy-mini", "matches": true}
+      ]
+     }},
+    {"after": 4, "atMs": 6000,
+     "records": [
+      {"session": "desktop", "revision": 4, "generation": 1, "turn": "t1", "activity": "idle", "notices": [{"turn": "t1", "acknowledgedBy": ["pixoo"]}], "read": "read",
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "readers": {
+      "status": {"desktop": "finished/turn-ended"},
+      "policies": {"default": {"desktop": "quiet/acknowledged"}, "dashboard": {"desktop": "quiet/acknowledged"}, "nanoleaf": {"desktop": "quiet/read"}},
+      "lifx": "idle", "tronbyt": [], "pixoo": {"desktop": false},
+      "nanoleaf": {"tasks": {"desktop": "idle"}, "steady": []}, "dashboard": {"desktop": "idle"},
+      "opportunities": [{"session": "desktop", "for": "notice", "raisedAt": 0, "consumer": "reachy-mini", "matches": true}]
+     }}
+   ]
+  },
+  {
+   "id": "unknown-detail",
+   "name": "a status detail the reader does not know",
+   "covers": "design decisions 3 and 10: an unknown detail falls back to its class and never makes an action eligible",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "idle", "notices": [{"turn": "p1", "acknowledgedBy": []}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "views": {"claude": {"status": {"class": "finished", "detail": "failed-remotely"}}},
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
+     "readers": {
+      "status": {"claude": "finished/failed-remotely"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": false},
+      "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished"},
+      "opportunities": [{"session": "claude", "for": "notice", "raisedAt": 0, "consumer": "reachy-mini", "matches": false}]
+     }}
+   ]
+  },
+  {
+   "id": "lost-prompt",
+   "name": "a finished turn whose next prompt start was lost (S1)",
+   "covers": "PR 1903 review R1: hooks publish once and fail open, so a Stop for p2 can arrive without its UserPromptSubmit; the turn becomes ambiguous and both notices stay unacknowledged",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-ended"}}}
+   ],
+   "checks": [
+    {"after": 3, "atMs": 3000,
+     "records": [
+      {"session": "claude", "revision": 3, "generation": 1, "turn": null, "activity": "unknown",
+       "notices": [{"turn": "p1", "acknowledgedBy": []}, {"turn": "p2", "acknowledgedBy": []}],
+       "unavailable": [["turn", "ambiguous"], ["ordering", "ambiguous"], ["activity", "ambiguous"]], "observedAtMs": 2000, "lastEvidenceAtMs": 2000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}, {"kind": "turn-ended", "session": "claude", "notice": "p2"}],
+     "readers": {
+      "status": {"claude": "finished/turn-ended"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished"},
+      "live": {"highest": "done", "states": {"claude": "done"}}
+     }}
+   ]
+  },
+  {
+   "id": "stop-without-turn",
+   "name": "a stop without a turn ID after a known running turn (S2)",
+   "covers": "PR 1903 review R1: missing turn evidence never hides the recorded outcome",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": null, "event": {"kind": "turn-ended"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "unknown",
+       "notices": [{"turn": null, "acknowledgedBy": [], "id": "f95d09316368ebff90d73f4b9d095ded63e61391629f29710be708781d423327"}],
+       "unavailable": [["turn", "missing"], ["ordering", "missing"], ["activity", "ambiguous"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "f95d09316368ebff90d73f4b9d095ded63e61391629f29710be708781d423327"}],
+     "readers": {
+      "status": {"claude": "finished/turn-ended"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished"},
+      "live": {"highest": "done", "states": {"claude": "done"}}
+     }}
+   ]
+  },
+  {
+   "id": "unknown-turn-notice",
+   "name": "a notice with an unknown turn, then a next turn that starts and is interrupted (S3)",
+   "covers": "PR 1903 review R1: only a known later turn supersedes a notice",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": null, "event": {"kind": "session-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": null, "event": {"kind": "turn-ended"}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-started"}}},
+    {"atMs": 3000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-interrupted"}}}
+   ],
+   "checks": [
+    {"after": 4, "atMs": 4000,
+     "records": [
+      {"session": "claude", "revision": 4, "generation": 1, "turn": "p2", "activity": "unknown",
+       "notices": [{"turn": null, "acknowledgedBy": [], "id": "f95d09316368ebff90d73f4b9d095ded63e61391629f29710be708781d423327"}],
+       "unavailable": [["ordering", "missing"], ["activity", "ambiguous"]], "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "f95d09316368ebff90d73f4b9d095ded63e61391629f29710be708781d423327"}],
+     "readers": {
+      "status": {"claude": "finished/turn-ended"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished"},
+      "live": {"highest": "done", "states": {"claude": "done"}}
+     }}
+   ]
+  },
+  {
+   "id": "superseded-notice",
+   "name": "a finished turn superseded by a known next turn that is interrupted",
+   "covers": "design decision 3, rule 3: a notice that a known later turn superseded makes no finished status",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 2000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-started"}}},
+    {"atMs": 3000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-interrupted"}}}
+   ],
+   "checks": [
+    {"after": 4, "atMs": 4000,
+     "records": [
+      {"session": "claude", "revision": 4, "generation": 1, "turn": "p2", "activity": "unknown", "notices": [{"turn": "p1", "acknowledgedBy": ["nanoleaf", "pixoo"]}],
+       "unavailable": [["ordering", "missing"], ["activity", "ambiguous"]], "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
+     "readers": {
+      "status": {"claude": "unknown/ambiguous"}, "lifx": "idle", "tronbyt": [], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "idle"}, "steady": []}, "dashboard": {"claude": "unknown"},
+      "live": {"highest": "idle", "states": {"claude": null}}
+     }}
+   ]
+  },
+  {
+   "id": "activity-lost",
+   "name": "lost activity evidence on running work",
+   "covers": "design decision 3: ambiguous or lost activity evidence makes active work unconfirmed (PR 1903 review R3)",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "evidence-unavailable", "dimension": "activity", "reason": "lost"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "active", "unavailable": [["ordering", "missing"], ["activity", "lost"]],
+       "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "readers": {
+      "status": {"claude": "working/unconfirmed"}, "lifx": "working", "tronbyt": [["RUN", true]], "pixoo": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": ["claude"]}, "dashboard": {"claude": "working"},
+      "live": {"highest": "working", "states": {"claude": "working"}}
+     }}
+   ]
+  },
+  {
+   "id": "unsynced",
+   "name": "a copy that has not synced",
+   "covers": "design decision 10: an unsynced copy marks every Tronbyt row and Pixoo row, and LIFX shows unknown",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000, "synced": false,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "idle", "notices": [{"turn": "p1", "acknowledgedBy": []}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
+     "readers": {
+      "status": {"claude": "finished/turn-ended"}, "lifx": "unknown", "tronbyt": [["DONE", true]], "pixoo": {"claude": true}, "pixooChildren": {"claude": true},
+      "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished"},
+      "live": {"highest": "unknown", "states": {"claude": "done"}}
+     }}
+   ]
+  },
+  {
+   "id": "reset",
+   "name": "the cutover reset",
+   "covers": "design decisions 9 and 12: the reset publishes nothing, the next sync serves no session, and a session that returns has a new generation",
+   "since": "step 7",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
+    {"atMs": 1000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
+    {"atMs": 2000, "observe": {"session": "codex", "turn": "t1", "event": {"kind": "turn-started"}}},
+    {"atMs": 3000, "observe": {"session": "codex", "turn": "t1", "event": {"kind": "question-continuing", "attention": {"status": "known", "id": "q1"}}}},
+    {"atMs": 10000, "reset": true},
+    {"atMs": 20000, "observe": {"session": "claude", "turn": "p2", "event": {"kind": "turn-started"}}}
+   ],
+   "checks": [
+    {"after": 4, "atMs": 4000,
+     "records": [
+      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "activity": "idle", "notices": [{"turn": "p1", "acknowledgedBy": []}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000},
+      {"session": "codex", "revision": 4, "generation": 3, "turn": "t1", "activity": "active", "attention": [{"kind": "question", "id": "q1", "turn": "t1"}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "occurrences": [
+      {"kind": "turn-ended", "session": "claude", "notice": "p1"},
+      {"kind": "attention-raised", "session": "codex", "attention": {"kind": "question", "id": "q1", "turn": "t1"}}
+     ],
+     "readers": {
+      "status": {"claude": "finished/turn-ended", "codex": "needs-owner/question"}, "lifx": "attention", "tronbyt": [["ASK", false], ["DONE", false]],
+      "pixoo": {"claude": false, "codex": false}, "nanoleaf": {"tasks": {"claude": "unread", "codex": "question"}, "steady": []},
+      "dashboard": {"claude": "finished", "codex": "question"},
+      "opportunities": [
+       {"session": "codex", "for": "attention", "raisedAt": 0, "consumer": "microduck", "matches": true},
+       {"session": "claude", "for": "notice", "raisedAt": 0, "consumer": "reachy-mini", "matches": true}
+      ]
+     }},
+    {"after": 5, "atMs": 11000,
+     "records": [],
+     "readers": {
+      "status": {}, "lifx": "idle", "tronbyt": [], "pixoo": {}, "nanoleaf": {"tasks": {}, "steady": []}, "dashboard": {},
+      "opportunities": [
+       {"session": "codex", "for": "attention", "raisedAt": 0, "consumer": "microduck", "matches": false},
+       {"session": "claude", "for": "notice", "raisedAt": 0, "consumer": "reachy-mini", "matches": false}
+      ]
+     }},
+    {"after": 6, "atMs": 21000,
+     "records": [
+      {"session": "claude", "revision": 6, "generation": 6, "turn": "p2", "activity": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 20000, "lastEvidenceAtMs": 20000}
+     ],
+     "readers": {
+      "status": {"claude": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working"},
+      "opportunities": [{"session": "claude", "for": "notice", "raisedAt": 0, "consumer": "reachy-mini", "matches": false}]
+     }}
+   ]
+  }
+ ]
+}

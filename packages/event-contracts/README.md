@@ -151,7 +151,9 @@ change them ([Hub #842](https://github.com/jimmie-potts/agent-device-hub/issues/
 Import them from `@jimmie-potts/event-contracts/v2/families`. Each schema lives
 in `schemas/v2/families/<family>.schema.json`, is built from the shared blocks
 and is registered under `https://bunny.invalid/events/<family>/2.0`, with explicitly
-registered minor versions where extended. No family
+registered minor versions where extended. The session family also registers its
+new major, `session/3.0` (Hub #1865), described under
+[Shared session view and read function](#shared-session-view-and-read-function-hub-1865). No family
 carries a device-specific payload: modules define those.
 
 | Kind | Family | Type |
@@ -306,7 +308,9 @@ for rules a schema cannot state. The core families use it to refuse:
   not the outcome's `id`;
 - a session `generation` after its `revision`;
 - freshness that disagrees with the envelope `time`: `current` five minutes or
-  more after the last evidence, or `uncertain` before that without a restart;
+  more after the last evidence, or `uncertain` before that without a restart
+  (`session/2.0` and `2.1`);
+- a `session/3.0` status that is not `statusOf` of the record's claims;
 - a raised attention item from a turn other than the observation's;
 - repeated notice IDs or unavailable dimensions;
 - a moment that starts more than 60 s after the request;
@@ -655,7 +659,8 @@ someone lists it.
 `@jimmie-potts/event-contracts/v2/status` holds `sessionState`, `highestStatus`
 and `STATUS_COLORS`, copied from `@jimmie-potts/agent-status` and rewritten for
 `session/2.0` records (Hub #918). The 1.x package stays for the old controllers
-until #839.
+until #839. Hub #1865 leaves this helper unchanged until each reader's step moves
+the reader onto the view's helper below.
 
 - `sessionState(record, consumers?)` ranks a root session: `attention` when it
   has attention, `working` when it is active or has an active child, `done`
@@ -673,6 +678,48 @@ until #839.
 `tests/status.test.mjs` runs the copied 1.x cases against valid `session/2.0`
 records and checks that both helpers rank the same sessions alike and use the
 same colors.
+
+### Shared session view and read function (Hub #1865)
+
+One definition, one status function and one read function serve every session
+reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
+
+- `src/v2/sources.ts` (`./v2/sources`) defines each supported source once: its
+  provider, its clients and the hooks the adapter maps. `Identity`'s provider
+  and client types derive from it, `supportedSource` and `supportedHook` check
+  against it, and `tests/sources.test.mjs` fails when an identity enum of the
+  `session` or `lifecycle` schemas differs from it.
+- `session/3.0` is the session family's new major, registered beside 2.0 and
+  2.1. Nothing publishes it until the switch step. It carries the hub's
+  `status`, a closed class (`needs-owner`, `working`, `finished`, `quiet` or
+  `unknown`) with an open kebab-case detail, and the `work`, `attention`,
+  `outcome` and `relationships` claims, each with its confidence. It has no
+  freshness and no restart uncertainty. The validator refuses a status that is
+  not `statusOf` of the record's claims and keeps the 2.x record rules.
+- `src/v2/session-view.ts` (`./v2/session-view`) imports only the import-free
+  `status.ts`, so a browser part can bundle it. It holds `statusOf`,
+  `noticeCounts` (which notices make a session finished: pending the owner's
+  decision, every notice no known later turn superseded), `sessionView(record)`
+  for a `session/2.x` record its copy already validated,
+  `forConsumer(view, policy)`, which retires `finished` to `quiet` under a
+  reader's acknowledgment and read policy,
+  `opportunityMatches(view, opportunity, consumer)`, `knownDetail`, and
+  `sessionState` and `highestStatus` over views with `status.ts`'s colors and
+  ranking. Nothing live calls them yet. A detail a reader does not know falls
+  back to its class and never makes an opportunity match.
+- `src/v2/session.ts` (`./v2/session`) re-exports the view and adds
+  `readSession(message)`, which validates a session state message and returns
+  its view, or undefined. It reads `session/2.0` and `2.1` until the core
+  publishes `session/3.0`. A `session/2.x` record's active work is
+  unconfirmed while its freshness is uncertain or it is restart-uncertain;
+  silence never makes attention or an outcome uncertain.
+- `fixtures/v2/session-cases.json` is the shared synthetic case set, and
+  `loadSessionCases()` in `./v2/session-cases` expands it into messages for the
+  core's and each reader's tests. `tests/session-cases.test.mjs` runs every
+  case's reader expectations through the shared functions and checks that the
+  live helper in `status.ts` still gives main's results, and
+  `tests/session.test.mjs` covers the status function, the 2.x mapping, the
+  policies and opportunity matching.
 
 ### How 1.x error codes merged
 

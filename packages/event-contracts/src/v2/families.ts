@@ -22,6 +22,8 @@ import type {ArtScheduleRecord} from './art-schedule.js';
 import {createHash} from 'node:crypto';
 import {MessageValidator, type ErrorDetail, type Message, type PayloadCheck} from './index.js';
 import {defineFamily as define, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
+import {statusOf} from './session-view.js';
+import type {Client, Provider} from './sources.js';
 
 export {FAMILY_VERSION, type PayloadFamily} from './registry.js';
 /** Core-derived optional maximum-on state, independent of observed device power and tracked operation outcomes. */
@@ -34,7 +36,8 @@ export const MOMENT_MAX_LEAD_MS = 60_000;
 /** Freshness is `uncertain` once this long has passed without session evidence. */
 export const STALE_AFTER_MS = 300_000;
 
-export type Identity = {provider: 'codex' | 'claude'; client: 'cli' | 'desktop' | 'code' | 'local'; hostId: string; sourceId: string; sessionId: string};
+/** A session's native selector. Its provider and client come from the supported-source definition (`sources.ts`). */
+export type Identity = {provider: Provider; client: Client; hostId: string; sourceId: string; sessionId: string};
 export type KnownId = {status: 'unknown'} | {status: 'known'; id: string};
 export type Parent = {status: 'unknown'} | {status: 'top-level'} | {status: 'known'; identity: Identity};
 export type Ordering = {status: 'unknown'} | {status: 'known'; authority: string; epoch: string; sequence: number};
@@ -48,16 +51,49 @@ export type Unavailable = {
 export type Label = {value: string; origin: 'user' | 'agent'};
 export type Title = {value: string; source: 'provider' | 'user'};
 
-/** `org.bunny.session.updated`: the full record of one agent session. */
+/** One turn-ended notice and the consumers that acknowledged it. */
+export type Notice = {id: string; kind: 'turn-ended'; turn: KnownId; acknowledgedBy: string[]};
+/** Explicit read provenance (`session/2.1`): the exact finished notice, when the receipt was observed, its source and the receipt. */
+export type ReadProvenance = {noticeId: string; observedAtMs: number; source: string; receipt: ReadReceipt};
+
+/** `org.bunny.session.updated` under `session/2.0` and `2.1`: the full record of one agent session. */
 export type SessionRecord = {
   id: string; revision: number; generation: number; identity: Identity; parent: Parent; turn: KnownId;
   activity: 'unknown' | 'active' | 'idle' | 'interrupted';
   attention: Attention[];
-  notices: {id: string; kind: 'turn-ended'; turn: KnownId; acknowledgedBy: string[]}[];
-  readReceipt?: {noticeId: string; observedAtMs: number; source: string; receipt: ReadReceipt};
+  notices: Notice[];
+  readReceipt?: ReadProvenance;
   read: 'unknown' | 'read' | 'unread'; unavailable: Unavailable[]; ordering: Ordering;
   observedAtMs: number; lastEvidenceAtMs: number; freshness: 'current' | 'uncertain'; restartUncertain: boolean;
   children: {active: number; uncertain: number};
+  label?: Label; title?: Title; project?: string; projectId?: string; hostSessionId?: string;
+};
+
+/** `session/3.0`'s status class (Hub #1865): closed, so a reader can switch on it. */
+export type StatusClass = 'needs-owner' | 'working' | 'finished' | 'quiet' | 'unknown';
+/** The hub-computed status: a closed class and an open kebab-case detail. A detail a reader does not know falls back to its class. */
+export type SessionStatus = {class: StatusClass; detail: string};
+export type Confidence = 'confirmed' | 'unconfirmed';
+/** Why work is unconfirmed: a passed deadline, a core restart, or ambiguous or lost activity evidence. */
+export type WorkReason = 'deadline' | 'restart' | 'ambiguous' | 'lost';
+/** The work claim. Confirmed work has no reason, and unconfirmed work at least one. */
+export type WorkClaim = {state: 'active' | 'idle' | 'interrupted' | 'unknown'; confidence: Confidence; evidenceAtMs: number; reasons: WorkReason[]};
+/** The attention claim: the items that need the owner. Silence never changes it. */
+export type AttentionClaim = {items: Attention[]; confidence: Confidence; evidenceAtMs: number};
+/** The outcome claim: the notices with their per-consumer acknowledgments, read evidence and its provenance. */
+export type OutcomeClaim = {notices: Notice[]; read: 'unknown' | 'read' | 'unread'; readReceipt?: ReadProvenance; confidence: Confidence; evidenceAtMs: number};
+/** The relationship claim. A child counts as working only while its own work is active and confirmed. */
+export type RelationshipsClaim = {children: {working: number; unconfirmed: number}; confidence: Confidence};
+/**
+ * `org.bunny.session.updated` under `session/3.0` (Hub #1865): the full record of one agent session, with the hub's
+ * status and its separately evidenced claims in place of `session/2.0`'s freshness and restart uncertainty. The
+ * validator refuses a status that is not `statusOf` of the claims. It is registered beside 2.0 and 2.1, and the core
+ * publishes it only from the switch step.
+ */
+export type Session30Record = {
+  id: string; revision: number; generation: number; identity: Identity; parent: Parent; turn: KnownId;
+  status: SessionStatus; work: WorkClaim; attention: AttentionClaim; outcome: OutcomeClaim; relationships: RelationshipsClaim;
+  unavailable: Unavailable[]; ordering: Ordering; observedAtMs: number; lastEvidenceAtMs: number;
   label?: Label; title?: Title; project?: string; projectId?: string; hostSessionId?: string;
 };
 export type LifecycleEvent =
@@ -277,6 +313,23 @@ const checkSession: PayloadCheck = message => {
     fresh(message, record) ?? (repeated(record.notices.map(notice => notice.id)) ? 'payload /notices duplicate id' : undefined) ??
     (repeated(record.unavailable.map(item => item.dimension)) ? 'payload /unavailable duplicate dimension' : undefined);
 };
+// session/3.0 keeps the record rules of 2.0 and 2.1, drops the freshness rule and adds the status rule (Hub #1865,
+// design decision 3): the published status is the status function of the record's claims.
+const checkSession30: PayloadCheck = message => {
+  const record = message.data as Session30Record;
+  if (record.id !== sessionEntityId(record.identity)) return 'payload /id not the identity key';
+  if (record.generation > record.revision) return 'payload /generation after the revision';
+  const receipt = record.outcome.readReceipt;
+  if (receipt !== undefined && !record.outcome.notices.some(notice => notice.id === receipt.noticeId && notice.turn.status === 'known' &&
+    record.turn.status === 'known' && notice.turn.id === record.turn.id)) {
+    return 'payload /outcome/readReceipt does not name the current finished turn';
+  }
+  const status = statusOf(record);
+  return entity(message, record.id) ?? parentage(record.identity, record.parent) ?? authority(record.identity, record.ordering) ??
+    (repeated(record.outcome.notices.map(notice => notice.id)) ? 'payload /outcome/notices duplicate id' : undefined) ??
+    (repeated(record.unavailable.map(item => item.dimension)) ? 'payload /unavailable duplicate dimension' : undefined) ??
+    (status.class === record.status.class && status.detail === record.status.detail ? undefined : 'payload /status not the status of the claims');
+};
 const checkLifecycle: PayloadCheck = message => {
   const observation = message.data as LifecycleObservation;
   if (message.subject !== sessionEntityId(observation.identity)) return 'envelope /subject not the session';
@@ -369,6 +422,7 @@ const checkPlaybackArtwork: PayloadCheck = message => {
 export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession),
   define('session', 'state', 'org.bunny.session.updated', checkSession, '2.1'),
+  define('session', 'state', 'org.bunny.session.updated', checkSession30, '3.0'),
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
   define('mode', 'state', 'org.bunny.mode.updated', message => checkEntity(message) ?? (normalizeModeState(message.data) === undefined ? 'payload mode choices are invalid' : undefined), '2.1'),
   define('automation-rule', 'state', 'org.bunny.automation-rule.updated', checkAutomationDefinition),

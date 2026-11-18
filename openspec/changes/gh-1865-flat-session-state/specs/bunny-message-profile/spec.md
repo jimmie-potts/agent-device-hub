@@ -53,6 +53,8 @@ The package SHALL provide `sessionState`, `highestStatus` and `STATUS_COLORS` ov
 - **WHEN** the 1.x status tests and the shared case set run against the view
 - **THEN** they pass, including the acknowledging-consumer cases, and a copy that has not synced reads as `unknown`
 
+Pending: this scenario waits on the owner's answer on status rule 3 (design.md, "Rule 3 pending the owner"); task 3.7 settles it before any live reader moves onto the view.
+
 #### Scenario: Today's acknowledgment scope
 - **WHEN** Pixoo acknowledges a session's only notice, and one caller names no consumers while another names Nanoleaf
 - **THEN** the first sees no `done` and the second still sees `done`
@@ -60,6 +62,8 @@ The package SHALL provide `sessionState`, `highestStatus` and `STATUS_COLORS` ov
 #### Scenario: The same colors and ranking as 1.x
 - **WHEN** the shared and 1.x helpers judge the same sessions and their colors are compared
 - **THEN** they agree
+
+Pending: the ranking half of this scenario waits on the owner's answer on status rule 3; task 3.7 settles it before any live reader moves onto the view.
 
 ### Requirement: Versioned session output retains explicit receipt provenance
 
@@ -88,11 +92,11 @@ The package SHALL define each supported agent source once, its provider, its cli
 
 ### Requirement: Shared session read function
 
-The package SHALL provide one read function that every session reader uses: it SHALL validate a session state message and return a version-independent view, holding the identity, parent, turn, generation, revision, status, claims, notices, read evidence, receipt provenance, unavailable evidence and display metadata, or nothing for a message it does not accept. Until the core publishes `session/3.0` it SHALL read `session/2.0` and `session/2.1`, treating active work as unconfirmed exactly when the record's freshness is uncertain or it is restart-uncertain, and mapping active and uncertain child counts to working and unconfirmed children; from then it SHALL read `session/3.0` only. The package SHALL also provide the status function the core uses, a per-consumer function that retires `finished` to `quiet` under a consumer's acknowledgment and read policy, and an opportunity match that requires the same generation, identity and turn and the attention item or unacknowledged notice the opportunity names. A detail the reader does not know SHALL fall back to its class, and an unknown detail SHALL never make an action eligible.
+The package SHALL provide one read function that every session reader uses: it SHALL validate a session state message and return a version-independent view, holding the identity, parent, turn, generation, revision, status, claims, notices, read evidence, receipt provenance, unavailable evidence and display metadata, or nothing for a message it does not accept. Until the core publishes `session/3.0` it SHALL read `session/2.0` and `session/2.1`, treating active work as unconfirmed exactly when the record's freshness is uncertain, it is restart-uncertain or its activity evidence is ambiguous or lost, and mapping active and uncertain child counts to working and unconfirmed children; from then it SHALL read `session/3.0` only. The package SHALL also provide the status function the core uses, a per-consumer function that retires `finished` to `quiet` under a consumer's acknowledgment and read policy, and an opportunity match that requires the same generation, identity and turn and the attention item or unacknowledged notice the opportunity names. A detail the reader does not know SHALL fall back to its class, and an unknown detail SHALL never make an action eligible.
 
 #### Scenario: A waiting session read from 2.x
 - **WHEN** a `session/2.0` record with an approval and uncertain freshness is read
-- **THEN** its view needs the owner, its work is not marked unconfirmed by age, and a working record with uncertain freshness reads as working with unconfirmed work
+- **THEN** its view needs the owner and its attention stays confirmed whatever its age, and a working record with uncertain freshness reads as working with unconfirmed work
 
 #### Scenario: An unknown detail
 - **WHEN** a record's status is `finished` with a detail the reader does not know
