@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {build} from 'esbuild';
 import {chromium, type Browser, type Page} from 'playwright';
 import {feed, startWorld} from './harness.ts';
-import {chooseConversation, conversationLink, destinationLink, openDeviceMenu, showRail} from './navigation-helpers.ts';
+import {chooseConversation, conversationLink, destinationLink, openDeviceMenu, routeCatalog, showRail, type CatalogModule} from './navigation-helpers.ts';
 
 type Row = {name: string; current: boolean; marked: boolean};
 const NAMES = ['B.U.N.N.Y.', 'Reachy Demo', 'MicroDuck Demo'];
@@ -454,16 +454,12 @@ async function railInDashboard(browser: Browser): Promise<void> {
     assert.deepEqual(await rows(page), [{name: 'B.U.N.N.Y.', current: true, marked: false}, ...plain().slice(1)]);
 
     // The group is shown only while the catalog declares the Conversation page of a running companions module.
-    type Catalog = {modules: {name: string; state: string; pages: {id: string}[]}[]};
+    const catalog = await routeCatalog(page);
     for (const [reason, change] of [
-      ['a stopped module', (module: Catalog['modules'][number]) => ({...module, state: 'stopped'})],
-      ['no Conversation page', (module: Catalog['modules'][number]) => ({...module, pages: module.pages.filter(entry => entry.id !== 'assistant')})],
+      ['a stopped module', (module: CatalogModule) => ({...module, state: 'stopped'})],
+      ['no Conversation page', (module: CatalogModule) => ({...module, pages: module.pages.filter(entry => entry.id !== 'assistant')})],
     ] as const) {
-      await page.route('**/api/v2/modules', async route => {
-        const response = await route.fetch();
-        const catalog = await response.json() as Catalog;
-        await route.fulfill({response, json: {...catalog, modules: catalog.modules.map(module => module.name === 'companions' ? change(module) : module)}});
-      });
+      catalog(module => module.name === 'companions' ? change(module) : module);
       await page.goto(`${world.url}/#/devices`);
       await page.reload();
       await feed(page, 'connected');
@@ -471,8 +467,13 @@ async function railInDashboard(browser: Browser): Promise<void> {
       await page.locator('.rail-pins .rail-label').waitFor({state: 'attached'});
       assert.equal(await conversations.count(), 0, `${reason}: the rail has no conversation group`);
       assert.equal(await page.locator('.rail-conversations').count(), 0, `${reason}: and leaves no empty group behind`);
-      await page.unroute('**/api/v2/modules');
     }
+    // With the real catalog again the group is back.
+    catalog();
+    await page.reload();
+    await feed(page, 'connected');
+    await conversations.waitFor();
+    assert.deepEqual(await rows(page), plain(), 'with the Conversation page declared again the rail lists the conversations');
     assert.deepEqual(posts.filter(path => path !== '/api/sdk/v1/upload' && path !== '/api/sdk/v1/request'), [], 'the rail registers no endpoint and publishes nothing');
   } finally {
     await context.close();
