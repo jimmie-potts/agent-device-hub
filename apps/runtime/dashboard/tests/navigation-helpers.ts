@@ -44,6 +44,21 @@ export async function openDirectory(page: Page): Promise<void> {
   await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
 }
 
+/** The rail's link for a chat profile (Hub #1890), with the phone drawer opened when the rail is one. */
+export async function conversationLink(page: Page, profile: 'bunny' | 'reachy' | 'microduck'): Promise<Locator> {
+  await showRail(page);
+  return page.getByRole('navigation', {name: 'Conversations', exact: true}).locator(`a[data-profile="${profile}"]`);
+}
+
+const CONVERSATION_NAMES = {bunny: 'B.U.N.N.Y.', reachy: 'Reachy', microduck: 'MicroDuck'} as const;
+/** Chooses a chat profile in the rail and waits for the Conversation page to show it. A phone's drawer closes behind the choice. */
+export async function chooseConversation(page: Page, profile: keyof typeof CONVERSATION_NAMES): Promise<void> {
+  const drawer = await page.getByRole('button', {name: 'Open navigation', exact: true}).isVisible();
+  await (await conversationLink(page, profile)).click();
+  await page.locator('.conversation-header').getByRole('heading', {name: CONVERSATION_NAMES[profile], exact: true}).waitFor();
+  if (drawer) await page.locator('.shell>aside').waitFor({state: 'hidden'});
+}
+
 export async function directoryLink(page: Page, category: string, name: string): Promise<Locator> {
   await openDirectory(page);
   await page.getByRole('group', {name: 'Device categories'}).getByRole('button', {name: category, exact: true}).click();

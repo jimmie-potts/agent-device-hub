@@ -856,7 +856,7 @@ heading or the footer keeps focus in the field, that the palette's stacking
 level is above the full-window visualizer's, that a stubbed full-screen element
 keeps it closed, that a slash on a slider opens it, that a held Enter opens it
 without choosing a row, that the toggle's box and focus ring stay clear of the
-brand, and the height at which the rail stops staying in view. The journey reads the height the full rail needs from the laid-out rail, since fonts differ between a Mac and the Linux container, and checks that the rail scrolls with the page in a window one pixel shorter and stays in view, whole, in a window of exactly that height: with one pinned page, with the hint, and for an ended
+brand, and the height at which the rail stops staying in view. The journey reads the height the full rail needs from the laid-out rail, since fonts differ between a Mac and the Linux container, and checks that the rail scrolls with the page in a window one pixel shorter and stays in view, whole, in a window of exactly that height: with one pinned page, with nothing pinned, where the rail keeps the room for one row, and for an ended
 session, whose rail needs more and whose recovery can be scrolled into view. It is opened there on the Devices directory,
 which mounts no module page, because a module page reads its copies with a sync
 request when it mounts.
@@ -864,6 +864,30 @@ request when it mounts.
 that a slash typed in the composer is text, that the palette opened from the
 composer returns focus and the draft, and that it stays closed under the modal
 Details drawer.
+
+Conversations in the rail (#1890) add one unit file and one journey.
+`node --test modules/companions/dist/tests/conversation-rail.test.js`, part of
+`npm run test:companions`, covers the shared store, which tasks wait on an
+unanswered question, which of them need the owner, the phone marker's rule and
+which question the rail reads.
+`node apps/runtime/dashboard/tests/conversation-rail.browser.ts` has two parts.
+The first mounts the companions frontend's rail group over a synthetic module
+scope with the page's clock held: it checks one history read for each pending
+question, the marker for a clarification and an approval and none for delegated
+work, no marker and no read from a state copy that is removed, failed,
+restarted, unavailable or disconnected, a failed read that is made again on the
+next state change and not on a timer, the kind shared by the open Conversation
+page, a modified click, and that the group sends no command and opens no speech
+endpoint. The second opens the real dashboard: it opens a profile from Home,
+Rooms and a device page, checks each profile's own history, the marker on every
+page and after a reload, the phone menu button, the drawer's rows, the icon
+rail's label, a failed history read, and a catalog with companions stopped or
+without the Conversation page. The companions browser entry runs it.
+`conversation-workspace.browser.ts` now also checks the one header row, the
+920px measure with the composer's width at 1024px, 1280px and 1440px, a
+profile chosen in the rail with its own history and draft, and the companion
+pages in the Devices menu. Journeys choose a profile with `chooseConversation`
+in `apps/runtime/dashboard/tests/navigation-helpers.ts`.
 
 The Devices menu and the pinned pages (#1889) add two unit files and one
 journey. `node --test apps/runtime/dashboard/tests/device-menu.test.ts` covers

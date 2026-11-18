@@ -68,8 +68,9 @@ Actual phone/certificate verification is separate from desktop browser tests.
 The rail has **Home, Habitat, Rooms, Devices and Automation**, each with an icon.
 Four are links; Devices is a button that opens the Devices menu (#1889).
 Settings, the feed indicator and the control mode sit at the bottom of the rail
-(#1887); Settings contains Connections (including build/operator tools), Places
-and Disconnect. The rail stays in view while a page scrolls, and a destination chosen from a
+(#1887). Settings and the indicator share one row there (#1890): the indicator
+is an icon whose details name the feed first. Settings contains Connections
+(including build/operator tools), Places and Disconnect. The rail stays in view while a page scrolls, and a destination chosen from a
 navigation link opens at the top of its page. Its toggle
 collapses it to icons that keep their names for assistive technology and show
 them on hover or focus. It starts collapsed below 1200px and expanded from
@@ -125,7 +126,7 @@ at its top with focus on the page. At phone width the menu covers the drawer as
 one scrolling column with its own close button, which leaves the drawer open.
 The row stays marked as the containing destination on every page under
 Devices; its box moves to the page's own row when the page has one among the
-pinned pages.
+pinned pages or the conversations.
 
 Device, lighting-brand, Audio and module pages have a **Pin to rail** toggle in
 their header; the Conversation page does not. Pinned pages are listed in the
@@ -136,7 +137,10 @@ button has keyboard focus. The page that is open and not pinned is a dashed
 temporary row with a pin button. A row for a page whose module is not running
 shows that module's state. The list scrolls inside the rail when it is
 longer than the room above the foot, and the rail always has room for the
-list's heading and one row. In the icon rail a pinned page is its mark, named
+list's heading and one row. With nothing to list the heading stands alone, with
+no line of explanation under it (owner direction, 2026-11-18); the rail keeps
+the room for one row, so a page that shows a temporary row never changes
+whether the rail fits. In the icon rail a pinned page is its mark, named
 by the link's title, and unpinning uses the page's own toggle. Pins are saved
 in this browser (`pins.ts`) and follow a change from another tab; they are
 never core or module state. Refused or missing storage leaves them working for
@@ -144,6 +148,25 @@ the open page. A pin whose page the catalog does not declare now is not shown
 and stays saved, so it returns with the page. The menu and the pins navigate,
 or change that list, and nothing else: they send no command, sync, upload or
 provider request.
+
+The rail lists the chat profiles under **Conversations**, above Settings, on
+every page (#1890): B.U.N.N.Y., Reachy and MicroDuck, the last two labelled
+Demo. A row opens the Conversation page on that profile and is marked as the
+current page while that conversation is open. A dot on a profile's tile, with
+"Needs your answer" in the row's name, says the conversation waits on the
+owner's answer or approval; at phone width the menu button carries the same dot
+when that conversation is not the open one. The group is the companions
+frontend's own component (`ConversationRail`), which the shell mounts in its
+own module scope with no control authority while the catalog declares the
+Conversation page of a running companions module. The shell imports that
+component and `useConversationWaiting` and nothing else of the module's
+conversation. The component emits the rail's own classes and ships no
+stylesheet for them: `rail-label` for the heading, and in each link `rail-mono`
+for the tile, `rail-text` for the name, `rail-tag` for the Demo label,
+`rail-need` for the need's words and `rail-attention` for the dot. `shell.css`
+lays them out in the full rail, the icon rail and the drawer. With the
+conversations the full rail needs about 710px to stay in view on a Mac and
+about 730px with the Linux test container's fonts.
 
 `navigation.tsx` shares native anchor navigation and containing-destination
 selection. `directory.ts` projects the existing copies without acquiring state.

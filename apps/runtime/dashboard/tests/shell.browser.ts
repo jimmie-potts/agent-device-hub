@@ -55,7 +55,7 @@ const pinOnly = async (address: string | null): Promise<void> => {
   }, [PINS_KEY, address === null ? null : JSON.stringify([address])]);
   await page.locator('.rail-pin').waitFor({state: address === null ? 'detached' : 'attached'});
 };
-/** The full rail in this window: whether it stays in view, and whether its foot and its whole pinned list, or the hint, are inside the window. */
+/** The full rail in this window: whether it stays in view, and whether its foot and its whole pinned list are inside the window. */
 const railFit = (): Promise<{position: string; footInWindow: boolean; pinsWhole: boolean; width: number}> => page.locator('.shell>aside').evaluate(element => {
   const foot = element.querySelector('.sidebar-foot'), pins = element.querySelector('.rail-pins'), list = pins?.querySelector('nav') ?? null;
   if (foot === null || pins === null) throw new Error('The rail has its pinned pages and a foot.');
@@ -64,15 +64,16 @@ const railFit = (): Promise<{position: string; footInWindow: boolean; pinsWhole:
 });
 /**
  * The window height the rail needs here, read from the laid-out rail in a window that holds it: the window's height
- * less what the pinned pages have to spare beyond their heading and one row, or the hint. Fonts wrap the rail's text
- * differently from one computer to the next, so the journey measures the height instead of naming one.
+ * less what the pinned pages have to spare beyond their heading and one row. With nothing pinned the rail keeps the
+ * room for one row all the same: a 36px row and the 6px its focus ring needs. Fonts wrap the rail's text differently
+ * from one computer to the next, so the journey measures the height instead of naming one.
  */
 const railNeeds = (): Promise<number> => page.locator('.shell>aside').evaluate(element => {
-  const pins = element.querySelector('.rail-pins'), label = pins?.querySelector('.rail-label') ?? null, hint = pins?.querySelector('.rail-hint') ?? null, list = pins?.querySelector('nav') ?? null;
+  const pins = element.querySelector('.rail-pins'), label = pins?.querySelector('.rail-label') ?? null, list = pins?.querySelector('nav') ?? null;
   if (pins === null || pins === undefined || label === null || getComputedStyle(element).position !== 'sticky') throw new Error('The rail is in view with its pinned pages.');
   const outer = (part: Element): number => {const style = getComputedStyle(part); return part.getBoundingClientRect().height + Number.parseFloat(style.marginTop) + Number.parseFloat(style.marginBottom);};
   // The list's box is one row and the room for its focus ring above and below it; the room above overlaps the heading's margin.
-  const smallest = outer(label) + (list !== null ? list.scrollHeight - 6 : hint !== null ? outer(hint) : 0);
+  const smallest = outer(label) + (list !== null ? list.scrollHeight - 6 : 36 + 6);
   return Math.ceil(innerHeight - pins.getBoundingClientRect().height + smallest);
 });
 /** The shell measures the rail when the window is resized; two frames later the layout has followed. */
@@ -214,7 +215,20 @@ try {
     const box = element.getBoundingClientRect(), rail = document.querySelector('.shell>aside')?.getBoundingClientRect();
     return rail !== undefined && box.left >= rail.right && box.top >= 0 && box.bottom <= innerHeight;
   }), true, 'the feed details state the control mode and open beside the rail, over none of it');
+  // In the rail the indicator is an icon beside Settings (#1890), so its details name the feed first.
+  assert.match(await feedDetails.innerText(), /^Feed connected\n/, 'the feed details name the feed');
   await page.keyboard.press('Escape');
+  const footRow = (): Promise<{sameRow: boolean; beside: boolean; below: boolean; size: number[]; named: string}> => page.evaluate(() => {
+    const link = document.querySelector('.sidebar-foot nav a')?.getBoundingClientRect(), button = document.querySelector('.sidebar-foot .status-indicator');
+    const box = button?.getBoundingClientRect(), name = button?.querySelector('.rail-text')?.getBoundingClientRect();
+    if (link === undefined || box === undefined || name === undefined) throw new Error('The foot holds Settings and the feed indicator.');
+    return {sameRow: Math.abs((link.top + link.bottom) / 2 - (box.top + box.bottom) / 2) <= 1, beside: box.left >= link.right, below: box.top >= link.bottom,
+      size: [Math.round(box.width), Math.round(box.height)], named: `${button?.textContent ?? ''} drawn ${String(name.width > 2)}`};
+  });
+  assert.deepEqual(await footRow(), {sameRow: true, beside: true, below: false, size: [44, 44], named: '● Feed connected drawn false'},
+    'in the full rail Settings and the feed indicator share a row, and the indicator is an icon that keeps its name');
+  assert.equal(await page.locator('.sidebar-foot').getByRole('button', {name: /Feed connected/}).count(), 1, 'the icon keeps the feed\'s name as its accessible name');
+  assert.equal(await page.locator('.rail-conversations').count(), 0, 'a catalog without the companions module leaves the rail without a conversation group');
   const order = await page.evaluate(() => {
     const rail = document.querySelector('.shell>aside'), main = rail?.querySelector('nav[aria-label="Main navigation"]'), utilities = rail?.querySelector('nav[aria-label="Utilities"]');
     if (rail === null || rail === undefined || main === null || main === undefined || utilities === null || utilities === undefined) throw new Error('The rail holds both navigation groups.');
@@ -244,23 +258,32 @@ try {
     return {position: getComputedStyle(element).position, tallerPage: total > innerHeight + 100, fullHeight: Math.abs(height - total) <= 1};
   }), {position: 'static', tallerPage: true, fullHeight: true}, 'in a short window the rail scrolls with the page and its panel runs the full height');
   // The shell measures whether the rail fits, so the height at which it stops staying in view is exactly the height
-  // it needs: its parts, and of the pinned pages their heading with one row, or with the hint when nothing is pinned.
+  // it needs: its parts, and of the pinned pages their heading with one row, or with the room for one when nothing is pinned.
   // One pixel less and it scrolls with the page. The rail is full from 1200px wide.
   await pinOnly('#/lights/lifx');
   await resized(1280, 1000);
   const rowNeed = await railNeeds();
-  assert.equal(rowNeed > 560 && rowNeed < 720, true, `a full rail with one pinned page needs a plausible height: ${String(rowNeed)}`);
+  // About 559px on a Mac since Settings and the feed indicator share a row (#1890); this world has no conversations.
+  assert.equal(rowNeed > 500 && rowNeed < 680, true, `a full rail with one pinned page needs a plausible height: ${String(rowNeed)}`);
   await resized(1280, rowNeed - 1);
   assert.deepEqual([(await railFit()).position, (await railFit()).width], ['static', 184], `a connected full rail scrolls with the page in a window one pixel too short (${String(rowNeed - 1)}px)`);
   await resized(1280, rowNeed);
   assert.deepEqual(await railFit(), {position: 'sticky', footInWindow: true, pinsWhole: true, width: 184}, `a connected full rail stays in view in the window that just holds it (${String(rowNeed)}px), with a pinned row whole`);
+  // With nothing pinned the Pinned heading stands alone, with no line of explanation under it. The rail still keeps
+  // the room for one row, so a page that shows a temporary row never changes whether the rail fits.
   await pinOnly(null);
   await resized(1280, 1000);
-  const hintNeed = await railNeeds();
-  await resized(1280, hintNeed - 1);
-  assert.equal((await railFit()).position, 'static', `with nothing pinned the rail scrolls with the page in a window one pixel too short for its hint (${String(hintNeed - 1)}px)`);
-  await resized(1280, hintNeed);
-  assert.deepEqual(await railFit(), {position: 'sticky', footInWindow: true, pinsWhole: true, width: 184}, `and stays in view, with the hint whole, in the window that just holds it (${String(hintNeed)}px)`);
+  assert.deepEqual(await page.locator('.rail-pins').evaluate(pins => [...pins.children].map(child => child.textContent)), ['Pinned'], 'with nothing pinned the rail shows the Pinned heading and nothing under it');
+  const emptyNeed = await railNeeds();
+  assert.equal(emptyNeed, rowNeed, 'with nothing pinned the rail needs what it needs with one pinned row');
+  await resized(1280, emptyNeed - 1);
+  assert.equal((await railFit()).position, 'static', `with nothing pinned the rail scrolls with the page in a window one pixel too short for one row (${String(emptyNeed - 1)}px)`);
+  await resized(1280, emptyNeed);
+  assert.deepEqual(await railFit(), {position: 'sticky', footInWindow: true, pinsWhole: true, width: 184}, `and stays in view in the window that just holds it (${String(emptyNeed)}px)`);
+  await page.goto(`${world.url}/#/lights/lifx`);
+  await page.locator('.rail-pin.visiting').waitFor();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.deepEqual(await railFit(), {position: 'sticky', footInWindow: true, pinsWhole: true, width: 184}, 'a page that shows a temporary row finds its room there: the rail stays in view with the row whole');
   await page.setViewportSize({width: 1440, height: 1000});
   await open('Devices'); await category('Displays');
 
@@ -283,6 +306,7 @@ try {
     return name !== null && link.matches(':focus-visible') ? getComputedStyle(name).opacity : 'no visible keyboard focus';
   }), '1', 'a keyboard-focused icon shows its name');
   assert.equal(await page.getByText('Control enabled · Local', {exact: true}).isVisible(), true, 'the control mode stays readable to assistive technology');
+  assert.deepEqual(await footRow(), {sameRow: false, beside: false, below: true, size: [44, 44], named: '● Feed connected drawn false'}, 'in the icon rail the feed indicator sits under Settings');
   await toggle.click();
   assert.equal(await railState(), 'expanded');
   assert.equal(await toggle.getAttribute('aria-label'), 'Collapse navigation');

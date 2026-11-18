@@ -38,7 +38,8 @@ export function PinToggle({route}: {route: Route}): React.JSX.Element | null {
 }
 
 /**
- * The rail's pinned pages. A saved pin whose page is not declared now is left out and stays saved. The page that is
+ * The rail's pinned pages, under their heading. With nothing to list the heading stands alone; the header toggle on a
+ * page says where a pin goes. A saved pin whose page is not declared now is left out and stays saved. The page that is
  * open, when it could be pinned and is not, is a temporary row with a pin button. A page of a module that is not
  * running keeps its row, which shows that state in place of the module's name. After a row's own button is used,
  * focus stays on that row's button when the row is still there and otherwise moves to the row before it, so it is
@@ -71,7 +72,6 @@ export function PinnedPages({route, fallback}: {route: Route; fallback: React.Re
   };
   return <div className="rail-pins">
     <p className="rail-label"><span>Pinned</span></p>
-    {rows.length > 0 ? <nav ref={list} aria-label="Pinned pages">{rows.map(row)}</nav>
-      : pins.length === 0 && <p className="rail-hint">Pin a device page to keep it one click away.</p>}
+    {rows.length > 0 && <nav ref={list} aria-label="Pinned pages">{rows.map(row)}</nav>}
   </div>;
 }
