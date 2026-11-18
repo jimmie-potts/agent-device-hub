@@ -1,4 +1,4 @@
-import React, {useSyncExternalStore} from 'react';
+import React, {useMemo, useSyncExternalStore} from 'react';
 import {RailIcon} from './rail.tsx';
 import {navigationDestination, parseRoute, routeHash, type Route} from './routes.ts';
 
@@ -6,7 +6,11 @@ const listeners = new Set<() => void>();
 const emit = (): void => {for (const listener of listeners) listener();};
 addEventListener('hashchange', emit);
 const subscribe = (listener: () => void): (() => void) => {listeners.add(listener); return () => {listeners.delete(listener);};};
-export const useRoute = (): Route => parseRoute(useSyncExternalStore(subscribe, () => location.hash));
+/** The route of the current address. It is the same object until the address changes, so it can key a memo. */
+export const useRoute = (): Route => {
+  const hash = useSyncExternalStore(subscribe, () => location.hash);
+  return useMemo(() => parseRoute(hash), [hash]);
+};
 
 /**
  * Opens a route as a chosen navigation link does. The address changes, the page opens at its top and the shell is told

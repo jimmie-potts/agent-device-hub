@@ -42,6 +42,8 @@ export function JumpPalette({entries, onOpen, onClose}: {
       setChosen((active + (event.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length);
     } else if (event.key === 'Enter') {
       event.preventDefault(); event.stopPropagation();
+      // A held Enter that opened the palette from the rail's field must not also choose a row.
+      if (event.repeat) return;
       const entry = shown[active];
       if (entry !== undefined) onOpen(entry.route);
     } else if (event.key !== 'Tab' && !event.metaKey && !event.ctrlKey && !event.altKey && document.activeElement !== input.current) {

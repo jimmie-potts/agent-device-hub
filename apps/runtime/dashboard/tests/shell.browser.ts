@@ -133,14 +133,27 @@ try {
   assert.equal(await railState(), 'expanded', 'a wide window starts with the full rail');
   assert.equal(await railWidth(), 184, 'the full rail keeps its width, so pages keep theirs in a wide window');
   assert.equal(await page.locator('.top').count(), 0, 'the separate top utility row is gone');
-  assert.equal(await page.locator('.rail-head').evaluate(head => {
+  // The brand's second line is on one line, and what the toggle draws stays clear of it: its box when pointed at, and
+  // its ring when it has keyboard focus. The box is the background clipped to the padding's inside, with no border.
+  const headGaps = (): Promise<{lines: number; box: number; ring: number; clip: string; edge: string; ringStyle: string}> => page.locator('.rail-head').evaluate(head => {
     const line = head.querySelector('.brand small'), button = head.querySelector('.rail-toggle');
     if (line === null || button === null) throw new Error('The rail head holds the brand and the toggle.');
     const text = document.createRange(); text.selectNodeContents(line);
-    const style = getComputedStyle(button);
-    const drawn = button.getBoundingClientRect().left + Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(style.paddingLeft);
-    return text.getClientRects().length === 1 && drawn - line.getBoundingClientRect().right >= 4;
-  }), true, 'the brand\'s second line is on one line, clear of the box the toggle draws');
+    const style = getComputedStyle(button), left = button.getBoundingClientRect().left, end = line.getBoundingClientRect().right;
+    return {lines: text.getClientRects().length, box: left + Number.parseFloat(style.borderLeftWidth) + Number.parseFloat(style.paddingLeft) - end,
+      ring: left - Number.parseFloat(style.outlineOffset) - Number.parseFloat(style.outlineWidth) - end, clip: style.backgroundClip, edge: style.borderLeftColor, ringStyle: style.outlineStyle};
+  });
+  await toggle.hover();
+  const pointed = await headGaps();
+  assert.deepEqual({lines: pointed.lines, clip: pointed.clip, edge: pointed.edge, clear: pointed.box >= 4}, {lines: 1, clip: 'content-box', edge: 'rgba(0, 0, 0, 0)', clear: true},
+    `the brand's second line is on one line, clear of the box the toggle draws: ${JSON.stringify(pointed)}`);
+  await page.mouse.move(700, 500);
+  await page.locator('.rail-jump').focus();
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await toggle.evaluate(element => element === document.activeElement && element.matches(':focus-visible')), true, 'the toggle is the Tab stop before the field');
+  const focused = await headGaps();
+  assert.deepEqual({ringStyle: focused.ringStyle, clear: focused.ring >= 4}, {ringStyle: 'solid', clear: true}, `the toggle's focus ring is clear of the brand's second line: ${JSON.stringify(focused)}`);
+  await toggle.evaluate(element => {if (element instanceof HTMLElement) element.blur();});
   const skip = page.getByRole('link', {name: 'Skip to content', exact: true});
   await skip.focus();
   assert.equal(await skip.evaluate(element => {
@@ -185,6 +198,14 @@ try {
     const total = document.documentElement.scrollHeight, height = element.getBoundingClientRect().height;
     return {position: getComputedStyle(element).position, tallerPage: total > innerHeight + 100, fullHeight: Math.abs(height - total) <= 1};
   }), {position: 'static', tallerPage: true, fullHeight: true}, 'in a short window the rail scrolls with the page and its panel runs the full height');
+  // A connected session's rail fits a 580px window, so it stays in view there; only an ended session's rail, which
+  // is taller, scrolls with the page at that height.
+  await page.setViewportSize({width: 1024, height: 580});
+  assert.deepEqual(await page.locator('.shell>aside').evaluate(element => {
+    const foot = element.querySelector('.sidebar-foot');
+    if (foot === null) throw new Error('The rail has a foot.');
+    return {position: getComputedStyle(element).position, footInWindow: foot.getBoundingClientRect().bottom <= innerHeight + 1};
+  }), {position: 'sticky', footInWindow: true}, 'a connected rail stays in view in a 580px window and fits it');
   await page.setViewportSize({width: 1440, height: 1000});
   await open('Devices'); await category('Displays');
 
@@ -300,10 +321,11 @@ try {
   await page.setViewportSize({width: 1024, height: 500});
   await again.scrollIntoViewIfNeeded();
   assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= -1 && box.bottom <= innerHeight + 1;}), true, 'a window too short for the rail can scroll the recovery into view');
-  // With the jump field the ended rail needs about 571px: a 560px window lets it scroll too, and a 600px one holds it.
-  await page.setViewportSize({width: 1024, height: 560});
+  // With the jump field the ended rail needs about 571px: a 580px window lets it scroll too, and a 600px one holds it.
+  await page.setViewportSize({width: 1024, height: 580});
+  assert.equal(await page.locator('.shell>aside').evaluate(element => getComputedStyle(element).position), 'static', 'an ended rail scrolls with the page in a 580px window');
   await again.scrollIntoViewIfNeeded();
-  assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= -1 && box.bottom <= innerHeight + 1;}), true, 'a 560px window can scroll the recovery into view');
+  assert.equal(await again.evaluate(element => {const box = element.getBoundingClientRect(); return box.top >= -1 && box.bottom <= innerHeight + 1;}), true, 'a 580px window can scroll the recovery into view');
   await page.setViewportSize({width: 1024, height: 600});
   await page.evaluate(() => {window.scrollTo(0, 0);});
   assert.equal(await page.locator('.shell>aside').evaluate(element => getComputedStyle(element).position), 'sticky');
@@ -523,6 +545,15 @@ try {
   assert.equal(await find.inputValue(), '/');
   assert.equal(await palette.count(), 0, 'a slash typed into a field does not open the palette');
   await find.fill('');
+  // A held Enter opens the palette from the rail's field and does not also choose a row.
+  const beforeHeld = new URL(page.url()).hash;
+  await page.locator('.rail-jump').focus();
+  await page.keyboard.down('Enter'); await page.keyboard.down('Enter'); await page.keyboard.down('Enter');
+  await page.keyboard.up('Enter');
+  await palette.waitFor();
+  assert.equal(new URL(page.url()).hash, beforeHeld, 'a held Enter opens the palette and chooses nothing');
+  await page.keyboard.press('Escape');
+  await palette.waitFor({state: 'detached'});
   // The rail's field opens it too, and an option can be clicked.
   await page.locator('.rail-jump').click();
   await palette.waitFor();

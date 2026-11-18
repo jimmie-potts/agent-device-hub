@@ -23,3 +23,10 @@
 - [x] 3.5 Search names and hints only, count only text-taking inputs as text fields, and give the chosen row a boundary.
 - [x] 3.6 Keep the toggle's drawn box clear of the brand and the drawer's brand where it was.
 - [x] 3.7 Add a journey check for each of these and confirm each fails without its fix.
+
+## 4. Review round two
+
+- [x] 4.1 Ignore an Enter still held from opening the palette.
+- [x] 4.2 Draw the toggle's focus ring on its box, and make the journey read the drawn box and the ring.
+- [x] 4.3 Keep one route object per address, so the palette's list is not rebuilt on each tick.
+- [x] 4.4 Give connected and ended sessions their own short-window heights.

@@ -16,9 +16,10 @@
 .rabbit{display:none}
 .shell .rail-button{display:inline-grid;place-items:center;flex:none;inline-size:44px;min-block-size:44px;padding:0;border-color:transparent;color:var(--muted-dense)}
 .shell .rail-button:hover:not(:disabled),.shell .rail-button[aria-expanded=true]{background:var(--raised);color:var(--text)}
-/* The toggle is a 44px target that draws a smaller box, so its hover and disabled states stand clear of the brand.
-   The states are named because each sets its background with the shorthand, which would reset the clip. */
-.shell .rail-toggle{padding:4px}
+/* The toggle is a 44px target that draws a smaller box, so its hover and disabled states stand clear of the brand,
+   and its focus ring is drawn on that box for the same reason. The states are named because each sets its
+   background with the shorthand, which would reset the clip. */
+.shell .rail-toggle{padding:4px;outline-offset:-7px}
 .shell .rail-toggle,.shell .rail-toggle:hover:not(:disabled),.shell .rail-toggle:disabled{background-clip:content-box}
 .shell .rail-toggle:hover:not(:disabled),.shell .rail-toggle:disabled{border-color:transparent}
 .rail-icon{flex:none;display:block}
@@ -58,11 +59,13 @@
 .sidebar-foot .info-popover{top:auto;right:auto;bottom:0;left:calc(100% + var(--space-m))}
 .phone-sign-in{display:none}
 .phone-bar,.rail-scrim{display:none}
-/* A window too short for the rail lets it scroll with the page, as it did before it was sticky. The height covers
-   the rail of an ended session, which holds the jump field and "Sign in again" and needs about 571px. The panel
-   still runs the full height of the page, with the foot directly under the destinations instead of at the page's
-   end. The phone drawer is a fixed panel and keeps its own layout at any height. */
-@media(max-height:590px) and (min-width:680.02px){.shell>aside{position:static;align-self:stretch;block-size:auto}.shell>aside .sidebar-foot{margin-block-start:0}}
+/* A window too short for the rail lets it scroll with the page, as it did before it was sticky. With the jump field
+   the rail needs about 531px, and an ended session's rail, which also holds "Sign in again", about 571px, so each
+   has its own height. The panel still runs the full height of the page, with the foot directly under the
+   destinations instead of at the page's end. The phone drawer is a fixed panel and keeps its own layout at any
+   height. */
+@media(max-height:560px) and (min-width:680.02px){.shell>aside{position:static;align-self:stretch;block-size:auto}.shell>aside .sidebar-foot{margin-block-start:0}}
+@media(max-height:590px) and (min-width:680.02px){.shell[data-session=ended]>aside{position:static;align-self:stretch;block-size:auto}.shell[data-session=ended]>aside .sidebar-foot{margin-block-start:0}}
 
 /* The icon rail keeps every name. A link's own label becomes the name shown beside its icon on hover or focus, so
    the name is in the page once; the feed label and the control mode stay for assistive technology only. A name
@@ -75,7 +78,7 @@
   .shell:not([data-rail-narrow=expanded]){grid-template-columns:64px minmax(0,1fr)}
   .shell:not([data-rail-narrow=expanded])>aside{padding-inline:10px}
   .shell:not([data-rail-narrow=expanded]) .rail-head{justify-content:center;margin-inline-end:0}
-  .shell:not([data-rail-narrow=expanded]) .rail-toggle{padding:0}
+  .shell:not([data-rail-narrow=expanded]) .rail-toggle{padding:0;outline-offset:3px}
   .shell:not([data-rail-narrow=expanded])>aside .brand{display:none}
   .shell:not([data-rail-narrow=expanded])>aside :is(p.rail-text,.status-indicator .rail-text,.rail-jump .rail-text){position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .shell:not([data-rail-narrow=expanded])>aside nav a{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
@@ -92,7 +95,7 @@
   .shell[data-rail-wide=collapsed]{grid-template-columns:64px minmax(0,1fr)}
   .shell[data-rail-wide=collapsed]>aside{padding-inline:10px}
   .shell[data-rail-wide=collapsed] .rail-head{justify-content:center;margin-inline-end:0}
-  .shell[data-rail-wide=collapsed] .rail-toggle{padding:0}
+  .shell[data-rail-wide=collapsed] .rail-toggle{padding:0;outline-offset:3px}
   .shell[data-rail-wide=collapsed]>aside .brand{display:none}
   .shell[data-rail-wide=collapsed]>aside :is(p.rail-text,.status-indicator .rail-text,.rail-jump .rail-text){position:absolute;inline-size:1px;block-size:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .shell[data-rail-wide=collapsed]>aside nav a{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}

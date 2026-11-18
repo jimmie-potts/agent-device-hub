@@ -854,8 +854,10 @@ both themes, that a scrolled list stays put when the shell renders, that the
 keys work and typing reaches the field with focus outside it, that a press on a
 heading or the footer keeps focus in the field, that the palette's stacking
 level is above the full-window visualizer's, that a stubbed full-screen element
-keeps it closed, that a slash on a slider opens it, and that an ended session's
-rail can be reached in 560px and 600px windows. It is opened there on the Devices directory,
+keeps it closed, that a slash on a slider opens it, that a held Enter opens it
+without choosing a row, that the toggle's box and focus ring stay clear of the
+brand, that a connected rail stays in view in a 580px window, and that an ended
+session's rail can be reached in 580px and 600px windows. It is opened there on the Devices directory,
 which mounts no module page, because a module page reads its copies with a sync
 request when it mounts.
 `node apps/runtime/dashboard/tests/conversation-workspace.browser.ts` checks
