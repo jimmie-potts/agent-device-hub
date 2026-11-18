@@ -164,6 +164,58 @@ sequences. This follows from the code and focused tests, not from a qualified
 recovery, so recovery stays unknown unless separately qualified; prefer fixing
 forward.
 
+## One-time session reset
+
+The #1865 storage release (its group 7) moves agent sessions out of the old
+agent-state block into the core store's own tables, `core_sessions` and
+`core_session_guards`, in `modules/core.sqlite`. This section applies to every
+core store, including the Mac container's state volume. Session monitoring
+state starts empty once; the owner accepted the downtime and the loss of
+session-monitoring data, and recovery is fix-forward (2026-11-18).
+
+The first start of this release that finds the old `state` table runs the reset
+in the core's start, before the core serves a sync or republishes, in one
+SQLite transaction. It:
+
+- drops the `state` table, which held the old owner's sessions, retirement
+  guards and journal;
+- empties `core_sessions` and `core_session_guards`;
+- deletes the session family's published records from `core_records`, and its
+  rows from `core_history_latest` and `core_history_span`, so the first new
+  history row of each session is a change from nothing;
+- deletes pending outbox messages whose routing keys are session states or
+  removals (`bunny.state.session.*`) or agent occurrences
+  (`bunny.event.attention-raised.*`, `bunny.event.attention-cleared.*`,
+  `bunny.event.turn-ended.*`, `bunny.event.session-ended.*`), so they never
+  go out;
+- raises the core revision in `core_revision` by one.
+
+It publishes nothing: no removal, no occurrence and no history row, so no
+automation runs. It records one `operation.completed` with `bunny.operation`
+`storage`. The next sync serves an empty session family at a revision no earlier
+payload carried. Every module in the runtime syncs again after the restart, and
+remote consumers resync when their stream restarts. Each live session returns
+at its next observation, with a new generation. History fact rows, the outbox's
+other messages, the taken `(source, id)` records and every other part's tables
+and rows stay as they are.
+
+The old data's presence is the reset's only key: no marker is stored. Once the
+`state` table is gone, a later start finds nothing to drop and changes nothing.
+On failure:
+
+| Fault | Behavior | Recovery |
+|---|---|---|
+| Crash or power loss during the reset | The transaction commits whole or not at all | The next start runs the reset again |
+| Full disk at the reset | The store does not open. The core keeps running, refuses intake with `capacity` and syncs with `unavailable` | The next intake or sync after a backoff that doubles from 1 s to 60 s opens the store again, and the reset runs once there is room |
+| A second runtime on the same state directory | Refused at the lease or the database, before its core opens the store | None needed; the first keeps running |
+
+Rolling back below this release is unsupported for session data. An earlier
+release run on a reset store starts with empty session state and writes a new
+`state` table; it does not read the new session tables. The next start of this
+release finds that table and runs the reset again, emptying the new session
+tables too. This follows from the code and focused tests, not from a qualified
+recovery. Prefer fixing forward.
+
 ## Retired settings replication metadata
 
 The runtime leaves existing history rows and the former settings metadata

@@ -20,7 +20,7 @@ import type {Envelope} from '@jimmie-potts/agent-state';
 import {MessageValidator, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, prepareMessage, publishOnce} from '@jimmie-potts/sdk';
-import {toEnvelope} from '../src/core/mapping.js';
+import {toEnvelope} from './fixtures/retained-core.js';
 import {
   HOOK_BUDGET_MS, LIFECYCLE_SCHEMA, lifecycleMessage, observationOf, producerCredentialId, producerSource, readProducer, runHook,
 } from '../src/hook/index.js';

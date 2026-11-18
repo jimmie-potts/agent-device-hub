@@ -1,7 +1,7 @@
 // The reference history (Hub #831, the #842 hand-off): #842's root session fixtures in
 // packages/event-contracts/fixtures/v2/families.json must be messages the real owner published, in one history it
-// could produce. This test replays that history through the core store and its agent-state owner and compares every
-// named fixture with what the owner published. `BUNNY_WRITE_REFERENCE=1` writes the owner's messages into the fixture
+// could produce. This test replays that history through the core store and its session logic and compares every
+// named fixture with what the core published. `BUNNY_WRITE_REFERENCE=1` writes the owner's messages into the fixture
 // file instead, keeping each fixture's `id` and `traceparent`; the notice the owner gave the finished turn replaces the
 // one the fixtures named before.
 import assert from 'node:assert/strict';
@@ -61,7 +61,7 @@ async function replay(context: TestContext, fixtures: Fixtures): Promise<Map<str
   const notice = named.get('turn-ended')?.data.noticeId;
   assert.equal(typeof notice, 'string');
   const from = world.published.length;
-  assert.equal((await world.owner?.acknowledge(ROOT, String(notice), 'nanoleaf'))?.ok, true);
+  assert.equal((await world.acknowledge(ROOT, String(notice), 'nanoleaf')).ok, true);
   named.set('session', last(world.since(from), 'org.bunny.session.updated'));
   // The approval is resolved on its turn, after the turn ended.
   const resolved = await step(root({kind: 'attention-resolved', attention: {status: 'known', id: 'approval-1'}}, START - 2400, {ordering: ordered(42)}));

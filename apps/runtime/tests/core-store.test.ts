@@ -1,22 +1,21 @@
-// The core store (Hub #831): agent-state's owner on the core's SQLite store, which commits each change with the 2.0
-// messages it publishes, the published records, history and the intake it took in one transaction, then publishes
-// through the outbox. These tests drive the owner directly, as the core does, with a recording participant in place of
+// The core store (Hub #831, #1865): the core's sessions in its own SQLite tables, each change committed with the 2.0
+// messages it publishes, the published records, history and the intake it took in one transaction, then published
+// through the outbox. These tests drive the store directly, as the core does, with a recording participant in place of
 // the bus, and check the store's rows and what went out.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {createAgentState, recoveryJournalKey, validateExport, type DurableState, type StorageLease} from '@jimmie-potts/agent-state';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {SdkError, type LogFields, type Logger} from '@jimmie-potts/sdk';
 import {countCommits} from '@jimmie-potts/sdk/testing';
 import {CoreStore, SAVE_COST, type Deriver} from '../src/core/store.js';
 import {producerSource} from '../src/hook/index.js';
-import {DEFAULT_CONSUMERS, OWNER_ID} from '../src/index.js';
+import {holdRuntimeLease} from '../src/lease.js';
 import {MODULE_SCOPE, record, runtimeResource} from '../src/record.js';
 import {
-  CHILD, CHILD_ID, IDENTITY, OTHER, SESSION_ID, approvalPrompt, approvalResolved, lifecycleOf, runtimeEnded, sessionStarted, turnEnded, turnStarted,
+  CHILD, CHILD_ID, IDENTITY, OTHER, OTHER_ID, SESSION_ID, approvalPrompt, approvalResolved, lifecycleOf, runtimeEnded, sessionStarted, turnEnded, turnStarted,
   unknownApproval,
 } from './fixtures/agents.js';
 import {fillDisk} from './fixtures/disk.js';
@@ -27,22 +26,18 @@ const sessions = (messages: readonly Message[]): SessionRecord[] =>
   messages.filter(message => message.type === 'org.bunny.session.updated').map(message => message.data as SessionRecord);
 const types = (messages: readonly Message[]): string[] => messages.map(message => message.type);
 
-it('only a matching owner save invokes its transaction completion, including a save with no published state change', async context => {
+it('a label save completes its action in its own transaction, including a save with no published state change', async context => {
   const world = await World.open(context);
   await world.observe(sessionStarted);
-  assert.ok(world.owner);
-  const command = {...lifecycleMessage(lifecycleOf(sessionStarted, START), START), kind: 'command' as const,
-    type: 'org.bunny.session-label.set.requested', dataschema: 'https://bunny.invalid/events/session-label-set/2.0',
-    data: {requestId: 'req-store-label', label: 'Label', expectedRevision: 1}};
-  const cause = {message: command, kind: 'label', entity: SESSION_ID};
   const changes: number[] = [];
   const complete = (change: {messages: readonly Message[]}): void => { changes.push(change.messages.length); };
-  await world.store.during(cause, () => { assert.ok(world.owner); return world.owner.setLabel(IDENTITY, 'Label'); }, complete);
-  await world.store.during(cause, () => { assert.ok(world.owner); return world.owner.setLabel(IDENTITY, 'Label'); }, complete);
+  await world.setLabel(IDENTITY, 'Label', complete);
+  await world.setLabel(IDENTITY, 'Label', complete);
   assert.deepEqual(changes, [1, 0], 'completion is part of the save even when the session record is unchanged');
   world.clock.advance(86_400_001);
-  await world.store.during(cause, () => { assert.ok(world.owner); return world.owner.maintain(); }, complete);
-  assert.deepEqual(changes, [1, 0], 'unmatched owner maintenance cannot complete the label action');
+  await world.store.refresh();
+  assert.deepEqual(changes, [1, 0], 'a due change completes no label action');
+  assert.deepEqual(world.store.records(), [], 'it expired the session');
 });
 
 const wrappedEnospc = (): Error => new Error('database operation failed', {cause: Object.assign(new Error('filesystem is full'), {code: 'ENOSPC'})});
@@ -67,15 +62,16 @@ function failStoreExec(database: DatabaseSync, shouldFail: (sql: string) => bool
 it('classifies a wrapped ENOSPC while the core opens its store as full', async context => {
   const database = new DatabaseSync(join(await stateDir(context), 'startup-full.sqlite'));
   const store = new CoreStore({
-    database: failStoreExec(database, sql => sql.includes('CREATE TABLE IF NOT EXISTS state'), wrappedEnospc),
+    database: failStoreExec(database, sql => sql.includes('CREATE TABLE IF NOT EXISTS core_sessions'), wrappedEnospc),
     clock: {now: () => START},
     sdk: {source: 'bunny/core', publishMessage: <T extends object>(_key: string, message: Message<T>): Promise<Message<T>> => Promise.resolve(message)},
     onError: () => {},
   });
   context.after(() => { store.close(); database.close(); });
 
-  await assert.rejects(store.acquire(OWNER_ID, new AbortController().signal), /storage-unavailable/);
+  await assert.rejects(store.open(AbortSignal.abort()), /storage-unavailable/);
   assert.equal(store.takeFailure(), 'full', 'the startup path follows the wrapped filesystem error');
+  assert.equal(store.isOpen, false, 'and the store can be opened again');
 });
 
 it('classifies a wrapped ENOSPC on a core transaction as full without taking or publishing the observation', async context => {
@@ -131,10 +127,11 @@ it('a committed observation publishes its session state and occurrence after the
     attention: {id: {status: 'known', id: 'approval-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}},
   });
   assert.equal(raised?.time, waiting?.time, 'one change\'s messages share their time');
-  // Stored with the change: the durable state, the record, the revision, the history of the occurrence and the intake.
-  const [state] = world.rows('SELECT revision, payload FROM state') as {revision: number; payload: string}[];
-  assert.equal(state?.revision, 2);
-  assert.equal(validateExport(JSON.parse(state?.payload ?? '')).ok, true, 'the agent-state 2.1 format the old Hub keeps');
+  // Stored with the change: the session row, the record, the revision, the history of the occurrence and the intake.
+  assert.deepEqual(world.rows('SELECT id, revision, generation FROM core_sessions'), [{id: SESSION_ID, revision: 2, generation: 1}]);
+  const [stored] = world.store.sessions();
+  assert.deepEqual(stored?.attention, (waiting?.data as SessionRecord).attention, 'the row holds the session the record shows');
+  assert.equal(stored?.seen.length, 2, 'with its private bookkeeping');
   assert.deepEqual(world.rows('SELECT value FROM core_revision'), [{value: 2}]);
   // History (#782) keeps each state as a compact change event, what changed since the record it held, and the
   // occurrence whole, all in the change's own transaction.
@@ -153,17 +150,28 @@ it('a committed observation publishes its session state and occurrence after the
   assert.deepEqual(world.rows('SELECT * FROM bunny_outbox'), [], 'published, so the outbox let them go');
 });
 
-it('the store keeps the old Hub\'s state table and format, and a new store reads back what it committed', async context => {
+it('the store keeps each session in a row of its own, with no state table in the old Hub adapter\'s format, and reads back what it committed', async context => {
   const world = await World.open(context);
-  await world.observe(sessionStarted, {title: {value: 'Port the core', source: 'user'}});
-  const columns = (world.rows('PRAGMA table_info(state)') as {name: string; type: string; pk: number}[]).map(({name, type, pk}) => [name, type, pk]);
-  assert.deepEqual(columns, [['id', 'INTEGER', 1], ['revision', 'INTEGER', 0], ['payload', 'TEXT', 0]], 'the columns of apps/hub/src/storage.ts');
-  const before = JSON.parse((world.rows('SELECT payload FROM state')[0] as {payload: string}).payload) as DurableState;
-  assert.equal(before.formatVersion, '2.1');
+  await world.observe(turnStarted, {title: {value: 'Port the core', source: 'user'}, sequence: 1});
+  await world.observe(sessionStarted, {identity: CHILD, parent: {status: 'known', identity: IDENTITY}, turn: null});
+  await world.observe(turnEnded, {sequence: 2});
+  const notice = world.store.records().find(record => record.id === SESSION_ID)?.notices[0]?.id ?? '';
+  assert.equal((await world.acknowledge(IDENTITY, notice, 'nanoleaf')).ok, true);
+  await world.observe(runtimeEnded, {identity: OTHER, sequence: 3});
+  await world.observe(sessionStarted, {identity: OTHER});
+  await world.observe(runtimeEnded, {identity: OTHER, sequence: 4});
+  const columns = (world.rows('PRAGMA table_info(core_sessions)') as {name: string; type: string; pk: number}[]).map(({name, type, pk}) => [name, type, pk]);
+  assert.deepEqual(columns, [['id', 'TEXT', 1], ['revision', 'INTEGER', 0], ['generation', 'INTEGER', 0], ['session', 'TEXT', 0]]);
+  assert.deepEqual(world.rows('SELECT name FROM sqlite_master WHERE name = \'state\''), [], 'no state table');
+  const before = world.store.sessions();
+  assert.equal(before.length, 2);
+  assert.deepEqual(world.rows('SELECT id FROM core_session_guards'), [{id: OTHER_ID}], 'the retired session leaves its guard');
   await world.crashAndRestart();
-  const after = JSON.parse((world.rows('SELECT payload FROM state')[0] as {payload: string}).payload) as DurableState;
-  assert.deepEqual(after.sessions, before.sessions, 'reopened as committed');
-  assert.equal(world.owner?.snapshot('1.2').sessions[0]?.title?.value, 'Port the core');
+  assert.deepEqual(world.store.sessions(), before, 'every committed session, with its generation, notices, acknowledgments and bookkeeping');
+  assert.equal(world.store.records().find(record => record.id === SESSION_ID)?.title?.value, 'Port the core');
+  assert.deepEqual(world.store.records().find(record => record.id === SESSION_ID)?.notices[0]?.acknowledgedBy, ['nanoleaf']);
+  assert.deepEqual((await world.observe(turnStarted, {identity: OTHER, turn: 'turn-old', sequence: 3})), {ok: true, revision: world.store.revision, outcome: 'stale'},
+    'and the retirement guard still holds after the restart');
 });
 
 it('each occurrence follows MAPPING.md: resolved, turn-ended, turn-retired, and a runtime end before each removal', async context => {
@@ -225,48 +233,31 @@ it('owner-started clearings carry the session\'s current turn, the owner\'s inst
   await world.observe(turnStarted, {sequence: 1});
   await world.observe(unknownApproval, {sequence: 2});
   // Explicit approval recovery needs a stale record: five minutes without evidence.
-  world.clock.advance(300_000);
-  const owner = world.owner;
-  assert.ok(owner);
+  world.clock.advance(299_999);
+  assert.deepEqual(await world.recoverApproval(IDENTITY, 'turn-1'), {ok: false, code: 'invalid-state'}, 'a millisecond before, evidence is current');
+  world.clock.advance(1);
   const from = world.published.length;
-  const recovered = await owner.recoverApproval(IDENTITY, 'turn-1', owner.snapshot().revision);
+  const recovered = await world.recoverApproval(IDENTITY, 'turn-1');
   assert.equal(recovered.ok, true);
-  await flush();
   const cleared = world.since(from).find(message => message.type === 'org.bunny.attention.cleared');
   assert.deepEqual({...cleared?.data as object, revision: 0}, {
     session: SESSION_ID, identity: IDENTITY, turn: {status: 'known', id: 'turn-1'}, observedAtMs: START + 300_000, ordering: {status: 'unknown'}, revision: 0,
     attention: {id: {status: 'unknown'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}, cause: 'recovered',
   });
-  const journal = owner.journal().at(-1);
-  assert.equal(journal?.sessionKey, recoveryJournalKey(IDENTITY, 'turn-1'), 'agent-state journals it as recovery');
-});
-
-it('startup settles approvals left on retired turns, as owner-started turn-retired clearings', async context => {
-  // A store an older owner wrote: an approval without a request ID on a turn that a newer turn already retired.
-  const world = await World.open(context);
-  await world.observe(turnStarted, {sequence: 1});
-  await world.observe(turnStarted, {turn: 'turn-2', sequence: 2});
-  await world.owner?.shutdown();
-  const payload = JSON.parse((world.rows('SELECT payload FROM state')[0] as {payload: string}).payload) as DurableState;
-  const [stored] = payload.sessions;
-  assert.ok(stored);
-  stored.attention.push({id: {status: 'unknown'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}});
-  world.db.prepare('UPDATE state SET payload = ?').run(JSON.stringify(payload));
-  const from = world.published.length;
-  await world.crashAndRestart();
-  const cleared = world.since(from).find(message => message.type === 'org.bunny.attention.cleared');
-  assert.equal((cleared?.data as {cause: string}).cause, 'turn-retired');
-  assert.deepEqual((cleared?.data as {turn: unknown; ordering: unknown}).turn, {status: 'known', id: 'turn-2'});
-  assert.deepEqual((cleared?.data as {ordering: unknown}).ordering, {status: 'unknown'});
+  assert.deepEqual(await world.recoverApproval(IDENTITY, 'turn-1'), {ok: false, code: 'invalid-state'}, 'the marker is gone');
 });
 
 it('expiry after 24 hours without evidence publishes a removal with reason expired, and the turn-ended occurrence stays in history', async context => {
   const world = await World.open(context);
   await world.observe(turnStarted);
   await world.observe(turnEnded);
-  world.clock.advance(86_400_000);
+  world.clock.advance(86_399_999);
+  await world.store.refresh();
+  assert.equal(world.store.records().length, 1, 'a millisecond before the day ends, the session stays');
+  assert.equal(world.store.nextDue(), START + 86_400_000, 'expiry is the next change due');
+  world.clock.advance(1);
   const from = world.published.length;
-  await world.owner?.maintain();
+  assert.equal(await world.store.refresh(), true);
   await flush();
   const removed = world.since(from).filter(message => message.type === 'org.bunny.session.removed');
   assert.deepEqual(removed.map(message => (message.data as {reason: string}).reason), ['expired']);
@@ -286,7 +277,7 @@ it('freshness turns uncertain at five minutes at a new revision, computed at eac
   const [record] = sessions(world.since(1));
   assert.equal(record?.freshness, 'uncertain');
   assert.ok((record?.revision ?? 0) > revision, 'the revision is raised first, so no consumer drops it as stale');
-  assert.equal(world.store.nextTurn(), undefined, 'nothing else turns on its own');
+  assert.equal(world.store.nextDue(), START + 86_400_000, 'nothing else turns on its own before the session expires');
 });
 
 it('after a restart every stored session is uncertain until fresh evidence, at revisions above every earlier one', async context => {
@@ -320,9 +311,8 @@ it('a full disk refuses the change before anything reports it accepted, changes 
   assert.deepEqual(world.snapshot(), before, 'nothing changed');
   assert.equal(world.store.received(message), 'new', 'not taken, so the same message is new again');
 
-  // Room again: the owner, faulted by the failed commit, opens again on what committed, and takes the same message.
+  // Room again: the store, which a failed commit leaves as it was, takes the same message.
   world.db.exec('PRAGMA max_page_count = 1073741823');
-  await world.reopen();
   assert.equal((await world.take(message)).ok, true);
   assert.deepEqual(sessions(world.since(from)).map(record => record.identity.sessionId), [CHILD.sessionId]);
 });
@@ -482,22 +472,38 @@ it('a part\'s rows commit in the change\'s transaction, and a part that throws r
   assert.equal(world.rows('SELECT * FROM part_rows').length, 1);
 });
 
-it('the lease is exclusive: a second owner on the same store waits for it, and takes over once the first lets go', async context => {
-  const world = await World.open(context);
-  await world.observe(sessionStarted);
-  const second = new CoreStore({
-    database: new DatabaseSync(world.file), clock: {now: world.clock.now}, onError: () => {},
+/** A second store on the file, as a second core on the same state directory would open it. */
+function secondStore(file: string, clock: {now: () => number}): CoreStore {
+  return new CoreStore({
+    database: new DatabaseSync(file), clock, onError: () => {},
     sdk: {source: 'bunny/core', publishMessage: <T extends object>(_key: string, message: Message<T>): Promise<Message<T>> => Promise.resolve(message)},
   });
-  const open = (storageTimeoutMs: number): ReturnType<typeof createAgentState> =>
-    createAgentState({storage: second, ownerId: OWNER_ID, consumers: [...DEFAULT_CONSUMERS], clock: world.clock.now, storageTimeoutMs});
-  await assert.rejects(open(200), /storage-unavailable/, 'refused at agent-state\'s deadline while the first holds the lease');
-  const waiting = open(3000);
-  await world.owner?.shutdown();
+}
+
+it('the lease is exclusive: a second store on the same file is refused while the first holds it, and takes over once the first lets go', async context => {
+  const world = await World.open(context);
+  await world.observe(sessionStarted);
+  const second = secondStore(world.file, {now: world.clock.now});
+  context.after(() => second.close());
+  await assert.rejects(second.open(AbortSignal.abort()), /storage-unavailable/, 'refused while the first holds the lease');
+  assert.equal(second.isOpen, false, 'it opened nothing');
+  const waiting = second.open(AbortSignal.timeout(3000));
   world.store.close();
-  const owner = await waiting;
-  context.after(() => owner.shutdown());
-  assert.deepEqual(owner.snapshot().sessions.map(session => session.identity.sessionId), [IDENTITY.sessionId], 'it reads what the first committed');
+  await waiting;
+  assert.deepEqual(second.sessions().map(session => session.identity.sessionId), [IDENTITY.sessionId], 'it reads what the first committed');
+});
+
+it('an offline tool that holds the runtime\'s lease stops the core store from opening, and once it lets go the store opens', async context => {
+  const dir = await stateDir(context);
+  const lease = await holdRuntimeLease(dir);
+  const store = secondStore(join(dir, 'modules', 'core.sqlite'), {now: () => START});
+  context.after(() => store.close());
+  await assert.rejects(store.open(AbortSignal.abort()), /storage-unavailable/);
+  assert.equal(store.takeFailure(), undefined, 'a lease held elsewhere is no full disk');
+  assert.equal(store.isOpen, false);
+  lease.release();
+  await store.open(AbortSignal.abort());
+  assert.equal(store.isOpen, true);
 });
 
 it('the lease needs no journal: a lock database whose journal cannot be written still gives it, as on a full disk', async context => {
@@ -508,20 +514,15 @@ it('the lease needs no journal: a lock database whose journal cannot be written 
   assert.equal((await world.observe(sessionStarted)).ok, true);
 });
 
-it('the store keeps its lock while a failed commit\'s owner is opened again, so a second store waiting for it never gets it', async context => {
+it('the store keeps its lock through a failed commit, so a second store waiting for it never gets it', async context => {
   const world = await World.open(context);
   await world.observe(sessionStarted);
-  const second = new CoreStore({
-    database: new DatabaseSync(world.file), clock: {now: world.clock.now}, onError: () => {},
-    sdk: {source: 'bunny/core', publishMessage: <T extends object>(_key: string, message: Message<T>): Promise<Message<T>> => Promise.resolve(message)},
-  });
-  const contending = createAgentState({storage: second, ownerId: OWNER_ID, consumers: [...DEFAULT_CONSUMERS], clock: world.clock.now, storageTimeoutMs: 1500})
-    .then(owner => owner.shutdown().then(() => 'took the lease'), () => 'refused');
+  const second = secondStore(world.file, {now: world.clock.now});
+  const contending = second.open(AbortSignal.timeout(500)).then(() => 'took the lease', () => 'refused');
   const revision = world.store.revision;
   fillDisk(world.db);
   assert.deepEqual(await world.observe(sessionStarted, {identity: CHILD}), {ok: false, code: 'storage-failed'});
-  // The owner is opened again after a pause in which the second store keeps trying for the lock.
-  await world.reopen(200);
+  assert.equal(world.store.isOpen, true, 'the store stays open with its lock held');
   assert.equal(await contending, 'refused');
   second.close();
   world.db.exec('PRAGMA max_page_count = 1073741823');
@@ -597,28 +598,29 @@ it('a failure names only the commit it came from: a later commit clears it', asy
 it('a database that closed under the store, as a crash closes it, ends the store\'s use: a transaction is refused, and nothing is left unhandled', async context => {
   const world = await World.open(context);
   await world.observe(sessionStarted);
-  assert.equal(world.store.open, true);
+  assert.equal(world.store.isOpen, true);
   const unhandled: unknown[] = [];
   const heard = (reason: unknown): void => { unhandled.push(reason); };
   process.on('unhandledRejection', heard);
   context.after(() => { process.off('unhandledRejection', heard); });
   world.db.close();
-  assert.equal(world.store.open, false, 'the store is no longer open, so the tracker takes nothing more');
+  assert.equal(world.store.isOpen, false, 'the store is no longer open, so the tracker takes nothing more');
   await assert.rejects(world.store.transaction(() => {}));
   await new Promise(resolve => { setImmediate(resolve); });
   assert.deepEqual(unhandled, [], 'the outbox\'s refusal is taken');
 });
 
-it('a store that holds another owner\'s state is refused before anything is written to it', async context => {
+it('a store whose old state row holds another owner\'s state is reset like any other: the owner check went with the row', async context => {
   const file = join(await stateDir(context), 'core.sqlite');
   const other = new DatabaseSync(file);
   other.exec('CREATE TABLE state (id INTEGER PRIMARY KEY CHECK (id = 1), revision INTEGER NOT NULL, payload TEXT NOT NULL)');
   other.prepare('INSERT INTO state VALUES (1, 1, ?)').run(JSON.stringify({ownerId: 'someone-else'}));
-  const tables = (): unknown[] => other.prepare('SELECT name FROM sqlite_master ORDER BY name').all().map(row => ({...row}));
-  const before = tables();
-  await assert.rejects(World.open(context, {file}));
-  assert.deepEqual(tables(), before, 'no core table was created');
   other.close();
+  const world = await World.open(context, {file});
+  assert.deepEqual(world.rows('SELECT name FROM sqlite_master WHERE name = \'state\''), []);
+  assert.equal(world.store.revision, 1, 'the reset raised the revision from nothing');
+  assert.equal((await world.observe(sessionStarted)).ok, true);
+  assert.equal(world.store.records()[0]?.generation, 2);
 });
 
 /** What a store logged, as level, event and fields. */
@@ -637,9 +639,6 @@ function recorder(failing = false): {log: Logger; logged: Logged[]} {
 /** The save-cost records among what a store logged. */
 const costs = (logged: readonly Logged[]): Logged[] => logged.filter(([, event]) => event.startsWith('storage.cost.'));
 
-/** The state block's size in bytes, as the store holds it. */
-const stateBytes = (world: World): number => Buffer.byteLength((world.rows('SELECT payload FROM state')[0] as {payload: string}).payload);
-
 /** Each record as the runtime writes it for the core: kept whole, with only its own fields, or the test fails. */
 function asWritten(logged: readonly Logged[]): void {
   const resource = runtimeResource('test', '00000000-0000-4000-8000-000000000976');
@@ -650,55 +649,30 @@ function asWritten(logged: readonly Logged[]): void {
   }
 }
 
-it('a state block past its limit is recorded once with its size, and once more when it is back within it (Hub #976)', async context => {
+it('128 sessions with the largest notices and attention log no size record: no state block exists, and only a slow save is recorded (#1865)', async context => {
   const {log, logged} = recorder();
-  // A limit between one session's state and two sessions', so the block passes it as a second session starts, and is
-  // back within it a day later, once agent-state's maintenance has let go of what it keeps for a day. Every save takes
-  // 0 ms.
-  const LIMIT = 1_500;
-  const world = await World.open(context, {watch: {log, saveCost: {...SAVE_COST, stateBytes: LIMIT}, timer: () => 0}});
-  const sizes: number[] = [];
-  const step = async (...observation: Parameters<World['observe']>): Promise<void> => {
-    assert.equal((await world.observe(...observation)).ok, true);
-    sizes.push(stateBytes(world));
-  };
-  await step(sessionStarted);
-  await step(sessionStarted, {identity: OTHER});
-  await step(turnStarted, {identity: OTHER, turn: 'turn-2'});
-  world.clock.advance(86_400_001);
-  assert.equal((await world.owner?.maintain())?.ok, true);
-  sizes.push(stateBytes(world));
-  await step(sessionStarted);
-  await step(turnStarted, {turn: 'turn-2'});
-  assert.deepEqual(sizes.map(size => size > LIMIT), [false, true, true, false, false, false], `the block's sizes in bytes: ${sizes.join(', ')}`);
-  assert.deepEqual(costs(logged), [
-    ['warn', 'storage.cost.high', {'bunny.operation': 'storage', 'bunny.state.bytes': sizes[1]}],
-    ['info', 'storage.cost.normal', {'bunny.operation': 'storage', 'bunny.state.bytes': sizes[3]}],
-  ], 'one WARN as the block passes the limit and one INFO as it is back within it, each with only the block\'s size');
-  asWritten(costs(logged));
+  const world = await World.open(context, {watch: {log, timer: () => 0}, wrap: db => { db.exec('PRAGMA synchronous = OFF'); return db; }});
+  const title = {value: 'x'.repeat(160), source: 'user'} as const;
+  for (let index = 0; index < 128; index++) {
+    const identity = {...IDENTITY, sessionId: `session-${String(index).padStart(3, '0')}-${'s'.repeat(100)}`};
+    assert.equal((await world.observe(turnStarted, {identity, title, turn: `turn-${'t'.repeat(120)}`})).ok, true);
+    assert.equal((await world.observe(approvalPrompt(`approval-${'a'.repeat(110)}`), {identity, turn: `turn-${'t'.repeat(120)}`})).ok, true);
+  }
+  for (const session of world.store.sessions()) assert.equal((await world.observe(turnEnded, {identity: session.identity, turn: `turn-${'t'.repeat(120)}`})).ok, true);
+  assert.equal(world.store.sessions().length, 128);
+  assert.deepEqual(costs(logged), [], 'no save logged a size record, and none was slow');
+  assert.equal(logged.some(([, , fields]) => 'bunny.state.bytes' in fields), false);
 });
 
 it('a save that takes longer than 100 ms is recorded once with its time, and once more when a save is quick again (Hub #976)', async context => {
   const {log, logged} = recorder();
-  // Each save takes `work` milliseconds of the store's timer: half as the store applies agent-state's change to the whole
-  // state, which it does from the change's first read, before it serializes the state, and half in a part's rows in the
-  // save's transaction. Each message's publication after the commit takes a second, which is no part of the save.
+  // Each save takes `work` milliseconds of the store's timer, in a part's rows in the save's transaction. Each message's
+  // publication after the commit takes a second, which is no part of the save.
   let now = 0, work = 0;
-  const applying = (lease: StorageLease): StorageLease => ({
-    ...lease,
-    commit: (change, signal) => {
-      let read = false;
-      return lease.commit(new Proxy(change, {get: (target, key) => {
-        if (!read) now += work / 2;
-        read = true;
-        return Reflect.get(target, key) as unknown;
-      }}), signal);
-    },
-  });
-  const slowPart: Deriver = () => { now += work / 2; };
-  const world = await World.open(context, {derivers: [slowPart], lease: applying, watch: {log, timer: () => now}});
+  const slowPart: Deriver = () => { now += work; };
+  const world = await World.open(context, {derivers: [slowPart], watch: {log, timer: () => now}});
   world.publishing = () => { now += 1000; };
-  assert.deepEqual(SAVE_COST, {stateBytes: 8 * 1024 * 1024, saveMs: 100}, 'half of the 16 MiB limit, and 100 ms');
+  assert.deepEqual(SAVE_COST, {saveMs: 100}, '100 ms');
   const save = async (ms: number, ...observation: Parameters<World['observe']>): Promise<void> => {
     work = ms;
     const result = await world.observe(...observation);
@@ -717,7 +691,7 @@ it('a save that takes longer than 100 ms is recorded once with its time, and onc
     ['info', 'storage.cost.normal', {'bunny.operation': 'storage', 'bunny.save.duration_ms': 5}],
   ], 'one WARN for the run of slow saves and one INFO once a save is quick, each with only the save\'s time in whole milliseconds rounded up');
   asWritten(costs(logged));
-  assert.deepEqual(world.rows('SELECT revision FROM state'), [{revision: 6}], 'every save committed');
+  assert.deepEqual(world.rows('SELECT value FROM core_revision'), [{value: 6}], 'every save committed');
 });
 
 it('a costly save stands when its record cannot be written (Hub #976)', async context => {
@@ -727,9 +701,10 @@ it('a costly save stands when its record cannot be written (Hub #976)', async co
   work = 150;
   assert.deepEqual(await world.observe(sessionStarted), {ok: true, revision: 1, outcome: 'applied'});
   work = 5;
-  assert.deepEqual(await world.observe(turnStarted, {turn: 'turn-2'}), {ok: true, revision: 2, outcome: 'applied'}, 'the owner was never faulted');
+  assert.deepEqual(await world.observe(turnStarted, {turn: 'turn-2'}), {ok: true, revision: 2, outcome: 'applied'}, 'the store kept taking changes');
   assert.deepEqual(costs(logged).map(([level, event]) => [level, event]), [['warn', 'storage.cost.high'], ['info', 'storage.cost.normal']]);
-  assert.deepEqual(world.rows('SELECT revision FROM state'), [{revision: 2}]);
+  assert.deepEqual(world.rows('SELECT value FROM core_revision'), [{value: 2}]);
+  assert.deepEqual(world.store.sessions()[0]?.turn, {status: 'known', id: 'turn-2'}, 'the session row holds the second');
 });
 
 it('a save that does not commit changes neither condition (Hub #976)', async context => {
@@ -747,7 +722,6 @@ it('a save that does not commit changes neither condition (Hub #976)', async con
   assert.deepEqual(await world.observe(turnStarted, {turn: 'turn-2'}), {ok: false, code: 'storage-failed'}, 'the part rolls the quick save back');
   assert.deepEqual(costs(logged).map(([level]) => level), ['warn'], 'a refused save does not end the run');
   failing = false;
-  await world.reopen();
   assert.equal((await world.observe(turnStarted, {turn: 'turn-2'})).ok, true);
   assert.deepEqual(costs(logged), [
     ['warn', 'storage.cost.high', {'bunny.operation': 'storage', 'bunny.save.duration_ms': 150}],
@@ -761,18 +735,13 @@ it('a same-title metadata confirmation durably advances its watermark without re
   const identity = {...IDENTITY, provider: 'codex', client: 'desktop'} as const;
   const title = {value: 'A', source: 'provider'} as const;
   await world.observe(turnEnded, {identity, atMs: 100, title, hostSessionId: 'synthetic-host-session'});
-  assert.ok(world.owner);
-  await world.owner.setLabel(identity, 'Owner label');
+  await world.setLabel(identity, 'Owner label');
   await world.observe({kind: 'read-observed', state: 'unread'}, {identity, atMs: 100, hostSessionId: 'synthetic-host-session'});
   await world.crashAndRestart();
   const before = structuredClone(world.store.records()[0]);assert.ok(before);
   assert.equal(before.hostSessionId, 'synthetic-host-session');assert.equal(before.restartUncertain, true);
   const confirm = async (value: string, atMs: number) => {
-    const owner = world.owner;assert.ok(owner);
-    const metadataTitle = {value, source: 'provider'} as const;
-    const data = lifecycleOf({kind: 'metadata-observed'}, atMs, {identity, turn: null, title: metadataTitle});
-    const message = {...lifecycleMessage(data, world.clock.now()), source: 'bunny/modules/codex-desktop'};
-    const result = await world.store.during({message, kind: 'metadata.observed', entity: message.subject, observation: data}, () => owner.setTitle(identity, metadataTitle, atMs));
+    const result = await world.title(identity, {value, source: 'provider'}, atMs);
     assert.ok(result.ok);
     return result;
   };
@@ -780,10 +749,9 @@ it('a same-title metadata confirmation durably advances its watermark without re
   const after = world.store.records()[0];assert.ok(after);
   for (const field of ['title', 'label', 'activity', 'turn', 'read', 'ordering', 'notices', 'lastEvidenceAtMs', 'observedAtMs', 'restartUncertain', 'freshness', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
   assert.equal((await confirm('B', 150)).outcome, 'stale');
-  const saved = await world.owner.exportState();assert.equal(validateExport(saved).ok, true);
-  assert.equal(saved.sessions[0]?.metadataObservedAtMs, 200);
+  assert.equal(world.store.sessions()[0]?.metadataObservedAtMs, 200);
   await world.crashAndRestart();
   assert.equal((await confirm('B', 150)).outcome, 'stale');
-  assert.equal((await world.owner.exportState()).sessions[0]?.metadataObservedAtMs, 200);
+  assert.equal(world.store.sessions()[0]?.metadataObservedAtMs, 200);
   assert.deepEqual(world.store.records()[0]?.title, title);
 });

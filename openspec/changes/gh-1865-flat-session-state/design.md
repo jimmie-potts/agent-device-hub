@@ -247,6 +247,15 @@ Failure and recovery:
 
 Recovery is fix-forward with no snapshot restore. Downtime and loss of session-monitoring data are accepted (owner, 2026-11-18). The reset clears session monitoring only. It is not a command to clear other core data. Step 7 adds a section to `apps/runtime/UPGRADE.md`, beside "Core history fact log", that names the one transaction, what it drops, its failure behavior and that rollback below step 7 is unsupported for session data.
 
+Step 7 settled the storage mechanics as follows:
+
+- The tables are `core_sessions` (entity ID, the core revision of the row's last write, generation and the stored session as JSON, read back in the order sessions were first stored) and `core_session_guards` (one guard per row, in order). Published records stay in `core_records`, which sync and the restart read.
+- `CoreStore.open(signal)` waits for a lease another holder has until `signal` aborts. The core passes three seconds, agent-state's former deadline, so an offline tool's lease still fails the core's start after that wait, and the runtime exits with `core-failed`.
+- The reset records `operation.completed` with `bunny.operation` `storage` and no other attribute. The existing catalog expresses it, so no event or attribute is added.
+- A notice on an unknown turn is named from the observation's semantic key, so its ID is not the 1.x one. The differential test normalizes notice IDs with revisions and generations, and the core's run of the case set compares such notices by turn. The case set's literal IDs for those notices name the 1.x IDs until step 9 rewrites the case set.
+- The session logic bounds an observation at 2,304 bytes of its own compact JSON: 1.x's 2,048-byte event bound, with room for the ordering authority that 2.0 adds.
+- Restart uncertainty and the floor that keeps a change's instant from going back before an earlier change's stay in memory, as in agent-state's owner. Step 8 stores the restart marking.
+
 ### 13. Host-installed code and install skew
 
 Hooks and read-receipt helpers run from each host's installed release, not the runtime image.
