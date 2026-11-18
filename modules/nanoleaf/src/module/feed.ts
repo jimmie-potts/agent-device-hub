@@ -1,9 +1,12 @@
-// The module's input (Hub #844): the core's `session/2.0` records, which the SDK's sync keeps current, projected onto the
-// wall by the port's shared-input projection. The sync replaces the 1.x monitor feed: a sync that completes, the first or
-// one after an overflow, is projected as a fresh start (resync), so nothing missed across a gap replays as a comet or a
-// wave; each live change after it is projected as the next local revision, so the projection's own gap rules never fire.
-// The module keeps the copy in memory and saves only the state it owns.
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+// The module's input (Hub #844): the core's `session` records, which the SDK's sync keeps current, read through the
+// contracts package's shared session read function and projected onto the wall by the port's shared-input projection.
+// This boundary is where the wall takes the hub's status (Hub #1865, design decision 10): each view goes through
+// `forConsumer` with Nanoleaf's acknowledgment and read policy, and the projection keeps no session rule of its own.
+// The sync replaces the 1.x monitor feed: a sync that completes, the first or one after an overflow, is projected as a
+// fresh start (resync), so nothing missed across a gap replays as a comet or a wave; each live change after it is
+// projected as the next local revision, so the projection's own gap rules never fire. The module keeps the copy in
+// memory and saves only the state it owns.
+import {forConsumer, type ConsumerPolicy, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {DEFAULT} from '../devices.js';
 import {FeedError} from '../errors.js';
 import type {Metadata} from '../project-map.js';
@@ -15,32 +18,35 @@ import {transaction, type Db} from '../sqlite.js';
 export const CORE_OWNER = 'bunny-core';
 /** The consumer the core records the wall's acknowledgments for: the module's own name, which its source ends in. */
 export const CONSUMER = 'nanoleaf';
+/** The wall's policy: only its own acknowledgment retires a finished turn, and read evidence does too, as before. */
+export const POLICY: ConsumerPolicy = Object.freeze({acknowledgingConsumers: Object.freeze([CONSUMER]), read: true});
 
 /** The shared-input configuration the module's section gives. */
 export function sharedConfig(qualifiedSources: readonly Source[]): SharedConfig {
   return validateConfig({version: 1, ownerId: CORE_OWNER, consumerId: CONSUMER, clearOnNewTurn: true, qualifiedSources});
 }
 
-/** One `session/2.0` record as the projection reads a session; the derived observation age is not used. */
-export function sharedSession(record: SessionRecord): SharedSession {
+/** One session's view as the projection reads a session: its status for the wall, and what the wall draws and groups by. */
+export function sharedSession(view: SessionView): SharedSession {
+  const {status} = forConsumer(view, POLICY);
   return {
-    identity: {...record.identity}, turn: record.turn, parent: record.parent,
-    ...(record.label === undefined ? {} : {label: record.label.value, labelOrigin: record.label.origin}),
-    ...(record.projectId === undefined ? {} : {projectId: record.projectId}), ...(record.project === undefined ? {} : {project: record.project}),
-    ...(record.title === undefined ? {} : {title: record.title}),
-    activity: record.activity, attention: record.attention, notices: record.notices, read: record.read,
-    unavailable: record.unavailable.map(item => ({kind: 'evidence.unavailable', dimension: item.dimension, reason: item.reason})),
-    ordering: record.ordering, lastEvidenceAtMs: record.lastEvidenceAtMs, observedAtMs: record.observedAtMs, observationAgeMs: 0,
-    freshness: record.freshness, restartUncertain: record.restartUncertain, children: record.children, generation: record.generation,
+    identity: {...view.identity}, turn: view.turn, parent: view.parent,
+    ...(view.label === undefined ? {} : {label: view.label.value, labelOrigin: view.label.origin}),
+    ...(view.projectId === undefined ? {} : {projectId: view.projectId}), ...(view.project === undefined ? {} : {project: view.project}),
+    ...(view.title === undefined ? {} : {title: view.title}),
+    status: {...status}, work: {state: view.work.state, confidence: view.work.confidence},
+    attention: view.attention.items, notices: view.outcome.notices, read: view.outcome.read,
+    unavailable: view.unavailable.map(item => ({kind: 'evidence.unavailable', dimension: item.dimension, reason: item.reason})),
+    ordering: view.ordering, lastEvidenceAtMs: view.lastEvidenceAtMs, observedAtMs: view.observedAtMs, generation: view.generation,
   };
 }
 
 /**
- * The records as the projection's envelope, at the module's own `revision`. The sync is the owner's whole membership, so
+ * The views as the projection's envelope, at the module's own `revision`. The sync is the owner's whole membership, so
  * `lossCount` and `admissionRejected` stay 0, and the collector runs while the copy follows the core.
  */
-export function envelopeOf(records: Iterable<SessionRecord>, revision: number): Envelope {
-  const sessions = [...records].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map(sharedSession);
+export function envelopeOf(views: Iterable<SessionView>, revision: number): Envelope {
+  const sessions = [...views].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map(sharedSession);
   return {apiVersion: '2.0', ownerId: CORE_OWNER, connection: 'current', admissionRejected: 0, nextRequestId: 'sync',
     snapshot: {apiVersion: '2.0', revision, asOfMs: 0, collector: 'running', lossCount: 0, sessions}};
 }
@@ -63,8 +69,8 @@ export type Projected = 'selected' | 'followed' | 'stale-generation';
  */
 export class SessionFeed {
   readonly copy = new SharedCopy();
-  /** The records the current sync copy holds, by entity ID. */
-  readonly records = new Map<string, SessionRecord>();
+  /** The views of the records the current sync copy holds, by entity ID. */
+  readonly records = new Map<string, SessionView>();
   generation = 0;
   #revision = 0;
   readonly #options: FeedOptions;

@@ -222,6 +222,59 @@ suite('animations and favorites', () => {
   });
 });
 
+// Hub #1865, design decision 10 and the owner's decision of 2026-11-18: the Lines follow the hub's shared status and keep no
+// session rule of their own. Five minutes of silence reach the module as the core's republished record, whose evidence is
+// that old and whose freshness is uncertain.
+suite('the Lines follow the hub\'s shared status', () => {
+  const QUESTION = [{id: {status: 'known', id: 'ask'}, kind: 'question', turn: {status: 'known', id: 't1'}}] as const;
+  const keyOf = (name: string): string => identityKey({...QUALIFIED, sessionId: name});
+  const statuses = (world: ModuleWorld): Record<string, string> => Object.fromEntries(world.wall()?.tasks.map(task => [task.id, task.status]) ?? []);
+  const held = (world: ModuleWorld): unknown[] => world.query('SELECT session FROM shared_stale ORDER BY session').map(([key]) => key);
+
+  test('a waiting task and an unread finished task keep their indication past five minutes of silence, and a resync replays nothing',
+    async context => {
+      const world = await ModuleWorld.open(context);
+      await world.core.set('asking', {attention: [...QUESTION]});
+      const done = await world.core.finish('done');
+      await world.start();
+      await world.until(() => shown(world, 'question') && shown(world, 'unread'), 5000, 'both tasks on Lines');
+      await world.advance(3000);
+      const silent = world.clock.now() - 360_000;
+      await world.core.set('asking', {attention: [...QUESTION], evidenceAtMs: silent});
+      await world.core.set('done', {activity: 'idle', notices: done.notices, evidenceAtMs: silent});
+      await world.advance(1000);
+      assert.deepEqual(statuses(world), {[keyOf('asking')]: 'question', [keyOf('done')]: 'unread'});
+      assert.deepEqual(held(world), [], 'neither is held steady: the question keeps its alert and the finished turn its unread pulse');
+      await world.restart();
+      const restarted = world.clock.now();
+      await world.until(() => world.writes().some(write => write.atMs >= restarted && write.endpoint === '/effects'), 10_000, 'the tasks shown again');
+      await world.advance(5000);
+      assert.deepEqual(statuses(world), {[keyOf('asking')]: 'question', [keyOf('done')]: 'unread'});
+      assert.deepEqual(held(world), []);
+      assert.deepEqual(world.writes().filter(write => write.atMs >= restarted && write.endpoint === '/effects' && write.loop === false), [],
+        'no wave or comet replayed');
+      assert.deepEqual(world.query('SELECT 1 FROM comets'), []);
+      world.verify();
+    });
+
+  test('unconfirmed work holds steady, and an unknown status, a new task\'s included, shows idle at once', async context => {
+    const world = await ModuleWorld.open(context);
+    await world.core.set('busy');
+    await world.core.set('lost');
+    await world.start();
+    await world.until(() => world.wall()?.tasks.filter(task => task.status === 'working').length === 2, 5000, 'both tasks working');
+    await world.advance(3000);
+    const silent = world.clock.now() - 360_000;
+    await world.core.set('busy', {evidenceAtMs: silent});
+    await world.core.set('lost', {activity: 'unknown', evidenceAtMs: silent});
+    await world.core.set('newcomer', {activity: 'unknown', evidenceAtMs: silent});
+    await world.advance(1000);
+    assert.deepEqual(statuses(world), {[keyOf('busy')]: 'working', [keyOf('lost')]: 'idle', [keyOf('newcomer')]: 'idle'});
+    assert.deepEqual(held(world), [keyOf('busy')], 'only the working task whose work the hub no longer confirms is held steady');
+    world.verify();
+  });
+});
+
 const shown = (world: ModuleWorld, status: string): boolean => world.wall()?.tasks.some(task => task.status === status && task.element !== null) === true;
 const power = (requestId: string, on: boolean): {key: string; draft: CommandDraft<object>} => deviceCommand('power-set', {requestId, on});
 

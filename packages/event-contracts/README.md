@@ -698,15 +698,17 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
   not `statusOf` of the record's claims and keeps the 2.x record rules.
 - `src/v2/session-view.ts` (`./v2/session-view`) imports only the import-free
   `status.ts`, so a browser part can bundle it. It holds `statusOf`,
-  `noticeCounts` (which notices make a session finished: pending the owner's
-  decision, every notice no known later turn superseded), `sessionView(record)`
+  `noticeCounts` (which notices make a session finished: every notice no known
+  later turn superseded, the owner's decision of 2026-11-18), `sessionView(record)`
   for a `session/2.x` record its copy already validated,
   `forConsumer(view, policy)`, which retires `finished` to `quiet` under a
   reader's acknowledgment and read policy,
   `opportunityMatches(view, opportunity, consumer)`, `knownDetail`, and
   `sessionState` and `highestStatus` over views with `status.ts`'s colors and
-  ranking. Nothing live calls them yet. A detail a reader does not know falls
-  back to its class and never makes an opportunity match.
+  ranking. The device readers (LIFX, the Tidbyt tile, the Pixoo Monitor and
+  Nanoleaf) read through them; `status.ts` keeps its helper over 2.x records,
+  which no live reader calls. A detail a reader does not know falls back to its
+  class and never makes an opportunity match.
 - `src/v2/session.ts` (`./v2/session`) re-exports the view and adds
   `readSession(message)`, which validates a session state message and returns
   its view, or undefined. It reads `session/2.0` and `2.1` until the core
@@ -717,7 +719,7 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
   `loadSessionCases()` in `./v2/session-cases` expands it into messages for the
   core's and each reader's tests. `tests/session-cases.test.mjs` runs every
   case's reader expectations through the shared functions and checks that the
-  live helper in `status.ts` still gives main's results, and
+  helper over records in `status.ts` still gives main's results, and
   `tests/session.test.mjs` covers the status function, the 2.x mapping, the
   policies and opportunity matching.
 

@@ -42,8 +42,17 @@ export interface Unavailable {
 }
 
 /**
- * One session of a saved envelope. Envelopes saved by earlier bridges may lack `generation`; the projection reads
- * a missing one as 0, as Python's `.get('generation', 0)` did.
+ * The hub's status of a session as the wall shows it (Hub #1865, design decision 10): its class and detail from the
+ * shared session read function, with Nanoleaf's acknowledgment and read policy applied at the feed boundary.
+ */
+export interface HubStatus {
+  class: 'needs-owner' | 'working' | 'finished' | 'quiet' | 'unknown';
+  detail: string;
+}
+
+/**
+ * One session of the copy. A session without `generation` reads as 0, as Python's `.get('generation', 0)` did. `status`
+ * and `work` are the hub's: the wall keeps no session rule of its own, such as evidence age (owner decision, 2026-11-18).
  */
 export interface StoredSession {
   identity: Identity;
@@ -54,7 +63,9 @@ export interface StoredSession {
   projectId?: string;
   project?: string;
   title?: {value: string; source: 'provider' | 'user'};
-  activity: 'unknown' | 'active' | 'idle' | 'interrupted' | 'ended';
+  status: HubStatus;
+  /** The hub's work claim: its state, and whether evidence confirms it. */
+  work: {state: 'unknown' | 'active' | 'idle' | 'interrupted'; confidence: 'confirmed' | 'unconfirmed'};
   attention: Attention[];
   notices: Notice[];
   read: 'unknown' | 'read' | 'unread';
@@ -62,16 +73,12 @@ export interface StoredSession {
   ordering: Json;
   lastEvidenceAtMs: number;
   observedAtMs: number;
-  observationAgeMs: number;
-  freshness: 'current' | 'uncertain';
-  restartUncertain: boolean;
-  children: {active: number; uncertain: number};
   generation?: number;
 }
 
 /**
- * One session of an agent-state snapshot (1.1 or 1.2), as the owner published it. The consumer requires its generation
- * (shared_input.validate_snapshot); checkEnvelope refuses a snapshot whose session lacks one.
+ * One session as the feed gives it. The consumer requires its generation (shared_input.validate_snapshot); checkEnvelope
+ * refuses a snapshot whose session lacks one.
  */
 export interface SharedSession extends StoredSession {
   generation: number;
@@ -295,36 +302,46 @@ export function evict(db: Db, copy: SharedCopy, device: string, payload: unknown
   for (const table of ['slots', 'comets']) execute(db, 'DELETE FROM ' + table + ' WHERE session=? AND device=?', key, device);
 }
 
-type Alert = 'blocked' | 'question';
-const ALERTS: Readonly<Record<Alert, ReadonlySet<string>>> = {blocked: new Set(['approval', 'input']), question: new Set(['question'])};
-const RANK: Readonly<Record<string, number>> = {idle: 0, unread: 1, working: 2, question: 3, blocked: 4};
-const isAlert = (status: SqlValue): status is Alert => status === 'blocked' || status === 'question';
-const rank = (status: SqlValue): number => (typeof status === 'string' && Object.hasOwn(RANK, status) ? RANK[status] ?? 0 : 0);
+const isAlert = (status: SqlValue): boolean => status === 'blocked' || status === 'question';
 
 export type TaskStatus = 'blocked' | 'question' | 'working' | 'unread' | 'idle';
 
 /**
- * A task's status from its own and its subagents' evidence. Subagent attention and owner-counted fresh
- * activity belong to the parent task; a subagent's own turn-ended notices are not task completions.
+ * A task's status from the hub's statuses of its members (design decision 10). A member that needs the owner with a
+ * question asks; with an approval, input or a detail this version does not know, which falls back to its class, it
+ * blocks. A working root or subagent makes the task working, a root finished for this consumer makes it unread, and
+ * anything else, a quiet or `unknown` root included, is idle. A subagent's own finished turn is not a task completion.
  */
-export function semanticStatus(session: StoredSession, consumer: string, children: readonly StoredSession[] = []): TaskStatus {
+export function semanticStatus(session: StoredSession, children: readonly StoredSession[] = []): TaskStatus {
   const members = [session, ...children];
-  const kinds = new Set(members.flatMap(item => item.attention.map(attention => attention.kind)));
-  if ([...ALERTS.blocked].some(kind => kinds.has(kind as Attention['kind']))) return 'blocked';
-  if ([...ALERTS.question].some(kind => kinds.has(kind as Attention['kind']))) return 'question';
-  if (session.activity === 'active' || members.some(item => item.children.active !== 0)) return 'working';
-  if (session.read !== 'read' && session.notices.some(notice => !notice.acknowledgedBy.includes(consumer))) return 'unread';
+  const owner = members.filter(item => item.status.class === 'needs-owner');
+  if (owner.some(item => item.status.detail !== 'question')) return 'blocked';
+  if (owner.length > 0) return 'question';
+  if (members.some(item => item.status.class === 'working')) return 'working';
+  if (session.status.class === 'finished') return 'unread';
   return 'idle';
 }
 
-function parentKey(session: StoredSession): string | null {
+/**
+ * Whether the wall holds a task steady for the hub's unconfirmed work: the task is working, yet no member's work is
+ * active with confirmed evidence. It is the only hold beyond idle's own steady slot and a lost copy's freeze.
+ */
+export function heldForUnconfirmedWork(status: TaskStatus, members: readonly StoredSession[]): boolean {
+  return status === 'working'
+    && !members.some(item => item.status.class === 'working' && item.work.state === 'active' && item.work.confidence === 'confirmed');
+}
+
+/** What grouping reads of a session: its identity, its parent and whether that parent is ambiguous. */
+type Grouped = Pick<StoredSession, 'identity' | 'parent' | 'unavailable'>;
+
+function parentKey(session: Grouped): string | null {
   const parent = session.parent;
   if (parent.status !== 'known' || session.unavailable.some(item => item.dimension === 'parent' && item.reason === 'ambiguous')) return null;
   return identityKey(parent.identity);
 }
 
 /** A presented task: its top session, the subagent sessions folded into it, and whether its parent is missing. */
-export type PresentedTask<S extends StoredSession = SharedSession> = [S, S[], boolean];
+export type PresentedTask<S extends Grouped = SharedSession> = [S, S[], boolean];
 
 /**
  * Task key: [session, included subagent sessions, orphan]. A child joins its topmost
@@ -332,7 +349,7 @@ export type PresentedTask<S extends StoredSession = SharedSession> = [S, S[], bo
  * session. A group whose top has a missing parent, or a parent cycle keyed by its
  * smallest member, is an orphan presented only for its attention.
  */
-export function presented<S extends StoredSession>(snapshot: {readonly sessions: readonly S[]}): Map<string, PresentedTask<S>> {
+export function presented<S extends Grouped>(snapshot: {readonly sessions: readonly S[]}): Map<string, PresentedTask<S>> {
   const sessions = new Map<string, S>();
   for (const session of snapshot.sessions) sessions.set(identityKey(session.identity), session);
   const sessionOf = (key: string): S => {
@@ -361,19 +378,6 @@ export function presented<S extends StoredSession>(snapshot: {readonly sessions:
     if (key !== root) entry[1].push(sessionOf(key));
   }
   return tasks;
-}
-
-/**
- * Task members whose evidence supplies a status. For a retained status, a silent child
- * that still reports activity counts too, so its later current evidence can clear it.
- */
-function supporters<S extends StoredSession>(session: S, children: readonly S[], status: SqlValue, retained = false): S[] {
-  if (isAlert(status)) return [session, ...children].filter(item => item.attention.some(attention => ALERTS[status].has(attention.kind)));
-  if (status === 'working') {
-    return [...(session.activity === 'active' ? [session] : []),
-      ...children.filter(child => child.activity === 'active' && (retained || child.freshness === 'current'))];
-  }
-  return [session];
 }
 
 function forgetTask(db: Db, key: SqlValue): void {
@@ -413,9 +417,8 @@ export function projectEnvelope(db: Db, copy: SharedCopy, input: Envelope, confi
   if (resync) execute(db, "INSERT OR REPLACE INTO meta VALUES ('shared_wave_cutoff',?)", floatText(instant));
   let presentationChanged = metadata === null ? false : metadata.syncCatalog(db);
   const live = new Set<string>();
-  const priorTasks = previous === null ? new Map<string, PresentedTask<StoredSession>>() : presented(previous.snapshot);
   for (const [key, [session, children, orphan]] of presented(snapshot)) {
-    let status: SqlValue = semanticStatus(session, config.consumerId, children);
+    const status = semanticStatus(session, children);
     if (orphan && !isAlert(status)) continue;
     live.add(key);
     const token = evictionToken(current, session);
@@ -425,41 +428,15 @@ export function projectEnvelope(db: Db, copy: SharedCopy, input: Envelope, confi
     if (recreated) {
       forgetTask(db, key);
       prior.delete(key);
-      priorTasks.delete(key);
     }
     const taskResync = resync || recreated;
     const old = first(db, 'SELECT turn,status FROM sessions WHERE id=?', key);
     const oldActivity = first(db, 'SELECT turn,status,started FROM activity WHERE session=?', key);
-    let turn: SqlValue = session.turn.status === 'known' ? session.turn.id : '';
-    // A task is current when current evidence supplies its displayed status.
-    const supporting = supporters(session, children, status);
-    const stale = snapshot.collector !== 'running' || !supporting.some(item => item.freshness === 'current');
+    const turn: SqlValue = session.turn.status === 'known' ? session.turn.id : '';
+    // Every hub status replaces the displayed one at once, whatever the silence; the only steady hold is the hub's
+    // unconfirmed work.
+    const stale = snapshot.collector !== 'running' || heldForUnconfirmedWork(status, [session, ...children]);
     const priorSession = prior.get(key);
-    const priorChildren = priorTasks.get(key)?.[1] ?? [];
-    const priorBlocked = priorSession !== undefined && [priorSession, ...priorChildren]
-      .some(member => member.attention.some(item => item.kind === 'approval' && item.id.status === 'unknown'));
-    const ownerClearedBlock = priorBlocked && priorSession !== undefined && old !== undefined && old[1] === 'blocked'
-      && status !== 'blocked' && sameValue(priorSession.turn, session.turn) && previous !== null
-      && snapshot.revision > previous.snapshot.revision;
-    // Current members that supplied the retained status and no longer do clear it, and a
-    // higher subagent alert is shown steadily rather than hidden behind an older color.
-    const members = new Map([session, ...children].map(item => [identityKey(item.identity), item]));
-    const priorTask = priorTasks.get(key);
-    const priorSupport = old !== undefined && priorTask !== undefined && old[1] !== status
-      ? new Set(supporters(priorTask[0], priorTask[1], old[1] ?? null, true).map(item => identityKey(item.identity)))
-      : new Set<string>();
-    const still = old === undefined ? new Set<string>() : new Set(supporters(session, children, old[1] ?? null).map(item => identityKey(item.identity)));
-    const evidenceCleared = priorSupport.size > 0 && [...priorSupport]
-      .every(member => members.get(member)?.freshness === 'current' && !still.has(member));
-    const childAlert = old !== undefined && isAlert(status) && rank(status) > rank(old[1] ?? null)
-      && supporting.some(item => item !== session);
-    // Owner read evidence, or this consumer's acknowledgment of every notice, clears a
-    // retained unread task even while its lifecycle evidence is stale.
-    const unreadCleared = old !== undefined && old[1] === 'unread' && status === 'idle';
-    if (stale && old !== undefined && !(ownerClearedBlock || evidenceCleared || childAlert || unreadCleared)) {
-      turn = old[0] ?? null;
-      status = old[1] ?? null;
-    }
     const wasStale = first(db, 'SELECT 1 FROM shared_stale WHERE session=?', key) !== undefined;
     if (stale) execute(db, 'INSERT OR IGNORE INTO shared_stale VALUES (?)', key);
     else execute(db, 'DELETE FROM shared_stale WHERE session=?', key);
@@ -476,7 +453,7 @@ export function projectEnvelope(db: Db, copy: SharedCopy, input: Envelope, confi
       } else {
         execute(db, 'DELETE FROM activity WHERE session=?', key);
       }
-      if ((old !== undefined && old[0] !== turn) || session.activity === 'active' || session.activity === 'interrupted') {
+      if ((old !== undefined && old[0] !== turn) || session.work.state === 'active' || session.work.state === 'interrupted') {
         execute(db, 'DELETE FROM comets WHERE session=?', key);
       } else {
         execute(db, 'DELETE FROM comets WHERE session=? AND started IS NULL', key);

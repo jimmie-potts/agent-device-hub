@@ -71,6 +71,8 @@ const settle = async (): Promise<void> => {
 export type SessionOptions = {
   identity?: Identity; activity?: SessionRecord['activity']; turn?: string; attention?: SessionRecord['attention'];
   notices?: SessionRecord['notices']; read?: SessionRecord['read']; title?: string; generation?: number;
+  /** The session's last evidence, now by default. Five minutes or more before now, the core reports it uncertain. */
+  evidenceAtMs?: number;
 };
 
 /** A notice ID as the owner gives one: a SHA-256 hash. */
@@ -122,11 +124,12 @@ export class StandInCore {
     const id = sessionEntityId(identity);
     this.revision += 1;
     const turn = options.turn ?? 't1';
+    const evidenceAtMs = options.evidenceAtMs ?? this.clock.now();
     const record: SessionRecord = {
       id, revision: this.revision, generation: options.generation ?? 0, identity, parent: {status: 'top-level'}, turn: {status: 'known', id: turn},
       activity: options.activity ?? 'active', attention: options.attention ?? [], notices: options.notices ?? [], read: options.read ?? 'unknown',
-      unavailable: [], ordering: {status: 'unknown'}, observedAtMs: this.clock.now(), lastEvidenceAtMs: this.clock.now(), freshness: 'current',
-      restartUncertain: false, children: {active: 0, uncertain: 0}, ...(options.title === undefined ? {} : {title: {value: options.title, source: 'provider'}}),
+      unavailable: [], ordering: {status: 'unknown'}, observedAtMs: evidenceAtMs, lastEvidenceAtMs: evidenceAtMs,
+      freshness: this.clock.now() - evidenceAtMs >= 300_000 ? 'uncertain' : 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, ...(options.title === undefined ? {} : {title: {value: options.title, source: 'provider'}}),
     };
     this.sessions.set(id, record);
     await this.#participant?.publish(`bunny.state.session.${id}`, {kind: 'state', ...this.#draft(record)});

@@ -4,7 +4,7 @@ import {DashboardPager,shortLabel,shortSessionId} from '../../src/presentation/a
 import {present} from '../helpers/present.js';
 
 export function session(id:string,patch:Partial<MonitorSession>={}):MonitorSession {
- return {identity:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',sessionId:id},turn:{status:'unknown'},parent:{status:'top-level'},activity:'active',attention:[],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},lastEvidenceAtMs:1000,observedAtMs:1000,freshness:'current',restartUncertain:false,children:{active:0,uncertain:0},...patch};
+ return {identity:{provider:'codex',client:'cli',hostId:'h',sourceId:'s',sessionId:id},turn:{status:'unknown'},parent:{status:'top-level'},activity:'active',attention:[],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},lastEvidenceAtMs:1000,observedAtMs:1000,status:{class:'working',detail:'confirmed'},workConfidence:'confirmed',children:{working:0,unconfirmed:0},...patch};
 }
 export function view(sessions:MonitorSession[]):MonitorView {
  return {connection:'current',snapshot:{revision:1,collector:'running',sessions}};
@@ -36,7 +36,7 @@ it('shows one session per page, rotates at ten seconds, skips elapsed intervals 
  expect(pager.layout(view([]),42000)).toMatchObject({page:0,pages:1,rows:[]});
 });
 it('keeps notices consumer-specific, full labels and timestamps, and health dimensions separate',()=>{
- const state=view([session('a',{label:'résumé-long',notices:[{id:'n',kind:'turn-ended',turn:{status:'unknown'},acknowledgedBy:['other']}],children:{active:2,uncertain:1}})]);
+ const state=view([session('a',{label:'résumé-long',notices:[{id:'n',kind:'turn-ended',turn:{status:'unknown'},acknowledgedBy:['other']}],children:{working:2,unconfirmed:1}})]);
  state.connection='stale';const layout=new DashboardPager().layout(state,0);
  expect(layout).toMatchObject({connection:'stale',collector:'running'});
  expect(layout.rows[0]).toMatchObject({label:'résumé-long',shortLabel:'RESUME-LONG',noticeIds:['n'],activeChildren:2,childrenUncertain:true,uncertain:true,observedAtMs:1000});
@@ -94,7 +94,7 @@ it('pulses only a session that needs attention, dimming just its tile and chip i
  expect(renderDashboard(layout)).toHaveLength(1);
 });
 it('spells out uncertainty and dims the label instead of a trailing symbol',async()=>{
- const certain=present((await renderOne()).frames[0]),uncertain=present((await renderOne({freshness:'uncertain'})).frames[0]);
+ const certain=present((await renderOne()).frames[0]),uncertain=present((await renderOne({status:{class:'working',detail:'unconfirmed'},workConfidence:'unconfirmed'})).frames[0]);
  expect(lit(certain,39,45,62,49)).not.toContain('1');
  expect(lit(uncertain,39,45,62,49)).toContain('1');
  const label=(frame:Frame)=>Array.from(frame.slice((26*64+2)*3,(33*64+62)*3)).reduce((a,b)=>Math.max(a,b),0);
@@ -103,7 +103,7 @@ it('spells out uncertainty and dims the label instead of a trailing symbol',asyn
 it('shows subagents, and keeps the summary and separate source and collector health on every page, including an empty one',async()=>{
  const {renderDashboard}=await import('../../src/presentation/dashboard-pixels.js');
  expect(lit(present((await renderOne()).frames[0]),2,45,33,49)).not.toContain('1');
- expect(lit(present((await renderOne({children:{active:3,uncertain:0}})).frames[0]),2,45,33,49)).toContain('1');
+ expect(lit(present((await renderOne({children:{working:3,unconfirmed:0}})).frames[0]),2,45,33,49)).toContain('1');
  const sources=new Set<string>(),collectors=new Set<string>();
  for(const connection of ['current','stale','unavailable'] as const)sources.add(lit(present((await renderOne({},state=>{state.connection=connection;})).frames[0]),52,56,56,60));
  for(const collector of ['running','quiesced','faulted','closed'] as const)collectors.add(lit(present((await renderOne({},state=>{snapshotOf(state).collector=collector;})).frames[0]),58,56,62,60));
@@ -133,7 +133,7 @@ it('covers every legend state in the synthetic examples and matches their frame 
  expect(new Set(layouts.map(layout=>layout.collector))).toEqual(new Set(['running','quiesced','faulted','closed','unknown']));
  expect(layouts.some(layout=>layout.rows.length===0)).toBe(true);
  expect(layouts.some(layout=>layout.pages>8)).toBe(true);
- expect(cases.map(c=>c.rendition.frames.length)).toEqual([2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,2]);
+ expect(cases.map(c=>c.rendition.frames.length)).toEqual([2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,2,1]);
  for(const c of cases)expect(c.rendition.rgb).toEqual(c.rendition.frames[0]);
  expect(cases.map(c=>c.rendition.frames.map(frame=>createHash('sha256').update(new Uint8Array(frame)).digest('hex').slice(0,16)).join(' '))).toEqual([
   'd17b4eff2ddfa03d 120e94276ae78ec2',
@@ -151,7 +151,10 @@ it('covers every legend state in the synthetic examples and matches their frame 
   '94293ef42bd5c839',
   '8049586657dfe10e',
   '462e424af084472d',
-  'aab42864520804b9 7fe1b2c9d92c799d'
+  // Hub #1865: an approval whose work turned unconfirmed is no longer marked uncertain; the subagent marker stays.
+  '159c4afee03d8589 a2ede09e870afc11',
+  // Working whose work is unconfirmed is marked, as the ordering conflict is.
+  '8049586657dfe10e'
  ]);
  const projected=(row:{project?:string})=>row.project!==undefined&&row.project!=='';
  expect(rows.some(row=>row.title!==undefined&&!projected(row)&&row.label===row.title.value)).toBe(true);
@@ -212,7 +215,7 @@ it('uses label then shared title then distinct ID tails, and folds accents befor
 });
 it('places project below the title and moves details above it without overlapping ink or changing pulse',async()=>{
  const {drawText}=await import('../../src/presentation/pixel-font.js');
- const {frames}=await renderOne({title:{value:'Résumé monitor',source:'provider'},project:'DIVOOM-APP-UPGRADE',freshness:'uncertain',children:{active:2,uncertain:0},...ask('approval')});
+ const {frames}=await renderOne({title:{value:'Résumé monitor',source:'provider'},project:'DIVOOM-APP-UPGRADE',unavailable:[{dimension:'attention',reason:'ambiguous'}],children:{working:2,unconfirmed:0},...ask('approval')});
  const expected=new Uint8Array(12288);drawText(expected,'DIVOOM-…UPGRADE',2,45,[70,170,220]);
  expect(lit(present(frames[0]),0,45,63,49)).toBe(lit(expected,0,45,63,49));
  expect(lit(present(frames[0]),2,21,30,25)).toContain('1');
@@ -246,12 +249,15 @@ it.each(evidencePolicy)('applies the approved %s / %s uncertainty policy (%s)',(
  expect(row.unavailable).toEqual(item.unavailable);
  expect(state).toEqual(before);
 });
-it('keeps unknown ordering and optional read separate from unknown turn and other state warnings',()=>{
+it('marks uncertainty from the hub\'s status, not from unknown ordering, optional read, an unknown turn or a root\'s unknown parent',()=>{
+ // Hub #1865, design decision 10: every hook root has an unknown parent, and a turn may be unknown, without any doubt.
  const certain:Partial<MonitorSession>={turn:{status:'known',id:'t'},ordering:{status:'known',authority:'s',epoch:'e',sequence:1}};
- for(const patch of [{},{ordering:{status:'unknown'}},{read:'unknown'}] as Partial<MonitorSession>[])
-  expect(present(new DashboardPager().layout(view([session('a',{...certain,...patch})]),0).rows[0]).uncertain).toBe(false);
- for(const patch of [{turn:{status:'unknown'}},{activity:'unknown'},{parent:{status:'unknown'}},{freshness:'uncertain'}] as Partial<MonitorSession>[])
-  expect(present(new DashboardPager().layout(view([session('a',{...certain,...patch})]),0).rows[0]).uncertain).toBe(true);
+ for(const patch of [{},{ordering:{status:'unknown'}},{read:'unknown'},{turn:{status:'unknown'}},{parent:{status:'unknown'}},
+  {status:{class:'needs-owner',detail:'question'},workConfidence:'unconfirmed'}] as Partial<MonitorSession>[])
+  expect(present(new DashboardPager().layout(view([session('a',{...certain,...patch})]),0).rows[0]).uncertain,JSON.stringify(patch)).toBe(false);
+ for(const patch of [{status:{class:'unknown',detail:'unknown'},activity:'unknown'},{status:{class:'working',detail:'unconfirmed'},workConfidence:'unconfirmed'},
+  {unavailable:[{dimension:'parent',reason:'ambiguous'}]}] as Partial<MonitorSession>[])
+  expect(present(new DashboardPager().layout(view([session('a',{...certain,...patch})]),0).rows[0]).uncertain,JSON.stringify(patch)).toBe(true);
  for(const connection of ['stale','unavailable'] as const){const state=view([session('a',certain)]);state.connection=connection;expect(present(new DashboardPager().layout(state,0).rows[0]).uncertain).toBe(true);}
 });
 it.each([undefined,'DIVOOM'])('keeps warning words and label dimming accurate with project %s',async(project)=>{

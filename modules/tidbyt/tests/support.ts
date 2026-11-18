@@ -120,7 +120,7 @@ export const asking = (overrides: Partial<SessionRecord> & {at?: number} = {}): 
   activity: 'active', attention: [{id: {status: 'known', id: 'ask-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}], ...overrides,
 });
 export const notice = (acknowledgedBy: string[] = []): SessionRecord['notices'][number] =>
-  ({id: 'notice-1', kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy});
+  ({id: 'a'.repeat(64), kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy});
 export const finished = (overrides: Partial<SessionRecord> & {at?: number} = {}): SessionRecord => session({notices: [notice()], ...overrides});
 
 export const PLAYBACK_ID = SIMULATED_SECTION.nowPlaying.playback;

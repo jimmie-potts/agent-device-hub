@@ -16,7 +16,7 @@ import {join} from 'node:path';
 import {errorBody, SCHEMA_BASE, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type Capabilities, type CompletedOutcome, type DeviceCommand, type DeviceRecord, type Tagged} from '@jimmie-potts/event-contracts/v2/devices';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {highestStatus} from '@jimmie-potts/event-contracts/v2/status';
+import {highestStatus, readSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext,
   type Reply, type Snapshot, type Span, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import {configureLifx, NATIVE_MODES, qualified, type LifxBulbConfig, type LifxConfig, type NativeMode, type StatusCaps} from './configuration.js';
@@ -192,9 +192,11 @@ class LifxRun {
   #outbox: Outbox | undefined;
   #revision = 0;
   #closing = false;
-  /** The core's sessions: the copy once its first sync completed, and until then what its changes delivered. */
+  /** The core's sessions: the copy once its first sync completed, and until then the views its changes delivered. */
   #copy: SyncedCopy<SessionRecord> | undefined;
-  readonly #sessions = new Map<string, SessionRecord>();
+  readonly #sessions = new Map<string, SessionView>();
+  /** Each session message's view, or null for one the shared read function does not accept, read once per message. */
+  readonly #views = new WeakMap<object, SessionView | null>();
   #synced = false;
   #resync: Cancel | undefined;
   #resyncDelayMs = RESYNC_FIRST_MS;
@@ -700,9 +702,12 @@ class LifxRun {
 
   #sessionChanged(change: SyncChange<SessionRecord>): void {
     switch (change.type) {
-      case 'updated':
-        this.#sessions.set(change.entity.id, change.message.data);
+      case 'updated': {
+        const view = this.#viewOf(change.message);
+        if (view === null) this.#sessions.delete(change.entity.id);
+        else this.#sessions.set(change.entity.id, view);
         break;
+      }
       case 'removed':
         this.#sessions.delete(change.entity.id);
         break;
@@ -734,9 +739,22 @@ class LifxRun {
     }
   }
 
-  /** The sessions as the core holds them: the whole copy once it exists, so a resync is never seen half applied. */
-  #currentSessions(): SessionRecord[] {
-    return this.#copy === undefined ? [...this.#sessions.values()] : this.#copy.states().map(message => message.data);
+  /**
+   * The views of the sessions as the core holds them: the whole copy once it exists, so a resync is never seen half
+   * applied. Each session is read through the shared session read function (Hub #1865).
+   */
+  #currentSessions(): SessionView[] {
+    if (this.#copy === undefined) return [...this.#sessions.values()];
+    return this.#copy.states().map(message => this.#viewOf(message)).filter((view): view is SessionView => view !== null);
+  }
+
+  #viewOf(message: Message<SessionRecord>): SessionView | null {
+    let view = this.#views.get(message);
+    if (view === undefined) {
+      view = readSession(message) ?? null;
+      this.#views.set(message, view);
+    }
+    return view;
   }
 
   /**

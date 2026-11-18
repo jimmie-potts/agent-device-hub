@@ -3,6 +3,7 @@
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {ArtState} from '@jimmie-potts/event-contracts/v2/art-state';
+import {readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {
   SIMULATED_API_KEY, SIMULATED_DEVICE, SIMULATED_SECTION as TIDBYT_SIMULATED_SECTION, nowPlayingFrame, nowPlayingView, picture, statusFrame, statusView,
   MOMENT_INSTALLATION, TRONBYT_SIMULATED_SECTION, type CloudState, type TronbytState,
@@ -30,7 +31,8 @@ const tile = (h: Harness, installation: string): {picture: string[]; pushes: num
   cloudState(h).installations[installation];
 /** The status tile the reader's copy of the sessions calls for: the picture of the frame the module draws from them. */
 const expectedStatus = (h: Harness): string[] =>
-  picture(statusFrame(statusView({synced: true, sessions: h.reader.states<SessionRecord>('session').map(state => state.data)})).rgb);
+  picture(statusFrame(statusView({synced: true, sessions: h.reader.states<SessionRecord>('session').map(state => readSession(state))
+    .filter(view => view !== undefined)})).rgb);
 /** Whether the status tile shows what the reader's sessions call for, after `pushes` pushes. */
 function statusShown(h: Harness, pushes: number): Outcome {
   const shown = tile(h, STATUS_TILE);

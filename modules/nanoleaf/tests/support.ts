@@ -14,6 +14,9 @@ import {readJson} from '../src/jsonfile.js';
 import type {Report} from '../src/journal.js';
 import {setMode as commandMode} from '../src/modes.js';
 import {fallbackTitle, Metadata, owners, palette, pending, settings, taskProjects, type MapSettings, type Patch, type Role} from '../src/project-map.js';
+import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import {sharedSession} from '../src/module/feed.js';
 import {evictionToken, presented, selected, SharedCopy, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession,
   type SharedState, type Snapshot} from '../src/shared-input.js';
 import {acceptEnvelope, configureSource, markFailed, selectShared as select, sourceConfig} from '../src/shared-source.js';
@@ -75,21 +78,60 @@ export function loadDump(directory: string, dump: Dump): void {
   });
 }
 
+/**
+ * A session as the Python tests, the recorded owner snapshots and the recorded traces hold it: an owner record with its
+ * claims, its activity and its freshness. The wall reads none of these rules itself (Hub #1865): `hubSession` turns it
+ * into what the feed gives the projection, the hub's status through the shared read function with the wall's policy.
+ */
+export type RecordSession = Omit<SharedSession, 'status' | 'work'> & {
+  activity: 'unknown' | 'active' | 'idle' | 'interrupted' | 'ended';
+  observationAgeMs: number;
+  freshness: 'current' | 'uncertain';
+  restartUncertain: boolean;
+  children: {active: number; uncertain: number};
+};
+export type RecordSnapshot = Omit<Snapshot, 'sessions'> & {sessions: RecordSession[]};
+export type RecordEnvelope = Omit<Envelope, 'snapshot'> & {snapshot: RecordSnapshot};
+
+/**
+ * One recorded session as the feed gives it: its own fields, with the hub's status and work claim that the shared read
+ * function finds in the same record (`sessionView`, then the feed's `sharedSession` with the wall's policy). A 1.x
+ * `ended` activity, which no 2.x record carries, reads as unknown. A missing or malformed generation stays as it is, so
+ * the projection's own check still sees it.
+ */
+export function hubSession(session: RecordSession): SharedSession {
+  const {activity, observationAgeMs: _age, freshness, restartUncertain, children, ...kept} = session;
+  const record = {
+    id: identityKeyOf(session), revision: 0, generation: session.generation, identity: session.identity, parent: session.parent, turn: session.turn,
+    activity: activity === 'ended' ? 'unknown' : activity, attention: session.attention, notices: session.notices, read: session.read,
+    unavailable: session.unavailable.map(({dimension, reason}) => ({dimension, reason})), ordering: session.ordering,
+    observedAtMs: session.observedAtMs, lastEvidenceAtMs: session.lastEvidenceAtMs, freshness, restartUncertain, children,
+  } as unknown as SessionRecord;
+  const {status, work} = sharedSession(sessionView(record));
+  return {...kept, status, work};
+}
+const identityKeyOf = (session: RecordSession): string => sha256Hex(JSON.stringify(session.identity));
+
+/** A recorded envelope as the feed gives it: every session through `hubSession`, everything else unchanged. */
+export function hubEnvelope(value: RecordEnvelope): Envelope {
+  return {...value, snapshot: {...value.snapshot, sessions: value.snapshot.sessions.map(hubSession)}};
+}
+
 /** The first case of the released agent-state corpus as a 1.1 snapshot with generations (test_shared_input.fixture). */
-export function fixture(): Snapshot {
-  const snapshot = copyJson(fixtureJson('snapshot-v1.json') as Json) as unknown as Snapshot;
+export function fixture(): RecordSnapshot {
+  const snapshot = copyJson(fixtureJson('snapshot-v1.json') as Json) as unknown as RecordSnapshot;
   snapshot.apiVersion = '1.1';
   for (const session of snapshot.sessions) session.generation = 0;
   return snapshot;
 }
 
-export function envelope(snapshot: Snapshot = fixture()): Envelope {
+export function envelope(snapshot: RecordSnapshot = fixture()): RecordEnvelope {
   return {apiVersion: '1.0', ownerId: 'owner', connection: 'current', snapshot, admissionRejected: 0, nextRequestId: 'request-1'};
 }
 
 export const clone = <T>(value: T): T => structuredClone(value);
 
-export function firstSession(value: Envelope): SharedSession {
+export function firstSession(value: RecordEnvelope): RecordSession {
   const session = value.snapshot.sessions[0];
   if (session === undefined) throw new Error('The envelope has no session.');
   return session;
@@ -129,10 +171,13 @@ export function copyOf(directory: string): SharedCopy {
 
 export const configure = (directory: string, config: unknown): SharedConfig => write(directory, db => configureSource(db, copyOf(directory), config));
 
-/** shared_source.select_source(directory, 'shared', fetch=...): the envelope stands in for a successful preflight. */
-export function selectShared(directory: string, value: Envelope = envelope(), instant = 1000): void {
+/**
+ * shared_source.select_source(directory, 'shared', fetch=...): the envelope stands in for a successful preflight. A
+ * recorded envelope goes through `hubEnvelope`, as the feed gives it.
+ */
+export function selectShared(directory: string, value: RecordEnvelope = envelope(), instant = 1000): void {
   const metadata = metadataReader(directory);
-  write(directory, db => select(db, {copy: copyOf(directory), envelope: value, instant, targets: registeredDevices(directory), metadata}));
+  write(directory, db => select(db, {copy: copyOf(directory), envelope: hubEnvelope(value), instant, targets: registeredDevices(directory), metadata}));
 }
 
 export interface Accept {
@@ -140,10 +185,11 @@ export interface Accept {
   resync?: boolean;
 }
 
-/** shared_source.accept with a fresh metadata reader and the registered devices. */
-export function accept(directory: string, value: Envelope, instant: number, options: Accept = {}): boolean {
+/** shared_source.accept with a fresh metadata reader and the registered devices, of a recorded envelope as the feed gives it. */
+export function accept(directory: string, value: RecordEnvelope, instant: number, options: Accept = {}): boolean {
   const metadata = metadataReader(directory);
-  return write(directory, db => acceptEnvelope(db, value, {copy: copyOf(directory), instant, targets: registeredDevices(directory), metadata, ...options}));
+  return write(directory, db => acceptEnvelope(db, hubEnvelope(value), {copy: copyOf(directory), instant, targets: registeredDevices(directory), metadata,
+    ...options}));
 }
 
 export const failed = (directory: string, generation: number): void => write(directory, db => markFailed(db, copyOf(directory), generation));
@@ -174,10 +220,10 @@ export type FeedChange = 'prompt' | 'stop' | 'read' | 'question' | 'permission' 
  * evidence then stays until the next completion. `end` removes the session, as the owner does when it retires one.
  */
 export class Feed {
-  readonly sessions = new Map<string, SharedSession>();
+  readonly sessions = new Map<string, RecordSession>();
   revision = 1;
 
-  envelope(): Envelope {
+  envelope(): RecordEnvelope {
     return {apiVersion: '1.0', ownerId: 'owner', connection: 'current', admissionRejected: 0, nextRequestId: `request-${String(this.revision)}`,
       snapshot: {apiVersion: '1.2', revision: this.revision, asOfMs: 1000, collector: 'running', lossCount: 0,
         sessions: [...this.sessions.values()].map(session => clone(session))}};
@@ -185,7 +231,7 @@ export class Feed {
 
   change(op: FeedChange, name = ''): void {
     let session = this.sessions.get(name);
-    const known = (): SharedSession => {
+    const known = (): RecordSession => {
       if (session === undefined) throw new Error(`No shared session ${name}.`);
       return session;
     };

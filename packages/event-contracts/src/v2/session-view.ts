@@ -33,9 +33,9 @@ const ATTENTION_RANK: readonly AttentionKind[] = ['approval', 'input', 'question
 
 /**
  * Whether a notice still describes the session's finished turn, which status rule 3 and each reader's retirement
- * count. This is the one place that decides it, pending the owner's decision on rule 3 (design decision 3). Until then
- * it is the dashboard's rule (`nextTurnStarted` in apps/runtime/dashboard/src/sessions.ts): a notice counts unless a
- * known later turn superseded it, that is, unless its turn and the session's turn are both known and differ. Missing or
+ * count. This is the one place that decides it. The owner chose the dashboard's rule (`nextTurnStarted` in
+ * apps/runtime/dashboard/src/sessions.ts) on 2026-11-18 (Hub #1865, design decision 3): a notice counts until a known
+ * later turn supersedes it, that is, unless its turn and the session's turn are both known and differ. Missing or
  * conflicting turn evidence never hides a recorded outcome.
  */
 export function noticeCounts(notice: Pick<Notice, 'turn'>, turn: KnownId): boolean {

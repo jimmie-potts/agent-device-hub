@@ -1,6 +1,6 @@
 // Cached Monitor and Now Playing reads adapt the existing legacy Monitor view without activating its presentation (Hub #932).
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import type {ModuleContent, ModuleContentRequest} from '@jimmie-potts/sdk';
 import sharp from 'sharp';
 import {z} from 'zod';
@@ -8,7 +8,7 @@ import type {MonitorPresentation} from '../presentation/monitor-presentation.js'
 import {monitorSession, type MonitorSession, type PlaybackSourceStatus} from '../presentation/sources.js';
 import {MAX_JSON_BYTES} from './content.js';
 
-export type MonitorContentInput = {monitor: MonitorPresentation; sessions: readonly SessionRecord[]; playback: PlaybackSourceStatus};
+export type MonitorContentInput = {monitor: MonitorPresentation; sessions: readonly SessionView[]; playback: PlaybackSourceStatus};
 export type MonitorSessionRow = MonitorSession & {id: string};
 export type MonitorReading = {
   status: ReturnType<MonitorPresentation['status']>;

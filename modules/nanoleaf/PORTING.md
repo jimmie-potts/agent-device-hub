@@ -634,6 +634,14 @@ and `display_v3`. From `shared_input` it compares `source`, `generation`, `recei
 `connection` and `error`, and, by hash, the envelope Python saved there, which the port keeps in its in-memory copy (#844). The `palette`, `map_pending`,
 `locate` and `shared_ack` tables and `shared_input`'s `config` and `backup` are not compared.
 
+Since #1865 the replay feeds each recorded envelope through `hubEnvelope` (`tests/support.ts`), which gives every
+session the hub's status from the shared read function, as the module's feed does, and compares the copy in its
+recorded form. Where the wall's hub-status rule (see [the module's own differences](#known-differences)) gives another
+result or other rows than Python, the step's expectation is `recorded/trace-hub-status.json`: 84 of the 389 steps,
+all in seeds 1, 2, 3 and comets. After every projection the replay also checks, apart from the port, that each task's
+saved status and steady hold follow the hub's status of its members. The suite fails when such a step matches Python
+again. To record those steps again from the port, run the suite with `NANOLEAF_RECORD_HUB_STATUS=1`.
+
 To re-record, run from the repository root with a codex-nanoleaf checkout at the provenance commit:
 
 ```bash
@@ -909,6 +917,26 @@ settles of the limits this port left:
   module's one connection, so they take turns by construction.
 
 The module's own differences from Python:
+
+- The Lines follow the hub's shared session status (#1865, design decision 10; owner decision 2026-11-18). The feed
+  gives each session's status through the contracts package's shared read function with the wall's acknowledgment and
+  read policy, and `semanticStatus` maps the members' statuses to the task's. Python's own rules are gone: evidence
+  freshness, the retention of an earlier status while evidence was stale and its four clearing exceptions, and the
+  freshness term in counting a subagent as working. Every hub status replaces the shown one at once, so waiting and
+  unread tasks keep their indication until that status changes, and an `unknown` status shows idle. The only steady
+  hold beyond idle's own is a working task with no member whose work is confirmed. A notice a known later turn
+  superseded no longer makes a task unread. The translated tests whose subject was the retired rules assert the new
+  rule under new names: in `RecoveryTest`, `test_owner_recovery_clears_a_silent_red_without_clearing_other_state` and
+  `test_uncertain_snapshot_shows_the_hub_status_at_once_and_no_old_comet`; in `ChildSessionTest`,
+  `test_silent_child_alert_shows_at_once_under_a_current_parent`, `test_child_alert_replaces_unconfirmed_work_at_once`,
+  `test_silent_child_red_escalates_past_a_current_question`, `test_silent_subagent_keeps_its_task_working_steadily`,
+  `test_read_evidence_clears_a_silent_unread_parent_with_a_subagent`,
+  `test_silent_subagent_clears_when_it_returns_idle_under_a_silent_parent` and
+  `test_owner_recovery_clears_a_silent_child_approval`, with new expectations in
+  `test_current_child_evidence_is_not_frozen_by_an_uncertain_parent` and
+  `test_notice_lifecycle_follows_documented_count_and_allocation`; in `StaleReadEvidenceTest`,
+  `test_silent_working_follows_the_hubs_next_status`, `test_silent_alerts_clear_when_resolved_and_read` and
+  `test_silent_unread_turns_working_steadily_from_unconfirmed_work`.
 
 - At a restart, each command accepted before it with no outcome ends and never runs: an attempt
   without a result is uncertain (`recoverAttempts`), and a queued command fails `cancelled` and leaves
