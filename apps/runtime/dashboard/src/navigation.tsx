@@ -9,10 +9,18 @@ const subscribe = (listener: () => void): (() => void) => {listeners.add(listene
 export const useRoute = (): Route => parseRoute(useSyncExternalStore(subscribe, () => location.hash));
 
 /**
- * A real anchor keeps modified clicks native; ordinary clicks notify the shell before hashchange. The chosen page opens
- * at its top: the rail stays in view (Hub #1887), so a destination can be chosen while the page is scrolled. The shell
- * does nothing to scroll on back and forward; that is left to the browser.
+ * Opens a route as a chosen navigation link does. The address changes, the page opens at its top and the shell is told
+ * before hashchange. The rail stays in view (Hub #1887), so a destination can be chosen while the page is scrolled. The
+ * shell does nothing to scroll on back and forward; that is left to the browser.
  */
+export function navigate(route: Route): void {
+  const href = routeHash(route);
+  if (location.hash !== href) location.hash = href;
+  window.scrollTo(0, 0);
+  emit();
+}
+
+/** A real anchor keeps modified clicks native; an ordinary click navigates through the shell. */
 export function NavLink({route, current, selected, children}: {
   route: Route; current?: Route; selected?: boolean; children: React.ReactNode;
 }): React.JSX.Element {
@@ -20,9 +28,7 @@ export function NavLink({route, current, selected, children}: {
   return <a href={href} aria-current={selected === true || (current !== undefined && routeHash(current) === href) ? 'page' : undefined} onClick={event => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    if (location.hash !== href) location.hash = href;
-    window.scrollTo(0, 0);
-    emit();
+    navigate(route);
   }}>{children}</a>;
 }
 

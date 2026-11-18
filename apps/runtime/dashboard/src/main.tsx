@@ -7,7 +7,9 @@ import type {HomeCardDefinition} from './home-catalog.ts';
 import type {HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 import {LightingWorkspace} from './lighting-workspace.tsx';
 import {DeviceDirectory} from './device-directory.tsx';
-import {NavLink, ShellNavigation, useRoute} from './navigation.tsx';
+import {NavLink, ShellNavigation, navigate, useRoute} from './navigation.tsx';
+import {JumpPalette} from './jump-palette.tsx';
+import {jumpEntries, jumpShortcut, rememberRoute} from './jump.ts';
 import {RailIcon, usePhone, useRail} from './rail.tsx';
 import {railAttribute} from './rail-preference.ts';
 import {InboxPanel, type InboxFocus} from './inbox.tsx';
@@ -40,7 +42,7 @@ import {WisprWidget} from '@jimmie-potts/wispr/frontend';
 import {DuckWidget, ReachyWidget} from '@jimmie-potts/companions/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
-import {navigationDestination, routeHash} from './routes.ts';
+import {navigationDestination, routeHash, type Route} from './routes.ts';
 import {age, sessionRows} from './sessions.ts';
 import {AgentSessions} from './agent-sessions.tsx';
 import {OperatorTools} from './operator-tools.tsx';
@@ -101,6 +103,10 @@ function SlotWidget({placement}: {placement: Placement}): React.JSX.Element {
   const text = 'Failed and uncertain device commands will be listed here. This page does not show them yet.';
   return <Widget id={placement.widget} size={placement.size}><p className="hint slot" data-slot={placement.widget}>{text}</p></Widget>;
 }
+
+/** The palette's shortcut as this computer's keyboard shows it. */
+const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+const jumpKey = mac ? '⌘K' : 'Ctrl K';
 
 const FEED_TEXT: Readonly<Record<DashboardState['feed'], string>> = {connecting: 'Connecting', connected: 'Feed connected', reconnecting: 'Reconnecting', ended: 'Signed out'};
 
@@ -204,6 +210,62 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     return () => { clearInterval(clock); };
   }, []);
   const rows = useMemo(() => sessionRows(state.sessions.records), [state.sessions.records]);
+  // The jump palette (#1888). jumpShortcut holds the keys that open it. jumpFrom is where focus goes when it closes:
+  // back to where it was, or to the page that was chosen.
+  const [jump, setJump] = useState(false);
+  const jumpFrom = useRef<Element | null>(null);
+  const recents = useRef<Route[]>([]);
+  const shownRoute = useRef(route);
+  useEffect(() => {
+    if (routeHash(shownRoute.current) !== address) {
+      recents.current = rememberRoute(recents.current, shownRoute.current);
+      // The browser's back or forward can change the page under an open palette; it closes rather than stay over a page it was not opened on.
+      setJump(false);
+    }
+    shownRoute.current = route;
+  }, [address, route]);
+  const openJump = (): void => {
+    if (jump) return;
+    // The phone drawer closes under the palette, so focus goes back to the button that opens the drawer.
+    jumpFrom.current = drawer ? menuButton.current : document.activeElement;
+    setDrawer(false);
+    setJump(true);
+  };
+  const closeJump = (): void => { setJump(false); };
+  const jumpTo = (to: Route): void => {
+    // A chosen page takes focus itself, as it does after the skip link.
+    jumpFrom.current = document.getElementById('main');
+    setJump(false);
+    navigate(to);
+  };
+  // The page is inert until the palette is gone, so focus moves once that render is in the page.
+  useEffect(() => {
+    if (jump) return;
+    const to = jumpFrom.current;
+    jumpFrom.current = null;
+    if (to instanceof HTMLElement && to.isConnected) to.focus();
+  }, [jump]);
+  // The palette's own functions, as the key listener reaches them: they change with each render, the listener does not.
+  const jumpActions = useRef({jump, openJump, closeJump});
+  jumpActions.current = {jump, openJump, closeJump};
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent): void => {
+      // A key that a component already handled is not the palette's.
+      if (event.defaultPrevented) return;
+      const palette = jumpActions.current, target = event.target instanceof Element ? event.target : null;
+      const action = jumpShortcut(event, {mac, open: palette.jump,
+        field: target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select') !== null),
+        owned: target !== null && target.closest('[role=dialog], dialog, [role=menu], [role=listbox]') !== null,
+        modal: document.querySelector('dialog:modal') !== null});
+      if (action === undefined) return;
+      event.preventDefault();
+      // A held key opens or closes once.
+      if (event.repeat) return;
+      if (action === 'toggle' && palette.jump) palette.closeJump(); else palette.openJump();
+    };
+    window.addEventListener('keydown', shortcut);
+    return () => { window.removeEventListener('keydown', shortcut); };
+  }, []);
   const live = state.feed === 'connected' && state.sessions.synced;
   const notice = liveNotice(state);
   const runtime = state.runtime;
@@ -300,14 +362,15 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><div className={workspace ? 'shell workspace-shell' : 'shell'}
     data-rail-wide={ended ? 'expanded' : railAttribute(rail.saved.wide)} data-rail-narrow={ended ? 'expanded' : railAttribute(rail.saved.narrow)}
     data-drawer={drawer ? 'open' : undefined}>
-    <a className="skip" href="#main" inert={drawer} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
-    <header className="phone-bar">
+    <a className="skip" href="#main" inert={drawer || jump} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
+    <header className="phone-bar" inert={jump}>
       <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-expanded={drawer} aria-controls="rail"
         onClick={() => { setDrawer(open => !open); }}><RailIcon name="menu"/></button>
       <span className="phone-brand">B.U.N.N.Y.</span>
+      <button type="button" className="secondary rail-button phone-jump" aria-label="Jump to a page" aria-haspopup="dialog" onClick={openJump}><RailIcon name="search"/></button>
       {ended && <button type="button" className="phone-sign-in" inert={drawer} onClick={signInAgain}>Sign in again</button>}
     </header>
-    <aside id="rail" ref={railElement} onClick={event => {
+    <aside id="rail" ref={railElement} inert={jump} onClick={event => {
       if (!drawer || !(event.target instanceof Element) || event.target.closest('a') === null) return;
       setDrawer(false);
       menuButton.current?.focus();
@@ -318,6 +381,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
           aria-label={railExpanded ? 'Collapse navigation' : 'Expand navigation'} title={railExpanded ? 'Collapse navigation' : 'Expand navigation'}
           onClick={rail.toggle}><RailIcon name="sidebar"/></button>
       </div>
+      <button type="button" className="secondary rail-jump" aria-label="Jump to a page" aria-haspopup="dialog" title="Jump to a page" onClick={openJump}>
+        <RailIcon name="search"/><span className="rail-text">Jump to…</span><kbd>{jumpKey}</kbd></button>
       <ShellNavigation route={route}/>
       <div className="sidebar-foot">
         <nav aria-label="Utilities"><NavLink route={{kind: 'settings'}} selected={navigationDestination(route) === 'settings'}><RailIcon name="settings"/><span className="rail-text">Settings</span></NavLink></nav>
@@ -327,7 +392,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div>
     </aside>
     <div className="rail-scrim" onClick={() => { setDrawer(false); menuButton.current?.focus(); }}/>
-    <main id="main" tabIndex={-1} inert={drawer} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
+    {jump && <JumpPalette entries={jumpEntries(runtime, recents.current, route)} onOpen={jumpTo} onClose={closeJump}/>}
+    <main id="main" tabIndex={-1} inert={drawer || jump} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
       {!workspace && navigationDestination(route) === 'devices' && route.kind !== 'devices' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'devices'}}>All devices</NavLink></nav>}
       {!workspace && featureNavigation}
       {route.kind === 'connections' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'settings'}}>Back to Settings</NavLink></nav>}

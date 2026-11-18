@@ -100,7 +100,38 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await pages.press('Enter');
     await layout(1440, 1000);
     assert.equal(await message.inputValue(), 'Draft through resize and menu');
-    assert.deepEqual(posts, [], 'layout and navigation disclosure send no command, sync or endpoint registration');
+    // The jump palette (#1888) leaves a slash typed in the composer as text, opens from it with Control and K, and
+    // returns focus and the draft when it closes.
+    const palette = page.getByRole('dialog', {name: 'Jump to a page', exact: true});
+    await message.focus();
+    await page.keyboard.press('End');
+    await page.keyboard.press('/');
+    assert.equal(await message.inputValue(), 'Draft through resize and menu/', 'a slash typed in the composer is text');
+    assert.equal(await palette.count(), 0, 'a slash typed in the composer does not open the palette');
+    // Command and K on a Mac, Control and K elsewhere: on a Mac, Control and K in a field deletes to the end of the line.
+    await page.keyboard.press('ControlOrMeta+k');
+    await palette.waitFor();
+    assert.equal(await palette.getByRole('option', {name: /Conversation/}).count() > 0, true, 'the palette offers the declared Conversation page');
+    await page.keyboard.press('Escape');
+    await palette.waitFor({state: 'detached'});
+    const composer = await message.elementHandle();
+    await page.waitForFunction(element => element !== null && element === document.activeElement, composer);
+    await page.keyboard.press('Backspace');
+    assert.equal(await message.inputValue(), 'Draft through resize and menu', 'the palette returns focus to the composer and keeps its draft');
+    // Details is a modal dialog at phone width. The palette could only open underneath it, so its keys do nothing there.
+    await page.setViewportSize({width: 390, height: 844});
+    await assistant.getByRole('button', {name: 'Details', exact: true}).click();
+    const details = page.locator('.conversation-details');
+    await details.getByRole('heading', {name: 'Conversation details', exact: true}).waitFor();
+    assert.equal(await page.locator('dialog:modal').count(), 1, 'Details is modal at phone width');
+    await page.keyboard.press('ControlOrMeta+k');
+    await page.keyboard.press('/');
+    assert.equal(await palette.count(), 0, 'the palette does not open under a modal dialog');
+    assert.equal(await page.locator('dialog:modal').count(), 1, 'and the dialog stays open');
+    await details.getByRole('button', {name: 'Close details', exact: true}).click();
+    await details.waitFor({state: 'hidden'});
+    await page.setViewportSize({width: 1440, height: 1000});
+    assert.deepEqual(posts, [], 'layout, navigation disclosure and the jump palette send no command, sync or endpoint registration');
     for (const name of ['B.U.N.N.Y. Everyday assistant', 'Reachy Demo', 'MicroDuck Demo']) {
       await profiles.getByRole('button', {name, exact: true}).waitFor();
     }

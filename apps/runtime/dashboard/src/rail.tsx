@@ -31,6 +31,7 @@ const PATHS = {
   settings: <><path d="M4 7h9"/><path d="M19 7h1"/><circle cx="16" cy="7" r="2.5"/><path d="M4 17h1"/><path d="M11 17h9"/><circle cx="8" cy="17" r="2.5"/></>,
   sidebar: <><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/></>,
   menu: <><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></>,
+  search: <><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></>,
 } as const;
 
 /** A rail line icon. It is decoration: the control it sits in carries the name. */

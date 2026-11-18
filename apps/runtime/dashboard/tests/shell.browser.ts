@@ -181,7 +181,8 @@ try {
   await page.waitForFunction(() => {const name = document.querySelector('.primary-navigation a:hover .rail-text'); return name !== null && getComputedStyle(name).opacity === '1';});
   assert.equal(await rooms.evaluate(element => (element.querySelector('.rail-text')?.getBoundingClientRect().left ?? 0) >= element.getBoundingClientRect().right), true, 'the name opens beside the icon, outside the rail');
   await page.mouse.move(600, 500);
-  await toggle.focus(); await page.keyboard.press('Tab');
+  // The jump field sits between the toggle and the destinations, so Tab from it lands on Home.
+  await page.locator('.rail-jump').focus(); await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => {
     const link = document.activeElement;
     if (link === null || link.closest('.primary-navigation') === null) return 'focus is not on a destination';
@@ -312,6 +313,146 @@ try {
     await moving.close();
   }
   checks.push('with motion allowed the drawer slides fully open and hides after it closes');
+
+  // The jump palette (#1888): Command or Control and K anywhere, or a slash outside a text field. It only navigates.
+  // It is opened here on the Devices directory, which mounts no module page, so any write would be the palette's own.
+  await open('Home'); await open('Devices');
+  await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
+  const palette = page.getByRole('dialog', {name: 'Jump to a page', exact: true}), jumpField = palette.getByRole('combobox', {name: 'Jump to a page', exact: true});
+  const jumpOptions = palette.getByRole('option'), devicesLink = primary.getByRole('link', {name: 'Devices', exact: true});
+  const inert = (selector: string): Promise<boolean> => page.locator(selector).evaluate(element => element.hasAttribute('inert'));
+  const jumpWrites = recordWrites();
+  await devicesLink.focus();
+  await page.keyboard.press('Control+k');
+  await palette.waitFor();
+  assert.equal(await jumpField.evaluate(element => element === document.activeElement), true, 'the palette opens with focus in its field');
+  assert.deepEqual([await inert('#main'), await inert('.shell>aside')], [true, true], 'the page and the rail behind the palette are inert');
+  assert.deepEqual(await palette.locator('.jump-group').allTextContents(), ['Recent', 'Hub', 'Device pages']);
+  const offered = await jumpOptions.allTextContents();
+  assert.equal(offered[0], 'Home', 'the page just left is the first recent entry');
+  assert.equal(offered.includes('LIFXLighting'), true, 'a declared device page is offered with its category');
+  assert.equal(offered.filter(text => text === 'Settings').length, 1, 'a hub destination is offered once');
+  assert.equal(await jumpOptions.first().getAttribute('aria-selected'), 'true');
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await jumpOptions.nth(1).getAttribute('aria-selected'), 'true', 'the arrow keys move the choice');
+  await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
+  assert.equal(await jumpOptions.last().getAttribute('aria-selected'), 'true', 'the choice wraps at the ends');
+  await jumpField.fill('sign');
+  const narrowed = await jumpOptions.allTextContents();
+  assert.equal(narrowed.length > 0 && narrowed.length < offered.length && narrowed.every(text => /sign/i.test(text)) && narrowed.some(text => text.includes('Sign preview')), true,
+    `typing narrows the list to matching pages: ${narrowed.join(' | ')}`);
+  assert.equal(await palette.locator('.jump-group').count(), 0, 'a narrowed list has no group headings');
+  await jumpField.fill('no such page');
+  await palette.getByText('No page matches “no such page”.', {exact: true}).waitFor();
+  assert.equal(await jumpOptions.count(), 0);
+  await page.keyboard.press('Escape');
+  await palette.waitFor({state: 'detached'});
+  await page.waitForFunction(() => document.activeElement?.textContent === 'Devices' && document.activeElement.closest('.primary-navigation') !== null);
+  assert.deepEqual([await inert('#main'), await inert('.shell>aside')], [false, false], 'closing releases the page and returns focus to where it was');
+  await page.keyboard.press('Meta+k');
+  await palette.waitFor();
+  await page.keyboard.press('Meta+k');
+  await palette.waitFor({state: 'detached'});
+  // A click outside the palette closes it as well.
+  await page.keyboard.press('Control+k');
+  await palette.waitFor();
+  await page.mouse.click(1400, 980);
+  await palette.waitFor({state: 'detached'});
+  assert.equal(await devicesLink.evaluate(element => element === document.activeElement), true, 'a click outside closes the palette and returns focus');
+  assert.equal(new URL(page.url()).hash, '#/devices', 'the click outside reaches nothing behind the palette');
+  await page.keyboard.press('/');
+  await palette.waitFor();
+  assert.deepEqual(jumpWrites.stop(), [], 'opening, moving, typing and closing send no command, sync, upload or provider request');
+  await jumpField.fill('conn');
+  assert.equal((await jumpOptions.allTextContents())[0], 'ConnectionsSettings', 'a name that starts with the query comes first');
+  await page.keyboard.press('Enter');
+  await page.getByRole('heading', {name: 'Connections', level: 1, exact: true}).waitFor();
+  await palette.waitFor({state: 'detached'});
+  assert.equal(new URL(page.url()).hash, '#/connections');
+  await page.waitForFunction(() => document.activeElement?.id === 'main');
+  // A page opened from the palette opens at its top. As in the rail's check, Settings is scrolled first in a 1024x600
+  // window and Home is taller than that window, so it could have opened scrolled.
+  await page.setViewportSize({width: 1024, height: 600});
+  await settings();
+  await page.getByRole('heading', {name: 'Settings', level: 1, exact: true}).waitFor();
+  await page.evaluate(() => {window.scrollTo(0, document.documentElement.scrollHeight);});
+  assert.equal(await page.evaluate(() => scrollY > 100), true, 'Settings is scrolled before the jump');
+  await page.keyboard.press('Control+k');
+  await palette.waitFor();
+  await jumpField.fill('home');
+  assert.equal((await jumpOptions.allTextContents())[0], 'Home');
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', {name: 'Edit Home', exact: true}).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollHeight - innerHeight > 100), true, 'Home is taller than the window, so it could have opened scrolled');
+  assert.equal(await page.evaluate(() => scrollY), 0, 'a page opened from the palette opens at its top');
+  await page.waitForFunction(() => document.activeElement?.id === 'main');
+  await page.setViewportSize({width: 1440, height: 1000});
+  // The browser's back button changes the page under an open palette, and the palette closes. This is outside the
+  // window that records writes, because the page it returns to reads its copies when it mounts.
+  await page.keyboard.press('Control+k');
+  await palette.waitFor();
+  await page.goBack();
+  await page.getByRole('heading', {name: 'Settings', level: 1, exact: true}).waitFor();
+  await palette.waitFor({state: 'detached'});
+  assert.deepEqual([await inert('#main'), await inert('.shell>aside')], [false, false], 'the page is released when the palette closes on a page change');
+  await page.goForward();
+  await page.getByRole('button', {name: 'Edit Home', exact: true}).waitFor();
+  // A slash typed into a field is text.
+  await open('Home');
+  const find = page.getByPlaceholder('Find a session');
+  await find.click();
+  await page.keyboard.press('/');
+  assert.equal(await find.inputValue(), '/');
+  assert.equal(await palette.count(), 0, 'a slash typed into a field does not open the palette');
+  await find.fill('');
+  // The rail's field opens it too, and an option can be clicked.
+  await page.locator('.rail-jump').click();
+  await palette.waitFor();
+  // Rooms can be listed twice here, as a recent page and as a hub destination; either opens it.
+  await jumpOptions.filter({hasText: /^Rooms$/}).last().click();
+  await page.getByRole('region', {name: 'Rooms', exact: true}).waitFor();
+  await palette.waitFor({state: 'detached'});
+  // On a phone the bar's search button opens it, and it fits the window.
+  for (const width of [390, 320]) {
+    await page.setViewportSize({width, height: 844});
+    await page.locator('.phone-bar').getByRole('button', {name: 'Jump to a page', exact: true}).click();
+    await palette.waitFor();
+    assert.equal(await palette.evaluate(element => {const box = element.getBoundingClientRect(); return box.left >= 0 && box.right <= innerWidth && box.bottom <= innerHeight && document.documentElement.scrollWidth <= innerWidth;}), true,
+      `the palette fits a ${String(width)}px window`);
+    await page.keyboard.press('Escape');
+    await palette.waitFor({state: 'detached'});
+    await page.waitForFunction(() => document.activeElement?.classList.contains('phone-jump') === true);
+  }
+  // The drawer's own field opens it as well. The drawer closes underneath, so focus returns to the menu button.
+  await page.getByRole('button', {name: 'Open navigation', exact: true}).click();
+  await page.locator('.shell>aside .rail-jump').click();
+  await palette.waitFor();
+  await page.locator('.shell>aside').waitFor({state: 'hidden'});
+  await page.keyboard.press('Escape');
+  await palette.waitFor({state: 'detached'});
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Open navigation');
+  assert.equal(await page.locator('.shell').getAttribute('data-drawer'), null, 'the drawer stays closed after the palette');
+  await page.setViewportSize({width: 1440, height: 1000});
+  // The list follows the catalog the page holds: once the catalog reports a module as stopped, its pages are not offered.
+  await page.route('**/api/v2/modules', async route => {
+    const response = await route.fetch();
+    const catalog = await response.json() as {modules: {name: string; state: string}[]};
+    await route.fulfill({response, json: {...catalog, modules: catalog.modules.map(module => module.name === 'sign' ? {...module, state: 'stopped'} : module)}});
+  });
+  await page.reload(); await feed(page, 'connected');
+  await page.keyboard.press('Control+k');
+  await palette.waitFor();
+  // The list fills as the catalog and the device copies arrive after the reload; wait for a declared page and a device entry.
+  await jumpOptions.filter({hasText: 'Pixoo · Playlists'}).waitFor();
+  await jumpOptions.filter({hasText: /^LIFXLighting$/}).waitFor();
+  const afterStop = await jumpOptions.allTextContents();
+  assert.equal(offered.some(text => text.includes('Sign preview')) && !afterStop.some(text => /sign/i.test(text)), true, `a stopped module's pages are not offered: ${afterStop.join(' | ')}`);
+  assert.equal(afterStop.includes('LIFXLighting') && afterStop.includes('Home'), true, 'the other pages are still offered');
+  await page.keyboard.press('Escape');
+  await palette.waitFor({state: 'detached'});
+  await page.unroute('**/api/v2/modules');
+  await page.reload(); await feed(page, 'connected');
+  checks.push('the jump palette opens from the keyboard, the rail and the phone bar, narrows as typed, follows the catalog, opens a page and closes with focus restored, sending nothing');
 
   for (const address of ['#/component/pendant-1', signAddress, '#/connections']) {
     assert.notEqual(address, null);
