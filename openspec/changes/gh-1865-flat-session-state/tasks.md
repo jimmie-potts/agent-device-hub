@@ -2,15 +2,15 @@ Each numbered group is one pull request on its own `gh-1865-<step>` branch, with
 
 ## 0. Design
 
-- [ ] 0.1 Merge this change as an active OpenSpec change after independent review. Evidence: `npm run check:workflow` and `npm run test:workflow` exit zero, and the review verdicts are in the design pull request.
+- [x] 0.1 Merge this change as an active OpenSpec change after independent review. Evidence: `npm run check:workflow` and `npm run test:workflow` exit zero, and the review verdicts are in the design pull request.
 - [ ] 0.2 The coordinator confirms that decision 2 lands in group 4. Evidence: the confirmation recorded on #1865, and `design.md` updated if it differs.
 
 ## 1. Contract and shared read function
 
-- [ ] 1.1 Add the supported-source definition (`packages/event-contracts/src/v2/sources.ts`) and a contract test that the `Identity` type and the `session` and `lifecycle` schema enums match it. Evidence: the test fails when one enum differs.
-- [ ] 1.2 Add `session/3.0` (schema, types, registration beside 2.0 and 2.1, validator rules from design decision 3) and the status function. Evidence: valid and invalid 3.0 fixtures, including a status that disagrees with its claims and an unknown detail token.
-- [ ] 1.3 Add `readSession`, `forConsumer`, `opportunityMatches`, and `highestStatus` and `sessionState` reimplemented over the view, reading `session/2.0` and `2.1`. Evidence: the existing status tests pass unchanged over the view, and the 2.x mapping cases (waiting, working, restart, children) give the claims design decision 4 names.
-- [ ] 1.4 Add the shared synthetic case set (`packages/event-contracts/fixtures/v2/session-cases.json`) with the cases design decision 10 lists, each with expected records, the occurrence sequence and the reader outputs, plus a loader that reader tests share. Evidence: the contracts suite runs every case's reader expectations through the shared function.
+- [x] 1.1 Add the supported-source definition (`packages/event-contracts/src/v2/sources.ts`) and a contract test that the `Identity` type and the `session` and `lifecycle` schema enums match it. Evidence: the test fails when one enum differs.
+- [x] 1.2 Add `session/3.0` (schema, types, registration beside 2.0 and 2.1, validator rules from design decision 3) and the status function. Evidence: valid and invalid 3.0 fixtures, including a status that disagrees with its claims and an unknown detail token.
+- [x] 1.3 Add `readSession`, `forConsumer`, `opportunityMatches`, and `highestStatus` and `sessionState` reimplemented over the view, reading `session/2.0` and `2.1`. Evidence: the existing status tests pass over the view with their assertions unchanged (their notices sit on their record's turn, as design decision 3 records), and the 2.x mapping cases (waiting, working, restart, children) give the claims design decision 4 names.
+- [x] 1.4 Add the shared synthetic case set (`packages/event-contracts/fixtures/v2/session-cases.json`) with the cases design decision 10 lists, each with expected records, the occurrence sequence and the reader outputs, plus a loader that reader tests share. Evidence: the contracts suite runs every case's reader expectations through the shared function.
 - [ ] 1.5 Run `npm run build`, `npm run typecheck`, `npm run lint:js`, `npm run test:events:built`, `npm run test:events:python` and the workflow checks. Evidence: exit codes in the pull request.
 
 ## 2. Hook adapter in the runtime

@@ -24,6 +24,22 @@
       "types": "./dist/v2/devices.d.ts",
       "import": "./dist/v2/devices.js"
     },
+    "./v2/sources": {
+      "types": "./dist/v2/sources.d.ts",
+      "import": "./dist/v2/sources.js"
+    },
+    "./v2/session": {
+      "types": "./dist/v2/session.d.ts",
+      "import": "./dist/v2/session.js"
+    },
+    "./v2/session-view": {
+      "types": "./dist/v2/session-view.d.ts",
+      "import": "./dist/v2/session-view.js"
+    },
+    "./v2/session-cases": {
+      "types": "./dist/v2/session-cases.d.ts",
+      "import": "./dist/v2/session-cases.js"
+    },
     "./v2/status": {
       "types": "./dist/v2/status.d.ts",
       "import": "./dist/v2/status.js"

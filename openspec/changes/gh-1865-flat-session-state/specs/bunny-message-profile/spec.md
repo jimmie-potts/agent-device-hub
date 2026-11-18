@@ -92,7 +92,7 @@ The package SHALL provide one read function that every session reader uses: it S
 
 #### Scenario: A waiting session read from 2.x
 - **WHEN** a `session/2.0` record with an approval and uncertain freshness is read
-- **THEN** its view needs the owner, its work is not marked unconfirmed by age, and a working record with uncertain freshness reads as working with unconfirmed work
+- **THEN** its view needs the owner and its attention stays confirmed whatever its age, and a working record with uncertain freshness reads as working with unconfirmed work
 
 #### Scenario: An unknown detail
 - **WHEN** a record's status is `finished` with a detail the reader does not know

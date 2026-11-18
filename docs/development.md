@@ -1523,6 +1523,15 @@ messages and produce no audio.
 - `packages/event-contracts/tests/status.test.mjs` runs the 2.0 status helper's copied cases against
   valid `session/2.0` records, and checks its ranking and colors against the 1.x
   `@jimmie-potts/agent-status`.
+- `packages/event-contracts/tests/sources.test.mjs` fails when an identity enum of
+  the `session` or `lifecycle` schemas differs from the supported-source
+  definition (Hub #1865).
+- `packages/event-contracts/tests/session.test.mjs` covers the `session/3.0`
+  status function, the shared read function's `session/2.x` mapping, each
+  reader's acknowledgment and read policy and opportunity matching.
+- `packages/event-contracts/tests/session-cases.test.mjs` runs every case of the
+  shared session case set, `fixtures/v2/session-cases.json`, through the shared
+  read function. Session readers load the same cases with `loadSessionCases()`.
 - `packages/event-contracts/tests/mapping.test.mjs` checks that
   [MAPPING.md](../packages/event-contracts/MAPPING.md) names every 1.x field,
   including every field of the controller snapshot, its capabilities and each

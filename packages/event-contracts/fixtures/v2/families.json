@@ -1845,6 +1845,282 @@
     "projectId": "hub"
    }
   },
+  "session-3": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-3-root",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+   "time": "2026-10-06T13:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/session/3.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "05b9d0e6c74324fa9f7009a5530a8cc44668ebd0f49d613d9e264110f500f62a",
+    "revision": 7,
+    "generation": 1,
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-root"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "turn": {
+     "status": "known",
+     "id": "turn-7"
+    },
+    "status": {
+     "class": "needs-owner",
+     "detail": "approval"
+    },
+    "work": {
+     "state": "active",
+     "confidence": "unconfirmed",
+     "evidenceAtMs": 1791288000000,
+     "reasons": [
+      "deadline"
+     ]
+    },
+    "attention": {
+     "items": [
+      {
+       "id": {
+        "status": "known",
+        "id": "approval-1"
+       },
+       "kind": "approval",
+       "turn": {
+        "status": "known",
+        "id": "turn-7"
+       }
+      }
+     ],
+     "confidence": "confirmed",
+     "evidenceAtMs": 1791288000000
+    },
+    "outcome": {
+     "notices": [],
+     "read": "unread",
+     "confidence": "confirmed",
+     "evidenceAtMs": 1791287997400
+    },
+    "relationships": {
+     "children": {
+      "working": 1,
+      "unconfirmed": 0
+     },
+     "confidence": "confirmed"
+    },
+    "unavailable": [
+     {
+      "dimension": "parent",
+      "reason": "unsupported"
+     }
+    ],
+    "ordering": {
+     "status": "known",
+     "authority": "codex-desktop",
+     "epoch": "codex-epoch-1",
+     "sequence": 41
+    },
+    "observedAtMs": 1791287997400,
+    "lastEvidenceAtMs": 1791288000000,
+    "label": {
+     "value": "Port Nanoleaf",
+     "origin": "user"
+    },
+    "title": {
+     "value": "Translate the bridge tests",
+     "source": "provider"
+    },
+    "project": "agent-device-hub",
+    "projectId": "hub"
+   }
+  },
+  "session-3-child": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-3-child",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/session/3.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d",
+    "revision": 3,
+    "generation": 3,
+    "identity": {
+     "provider": "codex",
+     "client": "desktop",
+     "hostId": "host-a",
+     "sourceId": "codex-desktop",
+     "sessionId": "session-child"
+    },
+    "parent": {
+     "status": "known",
+     "identity": {
+      "provider": "codex",
+      "client": "desktop",
+      "hostId": "host-a",
+      "sourceId": "codex-desktop",
+      "sessionId": "session-root"
+     }
+    },
+    "turn": {
+     "status": "unknown"
+    },
+    "status": {
+     "class": "working",
+     "detail": "unconfirmed"
+    },
+    "work": {
+     "state": "active",
+     "confidence": "unconfirmed",
+     "evidenceAtMs": 1791288000000,
+     "reasons": [
+      "restart"
+     ]
+    },
+    "attention": {
+     "items": [],
+     "confidence": "confirmed",
+     "evidenceAtMs": 1791287992000
+    },
+    "outcome": {
+     "notices": [],
+     "read": "unknown",
+     "confidence": "confirmed",
+     "evidenceAtMs": 1791287992000
+    },
+    "relationships": {
+     "children": {
+      "working": 0,
+      "unconfirmed": 0
+     },
+     "confidence": "confirmed"
+    },
+    "unavailable": [
+     {
+      "dimension": "turn",
+      "reason": "missing"
+     },
+     {
+      "dimension": "ordering",
+      "reason": "missing"
+     }
+    ],
+    "ordering": {
+     "status": "unknown"
+    },
+    "observedAtMs": 1791287992000,
+    "lastEvidenceAtMs": 1791288000000,
+    "label": {
+     "value": "Review the schema",
+     "origin": "agent"
+    }
+   }
+  },
+  "session-3-read": {
+   "specversion": "1.0",
+   "bunnyprofile": "2.0",
+   "id": "msg-session-3-read",
+   "source": "bunny/core",
+   "type": "org.bunny.session.updated",
+   "subject": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad",
+   "time": "2026-10-06T12:00:00.000Z",
+   "kind": "state",
+   "datacontenttype": "application/json",
+   "dataschema": "https://bunny.invalid/events/session/3.0",
+   "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+   "data": {
+    "id": "d1e2ad015caec37dc943c93cb5ca07cfb6649775a8dc7798593ef7558f4627ad",
+    "revision": 12,
+    "generation": 10,
+    "identity": {
+     "provider": "claude",
+     "client": "code",
+     "hostId": "host-a",
+     "sourceId": "claude-code",
+     "sessionId": "session-claude"
+    },
+    "parent": {
+     "status": "top-level"
+    },
+    "turn": {
+     "status": "known",
+     "id": "claude-turn-3"
+    },
+    "status": {
+     "class": "finished",
+     "detail": "turn-ended"
+    },
+    "work": {
+     "state": "idle",
+     "confidence": "confirmed",
+     "evidenceAtMs": 1791287990000,
+     "reasons": []
+    },
+    "attention": {
+     "items": [],
+     "confidence": "confirmed",
+     "evidenceAtMs": 1791287990000
+    },
+    "outcome": {
+     "notices": [
+      {
+       "id": "e9c2c0b6381aec60df4cb28abcc6b521baa13554dc6f1a39e7890c6862fa64bd",
+       "kind": "turn-ended",
+       "turn": {
+        "status": "known",
+        "id": "claude-turn-3"
+       },
+       "acknowledgedBy": []
+      }
+     ],
+     "read": "read",
+     "readReceipt": {
+      "noticeId": "e9c2c0b6381aec60df4cb28abcc6b521baa13554dc6f1a39e7890c6862fa64bd",
+      "observedAtMs": 1791287995000,
+      "source": "bunny/observer/read-receipts",
+      "receipt": {
+       "kind": "owned-ui",
+       "viewRevision": "view-1"
+      }
+     },
+     "confidence": "confirmed",
+     "evidenceAtMs": 1791287995000
+    },
+    "relationships": {
+     "children": {
+      "working": 0,
+      "unconfirmed": 0
+     },
+     "confidence": "confirmed"
+    },
+    "unavailable": [],
+    "ordering": {
+     "status": "unknown"
+    },
+    "observedAtMs": 1791287990000,
+    "lastEvidenceAtMs": 1791287995000,
+    "title": {
+     "value": "Plan the cutover",
+     "source": "user"
+    },
+    "project": "agent-device-hub",
+    "hostSessionId": "local_0f8e2c4a-5b6d-4e7f-8a9b-0c1d2e3f4a5b"
+   }
+  },
   "mode": {
    "specversion": "1.0",
    "bunnyprofile": "2.0",
@@ -4718,6 +4994,198 @@
    },
    "expect": "invalid-message",
    "detail": "payload / additionalProperties operator"
+  },
+  {
+   "name": "a session/3.0 status that its claims do not give",
+   "base": "session-3",
+   "set": {
+    "/data/status": {
+     "class": "working",
+     "detail": "unconfirmed"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /status not the status of the claims"
+  },
+  {
+   "name": "a session/3.0 status with a detail the status function never gives",
+   "base": "session-3",
+   "set": {
+    "/data/status/detail": "approval-pending"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /status not the status of the claims"
+  },
+  {
+   "name": "a session/3.0 detail that is not a kebab-case token",
+   "base": "session-3",
+   "set": {
+    "/data/status/detail": "Approval"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /status/detail pattern"
+  },
+  {
+   "name": "a session/3.0 status class outside the closed set",
+   "base": "session-3",
+   "set": {
+    "/data/status/class": "waiting"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /status/class enum"
+  },
+  {
+   "name": "session/3.0 carries no freshness",
+   "base": "session-3",
+   "set": {
+    "/data/freshness": "current"
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties freshness"
+  },
+  {
+   "name": "session/3.0 carries no restart uncertainty",
+   "base": "session-3",
+   "set": {
+    "/data/restartUncertain": true
+   },
+   "expect": "invalid-message",
+   "detail": "payload / additionalProperties restartUncertain"
+  },
+  {
+   "name": "confirmed session/3.0 work with a reason",
+   "base": "session-3",
+   "set": {
+    "/data/work/confidence": "confirmed"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /work/reasons maxItems"
+  },
+  {
+   "name": "unconfirmed session/3.0 work without a reason",
+   "base": "session-3",
+   "set": {
+    "/data/work/reasons": []
+   },
+   "expect": "invalid-message",
+   "detail": "payload /work/reasons minItems"
+  },
+  {
+   "name": "a session/3.0 generation after its revision",
+   "base": "session-3",
+   "set": {
+    "/data/generation": 8
+   },
+   "expect": "invalid-message",
+   "detail": "payload /generation after the revision"
+  },
+  {
+   "name": "a session/3.0 id that is not the identity key",
+   "base": "session-3",
+   "set": {
+    "/data/id": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d",
+    "/subject": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /id not the identity key"
+  },
+  {
+   "name": "a session/3.0 state whose subject is not its id",
+   "base": "session-3",
+   "set": {
+    "/subject": "ae3b0f14d0ebc4f7f62b84de19c3305b83f7d75f8a02b78ef490169b3f04f81d"
+   },
+   "expect": "invalid-message",
+   "detail": "envelope /subject not the entity"
+  },
+  {
+   "name": "a session/3.0 child with a host session ID",
+   "base": "session-3-child",
+   "set": {
+    "/data/hostSessionId": "local_child"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /hostSessionId false schema"
+  },
+  {
+   "name": "session/3.0 ordering under another authority",
+   "base": "session-3",
+   "set": {
+    "/data/ordering/authority": "claude-code"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /ordering/authority not the source"
+  },
+  {
+   "name": "a repeated session/3.0 unavailable dimension",
+   "base": "session-3",
+   "set": {
+    "/data/unavailable/1": {
+     "dimension": "parent",
+     "reason": "missing"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /unavailable duplicate dimension"
+  },
+  {
+   "name": "a repeated session/3.0 notice",
+   "base": "session-3-read",
+   "set": {
+    "/data/outcome/notices/1": {
+     "id": "e9c2c0b6381aec60df4cb28abcc6b521baa13554dc6f1a39e7890c6862fa64bd",
+     "kind": "turn-ended",
+     "turn": {
+      "status": "known",
+      "id": "claude-turn-3"
+     },
+     "acknowledgedBy": [
+      "pixoo"
+     ]
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /outcome/notices duplicate id"
+  },
+  {
+   "name": "session/3.0 read provenance on another turn's notice",
+   "base": "session-3-read",
+   "set": {
+    "/data/outcome/readReceipt/noticeId": "7f1b0608c5130c79b4e22c1d4fff20aa7e6efbdc194ea9b5d45e0b9f01002ca0"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /outcome/readReceipt does not name the current finished turn"
+  },
+  {
+   "name": "session/3.0 read provenance on active work",
+   "base": "session-3-read",
+   "set": {
+    "/data/work/state": "active",
+    "/data/status": {
+     "class": "working",
+     "detail": "confirmed"
+    }
+   },
+   "expect": "invalid-message",
+   "detail": "payload /work/state enum"
+  },
+  {
+   "name": "positive non-Desktop session/3.0 read evidence without provenance",
+   "base": "session-3-read",
+   "set": {
+    "/data/outcome/readReceipt": null
+   },
+   "expect": "invalid-message",
+   "detail": "payload /outcome/read const"
+  },
+  {
+   "name": "session/3.0 read provenance with an undeclared field",
+   "base": "session-3-read",
+   "set": {
+    "/data/outcome/readReceipt/content": "the reply text"
+   },
+   "expect": "invalid-message",
+   "detail": "payload /outcome/readReceipt additionalProperties content"
   }
  ],
  "scenarios": [
