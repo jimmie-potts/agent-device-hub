@@ -85,13 +85,16 @@ const light = (id: string, label = id): DeviceRecord => ({
 });
 
 void test('light status preserves unknown state after copy loss and evidence older than a write', () => {
-  assert.match(readLights(undefined, 'desk-lamp'), /unavailable/);
-  assert.match(readLights([light('desk-lamp')], 'desk-lamp'), /Observed power and brightness are unknown/);
+  assert.match(readLights(undefined, 'desk-lamp', 1000), /unavailable/);
+  assert.match(readLights([light('desk-lamp')], 'desk-lamp', 1000), /Observed power and brightness are unknown/);
   const device: DeviceRecord = {...light('desk-lamp'),
     observed: {status: 'known', observedAtMs: 1000, power: {status: 'known', value: true}, brightness: {status: 'known', value: 60}},
     lastTransmission: {status: 'known', transmittedAtMs: 2000, operationIds: []},
   };
-  assert.match(readLights([device], 'desk-lamp'), /Current state is unknown. Observed power: on/);
+  assert.match(readLights([device], 'desk-lamp', 2000), /Current state is unknown. The observation is stale. Observed power: on/);
+  const noWrite = {...device, lastTransmission: unknown};
+  assert.doesNotMatch(readLights([noWrite], 'desk-lamp', 2000), /unknown|stale/);
+  assert.match(readLights([noWrite], 'desk-lamp', 31_000), /Current state is unknown. The observation is stale/);
 });
 
 void test('a duplicate light label asks for an exact device ID and sends nothing without a specific approval', async context => {

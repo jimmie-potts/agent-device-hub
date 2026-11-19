@@ -536,7 +536,7 @@ that local control was saved; task completion is reported separately.
 
 Allow `read_lifx`, `set_lifx_power`, or `set_lifx_brightness` in the private
 Conversation tool list. Read status by a configured light name or routing ID.
-A read reports the last observation and available controls. If several lights
+A read reports the last observation and supported controls. Conversation labels an observation stale after 30 seconds or when it predates a command. If several lights
 match a write, Conversation asks for the exact ID before proposing it.
 
 The approval shows the selected light and value. It binds the action to the

@@ -517,7 +517,7 @@ export class AssistantEngine {
         current => {this.store.message(current, `${id}-refused`, 'tool', reason, this.context.clock.now());});
       return {step: state.step};
     }
-    const result = await this.#call(state.taskId, state.step, 'tool', () => Promise.resolve({text: call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), this.context.clock.now()) : call.name === READ_LIFX ? readLights(this.options.devices?.(), call.input.device) : fail('invalid-state'), units: 0}));
+    const result = await this.#call(state.taskId, state.step, 'tool', () => Promise.resolve({text: call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), this.context.clock.now()) : call.name === READ_LIFX ? readLights(this.options.devices?.(), call.input.device, this.context.clock.now()) : fail('invalid-state'), units: 0}));
     await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result, ok: true, effect: id}, active.span.context);
     return {step: state.step + 1};
   }

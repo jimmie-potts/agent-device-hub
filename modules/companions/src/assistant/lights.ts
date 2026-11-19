@@ -67,7 +67,9 @@ export function chooseLight(devices: readonly DeviceRecord[] | undefined, name: 
   return matches.length === 1 && matches[0] !== undefined ? {device: matches[0]} : {matches};
 }
 
-export function readLights(devices: readonly DeviceRecord[] | undefined, name: unknown): string {
+// LIFX treats a reading older than 30 seconds as due for an on-demand refresh.
+const MAX_OBSERVATION_AGE_MS = 30_000;
+export function readLights(devices: readonly DeviceRecord[] | undefined, name: unknown, nowMs: number): string {
   if (name === '') {
     if (devices === undefined) return 'LIFX status unavailable: the device copy is not synced.';
     if (devices.length === 0) return 'No configured LIFX lights are known.';
@@ -83,8 +85,9 @@ export function readLights(devices: readonly DeviceRecord[] | undefined, name: u
   const last = observed.status !== 'known' ? 'Observed power and brightness are unknown.' :
     `Observed power: ${observed.power.status === 'known' ? (observed.power.value ? 'on' : 'off') : 'unknown'}. Observed brightness: ${observed.brightness.status === 'known' ? `${String(observed.brightness.value)}%` : 'unknown'}. Last observation at ${new Date(observed.observedAtMs).toISOString()}.`;
   const olderThanWrite = observed.status === 'known' && lastTransmission.status === 'known' && observed.observedAtMs < lastTransmission.transmittedAtMs;
-  const state = availability === 'available' && !olderThanWrite ? last : `Current state is unknown. ${last}`;
-  return `${lightLabel(device)} (${device.id}) is ${availability}. ${controls} ${state}`;
+  const stale = observed.status === 'known' && (observed.observedAtMs > nowMs || nowMs - observed.observedAtMs >= MAX_OBSERVATION_AGE_MS || olderThanWrite);
+  const state = availability === 'available' && !stale ? last : `Current state is unknown. ${stale ? 'The observation is stale. ' : ''}${last}`;
+  return `${lightLabel(device)} (${device.id}). Last reported availability: ${availability}. ${controls} ${state}`;
 }
 
 export function lightProposal(call: ToolCall, device: DeviceRecord): {proposal: AssistantLightAction} | {code: 'invalid-request' | 'unavailable' | 'unsupported-capability'} {

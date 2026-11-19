@@ -87,6 +87,7 @@ type Bulb = {
   /** Why the module could not take the bulb's lease, when it could not. */
   readonly leaseRefusal: LeaseRefusal | undefined;
   availability: DeviceRecord['availability'];
+  generationSequence: number;
   configurationRevision: number;
   mode: NativeMode | undefined;
   /** The shown key, kept across restarts so a restart paints nothing while the status stands. */
@@ -289,7 +290,7 @@ class LifxRun {
     }) : undefined;
     return {
       config, qualified: isQualified, caps: config.status, queue, lease, leaseRefusal, availability: lease === undefined ? 'unavailable' : 'unknown',
-      configurationRevision: row?.configurationRevision ?? 0, mode: isQualified ? row?.mode ?? config.initialMode ?? 'free' : undefined,
+      generationSequence: 0, configurationRevision: row?.configurationRevision ?? 0, mode: isQualified ? row?.mode ?? config.initialMode ?? 'free' : undefined,
       shown: row?.shown, desired: {power: UNKNOWN, brightness: UNKNOWN}, observed: undefined, deviceSeen: undefined, lightSeen: undefined, pending: new Map(), lastOutcome: undefined,
       lastTransmission: UNKNOWN, deviceRevision: this.#revision, lightRevision: this.#revision, readAtMs: undefined, probe: undefined,
       probeDelayMs: PROBE_FIRST_MS,
@@ -303,7 +304,7 @@ class LifxRun {
     const kinds = [...new Set(bulb.pending.values())];
     const record: DeviceRecord = {
       id: bulb.config.id, revision: bulb.deviceRevision, kind: 'lifx', availability: bulb.availability,
-      configurationRevision: bulb.configurationRevision, generation: {epoch: this.#epoch, sequence: 0},
+      configurationRevision: bulb.configurationRevision, generation: {epoch: this.#epoch, sequence: bulb.generationSequence},
       capabilities: bulb.qualified ? QUALIFIED : NO_CONTROLS,
       desired: {...bulb.desired, mode: bulb.mode === undefined ? UNKNOWN : known(bulb.mode)},
       observed: observed === undefined ? UNKNOWN : {
@@ -425,7 +426,7 @@ class LifxRun {
     if (revision !== undefined && revision !== bulb.configurationRevision) {
       return errorBody('revision-conflict', {detail: 'the bulb\'s configuration revision has moved on; read its record again'});
     }
-    if (generation !== undefined && (generation.epoch !== this.#epoch || generation.sequence !== 0)) {
+    if (generation !== undefined && (generation.epoch !== this.#epoch || generation.sequence !== bulb.generationSequence)) {
       return errorBody('revision-conflict', {detail: 'the bulb\'s generation has moved on; read its record again'});
     }
     if (!this.#supports(bulb, family, data)) return errorBody('unsupported-capability', {detail: 'the bulb does not offer this operation'});
@@ -609,6 +610,7 @@ class LifxRun {
     if (attempt.effect === 'sent' && attempt.transmittedAtMs !== undefined && sent !== undefined) {
       bulb.lastTransmission = {status: 'known', ...(requestId === undefined ? {} : {requestId}), transmittedAtMs: attempt.transmittedAtMs, operationIds: [sent]};
     }
+    const priorAvailability = bulb.availability;
     if (attempt.failure === 'unreachable') {
       bulb.availability = 'unavailable';
       this.#availability.unreachable(bulb.config.id, 'unavailable', trace);
@@ -620,6 +622,7 @@ class LifxRun {
       bulb.probe = undefined;
       bulb.probeDelayMs = PROBE_FIRST_MS;
     }
+    if (bulb.availability !== priorAvailability) bulb.generationSequence += 1;
   }
 
   /** One read-only LightGet through the bulb's queue, and the records it changes. Answers whether the bulb answered. */

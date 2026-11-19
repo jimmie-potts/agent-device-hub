@@ -11,7 +11,7 @@ The Conversation engine saves approvals before execution. The core already follo
 
 ## Risks and trade-offs
 
-An approval can outlive a manual change or device restart. The owner checks the original guards before accepting a command. A lost reply leaves the action uncertain, with no automatic replay. Device names and observations stay on the authorized private Conversation path.
+An approval can outlive a manual change or device restart. LIFX advances the existing generation sequence when observed availability changes. The writer checks the original guards before accepting a command, even when the core still has the previous device record. Commands that omit the guard keep their existing admission behavior. A lost reply leaves the action uncertain, with no automatic replay. Conversation identifies readings outside the LIFX refresh interval as stale. Device names and observations stay on the authorized private Conversation path.
 
 ## Migration plan
 

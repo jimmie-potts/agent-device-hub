@@ -52,7 +52,7 @@ The core SHALL answer an `assistant-dispatch` command only from `bunny/modules/c
 
 ### Requirement: Conversation controls configured LIFX lights
 
-Conversation SHALL expose authorized LIFX status, power, and brightness based on the admitted owner's current device records. It SHALL ask the owner to disambiguate matching labels before proposing a write. Reads report observed values with evidence time and identify unknown or unavailable evidence.
+Conversation SHALL expose authorized LIFX status, power, and brightness based on the admitted owner's current device records. It SHALL ask the owner to disambiguate matching labels before proposing a write. Reads report observed values with evidence time and identify unknown or unavailable evidence. A reading older than the LIFX refresh interval, dated in the future, or superseded by a newer transmission SHALL be reported as stale.
 
 #### Scenario: Status from the configured owner
 - **WHEN** the owner asks about a configured LIFX light
@@ -63,7 +63,7 @@ Conversation SHALL expose authorized LIFX status, power, and brightness based on
 - **THEN** one tracked command targets the selected eligible bulb with the saved guards, and Conversation reports the operation without claiming a physical effect from acceptance
 
 #### Scenario: Approval can no longer execute
-- **WHEN** the target becomes unavailable, permission is removed, or the saved guards become stale
+- **WHEN** the target becomes unavailable before owner admission, permission is removed, or the saved guards become stale
 - **THEN** the approval cannot cause a device write and Conversation reports the refusal
 
 #### Scenario: Lost reply
