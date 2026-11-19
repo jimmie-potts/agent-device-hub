@@ -2,6 +2,7 @@
 import type {ComponentType, ReactNode} from 'react';
 import type {ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
 import type {HomeShape, Mode, SessionRecord, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import type {SpeechEndpointControl, SpeechOutput, SpeechPlayback} from '@jimmie-potts/event-contracts/v2/companions';
 import type {RemoteEndpointOptions, RequestResult, SyncHandler, SyncResult} from './remote.js';
 import type {TraceContext} from './sdk.js';
@@ -69,8 +70,14 @@ export type FrontendContext = {
   readonly control: boolean;
   readonly operations: readonly OperationRecord[];
   readonly operationsLive: boolean;
-  /** Existing shell-owned core copies for module previews. No new subscription or source authority. */
-  readonly core?: {readonly sessions: readonly SessionRecord[]; readonly sessionsLive: boolean; readonly mode: Mode | undefined; readonly modeLive: boolean};
+  /**
+   * Existing shell-owned core copies for module previews. No new subscription or source authority. `views` holds the
+   * same sessions as `sessions`, read through the shared session view (Hub #1865, design decision 10), which a module
+   * reads in place of the records it carries; the shell always provides it.
+   */
+  readonly core?: {
+    readonly sessions: readonly SessionRecord[]; readonly views?: readonly SessionView[]; readonly sessionsLive: boolean; readonly mode: Mode | undefined; readonly modeLive: boolean;
+  };
   /**
    * Present only while the card is placed in a Home shape on the unit grid. Absent on module and device pages, in one
    * column and in the Phone arrangement, where the card shows its full content. Ignoring it keeps the full card.

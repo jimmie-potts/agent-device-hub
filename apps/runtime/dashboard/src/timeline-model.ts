@@ -24,6 +24,23 @@ export function historyRows(value: unknown): HistoryRow[] | undefined {
   return rows as HistoryRow[];
 }
 
+/** The title of a `session/3.0` change by its status's class (Hub #1865); an unknown class keeps the generic title. */
+const STATUS_TITLES: Readonly<Record<string, string>> = {
+  'needs-owner': 'Agent needs you', working: 'Agent working', finished: 'Turn finished', quiet: 'Agent quiet', unknown: 'Agent activity unknown',
+};
+
+/**
+ * A session change row's title (Hub #1865, design decision 10). A `session/3.0` row whose status changed is titled by
+ * the status's class. An older row, whose record has no status, keeps its rule: attention changed, then work started.
+ * Anything else, such as a change of title or label alone, is `Agent updated`. Rows hold changed fields only, so a row
+ * without a status change says nothing new about the status.
+ */
+function sessionTitle(changed: Record<string, unknown>): string {
+  const status = object(changed.status), name = status?.class;
+  if (status !== undefined) return typeof name === 'string' && Object.hasOwn(STATUS_TITLES, name) ? STATUS_TITLES[name] ?? 'Agent updated' : 'Agent updated';
+  return Array.isArray(changed.attention) ? 'Attention updated' : changed.activity === 'active' ? 'Agent working' : 'Agent updated';
+}
+
 /**
  * An entity's open span, as the history read's optional `open` member gives it (#1773): the stretch its next row would
  * close, from the reading that wrote the row at `revision` (or an unknown start) to its last confirmation. It is a past
@@ -178,8 +195,7 @@ export function historyFace(row: HistoryRow, open?: HistoryOpenSpan, at: (atMs: 
               : state === 'failed' ? 'The request did not complete successfully. This entry does not establish the device state.'
                 : state === 'succeeded' ? 'The owner reported success without observed or transmitted evidence.' : detail;
   } else if (row.kind === 'change') {
-    if (family === 'session') title = Array.isArray(changed.attention) ? 'Attention updated'
-      : changed.activity === 'active' ? 'Agent working' : 'Agent updated';
+    if (family === 'session') title = sessionTitle(changed);
     else if (family === 'mode' && ['work', 'free', 'quiet'].includes(String(changed.mode))) title = `Hub mode · ${String(changed.mode)}`;
     else if (family === 'device') title = 'Device updated';
     else title = `${family !== '' ? family : 'Record'} updated`;

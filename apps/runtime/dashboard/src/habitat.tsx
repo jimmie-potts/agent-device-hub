@@ -1,12 +1,12 @@
 import React,{useEffect,useRef,useState} from 'react';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {CHIP_TEXT,chipOf,sessionName} from './sessions.ts';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import {CHIP_TEXT,chipOf,sessionName,uncertainOf} from './sessions.ts';
 import {createHabitat,type HabitatController} from './habitat/controller.ts';
 import {markup} from './habitat/template.js';
 import {exportPreferences,importPreferences} from './habitat/preferences.ts';
 
 /** A native dashboard view over the shell's session copy. Preferences never leave this browser. */
-export function HabitatPage({records,live}:{records:readonly SessionRecord[];live:boolean}):React.JSX.Element{
+export function HabitatPage({views,live}:{views:readonly SessionView[];live:boolean}):React.JSX.Element{
  const root=useRef<HTMLDivElement>(null),controller=useRef<HabitatController|null>(null),importGeneration=useRef({generation:0});
  const [epoch,setEpoch]=useState(0),[unavailable,setUnavailable]=useState(false),[message,setMessage]=useState('');
  useEffect(()=>{
@@ -14,7 +14,7 @@ export function HabitatPage({records,live}:{records:readonly SessionRecord[];liv
   setUnavailable(false);const habitat=createHabitat(element,()=>{setUnavailable(true);});controller.current=habitat;
   return ()=>{pending.generation++;habitat.destroy();controller.current=null;};
  },[epoch]);
- useEffect(()=>{controller.current?.update(records,live);},[records,live,epoch]);
+ useEffect(()=>{controller.current?.update(views,live);},[views,live,epoch]);
  const exportSettings=():void=>{
   try{
    const data=exportPreferences(localStorage),url=URL.createObjectURL(new Blob([data],{type:'application/json'})),anchor=document.createElement('a');
@@ -38,6 +38,6 @@ export function HabitatPage({records,live}:{records:readonly SessionRecord[];liv
   </details>
   <p role="status">{message}</p>
   <div key={epoch} ref={root} className="habitat-root" hidden={unavailable} dangerouslySetInnerHTML={{__html:markup}}/>
-  {unavailable&&<section aria-label="Habitat session list"><h2>Session activity</h2><p>The habitat artwork is unavailable. Session evidence remains available below.</p><ul>{records.map(record=><li key={record.id}>{sessionName(record)} · {CHIP_TEXT[chipOf(record)]}{!live||record.freshness!=='current'||record.restartUncertain?' · Evidence uncertain':''}</li>)}</ul>{records.length===0&&<p>No observed sessions.</p>}</section>}
+  {unavailable&&<section aria-label="Habitat session list"><h2>Session activity</h2><p>The habitat artwork is unavailable. Session evidence remains available below.</p><ul>{views.map(view=><li key={view.id}>{sessionName(view)} · {CHIP_TEXT[chipOf(view)]}{!live||uncertainOf(view)!==undefined?' · Evidence uncertain':''}</li>)}</ul>{views.length===0&&<p>No observed sessions.</p>}</section>}
  </section>;
 }

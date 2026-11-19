@@ -1,19 +1,31 @@
 // Evidence for one explicit operator override; reconnect and reload send nothing.
-import type {OperationRecord, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import type {ActionReply} from './actions.ts';
+import {uncertainOf} from './sessions.ts';
 
 export type NoticeAttempt = {id: string; generation: number; revision: number; noticeId: string; requestId: string};
-export const noticeAttempt = (record: SessionRecord, requestId: string): NoticeAttempt | undefined => {
-  const notice = record.notices.at(-1);
-  return notice === undefined ? undefined : {id: record.id, generation: record.generation, revision: record.revision, noticeId: notice.id, requestId};
+/** The session's latest notice, which the override selects. */
+export const currentNotice = (view: SessionView): SessionView['outcome']['notices'][number] | undefined => view.outcome.notices.at(-1);
+export const noticeAttempt = (view: SessionView, requestId: string): NoticeAttempt | undefined => {
+  const notice = currentNotice(view);
+  return notice === undefined ? undefined : {id: view.id, generation: view.generation, revision: view.revision, noticeId: notice.id, requestId};
 };
+/**
+ * Whether the override may be offered for the selected session (Hub #1865, design decision 10): with control authority,
+ * over a live synced copy, for a session the dashboard does not mark uncertain. There is no freshness term: a session
+ * that holds a finished turn or waits for the owner stays available however long it is silent. The selected notice and
+ * the expected-revision guard stay with the attempt.
+ */
+export const overrideAvailable = (view: SessionView | undefined, {control, live, synced}: {control: boolean; live: boolean; synced: boolean}): boolean =>
+  control && live && synced && view !== undefined && uncertainOf(view) === undefined;
 export type NoticeEvidence = {reply: 'requested' | 'accepted' | 'refused' | 'uncertain'; completion: string; acknowledgedBy: readonly string[] | undefined; retired: boolean};
 /** Matching operation completion and the selected notice's current acknowledgments are separate evidence. */
-export function noticeEvidence(attempt: NoticeAttempt, record: SessionRecord | undefined, live: boolean,
+export function noticeEvidence(attempt: NoticeAttempt, view: SessionView | undefined, live: boolean,
   operations: readonly OperationRecord[], operationsSynced: boolean, answer?: ActionReply): NoticeEvidence {
-  const retired = record === undefined || record.id !== attempt.id || record.generation !== attempt.generation;
+  const retired = view === undefined || view.id !== attempt.id || view.generation !== attempt.generation;
   const operation = operations.find(item => item.requestId === attempt.requestId && item.family === 'notice-clear' && item.target === attempt.id);
-  const notice = record?.notices.find(item => item.id === attempt.noticeId);
+  const notice = view?.outcome.notices.find(item => item.id === attempt.noticeId);
   return {
     reply: answer === undefined ? 'requested' : 'error' in answer ? answer.error.code === 'uncertain-result' ? 'uncertain' : 'refused' : 'accepted',
     completion: operationsSynced ? operation?.status ?? 'not observed' : 'not synced',

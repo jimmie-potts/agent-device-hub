@@ -6,6 +6,7 @@
 import {errorBody, isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionView, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import type {SpeechOutput} from '@jimmie-potts/event-contracts/v2/companions';
 import {
   SdkError, childOf, connectRemote, type Diagnostic, type RemoteEndpoint, type RemoteOptions, type RemoteParticipant, type Scheduler, type Subscription, type SyncChange,
@@ -37,6 +38,11 @@ export type SessionsCopy = {
   synced: boolean;
   /** The core's current records, in the copy's order; the last ones it had while it is not synced. */
   records: readonly SessionRecord[];
+  /**
+   * The same sessions as the shared session view (Hub #1865, design decision 10), which every dashboard reader reads.
+   * The records were validated where the core published them, so the view is read from each record directly.
+   */
+  views: readonly SessionView[];
   /** The core's revision at the copy's last sync, and the highest record revision since. */
   revision: number | undefined;
   /** How many times the copy has synced, the first sync included. */
@@ -73,7 +79,7 @@ export class DashboardConnection {
   readonly #now: () => number;
   readonly #scheduler: Scheduler;
   readonly #listeners = new Set<() => void>();
-  #state: DashboardState = {runtime: {modules: undefined, control: false, copies: [], catalogFailed: false}, feed: 'connecting', sessions: {synced: false, records: [], revision: undefined, syncs: 0, changedAtMs: undefined, refused: undefined}};
+  #state: DashboardState = {runtime: {modules: undefined, control: false, copies: [], catalogFailed: false}, feed: 'connecting', sessions: {synced: false, records: [], views: [], revision: undefined, syncs: 0, changedAtMs: undefined, refused: undefined}};
   #participant: RemoteParticipant | undefined;
   readonly #runtime: RuntimeFeeds;
   readonly #moduleScopes = new Set<ModuleScope>();
@@ -390,7 +396,7 @@ export class DashboardConnection {
     const records = copy.states().map(message => message.data);
     const revision = Math.max(completed?.data.revision ?? 0, this.#state.sessions.revision ?? 0, ...records.map(record => record.revision));
     this.#update({sessions: {
-      synced: completed !== undefined || this.#state.sessions.synced, records, revision, syncs: this.#state.sessions.syncs + (counted ? 1 : 0), changedAtMs: this.#now(), refused: undefined,
+      synced: completed !== undefined || this.#state.sessions.synced, records, views: records.map(sessionView), revision, syncs: this.#state.sessions.syncs + (counted ? 1 : 0), changedAtMs: this.#now(), refused: undefined,
     }});
   }
 

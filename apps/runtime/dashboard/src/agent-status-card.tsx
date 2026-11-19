@@ -1,6 +1,6 @@
 // Presentation only: the caller supplies the core-derived row and any guarded actions.
 import React from 'react';
-import {age, agentSummary, needsAttention, type NoticeRow, type SessionRow} from './sessions.ts';
+import {age, agentSummary, faceText, needsAttention, type NoticeRow, type SessionRow} from './sessions.ts';
 import {Facts} from './ui.tsx';
 import './agent-status.css';
 
@@ -23,19 +23,19 @@ export function AgentStatusCard({row, live, now, actions}: {
         <span className="agent-client" title={row.where}>{row.where}</span>
         <div className="session-id"><h3 title={row.name}>{row.name}</h3></div>
         <span className="agent-state"><span className="session-dot" data-chip={row.chip} aria-hidden="true"/>
-          <span className="chip" data-chip={row.chip}>{stale ? 'Stale' : row.chipText}</span>
-          {stale && needsAttention(row) && <span className="agent-last-attention">{row.chipText}</span>}
+          <span className="chip" data-chip={row.chip}>{faceText(row, live)}</span>
+          {!live && needsAttention(row) && <span className="agent-last-attention">{row.chipText}</span>}
           <span className="agent-caret" aria-hidden="true">›</span>
         </span>
       </summary>
       <div className="agent-evidence">
-        <p className={stale ? 'warning' : 'hint'}>{stale ? `Last known: ${row.chipText}. ` : ''}Last evidence: {age(elapsed)} ago.
-          {stale ? ' Freshness is uncertain.' : ' Current observation; not a completion estimate.'}</p>
+        <p className={stale ? 'warning' : 'hint'}>{stale ? `Last known: ${row.chipText}. ` : ''}Last published change: {age(elapsed)} ago.
+          {!live ? ' The session copy is not synced.' : row.uncertainty !== undefined ? ` ${row.uncertainty}` : ' Not a completion estimate.'}</p>
         {row.attention.length > 0 && <p className="attention">{row.attention.join(' · ')}</p>}
         {actions}
         {row.notices.length > 0 && <><h4>Retained notices</h4>{row.notices.map(notice => <Notice key={notice.id} notice={notice}/>)}</>}
         <Facts className="strip" items={[
-          ['Source', row.facts.source], ['Session ID', row.facts.sessionId], ['Activity', row.facts.activity],
+          ['Source', row.facts.source], ['Session ID', row.facts.sessionId], ['Work', row.facts.work],
           ['Read evidence', row.facts.read], ['Parent', row.facts.parent], ['Attributable children', row.facts.children],
         ]}/>
       </div>

@@ -40,7 +40,7 @@ export function ModuleFrontend({module, connection, Component, connected, contro
   // A Home card on the unit grid tells its module the shape and outer size it is placed in (#1672), from the grid alone.
   const box = useHomeCardBox();
   const context: FrontendContext = {module, api: scope.api, ui, connected, control, operations, operationsLive,
-    core: {sessions: state.sessions.records, sessionsLive: connected && state.sessions.synced, mode: mode?.mode, modeLive: connected && modeCopy?.synced === true},
+    core: {sessions: state.sessions.records, views: state.sessions.views, sessionsLive: connected && state.sessions.synced, mode: mode?.mode, modeLive: connected && modeCopy?.synced === true},
     ...(box === undefined ? {} : {presentation: {shape: box.shape, width: box.width, height: box.height}})};
   return <Component context={context}/>;
 }
