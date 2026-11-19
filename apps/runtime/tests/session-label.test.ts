@@ -272,14 +272,15 @@ it('a due expiry queued ahead of the label changes the parent revision and refus
   const fresh = observation(turnStarted, world.clock.now(), {turn: 'turn-fresh'});
   await world.hook.publish(fresh.key, fresh.draft);
   const before = await world.record();
-  assert.equal(before.relationships.children.unconfirmed, 1);
+  // Silence leaves the child's work confirmed (Hub #1947): it counts as working until it expires.
+  assert.equal(before.relationships.children.working, 1);
   // The child's day ends after the operator read the parent: the core's timer queues the expiry ahead of the label, which
   // still names the revision the operator read.
   world.clock.advance(2);
   const answer = await world.module.operatorActions.dispatch(labelAction('Must conflict', before.revision));
   assert.equal((answer as {error: {code: string}}).error.code, 'revision-conflict');
   const after = await world.record();
-  assert.equal(after.relationships.children.unconfirmed, 0, 'the expiry removed the child');
+  assert.equal(after.relationships.children.working, 0, 'the expiry removed the child');
   assert.ok(after.revision > before.revision);
   assert.equal(after.label, undefined);
   assert.deepEqual(world.handle.operation('req-label')?.outcomes, []);

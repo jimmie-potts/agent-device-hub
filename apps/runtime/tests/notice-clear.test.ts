@@ -149,12 +149,14 @@ it('a due expiry queued ahead of the override changes the session revision and r
   observed = observation(turnStarted, world.clock.now(), {turn: 'turn-fresh'}); await world.hook.publish(observed.key, observed.draft);
   observed = observation(turnEnded, world.clock.now(), {turn: 'turn-fresh'}); await world.hook.publish(observed.key, observed.draft);
   const before = await world.record(), id = before.outcome.notices.at(-1)?.id; assert.ok(id !== undefined);
+  // Silence leaves the child's work confirmed (Hub #1947): it counts as working until it expires.
+  assert.equal(before.relationships.children.working, 1);
   // The child's day ends after the operator read the session: the core's timer queues its expiry ahead of the override.
   world.clock.advance(2);
   const answer = await world.module.operatorActions.dispatch(clearAction(id, before.revision));
   assert.equal((answer as {error: {code: string}}).error.code, 'revision-conflict');
   const after = await world.record();
-  assert.equal(after.relationships.children.unconfirmed, 0, 'the expiry removed the child');
+  assert.equal(after.relationships.children.working, 0, 'the expiry removed the child');
   assert.deepEqual(after.outcome.notices.at(-1)?.acknowledgedBy, []);
   assert.deepEqual(world.handle.operation('req-clear')?.outcomes, []);
 });
