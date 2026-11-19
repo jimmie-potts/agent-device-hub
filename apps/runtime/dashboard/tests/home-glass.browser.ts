@@ -289,7 +289,7 @@ try {
       await shot(opened.page, `1440-${scheme}-${sample}`);
       const measure = async (state: string): Promise<void> => {
         const measured = await contrast(opened.page), label = `${scheme}/${sample}${state === '' ? '' : `/${state}`}`;
-        assert.ok(measured.runs > 20, `${label}: text runs were measured`);
+        assert.ok(measured.runs > 20, `${label}: text runs were measured (${String(measured.runs)})`);
         contrasts[label] = Math.round(measured.min * 100) / 100;
         assert.ok(measured.min >= 4.5, `${label}: text over the glass layer keeps 4.5:1 (lowest ${measured.min.toFixed(2)}: ${measured.worst})`);
       };
@@ -301,9 +301,11 @@ try {
       await measure('reconnecting');
       release();await feed(opened.page, 'connected');await followsBoxes(opened.page, `${scheme}/${sample} reconnected`);
       // Edit Home: the toolbar, the cards' edit bars and the empty cells.
-      await opened.page.getByRole('button', {name: 'Edit Home', exact: true}).click();await rest(opened.page);
+      // The hero (#1930) fills the top of the window, so the toolbar is scrolled to the top to bring the cards into view.
+      await opened.page.getByRole('button', {name: 'Edit Home', exact: true}).click();
+      await opened.page.locator('.home-edit-toolbar').evaluate(node => {node.scrollIntoView({block: 'start'});});await rest(opened.page);
       await shot(opened.page, `1440-${scheme}-${sample}-edit`);await measure('edit');
-      await opened.page.getByRole('button', {name: 'Cancel', exact: true}).click();await rest(opened.page);
+      await opened.page.getByRole('button', {name: 'Cancel', exact: true}).click();await opened.page.evaluate(() => {scrollTo(0, 0);});await rest(opened.page);
       // Phone widths for the private visual review only.
       if (receipts !== undefined) {
         for (const width of [390, 320]) {await opened.page.setViewportSize({width, height: 844});await rest(opened.page);await shot(opened.page, `${String(width)}-${scheme}-${sample}`);}
