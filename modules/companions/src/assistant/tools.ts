@@ -10,6 +10,11 @@ export const READ_SESSIONS = 'read_sessions';
 export const SET_MODE = 'set_mode';
 export const READ_FIXTURE = 'read_fixture';
 export const DELEGATE_CODING = 'delegate_coding';
+export const READ_LIFX = 'read_lifx';
+export const SET_LIFX_POWER = 'set_lifx_power';
+export const SET_LIFX_BRIGHTNESS = 'set_lifx_brightness';
+export const isLightTool = (name: string): boolean => name === READ_LIFX || name === SET_LIFX_POWER || name === SET_LIFX_BRIGHTNESS;
+const deviceName = {type: 'string' as const, description: 'The light name from the owner or an exact device ID from read_lifx.'};
 /** A repository name the worker's private allowlist may carry, and the brief's bound; both are checked again by the contract. */
 export const REPOSITORY = /^[a-z0-9]+(?:[-._][a-z0-9]+)*$/;
 export const BRIEF_BYTES = 4096;
@@ -25,6 +30,12 @@ export const TOOLS: readonly ToolDefinition[] = [
     input: {type: 'object', properties: {}, required: [], additionalProperties: false}},
   {name: SET_MODE, effect: 'command', description: 'Propose setting the Hub mode to work, free or quiet. The owner must approve the proposal before it is applied; report the result the tool returns, never assume it was applied.',
     input: {type: 'object', properties: {mode: {type: 'string', description: 'The requested Hub mode.', enum: MODES}}, required: ['mode'], additionalProperties: false}},
+  {name: READ_LIFX, effect: 'read', description: 'Read LIFX observed status and available controls. Use an empty device name to list lights.',
+    input: {type: 'object', properties: {device: deviceName}, required: ['device'], additionalProperties: false}},
+  {name: SET_LIFX_POWER, effect: 'command', description: 'Propose switching a LIFX light on or off. Requires owner approval.',
+    input: {type: 'object', properties: {device: deviceName, on: {type: 'boolean', description: 'True to turn on, false to turn off.'}}, required: ['device', 'on'], additionalProperties: false}},
+  {name: SET_LIFX_BRIGHTNESS, effect: 'command', description: 'Propose setting a LIFX light to a specific brightness from 0 to 100 percent. Requires owner approval.',
+    input: {type: 'object', properties: {device: deviceName, percent: {type: 'integer', description: 'Brightness as a whole percentage from 0 to 100.'}}, required: ['device', 'percent'], additionalProperties: false}},
   {name: READ_FIXTURE, effect: 'read', description: 'Read the immutable synthetic fixture. Only the synthetic provider sees this tool.',
     input: {type: 'object', properties: {}, required: [], additionalProperties: false}},
   {name: DELEGATE_CODING, effect: 'command', description: 'Propose handing one bounded coding task to the coding worker on the owner\'s computer: name an allowlisted repository and write a brief. The owner must approve the proposal; the worker then runs in a fresh worktree and its structured result arrives as this tool\'s result later. Never claim work was done before that result.',
@@ -32,8 +43,8 @@ export const TOOLS: readonly ToolDefinition[] = [
       brief: {type: 'string', description: 'What to change and how to verify it, in a few sentences.'}}, required: ['repository', 'brief'], additionalProperties: false}},
 ];
 /** The permitted tool definitions for one turn: the built-in question plus the allowlisted names, in catalog order. */
-export function permittedTools(allowed: readonly string[], synthetic: boolean): ToolDefinition[] {
-  return TOOLS.filter(tool => tool.name === ASK_OWNER || (tool.name === READ_FIXTURE ? synthetic : allowed.includes(tool.name)));
+export function permittedTools(allowed: readonly string[], synthetic: boolean, devices = true): ToolDefinition[] {
+  return TOOLS.filter(tool => tool.name === ASK_OWNER || (tool.name === READ_FIXTURE ? synthetic : allowed.includes(tool.name) && (devices || !isLightTool(tool.name))));
 }
 /** Whether `name` is a tool name the private section may list: a permitted tool other than the built-in question and the synthetic fixture. */
 export const allowlistable = (name: unknown): name is string => typeof name === 'string' && TOOL_NAME.test(name) && TOOLS.some(tool => tool.name === name && tool.name !== ASK_OWNER && tool.name !== READ_FIXTURE);

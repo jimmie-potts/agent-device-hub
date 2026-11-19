@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/assistant-dispatch/2.1",
+  "description": "Forwards a single approved LIFX power or brightness command with both device guards.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "family",
+    "target",
+    "data"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "family": {
+      "enum": [
+        "power-set",
+        "brightness-set"
+      ]
+    },
+    "target": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "expectedConfigurationRevision",
+        "expectedGeneration"
+      ],
+      "properties": {
+        "expectedConfigurationRevision": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+        },
+        "expectedGeneration": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ticket"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "family": {
+          "const": "power-set"
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "on"
+          ],
+          "properties": {
+            "expectedConfigurationRevision": {},
+            "expectedGeneration": {},
+            "on": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "family": {
+          "const": "brightness-set"
+        },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "percent"
+          ],
+          "properties": {
+            "expectedConfigurationRevision": {},
+            "expectedGeneration": {},
+            "percent": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            }
+          }
+        }
+      }
+    }
+  ]
+}

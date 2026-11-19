@@ -361,7 +361,7 @@ as for every configured module; an empty section keeps every default:
   `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`). The
   synthetic provider takes neither.
 - `assistant.tools` lists the permitted tools by name, each once:
-  `read_sessions`, `set_mode` and `delegate_coding`. The engine builds the model's tool
+  `read_sessions`, `set_mode`, `delegate_coding`, `read_lifx`, `set_lifx_power` and `set_lifx_brightness`. The engine builds the model's tool
   definitions from the list at start and checks membership again when a call
   executes, so a changed section cannot widen an effect. The built-in
   `ask_owner` is always available; the synthetic fixture read is never listed.
@@ -531,6 +531,19 @@ generation fence, then requests abort. Late replies may add bounded receipt
 evidence but cannot continue the graph or undo cancellation. If SQLite cannot
 save the fence, cancellation is refused. A successful command receipt means
 that local control was saved; task completion is reported separately.
+
+### LIFX status and controls
+
+Allow `read_lifx`, `set_lifx_power`, or `set_lifx_brightness` in the private
+Conversation tool list. Read status by a configured light name or routing ID.
+A read reports the last observation and available controls. If several lights
+match a write, Conversation asks for the exact ID before proposing it.
+
+The approval shows the selected light and value. It binds the action to the
+light's configuration revision and generation. The core forwards the approved
+action through the tracked dispatcher. Expand **Tool result** to see the
+operation result and its available evidence. Device availability, changed
+configuration, a restart, or a revoked tool can invalidate an approval.
 
 ### Conversation history contract
 

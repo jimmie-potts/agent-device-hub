@@ -4,7 +4,7 @@ import type {ConversationHistory} from './conversation-history.js';
 
 type Position = {follow: boolean; anchor?: {id: string; offset: number}};
 
-export function ConversationTranscript({history, status, live, canStart, readLocked, loadEarlier, retry, renderMessage}: {
+export function ConversationTranscript({history, status, live, canStart, readLocked, loadEarlier, retry, renderMessage, renderToolEvidence}: {
   history: ConversationHistory | undefined;
   status: 'loading' | 'ready' | 'failed' | 'unavailable';
   live: boolean;
@@ -12,6 +12,7 @@ export function ConversationTranscript({history, status, live, canStart, readLoc
   readLocked: boolean;
   loadEarlier: (before: string) => void;
   retry: () => void;
+  renderToolEvidence: (message: ConversationMessage) => React.ReactNode;
   renderMessage: (message: ConversationMessage) => React.ReactNode;
 }): React.JSX.Element {
   const scroll = useRef<HTMLDivElement>(null);
@@ -84,6 +85,7 @@ export function ConversationTranscript({history, status, live, canStart, readLoc
               <details className="conversation-tool-result" onToggle={remember}>
                 <summary>Tool result</summary>
                 <p className="conversation-message-text" dir="auto">{message.text}</p>
+                {renderToolEvidence(message)}
               </details>
             </article> : renderMessage(message)}
           </li>);

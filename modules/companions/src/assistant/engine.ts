@@ -2,6 +2,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {Annotation, Command as Resume, END, StateGraph, interrupt} from '@langchain/langgraph';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AssistantControl, AssistantDispatch, AssistantInput, AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
@@ -13,7 +14,8 @@ import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptC
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {SyntheticProvider} from './synthetic.js';
-import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, REPOSITORY, SET_MODE, summarizeSessions, type CoreCopy} from './tools.js';
+import {chooseLight, lightLabel, lightProposal, lightText, readLights} from './lights.js';
+import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, READ_LIFX, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, summarizeSessions, type CoreCopy} from './tools.js';
 
 export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provider.js';
 /** Sends one approved command through the core's tracked dispatcher; the module binds it to its own participant. */
@@ -28,6 +30,7 @@ export type AssistantOptions = {
   tools?: readonly string[];
   core?: () => CoreCopy;
   dispatch?: Dispatch;
+  devices?: () => readonly DeviceRecord[] | undefined;
   available?: () => boolean;
   preferences?: () => readonly ActivePreference[];
   /** Offers a saved assistant message to the speech coordinator, once per key: the message that ended a turn, or a replay the owner asked for (Hub #500). */
@@ -385,7 +388,7 @@ export class AssistantEngine {
   }
   async #turn(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
-    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic'), copy = this.#core();
+    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile === 'bunny'), copy = this.#core();
     const id = `${state.taskId}-step-${String(state.step)}`;
     const context = this.#context(task.profile);
     // Over the bound the call is refused before any usage is reserved or a request leaves: the owner reads why, nothing is truncated.
@@ -419,6 +422,7 @@ export class AssistantEngine {
     const question = (next === 'ask' || next === 'approve') && call !== undefined ? this.#question(state.taskId, call, copy) : undefined;
     // A command the module cannot bind to a synced Hub-mode revision, or whose value is not a mode, is refused to the model in the tool node.
     if (next === 'approve' && question === undefined) next = 'tool';
+    if (question?.kind === 'clarification') next = 'ask';
     const item: Appended = {role: 'assistant', text: reply.text, calls: call === undefined ? [] : [call], effect: id, ...(reply.blocks === undefined ? {} : {blocks: reply.blocks})};
     let asked = false;
     await this.#append(state.taskId, item, active.span.context, current => {
@@ -445,6 +449,17 @@ export class AssistantEngine {
       const proposal: Proposal = {family: 'coding-dispatch', target: 'assistant', data: {repository, brief: brief.trim()}, expectedRevision: coding.revision};
       return {id, text: `Delegate to the coding worker in ${repository}: ${proposal.data.brief}`.slice(0, 1024), answer: null, kind: 'approval', call: call.id, proposal};
     }
+    if (call.name === SET_LIFX_POWER || call.name === SET_LIFX_BRIGHTNESS) {
+      const selected = chooseLight(this.options.devices?.(), call.input.device);
+      if ('matches' in selected) {
+        const names = selected.matches.slice(0, 4).map(device => device.id).join(', ');
+        return {id, text: `Which light do you mean? Matching device IDs: ${names}.`, answer: null, kind: 'clarification', call: call.id, proposal: null};
+      }
+      if ('code' in selected) return undefined;
+      const result = lightProposal(call, selected.device);
+      if ('code' in result) return undefined;
+      return {id, text: lightText(result.proposal, lightLabel(selected.device)), answer: null, kind: 'approval', call: call.id, proposal: result.proposal};
+    }
     const mode = MODES.find(value => value === call.input.mode);
     if (mode === undefined || copy.mode === undefined || !copy.synced) return undefined;
     const proposal: Proposal = {family: 'mode-set', target: 'hub', data: {mode}, expectedRevision: copy.mode.revision};
@@ -457,6 +472,12 @@ export class AssistantEngine {
       const {repository, brief} = call.input;
       if (typeof repository !== 'string' || !REPOSITORY.test(repository) || typeof brief !== 'string' || brief.trim() === '' || textBytes(brief) > BRIEF_BYTES) return 'The repository name or the brief is not usable: name an allowlisted repository and write a brief under 4 KiB; nothing was proposed.';
       return 'No coding worker is connected right now, so nothing was proposed; the owner can start the worker on their computer.';
+    }
+    if (call.name === SET_LIFX_POWER || call.name === SET_LIFX_BRIGHTNESS) {
+      const selected = chooseLight(this.options.devices?.(), call.input.device);
+      if ('matches' in selected) return 'Multiple lights match. Ask the owner for an exact device ID.';
+      const result = 'code' in selected ? selected : lightProposal(call, selected.device);
+      return 'code' in result ? `refused: ${result.code}; no light change was proposed.` : 'This tool is not permitted.';
     }
     if (MODES.find(value => value === call.input.mode) === undefined) return 'The requested mode is not work, free or quiet; nothing was proposed.';
     if (copy.mode === undefined || !copy.synced) return 'The Hub mode is not synced with the core right now, so a proposal cannot be bound to its revision; nothing was proposed.';
@@ -471,7 +492,9 @@ export class AssistantEngine {
   async #answered(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
     const question = task.question ?? fail('invalid-state');
-    await this.#append(state.taskId, {role: 'tool', call: question.call, name: ASK_OWNER, result: state.decision, ok: true, effect: `${question.id}-answer`}, active.span.context);
+    const last = task.transcript.at(-1);
+    const name = last?.role === 'assistant' ? last.calls.find(call => call.id === question.call)?.name ?? ASK_OWNER : ASK_OWNER;
+    await this.#append(state.taskId, {role: 'tool', call: question.call, name, result: state.decision, ok: true, effect: `${question.id}-answer`}, active.span.context);
     return {step: state.step};
   }
   #approve(state: GraphState): Partial<GraphState> {
@@ -484,7 +507,7 @@ export class AssistantEngine {
     const last = [...task.transcript].reverse().find(item => item.role === 'assistant');
     const call = last?.role === 'assistant' ? last.calls[0] : undefined;
     if (call === undefined) fail('invalid-state');
-    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic');
+    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile === 'bunny');
     const tool = definition(call.name), permitted = tools.some(permittedTool => permittedTool.name === call.name);
     const id = `${state.taskId}-step-${String(state.step)}`;
     if (tool === undefined || !permitted || tool.effect !== 'read') {
@@ -494,14 +517,15 @@ export class AssistantEngine {
         current => {this.store.message(current, `${id}-refused`, 'tool', reason, this.context.clock.now());});
       return {step: state.step};
     }
-    const result = await this.#call(state.taskId, state.step, 'tool', () => Promise.resolve({text: call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), this.context.clock.now()) : fail('invalid-state'), units: 0}));
+    const result = await this.#call(state.taskId, state.step, 'tool', () => Promise.resolve({text: call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), this.context.clock.now()) : call.name === READ_LIFX ? readLights(this.options.devices?.(), call.input.device) : fail('invalid-state'), units: 0}));
     await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result, ok: true, effect: id}, active.span.context);
     return {step: state.step + 1};
   }
   async #act(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
     const question = task.question ?? fail('invalid-state'), proposal = question.proposal ?? fail('invalid-state');
-    const id = `${state.taskId}-step-${String(state.step)}`, name = proposal.family === 'mode-set' ? SET_MODE : DELEGATE_CODING;
+    const id = `${state.taskId}-step-${String(state.step)}`, name = proposal.family === 'mode-set' ? SET_MODE : proposal.family === 'coding-dispatch' ? DELEGATE_CODING :
+      proposal.family === 'power-set' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;
     const refuse = async (suffix: string, text: string): Promise<Partial<GraphState>> => {
       // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
       await this.#append(state.taskId, {role: 'tool', call: question.call, name, result: text, ok: false, effect: `${id}-${suffix}`}, active.span.context,
@@ -509,7 +533,7 @@ export class AssistantEngine {
       return {step: state.step, next: 'turn'};
     };
     if (state.decision !== 'approve') return refuse('declined', DECLINED);
-    if (!this.#allowed.includes(name)) return refuse('refused', 'This tool is not permitted.');
+    if (!permittedTools(this.#allowed, this.provider(task.profile).name === 'synthetic', task.profile === 'bunny').some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
     const settle = (answer: RequestResult, accepted: string): {text: string; units: number} => {
       // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`; the fate is unknown either way.
       if (answer.status === 'uncertain' || (answer.status === 'rejected' && answer.error.error.code === 'uncertain-result')) throw new Fault('uncertain-result');
@@ -520,12 +544,17 @@ export class AssistantEngine {
         : `refused: ${code}`, units: 0};
     };
     let result: string, delegation: Question | undefined;
-    if (proposal.family === 'mode-set') {
+    if (proposal.family !== 'coding-dispatch') {
       const dispatch = this.options.dispatch;
       if (dispatch === undefined) return refuse('refused', 'This tool is not permitted.');
-      result = await this.#call(state.taskId, state.step, 'tool', signal => dispatch({requestId: id, family: proposal.family, target: proposal.target,
-        data: {mode: proposal.data.mode, expectedRevision: proposal.expectedRevision}}, active.span.context, signal)
-        .then(answer => settle(answer, `accepted: the core accepted mode-set ${proposal.data.mode} as operation ${id}; its outcome is tracked separately`)));
+      const data: AssistantDispatch = proposal.family === 'mode-set'
+        ? {requestId: id, family: proposal.family, target: proposal.target, data: {mode: proposal.data.mode, expectedRevision: proposal.expectedRevision}}
+        : {requestId: id, ...proposal};
+      const receipt = proposal.family === 'mode-set'
+        ? `accepted: the core accepted mode-set ${proposal.data.mode} as operation ${id}; its outcome is tracked separately`
+        : `accepted: ${proposal.family} on ${proposal.target} as operation ${id}; its outcome is tracked separately`;
+      result = await this.#call(state.taskId, state.step, 'tool', (signal, parent) => dispatch(data, parent, signal)
+        .then(answer => settle(answer, receipt)));
     } else {
       const delegate = this.options.delegate;
       if (delegate === undefined) return refuse('refused', 'This tool is not permitted.');
@@ -581,7 +610,7 @@ export class AssistantEngine {
     });
     if (launch && !this.#closed && !this.context.signal.aborted) this.#launch(taskId);
   }
-  async #call(taskId: string, ordinal: number, kind: 'model' | 'tool', operation: (signal: AbortSignal) => Promise<{text: string; units: number | null}>): Promise<string> {
+  async #call(taskId: string, ordinal: number, kind: 'model' | 'tool', operation: (signal: AbortSignal, parent: TraceContext) => Promise<{text: string; units: number | null}>): Promise<string> {
     const active = this.#activeFor(taskId);
     const id = `${taskId}-step-${String(ordinal)}`, saved = this.store.call(id);
     if (saved !== undefined) {
@@ -607,7 +636,7 @@ export class AssistantEngine {
         task.activeMs += timeout; task.reservedUnits += units; this.store.saveCall(call);
       }, span.context);
       this.#fence(active);
-      const reply = await this.#wait(active, timeout, bound, () => Promise.resolve().then(() => operation(active.controller.signal)), call);
+      const reply = await this.#wait(active, timeout, bound, () => Promise.resolve().then(() => operation(active.controller.signal, span.context)), call);
       replied = true; this.#fence(active);
       if (typeof reply.text !== 'string' || textBytes(reply.text) > bound || (reply.units !== null && (!Number.isSafeInteger(reply.units) || reply.units < 0 || reply.units > units))) fail('capacity');
       const elapsed = Math.min(timeout, Math.max(0, this.context.clock.now() - started)); active.accountedAt = this.context.clock.now();

@@ -4,7 +4,8 @@
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
-import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
+import {ASSISTANT_LIGHT_OWNER, type AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {CodingDispatch} from '@jimmie-potts/event-contracts/v2/coding';
 import {coreValidator, type AgentOccurrence, type AttentionRaised, type Session30Record, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
@@ -16,6 +17,7 @@ export class CompanionPart implements CorePart {
   readonly #eligibility = new LivePublication();
   readonly #sessions = new Map<string, Session30Record>();
   #closed = false;
+  constructor(private readonly device: (id: string) => Message<DeviceRecord> | undefined = () => undefined) {}
   /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
   seed(records: readonly Session30Record[]): void {
     this.#sessions.clear();
@@ -79,12 +81,23 @@ export class CompanionPart implements CorePart {
       if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
       const checked = validator.validate(command, {nowMs: core.clock.now()});
       if (!checked.ok) return {error: checked.error};
-      const {family, target, data} = command.data;
-      // The schema closes family and target; this check keeps the allowlist explicit where the dispatch happens.
-      if (family !== 'mode-set' || target !== 'hub') return errorBody('invalid-request', {detail: 'the assistant may dispatch only mode-set for the Hub'});
-      const answer = await core.dispatch({key: 'bunny.cmd.mode-set.hub', requestedBy: command.source, requestId: command.data.requestId, parent: command,
-        draft: {type: 'org.bunny.mode.set.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/mode-set/2.0',
-          data: {mode: data.mode, ...(data.expectedRevision === undefined ? {} : {expectedRevision: data.expectedRevision})}}});
+      const action = command.data;
+      const {family, target, requestId} = action;
+      if (family !== 'mode-set' && core.operation(requestId) === undefined) {
+        const message = this.device(target);
+        if (message === undefined) return errorBody('unavailable');
+        if (message.source !== ASSISTANT_LIGHT_OWNER) return errorBody('forbidden');
+        const record = message.data;
+        const capability = family === 'power-set' ? record.capabilities.power : record.capabilities.brightness;
+        if (!capability.supported) return errorBody('unsupported-capability');
+        const {expectedConfigurationRevision, expectedGeneration} = action.data;
+        if (record.configurationRevision !== expectedConfigurationRevision || record.generation.epoch !== expectedGeneration.epoch ||
+          record.generation.sequence !== expectedGeneration.sequence) return errorBody('revision-conflict');
+        if (record.availability !== 'available' || record.held !== undefined) return errorBody('unavailable');
+      }
+      const type = family === 'mode-set' ? 'org.bunny.mode.set.requested' : family === 'power-set' ? 'org.bunny.power.set.requested' : 'org.bunny.brightness.set.requested';
+      const answer = await core.dispatch({key: `bunny.cmd.${family}.${target}`, requestedBy: command.source, requestId, parent: command,
+        draft: {type, subject: target, dataschema: `https://bunny.invalid/events/${family}/2.0`, data: action.data}});
       return 'error' in answer ? answer : {status: 'accepted'};
     });
     await Promise.all(['attention-raised', 'turn-ended'].map(family => core.sdk.subscribe<AgentOccurrence>(`bunny.event.${family}.*`, async message => {

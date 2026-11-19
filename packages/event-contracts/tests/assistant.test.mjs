@@ -26,6 +26,22 @@ test('assistant-dispatch admits only an allowlisted mode-set for the Hub from th
   invalid({...dispatch(), kind: 'state'});
 });
 
+test('assistant-dispatch 2.1 requires both LIFX guards and admits only the exact power or brightness value', () => {
+  const guards = {expectedConfigurationRevision: 12, expectedGeneration: {epoch: 'start-1', sequence: 0}};
+  const light = (family, data, target = 'desk-lamp') => ({...dispatch({requestId: 'r-2', family, target, data}),
+    dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.1'});
+  valid(light('power-set', {...guards, on: false}));
+  valid(light('brightness-set', {...guards, percent: 30}));
+  invalid(light('power-set', {on: false}));
+  invalid(light('power-set', {expectedConfigurationRevision: 12, on: false}));
+  invalid(light('brightness-set', {...guards, percent: 101}));
+  invalid(light('brightness-set', {...guards, percent: 0.3}));
+  invalid(light('brightness-set', {...guards, percent: 30, on: false}));
+  invalid(light('power-set', {...guards, on: false}, 'Desk Lamp'));
+  invalid(light('device-mode-set', {...guards, mode: 'free'}));
+  invalid({...light('power-set', {...guards, on: false}), subject: 'desk-lamp'});
+});
+
 test('assistant-state carries the provider, model and tool names and refuses unknown providers or extra fields', () => {
   valid(state());
   valid(state({...state().data, provider: 'anthropic', model: 'claude-opus-5-5', tools: ['read_sessions', 'set_mode']}));

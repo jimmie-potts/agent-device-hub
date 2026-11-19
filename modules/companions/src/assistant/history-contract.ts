@@ -1,4 +1,4 @@
-import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
+import type {AssistantLightAction, AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {Mode} from '@jimmie-potts/event-contracts/v2/families';
 
 export const HISTORY_ROWS = 16;
@@ -7,7 +7,8 @@ export const HISTORY_ROWS = 16;
  * the synced Hub-mode revision for `mode-set`, the coding worker's state revision for a delegation (Hub #502).
  */
 export type Proposal = {family: 'mode-set'; target: 'hub'; data: {mode: Mode}; expectedRevision: number}
-  | {family: 'coding-dispatch'; target: 'assistant'; data: {repository: string; brief: string}; expectedRevision: number};
+  | {family: 'coding-dispatch'; target: 'assistant'; data: {repository: string; brief: string}; expectedRevision: number}
+  | AssistantLightAction;
 export type ConversationMessage = {seq: number; id: string; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number};
 /** A clarification for the owner, an approval decision, or a delegation waiting on the worker. */
 export type SavedQuestion = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval' | 'delegation'; proposal: Proposal | null};
