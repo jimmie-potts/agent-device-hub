@@ -1,6 +1,6 @@
 import {artScheduleCopy} from './art-schedule-client.ts';
 import {HabitatPage} from './habitat.tsx';
-import {ArtPresentationProvider, ArtWidget, scheduledArtNotice} from '@jimmie-potts/art/frontend';
+import {ArtBackdropSource, ArtPresentationProvider, ArtWidget, scheduledArtNotice} from '@jimmie-potts/art/frontend';
 import {ArtThemeProvider, ArtThemeSettings} from './art-theme.tsx';
 import {HomeLayout} from './home-layout.tsx';
 import type {HomeCardDefinition} from './home-catalog.ts';
@@ -354,6 +354,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
             limit={{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}/>
           : <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
             control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now} {...(record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?{limit:{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}:{})} compact={route.kind === 'home'}/>);
+  // The Art card and the Home backdrop source follow the art module through the same scope condition.
+  const artRunning = runtime.modules?.some(module => module.name === 'art' && module.state === 'running') === true;
+  const artConnected = state.feed === 'connected' && !runtime.catalogFailed && artRunning;
   const place = (definition: HomeCardDefinition, placement: HomePlacement, selections: import('@jimmie-potts/event-contracts/v2/families').LightingSelection[]): React.ReactNode => {
     if (definition.source.kind === 'device') {
       const source = definition.source, device = devices.find(item => item.copy.owner === source.owner && item.record.id === source.instance);
@@ -364,8 +367,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     if (definition.source.kind === 'light') return <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSelection={definition.source.selection} homeSelections={selections}/>;
     if (definition.source.kind === 'music') return <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSource={definition.source}/>;
 
-    if (placement.widget === 'art') return <ModuleFrontend module="art" connection={connection}
-      connected={state.feed === 'connected' && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'art' && module.state === 'running') === true}
+    if (placement.widget === 'art') return <ModuleFrontend module="art" connection={connection} connected={artConnected}
       control={runtime.control} operations={operations} operationsLive={operationsLive} Component={ArtWidget}/>;
     if (placement.widget === 'module:roborock') return <ModuleFrontend module="roborock" connection={connection}
       connected={state.feed === 'connected' && !runtime.catalogFailed}
@@ -444,6 +446,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       {!workspace && featureNavigation}
       {route.kind === 'connections' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'settings'}}>Back to Settings</NavLink></nav>}
       {route.kind === 'home' && <section aria-label="Home">
+        {/* Decodes the presented artwork for Home's backdrop while the art module runs; it draws nothing itself (#1928). */}
+        {artRunning && <ModuleFrontend module="art" connection={connection} connected={artConnected} control={false} operations={[]} operationsLive={false} Component={ArtBackdropSource}/>}
         {notice !== undefined && <p role="alert" className="warning">{notice}</p>}
         <HomeLayout runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive}
           attention={rows.some(row => row.attention.length > 0)} inbox={inboxItems.length > 0} renderCard={place}/>

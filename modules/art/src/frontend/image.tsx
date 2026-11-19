@@ -1,9 +1,10 @@
 import {ArtNotice} from './notice-label.js';
-import React, {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
 import type {ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
-import {artworkOf, browserArt} from './model.js';
+import {useBrowserArt} from './hooks.js';
 import {usePresentArt, type PresentedArt} from './presentation.js';
+import {loadBrowserArt} from './rendition.js';
 
 type Decoded = {bitmap: ImageBitmap; evidence: PresentedArt; label: string};
 /** A still is complete only after authenticated bytes decode. Obsolete selections release their bitmap. */
@@ -21,28 +22,16 @@ export function ArtImage({api, artwork, live, compact = false, presented = false
     const observer = new IntersectionObserver(entries => {setVisible(entries.some(entry => entry.isIntersecting && entry.intersectionRect.width > 0 && entry.intersectionRect.height > 0));});
     observer.observe(frame.current);return () => {observer.disconnect();};
   }, [presented]);
-  // The dependency contains only image-relevant values; catalog edits do not trigger a new decode.
-  const imageKey = artwork === undefined ? '' : JSON.stringify({artworkId: artwork.artworkId, palette: artwork.palette, provenance: artwork.provenance, compositions: artwork.compositions});
-  const selected = useMemo(() => {
-    if (imageKey === '') return undefined;
-    const value: unknown = JSON.parse(imageKey);
-    const art = artworkOf({...((typeof value === 'object' && value !== null) ? value : {}), createdAtMs: 0, favorite: false, feedback: null, variationOf: null});
-    return art === undefined ? undefined : browserArt(art, compact);
-  }, [imageKey, compact]);
+  // Catalog edits do not trigger a new decode.
+  const selected = useBrowserArt(artwork, compact);
   useEffect(() => {
     let disposed = false;
     if (!live || metadataStatus !== undefined) return;
     if (selected === undefined) {kept.current?.bitmap.close();kept.current = undefined;setDecoded(undefined);setStatus('unavailable');return;}
-    const {rendition, compositionId, artwork: value} = selected;
     setStatus('loading');
-    void api.image(`/modules/art/content/${rendition.ref}`).then(async blob => {
-      if (disposed) return;
-      if (blob.size !== rendition.bytes || blob.type !== `image/${rendition.format}`) throw new Error('invalid-image');
-      const bitmap = await createImageBitmap(blob);
-      if (disposed) {bitmap.close();return;}
-      if (bitmap.width !== rendition.width || bitmap.height !== rendition.height) {bitmap.close();throw new Error('invalid-dimensions');}
-      const next: Decoded = {bitmap, evidence: {artworkId: value.artworkId, compositionId, renditionId: rendition.renditionId, palette: [...value.palette]},
-        label: `Generated art by ${value.provenance.generatedBy === 'openai' ? 'OpenAI' : 'local rendering'}. Fictional composition.`};
+    void loadBrowserArt(api, selected, () => !disposed).then(loaded => {
+      if (loaded === undefined) return;
+      const next: Decoded = {...loaded, label: `Generated art by ${selected.artwork.provenance.generatedBy === 'openai' ? 'OpenAI' : 'local rendering'}. Fictional composition.`};
       kept.current?.bitmap.close();kept.current = next;setDecoded(next);setStatus('ready');
     }).catch(() => {if (!disposed) setStatus('unavailable');});
     return () => {disposed = true;};
@@ -63,7 +52,8 @@ export function ArtImage({api, artwork, live, compact = false, presented = false
     if (presented) publish(visible ? {presented: decoded !== undefined && drawn === decoded.evidence.renditionId ? decoded.evidence : null, status: currentStatus} : {presented: null, status: 'idle'});
   }, [decoded, drawn, currentStatus, presented, visible, publish]);
   useEffect(() => () => {if (presented) publish({presented: null, status: 'idle'});}, [presented, publish]);
-  return <figure ref={frame} className="art-image" data-art-image-state={currentStatus} data-artwork={decoded?.evidence.artworkId ?? ''}>
+  return <figure ref={frame} className="art-image" data-art-image-state={currentStatus} data-artwork={decoded?.evidence.artworkId ?? ''}
+    data-composition={decoded?.evidence.compositionId ?? ''}>
     <div className="art-image-frame">{decoded !== undefined && <canvas ref={canvas} role="img" aria-label={decoded.label}/>}
       {decoded === undefined && <span className="hint">{currentStatus === 'stale' ? 'Art is unavailable or stale.' : currentStatus === 'loading' ? 'Loading artwork…' : 'No browser image is available.'}</span>}
     </div>

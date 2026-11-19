@@ -9,12 +9,14 @@ import {artSelectionJourney} from './art-selection-journey.ts';
 import {artScheduleJourney} from './art-schedule-journey.ts';
 import {artNoticeJourney} from './art-notice-journey.ts';
 import {artShowJourney} from './art-show-journey.ts';
+import {artBackdropJourney} from './art-backdrop-journey.ts';
 import {destinationLink} from './navigation-helpers.ts';
 
 await artScheduleJourney();
 await artNoticeJourney();
 await artSelectionJourney();
 await artShowJourney();
+await artBackdropJourney();
 
 const world = await startWorld({art: true}), browser = await chromium.launch({headless: true});
 const artifacts = await browserArtifactDirectory();

@@ -303,6 +303,12 @@ command. Provider allowance, job results and uncertain spending remain visible.
 The browser uses a completely decoded rich still before changing the canvas;
 failed/stale images remain labelled and controls lock without fresh authority.
 
+While the art module runs, Home mounts the art module's `ArtBackdropSource` once
+through the same module frontend scope. It decodes the presented artwork for
+Home's backdrop and draws nothing itself; the shell reads it with
+`useArtBackdrop` and reports what it drew with `useShowArtBackdrop`. A hidden
+`data-art-backdrop` element states its status and identity for browser checks.
+
 The versioned `home-layout` record lives in `modules/core.sqlite`, with IDs,
 sizes, shapes and flags only. Reload, another browser and restart read the same state;
 no layout is stored in localStorage. A concurrent change requires loading and

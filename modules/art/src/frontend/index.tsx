@@ -5,8 +5,10 @@ import type {FrontendCommand, FrontendContext, FrontendContribution} from '@jimm
 import {ArtImage} from './image.js';
 import {useArt, useGalleryPage, useShowSurfaces, useShowTargets, useWidgetArtwork, type SentShow} from './hooks.js';
 import {ART_TARGETS, TARGET_LABELS, browserArt, latestBrowserArt, money, reasonText, showableSurfaces, surfaceLabel, surfaceText, type ShowTarget} from './model.js';
-export {ArtPresentationProvider, useArtPresentation} from './presentation.js';
+export {ArtPresentationProvider, useArtBackdrop, useArtPresentation, useShowArtBackdrop} from './presentation.js';
 export type {ArtPresentation, PresentedArt} from './presentation.js';
+export {ArtBackdropSource} from './backdrop-source.js';
+export type {ArtBackdrop, ArtBackdropImage} from './backdrop.js';
 import './style.css';
 
 function ArtStatus({live, error, refresh}: {live: boolean; error: string | undefined; refresh: () => void}): React.JSX.Element | null {
