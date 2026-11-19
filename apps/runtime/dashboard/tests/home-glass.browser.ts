@@ -50,7 +50,8 @@ async function substitute(context: BrowserContext): Promise<void> {
 }
 /** Creates one artwork through the Gallery, as the art backdrop journey does, and returns its backdrop still. */
 async function generate(creator: Page, kind: Sample): Promise<{artworkId: string; compositionId: string; renditionId: string}> {
-  nextSample = kind;
+  // Different provider colors give each artwork its own renditions, so each can carry its own sample.
+  nextSample = kind;world.art.act(kind === 'dark' ? 'warm-colors' : 'cool-colors');
   for (const target of ['Tidbyt', 'Pixoo']) {const box = creator.getByRole('checkbox', {name: target, exact: true});if (await box.count() > 0) await box.uncheck();}
   const calls = world.art.state().imageCalls, tiles = creator.locator('[data-gallery-art]');
   const previous = await tiles.count() === 0 ? null : await tiles.first().getAttribute('data-gallery-art');
@@ -68,7 +69,9 @@ async function generate(creator: Page, kind: Sample): Promise<{artworkId: string
   }, {timeout: 15_000}).toBe(true);
   const artwork = artworkOf(body);assert.ok(artwork !== undefined, JSON.stringify(body));
   const still = browserArt(artwork, false);assert.ok(still !== undefined);
-  for (const composition of artwork.compositions) for (const rendition of composition.renditions) samples.set(`/modules/art/content/${rendition.ref}`, kind);
+  for (const composition of artwork.compositions) for (const rendition of composition.renditions) {
+    const path = `/modules/art/content/${rendition.ref}`;assert.notEqual(samples.get(path) ?? kind, kind === 'dark' ? 'bright' : 'dark', `${path} carries one sample`);samples.set(path, kind);
+  }
   return {artworkId: artwork.artworkId, compositionId: still.compositionId, renditionId: still.rendition.renditionId};
 }
 type Artwork = Awaited<ReturnType<typeof generate>>;
@@ -209,6 +212,7 @@ try {
   // Two artworks through the real art module and its backdrop source, drawn from the samples' pixels.
   const creator = await context.newPage();await creator.goto(`${world.url}/#/module/art/gallery`);await feed(creator, 'connected');
   const dark = await generate(creator, 'dark'), bright = await generate(creator, 'bright');await creator.close();
+  assert.notEqual(dark.renditionId, bright.renditionId, 'the two artworks have their own backdrop renditions');
   await present(page, dark);
   assert.notDeepEqual(await page.screenshot({clip: {x: 1200, y: 10, width: 40, height: 30}}), empty, 'the artwork replaces the wash behind the page');
   report['panels'] = await followsBoxes(page, 'loaded');
@@ -221,6 +225,14 @@ try {
   // Scrolling and resizing move the glass with the cards, then it rests again.
   await page.mouse.wheel(0, 420);await followsBoxes(page, 'scrolled');
   await page.setViewportSize({width: 1100, height: 800});await followsBoxes(page, 'resized');
+  // A window resize draws one frame, after the page has repacked, and a context that renders in software draws at most
+  // about a million pixels: the page's main thread waits for every software frame, so a wide window must not cost
+  // more (the full browser suite's Home shapes journey timed out waiting for a repack at 2560 px, #1929).
+  const settled = await rest(page);await page.setViewportSize({width: 2560, height: 1000});await followsBoxes(page, 'wide');
+  assert.equal(await frames(page) - settled, 1, 'one window resize draws one frame');
+  const backing = await layer(page).evaluate(node => ({software: (node as HTMLCanvasElement).dataset['glassSoftware'] !== undefined, pixels: (node as HTMLCanvasElement).width * (node as HTMLCanvasElement).height}));
+  if (backing.software) assert.ok(backing.pixels <= 1_010_000, `software rendering draws at most a million pixels (${String(backing.pixels)})`);
+  report['software'] = backing.software;
   await page.setViewportSize({width: 1440, height: 900});await page.evaluate(() => {scrollTo(0, 0);});await followsBoxes(page, 'restored');
 
   // Edit Home: reordering and reshaping cards moves their glass; the draft is discarded.

@@ -87,7 +87,8 @@ vec3 glass(vec2 p, float d, vec2 g, vec3 behind){
   float sheen = sin((p.x * .6 + p.y) * .011 + 1.) * .5 + .5; c += sheen * sheen * .035 * (1. - slope);
   c = veiled(c, needed(c));
   float ndl = dot(g, LIGHT), rim = 1. - smoothstep(0., 1.7, -d);
-  c += art(vec2(uRes.x - p.x, p.y) + g * 60., 94.) * slope * slope * .22;
+  // The reflection lives in the bevel only; inside it would cost thirteen texture reads for nothing.
+  if (slope > 0.) c += art(vec2(uRes.x - p.x, p.y) + g * 60., 94.) * slope * slope * .22;
   c += uRim.rgb * uRim.a * (rim * (max(ndl, 0.) * .75 + max(-ndl, 0.) * .3 + .1) + slope * max(ndl, 0.) * .2) - slope * max(-ndl, 0.) * .08;
   return mix(behind, c, (1. - smoothstep(-1., .5, d)) * smoothstep(0., .35, uAppear));
 }

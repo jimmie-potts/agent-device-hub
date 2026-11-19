@@ -33,6 +33,13 @@ export type GlassLayerProps = {
 
 /** How long the first appearance takes. */
 const APPEAR_MS = 700;
+/**
+ * Without a GPU the browser renders WebGL in software and reads every frame back for its compositor, which holds the
+ * page's main thread for the whole draw: about half a second for a 2560 by 1000 window on a desktop processor. There
+ * the layer draws at most about a million pixels and the browser scales them up; with a GPU it draws every pixel.
+ */
+const SOFTWARE_PIXELS = 1_000_000;
+const SOFTWARE = /SwiftShader|llvmpipe|softpipe|Software/i;
 /** The join between neighboring panels when they fuse (the reference's k). */
 const MERGE = 20;
 /** Every skin value the shader reads, by its --glass-* token or shell role. */
@@ -58,7 +65,7 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   let renderer: GlassRenderer | null = null, picture: GlassBackdrop | null = null, merge = 0, disposed = false;
   let raf = 0, born = -1, frames = 0, scene: GlassScene | undefined, tokens: GlassTokens | undefined, size = '', drawnBackdrop: string | null | undefined;
   // What the next frame must look at. A frame that finds nothing new draws nothing.
-  let readBoxes = true, readSkin = true, force = true, state: GlassState = 'quiet';
+  let readBoxes = true, readSkin = true, force = true, resizing = false, settling: GlassScene | undefined, settleFrames = 0, state: GlassState = 'quiet';
   const setState = (next: GlassState): void => {if (next !== state) {state = next;callbacks.state(next);}};
   const report = (id: string | null): void => {if (id !== drawnBackdrop) {drawnBackdrop = id;callbacks.backdrop(id);}};
   const build = (): void => {
@@ -67,6 +74,9 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   };
   // Why the page shows Quiet glass, for diagnosis: no WebGL 2, a program that would not build, or a lost context.
   if (gl === null) canvas.dataset['glassFallback'] = 'no-webgl2';
+  // Whether the context renders in software (see SOFTWARE_PIXELS). The renderer's name is the only sign browsers give.
+  const debug = gl?.getExtension('WEBGL_debug_renderer_info'), software = gl !== null && debug !== null && debug !== undefined && SOFTWARE.test(String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)));
+  if (software) canvas.dataset['glassSoftware'] = '';
   build();
   if (gl === null || renderer === null) {setState('quiet');report(null);return {backdrop: () => {}, fuse: () => {}, dispose: () => {}};}
   const still = view.matchMedia('(prefers-reduced-motion: reduce)');
@@ -75,8 +85,17 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
     raf = 0;
     if (disposed || renderer === null || gl === null || gl.isContextLost()) return;
     if (doc.hidden) return;
-    const dpr = Math.min(view.devicePixelRatio > 0 ? view.devicePixelRatio : 1, 2), width = canvas.clientWidth, height = canvas.clientHeight;
+    const width = canvas.clientWidth, height = canvas.clientHeight;
     if (width === 0 || height === 0) return;
+    // A window resize moves the boxes twice: the browser reflows at once and the page repacks its grid in the tasks
+    // after. Drawing each would cost two frames; the layer waits until two reads agree, for up to ten frames, and
+    // draws once. The canvas keeps its last picture, stretched, until then.
+    if (resizing) {
+      const next = readScene(root, doc, {width, height});
+      if ((settling === undefined || !sameScene(settling, next)) && (settleFrames += 1) < 10) {settling = next;schedule();return;}
+      resizing = false;settling = undefined;settleFrames = 0;readBoxes = true;
+    }
+    const ratio = Math.min(view.devicePixelRatio > 0 ? view.devicePixelRatio : 1, 2), dpr = software ? Math.min(ratio, Math.sqrt(SOFTWARE_PIXELS / (width * height))) : ratio;
     const backing = `${String(Math.round(width * dpr))}x${String(Math.round(height * dpr))}`;
     let changed = force;force = false;
     if (backing !== size) {size = backing;canvas.width = Math.round(width * dpr);canvas.height = Math.round(height * dpr);changed = true;}
@@ -98,7 +117,7 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   const skin = (): void => {readSkin = true;readBoxes = true;schedule();};
 
   const events = new AbortController(), signal = events.signal;
-  view.addEventListener('resize', boxes, {signal});
+  view.addEventListener('resize', () => {resizing = true;settleFrames = 0;boxes();}, {signal});
   view.addEventListener('scroll', boxes, {signal, passive: true, capture: true});
   doc.addEventListener('visibilitychange', () => {if (!doc.hidden) {force = true;skin();}}, {signal});
   doc.fonts.addEventListener('loadingdone', boxes, {signal});
