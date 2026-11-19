@@ -7,7 +7,7 @@ import {once} from 'node:events';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {CaptureContext} from '@jimmie-potts/app-verify';
-import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {Page, Locator} from 'playwright';
 import {SdkError, connectRemote} from '@jimmie-potts/sdk';
 import {producerCredentialId, producerSource} from '../src/hook/index.js';
@@ -112,28 +112,61 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   }
   await t.expect('real core records the shared local known active turn', () => until(async () => (await records()).some(r => r.identity.client === 'local' && r.identity.sessionId === raw.session_id && r.work.state === 'active' && r.turn.status === 'known' && r.turn.id === raw.turn_id)));
   await page.getByText('Mac Codex', {exact: false}).first().waitFor();
-  const card = page.locator('article.agent-status-card').filter({hasText: 'Mac Codex'}).first();
+  // The root's own card: a subagent's card also names the Mac Codex feed.
+  const rootId = sessionEntityId({...SOURCE, sessionId: raw.session_id});
+  const card = page.locator(`article.agent-status-card[data-session="${rootId}"]`);
   const working = card.locator('.chip[data-chip="working"]');
   await working.waitFor();
   await show(working, 'Synthetic turn started: observe Working');
   await t.expect('dashboard card renders the active shared local turn as Working', async () => await working.innerText() === 'Working' && await working.isVisible());
+  // A Codex approval carries no request ID (#1867): it is raised on its turn and forgotten at that turn's Stop.
+  await label('Send synthetic PermissionRequest; observe Waiting for approval');
+  const asked = await invoke(producer, {...raw, hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: {command: 'PRIVATE_CANARY'}});
+  await t.expect('PermissionRequest publishes silently', () => asked.quiet && asked.elapsed < 4000);
+  await t.expect('real core records an approval without a request ID on the running turn', () => until(async () => (await records()).some(r =>
+    r.identity.sessionId === raw.session_id && r.attention.items.length === 1 && r.attention.items[0]?.kind === 'approval' &&
+    r.attention.items[0].id.status === 'unknown' && r.attention.items[0].turn.status === 'known' && r.attention.items[0].turn.id === raw.turn_id)));
+  const waiting = card.locator('.chip[data-chip="approval"]');
+  await waiting.waitFor();
+  await show(waiting, 'Synthetic approval requested: observe Waiting for approval');
+  await t.expect('dashboard card renders the approval', async () => await waiting.innerText() === 'Waiting for approval');
+  // A subagent is its own session under the root, with no turn of its own.
+  await label('Send synthetic SubagentStart; observe the child session');
+  const agent = {...raw, agent_id: 'portable-agent', agent_type: 'PRIVATE_CANARY', agent_transcript_path: '/DO_NOT_OPEN/agent.jsonl'};
+  const spawned = await invoke(producer, {...agent, hook_event_name: 'SubagentStart'});
+  await t.expect('SubagentStart publishes silently', () => spawned.quiet && spawned.elapsed < 4000);
+  await t.expect('real core records the child under the root with no borrowed turn', () => until(async () => (await records()).some(r =>
+    r.identity.sessionId === agent.agent_id && r.parent.status === 'known' && r.parent.identity.sessionId === raw.session_id &&
+    r.turn.status === 'unknown' && r.work.state === 'active')));
+  await t.expect('the root counts its working child', () => until(async () => (await records()).some(r => r.identity.sessionId === raw.session_id && r.relationships.children.working === 1)));
+  const childCard = page.locator(`article.agent-status-card[data-session="${sessionEntityId({...SOURCE, sessionId: agent.agent_id})}"]`);
+  const childWorking = childCard.locator('.chip[data-chip="working"]');
+  await childWorking.waitFor();
+  await show(childWorking, 'Subagent started: its own card shows Working');
+  await label('Send synthetic SubagentStop; the child stops working');
+  const stopped = await invoke(producer, {...agent, hook_event_name: 'SubagentStop', last_assistant_message: 'PRIVATE_CANARY'});
+  await t.expect('SubagentStop publishes silently', () => stopped.quiet && stopped.elapsed < 4000);
+  await t.expect('the root no longer counts a working child', () => until(async () => (await records()).some(r => r.identity.sessionId === raw.session_id && r.relationships.children.working === 0)));
+  await t.expect('the approval still waits: a child\'s stop is not its parent\'s turn end', async () => (await records()).some(r => r.identity.sessionId === raw.session_id && r.attention.items.length === 1));
   await label('Send synthetic Stop; observe the retained Finished notice');
   const ended = await invoke(producer, {...raw, hook_event_name: 'Stop'});
   await t.expect('Stop publishes silently', () => ended.quiet);
-  await t.expect('real core retains the completed unread notice', () => until(async () => (await records()).some(r => r.work.state === 'idle' && r.outcome.notices.some(n => n.kind === 'turn-ended'))));
+  await t.expect('real core retains the completed unread notice and forgets the turn\'s approval', () => until(async () => (await records()).some(r =>
+    r.identity.sessionId === raw.session_id && r.work.state === 'idle' && r.attention.items.length === 0 && r.outcome.notices.some(n => n.kind === 'turn-ended'))));
   const finished = card.locator('.chip[data-chip="finished"]');
   await finished.waitFor();
   await t.expect('dashboard card renders Finished unread', async () => await finished.innerText() === 'Finished · unread');
   await show(finished, 'Finished notice remains unread');
   const beforeExcluded = JSON.stringify(await records());
-  for (const [index, payload] of [{...raw, hook_event_name: 'Stop', agent_id: 'child'}, {...raw, hook_event_name: 'SessionStart', source: 'compact'}, {...raw, hook_event_name: 'PermissionRequest'}].entries()) {
+  for (const [index, payload] of [{...raw, hook_event_name: 'Stop', agent_id: 'child'}, {...raw, hook_event_name: 'SessionStart', source: 'compact'},
+    {...raw, hook_event_name: 'PermissionRequest', agent_id: 'child'}, {...raw, hook_event_name: 'PreToolUse'}].entries()) {
     payload.session_id = `excluded-root-${index}`; payload.turn_id = `excluded-turn-${index}`;
     const result = await invoke(producer, payload); await t.expect('excluded input is silent', () => result.quiet);
     await t.expect('distinct excluded identity creates no record and leaves the original unchanged', async () => JSON.stringify(await records()) === beforeExcluded);
   }
   await t.expect('excluded events and private content do not enter retained core records', async () => {
     const found = await records(), text = JSON.stringify(found);
-    return found.length === 1 && !/PRIVATE_CANARY|DO_NOT_OPEN/.test(text) && !text.includes(token);
+    return found.length === 2 && !/PRIVATE_CANARY|DO_NOT_OPEN/.test(text) && !text.includes(token);
   });
   for (const scope of ['read', 'control', 'admin']) await t.expect(`ingest credential cannot acquire ${scope}`, async () =>
     await status(origin, `/api/v2/authority?scope=${scope}`, {authorization: `Bearer ${token}`}) === 403);
@@ -175,7 +208,9 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   await notice.waitFor();
   await show(notice, 'Original turn-ended notice retained');
   await t.expect('retained record survives and lost observation is not invented', async () => {
-    const found = await records(); return found.length === 1 && found[0]?.identity.sessionId === raw.session_id && found[0].outcome.notices.some(n => n.kind === 'turn-ended');
+    const found = await records(), root = found.find(r => r.identity.sessionId === raw.session_id);
+    return found.length === 2 && root !== undefined && root.outcome.notices.some(n => n.kind === 'turn-ended') &&
+      found.some(r => r.identity.sessionId === agent.agent_id && r.parent.status === 'known');
   });
   await t.expect('rendered page has no private input, token or JavaScript failure', async () => {
     const text = await page.locator('body').innerText(); return !/PRIVATE_CANARY|DO_NOT_OPEN/.test(text) && !text.includes(token) && errors.length === 0;
@@ -184,6 +219,7 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
     components: {actual: ['runtime-core', 'gateway', 'dashboard', 'chromium', 'mac-codex-hook-wrapper'], simulated: ['Codex-input', 'source-identities', 'grants', 'device-transports'], installedClients: false},
     recording: 'synthetic-input walkthrough with review-only labels and pointer cues',
     scopesRefused: ['read', 'control', 'admin'],
-    excludedInputs: ['child', 'compact', 'permission'], sourceBinding: true, rawHostRefused: true, originRefused: true,
+    approval: {raised: true, clearedAtStop: true}, subagent: {parentKnown: true, turn: 'unknown'},
+    excludedInputs: ['child-stop', 'compact', 'child-permission', 'pre-tool-use'], sourceBinding: true, rawHostRefused: true, originRefused: true,
     stalledAttempts: attempts, offlineFailOpen: true, browserRecovery: true, retainedNotice: true}));
 }

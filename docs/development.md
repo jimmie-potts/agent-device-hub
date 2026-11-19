@@ -3240,7 +3240,10 @@ For #1183, use Node 24 and build before lint/type checks. Run the existing
 lifecycle JS/Python corpus, agent-state JS/Python/package and event-family checks,
 plus runtime hook tests and dashboard session tests. The native wrapper suite is
 `node --test apps/runtime/tests/mac-codex-hook.test.mjs`; existing core runtime CI
-runs it explicitly because `.mjs` source tests are not TypeScript outputs.
+runs it explicitly because `.mjs` source tests are not TypeScript outputs. The
+#1867 approval and subagent cases through the wrapper, the hook adapter and the
+core store are `apps/runtime/tests/core-codex-mac-hooks.test.ts`, part of the
+runtime unit suite, and the `mac-codex-local` capture shows them in the browser.
 Run container entrypoint/operator tests for exact single-source admission and
 refusal of wider grants. Shared contract, MCP, workflow and affected consumer
 checks remain required. Synthetic tests do not qualify an installed Codex client:

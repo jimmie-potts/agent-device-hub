@@ -29,21 +29,35 @@ producer bearer out of the command, shell history, diagnostics and evidence.
 | --- | --- | --- |
 | SessionStart | session.started | source is startup, resume, clear or fork |
 | UserPromptSubmit | turn.started | valid turn_id |
+| PermissionRequest | attention.approval | valid turn_id |
 | Stop | turn.ended | valid turn_id |
 | Interrupt | turn.interrupted | valid turn_id |
 | SessionEnd | runtime.ended | session identity is sufficient |
+| SubagentStart | session.started for the child | valid agent_id other than session_id |
+| SubagentStop | turn.ended for the child | valid agent_id other than session_id |
 
-Every selected event needs a valid session_id. If turn_id is present it must
-also be valid. Any input containing agent_id is dropped whole, including null
-or empty values. Compaction, permission and subagent events are excluded.
-SessionEnd reflects the client's emitted evidence; switching away from a
-Desktop chat does not establish that the client emitted it.
+Every selected event needs a valid session_id. If turn_id is present on a root
+event it must also be valid. A root event containing agent_id is dropped whole,
+including null or empty values. A subagent event's session_id is the parent's
+and its agent_id names the child, which becomes its own session under that
+parent with an unknown turn. Any other input containing agent_id, including a
+child's PermissionRequest, is dropped whole. Compaction and tool events are
+excluded. SessionEnd reflects the client's emitted evidence; switching away
+from a Desktop chat does not establish that the client emitted it.
+
+A Codex approval carries no request ID. The core forgets it at its turn's Stop,
+when a newer turn retires its turn, at the session's end or by operator
+recovery, and never correlates it otherwise. The hook makes no permission
+decision: Codex shows its normal approval prompt once the hook exits. The
+[provider qualification record](provider-qualification.md#mac-codex-approvals-and-subagents)
+lists what is documented, implemented and observed for these events.
 
 The sanitizer forwards only hook_event_name, session_id and optional turn_id
-to the existing runtime hook. The normalizer adds the configured source and
+for a root event, and only hook_event_name, session_id and agent_id for a
+subagent event, to the existing runtime hook. The normalizer adds the configured source and
 observation time, then the SDK publishes one existing lifecycle message.
-Prompt/reply text and paths arrive transiently on client stdin but are never
-forwarded, logged or saved. No supplied path or transcript is opened.
+Prompt/reply text, tool input, agent types and paths arrive transiently on
+client stdin but are never forwarded, logged or saved. No supplied path or transcript is opened.
 
 A producer without `lifecycleVersion` publishes activity without title lookup.
 To show available session titles, explicitly select `lifecycleVersion: "1.1"`
@@ -56,7 +70,7 @@ the title on a missing, unreadable or rejected entry. The reader retains its
 The sanitizer still strips `cwd` and `transcript_path`, so this adds no project,
 transcript, prompt or response collection. Explicit labels keep precedence.
 Only later hook events refresh a title; renaming an idle session alone sends
-nothing. Desktop read/archive evidence remains separate and Desktop-only.
+nothing. A subagent gets no title. Desktop read/archive evidence remains separate and Desktop-only.
 
 The runtime verifies the private producer and any required receipt before
 consuming input. Keep the existing source identity:
@@ -83,7 +97,10 @@ Read-only inspection on 2026-10-22 found matching embedded event schemas and
 enabled hooks in Codex Desktop 26.1016.51333 (bundled CLI 0.163.0-alpha.11) and
 standalone CLI 0.163.0. This establishes available mechanisms, not successful
 invocation. Recheck versions and supported hook settings when qualifying an
-installation.
+installation. PermissionRequest, SubagentStart and SubagentStop were added in
+source by [#1867](https://github.com/jimmie-potts/agent-device-hub/issues/1867);
+installing them and observing an actual client emit them belong to
+[#1869](https://github.com/jimmie-potts/agent-device-hub/issues/1869).
 
 After the integrated source passes its checks and review:
 
@@ -114,8 +131,8 @@ After the integrated source passes its checks and review:
    hook process resolves the intended Mac Codex home. Keep the bearer and
    actual session titles out of evidence published to GitHub.
 4. Preserve existing Codex config.toml and its computer-use notify command.
-   Merge only the five selected hook definitions into user hooks.json after
-   checking for concurrent edits. Set each command handler's timeout to three
+   Merge only the hook definitions for the events selected above into user
+   hooks.json after checking for concurrent edits. Set each command handler's timeout to three
    seconds and use absolute Node, release and producer paths. Use supported hook
    settings and normal trust review. Do not modify trust databases or suppress
    trust checks.

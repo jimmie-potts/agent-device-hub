@@ -71,6 +71,21 @@ A listed session is `unread`. An unlisted session is `read` when it was unread, 
 
 Source fixtures validate this contract. Live Codex Windows/WSL, Desktop and Claude gaps remain for #8 and device acceptance. No settings, hooks, agent sessions or devices were changed to obtain this matrix.
 
+## Mac Codex approvals and subagents
+
+[Hub #1867](https://github.com/jimmie-potts/agent-device-hub/issues/1867) forwards Codex PermissionRequest, SubagentStart and SubagentStop from the Mac Codex hook wrapper (`apps/runtime/bin/mac-codex-hook.mjs`). The [Codex hook reference](https://learn.chatgpt.com/docs/hooks) was read on 2026-11-19. The evidence classes for that path differ:
+
+| Claim | Class | Evidence and limit |
+| --- | --- | --- |
+| PermissionRequest runs when Codex is about to ask for approval, carries `session_id` and `turn_id`, and lets the normal approval prompt continue when the hook makes no decision | Documented | The reference lists no approval or tool-call ID, so approvals carry no request ID. It does not say whether PermissionRequest runs inside subagents |
+| SubagentStart and SubagentStop carry the parent's `session_id`, the child's `agent_id` and a `turn_id`; Interrupt and SessionEnd do not run for subagents | Documented | The reference does not say whether a subagent's `turn_id` is the parent's turn or the child's, and documents no other parent field |
+| The wrapper forwards a root PermissionRequest with a valid `turn_id`, and SubagentStart and SubagentStop with only `session_id` and `agent_id` | Implemented in source | A root approval is raised on its turn. Its turn's Stop, a newer turn or the session's end forgets it; the core infers no correlation. A child is its own session under its parent with an unknown turn and no title. A payload without a valid `agent_id`, or whose `agent_id` is its own `session_id`, sends nothing. A child's PermissionRequest and every other payload with `agent_id` are dropped, so a child approval, if Codex emits one, does not appear. Synthetic wrapper, adapter and core tests prove the mapping, not delivery |
+| An installed Codex Desktop or CLI on the Mac emits these hooks with these fields | Unknown | Actual-client observation belongs to [Hub #1869](https://github.com/jimmie-potts/agent-device-hub/issues/1869), together with installing the wrapper and adding the three hook definitions. Until then no installed client is claimed |
+
+Each forwarded hook is one blocking Node process. In the source measurement on the owner's PC (WSL, Node 24), each new hook took about 160 ms from start to exit, so it delays the approval prompt and each subagent's start and stop by that much. Mac latency is measured under #1869. No per-tool-call hook is added.
+
+Two existing core rules apply to every source. The core reads an unordered Interrupt of running work as ambiguous work and keeps that turn's approval until a newer turn or the runtime end. It also reads a subagent's stop, which carries no turn, as ambiguous child work: the child no longer counts as working, and a repeated stop keeps a second notice.
+
 ## Performance handoff
 
 [Hub #30](https://github.com/jimmie-potts/agent-device-hub/issues/30) measures the delivered Linux hook in Ubuntu WSL using pinned source and synthetic isolated state. Native Windows comparison and cross-OS forwarding measurements are not required. Record cold/warm starts, repeat counts, load and artifact revisions. Separate producer return, admission, reduction, publication, consumer admission and transport. Compare durations within one monotonic clock domain. This document supplies no measurements or numeric budgets. Freeze measured budgets before Hub #3; installed-client and integrated qualification retain their own gates.
