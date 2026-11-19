@@ -1,7 +1,7 @@
 import {isObject} from './compat.js';
 import {validName} from './effects.js';
 import {prepareMusicTimeline} from './music-timeline.js';
-import {SHOW_LIMITS, SHOW_TARGET, SHOW_VERSION_SCHEMA, showMeasurement, validShowId, type ShowCatalog, type ShowSave, type ShowSummary, type ShowVersion} from './music-show-data.js';
+import {AUTHORED_SHOW_VERSION_SCHEMA, SHOW_LIMITS, SHOW_TARGET, SHOW_VERSION_SCHEMA, showMeasurement, showProvenance, validShowId, type ShowCatalog, type ShowSave, type ShowSummary, type ShowVersion} from './music-show-data.js';
 import {execute, first, number, rows, text, type Db} from './sqlite.js';
 
 export const SHOW_ERRORS = {
@@ -31,15 +31,18 @@ export function initShows(db: Db): void {
 
 /** Parse once at the owner boundary; presets are resolved into frozen explicit recipes. */
 export function prepareShowSave(input: unknown): ShowSave {
-  if (!isObject(input) || !fields(input, ['showId', 'expectedVersion', 'name', 'versionName', 'timeline', ...(Object.hasOwn(input, 'measurement') ? ['measurement'] : [])])
+  if (!isObject(input) || !fields(input, ['showId', 'expectedVersion', 'name', 'versionName', 'timeline', ...(Object.hasOwn(input, 'measurement') ? ['measurement'] : []), ...(Object.hasOwn(input, 'provenance') ? ['provenance'] : [])])
       || !validShowId(input.showId) || !versionNumber(input.expectedVersion, 0) || !validName(input.name) || !validName(input.versionName)) {
     throw new ShowFailure('invalid-request');
   }
   const measurement = showMeasurement(input.measurement);
   if (Object.hasOwn(input, 'measurement') && measurement === undefined) throw new ShowFailure('invalid-request');
+  const provenance = showProvenance(input.provenance);
+  if (Object.hasOwn(input, 'provenance') && (provenance === undefined
+      || (provenance.confidence === 'measured-excerpt') !== (measurement !== undefined))) throw new ShowFailure('invalid-request');
   try {
     return Object.freeze({showId: input.showId, expectedVersion: input.expectedVersion, name: input.name, versionName: input.versionName,
-      timeline: prepareMusicTimeline(input.timeline), ...(measurement === undefined ? {} : {measurement})});
+      timeline: prepareMusicTimeline(input.timeline), ...(provenance === undefined ? {} : {provenance}), ...(measurement === undefined ? {} : {measurement})});
   } catch {throw new ShowFailure('invalid-request');}
 }
 
@@ -80,8 +83,8 @@ export function saveShow(db: Db, input: unknown, revision: number): ShowVersion 
   if (!Number.isSafeInteger(revision) || revision <= catalog.revision) throw new ShowFailure('invalid-state');
   if (head === undefined && catalog.shows.length >= SHOW_LIMITS.shows
       || catalog.shows.reduce((total, show) => total + show.versions.length, 0) >= SHOW_LIMITS.versions) throw new ShowFailure('capacity');
-  const version: ShowVersion = Object.freeze({schema: SHOW_VERSION_SCHEMA, showId: next.showId, version: next.expectedVersion + 1,
-    name: next.name, versionName: next.versionName, timeline: next.timeline,
+  const version: ShowVersion = Object.freeze({schema: next.provenance === undefined ? SHOW_VERSION_SCHEMA : AUTHORED_SHOW_VERSION_SCHEMA, showId: next.showId, version: next.expectedVersion + 1,
+    name: next.name, versionName: next.versionName, timeline: next.timeline, ...(next.provenance === undefined ? {} : {provenance: next.provenance}),
     ...(next.measurement === undefined ? {kind: 'decorative' as const} : {kind: 'measured' as const, measurement: next.measurement})});
   const encoded = JSON.stringify(version);
   if (Buffer.byteLength(encoded, 'utf8') > SHOW_LIMITS.versionBytes) throw new ShowFailure('capacity');
@@ -102,14 +105,15 @@ export function readShowVersion(db: Db, id: string, version: number): ShowVersio
   try {
     if (number(row, 2) > SHOW_LIMITS.versionBytes) throw new ShowFailure('invalid-state');
     const input: unknown = JSON.parse(text(row, 0));
-    if (!isObject(input) || !fields(input, ['schema', 'showId', 'version', 'name', 'versionName', 'kind', 'timeline', ...(input.kind === 'measured' ? ['measurement'] : [])])
-        || input.schema !== SHOW_VERSION_SCHEMA || input.showId !== id || input.version !== version || input.kind !== 'decorative' && input.kind !== 'measured'
+    if (!isObject(input) || !fields(input, ['schema', 'showId', 'version', 'name', 'versionName', 'kind', 'timeline', ...(input.kind === 'measured' ? ['measurement'] : []), ...(Object.hasOwn(input, 'provenance') ? ['provenance'] : [])])
+        || input.schema !== (Object.hasOwn(input, 'provenance') ? AUTHORED_SHOW_VERSION_SCHEMA : SHOW_VERSION_SCHEMA) || input.showId !== id || input.version !== version || input.kind !== 'decorative' && input.kind !== 'measured'
         || input.versionName !== text(row, 1) || input.kind !== (row[3] === null ? 'decorative' : 'measured')) throw new ShowFailure('invalid-state');
     const prepared = prepareShowSave({showId: input.showId, expectedVersion: version - 1, name: input.name, versionName: input.versionName, timeline: input.timeline,
-      ...(input.kind === 'measured' ? {measurement: input.measurement} : {})});
+      ...(input.kind === 'measured' ? {measurement: input.measurement} : {}),
+      ...(Object.hasOwn(input, 'provenance') ? {provenance: input.provenance} : {})});
     if (JSON.stringify(prepared.timeline) !== JSON.stringify(input.timeline)) throw new ShowFailure('invalid-state');
-    return Object.freeze({schema: SHOW_VERSION_SCHEMA, showId: id, version, name: prepared.name, versionName: prepared.versionName,
-      timeline: prepared.timeline,
+    return Object.freeze({schema: prepared.provenance === undefined ? SHOW_VERSION_SCHEMA : AUTHORED_SHOW_VERSION_SCHEMA, showId: id, version, name: prepared.name, versionName: prepared.versionName,
+      timeline: prepared.timeline, ...(prepared.provenance === undefined ? {} : {provenance: prepared.provenance}),
       ...(prepared.measurement === undefined ? {kind: 'decorative' as const} : {kind: 'measured' as const, measurement: prepared.measurement})});
   } catch {throw new ShowFailure('invalid-state');}
 }

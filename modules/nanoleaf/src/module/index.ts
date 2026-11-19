@@ -9,6 +9,7 @@ import {lightDatagram, type LightDatagram} from '../stream.js';
 import {classifiedRead, lightRequest, type LightRequest} from '../transport.js';
 import {LINES_ADDRESS, SimulatedNanoleaf} from './simulated.js';
 import {configureNanoleaf, type NanoleafConfig} from './config.js';
+import type {MusicShowAuthoringProvider} from '../music-show-authoring-provider.js';
 import {NanoleafRuntime} from './runtime.js';
 import {nanoleafSchemas} from './schemas.js';
 
@@ -43,6 +44,7 @@ export type NanoleafModuleOptions = {
   readWithDiagnostics?: typeof classifiedRead;
   /** How the module sends live Music frame datagrams (#1598): `lightDatagram` for real devices, or a simulated controller's `datagram`. */
   datagram: LightDatagram;
+  authoringProvider?: MusicShowAuthoringProvider;
 };
 
 /**
@@ -55,7 +57,7 @@ export const nanoleafMessageSchemas: Readonly<Record<string, object>> = {
 };
 
 /** The Nanoleaf module with the given controller transport. */
-export function createNanoleafModule({transport, datagram, readWithDiagnostics}: NanoleafModuleOptions): BunnyModule<NanoleafConfig> {
+export function createNanoleafModule({transport, datagram, readWithDiagnostics, authoringProvider}: NanoleafModuleOptions): BunnyModule<NanoleafConfig> {
   let running: NanoleafRuntime | undefined;
   return {
     manifest: {
@@ -66,7 +68,7 @@ export function createNanoleafModule({transport, datagram, readWithDiagnostics}:
     },
     async start(context) {
       if (context.config === undefined) throw new Error('the Nanoleaf module started without its configuration');
-      running = await NanoleafRuntime.start({...context, config: context.config}, context.config, transport, datagram, readWithDiagnostics);
+      running = await NanoleafRuntime.start({...context, config: context.config}, context.config, transport, datagram, readWithDiagnostics, authoringProvider);
     },
     async stop() {
       const current = running;

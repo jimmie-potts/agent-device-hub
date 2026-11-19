@@ -62,6 +62,8 @@ export type WorldOptions = {
   artSchedule?: {choice: () => number};
   /** A numeric-only fake Music producer may use the existing endpoint role; no native helper. */
   musicCapture?: boolean;
+  /** Explicit fake for Music light show authoring through the disposable owner. */
+  musicShowAuthoring?: NonNullable<Parameters<typeof createNanoleafModule>[0]['authoringProvider']>;
   /** A synthetic playback observation producer over the disposable gateway and real Playback owner. */
   musicPlayback?: boolean;
   /** A dedicated synthetic Claude terminal receipt producer for the real helper. */
@@ -350,7 +352,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}, ...(options.clock === undefined ? {} : {monotonic: now})})]
         : options.pixooPages === true || options.musicPlayback === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
-      ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request, datagram: lines.datagram})] : [])]
+      ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request, datagram: lines.datagram,
+        ...(options.musicShowAuthoring === undefined ? {} : {authoringProvider: options.musicShowAuthoring})})] : [])]
       .map(module => options.clock?.working === undefined ? module : holdingWorkers(module, options.clock.working)),
     ...(options.clock === undefined ? {} : {clock: options.clock.clock, scheduler: options.clock.scheduler}),
     port, stateDir, configFile: config, edge: {schemas: {...(options.artSchedule === undefined ? {} : weatherSchemas),...(options.art === true ? artRegistration.schemas : {}),...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.roborock===true?roborockSchemas:{}, ...options.volcano===true?volcanoSchemas:{}, ...options.presence===true?presenceSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',

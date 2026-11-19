@@ -5,13 +5,26 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
 import type {Browser} from 'playwright';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, feed, startWorld, type WorldOptions} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {musicPlaybackProducer} from './music-playback-producer.ts';
 
 /** Real gateway/core/module, synthetic plans and controller. No installed service or media is selected. */
 export async function showEditorJourney(browser: Browser): Promise<void> {
-  const world = await startWorld({nanoleaf: true, musicCapture: true, musicPlayback: true});
+  type AuthoringProvider = NonNullable<WorldOptions['musicShowAuthoring']>;
+  const calls: Parameters<AuthoringProvider>[0][] = [];
+  const world = await startWorld({nanoleaf: true, musicCapture: true, musicPlayback: true, musicShowAuthoring: (input, signal) => {
+    calls.push(input);
+    if (calls.length === 2 || calls.length === 3) return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => {reject(new Error('Synthetic unknown charges after cancel'));}, {once: true});
+    });
+    if (calls.length === 4) return Promise.resolve({draft: {cues: [{startMs: 0, endMs: 700, effect: 'pulse',
+      palette: ['#4f85ff'], intensity: 0.45}]}, costUsd: 0.0123});
+    const span = input.analysis?.spans[0];
+    assert.ok(span !== undefined, 'the browser chose a measured excerpt');
+    assert.equal(calls.length, 1, 'only the explicitly generated draft calls the fake provider');
+    return Promise.resolve({draft: {cues: [{startMs: span.offsetMs, endMs: span.offsetMs + span.durationMs, effect: 'pulse', palette: ['#4f85ff'], intensity: 0.45}]}, costUsd: 0.0123, costBasis: 'conservative-region'});
+  }});
   let capture: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
   let playback: Awaited<ReturnType<typeof musicPlaybackProducer>> | undefined;
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
@@ -19,6 +32,13 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     const page = await context.newPage(); page.setDefaultTimeout(12_000);
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
     const sent = changes(page);
+    const generationIds: string[] = [];
+    page.on('request', request => {
+      if (request.method() !== 'POST' || new URL(request.url()).pathname !== '/api/v2/commands/nanoleaf-show-generate') return;
+      const body: unknown = request.postDataJSON();
+      assert.ok(typeof body === 'object' && body !== null && 'requestId' in body && typeof body.requestId === 'string');
+      generationIds.push(body.requestId);
+    });
     const saves: {requestId: string; target: string; data: {showId: string; expectedVersion: number; name: string; versionName: string; timeline: object}}[] = [];
     page.on('request', request => {
       if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/v2/commands/nanoleaf-show-save') {
@@ -195,8 +215,39 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
       await result.dispose();
     }
     assert.equal(draftStatus, 200, 'the runtime prepared a draft from the synthetic producer feeds');
+    const authoring = editor.getByRole('region', {name: 'Claude show generation', exact: true});
+    const generate = authoring.getByRole('button', {name: 'Generate paid draft', exact: true});
+    await authoring.getByText(/one paid Anthropic API attempt.*\$3 USD per day and \$20 USD per month/).waitFor();
+    await authoring.getByText(/current Music track’s title and artist.*Audio stays on your Mac/).waitFor();
+    await authoring.getByText(/Anthropic keeps prompts and completions for at least 30 days/).waitFor();
+    assert.equal(await generate.isDisabled(), true, 'generation requires a style');
+    await editor.getByRole('button', {name: 'Use Ocean drift', exact: true}).click();
+    await editor.getByLabel('Show name', {exact: true}).fill('Existing edits');
+    const openLatest = authoring.getByRole('button', {name: 'Open latest generated draft', exact: true});
+    await openLatest.click();
+    await editor.getByRole('alert').filter({hasText: 'No generated draft is available to open right now.'}).waitFor();
+    assert.equal(await editor.getByLabel('Show name', {exact: true}).inputValue(), 'Existing edits');
+    assert.equal(calls.length, 0, 'opening latest before a generation calls no provider');
+    await authoring.getByRole('button', {name: 'Use warm rise style', exact: true}).click();
+    await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic amber surge');
     const commandsBeforeDraft = sent.length;
-    await prepare.click();
+    await playback.observe();
+    await generate.click();
+    const openGenerated = authoring.getByRole('button', {name: 'Open generated draft', exact: true});
+    await openGenerated.waitFor();
+    assert.equal(await editor.getByLabel('Show name', {exact: true}).inputValue(), 'Existing edits', 'generation leaves local edits in place until the result is opened');
+    assert.equal(sent.length, commandsBeforeDraft + 1, 'exactly one explicit generate command');
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0] && {title: calls[0].title, artist: calls[0].artist, style: calls[0].style},
+      {title: 'Synthetic Music', artist: 'Synthetic artist', style: 'Synthetic amber surge'});
+    await page.route('**/modules/nanoleaf/content/generated-show-draft?**', route => route.fulfill({status: 200, json: {timeline: {}}}), {times: 1});
+    await openGenerated.click();
+    await editor.getByRole('alert').filter({hasText: 'The generated cues could not be opened.'}).waitFor();
+    assert.equal(await editor.getByLabel('Show name', {exact: true}).inputValue(), 'Existing edits');
+    await page.reload(); await feed(page, 'connected');
+    await openLatest.click();
+    assert.equal(calls.length, 1, 'reopening a generated draft after reload calls no provider');
+    await editor.getByText(/Claude drafted from a measured excerpt.*Recorded generation cost estimate is \$0.0123 USD.*highest published regional rate/).waitFor();
     await editor.getByRole('heading', {name: 'Unsaved draft', exact: true}).waitFor();
     await editor.getByRole('heading', {name: 'Measured cue storyboard', exact: true}).waitFor();
     await editor.getByLabel('Show name', {exact: true}).fill('Synthetic captured excerpt');
@@ -205,7 +256,7 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     const finalCueDuration = 8000;
     await cues.last().getByLabel('Duration (ms)', {exact: true}).fill(String(finalCueDuration));
     await editor.getByLabel('Show duration (ms)', {exact: true}).fill(String(finalCueOffset + finalCueDuration));
-    assert.equal(sent.length, commandsBeforeDraft, 'preparing and editing a measured excerpt send no command');
+    assert.equal(sent.length, commandsBeforeDraft + 1, 'opening, previewing and editing generated cues send no command');
     await editor.getByRole('button', {name: 'Save new version', exact: true}).click();
     await editor.getByRole('heading', {name: 'Saved version 1', exact: true}).waitFor();
     assert.equal(saves.length, 4);
@@ -217,6 +268,9 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.ok(typeof savedExcerpt.measurement === 'object' && savedExcerpt.measurement !== null && 'item' in savedExcerpt.measurement);
     assert.deepEqual(savedExcerpt.measurement.item, playback.item);
     assert.equal('measurementProof' in savedExcerpt, false);
+    assert.equal('authoringProof' in savedExcerpt, false);
+    assert.ok('provenance' in savedExcerpt);
+    assert.deepEqual(savedExcerpt.provenance, {model: 'claude-fable-5-2', costUsd: 0.0123, confidence: 'measured-excerpt', costBasis: 'conservative-region'});
     await editor.getByLabel('Show', {exact: true}).selectOption(first.data.showId);
     await editor.getByRole('button', {name: 'Open saved version', exact: true}).click();
     await editor.getByRole('heading', {name: 'Saved version 3', exact: true}).waitFor();
@@ -295,9 +349,66 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.equal(await editor.getByRole('button', {name: 'Use Ocean drift', exact: true}).isDisabled(), true);
     assert.equal(saves.length, 5, 'uncertainty is not retried on reload');
     assert.deepEqual(errors, []);
+    assert.equal(calls.length, 1, 'saved playback, stop, edit and reload do not call the provider');
+
+    // Interrupt Cancel before it reaches the owner. The same generation must retain its fence across reload.
+    await playback.observe({itemId: playback.item.itemId, positionMs: 1000});
+    await authoring.getByLabel('Timing source', {exact: true}).selectOption('generic');
+    await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic cancellation exercise');
+    await generate.click();
+    const cancelGeneration = authoring.getByRole('button', {name: 'Cancel generation', exact: true});
+    await cancelGeneration.waitFor();
+    const cancelledGeneration = generationIds[1];
+    assert.ok(cancelledGeneration !== undefined && cancelledGeneration !== '');
+    const cancelPath = '/api/v2/commands/nanoleaf-show-generate-cancel';
+    const cancelTargets: string[] = [];
+    page.on('request', request => {
+      if (request.method() !== 'POST' || new URL(request.url()).pathname !== cancelPath) return;
+      const body: unknown = request.postDataJSON();
+      assert.ok(typeof body === 'object' && body !== null && 'data' in body && typeof body.data === 'object' && body.data !== null
+        && 'generationRequestId' in body.data && typeof body.data.generationRequestId === 'string');
+      cancelTargets.push(body.data.generationRequestId);
+    });
+    await page.route(`**${cancelPath}`, route => route.abort('connectionreset'), {times: 1});
+    await cancelGeneration.click();
+    await authoring.getByRole('status').filter({hasText: 'Uncertain result.'}).waitFor();
+    assert.equal(await cancelGeneration.isDisabled(), true);
+    await page.reload(); await feed(page, 'connected');
+    await authoring.getByRole('status').filter({hasText: 'Previous request has no confirmed result yet.'}).waitFor();
+    assert.equal(await cancelGeneration.isDisabled(), true, 'the first cancellation stays fenced after reload');
+    assert.equal(await generate.isDisabled(), true, 'pending generation remains locked after reload');
+    assert.deepEqual(cancelTargets, [cancelledGeneration], 'reload does not resend the interrupted cancellation');
+    if (receipts !== undefined) await authoring.screenshot({path: join(receipts, 'shows-first-cancel-fenced.png')});
+    assert.equal((await world.credentialAction('nanoleaf-show-generate-cancel', 'shows', {generationRequestId: cancelledGeneration})).status, 200);
+    const nextGeneration = authoring.getByRole('button', {name: 'Generate new paid draft', exact: true});
+    await authoring.getByText(/A charge may apply to the previous request/).waitFor();
+    assert.equal(generationIds.length, 2, 'cancel, reload and the uncertain result send no generation');
+    await playback.observe();
+    await authoring.getByLabel('Timing source', {exact: true}).selectOption('generic');
+    await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic generic follow-up');
+    await nextGeneration.click();
+    await cancelGeneration.waitFor();
+    assert.equal(await cancelGeneration.isEnabled(), true, 'an independently admitted generation has its own cancellation');
+    const secondGeneration = generationIds[2];
+    assert.ok(secondGeneration !== undefined && secondGeneration !== cancelledGeneration);
+    await page.reload(); await feed(page, 'connected');
+    await cancelGeneration.waitFor();
+    assert.equal(await cancelGeneration.isEnabled(), true, 'the second cancellation remains available after reload');
+    assert.deepEqual(cancelTargets, [cancelledGeneration], 'a new generation and reload send no cancellation');
+    if (receipts !== undefined) await authoring.screenshot({path: join(receipts, 'shows-second-cancel-available.png')});
+    await cancelGeneration.click();
+    await authoring.getByText(/A charge may apply to the previous request/).waitFor();
+    assert.deepEqual(cancelTargets, [cancelledGeneration, secondGeneration], 'the explicit cancellation reaches only the second generation');
+    await playback.observe();
+    await authoring.getByLabel('Timing source', {exact: true}).selectOption('generic');
+    await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic generic continuation');
+    await nextGeneration.click();
+    await openGenerated.waitFor();
+    assert.equal(calls.length, 4, 'an explicit new request can run after each completed uncertain result');
+    assert.equal(new Set(generationIds).size, 4, 'each paid request uses its own identity');
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'offline-decorative-shows', browserSaveRequests: saves.length,
       immutableVersions: true, staleSave: 409, readonly: 403, crossOrigin: 403, malformed: 400, authoringDeviceChanges: 0,
-      preview: 'cue storyboard only', measuredExcerpt: 'prepared, edited, saved and reopened using synthetic producers', forgedProvenanceRefused: true, measuredAudio: 'wrong item refused, matching item started and stopped, v1 pinned while v2 saved', noResend: true})}\n`);
+      preview: 'cue storyboard only', measuredExcerpt: 'generated, edited, saved and reopened using synthetic producers and fake Claude', recoveryProviderCalls: 1, freshAttemptAfterCompletedUncertainty: true, perGenerationCancelFence: true, malformedGenerationReadPreservedEdits: true, draftRecoveredAfterReload: true, forgedProvenanceRefused: true, measuredAudio: 'wrong item refused, matching item started and stopped, v1 pinned while v2 saved', noResend: true})}\n`);
   } catch (error) {
     const receipts = process.env.DASHBOARD_RECEIPTS, page = context.pages()[0];
     if (receipts !== undefined && page !== undefined) {

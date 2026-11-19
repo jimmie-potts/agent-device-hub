@@ -1,17 +1,19 @@
 // Browser-safe show data. Compilation, storage and device rendering stay with the server owner.
 import type {MusicTimeline} from './music-timeline-data.js';
 
+export const MUSIC_AUTHORING_MODEL = 'claude-fable-5-2';
 export const SHOW_TARGET = 'shows';
 export const SHOW_VERSION_SCHEMA = 'nanoleaf-show-version/2.0';
+export const AUTHORED_SHOW_VERSION_SCHEMA = 'nanoleaf-show-version/2.1';
 export const SHOW_ID_PATTERN = '^show-[a-z0-9]+(?:-[a-z0-9]+)*$';
 export const SHOW_LIMITS = Object.freeze({shows: 32, versions: 256, versionBytes: 128 * 1024, name: 80, id: 64});
 export type ShowVersion = Readonly<{
-  schema: typeof SHOW_VERSION_SCHEMA; showId: string; version: number; name: string; versionName: string;
-  timeline: MusicTimeline;
+  schema: typeof SHOW_VERSION_SCHEMA | typeof AUTHORED_SHOW_VERSION_SCHEMA; showId: string; version: number; name: string; versionName: string;
+  timeline: MusicTimeline; provenance?: ShowProvenance;
 }> & ({kind: 'decorative'} | {kind: 'measured'; measurement: ShowMeasurement});
 export type ShowSummary = Readonly<{id: string; name: string; version: number; versions: readonly {version: number; versionName: string; kind?: 'measured'}[]}>;
 export type ShowCatalog = Readonly<{id: typeof SHOW_TARGET; revision: number; shows: readonly ShowSummary[]}>;
-export type ShowSave = Readonly<{showId: string; expectedVersion: number; name: string; versionName: string; timeline: MusicTimeline; measurement?: ShowMeasurement; measurementProof?: string}>;
+export type ShowSave = Readonly<{showId: string; expectedVersion: number; name: string; versionName: string; timeline: MusicTimeline; measurement?: ShowMeasurement; measurementProof?: string; provenance?: ShowProvenance; authoringProof?: string}>;
 
 export const validShowId = (value: unknown): value is string =>
   typeof value === 'string' && value.length <= SHOW_LIMITS.id && new RegExp(SHOW_ID_PATTERN).test(value);
@@ -23,6 +25,19 @@ export type ShowMeasurement = Readonly<{
 }>;
 
 const object = (input: unknown): input is Record<string, unknown> => typeof input === 'object' && input !== null && !Array.isArray(input);
+
+export type ShowProvenance = Readonly<{
+  model: typeof MUSIC_AUTHORING_MODEL; costUsd: number; confidence: 'measured-excerpt' | 'generic'; costBasis?: 'conservative-region';
+}>;
+
+export function showProvenance(input: unknown): ShowProvenance | undefined {
+  if (!object(input) || Object.keys(input).length !== (Object.hasOwn(input, 'costBasis') ? 4 : 3) || input.model !== MUSIC_AUTHORING_MODEL
+      || typeof input.costUsd !== 'number' || !Number.isFinite(input.costUsd) || input.costUsd < 0
+      || (input.confidence !== 'measured-excerpt' && input.confidence !== 'generic')
+      || (Object.hasOwn(input, 'costBasis') && input.costBasis !== 'conservative-region')) return undefined;
+  return {model: input.model, costUsd: input.costUsd, confidence: input.confidence,
+    ...(input.costBasis === 'conservative-region' ? {costBasis: input.costBasis} : {})};
+}
 
 export function showMeasurement(input: unknown): ShowMeasurement | undefined {
   if (!object(input) || Object.keys(input).length !== 2) return undefined;

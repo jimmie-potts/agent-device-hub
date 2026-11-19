@@ -29,6 +29,9 @@ export function resendRefusal(operation: Operation, handler: string): ErrorBody 
   if (operation.command.startsWith('org.bunny.microduck.')) return errorBody('forbidden', {
     detail: 'MicroDuck requires a fresh explicit request from its dashboard controls',
   });
+  if (operation.family === 'nanoleaf-show-generate' || operation.family === 'nanoleaf-show-generate-cancel') {
+    return errorBody('forbidden', {detail: 'Use Saved shows to request a fresh draft or cancel the current generation'});
+  }
   if (operation.family === 'moment-play' && operation.data.art !== undefined) return errorBody('forbidden', {
     detail: 'a moment naming art needs a fresh request through the core\'s automation, which arbitrates it',
   });

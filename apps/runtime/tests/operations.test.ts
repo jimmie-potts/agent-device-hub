@@ -34,6 +34,13 @@ it('each kind has its own deadlines, and a family names its kind', () => {
   assert.deepEqual(['power-set', 'playback-control', 'lifx-color-set', 'moment-play', 'mode-set'].map(kindOf), ['device', 'device', 'device', 'moment', 'mode']);
 });
 
+it('show generation remains accepted through its provider deadline', () => {
+  const kind = kindOf('nanoleaf-show-generate');
+  const action = accepted(sent({kind, deadlineAtMs: SENT_AT + DEADLINES[kind].outcomeMs}));
+  assert.equal(advance(action, {type: 'deadline', atMs: SENT_AT + 65_000}), undefined);
+  assert.equal(kindOf('nanoleaf-show-generate-cancel'), 'device');
+});
+
 it('sent, accepted, then completed by its outcome', () => {
   const replied = accepted();
   assert.deepEqual([replied.status, replied.result, replied.reply, replied.responder], ['accepted', undefined, 'accepted', 'bunny/modules/lamp']);
@@ -85,6 +92,19 @@ it('a late definitive outcome replaces an uncertain result, and an uncertain one
   // An uncertain result, then another uncertain outcome: still uncertain, with the stronger evidence.
   const twice = step(step(uncertain, outcome('uncertain', 'transmitted', 'u1')), outcome('uncertain', 'none', 'u2'));
   assert.deepEqual([twice.status, twice.result, twice.evidence], ['uncertain', 'uncertain', 'transmitted']);
+});
+
+it('a late owner outcome closes local show generation while its spending remains uncertain', () => {
+  const action = accepted(sent({family: 'nanoleaf-show-generate', responder: 'bunny/modules/nanoleaf'}));
+  const provisional = step(action, {type: 'deadline', atMs: action.deadlineAtMs});
+  const atMs = action.deadlineAtMs + 1;
+  const result = {source: 'bunny/modules/nanoleaf', id: 'show-outcome', result: 'uncertain', evidence: 'none',
+    error: {code: 'uncertain-result', retryable: false}, atMs} satisfies TakenOutcome;
+  const unrelated = step(provisional, {type: 'outcome', outcome: {...result, source: 'bunny/modules/lamp'}});
+  assert.equal(unrelated.status, 'uncertain');
+  const finished = step(provisional, {type: 'outcome', outcome: result});
+  assert.deepEqual(shape(finished), ['completed', 'uncertain', 'none', 'uncertain-result']);
+  assert.equal(finished.outcomes.length, 1);
 });
 
 it('a succeeded and a failed outcome for one action are a conflict in either order, and arrival order never picks a winner', () => {
