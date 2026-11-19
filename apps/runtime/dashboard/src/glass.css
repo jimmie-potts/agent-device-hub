@@ -1,0 +1,27 @@
+/* The glass layer (#1929, glass-layer.tsx). A page that mounts it sets data-glass on its root: "webgl" while the
+   canvas draws the backdrop and the glass, "quiet" otherwise. Only the webgl state changes anything, so without
+   WebGL 2 or after a lost context the page keeps its ordinary Quiet glass panels. */
+.glass-layer{position:fixed;inset:0;z-index:-1;display:block;inline-size:100%;block-size:100%;pointer-events:none}
+[data-glass=quiet] .glass-layer{visibility:hidden}
+/* The outermost card surface inside each panel is the glass drawn under it, with the glass's corners; nested surfaces
+   keep their own fill. A surface with a fixed state meaning, such as an Inbox that needs attention, keeps its fill. */
+[data-glass=webgl] [data-glass-panel]{--light-radius:var(--glass-radius);--card-radius:var(--glass-radius)}
+[data-glass=webgl] [data-glass-panel] :is(.card,.widget,.light-card,.wemo-card,.music-card,.roborock-card,.volcano-card,.wispr-card):not(:is(.card,.widget,.light-card,.wemo-card,.music-card,.roborock-card,.volcano-card,.wispr-card) *){
+  background:transparent;border-color:transparent;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none
+}
+/* The backdrop continues behind the rail, which stays frosted, and behind the phone's bar. */
+.shell:has([data-glass=webgl]){background:transparent}
+/* The phone's drawer slides over the page and keeps its own fill. */
+.shell:has([data-glass=webgl])>.phone-bar{background:var(--glass-rail);-webkit-backdrop-filter:blur(26px) saturate(1.8);backdrop-filter:blur(26px) saturate(1.8)}
+@media(min-width:681px){.shell:has([data-glass=webgl])>aside{background:var(--glass-rail);-webkit-backdrop-filter:blur(26px) saturate(1.8);backdrop-filter:blur(26px) saturate(1.8)}}
+/* The skin's values the shader reads; glass-layer.tsx resolves each one through its computed color. */
+.glass-tokens [data-glass-token=veil]{color:var(--glass-veil)}
+.glass-tokens [data-glass-token=veil-deep]{color:var(--glass-veil-deep)}
+.glass-tokens [data-glass-token=tone]{color:var(--glass-tone)}
+.glass-tokens [data-glass-token=rim]{color:var(--glass-rim)}
+.glass-tokens [data-glass-token=shadow]{color:var(--glass-shadow)}
+.glass-tokens [data-glass-token=edge]{color:var(--glass-edge)}
+.glass-tokens [data-glass-token=ink]{color:var(--glass-ink)}
+.glass-tokens [data-glass-token=bg]{color:var(--bg)}
+.glass-tokens [data-glass-token=wash-start]{color:var(--shell-wash-start)}
+.glass-tokens [data-glass-token=wash-end]{color:var(--shell-wash-end)}

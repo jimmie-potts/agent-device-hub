@@ -190,3 +190,5 @@ try {
 // The unit grid (#1672) replaced the flex rows home-balance checked; home-shapes checks tiling, shapes and paging by shape.
 await import('./home-shapes.browser.ts');
 await import('./home-paging.browser.ts');
+// The glass layer under Home (#1929): backdrop, boxes, rest, fallbacks and contrast.
+await import('./home-glass.browser.ts');
