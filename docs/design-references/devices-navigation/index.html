@@ -1,0 +1,1277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#e8edf6">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#151c2b">
+<title>Devices navigation design reference</title>
+<style>
+/* Tokens copied from the runtime skin (apps/runtime/dashboard/src/skins/quiet-glass.css). Prototype only. */
+:root{
+  color-scheme:light dark;
+  --bg:light-dark(#e8edf6,#151c2b);--panel:light-dark(#f7f9fe,#253046);--raised:light-dark(#e3e9f6,#34415b);--inset:light-dark(#edf1f9,#1c263a);
+  --text:light-dark(#25314b,#eff3fc);--muted:light-dark(#53617a,#bdc9dd);
+  --edge:light-dark(#cbd5e6,#4d5b75);--edge-strong:light-dark(#556582,#9aacd0);--edge-faint:light-dark(#d9e0ed,#3f4c65);
+  --accent:light-dark(#354567,#dce6fc);--accent-ink:light-dark(#ffffff,#202c45);--primary-hover:light-dark(#485d84,#c5d7fa);
+  --link:light-dark(#354f84,#b8d0ff);--focus:light-dark(#2557ae,#b0ceff);
+  --pending:light-dark(#8a5800,#f4d28b);--pending-text:light-dark(#805100,#f4d28b);
+  --warn-bg:light-dark(#fff2d6,#3c3324);--warn-edge:light-dark(#9d741d,#c5a762);
+  --disabled-bg:light-dark(#e6ebf3,#202a3e);--disabled-text:light-dark(#647187,#a2afc5);--disabled-edge:light-dark(#cbd5e6,#4d5b75);
+  --ok:light-dark(#21734f,#7fd6a8);
+  --radius:14px;--card-radius:26px;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --type-small:.875rem;--type-label:.8rem;--type-title:2rem;--type-heading:1.25rem;--type-subheading:1.1rem;--type-brand:1.15rem;
+  --space-xxs:2px;--space-xs:4px;--space-s:8px;--space-m:16px;--space-l:24px;--space-xl:32px;
+  --shell-bg:radial-gradient(ellipse at 0 0,light-dark(#cbd9f4,#293650),transparent 65%),radial-gradient(ellipse at 100% 100%,light-dark(#ebdcde,#302b3f),transparent 65%),var(--bg);
+  --rail-bg:light-dark(#e2e9f5,#1b2436);
+  --shadow:0 12px 28px light-dark(#50628016,#00000030),inset 0 1px 0 light-dark(#ffffff,#ffffff14);
+  --pop-shadow:0 20px 44px light-dark(#3b4c6e2e,#00000075),0 2px 6px light-dark(#3b4c6e14,#00000040),inset 0 1px 0 light-dark(#ffffff,#ffffff14);
+  --ease-out:cubic-bezier(.23,1,.32,1);
+  --measure:920px;
+}
+html{font-size:.9375rem;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:none}
+*{box-sizing:border-box}
+body{margin:0;background:#0d1016;color:var(--text);font-family:var(--font);-webkit-font-smoothing:antialiased;overflow:hidden}
+
+/* Harness: the stage stops above a band kept free for the picker, so the picker never covers the composer. */
+#stage{position:relative;height:100dvh;overflow:hidden}
+/* The phone preview page embeds this file without the picker. */
+.embed #stage{height:100dvh}
+.embed :is(.proto-picker,.harness-note){display:none}
+.harness-note{position:fixed;bottom:34px;margin:0;font:12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:rgba(255,255,255,.5)}
+.harness-note.l{left:24px}.harness-note.r{right:24px}
+.harness-note a{color:inherit}
+@media (max-width:860px){.harness-note{display:none}}
+
+/* ---------- Shared app surface ---------- */
+.app{position:relative;height:100%;display:grid;overflow:hidden;background:var(--shell-bg);line-height:1.4}
+:where(.app) a{color:inherit;text-decoration:none}
+:where(.app) :is(button,textarea,select,input){font:inherit}
+:where(.app) button{cursor:pointer}
+/* Phone baseline: taps fire without the double-tap wait, controls are not selectable text, 16px inputs stop iOS zooming the page, and inner scrollers do not drag the page with them. */
+:where(.app) :is(button,a,summary){touch-action:manipulation}
+:where(.app) :is(button,a[data-go],a[data-profile],summary){-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+@media (pointer:coarse){
+  .app :is(input,textarea,select){font-size:16px}
+  /* Keyboard hints mean nothing without a hardware keyboard. */
+  .app :is(.rail-jump kbd,.input-help p:first-child){display:none}
+}
+.app :is(.rail-scroll,.transcript,.main-scroll,.details-body,.pop.fly,#pal-list){overscroll-behavior:contain}
+.app :focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.app :is(.input-surface textarea,.pal-search input):focus-visible{outline:none}
+:where(.app) :is(h1,h2,h3,p,dl,ul,ol){margin-top:0}
+.i{flex:none;display:block}
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-s);min-height:44px;padding:var(--space-s) var(--space-m);border:1px solid var(--accent);border-radius:var(--radius);background:var(--accent);color:var(--accent-ink);font-weight:500;white-space:nowrap;transition:transform 160ms var(--ease-out),background-color 150ms ease-out,border-color 150ms ease-out}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn.secondary{background:transparent;color:var(--text);border-color:var(--edge)}
+.btn.sm{min-height:36px;padding:0 12px;border-radius:12px;font-size:var(--type-small)}
+.btn:disabled{background:var(--disabled-bg);color:var(--disabled-text);border-color:var(--disabled-edge);cursor:not-allowed}
+.btn[aria-expanded=true]{background:var(--raised);border-color:var(--edge-strong)}
+.icon-btn{display:inline-grid;place-items:center;flex:none;width:36px;height:36px;padding:0;border:1px solid transparent;border-radius:12px;background:transparent;color:var(--muted);transition:transform 160ms var(--ease-out),background-color 150ms ease-out}
+.icon-btn:active{transform:scale(.97)}
+.icon-btn[aria-current]{background:var(--panel);border-color:var(--edge);color:var(--text)}
+@media (hover:hover) and (pointer:fine){
+  .btn:hover:not(:disabled){background:var(--primary-hover)}
+  .btn.secondary:hover:not(:disabled){background:var(--raised);border-color:var(--edge-strong)}
+  .icon-btn:hover{background:var(--raised);color:var(--text)}
+}
+
+.avatar{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:50%;border:1px solid var(--edge);background:var(--raised);color:var(--text);font-size:.72rem;font-weight:600;letter-spacing:0}
+.tag{flex:none;margin-left:auto;padding:1px 7px;border:1px solid var(--edge-faint);border-radius:999px;color:var(--muted);font-size:.72rem;font-weight:400}
+.dot-attn{flex:none;width:8px;height:8px;margin-left:auto;border-radius:50%;background:var(--pending)}
+.count{display:grid;place-items:center;flex:none;min-width:20px;height:20px;margin-left:auto;padding:0 6px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-size:.72rem;font-weight:600}
+.status-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.status-dot[data-off]{background:var(--pending)}
+.brand{flex:none;color:var(--text);font-size:var(--type-brand);font-weight:500;letter-spacing:.09em;line-height:1.15;border-radius:8px}
+.brand small{display:block;margin-top:2px;color:var(--muted);font-size:var(--type-label);font-weight:400;letter-spacing:0}
+
+/* Menus: one popover vocabulary for every variant. Origin-aware scale, ease-out, exit faster than entrance. */
+.menu-wrap{position:relative;display:inline-flex}
+.pop{position:absolute;top:calc(100% + 8px);left:0;z-index:30;min-width:236px;padding:6px;border:1px solid var(--edge);border-radius:16px;background:var(--panel);box-shadow:var(--pop-shadow);opacity:0;visibility:hidden;pointer-events:none;transform:translateY(-4px) scale(.98);transform-origin:top left;transition:opacity 110ms ease-out,transform 110ms ease-out,visibility 0s linear 110ms}
+.pop.right{left:auto;right:0;transform-origin:top right}
+.pop.up{top:auto;bottom:calc(100% + 8px);transform:translateY(4px) scale(.98);transform-origin:bottom left}
+.pop[data-open]{opacity:1;visibility:visible;pointer-events:auto;transform:none;transition:opacity 160ms var(--ease-out),transform 160ms var(--ease-out),visibility 0s}
+.pop-label{margin:0;padding:8px 10px 4px;color:var(--muted);font-size:.72rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+.pop-item{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;padding:0 10px;border:0;border-radius:10px;background:transparent;color:var(--text);font-weight:400;text-align:left;white-space:nowrap}
+.pop-item small{color:var(--muted);font-size:var(--type-small)}
+.pop-item[aria-current]{font-weight:600}
+.pop-item .i.tick{margin-left:auto;color:var(--muted)}
+.pop-item .tag+.i.tick,.pop-item .dot-attn+.i.tick{margin-left:8px}
+.app .pop-item:focus-visible{outline:none;background:var(--raised)}
+@media (hover:hover) and (pointer:fine){.pop-item:hover{background:var(--raised)}}
+.pop-body{padding:8px 10px;font-size:var(--type-small);white-space:normal;width:260px}
+.pop-body p{margin:0 0 4px}
+.pop-hint{color:var(--muted);font-size:var(--type-small);line-height:1.45}
+.pop-body .btn{margin-top:6px}
+
+/* Main column and ordinary pages */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;padding:0 var(--space-xl)}
+.main-scroll{overflow:auto}
+.page-wrap{width:100%;max-width:1240px;padding:var(--space-l) 0 var(--space-xl)}
+.page{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--space-m);margin-bottom:var(--space-l)}
+.page h1{margin:0;font-size:var(--type-title);font-weight:500;letter-spacing:-.03em;line-height:1.15}
+.backlink{display:inline-flex;align-items:center;gap:6px;min-height:36px;margin-bottom:var(--space-s);color:var(--link)!important;font-size:var(--type-small)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:var(--space-l);align-items:start}
+.home-columns{display:grid;grid-template-columns:minmax(0,3fr) minmax(260px,1fr);gap:var(--space-l);align-items:start}
+.stack{display:grid;gap:var(--space-l);min-width:0}
+.card{min-width:0;padding:var(--space-l);border:1px solid var(--edge);border-radius:var(--card-radius);background:var(--panel);box-shadow:var(--shadow)}
+.card h2{margin:0 0 var(--space-s);font-size:var(--type-heading);font-weight:500;letter-spacing:-.02em}
+.card p{margin:0 0 var(--space-s);line-height:1.5}
+.hint{margin:var(--space-s) 0 0!important;color:var(--muted);font-size:var(--type-small);line-height:1.5}
+.facts{display:grid;margin:0;font-size:var(--type-small)}
+.facts>div{display:flex;justify-content:space-between;gap:var(--space-m);padding:var(--space-s) 0;border-bottom:1px solid var(--edge-faint)}
+.facts>div:last-child{border-bottom:0}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;text-align:right;overflow-wrap:anywhere}
+.rows{display:grid;margin:0;padding:0;list-style:none}
+.rows li{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--edge-faint)}
+.rows li:first-child{border-top:0}
+.rows .grow{flex:1;min-width:0}
+.rows .grow strong{display:block;font-weight:500}
+.rows .grow small{color:var(--muted);font-size:var(--type-small)}
+.chip{flex:none;padding:2px 8px;border:1px solid var(--edge);border-radius:var(--radius);background:#162235;color:#bdc9dd;font-size:var(--type-label);white-space:nowrap}
+.chip[data-chip=working]{border-color:#2bff63;color:#2bff63}
+.chip[data-chip=approval]{border-color:#ff4a4a;color:#ff7a7a}
+.chip[data-chip=finished]{border-color:#5b9bff;color:#8bb8ff}
+.seg{display:flex;flex-wrap:wrap;gap:var(--space-xs);width:fit-content;max-width:100%;padding:var(--space-xs);border-radius:var(--radius);background:var(--inset)}
+.seg-btn{min-height:40px;padding:0 var(--space-m);border:1px solid transparent;border-radius:10px;background:transparent;color:var(--muted);font-weight:500;transition:transform 160ms var(--ease-out)}
+.seg-btn:active{transform:scale(.97)}
+.seg-btn[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.toggle{position:relative;flex:none;width:42px;height:26px;padding:0;border:1px solid var(--edge);border-radius:999px;background:var(--inset);transition:background-color 160ms ease-out,border-color 160ms ease-out}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--muted);transition:transform 160ms var(--ease-out),background-color 160ms ease-out}
+.toggle[aria-checked=true]{background:var(--accent);border-color:var(--accent)}
+.toggle[aria-checked=true]::after{transform:translateX(16px);background:var(--accent-ink)}
+.dir-links{display:grid;gap:var(--space-xs)}
+.dir-links a{display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:var(--space-s) var(--space-m);border-radius:var(--radius);background:var(--inset);color:var(--text);font-weight:500}
+@media (hover:hover) and (pointer:fine){.dir-links a:hover{background:var(--raised)}.seg-btn:hover:not([aria-pressed=true]){background:var(--raised);color:var(--text)}}
+.field{display:grid;gap:var(--space-xs);margin-bottom:var(--space-m);color:var(--muted);font-size:var(--type-small)}
+.field select{min-height:44px;padding:var(--space-s);border:1px solid var(--edge);border-radius:var(--radius);background:var(--inset);color:var(--text)}
+.check{display:flex;align-items:center;gap:var(--space-s)}
+.check input{width:18px;height:18px;accent-color:var(--accent)}
+.inline-status{display:inline-flex;align-items:center;gap:var(--space-s);padding:var(--space-xs) var(--space-s);border:1px solid var(--edge);border-radius:var(--radius);background:var(--inset);font-size:var(--type-label)}
+
+/* ---------- Conversation workspace ---------- */
+.conv{flex:1;display:grid;grid-template-columns:minmax(0,1fr);gap:0 var(--space-m);min-height:0}
+.conv-main{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:.5rem;min-width:0;min-height:0;padding-bottom:var(--space-m)}
+.transcript{overflow:auto;padding:var(--space-m) .375rem .75rem}
+.transcript ol,.conv-empty,.demo-note{max-width:var(--measure);margin-inline:auto}
+.transcript ol{display:grid;gap:var(--space-l);margin-block:0;padding:0;list-style:none}
+.transcript li{min-width:0}
+.transcript li[data-role=owner]{justify-self:end;max-width:min(85%,36rem);padding:.65rem .85rem;border:1px solid var(--edge-faint);border-radius:var(--radius);background:var(--raised)}
+.transcript li[data-role=assistant] article{max-width:46rem}
+.speaker{color:var(--muted);font-size:var(--type-small);font-weight:650}
+.msg-text{margin:.35rem 0 0;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.read-aloud{min-height:2.25rem;margin-top:.15rem;padding:.35rem .55rem;border:1px solid transparent;border-radius:12px;background:transparent;color:var(--muted);font-size:var(--type-small);font-weight:500}
+@media (hover:hover) and (pointer:fine){.read-aloud:hover{color:var(--text);background:var(--raised)}}
+.tool{margin-top:.5rem;border-top:1px solid var(--edge-faint)}
+.tool summary{padding:.55rem 0;color:var(--muted);font-size:var(--type-small);cursor:pointer}
+.tool p{margin:0 0 .75rem;padding-left:.75rem;border-left:1px solid var(--edge-faint);font-size:var(--type-small)}
+.demo-note{margin-bottom:var(--space-m);color:var(--muted);font-size:var(--type-small)}
+.conv-empty{display:grid;align-content:center;min-height:80%;text-align:center}
+.conv-empty h3{margin:0 0 var(--space-xs);font-size:var(--type-heading);font-weight:500}
+.conv-empty p{margin:0;color:var(--muted)}
+.compose{display:grid;gap:.35rem;justify-self:center;width:min(calc(100% - .75rem),var(--measure));min-width:0}
+.cue{display:flex;align-items:center;gap:var(--space-s);margin:0;color:var(--muted);font-size:var(--type-small)}
+.cue.attn{color:var(--pending-text)}
+.input-surface{position:relative;display:grid;gap:var(--space-xs);padding:var(--space-s) var(--space-m);border:1px solid var(--edge);border-radius:18px;background:var(--panel);transition:border-color 150ms ease-out}
+.input-surface:has(textarea:focus-visible){border-color:var(--focus)}
+.input-surface textarea{display:block;width:100%;min-height:3rem;max-height:35dvh;padding:var(--space-xs) 0;border:0;outline:0;background:transparent;color:var(--text);resize:vertical}
+.input-surface textarea::placeholder{color:var(--muted)}
+.composer-actions,.input-help{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--space-xxs) var(--space-s)}
+.composer-actions .send{min-width:4rem;margin-left:auto}
+.input-help{padding-inline:var(--space-xs);color:var(--muted);font-size:var(--type-small)}
+.input-help p{margin:0}
+.pop .switch-row{justify-content:space-between;white-space:normal}
+.details{display:grid;grid-template-rows:auto minmax(0,1fr);min-width:0;min-height:0;margin:var(--space-s) 0 var(--space-m);border:1px solid var(--edge);border-radius:var(--radius);background:var(--panel);overflow:hidden}
+.details>header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-s);padding:var(--space-s) var(--space-m);border-bottom:1px solid var(--edge-faint)}
+.details h2{margin:0;font-size:var(--type-subheading);font-weight:500}
+.details-body{overflow:auto;padding-inline:var(--space-m);font-size:var(--type-small)}
+.details-profile{display:flex;align-items:baseline;gap:var(--space-s);margin:0;padding-block:var(--space-m)}
+.details-profile small{color:var(--muted)}
+.details-body details{border-top:1px solid var(--edge-faint)}
+.details-body summary{min-height:2.75rem;padding-block:.75rem;font-weight:600;cursor:pointer}
+.details-body details>*:last-child{margin-bottom:var(--space-m)}
+.details-body ul{display:grid;gap:.5rem;margin:var(--space-s) 0 var(--space-m);padding:0;list-style:none}
+.details-body ul a{color:var(--link)}
+.scrim{position:absolute;inset:0;z-index:40;background:light-dark(#25314b47,#05080f99)}
+.details-scrim{display:none}
+@media (min-width:1120px){.conv[data-details]{grid-template-columns:minmax(0,1fr) clamp(17rem,23vw,20.25rem)}}
+@media (max-width:1119px){
+  .details{position:absolute;top:var(--space-s);right:var(--space-s);bottom:var(--space-s);z-index:45;width:min(23rem,calc(100% - var(--space-l)));margin:0;box-shadow:var(--pop-shadow)}
+  .details-scrim{display:block}
+  .details.just-opened{animation:drawer-in 220ms var(--ease-out)}
+  .details-scrim.just-opened{animation:fade-in 160ms ease-out}
+}
+@keyframes drawer-in{from{opacity:0;transform:translateX(16px)}}
+@keyframes fade-in{from{opacity:0}}
+
+/* ---------- Rail: shared by every variant in this round ---------- */
+.v-rail{grid-template-columns:184px minmax(0,1fr)}
+.rail{position:relative;z-index:10;display:flex;flex-direction:column;gap:var(--space-s);min-width:0;min-height:0;padding:var(--space-m) 12px 12px;border-right:1px solid var(--edge-faint);background:var(--rail-bg)}
+.rail .icon-btn{position:relative}
+.rail-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-s);flex:none;min-height:44px;padding-left:10px}
+.rail-jump{position:relative;display:flex;align-items:center;gap:10px;flex:none;width:100%;height:36px;padding:0 8px 0 12px;border:1px solid var(--edge);border-radius:12px;background:var(--inset);color:var(--muted);text-align:left;white-space:nowrap;transition:transform 160ms var(--ease-out),border-color 150ms ease-out}
+.rail-jump:active{transform:scale(.985)}
+.rail-jump kbd{margin-left:auto}
+kbd{padding:2px 6px;border:1px solid var(--edge);border-radius:6px;background:var(--panel);color:var(--muted);font:inherit;font-size:.72rem}
+.rail-scroll{flex:1;display:flex;flex-direction:column;gap:2px;min-height:0;margin:0 -6px;padding:2px 6px;overflow:hidden auto}
+.rail-pinned{flex:none;display:grid;gap:2px}
+/* A long list fades out at the bottom edge instead of ending in a hard cut. Not on the icon rail, where the mask would clip tooltips. */
+[data-rail=expanded] .rail-scroll{-webkit-mask-image:linear-gradient(#000 calc(100% - 14px),transparent);mask-image:linear-gradient(#000 calc(100% - 14px),transparent)}
+.rail-group{display:grid;gap:2px}
+.rail-item{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:38px;padding:0 12px;border:1px solid transparent;border-radius:var(--radius);background:transparent;color:var(--muted);font-weight:500;text-align:left;white-space:nowrap}
+.rail-item .lbl{overflow:hidden;text-overflow:ellipsis}
+.rail-item .go{margin-left:auto;color:var(--muted)}
+.rail-item[aria-current]{border-color:var(--edge-strong);background:var(--panel);box-shadow:var(--shadow);color:var(--text)}
+.rail-item[data-ancestor]{color:var(--text)}
+.rail-item[aria-expanded=true]{background:var(--raised);color:var(--text)}
+/* With the tap highlight gone, a press needs its own feedback. */
+:is(.rail-item,.pop-item,.pal-item,.dir-links a):active{background:var(--raised)}
+.rail-item.sub{min-height:30px;padding-left:44px;border-radius:10px;font-size:var(--type-small);font-weight:400}
+.rail-item.sub[aria-current]{border-color:transparent;background:var(--raised);box-shadow:none;font-weight:500}
+.rail-item.mod{min-height:30px;border-radius:12px;font-size:var(--type-small)}
+.rail-item.more{display:none}
+.mono{display:grid;place-items:center;flex:none;width:22px;height:22px;border:1px solid var(--edge);border-radius:7px;background:var(--inset);color:var(--muted);font-size:.66rem;font-weight:600;letter-spacing:0}
+.rail-item:is([aria-current],[data-ancestor]) .mono{color:var(--text)}
+@media (hover:hover) and (pointer:fine){
+  .rail-item:hover:not([aria-current]){background:var(--raised);color:var(--text)}
+  .rail-jump:hover{border-color:var(--edge-strong);color:var(--text)}
+}
+.rail-label{margin:6px 12px 4px;color:var(--muted);font-size:.72rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+.rail-hint{margin:0;padding:2px 12px 8px;color:var(--muted);font-size:var(--type-label);line-height:1.45;white-space:normal}
+.rail-sep{height:1px;margin:2px 12px;background:var(--edge-faint)}
+.rail-foot{display:flex;align-items:center;gap:var(--space-xs);flex:none;padding-top:var(--space-s);border-top:1px solid var(--edge-faint)}
+.rail-foot .rail-item{flex:1;min-width:0}
+.main-head{flex:none;display:flex;align-items:center;gap:var(--space-m);min-height:56px}
+.main-head h1{margin:0;font-size:var(--type-heading);font-weight:500;letter-spacing:-.01em}
+.head-title{display:flex;align-items:baseline;gap:var(--space-s);min-width:0;margin-right:auto}
+.head-title small{color:var(--muted);font-size:var(--type-small);white-space:nowrap}
+.main-head[data-kind=page] .brand{margin-right:auto}
+.main-head .icon-btn{position:relative}
+.icon-btn>.dot-attn{position:absolute;top:5px;right:5px;margin:0}
+.main-head[data-kind=page],.only-mobile{display:none}
+.pin-btn[aria-pressed=true]{background:var(--raised);border-color:var(--edge-strong)}
+
+/* ---------- Variant 2: Drill. The rail shows one level at a time. ---------- */
+.drill-level{display:grid;gap:2px}
+.drill-level.fwd{animation:drill-fwd 200ms var(--ease-out)}
+.drill-level.back{animation:drill-back 200ms var(--ease-out)}
+@keyframes drill-fwd{from{opacity:0;transform:translateX(14px)}}
+@keyframes drill-back{from{opacity:0;transform:translateX(-14px)}}
+.drill-head{display:flex;align-items:center;gap:var(--space-xs);min-height:38px}
+.drill-head .icon-btn{width:32px;height:32px;border-radius:10px}
+.drill-title{display:flex;align-items:center;flex:1;min-width:0;min-height:32px;padding:0 8px;border-radius:10px;color:var(--text);font-weight:600;white-space:nowrap}
+a.drill-title[aria-current]{background:var(--raised)}
+@media (hover:hover) and (pointer:fine){a.drill-title:hover{background:var(--raised)}}
+
+/* ---------- Variant 3: Flyout. A slim rail; the second level floats beside it. ---------- */
+.v-flyout{grid-template-columns:80px minmax(0,1fr)}
+.v-flyout .rail{align-items:center;padding:12px 6px}
+.v-flyout .rail-scroll{align-items:center;gap:var(--space-s);width:100%;margin:0;padding:2px 0;overflow:visible}
+.fly-brand{position:relative;display:grid;place-items:center;flex:none;width:40px;height:40px;border:1px solid var(--edge);border-radius:13px;background:var(--panel);box-shadow:var(--shadow);color:var(--text);font-size:1.05rem;font-weight:600}
+.fly-group{display:grid;gap:2px;width:100%}
+.fly-item{position:relative;display:grid;justify-items:center;align-content:center;gap:3px;width:100%;height:54px;padding:0;border:1px solid transparent;border-radius:var(--radius);background:transparent;color:var(--muted);font-size:.7rem;font-weight:500;line-height:1.1;transition:transform 160ms var(--ease-out)}
+.fly-item:active{transform:scale(.97)}
+.fly-item[aria-expanded=true]{background:var(--raised);color:var(--text)}
+.fly-item[aria-current]{border-color:var(--edge-strong);background:var(--panel);box-shadow:var(--shadow);color:var(--text)}
+.fly-item .count{position:absolute;top:3px;right:9px;min-width:16px;height:16px;margin:0;padding:0 4px;font-size:.65rem}
+.fly-avatars,.fly-foot{display:grid;justify-items:center;gap:var(--space-xs);width:100%;padding-top:var(--space-s);border-top:1px solid var(--edge-faint)}
+.fly-foot{flex:none}
+.fly-avatar{position:relative;display:grid;place-items:center;width:40px;height:40px;border:1px solid transparent;border-radius:50%;transition:transform 160ms var(--ease-out)}
+.fly-avatar:active{transform:scale(.97)}
+.fly-avatar .avatar{width:30px;height:30px;font-size:.8rem}
+.fly-avatar[aria-current]{border-color:var(--edge-strong);background:var(--panel);box-shadow:var(--shadow)}
+.fly-avatar .dot-attn{position:absolute;top:1px;right:1px;margin:0;box-shadow:0 0 0 2px var(--rail-bg)}
+@media (hover:hover) and (pointer:fine){
+  .fly-item:hover:not([aria-current]){background:var(--raised);color:var(--text)}
+  .fly-avatar:hover:not([aria-current]){background:var(--raised)}
+}
+.pop.fly{top:8px;left:calc(100% + 8px);width:468px;min-width:0;max-height:calc(100% - 16px);overflow:auto;transform:translateX(-6px) scale(.98);transform-origin:left 293px}
+.pop.fly[data-open]{transform:none}
+.v-pinned .pop.fly{transform-origin:left 245px}
+.fly-head{display:none;align-items:center;justify-content:space-between;padding:2px 2px 2px 10px;font-weight:600}
+.pop-item .pinmark{display:inline-grid;margin-left:auto;color:var(--muted)}
+.pop-item .pinmark+.i.tick{margin-left:8px}
+.fly-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-xs);padding-bottom:6px}
+.fly-mod{margin:0;padding:8px 10px 2px;color:var(--muted);font-size:var(--type-small)}
+.pop-item.in{padding-left:22px}
+.fly-all{justify-content:space-between;min-height:40px;border-top:1px solid var(--edge-faint);border-radius:0 0 10px 10px;color:var(--link)!important;font-weight:500}
+
+/* ---------- Variant 4: Pinned. The rail holds what you pin. ---------- */
+.rail-row{position:relative;display:flex}
+.rail-row .rail-item{flex:1;min-width:0}
+.suffix{flex:0 9999 auto;min-width:0;margin-left:auto;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:.72rem;font-weight:400}
+.row-btn{position:absolute;top:50%;right:6px;display:grid;place-items:center;width:24px;height:24px;margin-top:-12px;padding:0;border:0;border-radius:8px;background:var(--raised);color:var(--muted);opacity:0;pointer-events:none;transition:opacity 120ms ease-out,transform 160ms var(--ease-out)}
+.row-btn:active{transform:scale(.94)}
+.rail-row.visiting .row-btn,.row-btn:focus-visible{opacity:1;pointer-events:auto}
+.rail-row.visiting .suffix{display:none}
+.rail-row.visiting .rail-item[aria-current]{padding-right:34px;border:1px dashed var(--edge-strong);background:transparent;box-shadow:none}
+@media (hover:hover) and (pointer:fine){
+  .rail-row:hover .row-btn{opacity:1;pointer-events:auto}
+  .rail-row:hover .suffix{visibility:hidden}
+  .row-btn:hover{color:var(--text)}
+}
+
+/* ---------- Icon rail: the collapsed state, and Flyout at every width ---------- */
+@media (min-width:761px){
+  .v-rail[data-rail=collapsed]{grid-template-columns:64px minmax(0,1fr)}
+  [data-rail=collapsed] .rail{padding-inline:11px}
+  [data-rail=collapsed] .rail-head{justify-content:center;padding-left:0}
+  [data-rail=collapsed] .rail :is(.brand,.lbl,.rail-hint,.tag,.suffix,.row-btn,.go,.drill-title,.rail-group.ctx,.rail-jump kbd){display:none}
+  /* Section labels become hairlines, so the icon groups stay separate. */
+  [data-rail=collapsed] .rail-label{height:1px;margin:6px 10px;overflow:hidden;background:var(--edge-faint);font-size:0}
+  [data-rail=collapsed] :is(.rail-scroll,.rail-pinned){overflow:visible}
+  [data-rail=collapsed] .rail-item{justify-content:center;flex:none;width:40px;padding:0;margin-inline:auto}
+  [data-rail=collapsed] .rail-item.more{display:flex}
+  [data-rail=collapsed] .rail-item :is(.count,.dot-attn){position:absolute;top:-4px;right:-4px;margin:0}
+  [data-rail=collapsed] .rail-item .count{min-width:16px;height:16px;padding:0 4px;font-size:.65rem}
+  [data-rail=collapsed] .rail-item .dot-attn{top:3px;right:5px;box-shadow:0 0 0 2px var(--rail-bg)}
+  [data-rail=collapsed] .rail-jump{justify-content:center;width:40px;padding:0;margin-inline:auto}
+  [data-rail=collapsed] .rail-foot{flex-direction:column}
+  [data-rail=collapsed] :is(.drill-head,.rail-row){justify-content:center}
+  [data-rail=collapsed] .rail-row.visiting .rail-item[aria-current]{padding-right:0}
+  [data-rail=collapsed] .rail-sep{margin-inline:8px}
+  :is([data-rail=collapsed],[data-rail=slim]) .rail [data-tip]::after{content:attr(data-tip);position:absolute;top:50%;left:calc(100% + 12px);z-index:60;padding:6px 10px;border-radius:8px;background:var(--text);color:var(--bg);font-size:var(--type-label);font-weight:500;line-height:1.2;letter-spacing:0;white-space:nowrap;opacity:0;pointer-events:none;transform:translate(-4px,-50%);transition:opacity 120ms ease-out,transform 120ms ease-out}
+  :is([data-rail=collapsed],[data-rail=slim]) .rail [data-tip]:focus-visible::after{opacity:1;transform:translate(0,-50%)}
+}
+@media (min-width:761px) and (hover:hover) and (pointer:fine){:is([data-rail=collapsed],[data-rail=slim]) .rail [data-tip]:hover:not([aria-expanded=true])::after{opacity:1;transform:translate(0,-50%);transition-delay:250ms}}
+
+/* ---------- Jump palette: every variant has it (⌘K or /) ---------- */
+.pal-scrim{opacity:0;visibility:hidden;transition:opacity 120ms ease-out,visibility 0s linear 120ms}
+.pal-scrim[data-open]{opacity:1;visibility:visible;transition:opacity 160ms ease-out,visibility 0s}
+.palette{position:absolute;top:min(12%,88px);left:50%;z-index:41;display:flex;flex-direction:column;width:min(580px,calc(100% - 32px));max-height:min(76%,560px);border:1px solid var(--edge);border-radius:20px;background:var(--panel);box-shadow:var(--pop-shadow);opacity:0;visibility:hidden;transform:translateX(-50%) scale(.97);transition:opacity 120ms ease-out,transform 120ms ease-out,visibility 0s linear 120ms}
+.palette[data-open]{opacity:1;visibility:visible;transform:translateX(-50%) scale(1);transition:opacity 180ms var(--ease-out),transform 180ms var(--ease-out),visibility 0s}
+.pal-search{display:flex;align-items:center;gap:10px;padding:0 var(--space-m);border-bottom:1px solid var(--edge-faint);color:var(--muted)}
+.pal-search input{flex:1;min-width:0;height:52px;border:0;outline:0;background:transparent;color:var(--text)}
+.pal-search input::placeholder{color:var(--muted)}
+#pal-list{overflow:auto;padding:6px;overscroll-behavior:contain}
+.pal-item{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:0 10px;border:0;border-radius:10px;background:transparent;color:var(--text);text-align:left;white-space:nowrap}
+.pal-item>.i:first-child{color:var(--muted)}
+.pal-item[aria-selected=true]{background:var(--raised)}
+.pal-name{overflow:hidden;text-overflow:ellipsis}
+.pal-hint{margin-left:auto;color:var(--muted);font-size:var(--type-small)}
+.pal-item .dot-attn{margin-left:0}
+.pal-item .tick{color:var(--muted)}
+.pal-empty{margin:0;padding:var(--space-l);color:var(--muted);text-align:center}
+.pal-foot{display:flex;gap:var(--space-m);padding:var(--space-s) var(--space-m);border-top:1px solid var(--edge-faint);color:var(--muted);font-size:var(--type-label)}
+.pal-foot span{display:inline-flex;align-items:center;gap:6px}
+
+/* ---------- Phones: the rail becomes a drawer ---------- */
+@media (max-width:760px){
+  .main{padding:env(safe-area-inset-top,0px) var(--space-m) 0}
+  .home-columns{grid-template-columns:minmax(0,1fr)}
+  .only-mobile{display:inline-grid}
+  .hide-mobile{display:none!important}
+  .v-rail{grid-template-columns:minmax(0,1fr)}
+  .main-head{gap:var(--space-s)}
+  .main-head[data-kind=page]{display:flex}
+  .v-rail .rail{position:absolute;inset:0 auto 0 0;z-index:50;width:min(82%,300px);box-shadow:var(--pop-shadow);visibility:hidden;transform:translateX(-104%);transition:transform 180ms ease-out,visibility 0s linear 180ms}
+  .v-rail .rail{padding-top:calc(var(--space-m) + env(safe-area-inset-top,0px))}
+  .embed .rail{padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}
+  .embed .conv-main{padding-bottom:calc(var(--space-m) + env(safe-area-inset-bottom,0px))}
+  .v-flyout .rail{width:80px}
+  .rail-item:is(.mod,.sub){min-height:40px}
+  .v-rail[data-drawer] .rail{visibility:visible;transform:none;transition:transform 240ms var(--ease-out),visibility 0s}
+  .drawer-scrim{opacity:0;visibility:hidden;transition:opacity 160ms ease-out,visibility 0s linear 160ms}
+  .v-rail[data-drawer] .drawer-scrim{opacity:1;visibility:visible;transition:opacity 200ms ease-out,visibility 0s}
+  .head-title small{display:none}
+  .details-btn span{display:none}
+  .details-btn{width:36px;padding:0}
+  .fly-head{display:flex}
+  .pop.fly .pop-item{min-height:44px}
+  .fly-cols{grid-template-columns:minmax(0,1fr)}
+  /* In a drawer the Devices menu takes over the panel. Beside Flyout's slim rail it still fits next to it. */
+  .pop.fly{inset:calc(8px + env(safe-area-inset-top,0px)) 8px 8px;width:auto;max-height:none;transform:translateX(12px);transform-origin:center}
+  .v-flyout .pop.fly{inset:calc(8px + env(safe-area-inset-top,0px)) auto auto calc(100% + 8px);width:min(468px,calc(100vw - 96px));max-height:calc(100% - 16px)}
+  .pop.right{max-width:calc(100vw - 2 * var(--space-m))}
+  .palette{top:var(--space-m);max-height:calc(100% - 2 * var(--space-m))}
+  .pal-foot{display:none}
+}
+@media (min-width:761px){.drawer-scrim{display:none}}
+@media (prefers-reduced-motion:reduce){.app *,.app *::before,.app *::after{animation:none!important;transition:none!important}}
+
+/* Devices prototype additions over the accepted shell's Quiet Glass tokens. */
+.proto-tag{color:var(--muted);font-size:var(--type-label);font-weight:500;letter-spacing:0}
+.top-proto{margin-left:auto}
+.rail-pinned .rail-group{min-width:0;grid-template-columns:minmax(0,1fr)}
+.rail-pinned .rail-item{min-width:0;gap:7px}
+.rail-pinned .avatar{position:relative}
+.rail-pinned .avatar .dot-attn{position:absolute;top:-1px;right:-1px;margin:0;width:7px;height:7px;box-shadow:0 0 0 2px var(--rail-bg)}
+.rail-pinned .tag{padding-inline:5px}
+@media(min-width:761px){[data-rail=expanded] .rail-pinned .rail-item{gap:6px;padding-inline:6px;font-size:var(--type-small)}}
+.inventory{display:grid;gap:24px;max-width:880px}
+.inventory-section h2{margin:0 0 8px;font-size:var(--type-heading);font-weight:500}
+.inventory-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.inventory-card{display:flex;align-items:center;gap:12px;padding:15px;border-radius:18px}
+.inventory-card:hover{background:var(--raised)}
+.inventory-icon{display:grid;place-items:center;width:38px;height:38px;flex:none;border-radius:12px;background:var(--inset);color:var(--link)}
+.inventory-name{flex:1;min-width:0}
+.inventory-name strong,.inventory-name small{display:block}
+.inventory-name small,.inventory-state{color:var(--muted);font-size:var(--type-label)}
+.inventory-state{display:flex;align-items:center;gap:6px;text-align:right}
+.inventory-state .status-dot{width:6px;height:6px}
+.inventory-brand{padding:0 12px 12px;border-radius:18px}
+.inventory-brand .inventory-card{padding:12px 3px}
+.inventory-brand .dir-links a{min-height:40px;padding-block:5px}
+.device-title{margin-bottom:16px}
+.display-tabs{margin-bottom:16px}
+.display-tabs .seg-btn{display:inline-flex;align-items:center;min-height:40px}
+.display-tabs [aria-current]{background:var(--accent);color:var(--accent-ink)}
+.device-panels{grid-template-columns:repeat(2,minmax(0,1fr));max-width:920px;gap:16px}
+.device-settings{max-width:540px}
+.device-panels .dir-links{margin-top:12px}
+.pixel-display{width:100%;max-width:288px;margin:12px 0 0;padding:11px;background:#1b2028;border:1px solid #49515d;border-radius:15px;box-shadow:0 8px 18px #0d101630,inset 0 0 0 2px #0f1319}
+.pixel-art{position:relative;isolation:isolate;display:grid;overflow:hidden;aspect-ratio:2;background:#111929;color:#d9ecff;border:2px solid #080b10;border-radius:5px}
+.pixel-art::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,transparent 0 3px,#0004 3px 4px),repeating-linear-gradient(90deg,transparent 0 3px,#0004 3px 4px)}
+.pixoo-screen{max-width:222px;border-radius:12px}
+.pixoo-screen .pixel-art{aspect-ratio:1}
+.pixel-moon{position:absolute;top:16%;left:23%;width:22%;aspect-ratio:1;background:#fbcbb5;clip-path:polygon(22% 0,78% 0,78% 12%,90% 12%,90% 24%,100% 24%,100% 76%,90% 76%,90% 88%,78% 88%,78% 100%,22% 100%,22% 88%,10% 88%,10% 76%,0 76%,0 24%,10% 24%,10% 12%,22% 12%)}
+.pixel-hills{position:absolute;inset:35% 0 24%;background:linear-gradient(#706bb9,#343365);clip-path:polygon(0 64%,15% 64%,15% 50%,30% 50%,30% 38%,45% 38%,45% 24%,59% 24%,59% 36%,68% 36%,68% 50%,81% 50%,81% 67%,100% 67%,100% 100%,0 100%)}
+.pixel-track,.pixel-sessions{display:grid;align-content:center;gap:4px;padding:0 12%;font:600 .72rem/1.2 ui-monospace,monospace;letter-spacing:.06em}
+.pixel-track{position:absolute;inset:auto 0 8%}
+.pixel-track span,.pixel-sessions span{color:#9baec6;font-size:.62rem}
+.tidbyt-screen{background:#805b40;border-color:#927254;box-shadow:0 8px 18px #0d101630,inset 0 0 0 2px #503826}
+.pixel-sessions b:first-child{color:#99e8a7}.pixel-sessions b:nth-child(2){color:#f6cb80}
+.transmission{margin-top:8px;border-top:1px solid var(--edge-faint);padding-top:8px}
+.transmission summary{min-height:40px;cursor:pointer;font-weight:500}
+.transmission summary small{float:right;color:var(--muted);font-weight:400}
+.playlist-name{width:100%;min-height:44px;padding:8px 12px;border:1px solid var(--edge);border-radius:12px;background:var(--inset);color:var(--text)}
+.playlist-items{margin:0 0 12px;padding-left:24px}.playlist-items li{padding:6px 2px}.playlist-items small{float:right;color:var(--muted)}
+.save-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#pop-devices{display:flex;flex-direction:column;width:404px;overflow:hidden}
+@media(min-width:761px){
+  #pop-devices{
+    --devices-menu-offset:clamp(8px,var(--devices-menu-top,8px),40%);
+    top:var(--devices-menu-offset);
+    max-height:calc(100% - var(--devices-menu-offset) - 8px);
+    transform-origin:top left;
+  }
+}
+#pop-devices .fly-cols{gap:12px}
+#pop-devices .fly-head{display:flex;flex:none}
+#pop-devices .fly-scroll{min-height:0;overflow:auto;overscroll-behavior:contain}
+#pop-devices .fly-all{flex:none}
+.device-menu-name{font-weight:500}
+.device-menu-brand summary{cursor:pointer;list-style:none}
+.device-menu-brand summary::-webkit-details-marker{display:none}
+.device-menu-brand summary .i{margin-left:auto;color:var(--muted)}
+.device-menu-brand[open] summary .i{transform:rotate(90deg)}
+.device-menu-lights{margin-left:14px;padding-left:6px;border-left:1px solid var(--edge-faint)}
+#pop-devices .device-menu-light{font-size:var(--type-small)}
+#pop-devices .device-menu-overview{color:var(--link)}
+#pop-devices .device-menu-task{width:calc(100% - 8px);padding-left:15px;min-height:34px;color:var(--link);font-size:var(--type-small)}
+#pop-devices .device-menu-task .i:not(.tick){color:var(--muted)}
+#pop-devices .device-menu-entry:has(.device-menu-task)+.device-menu-entry{margin-top:4px}
+@media(max-width:760px){
+  #pop-devices{width:auto}
+  #pop-devices .fly-scroll{flex:1}
+  #pop-devices .device-menu-task{min-height:44px}
+  .inventory-grid,.device-panels{grid-template-columns:minmax(0,1fr)}
+  .device-panels .card{padding:18px}
+  .display-tabs .seg-btn{padding:0 10px}
+  .device-title .pin-btn{min-height:40px}
+}
+@media(max-width:365px){.display-tabs .seg-btn{padding:0 7px}.top-proto{font-size:.7rem}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+'use strict';
+/* ================= Sample data and shared state ================= */
+const ICONS = {
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>',
+  habitat: '<path d="M3 19h18"/><path d="M5 19a7 7 0 0 1 14 0"/><path d="M10 19v-2.5a2 2 0 0 1 4 0V19"/>',
+  rooms: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M12 4.5V11"/><path d="M3.5 13.5H9"/><path d="M13 13.5h7.5"/>',
+  devices: '<rect x="3" y="5" width="12" height="9" rx="1.5"/><path d="M6.5 18h5"/><path d="M9 14v4"/><rect x="17" y="9" width="4.5" height="9.5" rx="1.2"/>',
+  automation: '<path d="M13 3 5.5 13H11l-1 8 7.5-10H12l1-8Z"/>',
+  settings: '<path d="M4 7h9"/><path d="M19 7h1"/><circle cx="16" cy="7" r="2.5"/><path d="M4 17h1"/><path d="M11 17h9"/><circle cx="8" cy="17" r="2.5"/>',
+  chat: '<path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 16h-7.5L7 19.5V16H5a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 5 5Z"/>',
+  page: '<path d="M7.5 3.5H14l4 4V19a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19V5a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M14 3.5V8h4"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>',
+  panel: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M14.5 4.5v15"/>',
+  sidebar: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/>',
+  chev: '<path d="m6.5 9.5 5.5 5.5 5.5-5.5"/>',
+  chevr: '<path d="m9.5 6.5 5.5 5.5-5.5 5.5"/>',
+  updown: '<path d="m8 9.5 4-4 4 4"/><path d="m8 14.5 4 4 4-4"/>',
+  wave: '<path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 8v8"/><path d="M20 10v4"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  menu: '<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>',
+  back: '<path d="M19 12H5"/><path d="m11 6-6 6 6 6"/>',
+  more: '<circle cx="6" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18" cy="12" r="1.2"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  pin: '<path d="M9 3.5h6l-.8 6.2 3.3 3.3h-11l3.3-3.3L9 3.5Z"/><path d="M12 13v7.5"/>',
+  x: '<path d="m6.5 6.5 11 11"/><path d="m17.5 6.5-11 11"/>',
+};
+const icon = (name, size = 18, cls = '') => `<svg class="i${cls ? ' ' + cls : ''}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+const esc = value => String(value).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const cur = on => on ? ' aria-current="page"' : '';
+
+const HUB = [['home', 'Home', 'home'], ['habitat', 'Habitat', 'habitat'], ['rooms', 'Rooms', 'rooms'], ['devices', 'Devices', 'devices'], ['automation', 'Automation', 'automation']];
+const TOP_TITLES = {home: 'Home', habitat: 'Habitat', rooms: 'Rooms', devices: 'Devices', automation: 'Automation', settings: 'Settings', connections: 'Connections'};
+const LIGHTING_BRANDS = [
+  {id: 'nanoleaf', name: 'Nanoleaf', lights: [['nanoleaf-lines', 'Lines'], ['nanoleaf-panels', 'Panels']]},
+  {id: 'lifx', name: 'LIFX', lights: [['lifx-floor-lamp', 'Floor lamp'], ['lifx-desk-lamp', 'Desk lamp'], ['lifx-shelf-light', 'Shelf light'], ['lifx-light-bar', 'Light bar']]},
+];
+const HARDWARE = [
+  {id: 'pixoo', name: 'Pixoo', category: 'Displays', place: 'Living room', state: 'Online'},
+  {id: 'tidbyt', name: 'Tidbyt', category: 'Displays', place: 'Office', state: 'Backend reachable'},
+  ...LIGHTING_BRANDS.map(brand => ({...brand, category: 'Lighting'})),
+  {id: 'roborock', name: 'Roborock', category: 'Appliances', place: 'Living room', state: 'Docked'},
+  {id: 'wemo', name: 'Wemo', category: 'Appliances', place: 'Kitchen', state: 'Stale', stale: true},
+];
+const CATEGORIES = ['Displays', 'Lighting', 'Appliances'];
+const MODULES = [
+  ...LIGHTING_BRANDS.map(({id, name, lights}) => ({
+    id, label: name, cat: 'Lighting',
+    pages: [[id, name], ...lights, ...(id === 'nanoleaf' ? [['nanoleaf-shows', 'Decorative shows']] : [])],
+  })),
+  {id: 'pixoo', label: 'Pixoo', cat: 'Displays', pages: [['pixoo', 'Pixoo'], ['pixoo-media', 'Media library'], ['pixoo-playlists', 'Playlists'], ['pixoo-agent', 'Agent status'], ['pixoo-settings', 'Device settings']]},
+  {id: 'tidbyt', label: 'Tidbyt', cat: 'Displays', pages: [['tidbyt', 'Tidbyt'], ['tidbyt-content', 'Content'], ['tidbyt-transmission', 'Last transmission']]},
+  {id: 'music', label: 'Music', cat: 'Audio', home: 'audio', pages: [['audio', 'Audio'], ['visualizer', 'Visualizer']]},
+  {id: 'companions', label: 'Companions', cat: 'Other', home: 'conversation', pages: [['reachy', 'Reachy'], ['microduck', 'MicroDuck'], ['conversation', 'Conversation'], ['preferences', 'Preferences'], ['knowledge', 'Companion knowledge'], ['duck', 'Duck conversation']]},
+  {id: 'roborock', label: 'Roborock', cat: 'Other', home: 'roborock', pages: [['roborock', 'Roborock']]},
+  {id: 'volcano', label: 'Volcano', cat: 'Other', home: 'volcano', pages: [['volcano', 'Volcano']]},
+  {id: 'wemo', label: 'Wemo', cat: 'Other', home: 'wemo', pages: [['wemo', 'Wemo']]},
+  {id: 'wispr', label: 'Wispr', cat: 'Other', home: 'wispr', pages: [['wispr', 'Analytics']]},
+];
+const PROFILES = {
+  bunny: {name: 'B.U.N.N.Y.', kind: 'Everyday assistant', initial: 'B'},
+  reachy: {name: 'Reachy', kind: 'Demo', initial: 'R'},
+  microduck: {name: 'MicroDuck', kind: 'Demo', initial: 'M'},
+};
+const FACTS = {
+  'nanoleaf-shows': [['Running show', 'None'], ['Saved shows', 'Sunrise sweep, Rain window, Idle shimmer']],
+  pixoo: [['Mode', 'Monitor · agent status'], ['Brightness', '70%'], ['Last frame', '8 seconds ago']],
+  tidbyt: [['App', 'Agent status'], ['Brightness', '35%'], ['Server', 'Local']],
+  audio: [['Now playing', 'Nothing playing'], ['Sources', 'Living room speaker, Desk DAC']],
+  visualizer: [['Capture', 'Stopped'], ['Effect', 'Spectrum bars']],
+  roborock: [['State', 'Docked · charging'], ['Last clean', 'Living room · 23 minutes'], ['Battery', '100%']],
+  volcano: [['State', 'Off'], ['Target temperature', '185 °C']],
+  wemo: [['Kettle plug', 'Off'], ['Fan plug', 'On · 31 W']],
+  wispr: [['Today', '1,240 words dictated'], ['This week', '8,910 words']],
+  reachy: [['Connection', 'Simulator'], ['Last motion', 'Wave · 2 minutes ago'], ['Speech', 'Ready']],
+  microduck: [['Connection', 'Not connected'], ['Last notice', 'None']],
+};
+
+/** Choices that outlive a reload. Storage can be unavailable, so every read has a fallback and a failed write only loses the memory. */
+const store = {
+  get(key, fallback) { try { const raw = localStorage.getItem(`devices-prototype.${key}`); return raw === null ? fallback : JSON.parse(raw); } catch { return fallback; } },
+  set(key, value) { try { localStorage.setItem(`devices-prototype.${key}`, JSON.stringify(value)); } catch { /* The choice lasts for this page only. */ } },
+};
+const savedRail = store.get('rail', null), savedPins = store.get('pins', null);
+
+const S = {
+  route: 'conversation', profile: 'bunny', recents: ['home', 'nanoleaf-panels', 'rooms'],
+  railPref: {wide: typeof savedRail?.wide === 'boolean' ? savedRail.wide : null, narrow: typeof savedRail?.narrow === 'boolean' ? savedRail.narrow : null},
+  pins: Array.isArray(savedPins) ? [...new Set(savedPins.filter(id => typeof id === 'string').map(id => id === 'nanoleaf-wall' ? 'nanoleaf' : id))] : ['nanoleaf-panels', 'roborock'],
+  expandedLightBrands: new Set(),
+  details: false, voice: false, enabled: true, feed: true, working: null, focus: null, scroll: 0, opened: false,
+  mode: 'Home', drafts: {}, pending: {reachy: true},
+  inbox: [{id: 'a', title: 'Roborock finished the living room', meta: 'Roborock · 12 minutes ago'}, {id: 'b', title: 'Art schedule skipped the 18:00 slot', meta: 'Art · 41 minutes ago'}],
+  lights: {living: true, bedroom: false, office: true, kitchen: false},
+  routines: {evening: true, away: true, wake: false},
+  selectedPlaylist: 'evening', playlistSaved: false,
+  playlists: {
+    evening: {name: 'Evening loop', draft: 'Evening loop', items: [['Rain window', '30 s'], ['City lights', '45 s'], ['Blue hour', '30 s']]},
+    morning: {name: 'Morning rotation', draft: 'Morning rotation', items: [['Blue hour', '30 s'], ['City lights', '20 s']]},
+  },
+  pal: {q: '', i: 0, items: [], from: null},
+  threads: {
+    bunny: [
+      {role: 'owner', text: 'Is the living room ready for movie night?'},
+      {role: 'assistant', text: 'Roborock docked 12 minutes ago after finishing the living room. The Pixoo is still showing agent status.', tool: 'Device status: read Roborock and Pixoo. No commands were sent.'},
+      {role: 'owner', text: 'What would Media mode change?'},
+      {role: 'assistant', text: 'Media mode dims selected lights and moves the Pixoo and Tidbyt from agent status to now playing. I can propose the change. It would need your approval before anything is sent.'},
+    ],
+    reachy: [
+      {role: 'owner', text: 'Wave when the build finishes.'},
+      {role: 'assistant', text: 'Which arm should wave: left, right or both?'},
+    ],
+    microduck: [],
+  },
+};
+
+const pageInfo = id => { for (const module of MODULES) for (const [page, title] of module.pages) if (page === id) return {module, title}; return undefined; };
+const titleOf = id => TOP_TITLES[id] ?? pageInfo(id)?.title;
+const destOf = id => {
+  const info = pageInfo(id);
+  if (HARDWARE.some(device => device.id === info?.module.id)) return 'devices';
+  if (['connections', 'preferences', 'knowledge'].includes(id)) return 'settings';
+  if (['reachy', 'microduck', 'duck'].includes(id)) return 'habitat';
+  return id;
+};
+const attention = () => Object.keys(S.pending).length > 0;
+const feedText = () => S.feed ? 'Feed connected' : 'Signed out';
+
+/* ================= Shared fragments ================= */
+const countBadge = () => S.inbox.length ? `<span class="count" aria-label="${S.inbox.length} inbox items">${S.inbox.length}</span>` : '';
+const attnDot = id => S.pending[id] ? '<span class="dot-attn" role="img" aria-label="Needs your answer"></span>' : '';
+const tick = on => on ? icon('check', 14, 'tick') : '';
+
+function statusPop(id, cls) {
+  return `<div class="pop ${cls}" id="${id}" role="dialog" aria-label="Connection"><div class="pop-body">
+    <p><strong>${feedText()}</strong></p>
+    <p>${S.feed ? 'Control enabled · Local' : 'These are the last records the page had.'}</p>
+    ${S.feed ? '<p>Core sessions: synced</p>' : ''}
+    <p class="pop-hint">Connection health does not prove task success.</p>
+    ${S.feed ? '' : '<button class="btn sm" data-act="feed">Sign in again</button>'}
+  </div></div>`;
+}
+const detailsButton = () => S.route === 'conversation' ? `<button class="btn secondary sm details-btn" data-act="details" aria-expanded="${S.details}" title="Conversation details">${icon('panel', 16)}<span>Details</span></button>` : '';
+
+/* ================= Pages ================= */
+const facts = rows => `<dl class="facts">${rows.map(([term, value]) => `<div><dt>${term}</dt><dd>${value}</dd></div>`).join('')}</dl>`;
+const toggle = (act, key, on, label) => `<button class="toggle" role="switch" aria-checked="${on}" aria-label="${label}" data-act="${act}" data-v="${key}"></button>`;
+
+const routeLink = (id, label, extra = '') =>
+  `<a href="#${id}" data-go="${id}" ${extra}>${label}</a>`;
+const listLinks = (items, label) =>
+  `<nav class="dir-links" aria-label="${label}">${items.map(([id, text]) => routeLink(id, text + icon('chevr', 14))).join('')}</nav>`;
+
+function inventoryEntry(device) {
+  const glyph = device.lights ? 'automation' : device.category === 'Displays' ? 'devices' : 'settings';
+  const name = `<span class="inventory-icon">${icon(glyph, 20)}</span>
+    <span class="inventory-name"><strong>${device.name}</strong><small>${device.lights ? `${device.lights.length} lights` : device.place}</small></span>`;
+  if (device.lights) {
+    return `<article class="card inventory-brand">
+      ${routeLink(device.id, name + icon('chevr', 14), 'class="inventory-card"')}
+      ${listLinks(device.lights, `${device.name} lights`)}
+    </article>`;
+  }
+  const state = `<span class="inventory-state"><span class="status-dot"${device.stale ? ' data-off' : ''}></span>${device.state}</span>`;
+  return routeLink(device.id, name + state, 'class="card inventory-card"');
+}
+
+function devicesDirectory() {
+  return `<header class="page"><h1>Devices</h1></header>
+    <div class="inventory">${CATEGORIES.map(category => `<section class="inventory-section" aria-label="${category}">
+      <h2>${category}</h2><div class="inventory-grid">${HARDWARE.filter(device => device.category === category).map(inventoryEntry).join('')}</div></section>`).join('')}</div>`;
+}
+
+function lightingPage(brand, route) {
+  const light = brand.lights.find(([id]) => id === route);
+  if (light) {
+    return `${routeLink(brand.id, icon('back', 14) + brand.name, 'class="backlink"')}
+      <header class="page device-title"><h1>${light[1]}</h1>${pinButton(route)}</header>
+      <article class="card device-settings"><h2>Light details</h2>${facts([['Brand', brand.name], ['Name', light[1]]])}</article>`;
+  }
+  return `${deviceHeader(brand.name, route)}
+    <article class="card device-settings"><h2>Lights</h2>${listLinks(brand.lights, `${brand.name} lights`)}</article>`;
+}
+
+function displayTabs(tabs, selected, label) {
+  return `<nav class="seg display-tabs" aria-label="${label}">${tabs.map(([id, text]) =>
+    routeLink(id, text, `class="seg-btn"${cur(selected === id)}`)).join('')}</nav>`;
+}
+
+function deviceHeader(name, route) {
+  return `${routeLink('devices', icon('back', 14) + 'All devices', 'class="backlink"')}
+    <header class="page device-title"><h1>${name}</h1>${pinButton(route)}</header>`;
+}
+
+const nowPlayingArt = `<div class="pixel-display pixoo-screen" aria-hidden="true"><div class="pixel-art">
+  <div class="pixel-moon"></div><div class="pixel-hills"></div>
+  <div class="pixel-track"><b>RAIN WINDOW</b><span>AMBIENT LOOP</span></div>
+</div></div>`;
+const tidbytArt = `<div class="pixel-display tidbyt-screen" aria-hidden="true"><div class="pixel-art">
+  <div class="pixel-sessions"><b>2 WORKING</b><b>1 WAITING</b><span>AGENT STATUS</span></div>
+</div></div>`;
+
+function pixooPage(route) {
+  const section = ['pixoo-media', 'pixoo-playlists'].includes(route) ? 'pixoo-media'
+    : route === 'pixoo-agent' ? 'pixoo-agent'
+    : route === 'pixoo-settings' ? 'pixoo-settings' : 'pixoo';
+  const tabs = [['pixoo', 'Display'], ['pixoo-media', 'Media'], ['pixoo-agent', 'Agent status']];
+  if (section === 'pixoo-settings') tabs.push(['pixoo-settings', 'Settings']);
+  return `${deviceHeader('Pixoo', route)}${displayTabs(tabs, section, 'Pixoo sections')}${pixooSection(route)}`;
+}
+
+function pixooSection(route) {
+  switch (route) {
+    case 'pixoo-media':
+    case 'pixoo-playlists':
+      return `${displayTabs([['pixoo-media', 'Library'], ['pixoo-playlists', 'Playlists']], route, 'Pixoo media')}
+        ${route === 'pixoo-media' ? mediaLibrary() : playlistEditor()}`;
+    case 'pixoo-agent':
+      return `<div class="grid device-panels">
+        <article class="card"><h2>Agent status</h2>${facts([['Presentation', 'Agent sessions'], ['Cadence', '10 seconds'], ['Visible sessions', 'Working and waiting']])}<p class="hint">These settings apply to agent status on Pixoo.</p></article>
+        <article class="card"><h2>Agent status preview</h2>${tidbytArt}<p class="hint">Illustration with sample sessions.</p></article></div>`;
+    case 'pixoo-settings':
+      return `<article class="card device-settings"><h2>Device settings</h2>${facts([['Device', 'Pixoo 64'], ['Connection', 'Local'], ['Configuration', 'Managed on the runtime host']])}</article>`;
+    default:
+      return `<div class="grid device-panels">
+        <article class="card"><h2>On the display</h2>${nowPlayingArt}<p class="hint">Sample playback preview.</p></article>
+        <article class="card"><h2>Playback &amp; screen</h2>
+          ${facts([['Playing', 'Rain window'], ['Playlist', 'Evening loop'], ['Brightness', '70%'], ['Room', 'Living room']])}
+          ${listLinks([['pixoo-settings', 'Device settings']], 'Pixoo setup')}
+        </article></div>`;
+  }
+}
+
+function mediaLibrary() {
+  return `<article class="card device-settings"><h2>Library</h2><ul class="rows">${['Rain window', 'City lights', 'Blue hour'].map(name =>
+    `<li><span class="grow"><strong>${name}</strong><small>64 × 64 animation</small></span></li>`).join('')}</ul></article>`;
+}
+
+function playlistEditor() {
+  const playlist = S.playlists[S.selectedPlaylist];
+  const dirty = playlist.draft !== playlist.name;
+  return `<div class="grid device-panels">
+    <article class="card"><h2>Playlists</h2><ul class="rows">${Object.entries(S.playlists).map(([id, item]) =>
+      `<li><span class="grow"><strong>${esc(item.name)}</strong><small>${item.items.length} items</small></span>
+        <button class="btn secondary sm" data-act="pick-playlist" data-v="${id}" aria-pressed="${id === S.selectedPlaylist}">Edit<span class="vh"> ${esc(item.name)}</span></button></li>`).join('')}</ul></article>
+    <article class="card"><h2>Edit playlist</h2>
+      <label class="field">Name<input class="playlist-name" id="playlist-name" value="${esc(playlist.draft)}" maxlength="60"></label>
+      <ol class="playlist-items">${playlist.items.map(([name, duration]) => `<li><span>${name}</span><small>${duration}</small></li>`).join('')}</ol>
+      <div class="save-row"><button class="btn" data-act="save-playlist"${dirty && playlist.draft.trim() ? '' : ' disabled'}>Save playlist</button>
+      <span class="hint" id="playlist-result" role="status">${S.playlistSaved ? 'Saved in this demo.' : ''}</span></div></article></div>`;
+}
+
+function tidbytPage(route) {
+  const content = route === 'tidbyt-content';
+  const direct = route === 'tidbyt-transmission';
+  return `${deviceHeader('Tidbyt', route)}
+    ${displayTabs([['tidbyt', 'Status'], ['tidbyt-content', 'Content']], content ? 'tidbyt-content' : 'tidbyt', 'Tidbyt sections')}
+    <div class="grid device-panels"><article class="card"><h2>Display illustration</h2>${tidbytArt}
+      <p class="hint">Sample layout for the 64 × 32 display.</p></article>
+    <article class="card">${content
+      ? `<h2>Automatic content</h2>${facts([['Agent status', 'On'], ['Now playing', 'On when music is playing'], ['Rotation', 'Automatic']])}`
+      : `<h2>Backend status</h2>${facts([['Backend', 'Tronbyt'], ['Availability', 'Reachable'], ['Room', 'Office']])}
+          <details class="transmission" id="transmission"${direct ? ' open' : ''}>
+            <summary>Last transmission <small>2 min ago</small></summary>
+            ${facts([['Content', 'Agent status'], ['Result', 'Accepted by Tronbyt'], ['Time', '10:42 AM']])}
+            <p class="hint">Backend acceptance records delivery to Tronbyt. Physical display output is unknown.</p>
+          </details>`}</article></div>`;
+}
+
+function drawDeviceMenu() {
+  const menuLink = (id, text, extra = '') => routeLink(id,
+    text + (S.pins.includes(id) ? `<span class="pinmark" role="img" aria-label="Pinned">${icon('pin', 12)}</span>` : '') + tick(S.route === id),
+    `role="menuitem" class="pop-item ${extra}"${cur(S.route === id)}`);
+  const entry = device => {
+    if (!device.lights) return menuLink(device.id, device.name, 'device-menu-name');
+    const open = S.expandedLightBrands.has(device.id) || pageInfo(S.route)?.module.id === device.id;
+    return `<details class="device-menu-brand" data-light-brand="${device.id}"${open ? ' open' : ''}>
+      <summary class="pop-item device-menu-name" role="menuitem" aria-expanded="${open}">${device.name}${icon('chevr', 14)}</summary>
+      <div class="device-menu-lights">${device.lights.map(([id, label]) => menuLink(id, label, 'device-menu-light')).join('')}
+        ${menuLink(device.id, `${device.name} overview`, 'device-menu-light device-menu-overview')}</div></details>`;
+  };
+  const group = category => `<section aria-label="${category}">
+    <p class="pop-label">${category}</p>${HARDWARE.filter(device => device.category === category).map(entry).join('')}</section>`;
+  return `<div class="pop fly" id="pop-devices" role="menu" aria-label="Device pages">
+    <div class="fly-head"><strong>Devices</strong><button class="icon-btn" data-act="close-menu" aria-label="Close device pages">${icon('x', 16)}</button></div>
+    <div class="fly-scroll"><div class="fly-cols">${group('Displays')}<div>${group('Lighting')}${group('Appliances')}</div></div></div>
+    ${routeLink('devices', 'All devices' + icon('chevr', 14), 'class="pop-item fly-all" role="menuitem"')}</div>`;
+}
+
+function pageBody(route) {
+  const head = (title, extra = '') => `<header class="page"><h1>${title}</h1>${extra}${pinButton(route)}</header>`;
+  if (route === 'pixoo' || route.startsWith('pixoo-')) return pixooPage(route);
+  if (route === 'tidbyt' || route.startsWith('tidbyt-')) return tidbytPage(route);
+  const brand = LIGHTING_BRANDS.find(candidate => candidate.id === route || candidate.lights.some(([id]) => id === route));
+  if (brand) return lightingPage(brand, route);
+  switch (route) {
+    case 'home': return `${head('Home')}<div class="home-columns"><div class="stack">
+      <article class="card"><h2>Hub mode</h2><div class="seg" role="group" aria-label="Hub mode">${['Home', 'Away', 'Quiet', 'Media'].map(mode => `<button class="seg-btn" data-act="mode" data-v="${mode}" aria-pressed="${S.mode === mode}">${mode}</button>`).join('')}</div>
+        <p class="hint">Displays and lights follow the selected mode. Device exceptions keep their own setting.</p></article>
+      <article class="card"><h2>Agent sessions</h2><ul class="rows">
+        <li><span class="grow"><strong>Dashboard navigation</strong><small>Claude · this computer · 2 minutes ago</small></span><span class="chip" data-chip="working">Working</span></li>
+        <li><span class="grow"><strong>Lighting scenes</strong><small>Codex · this computer · 6 minutes ago</small></span><span class="chip" data-chip="approval">Needs approval</span></li>
+        <li><span class="grow"><strong>Clock tests</strong><small>Claude · workstation · 14 minutes ago</small></span><span class="chip" data-chip="finished">Finished</span></li>
+      </ul></article></div>
+      <div class="stack"><article class="card"><h2>Inbox</h2>${S.inbox.length ? `<ul class="rows">${S.inbox.map(item => `<li><span class="grow"><strong>${item.title}</strong><small>${item.meta}</small></span><button class="btn secondary sm" data-act="ack" data-v="${item.id}">Acknowledge</button></li>`).join('')}</ul>` : '<p class="hint">Nothing waiting.</p>'}</article>
+      <article class="card"><h2>Timeline</h2><ul class="rows">
+        <li><span class="grow"><strong>Hub mode set to Home</strong><small>08:12</small></span></li>
+        <li><span class="grow"><strong>Roborock started the living room</strong><small>19:04</small></span></li>
+      </ul></article></div></div>`;
+    case 'habitat': return `${head('Habitat')}<div class="grid">
+      <article class="card"><h2>At the desk</h2><p>Dashboard navigation</p><p class="hint">Working. Last activity 2 minutes ago.</p></article>
+      <article class="card"><h2>Waiting at the door</h2><p>Lighting scenes</p><p class="hint">Needs approval before it continues.</p></article>
+      <article class="card"><h2>Companions</h2>${listLinks([['reachy', 'Reachy'], ['microduck', 'MicroDuck'], ['duck', 'Duck conversation']], 'Companion profiles')}</article>
+      <article class="card"><h2>Asleep in the burrow</h2><p>Clock tests</p><p class="hint">Finished 14 minutes ago.</p></article></div>`;
+    case 'rooms': return `${head('Rooms')}<div class="grid">${[['living', 'Living room', 'Pixoo', 'Occupied'], ['bedroom', 'Bedroom', 'Wemo Fan plug', 'Vacant'], ['office', 'Office', 'Tidbyt', 'Occupied'], ['kitchen', 'Kitchen', 'Wemo Kettle plug', 'Vacant']].map(([key, name, devices, presence]) =>
+      `<article class="card"><h2>${name}</h2><p>${devices}</p><ul class="rows"><li><span class="grow"><strong>Lights</strong><small>${presence}</small></span>${toggle('light', key, S.lights[key], `${name} lights`)}</li></ul></article>`).join('')}</div>`;
+    case 'devices': return devicesDirectory();
+    case 'automation': return `${head('Automation')}<div class="grid">
+      <article class="card"><h2>Routines</h2><ul class="rows">${[['evening', 'Evening lights', 'Every day at sunset'], ['away', 'Away sweep', 'When the hub mode becomes Away'], ['wake', 'Wake the office', 'Weekdays at 07:30']].map(([key, name, when]) => `<li><span class="grow"><strong>${name}</strong><small>${when}</small></span>${toggle('routine', key, S.routines[key], name)}</li>`).join('')}</ul></article>
+      <article class="card"><h2>Art schedule</h2>${facts([['Next appearance', 'Today · 19:30 UTC'], ['Displays', 'Pixoo, Tidbyt'], ['Theme', 'Rain window']])}<p class="hint">Times use the runtime's UTC clock.</p></article></div>`;
+    case 'settings': return `${head('Settings')}<div class="grid">
+      <article class="card"><h2>Connections</h2><p class="hint" style="margin:0 0 var(--space-m)!important">Connection evidence, running build and operator tools.</p><nav class="dir-links"><a href="#" data-go="connections">Connections${icon('chevr', 14)}</a></nav></article>
+      <article class="card"><h2>Browser session</h2><p><span class="inline-status"><span class="status-dot"${S.feed ? '' : ' data-off'}></span>${feedText()}</span></p><button class="btn secondary" data-act="feed">${S.feed ? 'Disconnect' : 'Sign in again'}</button></article>
+      <article class="card"><h2>Companions</h2>${listLinks([['preferences', 'Preferences'], ['knowledge', 'Companion knowledge']], 'Companion settings')}</article>
+      <article class="card"><h2>Navigation rail</h2>${railSettings()}</article>
+      <article class="card"><h2>Art theme</h2><label class="field">Dashboard theme<select><option>Quiet glass</option><option>Follow the current art</option></select></label><p class="hint">The theme changes this browser only.</p></article></div>`;
+    case 'connections': return `<a href="#" class="backlink" data-go="settings">${icon('back', 14)}Back to Settings</a>${head('Connections')}<div class="grid">
+      <article class="card"><h2>Connection</h2>${facts([['Feed', feedText()], ['Core sessions', S.feed ? 'Synced' : 'Not synced'], ['Core revision', '4127'], ['Syncs', '3'], ['Last change', '12 seconds ago']])}</article>
+      <article class="card"><h2>Observed sources</h2><p>claude / this-computer / desktop</p><p>codex / this-computer / desktop</p><p class="hint">A connected feed does not prove a fresh session, successful task, read chat or physical device result.</p></article></div>`;
+    case 'preferences': return `${head('Preferences')}<div class="grid"><article class="card"><h2>Spoken replies</h2>
+      <label class="field">Voice<select><option>Warm, medium pace</option><option>Bright, quick pace</option><option>Low, slow pace</option></select></label>
+      <label class="check"><input type="checkbox" checked> Speak replies on this computer</label><p class="hint">Preferences are saved privately and apply to every conversation profile.</p></article></div>`;
+    case 'knowledge': return `${head('Companion knowledge')}<div class="grid"><article class="card"><h2>Saved notes</h2><ul class="rows">
+      <li><span class="grow"><strong>Room names</strong><small>Living room, Bedroom, Office, Kitchen</small></span></li>
+      <li><span class="grow"><strong>Movie night</strong><small>Media mode, wall at 15%, floor lamp off</small></span></li>
+      <li><span class="grow"><strong>Quiet hours</strong><small>22:30 to 07:00, no spoken replies</small></span></li></ul></article></div>`;
+    case 'duck': return `${head('Duck conversation')}<div class="grid"><article class="card"><h2>Latest exchange</h2><p><strong>You</strong><br>Quack if the tests passed.</p><p><strong>MicroDuck</strong><br>Synthetic result: quack.</p><p class="hint">The duck speaks through the Demo profile and makes no paid calls.</p></article></div>`;
+    default: {
+      const info = pageInfo(route);
+      if (info === undefined) return `<div class="card"><h2>Nothing at this address</h2><p><a href="#" data-go="home">Go to the home</a></p></div>`;
+      const heading = info.module.pages.length > 1 && info.title !== info.module.label ? `${info.module.label} · ${info.title}` : info.title;
+      return `${head(heading)}<div class="grid"><article class="card"><h2>Observations</h2>${facts(FACTS[route] ?? [])}<p class="hint">Observations are the last records the hub received. They are not proof of a physical result.</p></article></div>`;
+    }
+  }
+}
+
+function detailsHTML() {
+  const profile = PROFILES[S.profile], demo = S.profile !== 'bunny', turns = S.threads[S.profile].length;
+  const opened = S.opened ? ' just-opened' : '';
+  return `<div class="scrim details-scrim${opened}" data-act="details"></div>
+  <aside class="details${opened}" aria-label="Conversation details">
+    <header><h2>Conversation details</h2><button class="btn secondary sm" data-act="details" aria-label="Close details">Close</button></header>
+    <div class="details-body">
+      <p class="details-profile"><strong>${profile.name}</strong>${demo ? '<small>Demo</small>' : ''}</p>
+      <details open><summary>Capabilities</summary>${facts([['Provider', demo ? 'Synthetic (no paid calls)' : 'Anthropic'], ['Allowed tools', 'Device status, hub mode, sessions'], ['Coding worker', 'Available on this computer']])}<p class="hint">Reads need no approval. Proposed changes need your approval in the conversation.</p></details>
+      <details><summary>Task activity</summary>${turns ? facts([['Status', S.working === S.profile ? 'running' : S.pending[S.profile] ? 'waiting' : 'succeeded'], ['Saved messages', String(turns)], ['Tool calls', demo ? '0' : '1']]) : `<p>No task saved for ${profile.name}.</p>`}</details>
+      <details><summary>Usage</summary>${facts([[demo ? 'Synthetic model usage' : 'Model usage', turns ? `${turns * 412} ${demo ? 'units' : 'tokens'}` : 'Unknown'], ['Paid cost', demo ? '0 (synthetic calls)' : 'Unknown (provider billing)']])}</details>
+      <details><summary>Conversation settings</summary><p>Conversation is ${S.enabled ? 'on' : 'off'}.</p><button class="btn secondary sm" data-act="power">${S.enabled ? 'Disable' : 'Enable'} conversation</button>
+        <ul><li><a href="#" data-go="preferences">Preferences</a></li><li><a href="#" data-go="knowledge">Companion knowledge</a></li></ul></details>
+    </div>
+  </aside>`;
+}
+
+function conversationHTML() {
+  const key = S.profile, profile = PROFILES[key], thread = S.threads[key], pending = Boolean(S.pending[key]), working = S.working === key;
+  const draft = S.drafts[key] ?? '';
+  const cue = working ? 'Working' : pending ? 'Needs your answer' : thread.length ? 'Task completed' : '';
+  const canSend = S.enabled && !working && draft.trim() !== '';
+  const message = item => `<li data-role="${item.role}"><article aria-label="${item.role} message"><strong class="speaker">${item.role === 'owner' ? 'You' : profile.name}</strong><p class="msg-text" dir="auto">${esc(item.text)}</p>${item.tool ? `<details class="tool"><summary>Tool result</summary><p>${esc(item.tool)}</p></details>` : ''}${item.role === 'assistant' ? '<button class="read-aloud" data-act="read">Read aloud</button>' : ''}</article></li>`;
+  return `<section class="conv" aria-label="${profile.name} conversation"${S.details ? ' data-details' : ''}>
+    <div class="conv-main">
+      <div class="transcript">
+        ${key === 'bunny' ? '' : '<p class="demo-note">Demo profile. No paid calls.</p>'}
+        ${thread.length ? `<ol aria-label="Saved conversation messages">${thread.map(message).join('')}</ol>` : `<div class="conv-empty"><h3>What’s on your mind?</h3><p>Messages to ${profile.name} are saved privately.</p></div>`}
+      </div>
+      <div class="compose">
+        ${S.enabled ? '' : '<p class="cue">Conversation is off. <button class="btn sm" data-act="power">Enable conversation</button></p>'}
+        ${cue ? `<p role="status" class="cue${pending && !working ? ' attn' : ''}">${cue}</p>` : ''}
+        <div class="input-surface">
+          <label class="vh" for="msg">${pending ? 'Answer' : 'Message'}</label>
+          <textarea id="msg" rows="2" enterkeyhint="send" placeholder="${pending ? 'Answer the question' : `Message ${profile.name}`}"${S.enabled ? '' : ' disabled'}>${esc(draft)}</textarea>
+          <div class="composer-actions">
+            <span class="menu-wrap"><button class="btn secondary sm" data-menu aria-controls="pop-voice" aria-expanded="false">${icon('wave', 16)}<span id="voice-label">${S.voice ? 'Voice on' : 'Voice off'}</span></button>
+              <div class="pop up" id="pop-voice" role="dialog" aria-label="Spoken replies"><p class="pop-label">Spoken replies</p>
+                <button class="pop-item switch-row" data-act="voice">Speak replies on this computer<span class="toggle" id="voice-switch" role="switch" aria-checked="${S.voice}"></span></button>
+                <p class="pop-hint" style="margin:0;padding:4px 10px 8px">Long replies stay written only. Playback is reported separately.</p></div></span>
+            <button class="btn sm send" data-act="send"${canSend ? '' : ' disabled'}>${pending ? 'Answer' : 'Send'}</button>
+          </div>
+        </div>
+        <div class="input-help"><p>Enter to ${pending ? 'answer' : 'send'}. Shift+Enter for a new line.</p><p>Messages stay in this demo.</p></div>
+      </div>
+    </div>
+    ${S.details ? detailsHTML() : ''}
+  </section>`;
+}
+
+const mainHTML = (before = '') => S.route === 'conversation'
+  ? `<main class="main">${before}${conversationHTML()}</main>`
+  : `<main class="main main-scroll">${before}<div class="page-wrap">${pageBody(S.route)}</div></main>`;
+
+/* ================= Rail pieces shared by every variant in this round ================= */
+const WIDE = 1200;
+const sizeClass = () => innerWidth >= WIDE ? 'wide' : 'narrow';
+/** The last choice made at this window size wins. Until one is made, wide windows expand the rail and narrower ones collapse it. */
+const railOpen = () => S.railPref[sizeClass()] ?? sizeClass() === 'wide';
+const railDest = () => S.route === 'conversation' ? 'conversation' : destOf(S.route);
+const isSubpage = info => info.module.pages.length > 1 && info.title !== info.module.label;
+const shortOf = id => { const info = pageInfo(id); return isSubpage(info) ? info.title : info.module.label; };
+const suffixOf = id => { const info = pageInfo(id); return isSubpage(info) ? info.module.label : ''; };
+const fullOf = id => suffixOf(id) ? `${suffixOf(id)} · ${shortOf(id)}` : shortOf(id);
+const monoOf = id => { const info = pageInfo(id); return isSubpage(info) ? (info.module.label[0] + info.title[0]).toUpperCase() : info.module.label.slice(0, 2); };
+const monoTile = text => `<span class="mono" aria-hidden="true">${text}</span>`;
+const pinnable = route => pageInfo(route) !== undefined && route !== 'conversation';
+const pinButton = route => pinnable(route)
+  ? `<button class="btn secondary sm pin-btn" data-act="pin" data-v="${route}" aria-pressed="${S.pins.includes(route)}">${icon('pin', 16)}<span>${S.pins.includes(route) ? 'Pinned' : 'Pin to rail'}</span></button>` : '';
+
+function railSettings() {
+  const describe = size => { const pref = S.railPref[size]; return `${(pref ?? size === 'wide') ? 'Expanded' : 'Collapsed'} · ${pref === null ? 'automatic' : 'your choice'}`; };
+  const untouched = S.railPref.wide === null && S.railPref.narrow === null;
+  return `${facts([[`Wide windows (${WIDE}px and up)`, describe('wide')], ['Narrower windows', describe('narrow')]])}
+    <p class="hint">The rail remembers the last choice you made at each size.</p>
+    <button class="btn secondary sm" style="margin-top:var(--space-m)" data-act="rail-reset"${untouched ? ' disabled' : ''}>Reset to automatic</button>`;
+}
+
+const hubItem = ([id, label, glyph]) => `<a href="#" class="rail-item" data-go="${id}" data-tip="${label}"${cur(S.route === id)}${railDest() === id && S.route !== id ? ' data-ancestor' : ''}>${icon(glyph)}<span class="lbl">${label}</span>${id === 'home' ? countBadge() : ''}</a>`;
+const conversationsGroup = () => `<p class="rail-label">Conversations</p><nav class="rail-group" aria-label="Conversations">${Object.entries(PROFILES).map(([id, item]) =>
+  `<a href="#" class="rail-item" data-profile="${id}" data-tip="${item.name} · ${S.pending[id] ? 'Needs your answer' : item.kind}"${cur(S.route === 'conversation' && S.profile === id)}><span class="avatar">${item.initial}${attnDot(id)}</span><span class="lbl">${item.name}</span>${id === 'bunny' ? '' : '<small class="tag">Demo</small>'}</a>`).join('')}</nav>`;
+const statusControl = () => `<span class="menu-wrap"><button class="icon-btn" data-menu aria-controls="pop-status" aria-expanded="false" aria-label="${feedText()}. Connection details" title="${feedText()}"><span class="status-dot"${S.feed ? '' : ' data-off'}></span></button>${statusPop('pop-status', 'up')}</span>`;
+
+function railHead() {
+  const open = railOpen();
+  return `<div class="rail-head"><a href="#" class="brand" data-go="home">B.U.N.N.Y.<small class="proto-tag">Design reference</small></a>
+      <button class="icon-btn hide-mobile" data-act="rail" aria-pressed="${!open}" aria-label="${open ? 'Collapse' : 'Expand'} navigation" title="${open ? 'Collapse' : 'Expand'} navigation">${icon('sidebar')}</button></div>
+    <button class="rail-jump" data-act="palette" aria-haspopup="dialog" aria-label="Jump to a page or conversation" data-tip="Jump to… ⌘K">${icon('search', 16)}<span class="lbl">Jump to…</span><kbd>⌘K</kbd></button>`;
+}
+const railFoot = () => `<div class="rail-foot"><a href="#" class="rail-item" data-go="settings" data-tip="Settings"${cur(destOf(S.route) === 'settings')}>${icon('settings')}<span class="lbl">Settings</span></a>${statusControl()}</div>`;
+
+/* ---------- Jump palette ---------- */
+function paletteEntries() {
+  const out = [];
+  const glyph = id => HUB.find(([key]) => key === id)?.[2] ?? (id === 'settings' || id === 'connections' ? 'settings' : 'page');
+  const hint = id => { const info = pageInfo(id); return info ? `${info.module.cat} › ${info.module.label}` : id === 'connections' ? 'Settings' : 'Hub'; };
+  for (const id of S.recents.filter(item => item !== S.route).slice(0, 3)) out.push({group: 'Recent', id, label: titleOf(id), hint: hint(id), glyph: 'clock'});
+  for (const [id, profile] of Object.entries(PROFILES)) out.push({group: 'Conversations', id: `profile:${id}`, label: profile.name, hint: S.pending[id] ? 'Needs your answer' : profile.kind, glyph: 'chat', attn: Boolean(S.pending[id]), current: S.route === 'conversation' && S.profile === id});
+  for (const [id, label, mark] of [...HUB, ['settings', 'Settings', 'settings']]) out.push({group: 'Hub', id, label, hint: id === 'home' && S.inbox.length ? `${S.inbox.length} in the inbox` : '', glyph: mark, current: S.route === id});
+  for (const module of MODULES) for (const [id, title] of module.pages) {
+    if (id === 'conversation') continue;
+    out.push({group: destOf(id) === 'devices' ? 'Device pages' : 'Tools & settings', id, label: module.pages.length > 1 && title !== module.label ? `${module.label} · ${title}` : module.label, hint: module.pages.length > 1 ? module.cat : `${module.cat}${title !== module.label ? ` · ${title}` : ''}`, glyph: glyph(id), current: S.route === id});
+  }
+  out.push({group: 'Tools & settings', id: 'connections', label: 'Connections', hint: 'Settings', glyph: 'settings', current: S.route === 'connections'});
+  return out;
+}
+function paletteItems() {
+  const query = S.pal.q.trim().toLowerCase(), all = paletteEntries();
+  if (query === '') return all;
+  const tokens = query.split(/\s+/);
+  const rank = item => { const label = item.label.toLowerCase(); return label.startsWith(query) ? 0 : label.includes(query) ? 1 : 2; };
+  return all.filter(item => item.group !== 'Recent' && tokens.every(token => `${item.label} ${item.hint} ${item.group}`.toLowerCase().includes(token))).sort((a, b) => rank(a) - rank(b));
+}
+function renderPaletteList() {
+  const list = document.getElementById('pal-list');
+  if (list === null) return;
+  const items = paletteItems(), grouped = S.pal.q.trim() === '';
+  S.pal.items = items;
+  S.pal.i = Math.max(0, Math.min(S.pal.i, items.length - 1));
+  if (items.length === 0) { list.innerHTML = `<p class="pal-empty">No page or conversation matches “${esc(S.pal.q.trim())}”.</p>`; return; }
+  let group, html = '';
+  items.forEach((item, index) => {
+    if (grouped && item.group !== group) { group = item.group; html += `<p class="pop-label">${group}</p>`; }
+    html += `<button class="pal-item" role="option" id="pal-${index}" data-pal="${index}" aria-selected="${index === S.pal.i}" tabindex="-1">${icon(item.glyph, 16)}<span class="pal-name">${esc(item.label)}</span>${item.attn ? '<span class="dot-attn"></span>' : ''}<span class="pal-hint">${esc(item.hint)}</span>${item.current ? icon('check', 14, 'tick') : ''}</button>`;
+  });
+  list.innerHTML = html;
+  document.getElementById('pal-input')?.setAttribute('aria-activedescendant', `pal-${S.pal.i}`);
+  list.querySelector('[aria-selected="true"]')?.scrollIntoView({block: 'nearest'});
+}
+const paletteHTML = () => `<div class="scrim pal-scrim" data-act="palette"></div>
+    <div class="palette" role="dialog" aria-label="Jump to">
+      <div class="pal-search">${icon('search', 18)}<input id="pal-input" type="text" role="combobox" aria-expanded="true" aria-controls="pal-list" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="go" placeholder="Jump to a page or conversation…"></div>
+      <div id="pal-list" role="listbox" aria-label="Destinations"></div>
+      <div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>
+    </div>`;
+
+/** The frame every variant shares: rail, main column and palette. Only the rail's contents differ. */
+function shell(name, rail) {
+  const profile = PROFILES[S.profile];
+  const waiting = Object.keys(S.pending).some(id => !(S.route === 'conversation' && S.profile === id));
+  const menu = `<button class="icon-btn only-mobile" data-act="drawer" aria-label="Open navigation${waiting ? '. A conversation needs your answer' : ''}">${icon('menu')}${waiting ? '<span class="dot-attn"></span>' : ''}</button>`;
+  const jump = `<button class="icon-btn only-mobile" data-act="palette" aria-haspopup="dialog" aria-label="Jump to a page or conversation">${icon('search')}</button>`;
+  const head = S.route === 'conversation'
+    ? `<header class="main-head" data-kind="conversation">${menu}<div class="head-title"><h1>${profile.name}</h1><small>${profile.kind}</small></div><span class="proto-tag top-proto only-mobile">Design reference</span>${jump}${detailsButton()}</header>`
+    : `<header class="main-head" data-kind="page">${menu}<span class="brand">B.U.N.N.Y.</span><span class="proto-tag top-proto">Design reference</span>${jump}</header>`;
+  return `<div class="app v-rail v-${name}" data-rail="${railOpen() ? 'expanded' : 'collapsed'}">
+    <aside class="rail" aria-label="Navigation">${rail}</aside>
+    <div class="scrim drawer-scrim" data-act="drawer"></div>
+    ${mainHTML(head)}
+    ${paletteHTML()}
+  </div>`;
+}
+
+function renderPinned() {
+  const pins = S.pins.filter(pinnable);
+  const row = (id, visiting) => `<div class="rail-row${visiting ? ' visiting' : ''}"><a href="#" class="rail-item mod" data-go="${id}" data-tip="${fullOf(id)}${visiting ? ' · not pinned' : ''}"${cur(S.route === id)}>${monoTile(monoOf(id))}<span class="lbl">${shortOf(id)}</span>${suffixOf(id) ? `<small class="suffix">${suffixOf(id)}</small>` : ''}</a>
+    <button class="row-btn" data-act="pin" data-v="${id}" aria-label="${visiting ? 'Pin' : 'Unpin'} ${fullOf(id)}" title="${visiting ? 'Pin to the rail' : 'Unpin'}">${icon(visiting ? 'pin' : 'x', 14)}</button></div>`;
+  const list = pins.map(id => row(id, false)).join('') + (pinnable(S.route) && !pins.includes(S.route) ? row(S.route, true) : '');
+  const hub = HUB.map(entry => entry[0] === 'devices'
+    ? `<button class="rail-item" data-menu aria-controls="pop-devices" aria-expanded="false" aria-haspopup="true" aria-label="Devices" data-tip="Devices"${S.route === 'devices' ? ' aria-current="true"' : railDest() === 'devices' ? ' data-ancestor' : ''}>${icon(entry[2])}<span class="lbl">Devices</span>${icon('chevr', 14, 'go')}</button>`
+    : hubItem(entry)).join('');
+  return shell('pinned', `${railHead()}
+    <div class="rail-scroll"><nav class="rail-group" aria-label="Main navigation">${hub}</nav>
+      <p class="rail-label">Pinned</p>${list ? `<nav class="rail-group" aria-label="Pinned pages">${list}</nav>` : ''}</div>
+    <div class="rail-pinned">${conversationsGroup()}</div>
+    ${railFoot()}
+    ${drawDeviceMenu()}`);
+}
+
+const stage = document.getElementById('stage');
+
+const app = () => stage.querySelector('.app');
+let openOnLoad = null;
+const paletteOpen = () => stage.querySelector('.palette[data-open]') !== null;
+
+function syncHash(push = true) {
+  const url = new URL(location);
+  url.hash = S.route === 'conversation' ? `conversation/${S.profile}` : S.route;
+  if (url.href !== location.href) history[push ? 'pushState' : 'replaceState'](null, '', url);
+}
+function readHash() {
+  const [hashRoute, profile] = location.hash.slice(1).split('/');
+  const route = hashRoute === 'nanoleaf-wall' ? 'nanoleaf' : hashRoute;
+  S.route = titleOf(route) === undefined ? 'conversation' : route;
+  if (S.route === 'conversation') S.profile = PROFILES[profile] === undefined ? 'bunny' : profile;
+}
+/** Re-renders the current variant in place. `focus` is a selector, or a list tried in order. Variant switches go through the picker's own mount. */
+function rerender(focus, keepScroll = true) {
+  S.focus = focus ?? null;
+  S.scroll = keepScroll ? stage.querySelector('.main-scroll')?.scrollTop ?? 0 : 0;
+  stage.innerHTML = renderPinned();
+}
+function afterRender() {
+  const transcript = stage.querySelector('.transcript');
+  if (transcript !== null) transcript.scrollTop = transcript.scrollHeight;
+  const page = stage.querySelector('.main-scroll');
+  if (page !== null) page.scrollTop = S.scroll;
+  S.scroll = 0;
+  S.opened = false;
+  if (S.focus !== null) {
+    const target = [].concat(S.focus).map(selector => stage.querySelector(selector)).find(found => found !== null);
+    S.focus = null;
+    if (target !== undefined && !target.disabled) {
+      if (target.matches('h1')) target.tabIndex = -1;
+      target.focus({preventScroll: !target.matches('#transmission summary')});
+      if (target.id === 'msg') target.setSelectionRange(target.value.length, target.value.length);
+    }
+  }
+  if (openOnLoad !== null) {
+    const what = openOnLoad;
+    openOnLoad = null;
+    if (innerWidth <= 760) app()?.setAttribute('data-drawer', '');
+    const trigger = what === 'devices' ? stage.querySelector('[aria-controls="pop-devices"]') : null;
+    if (trigger !== null) toggleMenu(trigger);
+  }
+}
+function go(route) {
+  S.playlistSaved = false;
+  if (route !== S.route) {
+    S.recents = [S.route, ...S.recents.filter(item => item !== S.route && item !== route)].slice(0, 4);
+    S.route = route;
+    if (route !== 'conversation') S.details = false;
+  }
+  syncHash();
+  rerender(route === 'conversation' ? '#msg' : route === 'tidbyt-transmission' ? '#transmission summary' : '.page h1', false);
+}
+function pickProfile(profile) {
+  S.profile = profile;
+  if (S.route !== 'conversation') { go('conversation'); return; }
+  syncHash();
+  rerender('#msg');
+}
+function send() {
+  const profile = S.profile, text = (S.drafts[profile] ?? '').trim();
+  if (text === '' || !S.enabled || S.working !== null) return;
+  S.threads[profile].push({role: 'owner', text});
+  S.drafts[profile] = '';
+  delete S.pending[profile];
+  S.working = profile;
+  rerender('#msg');
+  setTimeout(() => {
+    S.working = null;
+    S.threads[profile].push({role: 'assistant', text: profile === 'bunny' ? 'Prototype reply: nothing was sent to a model or a device. This transcript is sample data.' : `Synthetic result: ${text}`});
+    if (S.route === 'conversation' && S.profile === profile && !paletteOpen() && stage.querySelector('.pop[data-open]') === null) rerender(document.activeElement?.id === 'msg' ? '#msg' : undefined);
+  }, 700);
+}
+
+function closeDrawer() {
+  closeMenus();
+  app()?.removeAttribute('data-drawer');
+  stage.querySelector('.main-head [data-act="drawer"]')?.focus();
+}
+
+function closeMenus() {
+  for (const pop of stage.querySelectorAll('.pop[data-open]')) pop.removeAttribute('data-open');
+  for (const trigger of stage.querySelectorAll('[data-menu][aria-expanded="true"]')) trigger.setAttribute('aria-expanded', 'false');
+}
+function positionDeviceMenu() {
+  const pop = stage.querySelector('#pop-devices[data-open]');
+  if (pop === null || innerWidth <= 760) return;
+  const rail = pop.closest('.rail');
+  const trigger = stage.querySelector('[aria-controls="pop-devices"]');
+  const top = trigger.getBoundingClientRect().top - rail.getBoundingClientRect().top;
+  pop.style.setProperty('--devices-menu-top', top + 'px');
+}
+
+function visibleMenuItems(pop) {
+  return [...pop.querySelectorAll('.pop-item')].filter(item =>
+    item.matches('summary') || !item.closest('details:not([open])'));
+}
+
+function toggleMenu(trigger) {
+  const pop = document.getElementById(trigger.getAttribute('aria-controls'));
+  const open = pop.hasAttribute('data-open');
+  closeMenus();
+  if (open) return;
+  pop.setAttribute('data-open', '');
+  trigger.setAttribute('aria-expanded', 'true');
+  positionDeviceMenu();
+  requestAnimationFrame(() => {
+    const items = visibleMenuItems(pop);
+    (items.find(item => item.hasAttribute('aria-current')) ?? items[0])?.focus();
+  });
+}
+function togglePalette(force) {
+  const palette = stage.querySelector('.palette');
+  if (palette === null) return;
+  const open = force ?? !palette.hasAttribute('data-open');
+  closeMenus();
+  app().removeAttribute('data-drawer');
+  palette.toggleAttribute('data-open', open);
+  stage.querySelector('.pal-scrim').toggleAttribute('data-open', open);
+  if (open) {
+    // Closing hands focus back to wherever it was, so ⌘K from the composer returns to the composer.
+    S.pal.q = ''; S.pal.i = 0; S.pal.from = document.activeElement;
+    const input = document.getElementById('pal-input');
+    input.value = '';
+    renderPaletteList();
+    requestAnimationFrame(() => { input.focus(); });
+  } else {
+    const from = S.pal.from;
+    S.pal.from = null;
+    (from instanceof HTMLElement && from.isConnected && from !== document.body ? from : stage.querySelector('.rail [data-act="palette"]'))?.focus();
+  }
+}
+function openPaletteItem(index) {
+  const item = S.pal.items[index];
+  if (item === undefined) return;
+  if (item.id.startsWith('profile:')) pickProfile(item.id.slice(8));
+  else go(item.id);
+}
+
+function act(name, el) {
+  const value = el.dataset.v;
+  switch (name) {
+    case 'rail': S.railPref[sizeClass()] = !railOpen(); store.set('rail', S.railPref); rerender('.rail-head [data-act="rail"]'); break;
+    case 'rail-reset': S.railPref = {wide: null, narrow: null}; store.set('rail', S.railPref); rerender('.rail [aria-current]'); break;
+    case 'pin': S.pins = S.pins.includes(value) ? S.pins.filter(id => id !== value) : [...S.pins, value]; store.set('pins', S.pins); rerender(el.closest('.rail') !== null ? [`.rail [data-act="pin"][data-v="${value}"]`, '.rail [aria-current]'] : '.page [data-act="pin"]'); break;
+    case 'close-menu': { const trigger = stage.querySelector('[data-menu][aria-expanded="true"]'); closeMenus(); trigger?.focus(); break; }
+    case 'drawer':
+      if (app().hasAttribute('data-drawer')) closeDrawer();
+      else {
+        app().setAttribute('data-drawer', '');
+        stage.querySelector('[aria-controls="pop-devices"]')?.focus();
+      }
+      break;
+    case 'details': S.details = !S.details; S.opened = S.details; rerender('.details-btn'); break;
+    case 'palette': togglePalette(); break;
+    case 'send': send(); break;
+    case 'power': S.enabled = !S.enabled; rerender(S.enabled ? '#msg' : '[data-act="power"]'); break;
+    case 'feed': S.feed = !S.feed; rerender('[data-act="feed"]'); break;
+    case 'pick-playlist':
+      S.selectedPlaylist = value;
+      S.playlistSaved = false;
+      rerender('#playlist-name');
+      break;
+    case 'save-playlist': {
+      const playlist = S.playlists[S.selectedPlaylist];
+      playlist.name = playlist.draft.trim();
+      playlist.draft = playlist.name;
+      S.playlistSaved = true;
+      rerender('#playlist-name');
+      break;
+    }
+    case 'ack': S.inbox = S.inbox.filter(item => item.id !== value); rerender('[data-act="ack"]'); break;
+    case 'mode': S.mode = value; for (const button of el.parentElement.children) button.setAttribute('aria-pressed', String(button === el)); break;
+    case 'light': S.lights[value] = !S.lights[value]; el.setAttribute('aria-checked', String(S.lights[value])); break;
+    case 'routine': S.routines[value] = !S.routines[value]; el.setAttribute('aria-checked', String(S.routines[value])); break;
+    case 'voice': S.voice = !S.voice; document.getElementById('voice-switch').setAttribute('aria-checked', String(S.voice)); document.getElementById('voice-label').textContent = S.voice ? 'Voice on' : 'Voice off'; break;
+    case 'read': { const reading = el.textContent === 'Stop'; el.textContent = reading ? 'Read aloud' : 'Stop'; if (!reading) setTimeout(() => { if (el.isConnected) el.textContent = 'Read aloud'; }, 2400); break; }
+  }
+}
+
+stage.addEventListener('click', event => {
+  const palItem = event.target.closest('[data-pal]');
+  if (palItem !== null) { openPaletteItem(Number(palItem.dataset.pal)); return; }
+  if (event.target.closest('.pop, [data-menu]') === null) closeMenus();
+  const target = event.target.closest('[data-menu], [data-go], [data-profile], [data-act]');
+  if (target === null) return;
+  if (target.closest('a') !== null || target.tagName === 'A') event.preventDefault();
+  if (target.hasAttribute('data-menu')) { toggleMenu(target); return; }
+  if (target.dataset.go !== undefined) { go(target.dataset.go); return; }
+  if (target.dataset.profile !== undefined) { pickProfile(target.dataset.profile); return; }
+  act(target.dataset.act, target);
+});
+document.addEventListener('click', event => { if (!stage.contains(event.target)) closeMenus(); });
+
+stage.addEventListener('toggle', event => {
+  const brand = event.target;
+  if (!brand.matches('details[data-light-brand]') || !stage.contains(brand)) return;
+  if (brand.open) S.expandedLightBrands.add(brand.dataset.lightBrand);
+  else S.expandedLightBrands.delete(brand.dataset.lightBrand);
+  brand.querySelector('summary').setAttribute('aria-expanded', String(brand.open));
+}, true);
+
+stage.addEventListener('input', event => {
+  if (event.target.id === 'msg') {
+    S.drafts[S.profile] = event.target.value;
+    const button = stage.querySelector('.send');
+    if (button !== null) button.disabled = !(S.enabled && S.working === null && event.target.value.trim() !== '');
+  } else if (event.target.id === 'playlist-name') {
+    const playlist = S.playlists[S.selectedPlaylist];
+    playlist.draft = event.target.value;
+    S.playlistSaved = false;
+    stage.querySelector('[data-act="save-playlist"]').disabled = !playlist.draft.trim() || playlist.draft.trim() === playlist.name;
+    stage.querySelector('#playlist-result').textContent = '';
+  } else if (event.target.id === 'pal-input') {
+    S.pal.q = event.target.value; S.pal.i = 0;
+    renderPaletteList();
+  }
+});
+stage.addEventListener('mousemove', event => {
+  const item = event.target.closest('[data-pal]');
+  if (item === null || Number(item.dataset.pal) === S.pal.i) return;
+  stage.querySelector('.pal-item[aria-selected="true"]')?.setAttribute('aria-selected', 'false');
+  S.pal.i = Number(item.dataset.pal);
+  item.setAttribute('aria-selected', 'true');
+});
+stage.addEventListener('keydown', event => {
+  const target = event.target;
+  if (target.id === 'msg') {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (!event.repeat) send(); }
+    return;
+  }
+  if (target.id === 'pal-input') {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const count = S.pal.items.length;
+      if (count > 0) { S.pal.i = (S.pal.i + (event.key === 'ArrowDown' ? 1 : -1) + count) % count; renderPaletteList(); }
+    } else if (event.key === 'Enter') { event.preventDefault(); openPaletteItem(S.pal.i); }
+    return;
+  }
+  const pop = target.closest('.pop[data-open]');
+  if (pop === null) return;
+  const list = visibleMenuItems(pop), index = list.indexOf(target);
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); list[(index + (event.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]?.focus(); }
+  else if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); list[event.key === 'Home' ? 0 : list.length - 1]?.focus(); }
+});
+document.addEventListener('keydown', event => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
+  if ((event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) || (event.key === '/' && !typing)) { event.preventDefault(); togglePalette(); return; }
+  if (event.key !== 'Escape') return;
+  if (paletteOpen()) { togglePalette(false); return; }
+  const trigger = stage.querySelector('[data-menu][aria-expanded="true"]');
+  if (trigger !== null) { closeMenus(); trigger.focus(); return; }
+  if (app()?.hasAttribute('data-drawer')) { closeDrawer(); return; }
+  if (S.details) { S.details = false; rerender('.details-btn'); }
+});
+
+// Automatic collapse: crossing the wide/narrow boundary re-reads the rail state for the new size.
+const bands = () => innerWidth <= 760 ? 'phone' : sizeClass();
+let lastSize = bands();
+addEventListener('resize', () => {
+  const size = bands();
+  if (size === lastSize) { positionDeviceMenu(); return; }
+  lastSize = size;
+  if (app() !== null) {
+    if (stage.querySelector('#pop-devices[data-open]')) openOnLoad = 'devices';
+    rerender(document.activeElement?.id === 'msg' ? '#msg' : undefined);
+  }
+});
+
+new MutationObserver(() => { if (stage.firstElementChild !== null) afterRender(); }).observe(stage, {childList: true});
+addEventListener('hashchange', () => { readHash(); rerender(undefined, false); });
+readHash();
+openOnLoad = 'devices';
+rerender(undefined, false);
+</script>
+</body>
+</html>
