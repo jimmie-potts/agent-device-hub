@@ -41,6 +41,41 @@ void test('contrasting and extreme art palettes preserve actual skin text, focus
   assert.notDeepEqual(themeColors(['#FF0000']), themeColors(['#0000FF']), 'contrasting scenes have different decoration');
 });
 
+const spread = (hex: string): number => {
+  const channels = [1, 3, 5].map(at => Number.parseInt(hex.slice(at, at + 2), 16));
+  return Math.max(...channels) - Math.min(...channels);
+};
+
+void test('every accepted palette keeps the background, inset, panel and raised surfaces apart (Hub #1920)', () => {
+  // The fixed skin separates these surfaces by about 1.28 and 1.30 in dark appearance and 1.12 and 1.16 in light.
+  const least = {dark: {panel: 1.2, raised: 1.2}, light: {panel: 1.08, raised: 1.1}};
+  for (const palette of [['#000000'], ['#FFFFFF'], ['#777777'], ['#202020', '#000000'], ['#FF0000'], ['#00FF00'], ['#0000FF'], ['#FFFF00'], ['#00FFFF'], ['#FF00FF'], ['#000000', '#000020', '#E0A040'], ['#604020']]) {
+    const theme = themeColors(palette);assert.ok(theme !== undefined);
+    for (const scheme of ['light', 'dark'] as const) {
+      const colors: ThemeColors[typeof scheme] = theme[scheme], name = `${scheme} ${palette.join(' ')}`;
+      assert.ok(contrast(colors.panel, colors.bg) >= least[scheme].panel, `${name}: a panel stands off the page background`);
+      assert.ok(contrast(colors.raised, colors.panel) >= least[scheme].raised, `${name}: a raised surface stands off its panel`);
+      assert.ok(contrast(colors.inset, colors.panel) >= 1.05, `${name}: an inset surface stands off its panel`);
+      const light = [colors.bg, colors.inset, colors.panel].map(luminance);
+      assert.ok((light[0] ?? 1) < (light[1] ?? 0) && (light[1] ?? 1) < (light[2] ?? 0), `${name}: background, inset and panel keep their order`);
+      assert.equal(luminance(colors.raised) > luminance(colors.panel), scheme === 'dark', `${name}: raised is lighter than its panel in dark and darker in light`);
+    }
+  }
+});
+
+void test('the tint comes from the first palette color that has a hue, and a palette without one stays neutral (Hub #1920)', () => {
+  const black = themeColors(['#000000']), warm = themeColors(['#000000', '#202020', '#E0A040', '#0000E0']), cool = themeColors(['#000000', '#0000E0', '#E0A040']);
+  assert.ok(black !== undefined && warm !== undefined && cool !== undefined);
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const surface of ['bg', 'panel', 'raised', 'inset', 'shell-rail', 'wash-start', 'wash-end'] as const) assert.ok(spread(black[scheme][surface]) <= 2, `${scheme} ${surface} has no invented hue`);
+    assert.ok(spread(warm[scheme].accent) >= 12 && spread(cool[scheme].accent) >= 12, `${scheme}: a dark picture with a colored entry is tinted`);
+    assert.notDeepEqual(warm[scheme], black[scheme]);assert.notDeepEqual(warm[scheme], cool[scheme]);
+  }
+  assert.deepEqual(themeColors(['#000000', '#E0A040']), themeColors(['#202020', '#E0A040']), 'entries without a hue do not change the tint');
+  assert.deepEqual(themeColors(['#E0A040']), themeColors(['#E0A040', '#E0A040']), 'one colored entry also supplies the second wash');
+  assert.notDeepEqual(warm.dark['wash-end'], themeColors(['#E0A040'])?.dark['wash-end'], 'the second colored entry tints the second wash');
+});
+
 void test('theme preferences persist follow, default, locked colors and locked default without invented palette', () => {
   for (const value of [{version: 1, mode: 'follow'}, {version: 1, mode: 'default'}, {version: 1, mode: 'locked', palette: null}, {version: 1, mode: 'locked', palette: ['#FF0066']}]) {
     assert.deepEqual(themePreference(JSON.stringify(value)), value);

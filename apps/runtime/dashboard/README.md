@@ -910,6 +910,13 @@ attention, warning, error, pending and device colors do not change. Loading,
 stale, hidden or unavailable art retains the last valid theme; it supplies no
 new palette. No generated CSS, script, texture URL or extra image is accepted.
 
+The artwork supplies only a hue and how strong the tint is. Each decorative
+role keeps a fixed lightness step close to Quiet glass in light and dark
+appearance, so the page background, inset, panel and raised surfaces stay
+apart for every palette (Hub #1920). The tint comes from the first palette
+color that has a hue; the next one tints the second wash. A palette of black,
+white or grey alone gives neutral surfaces on the same steps.
+
 **Lock current colors** freezes the current palette, including a default with
 no palette. **Restore default** keeps Quiet glass until **Follow artwork** is
 selected again. These explicit preferences use the versioned browser-origin
