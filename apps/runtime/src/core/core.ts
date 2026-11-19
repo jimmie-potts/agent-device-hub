@@ -446,6 +446,7 @@ class Core {
         discarded: trace => recordLog(context.log, 'operation.failed',
           {'bunny.operation': 'automation', 'bunny.outcome': OutcomeWord.rejected, 'bunny.code': 'forbidden'}, trace),
       },
+      opened: records => { this.#automation.seed(records); this.#companions.seed(records); },
       committed: change => {
         this.#automation.committed(change);
         this.#companions.committed(change);
@@ -567,7 +568,13 @@ class Core {
    * the core stays up and tries again after a capped backoff.
    */
   async #ensureStore(): Promise<Refusal | undefined> {
-    if (this.#store.isOpen) return undefined;
+    // An open store first commits its pending start transaction (#1865 step 8), so callers read records as they stand.
+    if (this.#store.isOpen) {
+      if (await this.#store.settle()) return undefined;
+      const code = this.#store.takeFailure() === 'full' ? 'capacity' : 'unavailable';
+      this.#degraded(code);
+      return {code, detail: code === 'capacity' ? 'the core store is full' : 'the core is not taking changes now'};
+    }
     const refusal = (): Refusal => ({code: this.#storeDown, detail: this.#storeDown === 'capacity' ? 'the core store is full' : 'the core is not taking changes now'});
     if (!this.#reopen.ready(this.#clock.now())) return refusal();
     try {
@@ -945,6 +952,8 @@ class Core {
       };
       const checked = this.#validator.validate(command);
       if (!checked.ok) return refuse(checked.error.code, 'the recovery is not a valid approval-recover command');
+      const down = await this.#ensureStore();
+      if (down !== undefined) return refuse(down.code, down.detail);
       const record: SessionRecord | undefined = this.#store.records().find(item => item.id === command.subject);
       if (record === undefined) return refuse('not-found', 'no such session');
       if (record.revision !== expectedRevision) return refuse('revision-conflict', 'the session changed since it was read; read it again');

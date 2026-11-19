@@ -423,6 +423,45 @@ void test('the restart\'s work marking publishes no occurrence, evaluates no rul
   assert.equal(core.automation.log(50).length,before.logged,'no rule was evaluated');
 });
 
+void test('after a restart a finished session that still holds an approval keeps the Work alert, so a live turn end plays no moment (#1865 step 8)',async context=>{
+  const clock=manualClock(),directory=await stateDir(context),bus=new InProcessBus({now:clock.now});
+  const nano=bus.connect('bunny/modules/nanoleaf'),hook=bus.connect('bunny/parts/hook');
+  const moments:Message[]=[];
+  await nano.respond('bunny.cmd.moment-play.wall',command=>{moments.push(command);return {status:'accepted'};});
+  const device=deviceRecord('wall',1,'nanoleaf','available');
+  device.desired.mode={status:'known',value:'work'};
+  device.capabilities.moments={supported:true,moods:['celebrate','setback','reminder'],maxDurationMs:10000,coversStatus:true};
+  await nano.serveSync(['device'],()=>({revision:device.revision,states:[deviceState(device)]}));
+  const first=createCoreModule();
+  let harness=new CoreHarness(first,{bus,stateDir:directory,clock:{now:clock.now}});
+  context.after(async()=>{await harness.stop();await hook.close();await nano.close();});
+  await harness.start();first.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);
+  await nano.publish('bunny.state.device.wall',{kind:'state',...deviceState(device)});await flush();
+  await first.automation.replaceInterruptSet({kinds:['turn-ended']});
+  await first.automation.replaceSettings({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,deviceSpacingMs:0}});
+  await first.automation.create({...rule,action:{...rule.action,priorityClass:'event',targets:['wall']}},true);
+  // A turn that ends with its approval still open: the session is finished, not running, and still needs the owner.
+  for(const event of [turnStarted,approvalPrompt('approval-1865'),turnEnded]) {
+    clock.advance(10);const {key,draft}=observation(event,clock.now());await hook.publish(key,draft);await flush();
+  }
+  await first.automation.settled();await flush();
+  const before=moments.length;
+  await harness.stop();
+  clock.advance(10_000);
+  const core=createCoreModule();
+  harness=new CoreHarness(core,{bus,stateDir:directory,clock:{now:clock.now}});
+  await harness.start();core.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);
+  await nano.publish('bunny.state.device.wall',{kind:'state',...deviceState(device)});await flush();
+  // Another session's live turn end matches the rule; the open approval must still hold the Work alert.
+  const other={...IDENTITY,sessionId:'session-sim-2'};
+  for(const event of [turnStarted,turnEnded]) {
+    clock.advance(10);const {key,draft}=observation(event,clock.now(),{identity:other,turn:'turn-9'});await hook.publish(key,draft);await flush();
+  }
+  await core.automation.settled();await flush();
+  assert.equal(moments.length,before,'no moment plays while the approval is open');
+  assert.equal(core.automation.log(1)[0]?.reason,'alert');
+});
+
 void test('uncertain dispatch keeps its operation link and is never retried',async()=>{
   const w=world(new DatabaseSync(':memory:'),true);
   try {

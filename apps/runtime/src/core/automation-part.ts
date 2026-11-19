@@ -269,6 +269,11 @@ export class AutomationPart implements CorePart {
   /** Only the first attempt of the original batch can deliver an eligible live occurrence. */
   publishing(message: Message<unknown>): () => void {return this.#eligibility.publishing(message);}
   publicationEnded(change: CoreChange): void {this.#eligibility.ended(change.messages);}
+  /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
+  seed(records: readonly SessionRecord[]): void {
+    this.#sessions.clear();
+    for (const record of records) this.#sessions.set(record.id, record);
+  }
   committed(change: CoreChange): void {
     for (const message of change.messages) {
       if (message.kind === 'state' && message.type === 'org.bunny.session.updated') this.#sessions.set(message.subject, message.data as SessionRecord);

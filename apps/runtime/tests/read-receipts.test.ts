@@ -7,7 +7,7 @@ import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCoreModule} from '../src/core/core.js';
 import {World, lifecycleMessage} from './fixtures/store-world.js';
 import {receiptQualification, receiptSource} from '../src/read-receipts/qualification.js';
-import {IDENTITY, observation, turnEnded, turnStarted} from './fixtures/agents.js';
+import {IDENTITY, OTHER, observation, turnEnded, turnStarted} from './fixtures/agents.js';
 import {flush, it, stateDir, waitFor} from './support.js';
 
 const SOURCE = receiptSource(IDENTITY);
@@ -118,6 +118,38 @@ it('a committed receipt survives restart, while an old view revision remains unu
   assert.equal(restarted.lastEvidenceAtMs, read.lastEvidenceAtMs);
   assert.equal(await world.store.readReceipt(message, qualification), false);
   world.since(0);
+});
+
+/** A receipt for the record's finished turn as it stands now. */
+function receiptFor(world: World, record: SessionRecord) {
+  const draft = draftFor(record);
+  const message = {...lifecycleMessage(observation(turnEnded, world.clock.now()).draft.data, world.clock.now()),
+    ...draft, source: SOURCE, data: {...draft.data, observedAtMs: world.clock.now()}};
+  const qualification = receiptQualification(message); assert.ok(qualification);
+  return {message, qualification};
+}
+
+it('a receipt that is the first change after a failed start transaction is judged against the record as it stands (#1865)', async context => {
+  let failing = false;
+  const world = await World.open(context, {derivers: [() => { if (failing) throw Object.assign(new Error('database or disk is full'), {errcode: 13}); }]});
+  await world.observe(turnStarted);
+  await world.observe(turnEnded);
+  // Running work elsewhere gives the start transaction something to mark; five minutes make the target's record stale.
+  await world.observe(turnStarted, {identity: OTHER});
+  world.clock.advance(300_000);
+  failing = true;
+  await assert.rejects(world.crashAndRestart(), 'the start transaction cannot commit');
+  failing = false;
+  const shown = world.store.records().find(record => record.id === ID); assert.ok(shown);
+  const stale = receiptFor(world, shown);
+  // The start commits first and republishes the target, so a view of the record before it no longer matches.
+  assert.equal(await world.store.readReceipt(stale.message, stale.qualification), false);
+  assert.equal(world.store.takeFailure(), undefined, 'no storage failure');
+  const current = world.store.records().find(record => record.id === ID); assert.ok(current);
+  assert.ok(current.revision > shown.revision);
+  assert.equal(world.store.records().find(record => record.id === sessionEntityId(OTHER))?.restartUncertain, true);
+  const fresh = receiptFor(world, current);
+  assert.equal(await world.store.readReceipt(fresh.message, fresh.qualification), true);
 });
 
 it('a failed receipt commit leaves every owner table and publication unchanged', async context => {

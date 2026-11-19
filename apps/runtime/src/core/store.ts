@@ -100,6 +100,11 @@ export type StoreOptions = {
   /** Without a logger, hears that a publish was refused after its commit: committed, and awaiting publication. */
   onError?: OutboxOptions['onError'];
   statePublication?: OutboxOptions['statePublication'];
+  /**
+   * Hears the published session records once each open has loaded them, before the start transaction, so parts that keep
+   * a copy of the sessions from committed changes start from every stored session, not only those a start republishes.
+   */
+  opened?: (records: readonly SessionRecord[]) => void;
   /** Parts' derivers, run in each core change's transaction. */
   derivers?: readonly Deriver[];
   /** Parts' tables, created once the lease is held. */
@@ -268,6 +273,7 @@ export class CoreStore {
       this.#startedAtMs = this.#options.clock.now();
       this.#starting = true;
       this.#opened = tables;
+      this.#options.opened?.(this.records());
     } catch (error) {
       // A store that cannot create its tables or run its reset on a full disk, as at a first start, is full, not broken (Hub #972).
       if (fullDisk(error)) this.#failure = 'full';
@@ -299,6 +305,14 @@ export class CoreStore {
     const plan = this.#plan(undefined, atMs, undefined);
     if (plan.revision !== undefined) await this.#commit(plan, atMs, () => {});
     return this.#revision > before;
+  }
+
+  /**
+   * Commits the start transaction if it is still pending, so a caller reads the records as they stand. False while it
+   * cannot commit, as on a full disk; `takeFailure` then names why.
+   */
+  settle(): Promise<boolean> {
+    return this.#opened === undefined ? Promise.resolve(false) : this.#start();
   }
 
   /**
@@ -358,8 +372,12 @@ export class CoreStore {
     return this.#change({kind: 'recover-approval', id, turnId}, {message: command});
   }
 
-  /** The core calls this on its serialized intake. No await separates target checking from the SQLite commit. */
+  /**
+   * The core calls this on its serialized intake. A pending start transaction commits first, so the target is checked
+   * against the record as it stands; after that no await separates target checking from the SQLite commit.
+   */
   async readReceipt(message: Message<ReadReceiptObservation>, qualification: ReadReceiptQualification): Promise<boolean> {
+    if (!await this.#start()) throw new Error('the core store refused the start transaction');
     const before = this.#records.get(message.subject), observation = message.data, atMs = this.#options.clock.now();
     if (before === undefined || decideReadReceipt(message, before, qualification).status !== 'eligible' ||
       observation.observedAtMs <= atMs - TAKEN_LIFECYCLE_MS || before.lastEvidenceAtMs <= atMs - TAKEN_LIFECYCLE_MS) return false;

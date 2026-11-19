@@ -16,6 +16,11 @@ export class CompanionPart implements CorePart {
   readonly #eligibility = new LivePublication();
   readonly #sessions = new Map<string, SessionRecord>();
   #closed = false;
+  /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
+  seed(records: readonly SessionRecord[]): void {
+    this.#sessions.clear();
+    for (const record of records) this.#sessions.set(record.id, record);
+  }
   committed(change: CoreChange): void {
     for (const message of change.messages) {
       if (message.kind === 'state' && message.type === 'org.bunny.session.updated') this.#sessions.set(message.subject, message.data as SessionRecord);
