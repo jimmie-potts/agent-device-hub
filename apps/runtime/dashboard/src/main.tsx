@@ -404,14 +404,14 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     data-rail-wide={ended ? 'expanded' : railAttribute(rail.saved.wide)} data-rail-narrow={ended ? 'expanded' : railAttribute(rail.saved.narrow)}
     data-drawer={drawer ? 'open' : undefined} data-rail-short={railShort ? '' : undefined}>
     <a className="skip" href="#main" inert={drawer || jump} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
-    <header className="phone-bar" inert={jump} data-glass-veil>
+    <header className="phone-bar" inert={jump} data-glass-veil="edge">
       <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-description={conversationWaiting ? 'A conversation needs your answer' : undefined}
         aria-expanded={drawer} aria-controls="rail" onClick={() => { setDrawer(open => !open); }}><RailIcon name="menu"/>{conversationWaiting && <span className="rail-attention"/>}</button>
       <span className="phone-brand">B.U.N.N.Y.</span>
       <button type="button" className="secondary rail-button phone-jump" aria-label="Jump to a page" aria-haspopup="dialog" onClick={openJump}><RailIcon name="search"/></button>
       {ended && <button type="button" className="phone-sign-in" inert={drawer} onClick={signInAgain}>Sign in again</button>}
     </header>
-    <aside id="rail" ref={railElement} inert={jump} data-glass-veil onClick={event => {
+    <aside id="rail" ref={railElement} inert={jump} data-glass-veil="edge" onClick={event => {
       if (!drawer || !(event.target instanceof Element) || event.target.closest('a') === null) return;
       setDrawer(false);
       menuButton.current?.focus();
@@ -448,7 +448,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       {route.kind === 'home' && <section aria-label="Home">
         {/* Decodes the presented artwork for Home's backdrop while the art module runs; it draws nothing itself (#1928). */}
         {artRunning && <ModuleFrontend module="art" connection={connection} connected={artConnected} control={false} operations={[]} operationsLive={false} Component={ArtBackdropSource}/>}
-        {notice !== undefined && <p role="alert" className="warning">{notice}</p>}
+        {notice !== undefined && <p role="alert" className="warning" data-glass-veil>{notice}</p>}
         <HomeLayout runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive}
           attention={rows.some(row => row.attention.length > 0)} inbox={inboxItems.length > 0} renderCard={place}/>
       </section>}

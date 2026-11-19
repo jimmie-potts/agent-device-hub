@@ -77,7 +77,7 @@ export function createGlassRenderer(gl: WebGL2RenderingContext): GlassRenderer {
   const art = texture(0), panels = texture(1);
   gl.activeTexture(gl.TEXTURE0);gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
   gl.uniform1i(at('uArt'), 0);gl.uniform1i(at('uPanels'), 1);
-  const table = new Float32Array(PANEL_TEXELS * MAX_PANELS * 4), veils = new Float32Array(MAX_VEILS * 4);
+  const table = new Float32Array(PANEL_TEXELS * MAX_PANELS * 4), veils = new Float32Array(MAX_VEILS * 4), edges = new Float32Array(MAX_VEILS);
   let size: readonly [number, number] | null = null;
 
   const color4 = (name: string, value: GlassColor): void => {gl.uniform4f(at(name), value[0], value[1], value[2], value[3]);};
@@ -97,13 +97,13 @@ export function createGlassRenderer(gl: WebGL2RenderingContext): GlassRenderer {
       });
       gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D, panels);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, PANEL_TEXELS, MAX_PANELS, 0, gl.RGBA, gl.FLOAT, table);
-      veils.fill(0);scene.veils.slice(0, MAX_VEILS).forEach((veil, index) => {veils.set([veil.x, veil.y, veil.width, veil.height], index * 4);});
+      veils.fill(0);edges.fill(0);scene.veils.slice(0, MAX_VEILS).forEach((veil, index) => {veils.set([veil.rect.x, veil.rect.y, veil.rect.width, veil.rect.height], index * 4);edges[index] = veil.edge ? 1 : 0;});
       gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
       gl.uniform2f(at('uRes'), frame.width, frame.height);gl.uniform1f(at('uDpr'), frame.dpr);
       gl.uniform2f(at('uArtSize'), size?.[0] ?? 1, size?.[1] ?? 1);gl.uniform1f(at('uHasArt'), size === null ? 0 : 1);
       gl.uniform1f(at('uDark'), tokens.dark ? 1 : 0);gl.uniform1f(at('uInk'), tokens.ink);gl.uniform1f(at('uContrast'), CONTRAST);
       gl.uniform1f(at('uAppear'), frame.appear);gl.uniform1f(at('uDepth'), frame.depth);gl.uniform1f(at('uMerge'), frame.merge);
-      gl.uniform1i(at('uCount'), count);gl.uniform1i(at('uVeilCount'), Math.min(scene.veils.length, MAX_VEILS));gl.uniform4fv(at('uVeils'), veils);
+      gl.uniform1i(at('uCount'), count);gl.uniform1i(at('uVeilCount'), Math.min(scene.veils.length, MAX_VEILS));gl.uniform4fv(at('uVeils'), veils);gl.uniform1fv(at('uVeilEdges'), edges);
       color4('uVeil', tokens.veil);color4('uVeilDeep', tokens.veilDeep);color4('uTone', tokens.tone);color4('uRim', tokens.rim);color4('uShadow', tokens.shadow);
       color4('uWashStart', tokens.washStart);color4('uWashEnd', tokens.washEnd);gl.uniform4f(at('uWashBox'), ...frame.washBox);
       gl.uniform3f(at('uEdge'), tokens.edge[0], tokens.edge[1], tokens.edge[2]);gl.uniform3f(at('uBg'), tokens.bg[0], tokens.bg[1], tokens.bg[2]);

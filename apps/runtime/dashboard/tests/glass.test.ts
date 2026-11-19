@@ -5,15 +5,16 @@ import test from 'node:test';
 import {MAX_PANELS, readScene, sameScene, type GlassScene} from '../src/glass-scene.ts';
 import {luminance, parseColor} from '../src/glass-renderer.ts';
 
-type Fake = {dataset: Record<string, string>; radius: string; box: {left: number; top: number; width: number; height: number}};
+type Fake = {dataset: Record<string, string>; radius: string; box: {left: number; top: number; width: number; height: number}; shown?: boolean};
 const element = (id: string, left: number, top: number, width = 220, height = 220, radius = '34px'): Fake => ({dataset: {glassPanel: id}, radius, box: {left, top, width, height}});
 /** A root whose querySelectorAll returns fake marked elements; getComputedStyle reads their radius. */
 function page(panels: Fake[], veils: Fake[] = []): ParentNode {
-  const wrap = (fake: Fake): unknown => ({dataset: fake.dataset, radius: fake.radius, getBoundingClientRect: () => fake.box});
+  const wrap = (fake: Fake): unknown => ({dataset: fake.dataset, radius: fake.radius, getBoundingClientRect: () => fake.box, checkVisibility: () => fake.shown !== false});
   (globalThis as {getComputedStyle?: unknown}).getComputedStyle = (node: {radius: string}) => ({getPropertyValue: () => node.radius});
   return {querySelectorAll: (selector: string) => (selector === '[data-glass-panel]' ? panels : veils).map(wrap)} as unknown as ParentNode;
 }
 const viewport = {width: 1440, height: 900};
+const veil = (left: number, top: number, width: number, height: number, extra: Partial<Fake> = {}, mark = ''): Fake => ({dataset: {glassVeil: mark}, radius: '', box: {left, top, width, height}, ...extra});
 
 void test('the scene holds the marked panels in or near the window, with their radius', () => {
   const root = page([element('a', 0, 0), element('far', 0, 2000), element('edge', 0, 940), element('hidden', 0, 0, 0, 0), element('round', 300, 0, 100, 40, '34px')]);
@@ -23,17 +24,25 @@ void test('the scene holds the marked panels in or near the window, with their r
   assert.equal(readScene(page([element('x', 0, 0, 220, 220, '')]), page([]), viewport).panels[0]?.radius, 34, 'the reference radius without a token');
 });
 
+void test('only veils that are shown and in the window count, and an edge veil says so', () => {
+  const root = page([], [veil(0, 0, 184, 900, {}, 'edge'), veil(-300, 0, 280, 900, {shown: false}, 'edge'), veil(216, 40, 300, 40), veil(216, -60, 300, 40), veil(216, 120, 300, 20, {shown: false})]);
+  const scene = readScene(root, root, viewport);
+  assert.deepEqual(scene.veils, [{rect: {x: 0, y: 0, width: 184, height: 900}, edge: true}, {rect: {x: 216, y: 40, width: 300, height: 40}, edge: false}],
+    'a closed drawer, a heading scrolled out of the window and a hidden notice draw no veil');
+});
+
 void test('the scene is capped at Home\'s placement limit', () => {
   const root = page(Array.from({length: MAX_PANELS + 10}, (_, index) => element(String(index), index % 6 * 230, Math.floor(index / 6) * 10)));
   assert.equal(readScene(root, root, viewport).panels.length, MAX_PANELS);
 });
 
 void test('a read that moves nothing compares equal, so it draws no frame', () => {
-  const scene = (x: number, radius = 34): GlassScene => ({panels: [{id: 'a', rect: {x, y: 0, width: 220, height: 220}, radius}], veils: [{x: 0, y: 0, width: 10, height: 10}]});
+  const scene = (x: number, radius = 34): GlassScene => ({panels: [{id: 'a', rect: {x, y: 0, width: 220, height: 220}, radius}], veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: false}]});
   assert.equal(sameScene(scene(10), scene(10.1)), true, 'subpixel noise is not a change');
   assert.equal(sameScene(scene(10), scene(11)), false, 'a moved box is');
   assert.equal(sameScene(scene(10), scene(10, 20)), false, 'a new radius is');
   assert.equal(sameScene(scene(10), {...scene(10), veils: []}), false, 'a removed veil is');
+  assert.equal(sameScene(scene(10), {...scene(10), veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: true}]}), false, 'a veil that changes its edge is');
 });
 
 void test('computed colors parse into channels and an amount', () => {

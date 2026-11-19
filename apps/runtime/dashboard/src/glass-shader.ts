@@ -18,6 +18,7 @@ uniform vec2 uRes, uArtSize;
 uniform float uDpr, uHasArt, uDark, uAppear, uDepth, uMerge, uInk, uContrast;
 uniform int uCount, uVeilCount;
 uniform vec4 uVeils[${String(MAX_VEILS)}];
+uniform float uVeilEdges[${String(MAX_VEILS)}];
 uniform vec4 uVeil, uVeilDeep, uTone, uRim, uShadow, uWashStart, uWashEnd, uWashBox;
 uniform vec3 uEdge, uBg;
 out vec4 color;
@@ -94,12 +95,6 @@ vec3 glass(vec2 p, float d, vec2 g, vec3 behind){
 void main(){
   vec2 p = vec2(gl_FragCoord.x, uRes.y * uDpr - gl_FragCoord.y) / uDpr;
   vec3 col = backdrop(p, 0.);
-  // Veils behind text on the backdrop: as strong as the brighter of the local ground and the pixel itself needs.
-  float t = 0.;
-  for (int i = 0; i < ${String(MAX_VEILS)}; i++){ if (i >= uVeilCount) break;
-    vec2 h = uVeils[i].zw * .5 + 6.; float mask = 1. - smoothstep(0., 36., sdRound(p - uVeils[i].xy - uVeils[i].zw * .5, h, 18.));
-    if (mask > 0.) t = max(t, mask * max(needed(col), needed(backdrop(p, 40.)))); }
-  col = veiled(col, t);
   float D = field(p), appear = smoothstep(0., .6, uAppear);
   float shade = (1. - smoothstep(-8., 36., field(p - vec2(0., 12.)))) * uShadow.a * appear;
   col = mix(col, uShadow.rgb, shade);
@@ -108,5 +103,14 @@ void main(){
   // The lip of light a slab focuses just past its far edge.
   if (D > 0. && D < 20.) col += col * exp(-D / 5.) * max(dot(g, -LIGHT), 0.) * .55 * appear;
   if (D < 1.) col = glass(p, D, g, col);
+  // Veils behind text drawn over the layer, last, so they also hold over a panel's bevel and rim: as strong as the
+  // brighter of the local backdrop (outside panels) and the pixel itself needs. A veil fades out within 16 px past its
+  // box, or, marked edge, stops at it.
+  float t = 0.;
+  for (int i = 0; i < ${String(MAX_VEILS)}; i++){ if (i >= uVeilCount) break;
+    float edge = uVeilEdges[i], d = sdRound(p - uVeils[i].xy - uVeils[i].zw * .5, uVeils[i].zw * .5 + 4. * (1. - edge), 12. * (1. - edge));
+    float mask = edge > .5 ? step(d, 0.) : 1. - smoothstep(0., 12., d);
+    if (mask > 0.) t = max(t, mask * max(needed(col), D > 0. ? needed(backdrop(p, 40.)) : 0.)); }
+  col = veiled(col, t);
   color = vec4(col + (h21(gl_FragCoord.xy) - .5) * .018, 1.);
 }`;

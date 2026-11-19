@@ -973,14 +973,18 @@ that root. Its options:
 The scene (`src/glass-scene.ts`) is read from the page once per frame:
 `data-glass-panel="<id>"` marks an element whose box is a panel, with its corner
 radius from `--glass-radius`, and `data-glass-veil` marks text on the backdrop
-(the heading, status lines, the rail, the phone bar and the footer). Later stories
-add optional panel fields parsed from more attributes, one texel each in the
-renderer's panel table (`src/glass-renderer.ts`) and a term in the shader
-(`src/glass-shader.ts`). The layer draws only while something changes or settles:
-a box moved or resized, a scroll, a window resize, a mark or skin change, a new
-backdrop, or the 700 ms first appearance. At rest it draws nothing. It caps the
-pixel ratio at 2, takes no pointer input, sends nothing, and loses its context
-when the page is left.
+(the heading, the live notice, status lines, Edit Home's empty cells and the
+footer). Its veil fades out within 16px of the box; `data-glass-veil="edge"` stops
+at the box, for the frosted rail and phone bar. A veil that is hidden, such as the
+closed phone drawer, or outside the window draws nothing. Every text that can sit
+on the backdrop needs a veil or a fill of its own. Later stories add optional
+panel fields parsed from more attributes, one texel each in the renderer's panel
+table (`src/glass-renderer.ts`) and a term in the shader (`src/glass-shader.ts`).
+The layer draws only while something changes or settles: a box moved or resized
+(including by something added or resized above the page), a scroll, a window
+resize, a mark or skin change, a new backdrop, or the 700 ms first appearance. At
+rest it draws nothing. It caps the pixel ratio at 2, takes no pointer input, sends
+nothing, and loses its context when the page is left.
 
 `glass.css` keys everything on `data-glass="webgl"`: the outermost card surface
 in each panel turns transparent (a surface with a state meaning, such as an

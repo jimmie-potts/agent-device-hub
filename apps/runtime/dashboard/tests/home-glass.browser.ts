@@ -8,7 +8,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, feed, holdDashboardStream, startWorld} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {artworkOf, browserArt} from '../../../../modules/art/dist/src/frontend/model.js';
 
@@ -136,45 +136,45 @@ async function shot(page: Page, name: string): Promise<void> {
 }
 
 /**
- * The lowest contrast between panel or heading text and the pixels drawn behind it. Text that sits on its own fill
- * (a button, an inset) is not over the glass and is skipped. The text is hidden for the screenshot so only what is
- * behind it is measured; hiding it changes no box, so the layer draws nothing new.
+ * The lowest contrast between any text drawn over the layer and the pixels behind it: panel text, the heading, notices,
+ * status lines and empty cells in Home's section, and the footer. Text on a fill of its own (a button, an inset, the
+ * edit toolbar) is not over the layer and is skipped. The text is made transparent for the screenshot so only what is
+ * behind it is measured; that changes no box, so the layer draws nothing new.
  */
 async function contrast(page: Page): Promise<{min: number; runs: number; worst: string}> {
   const runs = await page.evaluate(() => {
+    const main = document.getElementById('main');if (main === null) throw new Error('contrast: no main');
     const clear = (element: Element): boolean => {const style = getComputedStyle(element);return style.backgroundImage === 'none' && (style.backgroundColor === 'transparent' || /rgba\(.*, 0\)$/.test(style.backgroundColor));};
     const found: {x: number; y: number; width: number; height: number; color: string; text: string}[] = [];
-    const roots = [...document.querySelectorAll('.home-layout [data-glass-panel], .home-layout [data-glass-veil]')];
-    for (const root of roots) {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-        const parent = node.parentElement;if (parent === null || (node.textContent ?? '').trim() === '') continue;
-        const style = getComputedStyle(parent);if (style.visibility !== 'visible' || Number(style.opacity) < 1) continue;
-        let ground = true;for (let at: Element | null = parent; at !== null && at !== root; at = at.parentElement) if (!clear(at)) {ground = false;break;}
-        if (!ground || !clear(root) && root.matches('[data-glass-veil]')) continue;
-        const range = document.createRange();range.selectNodeContents(node);const limit = parent.getBoundingClientRect();
-        for (const rect of range.getClientRects()) {
-          const x = Math.max(rect.left, limit.left, 0), y = Math.max(rect.top, limit.top, 0);
-          const right = Math.min(rect.right, limit.right, innerWidth), bottom = Math.min(rect.bottom, limit.bottom, innerHeight);
-          if (right - x >= 2 && bottom - y >= 2) found.push({x, y, width: right - x, height: bottom - y, color: style.color, text: (node.textContent ?? '').trim().slice(0, 24)});
-        }
+    const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const parent = node.parentElement;if (parent === null || (node.textContent ?? '').trim() === '' || !parent.checkVisibility({visibilityProperty: true, opacityProperty: true})) continue;
+      let ground = true;for (let at: Element | null = parent; at !== null && at !== main; at = at.parentElement) if (!clear(at) || Number(getComputedStyle(at).opacity) < 1) {ground = false;break;}
+      if (!ground) continue;
+      const range = document.createRange();range.selectNodeContents(node);const limit = parent.getBoundingClientRect(), color = getComputedStyle(parent).color;
+      for (const rect of range.getClientRects()) {
+        const x = Math.max(rect.left, limit.left, 0), y = Math.max(rect.top, limit.top, 0);
+        const right = Math.min(rect.right, limit.right, innerWidth), bottom = Math.min(rect.bottom, limit.bottom, innerHeight);
+        if (right - x >= 2 && bottom - y >= 2) found.push({x, y, width: right - x, height: bottom - y, color, text: (node.textContent ?? '').trim().slice(0, 32)});
       }
+      parent.dataset['glassMeasured'] = '';
     }
-    for (const root of roots) for (const child of root.matches('[data-glass-veil]') ? [root] : [...root.children]) if (child instanceof HTMLElement) child.style.visibility = 'hidden';
+    for (const element of main.querySelectorAll<HTMLElement>('[data-glass-measured]')) element.style.setProperty('color', 'transparent', 'important');
     return found;
   });
   const image = await sharp(await page.screenshot()).raw().toBuffer({resolveWithObject: true});
-  await page.evaluate(() => {for (const element of document.querySelectorAll<HTMLElement>('.home-layout [data-glass-veil], .home-layout [data-glass-panel] > *')) element.style.visibility = '';});
+  await page.evaluate(() => {for (const element of document.querySelectorAll<HTMLElement>('[data-glass-measured]')) {element.style.removeProperty('color');delete element.dataset['glassMeasured'];}});
   const linear = (value: number): number => {const channel = value / 255;return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;};
   const luminance = (r: number, g: number, b: number): number => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
   const {data, info} = image;let min = Infinity, worst = '';
   for (const run of runs) {
-    const [r = 0, g = 0, b = 0] = [...run.color.matchAll(/\d+(\.\d+)?/g)].map(match => Number(match[0]));
-    const ink = luminance(r, g, b);
+    const [r = 0, g = 0, b = 0, a = 1] = [...run.color.matchAll(/\d+(\.\d+)?/g)].map(match => Number(match[0]));
     for (let y = Math.ceil(run.y); y < Math.floor(run.y + run.height); y += 1) for (let x = Math.ceil(run.x); x < Math.floor(run.x + run.width); x += 1) {
-      const at = (y * info.width + x) * info.channels, ground = luminance(data[at] ?? 0, data[at + 1] ?? 0, data[at + 2] ?? 0);
+      const at = (y * info.width + x) * info.channels, [br = 0, bg = 0, bb = 0] = [data[at], data[at + 1], data[at + 2]];
+      // Translucent ink is drawn over the same pixel it is measured against.
+      const ink = luminance(br + (r - br) * a, bg + (g - bg) * a, bb + (b - bb) * a), ground = luminance(br, bg, bb);
       const ratio = (Math.max(ink, ground) + 0.05) / (Math.min(ink, ground) + 0.05);
-      if (ratio < min) {min = ratio;worst = `${run.text} at ${String(x)},${String(y)}`;}
+      if (ratio < min) {min = ratio;worst = `"${run.text}" at ${String(x)},${String(y)} in ${run.color}`;}
     }
   }
   return {min, runs: runs.length, worst};
@@ -275,10 +275,23 @@ try {
     for (const sample of ['dark', 'bright'] as const) {
       await present(opened.page, sample === 'dark' ? dark : bright);await rest(opened.page);
       await shot(opened.page, `1440-${scheme}-${sample}`);
-      const measured = await contrast(opened.page);
-      assert.ok(measured.runs > 20, `${scheme}/${sample}: text runs were measured`);
-      contrasts[`${scheme}/${sample}`] = Math.round(measured.min * 100) / 100;
-      assert.ok(measured.min >= 4.5, `${scheme}/${sample}: panel text keeps 4.5:1 (lowest ${measured.min.toFixed(2)}: ${measured.worst})`);
+      const measure = async (state: string): Promise<void> => {
+        const measured = await contrast(opened.page), label = `${scheme}/${sample}${state === '' ? '' : `/${state}`}`;
+        assert.ok(measured.runs > 20, `${label}: text runs were measured`);
+        contrasts[label] = Math.round(measured.min * 100) / 100;
+        assert.ok(measured.min >= 4.5, `${label}: text over the glass layer keeps 4.5:1 (lowest ${measured.min.toFixed(2)}: ${measured.worst})`);
+      };
+      await measure('');
+      // Reconnecting: the live notice above Home moves the page down and sits on the backdrop.
+      const release = await holdDashboardStream(opened.page);world.dropDashboardStreams();await feed(opened.page, 'reconnecting');
+      await expect(opened.page.locator('section[aria-label="Home"] > p[role=alert]')).toBeVisible();
+      await followsBoxes(opened.page, `${scheme}/${sample} reconnecting`);await shot(opened.page, `1440-${scheme}-${sample}-reconnecting`);
+      await measure('reconnecting');
+      release();await feed(opened.page, 'connected');await followsBoxes(opened.page, `${scheme}/${sample} reconnected`);
+      // Edit Home: the toolbar, the cards' edit bars and the empty cells.
+      await opened.page.getByRole('button', {name: 'Edit Home', exact: true}).click();await rest(opened.page);
+      await shot(opened.page, `1440-${scheme}-${sample}-edit`);await measure('edit');
+      await opened.page.getByRole('button', {name: 'Cancel', exact: true}).click();await rest(opened.page);
       // Phone widths for the private visual review only.
       if (receipts !== undefined) {
         for (const width of [390, 320]) {await opened.page.setViewportSize({width, height: 844});await rest(opened.page);await shot(opened.page, `${String(width)}-${scheme}-${sample}`);}

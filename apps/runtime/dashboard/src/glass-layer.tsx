@@ -105,8 +105,15 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   view.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', skin, {signal});
   // Each panel's size is observed; the set is renewed only when the marked elements change.
   const sizes = new ResizeObserver(boxes);let observed: readonly Element[] = [];
+  // Whatever comes before the root or one of its ancestors can move it without resizing it, such as a notice that
+  // appears above the page, so those elements' sizes are observed too.
+  const before = (): Element[] => {
+    const found: Element[] = [];
+    for (let node: Element | null = root; node !== null && node !== doc.body; node = node.parentElement) for (let sibling = node.previousElementSibling; sibling !== null; sibling = sibling.previousElementSibling) found.push(sibling);
+    return found;
+  };
   const observePanels = (): void => {
-    const next = [root, ...root.querySelectorAll('[data-glass-panel]')];
+    const next = [root, ...root.querySelectorAll('[data-glass-panel]'), ...before()];
     if (next.length === observed.length && next.every((element, index) => element === observed[index])) return;
     sizes.disconnect();for (const element of next) sizes.observe(element);observed = next;
   };
@@ -114,6 +121,9 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   // Cards added, removed, reordered or reshaped (Edit Home, paging, a new record), and marks that change.
   const page = new MutationObserver(records => {if (records.some(record => record.type === 'childList')) observePanels();boxes();});
   page.observe(root, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-glass-panel', 'data-glass-veil', 'style', 'class', 'hidden']});
+  // An element added or removed before the root, or beside one of its ancestors.
+  const around = new MutationObserver(() => {observePanels();boxes();});
+  for (let node = root.parentElement; node !== null && node !== doc.documentElement; node = node.parentElement) around.observe(node, {childList: true});
   // The art theme and the appearance change the skin's values on the document element.
   const theme = new MutationObserver(skin);
   theme.observe(doc.documentElement, {attributes: true, attributeFilter: ['style', 'class', 'data-art-theme']});
@@ -129,7 +139,7 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
     backdrop: next => {picture = next;renderer?.backdrop(next);force = true;schedule();},
     fuse: value => {const next = value ? MERGE : 0;if (next !== merge) {merge = next;force = true;schedule();}},
     dispose: () => {
-      disposed = true;view.cancelAnimationFrame(raf);events.abort();sizes.disconnect();page.disconnect();theme.disconnect();
+      disposed = true;view.cancelAnimationFrame(raf);events.abort();sizes.disconnect();page.disconnect();around.disconnect();theme.disconnect();
       renderer?.dispose();renderer = null;gl?.getExtension('WEBGL_lose_context')?.loseContext();
     },
   };
