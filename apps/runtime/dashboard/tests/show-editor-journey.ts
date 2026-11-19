@@ -15,10 +15,10 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
   const calls: Parameters<AuthoringProvider>[0][] = [];
   const world = await startWorld({nanoleaf: true, musicCapture: true, musicPlayback: true, musicShowAuthoring: (input, signal) => {
     calls.push(input);
-    if (calls.length === 2) return new Promise((_resolve, reject) => {
+    if (calls.length === 2 || calls.length === 3) return new Promise((_resolve, reject) => {
       signal.addEventListener('abort', () => {reject(new Error('Synthetic unknown charges after cancel'));}, {once: true});
     });
-    if (calls.length === 3) return Promise.resolve({draft: {cues: [{startMs: 0, endMs: 700, effect: 'pulse',
+    if (calls.length === 4) return Promise.resolve({draft: {cues: [{startMs: 0, endMs: 700, effect: 'pulse',
       palette: ['#4f85ff'], intensity: 0.45}]}, costUsd: 0.0123});
     const span = input.analysis?.spans[0];
     assert.ok(span !== undefined, 'the browser chose a measured excerpt');
@@ -351,17 +351,34 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.deepEqual(errors, []);
     assert.equal(calls.length, 1, 'saved playback, stop, edit and reload do not call the provider');
 
-    // Another client cancels this request while the browser reloads. Its completed outcome cannot confirm charges.
+    // Interrupt Cancel before it reaches the owner. The same generation must retain its fence across reload.
     await playback.observe({itemId: playback.item.itemId, positionMs: 1000});
     await authoring.getByLabel('Timing source', {exact: true}).selectOption('generic');
     await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic cancellation exercise');
     await generate.click();
-    await authoring.getByRole('button', {name: 'Cancel generation', exact: true}).waitFor();
+    const cancelGeneration = authoring.getByRole('button', {name: 'Cancel generation', exact: true});
+    await cancelGeneration.waitFor();
     const cancelledGeneration = generationIds[1];
     assert.ok(cancelledGeneration !== undefined && cancelledGeneration !== '');
+    const cancelPath = '/api/v2/commands/nanoleaf-show-generate-cancel';
+    const cancelTargets: string[] = [];
+    page.on('request', request => {
+      if (request.method() !== 'POST' || new URL(request.url()).pathname !== cancelPath) return;
+      const body: unknown = request.postDataJSON();
+      assert.ok(typeof body === 'object' && body !== null && 'data' in body && typeof body.data === 'object' && body.data !== null
+        && 'generationRequestId' in body.data && typeof body.data.generationRequestId === 'string');
+      cancelTargets.push(body.data.generationRequestId);
+    });
+    await page.route(`**${cancelPath}`, route => route.abort('connectionreset'), {times: 1});
+    await cancelGeneration.click();
+    await authoring.getByRole('status').filter({hasText: 'Uncertain result.'}).waitFor();
+    assert.equal(await cancelGeneration.isDisabled(), true);
     await page.reload(); await feed(page, 'connected');
-    await authoring.getByRole('button', {name: 'Cancel generation', exact: true}).waitFor();
+    await authoring.getByRole('status').filter({hasText: 'Previous request has no confirmed result yet.'}).waitFor();
+    assert.equal(await cancelGeneration.isDisabled(), true, 'the first cancellation stays fenced after reload');
     assert.equal(await generate.isDisabled(), true, 'pending generation remains locked after reload');
+    assert.deepEqual(cancelTargets, [cancelledGeneration], 'reload does not resend the interrupted cancellation');
+    if (receipts !== undefined) await authoring.screenshot({path: join(receipts, 'shows-first-cancel-fenced.png')});
     assert.equal((await world.credentialAction('nanoleaf-show-generate-cancel', 'shows', {generationRequestId: cancelledGeneration})).status, 200);
     const nextGeneration = authoring.getByRole('button', {name: 'Generate new paid draft', exact: true});
     await authoring.getByText(/A charge may apply to the previous request/).waitFor();
@@ -370,12 +387,28 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     await authoring.getByLabel('Timing source', {exact: true}).selectOption('generic');
     await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic generic follow-up');
     await nextGeneration.click();
+    await cancelGeneration.waitFor();
+    assert.equal(await cancelGeneration.isEnabled(), true, 'an independently admitted generation has its own cancellation');
+    const secondGeneration = generationIds[2];
+    assert.ok(secondGeneration !== undefined && secondGeneration !== cancelledGeneration);
+    await page.reload(); await feed(page, 'connected');
+    await cancelGeneration.waitFor();
+    assert.equal(await cancelGeneration.isEnabled(), true, 'the second cancellation remains available after reload');
+    assert.deepEqual(cancelTargets, [cancelledGeneration], 'a new generation and reload send no cancellation');
+    if (receipts !== undefined) await authoring.screenshot({path: join(receipts, 'shows-second-cancel-available.png')});
+    await cancelGeneration.click();
+    await authoring.getByText(/A charge may apply to the previous request/).waitFor();
+    assert.deepEqual(cancelTargets, [cancelledGeneration, secondGeneration], 'the explicit cancellation reaches only the second generation');
+    await playback.observe();
+    await authoring.getByLabel('Timing source', {exact: true}).selectOption('generic');
+    await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic generic continuation');
+    await nextGeneration.click();
     await openGenerated.waitFor();
-    assert.equal(calls.length, 3, 'a new explicit request can run after a completed uncertain result');
-    assert.equal(new Set(generationIds).size, 3, 'each paid request uses its own identity');
+    assert.equal(calls.length, 4, 'an explicit new request can run after each completed uncertain result');
+    assert.equal(new Set(generationIds).size, 4, 'each paid request uses its own identity');
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'offline-decorative-shows', browserSaveRequests: saves.length,
       immutableVersions: true, staleSave: 409, readonly: 403, crossOrigin: 403, malformed: 400, authoringDeviceChanges: 0,
-      preview: 'cue storyboard only', measuredExcerpt: 'generated, edited, saved and reopened using synthetic producers and fake Claude', recoveryProviderCalls: 1, freshAttemptAfterCompletedUncertainty: true, malformedGenerationReadPreservedEdits: true, draftRecoveredAfterReload: true, forgedProvenanceRefused: true, measuredAudio: 'wrong item refused, matching item started and stopped, v1 pinned while v2 saved', noResend: true})}\n`);
+      preview: 'cue storyboard only', measuredExcerpt: 'generated, edited, saved and reopened using synthetic producers and fake Claude', recoveryProviderCalls: 1, freshAttemptAfterCompletedUncertainty: true, perGenerationCancelFence: true, malformedGenerationReadPreservedEdits: true, draftRecoveredAfterReload: true, forgedProvenanceRefused: true, measuredAudio: 'wrong item refused, matching item started and stopped, v1 pinned while v2 saved', noResend: true})}\n`);
   } catch (error) {
     const receipts = process.env.DASHBOARD_RECEIPTS, page = context.pages()[0];
     if (receipts !== undefined && page !== undefined) {

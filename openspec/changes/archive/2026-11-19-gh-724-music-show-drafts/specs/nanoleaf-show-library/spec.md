@@ -23,6 +23,13 @@ The show library SHALL let an authenticated controller explicitly request one Cl
 - **THEN** no earlier edits, saved shows or favorites are changed
 - **AND** the provider is not called again for that request
 
+#### Scenario: A lost Cancel reply stays with its draft
+
+- **WHEN** the controller loses the reply to a Cancel attempt for one generation
+- **THEN** the browser keeps that generation's duplicate fence across reload
+- **AND** the controller can cancel a different current generation
+- **AND** no prior request is sent again or its spending reservation released
+
 #### Scenario: Separate Music allowance
 
 - **WHEN** a request would exceed the Music ledger's available USD 3 daily or USD 20 monthly allowance

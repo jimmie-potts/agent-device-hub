@@ -60,7 +60,8 @@ export const STATE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
 export const OTHER_MODULE_FAMILIES: readonly string[] = [
   'lifx-color-set/2.0', 'lifx-temperature-set/2.0',
   'microduck-gesture/2.0', 'microduck-stop/2.0', 'microduck-control/2.0', 'microduck-auto/2.0',
-  'nanoleaf-reactive-preset-save/2.0', 'nanoleaf-show-save/2.0', 'nanoleaf-wall-edit/2.0', 'nanoleaf-machine-edit/2.0',
+  'nanoleaf-reactive-preset-save/2.0', 'nanoleaf-show-save/2.0', 'nanoleaf-show-generate/2.0', 'nanoleaf-show-generate-cancel/2.0',
+  'nanoleaf-wall-edit/2.0', 'nanoleaf-machine-edit/2.0',
   'nanoleaf-animation-play/2.0', 'nanoleaf-favorite-edit/2.0', 'nanoleaf-notice-acknowledge/2.0',
   'pixoo-media-show/2.0', 'pixoo-monitor-set/2.0', 'pixoo-now-playing-set/2.0', 'pixoo-moments-set/2.0', 'pixoo-playlist-change/2.0',
   'pixoo-asset-change/2.0', 'pixoo-notice-dismiss/2.0',

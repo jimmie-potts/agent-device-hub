@@ -74,12 +74,13 @@ function CueEditor({cue, index, measured, disabled, update, remove}: {
   </fieldset>;
 }
 
-function ShowAuthoring({context, generate, cancel, reading, canOpen, open, dirty}: {
-  context: FrontendContext; generate: FrontendCommand; cancel: FrontendCommand; reading: boolean; canOpen: boolean;
+function ShowAuthoring({context, generate, reading, canOpen, open, dirty}: {
+  context: FrontendContext; generate: FrontendCommand; reading: boolean; canOpen: boolean;
   open: (requestId?: string) => void; dirty: boolean;
 }): React.JSX.Element {
   const [style, setStyle] = useState('');
   const [source, setSource] = useState<'measured' | 'generic'>('measured');
+  const Command = context.ui.Command;
   const requestId = generate.requestId;
   const operation = context.operations.find(value => value.requestId === requestId && value.family === 'nanoleaf-show-generate' && value.target === SHOW_TARGET);
   const ready = operation?.status === 'completed' && operation.result === 'succeeded' && operation.evidence === 'observed';
@@ -114,9 +115,14 @@ function ShowAuthoring({context, generate, cancel, reading, canOpen, open, dirty
       <button type="button" disabled={disabled || style.trim() === ''} onClick={() => {
         void generate.run({family: 'nanoleaf-show-generate', target: SHOW_TARGET, requestId: crypto.randomUUID(), data: {style: style.trim(), source}});
       }}>{settledUncertain ? 'Generate new paid draft' : 'Generate paid draft'}</button>
-      {active && requestId !== undefined && <button type="button" className="secondary" disabled={!online || cancel.locked} onClick={() => {
-        void cancel.run({family: 'nanoleaf-show-generate-cancel', target: SHOW_TARGET, requestId: crypto.randomUUID(), data: {generationRequestId: requestId}});
-      }}>Cancel generation</button>}
+      {active && requestId !== undefined && <Command key={requestId} context={context} target={SHOW_TARGET} attemptKey={`nanoleaf/shows/cancel/${requestId}`}>
+        {cancel => <>
+          <button type="button" className="secondary" disabled={!online || cancel.locked} onClick={() => {
+            void cancel.run({family: 'nanoleaf-show-generate-cancel', target: SHOW_TARGET, requestId: crypto.randomUUID(), data: {generationRequestId: requestId}});
+          }}>Cancel generation</button>
+          {cancel.requestId !== undefined && <span role="status">{cancel.text}</span>}
+        </>}
+      </Command>}
       <button type="button" className="secondary" disabled={!canOpen || reading} onClick={() => {open(ready ? requestId : undefined);}}>
         {reading ? 'Opening draft…' : ready ? 'Open generated draft' : 'Open latest generated draft'}</button>
     </div>
@@ -124,13 +130,12 @@ function ShowAuthoring({context, generate, cancel, reading, canOpen, open, dirty
     {ready && !dirty && <p className="hint">Open the result to preview and edit it before saving.</p>}
     {requestId !== undefined && <p role="status">{ready ? 'Generated draft ready to open.' : generate.text}</p>}
     {settledUncertain && <p>A charge may apply to the previous request. A new request makes a separate paid attempt.</p>}
-    {active && cancel.requestId !== undefined && <p role="status">{cancel.text}</p>}
     {!ready && operation?.error !== undefined && <p role="alert">{operation.error.detail ?? 'Generation did not produce a draft.'} Your current draft is retained.</p>}
   </section>;
 }
 
-function ShowEditor({context, catalog, command, generate, cancel}: {
-  context: FrontendContext; catalog: ReturnType<typeof useShows>; command: FrontendCommand; generate: FrontendCommand; cancel: FrontendCommand;
+function ShowEditor({context, catalog, command, generate}: {
+  context: FrontendContext; catalog: ReturnType<typeof useShows>; command: FrontendCommand; generate: FrontendCommand;
 }): React.JSX.Element {
   const [draft, setDraft] = useState<ShowSave>();
   const [dirty, setDirty] = useState(false);
@@ -235,7 +240,7 @@ function ShowEditor({context, catalog, command, generate, cancel}: {
       </button>
       {prepareFailed && <p role="alert">No measured excerpt is available for the current Mac Music item. Any earlier draft is retained.</p>}
     </section>}
-    {context.control && <ShowAuthoring context={context} generate={generate} cancel={cancel} reading={openingGenerated}
+    {context.control && <ShowAuthoring context={context} generate={generate} reading={openingGenerated}
       canOpen={context.connected && editable && !pendingRead} open={openGenerated} dirty={dirty}/>}
     {generatedProblem !== undefined && <p role="alert">{generatedProblem} Your current draft is retained.</p>}
     {!context.control && <p>Read-only access. You can inspect saved versions; editing requires control access.</p>}
@@ -271,9 +276,7 @@ export function Shows({context}: {context: FrontendContext}): React.JSX.Element 
   return <div className="nanoleaf-shows"><p>Private cue plans for Nanoleaf. Save a version here, then choose it on the <a href="#/audio">Audio page</a> to start playback.</p>
     <Command context={context} target={SHOW_TARGET} attemptKey="nanoleaf/shows/save">{command =>
       <Command context={context} target={SHOW_TARGET} attemptKey="nanoleaf/shows/generate">{generate =>
-        <Command context={context} target={SHOW_TARGET} attemptKey="nanoleaf/shows/cancel">{cancel =>
-          <ShowEditor context={context} catalog={catalog} command={command} generate={generate} cancel={cancel}/>
-        }</Command>}
+        <ShowEditor context={context} catalog={catalog} command={command} generate={generate}/>}
       </Command>}
     </Command>
   </div>;
