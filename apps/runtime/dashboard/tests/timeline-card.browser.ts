@@ -63,8 +63,15 @@ try {
   await expect(card).toHaveCount(0);await page.reload();await feed(page, 'connected');await expect(card).toHaveCount(0);
   const saves = sent.length;
 
-  // Synthetic reply shapes cover presentation, empty/fault paths and long evidence.
-  const now = Date.now(), rows: HistoryRow[] = Array.from({length: 35}, (_, index) => ({seq: index + 1, atMs: now - index * 1000,
+  // Synthetic reply shapes cover presentation, empty/fault paths and long evidence. The rows are stamped back from noon
+  // of a fixed day in the page's own time zone, and the page's clock is held at that noon, so "today" holds all 35 at
+  // any wall-clock time; rows stamped from the real clock fell partly into yesterday just after midnight (#1918).
+  // The held clock is days behind the runtime's, so the runtime refuses every SDK sync the page sends from here on as
+  // expired and the page holds no current copies. The checks below read only the routed history and the command
+  // recorder; a check that needs synced copies does not belong after this point.
+  const now = await page.evaluate(() => new Date(2026, 10, 12, 12).getTime());
+  await page.clock.setFixedTime(now);
+  const rows: HistoryRow[] = Array.from({length: 35}, (_, index) => ({seq: index + 1, atMs: now - index * 1000,
     kind: index < 3 ? 'change' : 'operation', source: index === 0 ? 'bunny/core' : 'bunny/modules/lifx', subject: index === 0 ? 'synthetic-session' : 'desk-lamp',
     type: index === 0 ? 'org.bunny.session.updated' : index === 1 ? 'org.bunny.mode.updated' : 'org.bunny.power.set.requested', requestId: null,
     record: index === 0 ? {family: 'session', changed: {label: 'Synthetic session'}} : index === 1 ? {family: 'mode', changed: {mode: 'work'}} : index === 2 ? {family: 'device', changed: {label: 'Synthetic lamp'}} : {status: index === 3 ? 'sent' : 'completed', result: index === 3 ? undefined : 'succeeded', evidence: index === 4 ? 'transmitted' : 'observed', diagnostic: 'x'.repeat(600)},

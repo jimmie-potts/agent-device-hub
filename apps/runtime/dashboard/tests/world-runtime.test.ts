@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {INSTALLED_PORTS, startWorldRuntime} from './world-runtime.ts';
+import {INSTALLED_PORTS, WORLD_LIMIT_MS, startWorldRuntime, worldDeadline} from './world-runtime.ts';
 
 void test('an allowed runtime is returned without stopping or retrying it', async () => {
   let starts = 0;
@@ -60,4 +60,19 @@ void test('a rejected candidate cleanup failure propagates without starting anot
     return Promise.resolve({url: 'http://127.0.0.1:41231', stop: () => Promise.reject(failure)});
   }), error => error === failure);
   assert.equal(starts, 1);
+});
+
+void test('a world not closed within its limit ends the run, naming the journey and its phase (#1919)', () => {
+  const timers: {run: () => void; ms: number; cancelled: boolean}[] = [];
+  const timer = {after: (run: () => void, ms: number) => {const entry = {run, ms, cancelled: false}; timers.push(entry); return entry;},
+    cancel: (entry: unknown) => {(entry as {cancelled: boolean}).cancelled = true;}};
+  const failures: string[] = [];
+  const stuck = worldDeadline('devices-menu.browser.ts:9', {timer, fail: message => {failures.push(message);}});
+  assert.equal(timers[0]?.ms, WORLD_LIMIT_MS);
+  stuck.phase('running'); stuck.phase('closing');
+  timers[0]?.run();
+  assert.deepEqual(failures, ['The world for devices-menu.browser.ts:9 was not closed within 25 minutes; it was closing.']);
+  const closed = worldDeadline('shell.browser.ts:11', {timer, limitMs: 60_000, fail: message => {failures.push(message);}});
+  closed.clear();
+  assert.deepEqual([timers[1]?.ms, timers[1]?.cancelled], [60_000, true], 'a closed world cancels its deadline');
 });

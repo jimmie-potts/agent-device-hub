@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, type Request} from 'playwright';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, copiesSynced, feed, startWorld} from './harness.ts';
 import {destinationLink, destinationNames, openDirectory, openSettings} from './navigation-helpers.ts';
 import {PINS_KEY} from '../src/pins.ts';
 import {RAIL_PREFERENCE_KEY} from '../src/rail-preference.ts';
@@ -294,6 +294,8 @@ try {
   await open('Devices'); await category('Displays');
 
   // From here to the reload nothing opens a page, so any command, sync, upload or provider request would be the rail's own.
+  // The page opened above sends its own syncs after its feed connects; the check starts once they are answered.
+  await copiesSynced(page);
   const railWrites = recordWrites();
   await page.setViewportSize({width: 1024, height: 1000});
   assert.equal(await railWidth(), 64, 'a narrower window starts with the icon rail, with no wait for a script');
@@ -344,6 +346,9 @@ try {
   await page.setViewportSize({width: 390, height: 844});
   const menu = page.getByRole('button', {name: 'Open navigation', exact: true}), drawer = page.locator('.shell>aside');
   await menu.waitFor();
+  // The reload above sends its own syncs after the feed connects; a check that started before they were sent counted
+  // them as the drawer's (#1919).
+  await copiesSynced(page);
   const drawerWrites = recordWrites();
   assert.equal(await drawer.isVisible(), false, 'the drawer starts closed');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -705,7 +710,9 @@ try {
   for (const address of ['#/component/pendant-1', signAddress, '#/connections']) {
     assert.notEqual(address, null);
     await page.goto(`${world.url}/${address ?? ''}`); await feed(page, 'connected');
-    assert.equal(await page.getByText('Nothing at this address', {exact: true}).count(), 0);
+    // Until the catalog and the device copies arrive the page says it is loading, not that the address is missing (#1919).
+    await page.getByRole('region', {name: 'Loading page', exact: true}).waitFor({state: 'detached'});
+    assert.equal(await page.getByRole('region', {name: 'Not found', exact: true}).count(), 0, `${address ?? ''} is a page`);
   }
   for (const address of ['#/component/devices', '#/component/settings', '#/missing-page']) {
     await page.goto(`${world.url}/${address}`); await feed(page, 'connected');
