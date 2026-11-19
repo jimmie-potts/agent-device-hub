@@ -21,7 +21,7 @@ const until = async (check: () => boolean): Promise<void> => {
   const end = Date.now() + 1500;
   while (!check()) { assert.ok(Date.now() < end, 'expected callback arrives'); await new Promise(resolve => { setTimeout(resolve, 5); }); }
 };
-async function device(t: TestContext, options: {invalidPassword?: boolean; wrongIdentity?: boolean; missingEntity?: boolean; silence?: boolean; noiseMismatch?: boolean} = {}) {
+async function device(t: TestContext, options: {invalidPassword?: boolean; wrongIdentity?: boolean; missingEntity?: boolean; silence?: boolean; noiseMismatch?: boolean; firmwareUpdate?: boolean} = {}) {
   const sockets = new Set<Socket>(), requests: {type: number; body: Buffer}[] = [], raw: Buffer[] = [];
   const server = createServer(socket => {
     sockets.add(socket); socket.on('error', () => {}); socket.on('close', () => { sockets.delete(socket); });
@@ -42,9 +42,13 @@ async function device(t: TestContext, options: {invalidPassword?: boolean; wrong
         if (type === 9) socket.write(frame(10, text(3, options.wrongIdentity === true ? '02:00:00:00:00:99' : '02:00:00:00:00:41')));
         if (type === 11) {
           for (const channel of channels(SYNTHETIC_SENSOR)) if (options.missingEntity !== true || channel.binding.key !== 1) socket.write(frame(TYPES[channel.type][0], fixed(2, channel.binding.key)));
+          if (options.firmwareUpdate === true) socket.write(frame(116, Buffer.concat([fixed(2, 40), text(3, 'Firmware Update')])));
           socket.write(frame(19));
         }
-        if (type === 20) for (const report of reports()) send(report);
+        if (type === 20) {
+          if (options.firmwareUpdate === true) socket.write(frame(117, fixed(1, 40)));
+          for (const report of reports()) send(report);
+        }
         if (type === 5) socket.write(frame(6));
         if (type === 7) socket.write(frame(8));
       }
@@ -63,8 +67,8 @@ async function device(t: TestContext, options: {invalidPassword?: boolean; wrong
   t.after(async () => { for (const socket of sockets) socket.destroy(); await new Promise<void>(resolve => { server.close(() => { resolve(); }); }); });
   return {sensor: {...SYNTHETIC_SENSOR, address: '127.0.0.1', port: address.port}, requests, raw, send};
 }
-void test('real Native API discovers typed numeric keys and preserves omitted false, zero, empty and missing-state reports', async t => {
-  const wire = await device(t), seen: ScalarReport[] = [];
+void test('real Native API reads typed reports and scalar defaults alongside firmware-update frames', async t => {
+  const wire = await device(t, {firmwareUpdate: true}), seen: ScalarReport[] = [];
   const session = nativeFactory(wire.sensor, {}, {report: report => { seen.push(report); }, disconnected: () => {}}); t.after(() => { session.close(); });
   await session.open(AbortSignal.timeout(2000)); await until(() => seen.length === reports().length);
   for (const key of [5, 9]) assert.equal(seen.find(report => report.key === key)?.value, false);

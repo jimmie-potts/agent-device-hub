@@ -137,10 +137,11 @@ construction, supports existing passwords and returns protobuf scalar defaults.
 The earlier `esphome-client` 2.1.0 candidate lacks password support and permits
 opportunistic Noise-to-plaintext fallback, so it was not selected.
 
-Two narrow per-instance compatibility fixes in `src/native.ts` rely on this
-pinned client's internals: preserve modern switch `missing_state` field 4 before
-the older generated switch decoder discards it, and retain teardown error sinks
-while the client's bounded five-second request timers/Noise initialization settle.
+The per-connection compatibility code in `src/native.ts` relies on this pinned
+client's internals. It consumes firmware-update entity and state frames that the
+client cannot decode, so discovery and occupancy can continue. It also preserves
+switch `missing_state` field 4 and retains teardown error sinks while the client's
+bounded five-second request timers and Noise initialization settle.
 Recheck these regressions before upgrading the dependency. Network/protocol
 failure is `unavailable`, identity/explicit password or local key refusal is `forbidden`, and
 missing typed bindings are `unsupported-capability`; none means vacancy.
