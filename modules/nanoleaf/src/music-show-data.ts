@@ -1,1 +1,1 @@
-export {SHOW_TARGET, SHOW_VERSION_SCHEMA, SHOW_ID_PATTERN, SHOW_LIMITS, type ShowVersion, type ShowSummary, type ShowCatalog, type ShowSave, validShowId, type MeasuredItem, type ShowMeasurement, showMeasurement} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
+export {SHOW_CATALOG_SCHEMA, SHOW_TARGET, SHOW_VERSION_SCHEMA, SHOW_ID_PATTERN, SHOW_LIMITS, type ShowVersion, type ShowSummary, type ShowCatalog, type ShowSave, validShowId, type MeasuredItem, type ShowMeasurement, showMeasurement} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';

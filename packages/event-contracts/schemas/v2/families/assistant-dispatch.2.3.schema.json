@@ -23,6 +23,7 @@
         "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"}
       }
     },
+    "admitByMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
     "data": {"type": "object", "maxProperties": 12}
   }
 }

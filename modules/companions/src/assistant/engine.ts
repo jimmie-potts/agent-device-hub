@@ -1,3 +1,4 @@
+import {SHOW_SAVE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {createHash, randomUUID} from 'node:crypto';
 import {Annotation, Command as Resume, END, StateGraph, interrupt} from '@langchain/langgraph';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
@@ -582,8 +583,13 @@ export class AssistantEngine {
         ? `accepted: the core accepted mode-set ${proposal.data.mode} as operation ${id}; its outcome is tracked separately`
         : `accepted: ${proposal.family === 'catalog-action' ? proposal.command : proposal.family} on ${proposal.target} as operation ${id}; its outcome is tracked separately`;
       result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
-        if (proposal.family === 'catalog-action') this.#catalog().beforeDispatch(proposal, id);
-        const answer = await dispatch(data, parent, signal);
+        const admitByMs = this.context.clock.now() + SHOW_SAVE_WINDOW_MS;
+        if (proposal.family === 'catalog-action') {
+          const refused = this.#catalog().beforeDispatch(proposal, id, admitByMs);
+          if (refused !== undefined) return {text: `refused: ${refused}`, units: 0};
+        }
+        const answer = await dispatch(data.family === 'catalog-action' && data.command === 'nanoleaf-show-save'
+          ? {...data, admitByMs} : data, parent, signal);
         if (proposal.family === 'catalog-action' && answer.status === 'rejected' && answer.error.error.code !== 'uncertain-result') {
           this.#catalog().rejected(proposal, id);
         }

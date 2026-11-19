@@ -213,6 +213,30 @@ void test('the light command stays uncertain after a lost dispatch reply and doe
   assert.equal(attempts, 1);
 });
 
+void test('a lost saved-show playback answer stays uncertain and never sends a second request', async context => {
+  const requests: AssistantDispatch[] = [];
+  const w = await world(context, {tools: ['control_music_lighting_control'], dispatch: data => {
+    requests.push(data);
+    return Promise.resolve({status: 'uncertain', requestId: data.requestId, error: errorBody('uncertain-result')});
+  }});
+  await w.core.serveSync(['music-lighting-state'], () => ({revision: 1, states: [{
+    type: 'org.bunny.music-lighting.updated', subject: 'wall', dataschema: 'https://bunny.invalid/events/music-lighting-state/2.0',
+    data: {id: 'wall', revision: 1, session: {status: 'active', generation: 'specific-show', operationId: 'previous-start',
+      startedAtMs: 1000, show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0}}, last: null},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'SYNTHETIC_CATALOG ' + JSON.stringify({name: 'control_music_lighting_control',
+    input: {owner: 'bunny/core', target: 'wall', arguments: '{"action":"stop"}'}}));
+  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'uncertain');
+  assert.equal(task(w)?.code, 'uncertain-result');
+  assert.deepEqual(requests[0]?.data, {action: 'stop', generation: 'specific-show'});
+  await w.restart();
+  assert.equal(status(w), 'uncertain');
+  assert.equal(requests.length, 1);
+});
+
 void test('private task pauses, restarts without execution and consumes an explicit saved answer in a new run', async context => {
   const provider = counted();
   const w = await world(context, {provider});

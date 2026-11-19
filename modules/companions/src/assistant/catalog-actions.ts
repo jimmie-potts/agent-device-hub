@@ -1,5 +1,5 @@
 import {assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
-import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
+import {ART_SHOW_EFFECTS_FAMILY, artShowSurfaces, type ArtShowEffects} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtRecord} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
@@ -7,14 +7,21 @@ import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts
 import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import type {ShowCatalog} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
-import {Outcome, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
-import {deviceLabel} from './devices.js';
+import {type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
+import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS} from './devices.js';
 import {ShowDrafts} from './show-drafts.js';
 import {textBytes, type ToolCall} from './provider.js';
 import {CREATE_SHOW, EDIT_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
   READ_PLAYBACK, READ_SHOWS, READ_VACUUM, READ_VOLCANO} from './catalog-tools.js';
 
 const CORE = 'bunny/core', NANOLEAF = 'bunny/modules/nanoleaf';
+const LIFX = 'bunny/modules/lifx', WEMO = 'bunny/modules/wemo';
+type LifxColor = {id: string; capabilities: {color: {supported: boolean}; temperature: {supported: boolean}};
+  observed: {status: 'unknown'} | {status: 'known'; observedAtMs: number; hue: number; saturation: number; brightness: number; kelvin: number}};
+function lifxSupports(family: CatalogFamily, light: LifxColor | undefined): boolean {
+  return family === 'lifx-color-set' ? light?.capabilities.color.supported === true
+    : family === 'lifx-temperature-set' ? light?.capabilities.temperature.supported === true : true;
+}
 const PLAYBACK = 'bunny/modules/playback', ART = 'bunny/modules/art', VOLCANO = 'bunny/modules/volcano';
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const idList = (value: unknown): value is string[] => Array.isArray(value) && value.length > 0 && value.length <= 3 &&
@@ -62,23 +69,30 @@ export class ConversationActions {
     let draft = drafts.read(call.input.draftId);
     if (draft === undefined) return {code: 'not-found'};
     if (draft.revision !== call.input.revision) return {code: 'revision-conflict'};
-    if (draft.pending !== null) {
-      const result = await this.#operation(draft.pending, parent);
-      if (result?.status === 'completed' && result.result === Outcome.succeeded && result.family === 'nanoleaf-show-save') {
+    const readStarted = this.context.clock.now();
+    const library = (await this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent))?.[0];
+    if (library === undefined) return {code: 'unavailable'};
+    const {showId, expectedVersion} = draft.value;
+    const current = library.shows.find(show => show.id === showId);
+    const pending = draft.pending;
+    if (pending !== null) {
+      const saved = current?.versions.find(version => version.version === expectedVersion + 1);
+      if (saved?.savedByRequest === pending.requestId) {
         drafts.confirmSave(draft);
-        draft = drafts.read(call.input.draftId);
-        if (draft === undefined) return {code: 'not-found'};
-      } else if (result === undefined || result.status === 'sent' || result.status === 'accepted' || result.status === 'uncertain') {
+      } else if (readStarted >= pending.admitByMs) {
+        // The owner checks this same deadline inside its save transaction. A new approval is safe after this fresh read.
+        drafts.clearSave(draft.value.showId, pending.requestId);
+      } else {
         return {code: 'uncertain-result'};
       }
+      draft = drafts.read(call.input.draftId);
+      if (draft === undefined) return {code: 'not-found'};
+      if (draft.revision !== call.input.revision) return {code: 'revision-conflict'};
     }
     const versionName = call.input.versionName;
     if (typeof versionName !== 'string') return {code: 'invalid-request'};
     const value = {...draft.value, versionName};
     if (draftProblem(value) !== undefined) return {code: 'invalid-request'};
-    const library = (await this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent))?.[0];
-    if (library === undefined) return {code: 'unavailable'};
-    const current = library.shows.find(show => show.id === value.showId);
     return (current?.version ?? 0) === value.expectedVersion ? value : {code: 'revision-conflict'};
   }
 
@@ -113,6 +127,12 @@ export class ConversationActions {
       if (selected === undefined) return {code: unreadable.length > 0 ? 'unavailable' : 'not-found'};
       const {device} = selected;
       if (!permitsDevice(route, device)) return {code: 'unsupported-capability'};
+      if (family === 'lifx-color-set' || family === 'lifx-temperature-set') {
+        const lights = await this.#snapshot<LifxColor>(LIFX, 'lifx-light', parent);
+        const light = lights?.find(candidate => candidate.id === device.id);
+        if (light === undefined) return {code: 'unavailable'};
+        if (!lifxSupports(family, light)) return {code: 'unsupported-capability'};
+      }
       if (family === 'wemo-hold-release') {
         if (device.held === undefined || data.heldRequestId !== device.held.requestId) return {code: 'revision-conflict'};
       } else if (device.availability !== 'available' || device.held !== undefined) return {code: 'unavailable'};
@@ -171,15 +191,16 @@ export class ConversationActions {
     return {binding: {kind: 'record', owner: CORE, target: name, revision: current.revision}, data};
   }
 
-  beforeDispatch(proposal: CatalogProposal, requestId: string): void {
-    if (proposal.command === 'nanoleaf-show-save' && typeof proposal.data.showId === 'string') {
-      this.#authoring().noteSave(proposal.data.showId, requestId);
+  beforeDispatch(proposal: CatalogProposal, requestId: string, admitByMs: number): ErrorCode | undefined {
+    if (proposal.command === 'nanoleaf-show-save') {
+      return this.#authoring().noteSave(proposal.data, {requestId, admitByMs});
     }
     if (proposal.command === 'art-show' && idList(proposal.data.targets)) {
       const db = this.context.database();
       db.exec('CREATE TABLE IF NOT EXISTS assistant_art_shows (request_id TEXT PRIMARY KEY, targets TEXT NOT NULL)');
       db.prepare('INSERT INTO assistant_art_shows (request_id, targets) VALUES (?, ?)').run(requestId, JSON.stringify(proposal.data.targets));
     }
+    return undefined;
   }
 
   rejected(proposal: CatalogProposal, requestId: string): void {
@@ -231,21 +252,40 @@ export class ConversationActions {
     const {target, owner} = input;
     if (typeof target !== 'string' || typeof owner !== 'string') return 'refused: invalid-request';
     const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
+    if (owners.length === 0) return 'refused: unsupported-capability';
     const {rows, unreadable} = await this.#deviceRecords(owners, parent);
-    const devices = rows.filter(row => target === '' || matches(row.device, target)).map(({owner: source, device}) => ({
-      owner: source, id: device.id, name: deviceLabel(device), availability: device.availability, hold: device.held ?? null,
-      choices: {modes: device.capabilities.modes, media: device.capabilities.media, scenes: device.capabilities.scenes, moments: device.capabilities.moments},
-      observed: device.observed, lastTransmissionAtMs: device.lastTransmission.status === 'known' ? device.lastTransmission.transmittedAtMs : null,
-      controls: this.enabled.filter(tool => {
-        if (tool === 'set_wemo_power') return source === 'bunny/modules/wemo' && device.capabilities.power.supported;
-        if (tool === 'set_lifx_power') return source === 'bunny/modules/lifx' && device.capabilities.power.supported;
-        if (tool === 'set_lifx_brightness') return source === 'bunny/modules/lifx' && device.capabilities.brightness.supported;
-        const family = tool.startsWith('control_') ? tool.slice(8).replaceAll('_', '-') : '';
-        if (!catalogFamily(family)) return false;
-        const route = catalogRoute(family);
-        return route.binding === 'device' && route.owners.some(eligible => eligible === source) && permitsDevice(route, device);
-      }),
-    }));
+    const selected = rows.filter(row => target === '' || matches(row.device, target));
+    if (target === '') return textResult({devices: selected.map(({owner, device}) => ({owner, id: device.id,
+      name: deviceLabel(device), lastReportedAvailability: device.availability})), unreadable});
+    if (selected.length > 1) return textResult({matches: selected.map(({owner, device}) => ({owner, id: device.id})),
+      guidance: 'Select the exact owner and ID.'});
+    const colors = selected.some(row => row.owner === LIFX) ? await this.#snapshot<LifxColor>(LIFX, 'lifx-light', parent) : undefined;
+    const now = this.context.clock.now();
+    const devices = selected.map(({owner: source, device}) => {
+      const light = colors?.find(row => row.id === device.id);
+      const age = source === LIFX ? MAX_OBSERVATION_AGE_MS : source === WEMO ? WEMO_OBSERVATION_AGE_MS : Number.POSITIVE_INFINITY;
+      const stale = observationStale(device, now, age);
+      const freshness = device.observed.status === 'unknown' ? 'unknown' : device.availability !== 'available' || stale ? 'stale' : 'current';
+      const color = light?.observed;
+      const colorStale = color?.status === 'known' && (color.observedAtMs > now || now - color.observedAtMs >= MAX_OBSERVATION_AGE_MS ||
+        device.lastTransmission.status === 'known' && color.observedAtMs < device.lastTransmission.transmittedAtMs);
+      return {
+        owner: source, id: device.id, name: deviceLabel(device), lastReportedAvailability: device.availability, hold: device.held ?? null,
+        choices: {modes: device.capabilities.modes, media: device.capabilities.media, scenes: device.capabilities.scenes, moments: device.capabilities.moments},
+        observation: {freshness, value: device.observed},
+        ...(color === undefined ? {} : {color: {freshness: color.status === 'unknown' ? 'unknown' : colorStale || device.availability !== 'available' ? 'stale' : 'current', value: color}}),
+        lastTransmissionAtMs: device.lastTransmission.status === 'known' ? device.lastTransmission.transmittedAtMs : null,
+        controls: this.enabled.filter(tool => {
+          if (tool === 'set_wemo_power') return source === 'bunny/modules/wemo' && device.capabilities.power.supported;
+          if (tool === 'set_lifx_power') return source === 'bunny/modules/lifx' && device.capabilities.power.supported;
+          if (tool === 'set_lifx_brightness') return source === 'bunny/modules/lifx' && device.capabilities.brightness.supported;
+          const family = tool.startsWith('control_') ? tool.slice(8).replaceAll('_', '-') : '';
+          if (!catalogFamily(family) || !lifxSupports(family, light)) return false;
+          const route = catalogRoute(family);
+          return route.binding === 'device' && route.owners.some(eligible => eligible === source) && permitsDevice(route, device);
+        }),
+      };
+    });
     return textResult({devices, unreadable});
   }
 
@@ -257,15 +297,18 @@ export class ConversationActions {
     if (typeof row?.targets !== 'string') return 'Show request unavailable.';
     const list: unknown = JSON.parse(row.targets);
     if (!idList(list)) return 'Show targets unavailable.';
-    const operations = await this.#snapshot<OperationRecord>(CORE, 'operation', parent);
-    if (operations === undefined) return 'Show operations unavailable.';
-    const result = (id: string) => {
-      const record = operations.find(operation => operation.requestId === id);
-      return record === undefined ? {status: 'no tracked operation'} : {status: record.status, result: record.result, evidence: record.evidence, code: record.error?.code};
+    const [operations, skips] = await Promise.all([this.#snapshot<OperationRecord>(CORE, 'operation', parent),
+      this.#snapshot<ArtShowEffects>(CORE, ART_SHOW_EFFECTS_FAMILY, parent)]);
+    const skipped = skips?.find(show => show.requestId === requestId)?.skipped ?? [];
+    const result = (id: string, target?: string, phase?: 'prepare' | 'present') => {
+      const skip = skipped.find(entry => entry.target === target && entry.phase === phase);
+      if (skip !== undefined) return {status: 'skipped', code: skip.code};
+      const record = operations?.find(operation => operation.requestId === id);
+      return record === undefined ? {status: 'evidence unavailable'} : {status: record.status, result: record.result, evidence: record.evidence, code: record.error?.code};
     };
     const effects = await artShowSurfaces(requestId, list);
     return textResult({show: result(requestId), effects: effects.map(surface => surface.kind === 'browser'
-      ? {target: surface.target, presentation: result(surface.presentRequestId)}
-      : {target: surface.target, preparation: result(surface.prepareRequestId), presentation: result(surface.momentRequestId)})});
+      ? {target: surface.target, presentation: result(surface.presentRequestId, surface.target, 'present')}
+      : {target: surface.target, preparation: result(surface.prepareRequestId, surface.target, 'prepare'), presentation: result(surface.momentRequestId, surface.target, 'present')})});
   }
 }

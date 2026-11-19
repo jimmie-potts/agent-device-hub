@@ -330,7 +330,7 @@ export class DisplayControl {
     const {store, commit, track} = this.#options;
     const spec = COMMANDS[family];
     // A refusal here proves no effect: nothing has been stored or sent.
-    if (command.dataschema !== spec.dataschema && !(family === 'moment-play' && [`${SCHEMA_BASE}moment-play/2.1`, `${SCHEMA_BASE}moment-play/2.2`].includes(command.dataschema))) return errorBody('invalid-request', {detail: 'the command is not of the family its key names'});
+    if (command.dataschema !== spec.dataschema && !(family === 'moment-play' && [`${SCHEMA_BASE}moment-play/2.1`, `${SCHEMA_BASE}moment-play/2.2`, `${SCHEMA_BASE}moment-play/2.3`].includes(command.dataschema))) return errorBody('invalid-request', {detail: 'the command is not of the family its key names'});
     const checked = validator().validate(command);
     if (!checked.ok) return errorBody(checked.error.code, {detail: 'the command does not match its family\'s schema'});
     const {data} = command;

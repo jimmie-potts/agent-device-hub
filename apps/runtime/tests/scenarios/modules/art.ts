@@ -176,6 +176,20 @@ export const scenarios: readonly Scenario[] = [{
         op.status === 'completed' && op.result === 'succeeded').length === 2 &&
         operations.every(op => op.target !== 'unconfigured-display') || 'the skipped target produced work or the eligible show was lost';
     }, 30_000),
+    act('read the partial show evidence from Conversation', h => {
+      const show = h.reader.states<OperationRecord>('operation', 'bunny/core').map(({data}) => data)
+        .filter(data => data.family === 'art-show' && data.requestedBy === 'bunny/modules/companions')
+        .sort((left, right) => right.sentAtMs - left.sentAtMs)[0];
+      if (show === undefined) throw new StepFailure('partial show request missing');
+      return catalogInput(h, 'art-conversation-partial-effects', 'read_art_show_effects', {requestId: show.requestId});
+    }),
+    expect('the evidence names the skipped target and the owning refusal', answers({
+      as: 'operator', method: 'GET', path: '/modules/companions/content/conversation?profile=bunny&view=recent',
+    }, answer => {
+      const output = JSON.stringify(bodyOf(answer));
+      return output.includes('unconfigured-display') && output.includes('skipped') && output.includes('not-found') ||
+        'Conversation omitted the target or its refusal';
+    })),
     holds('showing saved art makes no provider call', h => calls(h).imageCalls === 3 && calls(h).ideaCalls === 1 || 'Show now generated art', 250),
   ],
 }, {

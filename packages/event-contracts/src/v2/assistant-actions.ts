@@ -1,12 +1,14 @@
 // Browser-safe list of commands eligible for an explicit Conversation approval.
 import type {Capabilities, DeviceRecord} from './devices.js';
 
+export const SHOW_SAVE_WINDOW_MS = 30_000;
+
 const lifx = 'bunny/modules/lifx', wemo = 'bunny/modules/wemo', nanoleaf = 'bunny/modules/nanoleaf';
 const pixoo = 'bunny/modules/pixoo', tidbyt = 'bunny/modules/tidbyt', volcano = 'bunny/modules/volcano';
 export const assistantDeviceOwners = [lifx, wemo, nanoleaf, pixoo, tidbyt, 'bunny/modules/roborock', volcano] as const;
 export type CatalogDeviceOwner = typeof assistantDeviceOwners[number];
 
-type DeviceRoute = {binding: 'device'; owners: readonly CatalogDeviceOwner[]; capability?: keyof Capabilities; fields: string; guard?: 'configuration' | 'owner'};
+type DeviceRoute = {binding: 'device'; owners: readonly CatalogDeviceOwner[]; capability?: keyof Capabilities; fields: string; guardedMinor?: '2.1' | '2.3'};
 type RecordRoute = {binding: 'record'; owner: string; record: string; fields: string};
 type FixedRoute = {binding: 'fixed'; owner: string; target: string; fields: string};
 type Route = DeviceRoute | RecordRoute | FixedRoute;
@@ -18,21 +20,21 @@ export const assistantRoutes = {
   'lifx-color-set': {binding: 'device', owners: [lifx], fields: 'hue saturation'},
   'lifx-temperature-set': {binding: 'device', owners: [lifx], fields: 'kelvin'},
   'scene-activate': {binding: 'device', owners: [nanoleaf], capability: 'scenes', fields: 'sceneId'},
-  'moment-play': {binding: 'device', owners: [nanoleaf, pixoo, tidbyt], capability: 'moments', guard: 'owner', fields: 'momentId mood durationMs priorityClass coversStatus startAtMs toleranceMs'},
+  'moment-play': {binding: 'device', owners: [nanoleaf, pixoo, tidbyt], capability: 'moments', guardedMinor: '2.3', fields: 'momentId mood palette durationMs priorityClass coversStatus startAtMs toleranceMs'},
   'media-start': {binding: 'device', owners: [pixoo], capability: 'media', fields: 'playlistId'},
   'media-control': {binding: 'device', owners: [pixoo], capability: 'media', fields: 'action'},
   'pixoo-media-show': {binding: 'device', owners: [pixoo], capability: 'media', fields: 'renditionId playback'},
   'pixoo-monitor-set': {binding: 'device', owners: [pixoo], fields: 'filter cadenceMs'},
   'pixoo-now-playing-set': {binding: 'device', owners: [pixoo], fields: 'media'},
   'pixoo-moments-set': {binding: 'device', owners: [pixoo], fields: 'overStatus'},
-  'nanoleaf-animation-play': {binding: 'device', owners: [nanoleaf], guard: 'owner', fields: 'animation'},
+  'nanoleaf-animation-play': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'animation'},
   'pixoo-playlist-change': {binding: 'device', owners: [pixoo], fields: 'change'},
   'pixoo-asset-change': {binding: 'device', owners: [pixoo], fields: 'change'},
   'pixoo-notice-dismiss': {binding: 'device', owners: [pixoo], fields: 'session noticeId'},
-  'nanoleaf-wall-edit': {binding: 'device', owners: [nanoleaf], guard: 'owner', fields: 'edit'},
-  'nanoleaf-machine-edit': {binding: 'device', owners: [nanoleaf], guard: 'configuration', fields: 'edit'},
-  'nanoleaf-favorite-edit': {binding: 'device', owners: [nanoleaf], guard: 'configuration', fields: 'edit'},
-  'nanoleaf-notice-acknowledge': {binding: 'device', owners: [nanoleaf], guard: 'owner', fields: 'task noticeId'},
+  'nanoleaf-wall-edit': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'edit'},
+  'nanoleaf-machine-edit': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'edit'},
+  'nanoleaf-favorite-edit': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'edit'},
+  'nanoleaf-notice-acknowledge': {binding: 'device', owners: [nanoleaf], guardedMinor: '2.1', fields: 'task noticeId'},
   'nanoleaf-reactive-preset-save': {binding: 'fixed', owner: nanoleaf, target: 'reactive-presets', fields: 'presetId expectedRevision name recipe'},
   'wemo-hold-release': {binding: 'device', owners: [wemo], fields: 'heldRequestId'},
   'playback-control': {binding: 'record', owner: 'bunny/modules/playback', record: 'playback', fields: 'action'},

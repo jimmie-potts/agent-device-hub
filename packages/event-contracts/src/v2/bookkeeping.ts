@@ -46,6 +46,7 @@ export const bookkeeping: Bookkeeping = freeze({
   'music-lighting-device': [],
   'playback-position': [],
   'art-schedule': [],
+  'art-show-effects': [],
   'automation-rule': [],
   'automation-routine': [],
   'automation-settings': [],

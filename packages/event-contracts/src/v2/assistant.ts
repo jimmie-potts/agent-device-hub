@@ -28,7 +28,7 @@ export const ASSISTANT_WEMO_OWNER = 'bunny/modules/wemo';
 export type AssistantDeviceOwner = typeof ASSISTANT_LIGHT_OWNER | typeof ASSISTANT_WEMO_OWNER;
 export type AssistantWemoAction = {family: 'power-set'; target: string; owner: typeof ASSISTANT_WEMO_OWNER; data: LightGuards & {on: boolean}};
 export type AssistantDeviceAction = AssistantLightAction | AssistantWemoAction;
-export type AssistantDispatch = {requestId: string} & (AssistantDeviceAction | CatalogProposal | {family: 'mode-set'; target: 'hub'; data: {mode: Mode; expectedRevision?: number}});
+export type AssistantDispatch = {requestId: string} & (AssistantDeviceAction | (CatalogProposal & {admitByMs?: number}) | {family: 'mode-set'; target: 'hub'; data: {mode: Mode; expectedRevision?: number}});
 export const assistantFamilies = [
   defineFamily('assistant-input', 'command', 'org.bunny.assistant.input.requested'),
   defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested'),

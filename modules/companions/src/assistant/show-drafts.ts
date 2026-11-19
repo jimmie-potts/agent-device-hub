@@ -1,11 +1,21 @@
+import {isDeepStrictEqual} from 'node:util';
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {draftProblem, showVersion, starter, type ShowSave} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 
-type Draft = {revision: number; value: ShowSave; pending: string | null};
+type PendingSave = {requestId: string; admitByMs: number};
+type Draft = {revision: number; value: ShowSave; pending: PendingSave | null};
 type Result = {text: string} | {code: ErrorCode};
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function readPending(text: string): PendingSave {
+  const pending: unknown = JSON.parse(text);
+  if (!object(pending) || typeof pending.requestId !== 'string' || typeof pending.admitByMs !== 'number') {
+    throw new Error('Invalid pending show save.');
+  }
+  return {requestId: pending.requestId, admitByMs: pending.admitByMs};
+}
 
 export class ShowDrafts {
   constructor(private readonly database: DatabaseSync) {
@@ -30,15 +40,14 @@ export class ShowDrafts {
     if (!object(raw) || typeof raw.expectedVersion !== 'number') return undefined;
     const value = showVersion({schema: 'nanoleaf-show-version/2.0', showId: id, version: 1, kind: 'decorative',
       name: raw.name, versionName: raw.versionName, timeline: raw.timeline}, id, 1);
-    return {revision: row.revision, pending: typeof row.pending === 'string' ? row.pending : null,
+    const pending = typeof row.pending === 'string' ? readPending(row.pending) : null;
+    return {revision: row.revision, pending,
       value: {showId: id, expectedVersion: raw.expectedVersion, name: value.name, versionName: value.versionName, timeline: value.timeline}};
   }
 
   create(input: Readonly<Record<string, unknown>>): Result {
     const {name, starter: selected} = input;
     if (typeof name !== 'string' || (selected !== 'warm' && selected !== 'ocean')) return {code: 'invalid-request'};
-    const count = this.database.prepare('SELECT COUNT(*) AS count FROM assistant_show_drafts').get()?.count;
-    if (typeof count !== 'number' || count >= 32) return {code: 'capacity'};
     const value = {...starter(selected, `show-${randomUUID()}`), name};
     if (draftProblem(value) !== undefined) return {code: 'invalid-request'};
     this.database.prepare('INSERT INTO assistant_show_drafts (id, revision, value) VALUES (?, 1, ?)').run(value.showId, JSON.stringify(value));
@@ -80,17 +89,26 @@ export class ShowDrafts {
     return {text: `Draft ${value.name} (${value.showId}, revision ${String(revision)}), ${String(value.timeline.durationMs)} ms. Preview only.\n${cues.join('\n')}`};
   }
 
-  noteSave(showId: string, requestId: string): void {
-    this.database.prepare('UPDATE assistant_show_drafts SET pending = ? WHERE id = ?').run(requestId, showId);
+  noteSave(input: Readonly<Record<string, unknown>>, pending: PendingSave): ErrorCode | undefined {
+    const draft = this.read(input.showId);
+    if (draft === undefined) return 'not-found';
+    if (draft.pending !== null) return 'uncertain-result';
+    const value = {...draft.value, versionName: input.versionName};
+    if (!isDeepStrictEqual(value, input)) return 'revision-conflict';
+    this.database.prepare('UPDATE assistant_show_drafts SET pending = ? WHERE id = ?').run(JSON.stringify(pending), draft.value.showId);
+    return undefined;
   }
 
   clearSave(id: string, requestId: string): void {
-    this.database.prepare('UPDATE assistant_show_drafts SET pending = NULL WHERE id = ? AND pending = ?').run(id, requestId);
+    const pending = this.read(id)?.pending;
+    if (pending?.requestId !== requestId) return;
+    this.database.prepare('UPDATE assistant_show_drafts SET pending = NULL WHERE id = ? AND pending = ?').run(id, JSON.stringify(pending));
   }
 
   confirmSave(draft: Draft): void {
+    if (draft.pending === null) return;
     const value = {...draft.value, expectedVersion: draft.value.expectedVersion + 1};
     this.database.prepare('UPDATE assistant_show_drafts SET value = ?, pending = NULL WHERE id = ? AND pending = ?')
-      .run(JSON.stringify(value), value.showId, draft.pending);
+      .run(JSON.stringify(value), value.showId, JSON.stringify(draft.pending));
   }
 }

@@ -22,15 +22,21 @@ suite('private decorative show versions', () => {
     assert.equal(initial.timeline.cues[0]?.recipe.pattern, 'wave');
     assert.ok(!JSON.stringify(initial).includes('preset'));
     const original = readShowVersion(db, 'show-one', 1);
+    db.exec('DROP TABLE nanoleaf_show_save_receipts');
+    db.close(); db = connectState(directory);
+    initShows(db);
+    assert.deepEqual(readShowVersion(db, 'show-one', 1), original);
     const second = {...draft('show-one', 1), versionName: 'Quieter', timeline: {...plan(), cues: [{...plan().cues[0], intensity: 0.2}]}};
-    transaction(db, () => saveShow(db, second, 101));
+    transaction(db, () => saveShow(db, second, 101, 'synthetic-approved-save'));
     assert.deepEqual(readShowVersion(db, 'show-one', 1), original);
     assert.equal(showCatalog(db).shows[0]?.version, 2);
     db.close(); db = connectState(directory);
     try {
       assert.deepEqual(readShowVersion(db, 'show-one', 1), original);
       assert.equal(readShowVersion(db, 'show-one', 2).versionName, 'Quieter');
-      assert.deepEqual(showCatalog(db).shows[0]?.versions.map(version => version.version), [1, 2]);
+      assert.deepEqual(showCatalog(db).shows[0]?.versions, [
+        {version: 1, versionName: 'First draft'}, {version: 2, versionName: 'Quieter', savedByRequest: 'synthetic-approved-save'},
+      ]);
     } finally {db.close();}
   });
 

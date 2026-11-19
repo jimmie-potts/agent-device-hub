@@ -1,10 +1,10 @@
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {catalogProposal, catalogRoute, permitsDevice, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {catalogProposal, catalogRoute, permitsDevice, SHOW_SAVE_WINDOW_MS, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {CoreHandle} from './core.js';
 import type {Action, ActionAnswer} from './tracker.js';
 
-export async function dispatchCatalogAction(core: CoreHandle, command: Message<{requestId: string} & CatalogProposal>,
+export async function dispatchCatalogAction(core: Pick<CoreHandle, 'dispatch' | 'operation' | 'clock'>, command: Message<{requestId: string; admitByMs?: number} & CatalogProposal>,
   device: (id: string) => Message<DeviceRecord> | undefined, dispatchLighting: (action: Action) => Promise<ActionAnswer>): Promise<ActionAnswer> {
   const approved = catalogProposal(command.data);
   if (approved === undefined) return errorBody('invalid-request');
@@ -25,14 +25,20 @@ export async function dispatchCatalogAction(core: CoreHandle, command: Message<{
       } else if (record.availability !== 'available' || record.held !== undefined) return errorBody('unavailable');
       if (!permitsDevice(route, record)) return errorBody('unsupported-capability');
     }
-    if (route.guard !== 'owner') payload = {...data, expectedConfigurationRevision: binding.configurationRevision,
-      ...(route.guard === 'configuration' ? {} : {expectedGeneration: binding.generation})};
+    payload = {...data, expectedConfigurationRevision: binding.configurationRevision, expectedGeneration: binding.generation};
   }
   if (binding.kind === 'record') payload = family === 'volcano-session-gap'
     ? {...data, expectedConfigurationRevision: binding.revision} : {...data, expectedRevision: binding.revision};
   const verb = family.lastIndexOf('-');
   const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;
+  const admitByMs = command.data.admitByMs;
+  if (family === 'nanoleaf-show-save') {
+    if (admitByMs === undefined || admitByMs > core.clock.now() + SHOW_SAVE_WINDOW_MS) return errorBody('invalid-request');
+    if (admitByMs <= core.clock.now()) return errorBody('expired');
+    payload = {...data, admitByMs};
+  } else if (admitByMs !== undefined) return errorBody('invalid-request');
+  const minor = family === 'nanoleaf-show-save' ? '2.1' : route.binding === 'device' ? route.guardedMinor ?? '2.0' : '2.0';
   const action: Action = {key: `bunny.cmd.${family}.${target}`, requestedBy: command.source, requestId, parent: command,
-    draft: {type, subject: target, dataschema: `https://bunny.invalid/events/${family}/2.0`, data: payload}};
+    draft: {type, subject: target, dataschema: `https://bunny.invalid/events/${family}/${minor}`, data: payload}};
   return family === 'music-lighting-control' ? dispatchLighting(action) : core.dispatch(action);
 }

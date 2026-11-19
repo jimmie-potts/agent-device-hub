@@ -574,14 +574,16 @@ and the available effect evidence separately.
 `read_saved_art` offers saved artwork IDs and compositions. After approval,
 `control_art_show` uses the existing `art-show` preparation and presentation
 path. `read_art_show_effects` uses the approved request ID to show each
-display's preparation and presentation evidence. Missing tracked evidence
-stays visible as such.
+display's preparation and presentation evidence. A skipped phase shows its owner refusal.
+If the evidence is unavailable, the phase reports that separately.
 
 For light shows, `create_light_show_draft` uses a Nanoleaf starter timeline.
 `edit_light_show_cue` applies edits against the current draft revision.
 `preview_light_show_draft` shows cue timing, colors and intensity.
 `save_light_show` uses a separate approval to write a version to the existing
-Nanoleaf catalog. A failed or conflicted save leaves the draft available.
+Nanoleaf catalog. Each immutable version can confirm its save by request
+identity after a lost reply. If the save expires without a matching version,
+the owner can make a new approval against the catalog's current revision.
 `read_light_shows` lists drafts, saved versions and the lighting session state.
 `control_music_lighting_control` approves playback of one exact saved version
 on an eligible light. Stop, pause, resume and seek bind the active generation.

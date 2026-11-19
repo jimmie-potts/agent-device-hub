@@ -97,8 +97,9 @@ export function chooseDevice(devices: readonly DeviceRecord[] | undefined, name:
 }
 
 // LIFX treats a reading older than 30 seconds as due for an on-demand refresh.
-const MAX_OBSERVATION_AGE_MS = 30_000;
-function observationStale({observed, lastTransmission}: DeviceRecord, now: number, maxAgeMs: number): boolean {
+export const MAX_OBSERVATION_AGE_MS = 30_000;
+export const WEMO_OBSERVATION_AGE_MS = 15_000;
+export function observationStale({observed, lastTransmission}: DeviceRecord, now: number, maxAgeMs: number): boolean {
   return observed.status === 'known' && (observed.observedAtMs > now || now - observed.observedAtMs >= maxAgeMs ||
     (lastTransmission.status === 'known' && observed.observedAtMs < lastTransmission.transmittedAtMs));
 }
@@ -106,7 +107,7 @@ export function readDevices(devices: readonly DeviceRecord[] | undefined, name: 
   owner: AssistantDeviceOwner = ASSISTANT_LIGHT_OWNER): string {
   const wemo = owner === ASSISTANT_WEMO_OWNER;
   const brand = wemo ? 'Wemo' : 'LIFX', namePlural = wemo ? 'plugs' : 'lights';
-  const maxAgeMs = wemo ? 15_000 : MAX_OBSERVATION_AGE_MS;
+  const maxAgeMs = wemo ? WEMO_OBSERVATION_AGE_MS : MAX_OBSERVATION_AGE_MS;
   if (name === '') {
     if (devices === undefined) return `${brand} status unavailable: the device copy is not synced.`;
     if (devices.length === 0) return `No configured ${brand} ${namePlural} are known.`;

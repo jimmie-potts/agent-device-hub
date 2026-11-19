@@ -316,6 +316,13 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
       h.reader.states<VolcanoStatus>('volcano-status', 'bunny/modules/volcano')[0]?.data.gapMinutes === 30 || 'software update missing'),
     expect('the LIFX owner has a qualified available bulb', h => h.reader.states<DeviceRecord>('device', 'bunny/modules/lifx')
       .some(({data}) => data.id === LIFX_SIMULATED_SECTION.bulbs[0]?.id && data.availability === 'available') || 'light unavailable'),
+    act('read the LIFX color capabilities by owner', h => catalogInput(h, 'catalog-lifx-discovery', 'read_devices',
+      {owner: 'bunny/modules/lifx', target: LIFX_SIMULATED_SECTION.bulbs[0]?.id})),
+    expect('discovery labels the color evidence and lists the allowed qualified control', conversationAnswer((response, h) => {
+      const output = JSON.stringify(bodyOf(response));
+      return catalogFinished(h) && output.includes('freshness') && output.includes('control_lifx_color_set') && output.includes('color') ||
+        'qualified color evidence or tool missing';
+    })),
     act('propose using the LIFX color contract', h => catalogInput(h, 'catalog-lifx-color', 'control_lifx_color_set',
       {owner: 'bunny/modules/lifx', target: LIFX_SIMULATED_SECTION.bulbs[0]?.id, arguments: '{"hue":120,"saturation":60}'})),
     expect('the color proposal awaits approval', h => assistant(h)?.tasks[0]?.status === 'waiting' &&
@@ -372,8 +379,8 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
     act('the owner saves a different version from the existing catalog', h => dispatchOnce(h, 'operator', 'show-other-save', {
       key: 'bunny.cmd.nanoleaf-show-save.shows', draft: {type: 'org.bunny.nanoleaf-show.save.requested', subject: 'shows',
         dataschema: 'https://bunny.invalid/events/nanoleaf-show-save/2.0', data: {showId: draftIds.get(h), expectedVersion: 1,
-          name: 'Dawn test', versionName: 'Independent edit', timeline: {version: 1, durationMs: 1000,
-            cues: [{id: 'cue', offsetMs: 0, durationMs: 1000, recipe: {preset: 'ocean'}, intensity: 0.5}]}}}}, 'show-other-save')),
+          name: 'Dawn test', versionName: 'Independent edit', timeline: {version: 1, durationMs: 30000,
+            cues: [{id: 'cue', offsetMs: 0, durationMs: 30000, recipe: {preset: 'ocean'}, intensity: 0.5}]}}}}, 'show-other-save')),
     expect('the independent version is retained', h => showCatalog(h)?.shows[0]?.version === 2 || 'second catalog version missing'),
     act('approve the stale Conversation save', h => assistantInput(h, 'show-save-stale-approve', true, 'approve')),
     expect('the stale save cannot overwrite the library or play a light', conversationAnswer((response, h) =>
@@ -410,6 +417,25 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
     act('approve stopping this session only', h => assistantInput(h, 'show-stop-approve', true, 'approve')),
     expect('the session owner stops playback and reports restoration', h => lightingState(h)?.session.status === 'idle' &&
       lightingState(h)?.last?.reason === 'stopped' && lightingState(h)?.last?.restoration === 'restored' || 'stop result missing'),
+    act('propose playback of the original version again', h => catalogInput(h, 'show-play-stale', 'control_music_lighting_control',
+      lightingInput({action: 'start-show', showId: draftIds.get(h), version: 1, startDelayMs: 250}))),
+    expect('the new start waits for approval', h => assistant(h)?.tasks[0]?.status === 'waiting' || 'no second approval'),
+    act('the operator starts a different saved version through the same playback owner', h => dispatchOnce(h, 'operator', 'show-independent-play', {
+      key: 'bunny.cmd.music-lighting-control.wall', draft: {type: 'org.bunny.music-lighting.control.requested', subject: 'wall',
+        dataschema: 'https://bunny.invalid/events/music-lighting-control/2.0', data: {
+          action: 'start-show', showId: draftIds.get(h), version: 2, positionMs: 0, startDelayMs: 250,
+          expectedRevision: lightingState(h)?.revision,
+        }}}, 'show-independent-play')),
+    expect('the independently started version is active', h => {
+      const session = lightingState(h)?.session;
+      return session?.status === 'active' && 'show' in session && session.show.version === 2 || 'version two did not start';
+    }),
+    act('approve the stale start', h => assistantInput(h, 'show-play-stale-approve', true, 'approve')),
+    expect('the stale start is refused and cannot replace the active version', conversationAnswer((response, h) => {
+      const session = lightingState(h)?.session;
+      return catalogFinished(h) && JSON.stringify(bodyOf(response)).includes('refused: revision-conflict') &&
+        session?.status === 'active' && 'show' in session && session.show.version === 2 || 'stale start displaced or missed version two';
+    })),
   ],
 }];
 
