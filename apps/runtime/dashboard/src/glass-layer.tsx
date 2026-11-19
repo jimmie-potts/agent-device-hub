@@ -1,6 +1,6 @@
 import React, {useEffect, useLayoutEffect, useRef} from 'react';
 import {readScene, sameScene, type GlassScene} from './glass-scene.ts';
-import {createGlassRenderer, type GlassColor, type GlassPicture, type GlassRenderer, type GlassTokens} from './glass-renderer.ts';
+import {createGlassRenderer, luminance, parseColor, type GlassColor, type GlassPicture, type GlassRenderer, type GlassTokens} from './glass-renderer.ts';
 import './glass.css';
 
 /**
@@ -39,17 +39,6 @@ const MERGE = 20;
 const TOKENS = ['veil', 'veil-deep', 'tone', 'rim', 'shadow', 'edge', 'ink', 'bg', 'wash-start', 'wash-end'] as const;
 type Token = (typeof TOKENS)[number];
 
-/** Parses a computed color, which browsers serialize as rgb() or rgba() with 0-255 channels. */
-export function parseColor(value: string): GlassColor {
-  const numbers = /rgba?\(([^)]*)\)/.exec(value)?.[1]?.split(/[\s,/]+/).filter(part => part !== '').map(Number) ?? [];
-  const [r = 0, g = 0, b = 0, a = 1] = numbers;
-  return [r / 255, g / 255, b / 255, a];
-}
-/** WCAG relative luminance of a color's channels. */
-export function luminance([r, g, b]: GlassColor): number {
-  const linear = (value: number): number => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
-}
 function readTokens(probe: HTMLElement): GlassTokens {
   const value = (name: Token): GlassColor => {const element = probe.querySelector(`[data-glass-token="${name}"]`);return parseColor(element === null ? '' : getComputedStyle(element).color);};
   const bg = value('bg');

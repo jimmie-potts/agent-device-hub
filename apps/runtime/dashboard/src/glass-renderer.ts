@@ -5,6 +5,17 @@ import {FRAGMENT, PANEL_TEXELS, VERTEX} from './glass-shader.ts';
 
 /** A color as 0-1 channels and an alpha that the shader reads as an amount. */
 export type GlassColor = readonly [number, number, number, number];
+/** Parses a computed color, which browsers serialize as rgb() or rgba() with 0-255 channels; anything else is black. */
+export function parseColor(value: string): GlassColor {
+  const numbers = /rgba?\(([^)]*)\)/.exec(value)?.[1]?.split(/[\s,/]+/).filter(part => part !== '').map(Number) ?? [];
+  const [r = 0, g = 0, b = 0, a = 1] = numbers;
+  return [r / 255, g / 255, b / 255, a];
+}
+/** WCAG relative luminance of a color's channels. */
+export function luminance([r, g, b]: GlassColor): number {
+  const linear = (value: number): number => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+}
 /** The skin's values for one appearance, read from the --glass-* tokens (see glass-layer.tsx). */
 export type GlassTokens = {
   dark: boolean; ink: number;
