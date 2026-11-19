@@ -429,9 +429,10 @@ a white outline in both.
 - Selection (cyan), pending (magenta) and device or task status (physical
   hues) stay visually and textually distinct in every skin.
 - Skins may not encode a state in motion alone.
-- The dashboard has no limit on decorative drawing or motion (owner decision
-  2026-11-18, Hub #1927): a story may add a canvas or WebGL layer and motion
-  that continues. The story that adds it says when it draws and when it stops.
+- The dashboard's decoration is not limited to CSS or to one short play
+  (owner decision 2026-11-18, Hub #1927): it may use a canvas or WebGL layer
+  and motion that continues. The placement and print rules of section 4.4,
+  step 2, still apply.
 - The documentation skin's decorative motion plays once and ends within
   5 seconds of load; `docs/skins/check_skin.cjs` enforces that.
 - The owner-selected shared habitat (#1145) animates continuously inside its artwork. It provides Pause motion, stops ambient updates while hidden, and tears down on navigation. Session meaning remains available as text.
@@ -524,7 +525,8 @@ Acceptance checklist for each new or restyled page:
 - [ ] Every page has a hash address and the back button walks the history.
 - [ ] Shows keyboard focus and states selected, pending, unavailable, stale,
       uncertain, error and empty in text as well as color.
-- [ ] Ends decorative motion within 5 seconds, or follows the shared habitat exception with Pause motion.
+- [ ] Keeps decoration behind content and off text and meaning-carrying
+      edges, and shows no state in motion alone.
 - [ ] Keeps inspection separate from commands and preserves capability and
       permission gating.
 - [ ] Includes current-candidate screenshots or browser evidence and completes

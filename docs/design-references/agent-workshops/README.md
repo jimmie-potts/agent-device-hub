@@ -92,10 +92,11 @@ depth of the dip and dusk, the length of the sign loop, and 2-by-3 against
 text from the dashboard's existing session helper, which also has a question
 state the preview does not show.
 
-The page runs continuous decorative motion with no pause control, which the
-current motion rule in `docs/application-ui-style-guide.md` section 9 does not
-allow. The owner decided on October 16, 2026, that the workshops page should
-move continuously; the implementation story carries the style guide amendment.
+The page runs continuous decorative motion with no pause control. The owner
+decided on October 16, 2026, that the workshops page should move continuously,
+and `docs/application-ui-style-guide.md` section 9 has allowed continuing
+decorative motion in the dashboard since the owner's decision of 2026-11-18
+(Hub #1927), so the implementation story needs no style guide amendment for it.
 The runtime dashboard's own reduced-motion rule and content security policy
 apply to the implementation, not to this file.
 
