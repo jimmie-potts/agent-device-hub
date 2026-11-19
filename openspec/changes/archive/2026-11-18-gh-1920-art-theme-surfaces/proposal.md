@@ -5,7 +5,7 @@ With Artwork colors following the artwork, dark appearance turns almost pure bla
 ## What changes
 
 - Each decorative role keeps a fixed lightness step in light and dark appearance, close to Quiet glass. The artwork supplies only the hue and how strong the tint is.
-- The tint comes from the first palette color that has a hue. The next such color tints the second background wash. A palette with no such color gives neutral surfaces on the same steps.
+- The tint comes from the first palette color that has a hue and does not read as black. The next such color tints the second background wash. A palette with no such color gives neutral surfaces on the same steps.
 - The requirement says that the page background, inset, panel and raised surfaces stay distinguishable for every accepted palette.
 
 ## Capabilities

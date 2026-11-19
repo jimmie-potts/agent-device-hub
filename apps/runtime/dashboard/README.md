@@ -914,8 +914,12 @@ The artwork supplies only a hue and how strong the tint is. Each decorative
 role keeps a fixed lightness step close to Quiet glass in light and dark
 appearance, so the page background, inset, panel and raised surfaces stay
 apart for every palette (Hub #1920). The tint comes from the first palette
-color that has a hue; the next one tints the second wash. A palette of black,
-white or grey alone gives neutral surfaces on the same steps.
+color that has a hue and does not read as black; the next one tints the second
+wash. A near-black color with a hue tints only when no lighter one has a hue.
+A palette with no hue (black, white, grey and a few near-grey shades) gives
+neutral surfaces on the same steps. Card and control edges keep the 3:1
+contrast against their panel that every art theme has had, so they are
+stronger than the default skin's edges.
 
 **Lock current colors** freezes the current palette, including a default with
 no palette. **Restore default** keeps Quiet glass until **Follow artwork** is

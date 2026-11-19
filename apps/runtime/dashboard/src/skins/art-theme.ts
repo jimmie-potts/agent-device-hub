@@ -49,24 +49,33 @@ const STEPS: Record<'light' | 'dark', Record<Role, readonly [lightness: number, 
   light: {bg: [0.945, 0.016], inset: [0.958, 0.012], panel: [0.982, 0.006], raised: [0.925, 0.020], 'shell-rail': [0.930, 0.018],
     'edge-faint': [0.890, 0.020], 'edge-dense': [0.620, 0.040], 'edge-strong': [0.500, 0.050],
     accent: [0.400, 0.070], link: [0.450, 0.100], 'primary-hover': [0.470, 0.070], 'wash-start': [0.915, 0.030], 'wash-end': [0.930, 0.026]},
-  dark: {bg: [0.235, 0.030], inset: [0.265, 0.034], panel: [0.315, 0.040], raised: [0.385, 0.046], 'shell-rail': [0.255, 0.034],
+  dark: {bg: [0.235, 0.030], inset: [0.275, 0.034], panel: [0.315, 0.040], raised: [0.385, 0.046], 'shell-rail': [0.268, 0.034],
     'edge-faint': [0.400, 0.040], 'edge-dense': [0.640, 0.050], 'edge-strong': [0.760, 0.060],
     accent: [0.900, 0.040], link: [0.840, 0.090], 'primary-hover': [0.840, 0.060], 'wash-start': [0.340, 0.070], 'wash-end': [0.310, 0.060]},
 };
-/** A palette entry below this chroma has no usable hue. Black, white and the grey buckets are exactly zero. */
+/**
+ * A palette entry below this chroma has no usable hue. Black is zero, white and the grey buckets measure under
+ * one millionth, and a few near-grey shades also fall below it.
+ */
 const HUE_FLOOR = 0.04;
-/** The chroma at which an entry tints at full strength; a weaker entry still tints at half. */
+/** An entry darker than this reads as black, whatever its hue. It tints only when no lighter entry has a hue. */
+const NEAR_BLACK = 0.25;
+/** The chroma at which an entry tints at full strength. */
 const FULL_TINT = 0.12;
+/** How much of a role's chroma an entry of this chroma uses: in proportion up to full tint, and never under one half. */
+export const tintStrength = (chroma: number): number => Math.min(1, Math.max(0.5, chroma / FULL_TINT));
 
 export function themeColors(value: unknown): ThemeColors | undefined {
   const palette = themePalette(value);if (palette === undefined) return undefined;
-  // The art module lists a picture's most common colors first, and for a dark picture that is black. The tint
-  // comes from the first entry that has a hue; the next such entry tints the second wash. A palette with no
-  // such entry gives neutral surfaces on the same lightness steps.
-  const hued = palette.map(lchOf).filter(([, chroma]) => chroma >= HUE_FLOOR), first = hued[0], second = hued[1] ?? first;
+  // The art module lists a picture's most common colors first, and for a dark picture those are black and
+  // near-black shades. The tint comes from the first entry that has a hue and does not read as black; the next
+  // such entry tints the second wash. Near-black entries with a hue come after every lighter one. A palette
+  // with no hue at all gives neutral surfaces on the same lightness steps.
+  const hued = palette.map(lchOf).filter(([, chroma]) => chroma >= HUE_FLOOR);
+  const [first, second = first] = [...hued.filter(([lightness]) => lightness >= NEAR_BLACK), ...hued.filter(([lightness]) => lightness < NEAR_BLACK)];
   const color = (scheme: 'light' | 'dark', role: Role): string => {
     const [lightness, chroma] = STEPS[scheme][role], source = role === 'wash-end' ? second : first;
-    return source === undefined ? hexOf(lightness, 0, 0) : hexOf(lightness, chroma * Math.min(1, Math.max(0.5, source[1] / FULL_TINT)), source[2]);
+    return source === undefined ? hexOf(lightness, 0, 0) : hexOf(lightness, chroma * tintStrength(source[1]), source[2]);
   };
   const scheme = (name: 'light' | 'dark'): Record<Role, string> => {
     const colors = {} as Record<Role, string>;
