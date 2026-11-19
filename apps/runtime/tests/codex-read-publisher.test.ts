@@ -3,7 +3,7 @@ import {randomBytes} from 'node:crypto';
 import {chmod, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
-import type {Identity, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Identity, Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
 import {prepareMessage, publishOnce} from '@jimmie-potts/sdk';
@@ -12,7 +12,7 @@ import {producerSource} from '../src/hook/producer.js';
 import {openCodexReadPublisher} from '../src/read-receipts/codex-publisher.js';
 import {CODEX_RECEIPT_FEED, codexReceiptSource} from '../src/read-receipts/qualification.js';
 import {observation, turnEnded, turnStarted} from './fixtures/agents.js';
-import {asSession30, current, servedSessions} from './fixtures/session-owner.js';
+import {asSession20, current, rebuilt, servedSessions} from './fixtures/session-owner.js';
 import {edgeConfig, flush, it, run, waitFor} from './support.js';
 
 const FEED = {provider: 'codex', client: 'local', hostId: 'test-host', sourceId: 'codex-hooks'} as const;
@@ -30,7 +30,7 @@ async function setup(context: TestContext, scopes: ('read' | 'ingest')[] = ['rea
   const records = async () => {
     const response = await fetch(`${runtime.url}/api/v2/families/session`, {headers: {authorization: 'Bearer test-reader-token'}});
     assert.equal(response.status, 200);
-    return (await response.json() as {records: SessionRecord[]}).records;
+    return (await response.json() as {records: Session30Record[]}).records;
   };
   const emit = async (turn: string, identity = IDENTITY) => {
     for (const event of [turnStarted, turnEnded]) {
@@ -52,15 +52,15 @@ it('the synced Codex publisher binds exact existing targets and commits through 
   assert.equal(publisher.bind('thread-a', 'missing'), undefined);
   const target = publisher.bind('thread-a', 'turn-a'); assert.ok(target);
   const before = (await world.records())[0]; assert.ok(before);
-  assert.equal(before.read, 'unknown');
-  assert.equal(target.noticeId, before.notices[0]?.id);
+  assert.equal(before.outcome.read, 'unknown');
+  assert.equal(target.noticeId, before.outcome.notices[0]?.id);
   const receipt = {target, seenRevision: 'native-before', acceptedRevision: 'native-after', observedAtMs: Date.now()};
   publisher.accept(receipt);
-  await waitFor(async () => (await world.records())[0]?.read === 'read');
+  await waitFor(async () => (await world.records())[0]?.outcome.read === 'read');
   const after = (await world.records())[0]; assert.ok(after);
-  assert.equal(after.readReceipt?.source, world.source);
-  assert.equal(after.readReceipt?.receipt.kind, 'provider-client');
-  assert.deepEqual(after.notices, before.notices);
+  assert.equal(after.outcome.readReceipt?.source, world.source);
+  assert.equal(after.outcome.readReceipt?.receipt.kind, 'provider-client');
+  assert.deepEqual(after.outcome.notices, before.outcome.notices);
   assert.deepEqual(after.attention, before.attention);
   publisher.accept(receipt);
   await new Promise(resolve => setTimeout(resolve, 100));
@@ -69,7 +69,7 @@ it('the synced Codex publisher binds exact existing targets and commits through 
   await waitFor(() => publisher.bind('thread-a', 'turn-b') !== undefined);
   publisher.accept(receipt);
   await new Promise(resolve => setTimeout(resolve, 100));
-  assert.equal((await world.records())[0]?.read, 'unknown');
+  assert.equal((await world.records())[0]?.outcome.read, 'unknown');
 });
 
 it('missing read scope, unsafe configuration and a different enrollment cannot enable a Codex publisher', async context => {
@@ -81,7 +81,7 @@ it('missing read scope, unsafe configuration and a different enrollment cannot e
   assert.equal(await openCodexReadPublisher(world.path, () => {}), undefined);
   const denied = await setup(context, ['ingest']);
   assert.equal(await openCodexReadPublisher(denied.path, () => {}, 500), undefined);
-  assert.equal((await denied.records())[0]?.read, 'unknown');
+  assert.equal((await denied.records())[0]?.outcome.read, 'unknown');
 });
 
 it('a lost owner connection immediately invalidates bindings and tells native observation to discard pending reads', async context => {
@@ -102,30 +102,30 @@ it('a refused publication leaves read unchanged and discards pending native evid
   publisher.accept({target, seenRevision: 'before-refusal', acceptedRevision: 'after-refusal', observedAtMs: Date.now()});
   await waitFor(() => gaps > 0);
   assert.equal(publisher.bind('thread-a', 'turn-a'), undefined);
-  assert.equal((await world.records())[0]?.read, 'unknown');
+  assert.equal((await world.records())[0]?.outcome.read, 'unknown');
 });
 
-it('the Codex publisher binds only a record readSession accepts, and sends nothing for another version (Hub #1865)', async context => {
-  // A finished Codex root from the shared cases, served as session/2.0 and as session/3.0 by a stand-in core.
+it('the Codex publisher binds a session/3.0 record, and sends nothing, silently, for the session/2.0 an older core published (Hub #1865)', async context => {
+  // A finished Codex root from the shared cases, served as session/3.0 and as an older core's session/2.0 by a stand-in core.
   const found = loadSessionCases().cases.find(item => item.id === 'out-of-order')?.checks[0]?.messages
     .find(message => message.data.identity.client === 'local' && message.data.parent.status !== 'known');
   assert.ok(found);
   const state = current(found);
-  const {identity, turn, generation, notices} = state.data;
+  const {identity, turn, generation, outcome} = state.data;
   assert.ok(turn.status === 'known');
   const feed = {provider: identity.provider, client: identity.client, hostId: identity.hostId, sourceId: identity.sourceId};
   const runs = [];
-  for (const message of [state, asSession30(state)]) {
+  for (const message of [state, asSession20(state)]) {
     const world = await servedSessions(context, codexReceiptSource(feed), {...feed, feed: CODEX_RECEIPT_FEED}, [message]);
     let gaps = 0;
     const publisher = await openCodexReadPublisher(world.producer, () => {gaps += 1;});
     assert.ok(publisher); context.after(() => publisher.close());
     runs.push({accepted: readSession(message) !== undefined, world, publisher, gaps: () => gaps, target: publisher.bind(identity.sessionId, turn.id)});
   }
-  const ready = runs.filter(item => item.accepted);
-  assert.equal(ready.length, 1, 'readSession reads exactly one of the two versions');
-  const target = ready[0]?.target;
-  assert.deepEqual(target, {identity, turnId: turn.id, generation, noticeId: notices[0]?.id});
+  assert.deepEqual(runs.map(item => item.accepted), [true, false], 'readSession reads session/3.0 only');
+  const target = runs[0]?.target;
+  assert.deepEqual(target, {identity, turnId: turn.id, generation, noticeId: outcome.notices[0]?.id});
+  // The owner accepted that a helper meeting a version it does not read stops sending receipts, quietly (design decision 13).
   for (const {world, publisher, gaps, target: refused} of runs.filter(item => !item.accepted)) {
     assert.equal(refused, undefined);
     // `accept` rebinds before it sends: a record the publisher does not read stops it before any publication.
@@ -141,12 +141,10 @@ it('the Codex publisher binds no target while the session\'s work still runs, th
     .find(message => message.data.identity.client === 'local' && message.data.parent.status !== 'known');
   assert.ok(found);
   const finished = current(found);
-  const {identity, turn, generation, notices} = finished.data;
+  const {identity, turn, generation, outcome} = finished.data;
+  const notices = outcome.notices;
   assert.ok(turn.status === 'known');
-  const running = {...finished, data: {...finished.data, activity: 'active' as const}};
-  // The version readSession reads now: the record, or its session/3.0 form once the core switches.
-  const state = [running, asSession30(running)].find(message => readSession(message) !== undefined);
-  assert.ok(state);
+  const state = {...finished, data: rebuilt(finished.data, {work: 'active'})};
   assert.equal(readSession(state)?.work.state, 'active');
   const feed = {provider: identity.provider, client: identity.client, hostId: identity.hostId, sourceId: identity.sourceId};
   const world = await servedSessions(context, codexReceiptSource(feed), {...feed, feed: CODEX_RECEIPT_FEED}, [state]);

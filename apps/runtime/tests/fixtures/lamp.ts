@@ -7,7 +7,7 @@
 // outcome once the core acknowledges it (#782). Quiet mode keeps the lamps off, and its indicator shows when an agent
 // session waits for a person. Its command family is `lamp-switch`, on `bunny.cmd.lamp-switch.<lamp>`, named as ADR 0012
 // names commands, so the core's action route reaches it as any device's.
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {errorBody, type ErrorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import {Outbox, type BunnyModule, type Command, type CommandDraft, type Draft, type Snapshot, type StateDraft} from '@jimmie-potts/sdk';
 import type {ConformanceSpec} from '@jimmie-potts/sdk/testing';
@@ -19,7 +19,7 @@ export const LAMP_SWITCH_SCHEMA = `${BASE}lamp-switch/2.0`;
 export const LAMP_SWITCHED_SCHEMA = `${BASE}lamp-switched/2.0`;
 const OUTCOME_SCHEMA = `${BASE}outcome/2.0`;
 const MODE_SCHEMA = `${BASE}mode/2.0`;
-const SESSION_SCHEMA = `${BASE}session/2.0`;
+const SESSION_SCHEMA = `${BASE}session/3.0`;
 const block = (name: string): object => ({$ref: `${BASE}blocks/2.0#/$defs/${name}`});
 const closed = (properties: Record<string, object>): object =>
   ({type: 'object', additionalProperties: false, required: Object.keys(properties), properties});
@@ -164,10 +164,10 @@ export function createLampModule({transport, lamps: served = ['lamp-1'], beforeP
       let mode = 'work';
       const waiting = new Set<string>();
       let shown: Indicator | undefined;
-      const follow = await sdk.sync<{id: string; mode?: string; attention?: SessionRecord['attention']}>(['mode', 'session'], change => {
+      const follow = await sdk.sync<{id: string; mode?: string; attention?: Session30Record['attention']}>(['mode', 'session'], change => {
         if (change.type === 'updated' && change.entity.family === 'mode') mode = change.message.data.mode ?? mode;
         if (change.type === 'updated' && change.message.dataschema === SESSION_SCHEMA) {
-          if ((change.message.data.attention ?? []).length > 0) waiting.add(change.entity.id);
+          if ((change.message.data.attention?.items ?? []).length > 0) waiting.add(change.entity.id);
           else waiting.delete(change.entity.id);
         }
         if (change.type === 'removed' && change.entity.family === 'session') waiting.delete(change.entity.id);

@@ -7,7 +7,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {SdkError, type LogFields, type Logger} from '@jimmie-potts/sdk';
 import {countCommits} from '@jimmie-potts/sdk/testing';
 import {CoreStore, SAVE_COST, type Deriver} from '../src/core/store.js';
@@ -22,8 +22,8 @@ import {fillDisk} from './fixtures/disk.js';
 import {World, lifecycleMessage} from './fixtures/store-world.js';
 import {START, flush, it, manualClock, stateDir} from './support.js';
 
-const sessions = (messages: readonly Message[]): SessionRecord[] =>
-  messages.filter(message => message.type === 'org.bunny.session.updated').map(message => message.data as SessionRecord);
+const sessions = (messages: readonly Message[]): Session30Record[] =>
+  messages.filter(message => message.type === 'org.bunny.session.updated').map(message => message.data as Session30Record);
 const types = (messages: readonly Message[]): string[] => messages.map(message => message.type);
 
 it('a label save completes its action in its own transaction, including a save with no published state change', async context => {
@@ -118,9 +118,9 @@ it('a committed observation publishes its session state and occurrence after the
   assert.deepEqual(types(messages), ['org.bunny.session.updated', 'org.bunny.session.updated', 'org.bunny.attention.raised']);
   const [created, waiting, raised] = messages;
   assert.equal(created?.source, 'bunny/core');
-  assert.equal((created?.data as SessionRecord).revision, 1, 'the record carries the revision of its change');
-  assert.equal((created?.data as SessionRecord).generation, 1, 'a new record\'s generation is its admission revision');
-  assert.deepEqual((waiting?.data as SessionRecord).attention, [{id: {status: 'known', id: 'approval-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}]);
+  assert.equal((created?.data as Session30Record).revision, 1, 'the record carries the revision of its change');
+  assert.equal((created?.data as Session30Record).generation, 1, 'a new record\'s generation is its admission revision');
+  assert.deepEqual((waiting?.data as Session30Record).attention.items, [{id: {status: 'known', id: 'approval-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}]);
   assert.deepEqual(raised?.data, {
     session: SESSION_ID, identity: IDENTITY, turn: {status: 'known', id: 'turn-1'}, observedAtMs: START,
     ordering: {status: 'known', authority: 'claude-code', epoch: 'epoch-1', sequence: 1}, revision: 2,
@@ -130,7 +130,7 @@ it('a committed observation publishes its session state and occurrence after the
   // Stored with the change: the session row, the record, the revision, the history of the occurrence and the intake.
   assert.deepEqual(world.rows('SELECT id, revision, generation FROM core_sessions'), [{id: SESSION_ID, revision: 2, generation: 1}]);
   const [stored] = world.store.sessions();
-  assert.deepEqual(stored?.attention, (waiting?.data as SessionRecord).attention, 'the row holds the session the record shows');
+  assert.deepEqual(stored?.attention, (waiting?.data as Session30Record).attention.items, 'the row holds the session the record shows');
   assert.equal(stored?.seen.length, 2, 'with its private bookkeeping');
   assert.deepEqual(world.rows('SELECT value FROM core_revision'), [{value: 2}]);
   // History (#782) keeps each state as a compact change event, what changed since the record it held, and the
@@ -143,7 +143,7 @@ it('a committed observation publishes its session state and occurrence after the
   assert.deepEqual([first?.family, first?.id, first?.revision, first?.previous], ['session', SESSION_ID, 1, null], 'a new entity changes from nothing');
   assert.ok(first !== undefined && 'identity' in first.changed && !('id' in first.changed) && !('revision' in first.changed));
   assert.deepEqual([second?.revision, second?.previous, second?.removed], [2, 1, []]);
-  assert.deepEqual(second?.changed.attention, (waiting?.data as SessionRecord).attention, 'only what changed, with its new value');
+  assert.deepEqual(second?.changed.attention, (waiting?.data as Session30Record).attention, 'only what changed, with its new value');
   assert.equal('identity' in (second?.changed ?? {}), false, 'not a snapshot: what stayed the same is left out');
   assert.deepEqual(JSON.parse(history[2]?.record ?? '{}'), raised, 'an occurrence is kept whole');
   assert.equal(world.rows('SELECT * FROM core_taken').length, 2, 'both observations, by (source, id)');
@@ -155,7 +155,7 @@ it('the store keeps each session in a row of its own, with no state table in the
   await world.observe(turnStarted, {title: {value: 'Port the core', source: 'user'}, sequence: 1});
   await world.observe(sessionStarted, {identity: CHILD, parent: {status: 'known', identity: IDENTITY}, turn: null});
   await world.observe(turnEnded, {sequence: 2});
-  const notice = world.store.records().find(record => record.id === SESSION_ID)?.notices[0]?.id ?? '';
+  const notice = world.store.records().find(record => record.id === SESSION_ID)?.outcome.notices[0]?.id ?? '';
   assert.equal((await world.acknowledge(IDENTITY, notice, 'nanoleaf')).ok, true);
   await world.observe(runtimeEnded, {identity: OTHER, sequence: 3});
   await world.observe(sessionStarted, {identity: OTHER});
@@ -171,7 +171,7 @@ it('the store keeps each session in a row of its own, with no state table in the
   const marked = before.map(session => session.id === CHILD_ID ? {...session, restartUnconfirmed: true as const} : session);
   assert.deepEqual(world.store.sessions(), marked, 'every committed session, with its generation, notices, acknowledgments and bookkeeping');
   assert.equal(world.store.records().find(record => record.id === SESSION_ID)?.title?.value, 'Port the core');
-  assert.deepEqual(world.store.records().find(record => record.id === SESSION_ID)?.notices[0]?.acknowledgedBy, ['nanoleaf']);
+  assert.deepEqual(world.store.records().find(record => record.id === SESSION_ID)?.outcome.notices[0]?.acknowledgedBy, ['nanoleaf']);
   assert.deepEqual((await world.observe(turnStarted, {identity: OTHER, turn: 'turn-old', sequence: 3})), {ok: true, revision: world.store.revision, outcome: 'stale'},
     'and the retirement guard still holds after the restart');
 });
@@ -192,10 +192,10 @@ it('each occurrence follows MAPPING.md: resolved, turn-ended, turn-retired, and 
   const ended = world.since(from);
   assert.deepEqual(types(ended), ['org.bunny.session.updated', 'org.bunny.attention.cleared', 'org.bunny.turn.ended']);
   const record = sessions(ended)[0];
-  assert.equal(record?.activity, 'idle');
-  assert.equal(record?.notices.length, 1);
+  assert.equal(record?.work.state, 'idle');
+  assert.equal(record?.outcome.notices.length, 1);
   assert.equal((ended[1]?.data as {cause: string}).cause, 'turn-ended');
-  assert.equal((ended[2]?.data as {noticeId?: string}).noticeId, record?.notices[0]?.id, 'turn-ended names the notice it retained');
+  assert.equal((ended[2]?.data as {noticeId?: string}).noticeId, record?.outcome.notices[0]?.id, 'turn-ended names the notice it retained');
 
   // A newer turn retires the old one: an approval without a request ID raised there is cleared, naming both turns.
   await world.observe(unknownApproval, {turn: 'turn-1', sequence: 6});
@@ -227,17 +227,20 @@ it('a finished turn stays on its session record as an unread notice; it is no in
   const messages = world.since(0);
   assert.equal(messages.some(message => message.dataschema.includes('/inbox-item/')), false);
   const record = world.store.records()[0];
-  assert.deepEqual(record?.notices.map(notice => [notice.turn, notice.acknowledgedBy]), [[{status: 'known', id: 'turn-1'}, []]]);
+  assert.deepEqual(record?.outcome.notices.map(notice => [notice.turn, notice.acknowledgedBy]), [[{status: 'known', id: 'turn-1'}, []]]);
 });
 
 it('owner-started clearings carry the session\'s current turn, the owner\'s instant and unknown ordering', async context => {
   const world = await World.open(context);
   await world.observe(turnStarted, {sequence: 1});
   await world.observe(unknownApproval, {sequence: 2});
-  // Explicit approval recovery needs a stale record: five minutes without evidence.
+  // Explicit approval recovery needs unconfirmed work: five minutes without qualifying work evidence, which the core's
+  // timer commits as the work deadline.
   world.clock.advance(299_999);
-  assert.deepEqual(await world.recoverApproval(IDENTITY, 'turn-1'), {ok: false, code: 'invalid-state'}, 'a millisecond before, evidence is current');
+  await world.store.refresh();
+  assert.deepEqual(await world.recoverApproval(IDENTITY, 'turn-1'), {ok: false, code: 'invalid-state'}, 'a millisecond before, work is confirmed');
   world.clock.advance(1);
+  await world.store.refresh();
   const from = world.published.length;
   const recovered = await world.recoverApproval(IDENTITY, 'turn-1');
   assert.equal(recovered.ok, true);
@@ -267,17 +270,17 @@ it('expiry after 24 hours without evidence publishes a removal with reason expir
   assert.ok((world.rows('SELECT type FROM core_history') as {type: string}[]).some(row => row.type === 'org.bunny.turn.ended'));
 });
 
-it('freshness turns uncertain at five minutes at a new revision, computed at each message\'s time', async context => {
+it('running work turns unconfirmed for its deadline at five minutes at a new revision', async context => {
   const world = await World.open(context);
-  await world.observe(sessionStarted);
+  await world.observe(turnStarted);
   const revision = world.store.revision;
   world.clock.advance(299_999);
-  assert.equal(await world.store.refresh(), false, 'still current a millisecond before');
+  assert.equal(await world.store.refresh(), false, 'still confirmed a millisecond before');
   world.clock.advance(1);
   assert.equal(await world.store.refresh(), true);
   await flush();
   const [record] = sessions(world.since(1));
-  assert.equal(record?.freshness, 'uncertain');
+  assert.deepEqual([record?.work.confidence, record?.work.reasons], ['unconfirmed', ['deadline']]);
   assert.ok((record?.revision ?? 0) > revision, 'the revision is raised first, so no consumer drops it as stale');
   assert.equal(world.store.nextDue(), START + 86_400_000, 'nothing else turns on its own before the session expires');
 });
@@ -289,13 +292,12 @@ it('after a restart running work is unconfirmed until qualifying evidence, at re
   const from = world.published.length;
   await world.crashAndRestart();
   const [restarted] = sessions(world.since(from));
-  assert.equal(restarted?.restartUncertain, true);
-  assert.equal(restarted?.freshness, 'uncertain');
+  assert.deepEqual([restarted?.work.confidence, restarted?.work.reasons], ['unconfirmed', ['restart']]);
   assert.ok((restarted?.revision ?? 0) > before);
   assert.equal(restarted?.hostSessionId, 'local_0f8e2c4a', 'the host session ID persists in the private store');
   world.clock.advance(1);
   await world.observe(turnStarted, {turn: 'turn-2'});
-  assert.equal(world.store.records()[0]?.restartUncertain, false, 'a new turn after the start ends it');
+  assert.deepEqual(world.store.records()[0]?.work.reasons, [], 'a new turn after the start ends it');
   assert.equal(world.store.records()[0]?.hostSessionId, undefined, 'a 1.2 observation without one clears it');
 });
 
@@ -329,7 +331,7 @@ it('a publication refused after the commit is committed and awaiting publication
   const [report] = world.refused;
   assert.ok(report instanceof SdkError);
   assert.deepEqual([report.body.error.code, report.body.error.detail], ['unavailable', 'committed, awaiting publication']);
-  assert.equal(world.store.records()[0]?.activity, 'active', 'committed');
+  assert.equal(world.store.records()[0]?.work.state, 'active', 'committed');
   const stored = (world.rows('SELECT message FROM bunny_outbox ORDER BY seq') as {message: string}[]).map(row => JSON.parse(row.message) as Message);
   assert.equal(stored.length, 2);
   assert.equal(world.published.length, 0);
@@ -588,10 +590,10 @@ it('a rollback that fails is not taken for a commit: the change is refused and n
 
 it('a failure names only the commit it came from: a later commit clears it', async context => {
   const world = await World.open(context);
-  await world.observe(sessionStarted);
+  await world.observe(turnStarted);
   fillDisk(world.db);
   world.clock.advance(300_000);
-  await assert.rejects(world.store.refresh(), 'the store refuses to publish the record turning uncertain');
+  await assert.rejects(world.store.refresh(), 'the store refuses to publish the running work turning unconfirmed');
   world.db.exec('PRAGMA max_page_count = 1073741823');
   await world.store.refresh();
   assert.equal(world.store.takeFailure(), undefined, 'the full disk is no longer named');
@@ -743,7 +745,7 @@ it('a same-title metadata confirmation durably advances its watermark without re
   const before = structuredClone(world.store.records()[0]);assert.ok(before);
   assert.equal(before.hostSessionId, 'synthetic-host-session');
   // #1865 step 8: a finished session has no running work for the restart to leave unconfirmed.
-  assert.equal(before.restartUncertain, false);
+  assert.deepEqual(before.work.reasons, []);
   const confirm = async (value: string, atMs: number) => {
     const result = await world.title(identity, {value, source: 'provider'}, atMs);
     assert.ok(result.ok);
@@ -751,7 +753,7 @@ it('a same-title metadata confirmation durably advances its watermark without re
   };
   assert.equal((await confirm('A', 200)).outcome, 'applied');
   const after = world.store.records()[0];assert.ok(after);
-  for (const field of ['title', 'label', 'activity', 'turn', 'read', 'ordering', 'notices', 'lastEvidenceAtMs', 'observedAtMs', 'restartUncertain', 'freshness', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
+  for (const field of ['title', 'label', 'status', 'work', 'attention', 'outcome', 'relationships', 'turn', 'ordering', 'lastEvidenceAtMs', 'observedAtMs', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
   assert.equal((await confirm('B', 150)).outcome, 'stale');
   assert.equal(world.store.sessions()[0]?.metadataObservedAtMs, 200);
   await world.crashAndRestart();

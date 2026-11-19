@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type {TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, type Command, type Participant, type Responder, type Sdk} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCoreModule, type CoreHandle, type CoreOptions} from '../src/index.js';
@@ -20,7 +20,7 @@ async function notices(context: TestContext, options: CoreOptions = {}, controls
   sdk?: (participant: Participant) => Sdk; database?: (db: DatabaseSync) => DatabaseSync; dir?: string; seed?: boolean;
 } = {}): Promise<{
   module: ReturnType<typeof createCoreModule>; harness: ModuleHarness; handle: CoreHandle; hook: Participant;
-  record: () => Promise<SessionRecord>;
+  record: () => Promise<Session30Record>;
   db: DatabaseSync; clock: ReturnType<typeof manualClock>; dir: string; commands: Command<object>[]; messages: Message[];
 }> {
   const clock = manualClock(), bus = new InProcessBus({now: clock.now, scheduler: clock.scheduler});
@@ -49,8 +49,8 @@ async function notices(context: TestContext, options: CoreOptions = {}, controls
   assert.ok(db);
   const hook = bus.connect('bunny/parts/hook');
   context.after(() => hook.close());
-  const record = async (): Promise<SessionRecord> => {
-    const result = await hook.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const record = async (): Promise<Session30Record> => {
+    const result = await hook.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
     assert.equal(result.status, 'synced');
     if (result.status !== 'synced') throw new Error('the core did not sync');
     const held = result.copy.states().find(state => state.subject === SESSION_ID)?.data;
@@ -71,12 +71,12 @@ it('one operator override acknowledges every consumer and completes in the same 
   const world = await notices(context, {consumers: [{id: 'dashboard', clearOnNewTurn: false}, {id: 'nanoleaf', clearOnNewTurn: true}, {id: 'pixoo', clearOnNewTurn: true}, {id: 'another', clearOnNewTurn: false}]});
   const observed = observation(turnEnded, world.clock.now());
   await world.hook.publish(observed.key, observed.draft);
-  const before = await world.record(), notice = before.notices.at(-1);
+  const before = await world.record(), notice = before.outcome.notices.at(-1);
   assert.ok(notice);
   assert.deepEqual(await world.module.operatorActions.dispatch(clearAction(notice.id, before.revision)), {status: 'accepted', requestId: 'req-clear'});
   const after = await world.record();
-  assert.deepEqual(after.notices.at(-1)?.acknowledgedBy, ['dashboard', 'nanoleaf', 'pixoo', 'another']);
-  assert.deepEqual([after.read, after.lastEvidenceAtMs, after.activity], [before.read, before.lastEvidenceAtMs, before.activity]);
+  assert.deepEqual(after.outcome.notices.at(-1)?.acknowledgedBy, ['dashboard', 'nanoleaf', 'pixoo', 'another']);
+  assert.deepEqual([after.outcome.read, after.lastEvidenceAtMs, after.work], [before.outcome.read, before.lastEvidenceAtMs, before.work]);
   const operation = world.handle.operation('req-clear');
   assert.deepEqual([operation?.status, operation?.result, operation?.evidence, operation?.outcomes.length], ['completed', 'succeeded', 'observed', 1]);
   const outcome = world.db.prepare("SELECT revision FROM core_history WHERE request_id = 'req-clear' AND type = 'org.bunny.notice.clear.completed'").get();
@@ -100,7 +100,7 @@ it('no notice and an already acknowledged notice complete without changing the s
   assert.deepEqual(await world.module.operatorActions.dispatch(empty), {status: 'accepted', requestId: 'req-empty'});
   assert.deepEqual(await world.record(), before);
   const observed = observation(turnEnded, world.clock.now()); await world.hook.publish(observed.key, observed.draft);
-  const ended = await world.record(), id = ended.notices.at(-1)?.id; assert.ok(id !== undefined);
+  const ended = await world.record(), id = ended.outcome.notices.at(-1)?.id; assert.ok(id !== undefined);
   const action = clearAction(id, ended.revision);
   await world.module.operatorActions.dispatch(action);
   const after = await world.record();
@@ -114,7 +114,7 @@ it('no notice and an already acknowledged notice complete without changing the s
 it('unknown sessions and stale selected notices are refused before acknowledgment', async context => {
   const world = await notices(context);
   let observed = observation(turnEnded, world.clock.now()); await world.hook.publish(observed.key, observed.draft);
-  const old = await world.record(), oldId = old.notices.at(-1)?.id; assert.ok(oldId !== undefined);
+  const old = await world.record(), oldId = old.outcome.notices.at(-1)?.id; assert.ok(oldId !== undefined);
   world.clock.advance(1);
   observed = observation(turnStarted, world.clock.now(), {turn: 'turn-new'}); await world.hook.publish(observed.key, observed.draft);
   observed = observation(turnEnded, world.clock.now(), {turn: 'turn-new'}); await world.hook.publish(observed.key, observed.draft);
@@ -133,7 +133,7 @@ it('unknown sessions and stale selected notices are refused before acknowledgmen
 it('a failed participating projection rolls back every acknowledgment and completion together', async context => {
   const world = await notices(context, {parts: [{tracked: ({outcome}) => {if (outcome !== undefined) throw new Error('synthetic projection failure');}}]});
   const observed = observation(turnEnded, world.clock.now()); await world.hook.publish(observed.key, observed.draft);
-  const before = await world.record(), id = before.notices.at(-1)?.id; assert.ok(id !== undefined);
+  const before = await world.record(), id = before.outcome.notices.at(-1)?.id; assert.ok(id !== undefined);
   const answer = await world.module.operatorActions.dispatch(clearAction(id, before.revision));
   assert.equal((answer as {error: {code: string}}).error.code, 'internal');
   assert.deepEqual(await world.record(), before);
@@ -148,25 +148,25 @@ it('a due expiry queued ahead of the override changes the session revision and r
   world.clock.advance(86_399_999);
   observed = observation(turnStarted, world.clock.now(), {turn: 'turn-fresh'}); await world.hook.publish(observed.key, observed.draft);
   observed = observation(turnEnded, world.clock.now(), {turn: 'turn-fresh'}); await world.hook.publish(observed.key, observed.draft);
-  const before = await world.record(), id = before.notices.at(-1)?.id; assert.ok(id !== undefined);
+  const before = await world.record(), id = before.outcome.notices.at(-1)?.id; assert.ok(id !== undefined);
   // The child's day ends after the operator read the session: the core's timer queues its expiry ahead of the override.
   world.clock.advance(2);
   const answer = await world.module.operatorActions.dispatch(clearAction(id, before.revision));
   assert.equal((answer as {error: {code: string}}).error.code, 'revision-conflict');
   const after = await world.record();
-  assert.equal(after.children.uncertain, 0, 'the expiry removed the child');
-  assert.deepEqual(after.notices.at(-1)?.acknowledgedBy, []);
+  assert.equal(after.relationships.children.unconfirmed, 0, 'the expiry removed the child');
+  assert.deepEqual(after.outcome.notices.at(-1)?.acknowledgedBy, []);
   assert.deepEqual(world.handle.operation('req-clear')?.outcomes, []);
 });
 
 it('committed acknowledgments survive restart and the recorded request is never resent', async context => {
   const first = await notices(context);
   const observed = observation(turnEnded, first.clock.now()); await first.hook.publish(observed.key, observed.draft);
-  const before = await first.record(), id = before.notices.at(-1)?.id; assert.ok(id !== undefined);
+  const before = await first.record(), id = before.outcome.notices.at(-1)?.id; assert.ok(id !== undefined);
   const action = clearAction(id, before.revision);
   await first.module.operatorActions.dispatch(action); await first.harness.stop();
   const second = await notices(context, {}, {dir: first.dir, seed: false});
-  assert.deepEqual((await second.record()).notices.at(-1)?.acknowledgedBy, ['dashboard', 'nanoleaf', 'pixoo']);
+  assert.deepEqual((await second.record()).outcome.notices.at(-1)?.acknowledgedBy, ['dashboard', 'nanoleaf', 'pixoo']);
   assert.deepEqual(await second.module.operatorActions.dispatch(action), {status: 'accepted', requestId: 'req-clear'});
   assert.equal(second.commands.length, 0);
   assert.equal(second.handle.operation('req-clear')?.outcomes.length, 1);

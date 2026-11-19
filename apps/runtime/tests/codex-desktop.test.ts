@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {TestContext} from 'node:test';
 import {DESKTOP_METADATA_SCHEMA, MARKER_DEVICE, MARKER_FILE, POLL_MS, SimulatedMarker, createCodexDesktopModule, folderReader, type MarkerTransport} from '@jimmie-potts/codex-desktop';
-import {desktopFeedId, sessionEntityId, type DesktopMetadataSnapshot, type Identity, type LifecycleEvent, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {desktopFeedId, sessionEntityId, type DesktopMetadataSnapshot, type Identity, type LifecycleEvent, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {prepareMessage, publishOnce, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
 import {producerSource} from '../src/hook/index.js';
 import {createCoreModule, type LogRecord} from '../src/index.js';
@@ -60,7 +60,7 @@ const fromModule = (logs: readonly LogRecord[]): number => logs.filter(log => lo
   log.attributes['bunny.participant'] === 'bunny/modules/codex-desktop').length;
 
 /** Waits until the core's record of `identity` satisfies `ready`, through a copy of its sessions. */
-async function until(copy: SyncedCopy<SessionRecord>, identity: Identity, ready: (record: SessionRecord) => boolean, what: string, timeoutMs = 8000): Promise<SessionRecord> {
+async function until(copy: SyncedCopy<Session30Record>, identity: Identity, ready: (record: Session30Record) => boolean, what: string, timeoutMs = 8000): Promise<Session30Record> {
   const id = sessionEntityId(identity);
   const deadline = performance.now() + timeoutMs;
   for (;;) {
@@ -71,8 +71,8 @@ async function until(copy: SyncedCopy<SessionRecord>, identity: Identity, ready:
   }
 }
 
-const readOf = (copy: SyncedCopy<SessionRecord>, identity: Identity): string | undefined =>
-  copy.states().find(message => message.data.id === sessionEntityId(identity))?.data.read;
+const readOf = (copy: SyncedCopy<Session30Record>, identity: Identity): string | undefined =>
+  copy.states().find(message => message.data.id === sessionEntityId(identity))?.data.outcome.read;
 
 it('Codex Desktop\'s marker becomes read evidence the core takes, for the configured producer\'s top-level sessions only', async context => {
   const home = await codexHome(context);
@@ -82,23 +82,23 @@ it('Codex Desktop\'s marker becomes read evidence the core takes, for the config
     modules: [createCoreModule(), createCodexDesktopModule({transport: folderReader()}), probe], configFile: await privateConfig(context, home),
   });
   const {sdk} = contextOf(probe);
-  const synced = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const synced = await sdk.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
   assert.equal(synced.status, 'synced');
   if (synced.status !== 'synced') return;
   const {copy} = synced;
   // A turn that is still running, then one that finished, a subagent of it and another producer's session.
   await observe(sdk, desktop('one'), {kind: 'turn-started'});
-  await until(copy, desktop('one'), record => record.activity === 'active', 'the running turn');
+  await until(copy, desktop('one'), record => record.work.state === 'active', 'the running turn');
   await writeFile(join(home, MARKER_FILE), marker(['one', 'child', 'other']));
   await observe(sdk, desktop('one'), {kind: 'turn-ended'});
   await observe(sdk, desktop('child'), {kind: 'turn-ended'}, desktop('one'));
   await observe(sdk, desktop('other', 'other-desktop'), {kind: 'turn-ended'});
-  const unread = await until(copy, desktop('one'), record => record.read === 'unread', 'the unread session');
+  const unread = await until(copy, desktop('one'), record => record.outcome.read === 'unread', 'the unread session');
   assert.deepEqual(unread.unavailable.filter(item => item.dimension === 'read'), []);
   assert.equal(readOf(copy, desktop('child')), 'unknown', 'a subagent gets no read evidence');
   assert.equal(readOf(copy, desktop('other', 'other-desktop')), 'unknown', 'another producer\'s session gets none');
   await writeFile(join(home, MARKER_FILE), marker([]));
-  await until(copy, desktop('one'), record => record.read === 'read', 'the read session');
+  await until(copy, desktop('one'), record => record.outcome.read === 'read', 'the read session');
   // The core took the module's evidence, and the module only read the marker.
   const intake = logs.filter(record => record.event_name === 'message.received' && record.attributes['bunny.participant'] === 'bunny/modules/codex-desktop');
   assert.deepEqual(intake.map(record => record.attributes['bunny.outcome']), ['accepted', 'accepted']);
@@ -136,7 +136,7 @@ it('a Codex home that stalls leaves the core taking observations, the module run
     modules: [createCoreModule(), createCodexDesktopModule({transport}), probe], configFile: await privateConfig(context, home), clock, scheduler: clock.scheduler,
   });
   const {sdk} = contextOf(probe);
-  const synced = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const synced = await sdk.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
   if (synced.status !== 'synced') assert.fail('the core served its sessions');
   // The module's first poll, due at its start, issues the read and sets its deadline on the module's clock.
   const unavailable = (): LogRecord[] => logs.filter(record => record.event_name === 'device.unavailable' && record.attributes['bunny.module'] === 'codex-desktop');
@@ -183,7 +183,7 @@ it('Desktop metadata guards scoped root and ancestor admission, unarchive and ex
   const metadata = fixture('codex-desktop'), hook = fixture('hook');
   const {logs} = await run(context, {modules: [createCoreModule(), metadata, hook], clock, scheduler: clock.scheduler});
   const trusted = contextOf(metadata).sdk, untrusted = contextOf(hook).sdk;
-  const result = await untrusted.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const result = await untrusted.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
   if (result.status !== 'synced') assert.fail('the core served its sessions');
   const copy = result.copy;
   context.after(async () => { await copy.close(); });
@@ -208,7 +208,7 @@ it('Desktop metadata guards scoped root and ancestor admission, unarchive and ex
   await send(trusted, closed, {kind: 'metadata-observed'}, {title: 'Desktop title'});
   const after = record(closed);assert.ok(after);
   assert.deepEqual(after.title, {value: 'Desktop title', source: 'provider'});assert.equal(after.label?.value, 'Owner label');
-  for (const field of ['activity', 'turn', 'read', 'ordering', 'notices', 'lastEvidenceAtMs', 'observedAtMs', 'restartUncertain', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
+  for (const field of ['status', 'work', 'turn', 'outcome', 'ordering', 'lastEvidenceAtMs', 'observedAtMs', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
   await send(untrusted, closed, {kind: 'metadata-observed'}, {title: 'Forged title'});
   await send(untrusted, desktop('forged'), {kind: 'metadata-observed', archived: true});
   await send(untrusted, desktop('forged'), {kind: 'turn-started'});
@@ -233,7 +233,7 @@ it('Desktop metadata from the real reader keeps archives closed and titles indep
   const probe = fixture('probe');
   const {logs} = await run(context, {modules: [createCoreModule(), createCodexDesktopModule({transport: folderReader()}), probe], configFile: await privateConfig(context, home)});
   const sdk = contextOf(probe).sdk;
-  const result = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const result = await sdk.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
   if (result.status !== 'synced') assert.fail('the core served its sessions');
   const copy = result.copy;context.after(async () => { await copy.close(); });
   await observe(sdk, desktop('one'), {kind: 'turn-ended'});
@@ -271,13 +271,13 @@ it('Desktop metadata title commits preserve real core restart uncertainty and ho
   clock.advance(1000);
   const metadata = fixture('codex-desktop');
   await run(context, {modules: [createCoreModule(), metadata], stateDir: directory, clock, scheduler: clock.scheduler});
-  const sdk = contextOf(metadata).sdk, synced = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const sdk = contextOf(metadata).sdk, synced = await sdk.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
   if (synced.status !== 'synced') assert.fail('the restarted core served its sessions');
   context.after(async () => { await synced.copy.close(); });
-  const before = synced.copy.states()[0]?.data;assert.ok(before);assert.equal(before.restartUncertain, true);
+  const before = synced.copy.states()[0]?.data;assert.ok(before);assert.deepEqual(before.work.reasons, ['restart']);
   await sdk.publish(`bunny.event.lifecycle.${subject}`, {kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject, dataschema: 'https://bunny.invalid/events/lifecycle/2.0', data: lifecycleOf({kind: 'metadata-observed'}, clock.now(), {identity, turn: null, title: {value: 'Desktop title', source: 'provider'}})});
   const after = await until(synced.copy, identity, record => record.title?.value === 'Desktop title', 'the persisted metadata');
-  for (const field of ['activity', 'turn', 'read', 'ordering', 'notices', 'lastEvidenceAtMs', 'observedAtMs', 'restartUncertain', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
+  for (const field of ['status', 'work', 'turn', 'outcome', 'ordering', 'lastEvidenceAtMs', 'observedAtMs', 'hostSessionId'] as const) assert.deepEqual(after[field], before[field], field);
   assert.equal(after.label?.value, 'Owner label');
 });
 
@@ -288,7 +288,7 @@ it('Desktop archive batches above the SDK queue limit retain trailing admission 
   marker.archive(archived);marker.title('one', 'First title');marker.list(['one']);
   const probe = fixture('probe');
   const {logs} = await run(context, {logLevel: 'debug', modules: [createCoreModule(), createCodexDesktopModule({transport: marker}), probe], configFile: await privateConfig(context, home)});
-  const sdk = contextOf(probe).sdk, result = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const sdk = contextOf(probe).sdk, result = await sdk.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
   if (result.status !== 'synced') assert.fail('the core served its sessions');
   const copy = result.copy;context.after(async () => { await copy.close(); });
   await observe(sdk, desktop('one'), {kind: 'turn-ended'});
@@ -306,9 +306,9 @@ it('Desktop archive batches above the SDK queue limit retain trailing admission 
     for (let n = 0; n < 8; n += 1) await flush();
     assert.equal(copy.states().some(message => message.data.identity.sessionId === id), false, `${id} remains archived`);
   }
-  await until(copy, desktop('one'), record => record.title?.value === 'First title' && record.read === 'unread', 'independent title and unread evidence after the archive batch');
+  await until(copy, desktop('one'), record => record.title?.value === 'First title' && record.outcome.read === 'unread', 'independent title and unread evidence after the archive batch');
   marker.title('one', 'Next title');marker.list([]);
-  await until(copy, desktop('one'), record => record.title?.value === 'Next title' && record.read === 'read', 'continued title and read evidence across another archive batch');
+  await until(copy, desktop('one'), record => record.title?.value === 'Next title' && record.outcome.read === 'read', 'continued title and read evidence across another archive batch');
 });
 
 it('a remote source\'s snapshots, published through the edge by the collector\'s own credential, become evidence the core takes, and a forged feed is refused (Hub #567)', async context => {
@@ -329,7 +329,7 @@ it('a remote source\'s snapshots, published through the edge by the collector\'s
     clock, scheduler: clock.scheduler,
   });
   const {sdk} = contextOf(probe);
-  const synced = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const synced = await sdk.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
   if (synced.status !== 'synced') assert.fail('the core served its sessions');
   const {copy} = synced;
   const identity = (sessionId: string): Identity => ({...feed, sessionId});
@@ -351,7 +351,7 @@ it('a remote source\'s snapshots, published through the edge by the collector\'s
   // module's first poll, due at its start, reads it.
   assert.deepEqual(await publish(collector, token, snapshot({unread: ['one'], archived: ['closed'], titles: [{id: 'two', title: {value: 'PC title', source: 'provider'}}]})), {status: 'published'});
   clock.advance(0);
-  await until(copy, identity('one'), record => record.read === 'unread', 'the unread session');
+  await until(copy, identity('one'), record => record.outcome.read === 'unread', 'the unread session');
   await until(copy, identity('two'), record => record.title?.value === 'PC title', 'the titled session');
   // A late hook for the archived conversation is refused admission while the positive evidence is fresh.
   await decided(logs, [await observe(sdk, identity('closed'), {kind: 'turn-ended'}, undefined, clock.now())], 'the core\'s decision on the late hook');
@@ -360,7 +360,7 @@ it('a remote source\'s snapshots, published through the edge by the collector\'s
   clock.advance(POLL_MS);
   assert.deepEqual(await publish(collector, token, snapshot({unread: [], archived: ['closed']})), {status: 'published'});
   clock.advance(POLL_MS);
-  await until(copy, identity('one'), record => record.read === 'read', 'the read session');
+  await until(copy, identity('one'), record => record.outcome.read === 'read', 'the read session');
   // A hook's credential cannot speak for the feed, and the collector's cannot speak for another feed: neither changes a record.
   const before = [readOf(copy, identity('one')), readOf(copy, identity('two'))];
   const forged = await publish(hook, hookToken, snapshot({unread: ['one', 'two']}));

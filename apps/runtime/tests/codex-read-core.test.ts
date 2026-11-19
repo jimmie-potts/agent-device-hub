@@ -17,7 +17,7 @@ async function setup(context: TestContext) {
   const before = world.store.records().find(record => record.id === sessionEntityId(identity));
   assert.ok(before?.turn.status === 'known');
   const turn = before.turn;
-  const notice = before.notices.find(item => item.kind === 'turn-ended' && item.turn.status === 'known' && item.turn.id === turn.id);
+  const notice = before.outcome.notices.find(item => item.kind === 'turn-ended' && item.turn.status === 'known' && item.turn.id === turn.id);
   assert.ok(notice);
   const data: ReadReceiptObservation = {identity, turn: before.turn, parent: {status: 'unknown'},
     observedAtMs: world.clock.now(), ordering: {status: 'unknown'}, event: {
@@ -35,10 +35,10 @@ it('a qualified Codex receipt commits only read provenance for its exact complet
   assert.equal(await world.store.readReceipt(message, qualification), true);
   await world.store.drain();
   const after = world.store.records()[0]; assert.ok(after);
-  assert.equal(after.read, 'read');
+  assert.equal(after.outcome.read, 'read');
   assert.deepEqual(after.identity, identity);
-  assert.deepEqual(after.readReceipt?.receipt, message.data.event.receipt);
-  assert.deepEqual(after.notices, before.notices);
+  assert.deepEqual(after.outcome.readReceipt?.receipt, message.data.event.receipt);
+  assert.deepEqual(after.outcome.notices, before.outcome.notices);
   assert.deepEqual(after.attention, before.attention);
   assert.equal(after.lastEvidenceAtMs, before.lastEvidenceAtMs);
   assert.equal(after.observedAtMs, before.observedAtMs);
@@ -53,7 +53,7 @@ it('duplicate accepted Codex provenance and an older target cannot make another 
   assert.equal(await world.store.readReceipt({...message, id: 'another-delivery-id'}, qualification), false);
   assert.deepEqual(world.store.records(), read);
   await world.crashAndRestart();
-  assert.equal(world.store.records()[0]?.read, 'read');
+  assert.equal(world.store.records()[0]?.outcome.read, 'read');
   assert.equal(world.store.received(message), 'duplicate');
   assert.equal(await world.store.readReceipt(message, qualification), false);
   await world.observe(turnStarted, {identity, turn: 'new-turn'});
@@ -61,7 +61,7 @@ it('duplicate accepted Codex provenance and an older target cannot make another 
   const newer = structuredClone(world.store.records());
   assert.equal(await world.store.readReceipt(message, qualification), false);
   assert.deepEqual(world.store.records(), newer);
-  assert.equal(newer[0]?.read, 'unknown');
+  assert.equal(newer[0]?.outcome.read, 'unknown');
 });
 
 it('a Codex request with no revision change or a stale generation never marks read', async context => {

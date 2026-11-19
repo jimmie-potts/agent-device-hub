@@ -20,7 +20,6 @@ import type {Envelope} from '@jimmie-potts/agent-state';
 import {MessageValidator, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies, sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, prepareMessage, publishOnce} from '@jimmie-potts/sdk';
-import {toEnvelope} from './fixtures/retained-core.js';
 import {
   HOOK_BUDGET_MS, LIFECYCLE_SCHEMA, lifecycleMessage, producerCredentialId, producerSource, readProducer, runHook,
 } from '../src/hook/index.js';
@@ -560,7 +559,7 @@ function envelopeOf(event: Envelope['event'], extra: Partial<Envelope> = {}): En
   return {apiVersion: '1.2', identity: IDENTITY, turn: {status: 'known', id: 'prompt-1'}, parent: {status: 'unknown'}, event, observedAtMs: 1_790_000_000_000, ordering: {status: 'unknown'}, ...extra};
 }
 
-it('every 1.x lifecycle event maps to its 2.0 observation, which the core turns back into the same 1.2 envelope', () => {
+it('every 1.x lifecycle event maps to its 2.0 observation, which the core families accept', () => {
   const validator = new MessageValidator();
   registerCoreFamilies(validator);
   const known = {status: 'known', id: 'tool-1'} as const;
@@ -580,7 +579,6 @@ it('every 1.x lifecycle event maps to its 2.0 observation, which the core turns 
     kinds.push(observation.event.kind);
     assert.equal(observation.nativeEventId, 'native-1');
     assert.deepEqual(observation.ordering, {status: 'known', authority: IDENTITY.sourceId, epoch: 'epoch-1', sequence: 4});
-    assert.deepEqual(toEnvelope(observation), envelope, `${event.kind} survives the round trip`);
     const {key, draft} = lifecycleMessage(observation);
     assert.equal(key, `bunny.event.lifecycle.${sessionEntityId(IDENTITY)}`);
     assert.equal(draft.dataschema, LIFECYCLE_SCHEMA);

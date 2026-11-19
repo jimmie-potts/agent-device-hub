@@ -416,7 +416,7 @@ void test('the restart\'s work marking publishes no occurrence, evaluates no rul
   harness=new CoreHarness(core,{bus,stateDir:directory,clock:{now:clock.now}});
   await harness.start();core.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);await flush();
   await core.automation.settled();await flush();
-  assert.deepEqual(states.map(message=>[message.subject,(message.data as {restartUncertain:boolean}).restartUncertain]),
+  assert.deepEqual(states.map(message=>[message.subject,(message.data as {work:{reasons:string[]}}).work.reasons.includes('restart')]),
     [[SESSION_ID,true],[sessionEntityId(third),true]],'only the running sessions are published again, unconfirmed');
   assert.equal(occurrences.length,before.occurrences,'the marking published no occurrence');
   assert.equal(moments.length,before.moments,'no moment was dispatched');

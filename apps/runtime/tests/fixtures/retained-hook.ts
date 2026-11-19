@@ -1,8 +1,7 @@
 // The earlier hook mapping, kept for tests as the retained path's reference (Hub #1865, design decision 14): a copy of
 // `observationOf` from apps/runtime/src/hook/observation.ts at main 6adad7e7, which turned the lifecycle 1.x envelope
 // that agent-state's normalizers build into the 2.0 `lifecycle` observation. The golden test runs the retained
-// normalizers through this copy beside the hook, and the core's `toEnvelope` is checked as its inverse until the core
-// takes observations directly. Do not change it.
+// normalizers through this copy beside the hook. Do not change it.
 import type {Envelope} from '@jimmie-potts/agent-state';
 import type {LifecycleEvent, LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
 

@@ -10,7 +10,7 @@ import {request as httpRequest, type IncomingMessage} from 'node:http';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import type {OperationRecord, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {OperationRecord, Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {PROVIDERS} from '@jimmie-potts/event-contracts/v2/sources';
 import {
   MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, SdkError, connectRemote, traceFields, type BunnyModule,
@@ -541,20 +541,20 @@ it('the session reads, the snapshot and core_sessions pass the core\'s records u
     const {key, draft} = observation(event, Date.now(), options);
     await remote.publish(key, draft);
   }
-  const byId = (records: readonly SessionRecord[]): SessionRecord[] => [...records].sort((a, b) => a.id < b.id ? -1 : 1);
-  const family = async (): Promise<SessionRecord[]> => byId(((await ask(url, '/api/v2/families/session', {token: reader.token})).body as {records: SessionRecord[]}).records);
-  await waitFor(async () => {const held = await family(); return held.length === 2 && held.some(record => record.attention.length > 0);}, 5000, 'both sessions, one waiting');
+  const byId = (records: readonly Session30Record[]): Session30Record[] => [...records].sort((a, b) => a.id < b.id ? -1 : 1);
+  const family = async (): Promise<Session30Record[]> => byId(((await ask(url, '/api/v2/families/session', {token: reader.token})).body as {records: Session30Record[]}).records);
+  await waitFor(async () => {const held = await family(); return held.length === 2 && held.some(record => record.attention.items.length > 0);}, 5000, 'both sessions, one waiting');
   // The core's own copy, as any participant syncs it, is what every route passes on.
   const listener = await connectRemote({url, source: reader.source, token: reader.token});
   context.after(() => listener.close());
-  const synced = await listener.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const synced = await listener.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
   assert.equal(synced.status, 'synced');
   if (synced.status !== 'synced') return;
   const records = byId(synced.copy.states().map(message => message.data));
   await synced.copy.close();
   assert.deepEqual(await family(), records, 'the family read');
   const snapshot = await ask(url, '/api/v2/snapshot?families=session', {token: reader.token});
-  assert.deepEqual(byId((snapshot.body as {records: {session: SessionRecord[]}}).records.session), records, 'the snapshot');
+  assert.deepEqual(byId((snapshot.body as {records: {session: Session30Record[]}}).records.session), records, 'the snapshot');
   const accept = {accept: 'application/json, text/event-stream'};
   const init = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: accept, body: {
     jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test', version: '1.0.0'}},
@@ -564,9 +564,9 @@ it('the session reads, the snapshot and core_sessions pass the core\'s records u
   const listed = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers, body: {jsonrpc: '2.0', id: 2, method: 'tools/list'}});
   const tool = (listed.body as {result: {tools: {name: string; inputSchema: {properties: {provider: {enum: string[]}}}}[]}}).result.tools.find(entry => entry.name === 'core_sessions');
   assert.deepEqual(tool?.inputSchema.properties.provider.enum, [...PROVIDERS], 'the provider filter is the supported-source definition\'s');
-  const sessions = async (args: object): Promise<SessionRecord[]> => {
+  const sessions = async (args: object): Promise<Session30Record[]> => {
     const answer = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers, body: {jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name: 'core_sessions', arguments: args}}});
-    return byId((answer.body as {result: {structuredContent: {data: {result: {sessions: SessionRecord[]}}}}}).result.structuredContent.data.result.sessions);
+    return byId((answer.body as {result: {structuredContent: {data: {result: {sessions: Session30Record[]}}}}}).result.structuredContent.data.result.sessions);
   };
   assert.deepEqual(await sessions({}), records, 'core_sessions');
   assert.deepEqual(await sessions({provider: 'codex'}), records.filter(record => record.identity.provider === 'codex'));

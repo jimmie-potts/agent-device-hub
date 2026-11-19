@@ -3,12 +3,14 @@
 // could produce. This test replays that history through the core store and its session logic and compares every
 // named fixture with what the core published. `BUNNY_WRITE_REFERENCE=1` writes the owner's messages into the fixture
 // file instead, keeping each fixture's `id` and `traceparent`; the notice the owner gave the finished turn replaces the
-// one the fixtures named before.
+// one the fixtures named before. Since #1865 step 9 the owner publishes `session/3.0`, and the session state fixtures
+// stay the retained `session/2.0` documents the contracts' tests read: each must agree with the owner's record in every
+// member the two versions share, its work state and children included, and is never rewritten.
 import assert from 'node:assert/strict';
 import {readFileSync, writeFileSync} from 'node:fs';
 import type {TestContext} from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {Identity, LifecycleEvent, LifecycleObservation, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Identity, LifecycleEvent, LifecycleObservation, Session30Record, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {World, lifecycleMessage} from './fixtures/store-world.js';
 import {START, it, manualClock} from './support.js';
 
@@ -84,6 +86,27 @@ async function replay(context: TestContext, fixtures: Fixtures): Promise<Map<str
 
 /** A fixture as the owner published it, with the fixture's own `id` and `traceparent`. */
 const asFixture = (fixture: Message, published: Message): Message => ({...published, id: fixture.id, traceparent: fixture.traceparent});
+const SESSION_STATE = 'org.bunny.session.updated';
+
+/**
+ * The retained `session/2.0` fixture's members as the owner's `session/3.0` record holds them: confirmed work's state
+ * as the activity, the claims' items, notices and read evidence, and the children as active and uncertain. Freshness
+ * has no 3.0 counterpart; a fixture whose work the owner reports confirmed must be current and not restart-uncertain.
+ */
+function asRetained(fixture: Message<SessionRecord>, published: Message<Session30Record>): Message<SessionRecord> {
+  const {status: _status, work, attention, outcome, relationships, ...rest} = published.data;
+  assert.equal(published.dataschema, 'https://bunny.invalid/events/session/3.0', 'the owner publishes session/3.0');
+  assert.deepEqual([work.confidence, fixture.data.freshness, fixture.data.restartUncertain], ['confirmed', 'current', false]);
+  const {notices, read, readReceipt} = outcome;
+  const data: SessionRecord = {
+    ...rest, activity: work.state, attention: attention.items, notices, read, ...(readReceipt === undefined ? {} : {readReceipt}),
+    freshness: 'current', restartUncertain: false, children: {active: relationships.children.working, uncertain: relationships.children.unconfirmed},
+  };
+  return {...published, id: fixture.id, traceparent: fixture.traceparent, dataschema: fixture.dataschema, data};
+}
+/** Members compared in a fixed order, so the comparison does not depend on where a member sits in either record. */
+const sorted = (value: unknown): unknown => value === null || typeof value !== 'object' ? value : Array.isArray(value) ? value.map(sorted)
+  : Object.fromEntries(Object.keys(value).sort().map(key => [key, sorted((value as Record<string, unknown>)[key])]));
 
 it('#842\'s root session fixtures are what the real owner published in one reference history', async context => {
   const text = readFileSync(FIXTURES, 'utf8');
@@ -97,7 +120,8 @@ it('#842\'s root session fixtures are what the real owner published in one refer
     for (const [name, published] of named) {
       const fixture = fixtures.valid[name];
       assert.ok(fixture, name);
-      fixtures.valid[name] = asFixture(fixture, published);
+      // The session states stay the retained session/2.0 documents.
+      if (published.type !== SESSION_STATE) fixtures.valid[name] = asFixture(fixture, published);
     }
     // A generation after the revision stays one past the regenerated record's revision.
     const generation = fixtures.invalid.find(item => item.name === 'a generation after the revision');
@@ -108,7 +132,10 @@ it('#842\'s root session fixtures are what the real owner published in one refer
   for (const [name, published] of named) {
     const fixture = fixtures.valid[name];
     assert.ok(fixture, `families.json holds ${name}`);
-    assert.deepEqual(fixture, asFixture(fixture, published), `${name} is the message the owner published`);
+    if (published.type === SESSION_STATE) {
+      assert.deepEqual(sorted(fixture), sorted(asRetained(fixture as Message<SessionRecord>, published as Message<Session30Record>)),
+        `${name} agrees with the record the owner published`);
+    } else assert.deepEqual(fixture, asFixture(fixture, published), `${name} is the message the owner published`);
   }
   // Every fixture that names the finished turn's notice names the one the owner gave it.
   const notice = String(named.get('turn-ended')?.data.noticeId);
