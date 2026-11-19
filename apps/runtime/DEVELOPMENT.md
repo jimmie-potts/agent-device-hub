@@ -767,22 +767,23 @@ Tidbyt and Wispr journeys and hosted smoke check those modules' compact cards
 there instead.
 
 Home's glass layer (#1929) ends the same Home editor chain, so hosted smoke and
-the full browser suite run it. After the root build,
-`node apps/runtime/dashboard/tests/home-glass.browser.ts` launches Chromium with
-SwiftShader for WebGL 2. It creates two artworks through the art module's Gallery
-and serves dark and bright synthetic pixels through the module's content route.
-It checks that the Quiet glass wash and then the artwork are drawn behind
+the full browser suite run it. After the root build, `node
+apps/runtime/dashboard/tests/home-glass.browser.ts` launches Chromium with
+SwiftShader for WebGL 2. It creates two artworks through the art module's
+Gallery and serves dark and bright synthetic pixels through the module's content
+route. It checks that the Quiet glass wash and then the artwork are drawn behind
 see-through card surfaces and a frosted rail; that the boxes the layer last drew
-match every card's box after loading, scrolling, resizing, moving and reshaping a
-card in Edit Home, Cancel, paging the Inbox in one column and a reconnecting
+match every card's box after loading, scrolling, resizing, moving and reshaping
+a card in Edit Home, Cancel, paging the Inbox in one column and a reconnecting
 notice above Home; that the frame count holds for two seconds at rest; that a
-light switches off and on through the layer, after a forced context loss (Quiet
-glass panels) and without WebGL 2; that a restored context draws again; that
-leaving Home loses the context; and that all text drawn over the layer (panels,
-heading, notices, status lines, empty cells and the footer) measures at least
-4.5:1 against the pixels behind it for a dark and a bright artwork in light and
-dark appearance, at rest, while reconnecting and in Edit Home. With
-`DASHBOARD_RECEIPTS` set it saves private screenshots.
+window resize to 2,560 px draws one frame and, with software rendering, at most
+about a million pixels; that a light switches off and on through the layer,
+after a forced context loss (Quiet glass panels) and without WebGL 2; that a
+restored context draws again; that leaving Home loses the context; and that all
+text drawn over the layer (panels, heading, notices, status lines, empty cells
+and the footer) measures at least 4.5:1 against the pixels behind it for a dark
+and a bright artwork in light and dark appearance, at rest, while reconnecting
+and in Edit Home. With `DASHBOARD_RECEIPTS` set it saves private screenshots.
 
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the

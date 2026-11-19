@@ -983,8 +983,13 @@ table (`src/glass-renderer.ts`) and a term in the shader (`src/glass-shader.ts`)
 The layer draws only while something changes or settles: a box moved or resized
 (including by something added or resized above the page), a scroll, a window
 resize, a mark or skin change, a new backdrop, or the 700 ms first appearance. At
-rest it draws nothing. It caps the pixel ratio at 2, takes no pointer input, sends
-nothing, and loses its context when the page is left.
+rest it draws nothing. After a window resize it waits until two reads of the boxes
+agree, so it draws once, after the page has repacked. It caps the pixel ratio at
+2; where the browser renders WebGL in software (SwiftShader and similar, marked
+`data-glass-software` on the canvas), it draws at most about a million pixels and
+the browser scales them up, because the page's main thread waits for every
+software frame. It takes no pointer input, sends nothing, and loses its context when
+the page is left.
 
 `glass.css` keys everything on `data-glass="webgl"`: the outermost card surface
 in each panel turns transparent (a surface with a state meaning, such as an
