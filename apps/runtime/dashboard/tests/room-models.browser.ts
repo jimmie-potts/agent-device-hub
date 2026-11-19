@@ -8,7 +8,10 @@ import {apartmentPresenceJourney} from './apartment-presence-journey.ts';
 import {roomModelFixture} from '../../dist/tests/fixtures/room-model.js';
 
 const world=await startWorld({lighting:true});
-const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+// WebGL runs on SwiftShader on every host. Page compositing stays on Chromium's software compositor (#1893): with
+// SwiftShader as the compositing GPU, every reload or navigation away from a 3D view waited seconds for queued
+// software-GPU work while the old WebGL context was destroyed, and timed out on a busy CPU.
+const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-gpu-compositing']});
 try{
   const folder=join(world.stateDir,'modules/core/room-models');await mkdir(folder,{recursive:true,mode:0o700});
   await writeFile(join(folder,'catalog.json'),JSON.stringify({schema:'room-model-catalog/1.0',models:[{id:'studio',roomId:'studio'}]}),{mode:0o600});
