@@ -9,10 +9,10 @@ import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './pref
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {AnthropicProvider, DEFAULT_MODEL, EFFORTS, type Effort, type Transport} from './assistant/anthropic.js';
-import {isLightTool, allowlistable} from './assistant/tools.js';
+import {deviceToolOwner, allowlistable} from './assistant/tools.js';
 import {LIMITS} from './assistant/store.js';
-import {AssistantLights} from './assistant/lights.js';
-import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
+import {AssistantDeviceCopy} from './assistant/devices.js';
+import {type AssistantDeviceOwner, type AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import {createHash} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
@@ -81,7 +81,7 @@ class Companions {
   #qualification: SpeechQualification | undefined;
   #store: CompanionStore | undefined;
   #outbox: Outbox | undefined;
-  #lights: AssistantLights | undefined;
+  readonly #deviceCopies = new Map<AssistantDeviceOwner, AssistantDeviceCopy>();
   #copy: SyncedCopy<Session30Record | ModeState> | undefined;
   #synced = false;
   #closed = false;
@@ -180,7 +180,8 @@ class Companions {
     await this.preferences?.stop();
     await this.knowledge?.stop();
     await this.#copy?.close();
-    await this.#lights?.close();
+    await Promise.all([...this.#deviceCopies.values()].map(copy => copy.close()));
+    this.#deviceCopies.clear();
     await Promise.all([this.#work, this.#draining]);
   }
   /** The engine's seams from the section: the `bunny` provider, the allowlist, the synced core copy and the dispatch path. */
@@ -198,14 +199,20 @@ class Companions {
       const records = this.#copy?.states().map(message => message.data) ?? [];
       return {sessions: this.#views(), mode: records.find((record): record is ModeState => 'mode' in record), synced: this.#synced};
     });
-    if (options.devices === undefined && tools.some(isLightTool)) {
-      this.#lights = new AssistantLights(context);
-      this.#lights.start();
+    if (options.devices === undefined) {
+      for (const tool of tools) {
+        const owner = deviceToolOwner(tool);
+        if (owner === undefined || this.#deviceCopies.has(owner)) continue;
+        const copy = new AssistantDeviceCopy(context, owner);
+        this.#deviceCopies.set(owner, copy);
+        copy.start();
+      }
     }
     const dispatch = options.dispatch ?? ((data: AssistantDispatch, parent: TraceContext) => context.sdk.request('bunny.cmd.assistant-dispatch.assistant',
-      {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.family === 'mode-set' ? '2.0' : '2.1'}`, data},
+      {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.family === 'mode-set' ? '2.0' : 'owner' in data ? '2.2' : '2.1'}`, data},
       {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent}));
-    return {...(provider === undefined ? {} : {provider}), tools, core, dispatch, devices: options.devices ?? (() => this.#lights?.records()), ...(options.available === undefined ? {} : {available: options.available})};
+    return {...(provider === undefined ? {} : {provider}), tools, core, dispatch, devices: options.devices ?? (owner => this.#deviceCopies.get(owner)?.records()),
+      readDevice: options.readDevice ?? (async (owner, name, signal, parent) => this.#deviceCopies.get(owner)?.read(name, signal, parent)), ...(options.available === undefined ? {} : {available: options.available})};
   }
   #replyPolicy(): Pick<Policy, 'mode' | 'synced'> {
     const records = this.#copy?.states().map(message => message.data) ?? [];

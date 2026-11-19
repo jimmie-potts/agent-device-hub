@@ -596,7 +596,7 @@ npm run test:runtime:verify:built   # full suite, when the local scope below req
 Choose local verification by the behavior changed, including its direct
 consumers, rather than by file paths (owner decision, 2026-10-08):
 
-- For LIFX Conversation, exercise `assistant-lifx` in the catalog and run
+- For device Conversation, exercise `assistant-lifx` and `assistant-wemo` in the catalog and run
   `node apps/runtime/dashboard/tests/lifx-conversation.browser.ts` after the
   build. Run the companions suite, the assistant dispatch tests, and
   `test:events:built` for the additive assistant-dispatch contract.

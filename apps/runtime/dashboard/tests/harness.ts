@@ -73,6 +73,7 @@ export type WorldOptions = {
   privateProxy?: {origin: string; tokenDigest: string};
   companions?: boolean;
   assistantLights?: boolean;
+  assistantWemo?: boolean;
   /** A coding-worker credential and the delegation tool, so a journey can connect a fake worker through the real gateway (Hub #502). */
   coding?: boolean;
   /** Synthetic browser qualification only; never a real voice or installed receipt. */
@@ -290,7 +291,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.artSchedule === undefined ? {} : {weather: WEATHER_SECTION}),
     ...(options.tidbyt === true ? {tidbyt: {...TIDBYT_SECTION, secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
     ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),
-    ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode', ...(options.coding === true ? ['delegate_coding'] : []), ...(options.assistantLights === true ? ['read_lifx', 'set_lifx_power', 'set_lifx_brightness'] : [])]}}} : {}),
+    ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode', ...(options.coding === true ? ['delegate_coding'] : []), ...(options.assistantLights === true ? ['read_lifx', 'set_lifx_power', 'set_lifx_brightness'] : []), ...(options.assistantWemo === true ? ['read_wemo', 'set_wemo_power'] : [])]}}} : {}),
     ...(options.microduck===true?{microduck:options.microduckSection??MICRODUCK_SIMULATED_SECTION}:{}),
     ...(options.reachy === true ? {'reachy-mini':REACHY_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},

@@ -4,6 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
@@ -17,7 +18,7 @@ import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
 import type {SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
-import {readLights} from '../src/assistant/lights.js';
+import {readDevices} from '../src/assistant/devices.js';
 import {FIXTURE_TEXT, summarizeSessions} from '../src/assistant/tools.js';
 
 function deferred<T>() {let resolve: (value: T) => void = () => {}; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
@@ -85,16 +86,16 @@ const light = (id: string, label = id): DeviceRecord => ({
 });
 
 void test('light status preserves unknown state after copy loss and evidence older than a write', () => {
-  assert.match(readLights(undefined, 'desk-lamp', 1000), /unavailable/);
-  assert.match(readLights([light('desk-lamp')], 'desk-lamp', 1000), /Observed power and brightness are unknown/);
+  assert.match(readDevices(undefined, 'desk-lamp', 1000), /unavailable/);
+  assert.match(readDevices([light('desk-lamp')], 'desk-lamp', 1000), /Observed power and brightness are unknown/);
   const device: DeviceRecord = {...light('desk-lamp'),
     observed: {status: 'known', observedAtMs: 1000, power: {status: 'known', value: true}, brightness: {status: 'known', value: 60}},
     lastTransmission: {status: 'known', transmittedAtMs: 2000, operationIds: []},
   };
-  assert.match(readLights([device], 'desk-lamp', 2000), /Current state is unknown. The observation is stale. Observed power: on/);
+  assert.match(readDevices([device], 'desk-lamp', 2000), /Current state is unknown. The observation is stale. Observed power: on/);
   const noWrite = {...device, lastTransmission: unknown};
-  assert.doesNotMatch(readLights([noWrite], 'desk-lamp', 2000), /unknown|stale/);
-  assert.match(readLights([noWrite], 'desk-lamp', 31_000), /Current state is unknown. The observation is stale/);
+  assert.doesNotMatch(readDevices([noWrite], 'desk-lamp', 2000), /unknown|stale/);
+  assert.match(readDevices([noWrite], 'desk-lamp', 31_000), /Current state is unknown. The observation is stale/);
 });
 
 void test('a duplicate light label asks for an exact device ID and sends nothing without a specific approval', async context => {
@@ -114,6 +115,71 @@ void test('a duplicate light label asks for an exact device ID and sends nothing
   assert.deepEqual((await page(w)).currentTask?.question?.proposal, {
     family: 'power-set', target: 'second', data: {on: false, expectedConfigurationRevision: 3, expectedGeneration: {epoch: 'start-1', sequence: 0}},
   });
+});
+
+void test('an owner-approved Wemo power request preserves the exact plug, owner and guards', async context => {
+  const plug: DeviceRecord = {...light('table-plug', 'Table plug'), kind: 'wemo'};
+  const provider = counted((_input, turn) => turn === 1 ? call('set_wemo_power', {device: 'Table plug', on: true}) : reply('Done.'));
+  const commands: AssistantDispatch[] = [];
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on the table plug');
+  await until(() => status(w) === 'waiting' || status(w) === 'succeeded');
+  assert.equal(status(w), 'waiting', 'the Wemo action needs an explicit approval');
+  const proposal = {
+    family: 'power-set', target: plug.id, owner: 'bunny/modules/wemo',
+    data: {on: true, expectedConfigurationRevision: plug.configurationRevision, expectedGeneration: plug.generation},
+  };
+  assert.deepEqual((await page(w)).currentTask?.question?.proposal, proposal);
+  assert.equal(commands.length, 0);
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'succeeded');
+  assert.equal(commands.length, 1);
+  const saved = commands[0];
+  assert.ok(saved);
+  assert.ok(saved.requestId.startsWith(`${task(w)?.taskId}-step-`));
+  const {requestId, ...effect} = saved;
+  assert.deepEqual(effect, proposal);
+  assert.ok((await page(w)).messages.some(message => message.text.includes(`as operation ${requestId}`)));
+});
+
+void test('duplicate Wemo labels ask for an exact plug before proposing power', async context => {
+  const plugs = ['first-plug', 'second-plug'].map(id => ({...light(id, 'Table plug'), kind: 'wemo'}));
+  const provider = counted(() => call('set_wemo_power', {device: 'Table plug', on: true}));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: () => assert.fail('ambiguous Wemo power cannot be dispatched')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on the table plug');
+  await until(() => status(w) === 'waiting');
+  const clarification = (await page(w)).currentTask?.question;
+  assert.equal(clarification?.kind, 'clarification');
+  assert.match(JSON.stringify(clarification), /first-plug, second-plug/);
+  assert.equal(clarification?.proposal, null);
+});
+
+void test('a Wemo hold refuses a power proposal without dispatch', async context => {
+  const plug: DeviceRecord = {...light('table-plug'), kind: 'wemo', availability: 'degraded', held: {requestId: 'prior', heldAtMs: 1}};
+  const w = await world(context, {tools: ['set_wemo_power'], devices: () => [plug],
+    dispatch: () => assert.fail('a held plug cannot be dispatched')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'SYNTHETIC_WEMO power table-plug on');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: unavailable')));
+});
+
+void test('a saved Wemo proposal does not use a different power permission after restart', async context => {
+  const tools = ['set_wemo_power'];
+  const w = await world(context, {tools, devices: () => [{...light('table-plug'), kind: 'wemo'}],
+    dispatch: () => assert.fail('the Wemo power permission was revoked')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'SYNTHETIC_WEMO power table-plug off');
+  await until(() => status(w) === 'waiting');
+  tools.splice(0, 1, 'set_lifx_power');
+  await w.restart();
+  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('This tool is not permitted')));
 });
 
 void test('revoking a light tool across a restart stops the saved approval before dispatch', async context => {

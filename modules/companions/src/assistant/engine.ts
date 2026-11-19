@@ -3,7 +3,7 @@ import {Annotation, Command as Resume, END, StateGraph, interrupt} from '@langch
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {AssistantControl, AssistantDispatch, AssistantInput, AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
+import {ASSISTANT_WEMO_OWNER, type AssistantControl, type AssistantDeviceOwner, type AssistantDispatch, type AssistantInput, type AssistantProfile, type AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
@@ -14,8 +14,8 @@ import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptC
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {SyntheticProvider} from './synthetic.js';
-import {chooseLight, lightLabel, lightProposal, lightText, readLights} from './lights.js';
-import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, READ_LIFX, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, summarizeSessions, type CoreCopy} from './tools.js';
+import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices} from './devices.js';
+import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
 
 export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provider.js';
 /** Sends one approved command through the core's tracked dispatcher; the module binds it to its own participant. */
@@ -30,7 +30,8 @@ export type AssistantOptions = {
   tools?: readonly string[];
   core?: () => CoreCopy;
   dispatch?: Dispatch;
-  devices?: () => readonly DeviceRecord[] | undefined;
+  devices?: (owner: AssistantDeviceOwner) => readonly DeviceRecord[] | undefined;
+  readDevice?: (owner: AssistantDeviceOwner, name: unknown, signal: AbortSignal, parent: TraceContext) => Promise<string | undefined>;
   available?: () => boolean;
   preferences?: () => readonly ActivePreference[];
   /** Offers a saved assistant message to the speech coordinator, once per key: the message that ended a turn, or a replay the owner asked for (Hub #500). */
@@ -449,16 +450,17 @@ export class AssistantEngine {
       const proposal: Proposal = {family: 'coding-dispatch', target: 'assistant', data: {repository, brief: brief.trim()}, expectedRevision: coding.revision};
       return {id, text: `Delegate to the coding worker in ${repository}: ${proposal.data.brief}`.slice(0, 1024), answer: null, kind: 'approval', call: call.id, proposal};
     }
-    if (call.name === SET_LIFX_POWER || call.name === SET_LIFX_BRIGHTNESS) {
-      const selected = chooseLight(this.options.devices?.(), call.input.device);
+    const owner = deviceToolOwner(call.name);
+    if (owner !== undefined) {
+      const selected = chooseDevice(this.options.devices?.(owner), call.input.device);
       if ('matches' in selected) {
         const names = selected.matches.slice(0, 4).map(device => device.id).join(', ');
-        return {id, text: `Which light do you mean? Matching device IDs: ${names}.`, answer: null, kind: 'clarification', call: call.id, proposal: null};
+        return {id, text: `Which ${owner === ASSISTANT_WEMO_OWNER ? "plug" : "light"} do you mean? Matching device IDs: ${names}.`, answer: null, kind: 'clarification', call: call.id, proposal: null};
       }
       if ('code' in selected) return undefined;
-      const result = lightProposal(call, selected.device);
+      const result = deviceProposal(call, selected.device);
       if ('code' in result) return undefined;
-      return {id, text: lightText(result.proposal, lightLabel(selected.device)), answer: null, kind: 'approval', call: call.id, proposal: result.proposal};
+      return {id, text: deviceProposalText(result.proposal, deviceLabel(selected.device)), answer: null, kind: 'approval', call: call.id, proposal: result.proposal};
     }
     const mode = MODES.find(value => value === call.input.mode);
     if (mode === undefined || copy.mode === undefined || !copy.synced) return undefined;
@@ -473,11 +475,12 @@ export class AssistantEngine {
       if (typeof repository !== 'string' || !REPOSITORY.test(repository) || typeof brief !== 'string' || brief.trim() === '' || textBytes(brief) > BRIEF_BYTES) return 'The repository name or the brief is not usable: name an allowlisted repository and write a brief under 4 KiB; nothing was proposed.';
       return 'No coding worker is connected right now, so nothing was proposed; the owner can start the worker on their computer.';
     }
-    if (call.name === SET_LIFX_POWER || call.name === SET_LIFX_BRIGHTNESS) {
-      const selected = chooseLight(this.options.devices?.(), call.input.device);
-      if ('matches' in selected) return 'Multiple lights match. Ask the owner for an exact device ID.';
-      const result = 'code' in selected ? selected : lightProposal(call, selected.device);
-      return 'code' in result ? `refused: ${result.code}; no light change was proposed.` : 'This tool is not permitted.';
+    const owner = deviceToolOwner(call.name);
+    if (owner !== undefined) {
+      const selected = chooseDevice(this.options.devices?.(owner), call.input.device);
+      if ('matches' in selected) return 'Multiple devices match. Ask the owner for an exact device ID.';
+      const result = 'code' in selected ? selected : deviceProposal(call, selected.device);
+      return 'code' in result ? `refused: ${result.code}; no ${owner === ASSISTANT_WEMO_OWNER ? 'plug' : 'light'} change was proposed.` : 'This tool is not permitted.';
     }
     if (MODES.find(value => value === call.input.mode) === undefined) return 'The requested mode is not work, free or quiet; nothing was proposed.';
     if (copy.mode === undefined || !copy.synced) return 'The Hub mode is not synced with the core right now, so a proposal cannot be bound to its revision; nothing was proposed.';
@@ -517,7 +520,17 @@ export class AssistantEngine {
         current => {this.store.message(current, `${id}-refused`, 'tool', reason, this.context.clock.now());});
       return {step: state.step};
     }
-    const result = await this.#call(state.taskId, state.step, 'tool', () => Promise.resolve({text: call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), this.context.clock.now()) : call.name === READ_LIFX ? readLights(this.options.devices?.(), call.input.device, this.context.clock.now()) : fail('invalid-state'), units: 0}));
+    const owner = deviceToolOwner(call.name);
+    const result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
+      const now = this.context.clock.now();
+      if (owner !== undefined) {
+        const name = call.input.device;
+        const read = await this.options.readDevice?.(owner, name, signal, parent);
+        return {text: read ?? readDevices(this.options.devices?.(owner), name, now, owner), units: 0};
+      }
+      const text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now) : fail('invalid-state');
+      return {text, units: 0};
+    });
     await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result, ok: true, effect: id}, active.span.context);
     return {step: state.step + 1};
   }
@@ -525,7 +538,7 @@ export class AssistantEngine {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
     const question = task.question ?? fail('invalid-state'), proposal = question.proposal ?? fail('invalid-state');
     const id = `${state.taskId}-step-${String(state.step)}`, name = proposal.family === 'mode-set' ? SET_MODE : proposal.family === 'coding-dispatch' ? DELEGATE_CODING :
-      proposal.family === 'power-set' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;
+      'owner' in proposal ? SET_WEMO_POWER : proposal.family === 'power-set' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;
     const refuse = async (suffix: string, text: string): Promise<Partial<GraphState>> => {
       // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
       await this.#append(state.taskId, {role: 'tool', call: question.call, name, result: text, ok: false, effect: `${id}-${suffix}`}, active.span.context,

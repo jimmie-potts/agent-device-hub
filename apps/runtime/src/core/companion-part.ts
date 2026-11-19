@@ -86,7 +86,7 @@ export class CompanionPart implements CorePart {
       if (family !== 'mode-set' && core.operation(requestId) === undefined) {
         const message = this.device(target);
         if (message === undefined) return errorBody('unavailable');
-        if (message.source !== ASSISTANT_LIGHT_OWNER) return errorBody('forbidden');
+        if (message.source !== ('owner' in action ? action.owner : ASSISTANT_LIGHT_OWNER)) return errorBody('forbidden');
         const record = message.data;
         const capability = family === 'power-set' ? record.capabilities.power : record.capabilities.brightness;
         if (!capability.supported) return errorBody('unsupported-capability');

@@ -1,13 +1,14 @@
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {WEMO_SIMULATED_SECTION} from '@jimmie-potts/wemo';
 import {knowledgeScenarios} from '../knowledge.js';
 import {preferenceScenarios} from '../preferences.js';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
-import type {ModeState, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {ModeState, OperationRecord, PowerLimitRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../fixtures/agents.js';
-import {StepFailure, act, answered, answers, bodyOf, dispatchOnce, expect, holds, publish, recorded, refusedWith, running, waiting, type Harness, type ModuleRun, type Scenario} from '../framework.js';
+import {StepFailure, act, answered, answers, bodyOf, deviceState, dispatchOnce, expect, holds, publish, recorded, refusedWith, running, waiting, type Harness, type ModuleRun, type Scenario} from '../framework.js';
 const state = (h: Harness): CompanionState | undefined => h.reader.states<CompanionState>('companion-state', 'bunny/modules/companions')[0]?.data;
 const assistantSyncsBeforeRestart = new WeakMap<Harness, number>();
 const RECENT_CONVERSATION = {as: 'operator', method: 'GET', path: '/modules/companions/content/conversation?profile=bunny&view=recent'} as const;
@@ -206,8 +207,86 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
     expect('the previous generation does not cause another command', h => assistant(h)?.tasks[0]?.status === 'succeeded' &&
       lifxOperations(h).length === 2 || 'the old generation caused work'),
     expect('Conversation records refusal after restart', answers(RECENT_CONVERSATION, response => JSON.stringify(bodyOf(response)).includes('refused: revision-conflict') || 'stale generation refusal missing')),
+    act('a bulb becomes unreachable after a previously available observation', async h => {
+      await h.wait(31_000);
+      await h.simulate({device: 'lifx', action: 'offline', address: '192.0.2.40'});
+    }),
+    expect('the copied bulb is still available before anyone requests a refresh', h =>
+      h.reader.states<DeviceRecord>('device', 'bunny/modules/lifx').some(({data}) => data.id === 'desk-lamp' && data.availability === 'available') || 'the owner already observed the change'),
+    act('ask Conversation to read the bulb again', h => assistantInput(h, 'lifx-refresh-read', false, 'SYNTHETIC_LIFX status desk-lamp')),
+    expect('the explicit read prompts LIFX to discover the loss of availability', h =>
+      h.reader.states<DeviceRecord>('device', 'bunny/modules/lifx').some(({data}) => data.id === 'desk-lamp' && data.availability === 'unavailable') || 'the read did not prompt an observation'),
+    expect('the read reports uncertainty without a new operation', answers(RECENT_CONVERSATION, response =>
+      JSON.stringify(bodyOf(response)).includes('Last reported availability: unavailable') || 'updated availability missing')),
+    expect('status alone dispatched nothing', h => lifxOperations(h).length === 2 || 'reading dispatched a device command'),
+  ],
+}, {
+  id: 'assistant-wemo', title: 'Conversation approves Wemo power while the existing maximum-on limit stays in force',
+  seed: {modules: ['core', 'wemo', 'companions'], sections: {wemo: WEMO_SIMULATED_SECTION,
+    companions: {assistant: {tools: ['read_wemo', 'set_wemo_power']}}},
+    follows: [{owner: 'bunny/core', families: ['operation', 'power-limit']}, {owner: 'bunny/modules/wemo', families: ['device']},
+      {owner: 'bunny/modules/companions', families: ['assistant-state']}]},
+  steps: [
+    expect('both plugs report available power', h => h.reader.states<DeviceRecord>('device', 'bunny/modules/wemo').filter(record =>
+      record.data.availability === 'available' && record.data.observed.status === 'known').length === 2 || 'two plug observations required'),
+    act('enable Conversation', h => dispatchOnce(h, 'operator', 'wemo-assistant-enable', {key: 'bunny.cmd.assistant-control.assistant', draft: {
+      type: 'org.bunny.assistant.control.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-control/2.0',
+      data: {action: 'enable', expectedRevision: assistant(h)?.revision}}}, 'wemo-assistant-enable')),
+    expect('Conversation is enabled', h => assistant(h)?.enabled === true || 'disabled'),
+    act('ask about the first plug', h => assistantInput(h, 'wemo-assistant-read', false, 'SYNTHETIC_WEMO status desk-lamp')),
+    expect('Conversation reports the observed power', answers(RECENT_CONVERSATION, response =>
+      JSON.stringify(bodyOf(response)).includes('Observed power: off') || 'Wemo status evidence missing')),
+    expect('the read completes without a write', h => assistant(h)?.tasks[0]?.status === 'succeeded' && wemoEffects(h, 'desk-lamp')?.writes === 0 || 'read wrote power'),
+    expect('the owner saves a short synthetic maximum-on limit', answers({as: 'operator', method: 'PUT',
+      path: '/api/v2/automation/power-limits/desk-lamp', headers: {'bunny-request': '1'},
+      body: {enabled: true, durationMs: 1000, expectedSettingsRevision: 0}}, response =>
+      response.status === 200 && bodyOf<PowerLimitRecord>(response)?.enabled === true || 'limit save refused')),
+    act('ask to turn the first plug on', h => assistantInput(h, 'wemo-assistant-on', false, 'SYNTHETIC_WEMO power desk-lamp on')),
+    expect('the exact plug and effect await approval', answers(RECENT_CONVERSATION, response => {
+      const history = JSON.stringify(bodyOf(response));
+      return history.includes('"owner":"bunny/modules/wemo"') && history.includes('"target":"desk-lamp"') && history.includes('"on":true') || 'Wemo proposal missing';
+    })),
+    expect('there is no effect before approval', h => wemoEffects(h, 'desk-lamp')?.writes === 0 || 'unapproved effect'),
+    act('approve Wemo power on', h => assistantInput(h, 'wemo-assistant-on-yes', true, 'approve')),
+    expect('only the selected plug is switched on once', h => wemoEffects(h, 'desk-lamp')?.power === true &&
+      wemoEffects(h, 'desk-lamp')?.writes === 1 && wemoEffects(h, 'shelf-lamp')?.writes === 0 || 'power reached the wrong plug'),
+    expect('core tracks a successful Wemo power transmission', h => h.reader.states<OperationRecord>('operation').some(({data}) =>
+      data.family === 'power-set' && data.target === 'desk-lamp' && data.requestedBy === 'bunny/modules/companions' &&
+      data.result === 'succeeded' && data.evidence === 'transmitted') || 'missing tracked result'),
+    act('allow the power observation and automatic shutoff', h => h.wait(6200)),
+    expect('the existing limit switches off the plug exactly once', h => wemoEffects(h, 'desk-lamp')?.power === false &&
+      wemoEffects(h, 'desk-lamp')?.writes === 2 && wemoEffects(h, 'shelf-lamp')?.writes === 0 || 'maximum-on behavior changed'),
+    expect('the first power turn completes', h => assistant(h)?.tasks[0]?.status === 'succeeded' || 'assistant still working'),
+    act('ask to turn the second plug on', h => assistantInput(h, 'wemo-assistant-shelf-on', false, 'SYNTHETIC_WEMO power shelf-lamp on')),
+    expect('the second plug on approval waits', h => assistant(h)?.tasks[0]?.status === 'waiting' || 'second plug proposal missing'),
+    act('approve Wemo power on for the second plug', h => assistantInput(h, 'wemo-assistant-shelf-on-yes', true, 'approve')),
+    expect('second plug on succeeds', h => assistant(h)?.tasks[0]?.status === 'succeeded' && wemoEffects(h, 'shelf-lamp')?.power === true || 'power on missing'),
+    act('ask to turn the second plug off', h => assistantInput(h, 'wemo-assistant-shelf-off', false, 'SYNTHETIC_WEMO power shelf-lamp off')),
+    expect('the unchanged second plug awaits the off approval', h => assistant(h)?.tasks[0]?.status === 'waiting' &&
+      wemoEffects(h, 'shelf-lamp')?.writes === 1 || 'unapproved power off'),
+    act('approve Wemo power off for the second plug', h => assistantInput(h, 'wemo-assistant-shelf-off-yes', true, 'approve')),
+    expect('the approved off reaches only the second plug once', h => wemoEffects(h, 'shelf-lamp')?.power === false &&
+      wemoEffects(h, 'shelf-lamp')?.writes === 2 && wemoEffects(h, 'desk-lamp')?.writes === 2 || 'power off missed the selected plug'),
+    expect('the off turn completes', h => assistant(h)?.tasks[0]?.status === 'succeeded' || 'assistant still working'),
+    act('ask to turn the second plug on again', h => assistantInput(h, 'wemo-assistant-old', false, 'SYNTHETIC_WEMO power shelf-lamp on')),
+    expect('the on approval waits', h => assistant(h)?.tasks[0]?.status === 'waiting' || 'second plug proposal missing'),
+    act('restart before approval', h => {
+      assistantSyncsBeforeRestart.set(h, h.reader.syncs('assistant-state', 'bunny/modules/companions'));
+      return h.restart();
+    }),
+    expect('the proposal and new plug generation are visible', h =>
+      h.reader.syncs('assistant-state', 'bunny/modules/companions') > (assistantSyncsBeforeRestart.get(h) ?? Number.MAX_SAFE_INTEGER) &&
+      h.reader.states<DeviceRecord>('device', 'bunny/modules/wemo').some(({data}) => data.id === 'shelf-lamp' && data.availability === 'available') &&
+      assistant(h)?.tasks[0]?.status === 'waiting' || 'restart readback missing'),
+    act('approve against the previous Wemo generation', h => assistantInput(h, 'wemo-assistant-old-yes', true, 'approve')),
+    expect('Conversation refuses the old generation', answers(RECENT_CONVERSATION, response =>
+      JSON.stringify(bodyOf(response)).includes('refused: revision-conflict') || 'stale Wemo approval was not refused')),
+    expect('no power command repeats after restart', h => wemoEffects(h, 'shelf-lamp')?.writes === 2 &&
+      wemoEffects(h, 'desk-lamp')?.writes === 2 || 'a power command repeated'),
   ],
 }];
+
+const wemoEffects = (h: Harness, target: string) => deviceState<Record<string, {power: boolean; writes: number}>>(h, 'wemo')[target];
 
 const lifxOperations = (h: Harness): OperationRecord[] => h.reader.states<OperationRecord>('operation').map(record => record.data)
   .filter(record => record.requestedBy === 'bunny/modules/companions' && (record.family === 'power-set' || record.family === 'brightness-set'));

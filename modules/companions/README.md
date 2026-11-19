@@ -361,7 +361,8 @@ as for every configured module; an empty section keeps every default:
   `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`). The
   synthetic provider takes neither.
 - `assistant.tools` lists the permitted tools by name, each once:
-  `read_sessions`, `set_mode`, `delegate_coding`, `read_lifx`, `set_lifx_power` and `set_lifx_brightness`. The engine builds the model's tool
+  `read_sessions`, `set_mode`, `delegate_coding`, `read_lifx`, `set_lifx_power`, `set_lifx_brightness`, `read_wemo` and `set_wemo_power`.
+  The engine builds the model's tool
   definitions from the list at start and checks membership again when a call
   executes, so a changed section cannot widen an effect. The built-in
   `ask_owner` is always available; the synthetic fixture read is never listed.
@@ -536,7 +537,7 @@ that local control was saved; task completion is reported separately.
 
 Allow `read_lifx`, `set_lifx_power`, or `set_lifx_brightness` in the private
 Conversation tool list. Read status by a configured light name or routing ID.
-A read reports the last observation and supported controls. Conversation labels an observation stale after 30 seconds or when it predates a command. If several lights
+A read reports the last observation and supported controls. Conversation labels an observation stale after 30 seconds or when it predates a command. An explicit stale read requests the owner's rate-limited refresh. An unchanged result can retain its original observation timestamp. If several lights
 match a write, Conversation asks for the exact ID before proposing it.
 
 The approval shows the selected light and value. It binds the action to the
@@ -544,6 +545,14 @@ light's configuration revision and generation. The core forwards the approved
 action through the tracked dispatcher. Expand **Tool result** to see the
 operation result and its available evidence. Device availability, changed
 configuration, a restart, or a revoked tool can invalidate an approval.
+
+### Wemo status and power
+
+`read_wemo` reports the plug's observed power, freshness, and hold state.
+`set_wemo_power` proposes on or off for one named plug. The approval binds
+the Wemo owner and the plug's configuration revision and generation. The
+core tracks the existing power command. The plug's queue and hold still
+govern the write, and the core's existing maximum-on policy still applies.
 
 ### Conversation history contract
 

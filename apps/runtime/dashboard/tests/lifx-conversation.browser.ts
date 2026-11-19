@@ -52,8 +52,44 @@ export async function lifxConversationJourney(browser: Browser): Promise<void> {
   process.stdout.write('LIFX Conversation browser: status, saved approval across reload, exact target, and tracked brightness evidence passed.\n');
 }
 
+export async function wemoConversationJourney(browser: Browser): Promise<void> {
+  const world = await startWorld({companions: true, wemo: true, assistantWemo: true});
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    page.setDefaultTimeout(12_000);
+    await page.goto(`${world.url}/#/module/companions/assistant`);
+    await feed(page, 'connected');
+    const conversation = page.getByRole('region', {name: 'B.U.N.N.Y. conversation', exact: true});
+    await conversation.getByRole('button', {name: 'Enable conversation', exact: true}).click();
+    const send = async (text: string): Promise<void> => {
+      await conversation.getByRole('textbox', {name: 'Message', exact: true}).fill(text);
+      await conversation.getByRole('button', {name: 'Send', exact: true}).click();
+    };
+    await send('SYNTHETIC_WEMO status shelf-lamp');
+    await conversation.getByText(/Synthetic result: Shelf lamp.*Observed power: off/).waitFor();
+    await send('SYNTHETIC_WEMO power shelf-lamp on');
+    const proposal = conversation.getByRole('article', {name: 'Proposed command', exact: true});
+    await proposal.getByText('Turn on Shelf lamp?', {exact: true}).waitFor();
+    assert.equal(world.wemo.state()['shelf-lamp']?.writes, 0);
+    await page.reload();
+    await feed(page, 'connected');
+    await proposal.getByText('Turn on Shelf lamp?', {exact: true}).waitFor();
+    await proposal.getByRole('button', {name: 'Approve proposal', exact: true}).click();
+    const tool = conversation.getByRole('article', {name: 'tool message', exact: true}).filter({has: page.locator('p', {hasText: 'accepted: power-set on shelf-lamp'})});
+    await tool.locator('summary').click();
+    await tool.getByText('Tracked operation succeeded · evidence transmitted', {exact: true}).waitFor();
+    assert.equal(world.wemo.state()['shelf-lamp']?.writes, 1);
+    assert.equal(world.wemo.state()['desk-lamp']?.writes, 0);
+  } finally {
+    await context.close();
+    await world.close();
+  }
+  process.stdout.write('Wemo Conversation browser: status, saved owner and target, and tracked power evidence passed.\n');
+}
+
 if (import.meta.main) {
   const browser = await chromium.launch({headless: true});
-  try {await lifxConversationJourney(browser);}
+  try {await lifxConversationJourney(browser); await wemoConversationJourney(browser);}
   finally {await browser.close();}
 }

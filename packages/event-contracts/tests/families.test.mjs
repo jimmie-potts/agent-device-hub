@@ -75,7 +75,7 @@ test('each family has one kind and one type, and its schema is built from the sh
     assert.ok(dataschema === `https://bunny.invalid/events/${family}/2.0` || (['inbox-item', 'playback', 'mode', 'session', 'moment-play', 'home-layout', 'art-auto', 'art-dispatch', 'art-stage',
       'music-capture-endpoint', 'music-capture-work', 'music-capture-features', 'music-capture-control', 'music-capture-state',
       'coding-endpoint', 'coding-progress', 'coding-state', 'companion-speech-endpoint', 'companion-speech-state', 'assistant-dispatch'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.1`)
-      || (['moment-play', 'art-auto', 'art-dispatch', 'music-capture-control', 'music-capture-state', 'home-layout'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`)
+      || (['moment-play', 'art-auto', 'art-dispatch', 'music-capture-control', 'music-capture-state', 'home-layout', 'assistant-dispatch'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`)
       // The session family's new major (Hub #1865), registered beside 2.0 and 2.1.
       || (family === 'session' && dataschema === 'https://bunny.invalid/events/session/3.0'));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
