@@ -2,6 +2,7 @@ import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {knowledgeScenarios} from '../knowledge.js';
 import {preferenceScenarios} from '../preferences.js';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {ModeState, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
@@ -9,6 +10,7 @@ import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted
 import {StepFailure, act, answered, answers, bodyOf, dispatchOnce, expect, holds, publish, recorded, refusedWith, running, waiting, type Harness, type ModuleRun, type Scenario} from '../framework.js';
 const state = (h: Harness): CompanionState | undefined => h.reader.states<CompanionState>('companion-state', 'bunny/modules/companions')[0]?.data;
 const assistantSyncsBeforeRestart = new WeakMap<Harness, number>();
+const RECENT_CONVERSATION = {as: 'operator', method: 'GET', path: '/modules/companions/content/conversation?profile=bunny&view=recent'} as const;
 const CONVERSATION = {as: 'operator', method: 'GET', path: '/modules/companions/content/conversation?profile=bunny&after=0'} as const;
 const command = (family: string, data: object) => ({key: `bunny.cmd.${family}.reachy`, draft: {
   type: `org.bunny.${family.slice(0, family.lastIndexOf('-'))}.${family.slice(family.lastIndexOf('-') + 1)}.requested`, subject: 'reachy',
@@ -134,8 +136,81 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
       return rejected !== undefined && h.reader.states('inbox-item').length === 0 || `rejected ${String(rejected?.requestId)}, inbox ${String(h.reader.states('inbox-item').length)}`;
     }, 300),
   ],
+}, {
+  id: 'assistant-lifx', title: 'Conversation reads status and controls only the approved simulated LIFX bulb',
+  seed: {modules: ['core', 'lifx', 'companions'],
+    config: {lifx: {bulbs: [
+      {id: 'desk-lamp', address: '192.0.2.40', vendor: 1, product: 27, firmwareMajor: 2, firmwareMinor: 90},
+      {id: 'side-lamp', address: '192.0.2.41', vendor: 1, product: 27, firmwareMajor: 2, firmwareMinor: 90},
+    ]}},
+    sections: {companions: {assistant: {tools: ['read_lifx', 'set_lifx_power', 'set_lifx_brightness']}}},
+    follows: [{owner: 'bunny/core', families: ['operation']}, {owner: 'bunny/modules/lifx', families: ['device']},
+      {owner: 'bunny/modules/companions', families: ['assistant-state']}]},
+  steps: [
+    expect('both bulbs have observations', h => h.reader.states<DeviceRecord>('device', 'bunny/modules/lifx').filter(record =>
+      record.data.availability === 'available' && record.data.observed.status === 'known').length === 2 || 'two bulb observations required'),
+    act('enable Conversation', h => dispatchOnce(h, 'operator', 'lifx-assistant-enable', {key: 'bunny.cmd.assistant-control.assistant', draft: {
+      type: 'org.bunny.assistant.control.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-control/2.0',
+      data: {action: 'enable', expectedRevision: assistant(h)?.revision}}}, 'lifx-assistant-enable')),
+    expect('Conversation is enabled', h => assistant(h)?.enabled === true || 'disabled'),
+    act('ask about the desk lamp', h => assistantInput(h, 'lifx-assistant-read', false, 'SYNTHETIC_LIFX status desk-lamp')),
+    expect('Conversation reports observed power and brightness', answers(CONVERSATION, response =>
+      response.status === 200 && JSON.stringify(bodyOf(response)).includes('Observed power: on') &&
+      JSON.stringify(bodyOf(response)).includes('Observed brightness:') || 'LIFX status tool result missing')),
+    expect('the read completes', h => assistant(h)?.tasks[0]?.status === 'succeeded' || 'read still running'),
+    act('ask to turn off the desk lamp', h => assistantInput(h, 'lifx-assistant-power', false, 'SYNTHETIC_LIFX power desk-lamp off')),
+    expect('power awaits approval', answers(CONVERSATION, response => JSON.stringify(bodyOf(response)).includes('"family":"power-set"') || 'power proposal missing')),
+    expect('no device command is tracked before approval', h => lifxOperations(h).length === 0 || 'a device command escaped approval'),
+    act('approve power', h => assistantInput(h, 'lifx-assistant-power-yes', true, 'approve')),
+    expect('one power change reaches the selected bulb', h => lifxOperations(h).filter(record =>
+      record.target === 'desk-lamp' && record.family === 'power-set' && record.result === 'succeeded').length === 1 || 'power not tracked'),
+    expect('the power turn completes', h => assistant(h)?.tasks[0]?.status === 'succeeded' || 'power still running'),
+    act('ask to set desk-lamp brightness', h => assistantInput(h, 'lifx-assistant-brightness', false, 'SYNTHETIC_LIFX brightness desk-lamp 30')),
+    expect('brightness awaits approval', answers(CONVERSATION, response => JSON.stringify(bodyOf(response)).includes('"percent":30') || 'brightness proposal missing')),
+    act('approve brightness', h => assistantInput(h, 'lifx-assistant-brightness-yes', true, 'approve')),
+    expect('both approved actions completed on the selected bulb once', h => {
+      const records = lifxOperations(h);
+      return records.length === 2 && records.every(record => record.target === 'desk-lamp' && record.result === 'succeeded') || 'tracked actions differ';
+    }),
+    expect('the brightness turn completes', h => assistant(h)?.tasks[0]?.status === 'succeeded' || 'brightness still running'),
+    act('ask for an invalid brightness', h => assistantInput(h, 'lifx-invalid', false, 'SYNTHETIC_LIFX brightness desk-lamp 101')),
+    expect('Conversation refuses the invalid value', answers(CONVERSATION, response =>
+      JSON.stringify(bodyOf(response)).includes('refused: invalid-request; no light change was proposed') || 'invalid value was not refused')),
+    expect('the invalid turn completes', h => assistant(h)?.tasks[0]?.status === 'succeeded' || 'invalid turn still running'),
+    act('request power on for the side lamp', h => assistantInput(h, 'lifx-decline', false, 'SYNTHETIC_LIFX power side-lamp on')),
+    expect('the side lamp proposal waits', h => assistant(h)?.tasks[0]?.status === 'waiting' || 'proposal did not wait'),
+    act('decline the side lamp proposal', h => assistantInput(h, 'lifx-declined', true, 'decline')),
+    expect('the decline completes without a new device operation', h => assistant(h)?.tasks[0]?.status === 'succeeded' && lifxOperations(h).length === 2 || 'decline caused work'),
+    act('ask to change brightness again', h => assistantInput(h, 'lifx-stale', false, 'SYNTHETIC_LIFX brightness desk-lamp 45')),
+    expect('the brightness proposal waits', h => assistant(h)?.tasks[0]?.status === 'waiting' || 'proposal did not wait'),
+    act('the owner changes the desk lamp through the dispatcher', h => dispatchOnce(h, 'operator', 'lifx-manual-write', {
+      key: 'bunny.cmd.power-set.desk-lamp', draft: {type: 'org.bunny.power.set.requested', subject: 'desk-lamp',
+        dataschema: 'https://bunny.invalid/events/power-set/2.0', data: {on: true}}}, 'lifx-manual-write')),
+    expect('the manual write completed', h => recorded(h, 'lifx-manual-write', 'succeeded', 'transmitted')),
+    act('approve the original proposal', h => assistantInput(h, 'lifx-stale-yes', true, 'approve')),
+    expect('the stale approval does not send another light command', h => assistant(h)?.tasks[0]?.status === 'succeeded' && lifxOperations(h).length === 2 || 'stale approval caused work'),
+    expect('Conversation explains the stale approval', answers(RECENT_CONVERSATION, response => JSON.stringify(bodyOf(response)).includes('refused: revision-conflict') || 'stale refusal missing')),
+    act('ask for power off again', h => assistantInput(h, 'lifx-before-restart', false, 'SYNTHETIC_LIFX power desk-lamp off')),
+    expect('the power proposal waits', h => assistant(h)?.tasks[0]?.status === 'waiting' || 'proposal did not wait'),
+    act('restart the simulated runtime while approval is pending', h => {
+      assistantSyncsBeforeRestart.set(h, h.reader.syncs('assistant-state', 'bunny/modules/companions'));
+      return h.restart();
+    }),
+    expect('the same pending proposal still exists', answers(RECENT_CONVERSATION, response =>
+      JSON.stringify(bodyOf(response)).includes('"family":"power-set"') || 'approval was lost')),
+    expect('the simulated light and Conversation are both synced after restart', h =>
+      h.reader.syncs('assistant-state', 'bunny/modules/companions') > (assistantSyncsBeforeRestart.get(h) ?? Number.MAX_SAFE_INTEGER) &&
+      h.reader.states<DeviceRecord>('device', 'bunny/modules/lifx').some(record => record.data.id === 'desk-lamp' && record.data.availability === 'available')
+      && assistant(h)?.tasks[0]?.status === 'waiting' || 'not synced after restart'),
+    act('approve against the previous device generation', h => assistantInput(h, 'lifx-old-generation', true, 'approve')),
+    expect('the previous generation does not cause another command', h => assistant(h)?.tasks[0]?.status === 'succeeded' &&
+      lifxOperations(h).length === 2 || 'the old generation caused work'),
+    expect('Conversation records refusal after restart', answers(RECENT_CONVERSATION, response => JSON.stringify(bodyOf(response)).includes('refused: revision-conflict') || 'stale generation refusal missing')),
+  ],
 }];
 
+const lifxOperations = (h: Harness): OperationRecord[] => h.reader.states<OperationRecord>('operation').map(record => record.data)
+  .filter(record => record.requestedBy === 'bunny/modules/companions' && (record.family === 'power-set' || record.family === 'brightness-set'));
 
 const assistant = (h: Harness): AssistantState | undefined => h.reader.states<AssistantState>('assistant-state', 'bunny/modules/companions')[0]?.data;
 async function assistantInput(h: Harness, requestId: string, answer = false, text = answer ? 'SYNTHETIC_ASSISTANT_ANSWER' : 'SYNTHETIC_ASSISTANT_PROMPT'): Promise<void> {

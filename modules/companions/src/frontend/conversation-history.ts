@@ -19,14 +19,21 @@ const invalidPage = (): never => {throw new Error('Invalid conversation window')
 
 function decodeProposal(value: unknown): Proposal | null {
   if (value === null) return null;
-  if (!record(value) || !record(value.data) || !integer(value.expectedRevision)) return invalidPage();
+  if (!record(value) || !record(value.data)) return invalidPage();
   const {family, target, data, expectedRevision} = value;
-  if (family === 'mode-set' && target === 'hub' && (data.mode === 'work' || data.mode === 'free' || data.mode === 'quiet')) {
+  if (integer(expectedRevision) && family === 'mode-set' && target === 'hub' && (data.mode === 'work' || data.mode === 'free' || data.mode === 'quiet')) {
     return {family, target, data: {mode: data.mode}, expectedRevision};
   }
-  if (family === 'coding-dispatch' && target === 'assistant' && typeof data.repository === 'string' && typeof data.brief === 'string') {
+  if (integer(expectedRevision) && family === 'coding-dispatch' && target === 'assistant' && typeof data.repository === 'string' && typeof data.brief === 'string') {
     return {family, target, data: {repository: data.repository, brief: data.brief}, expectedRevision};
   }
+  const {expectedConfigurationRevision, expectedGeneration} = data;
+  if (typeof target !== 'string' || target.length > 128 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(target) ||
+    !integer(expectedConfigurationRevision) || !record(expectedGeneration) || typeof expectedGeneration.epoch !== 'string' ||
+    !integer(expectedGeneration.sequence)) return invalidPage();
+  const guards = {expectedConfigurationRevision, expectedGeneration: {epoch: expectedGeneration.epoch, sequence: expectedGeneration.sequence}};
+  if (family === 'power-set' && typeof data.on === 'boolean') return {family, target, data: {...guards, on: data.on}};
+  if (family === 'brightness-set' && integer(data.percent) && data.percent <= 100) return {family, target, data: {...guards, percent: data.percent}};
   return invalidPage();
 }
 

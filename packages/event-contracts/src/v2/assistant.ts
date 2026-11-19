@@ -1,4 +1,5 @@
 import type {ErrorCode, MessageValidator} from './index.js';
+import type {CommandGuards} from './devices.js';
 import type {Mode} from './families.js';
 import {defineFamily, registerFamilies} from './registry.js';
 
@@ -16,13 +17,18 @@ export type AssistantInput = {requestId: string; inputRef: string};
 export type AssistantControl = {requestId: string; expectedRevision: number; action: 'enable' | 'disable' | 'resume' | 'cancel' | 'speak'; taskId?: string; messageId?: string};
 /**
  * `org.bunny.assistant.dispatch.requested`: the companions module asks the core to send one approved, allowlisted command
- * through its tracked dispatcher (Hub #46). The first slice allows `mode-set` for the Hub; the core refuses anything else.
+ * through its tracked dispatcher. Version 2.0 carries Hub mode. Version 2.1 carries the guarded LIFX commands.
  */
-export type AssistantDispatch = {requestId: string; family: 'mode-set'; target: 'hub'; data: {mode: Mode; expectedRevision?: number}};
+type LightGuards = Required<Pick<CommandGuards, 'expectedConfigurationRevision' | 'expectedGeneration'>>;
+export const ASSISTANT_LIGHT_OWNER = 'bunny/modules/lifx';
+export type AssistantLightAction = {family: 'power-set'; target: string; data: LightGuards & {on: boolean}}
+  | {family: 'brightness-set'; target: string; data: LightGuards & {percent: number}};
+export type AssistantDispatch = {requestId: string} & (AssistantLightAction | {family: 'mode-set'; target: 'hub'; data: {mode: Mode; expectedRevision?: number}});
 export const assistantFamilies = [
   defineFamily('assistant-input', 'command', 'org.bunny.assistant.input.requested'),
   defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant'),
+  defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.1'),
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant'),
 ] as const;
 export function registerAssistantFamilies(validator: MessageValidator): void {registerFamilies(validator, assistantFamilies);}

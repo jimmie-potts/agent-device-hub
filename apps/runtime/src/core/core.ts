@@ -328,7 +328,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 
 class Core {
   readonly #automation: AutomationPart;
-  readonly #companions = new CompanionPart();
+  readonly #companions = new CompanionPart(id => this.#automation.currentDevice(id));
   readonly #art: ArtPart;
   setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
   get automation(): AutomationControls {return this.#automation.controls;}

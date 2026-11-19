@@ -451,6 +451,25 @@ it('a stale configuration revision or generation is refused before any change', 
   assert.equal(world.packets(PENDANT.address, PACKET.setPower), 1, 'and nothing reached the pendant');
 });
 
+it('a known outage makes a previously available bulb generation stale before guarded writes', async () => {
+  const world = await open();
+  await world.clock.advance(1);
+  const before = world.device(PENDANT.id);
+  assert.ok(before?.availability === 'available');
+  world.network.offline(PENDANT.address);
+  await world.clock.advance(READ_INTERVAL_MS);
+  await synced(world, PENDANT.id);
+  await world.clock.advance(5000);
+  const after = world.device(PENDANT.id);
+  assert.ok(after?.availability === 'unavailable');
+  assert.equal(after.configurationRevision, before.configurationRevision, 'the outage did not change the configuration');
+  const result = await world.send(command.power(PENDANT.id, false, {
+    expectedConfigurationRevision: before.configurationRevision, expectedGeneration: before.generation,
+  }));
+  assert.equal(result.status === 'rejected' && result.error.error.code, 'revision-conflict');
+  assert.equal(world.packets(PENDANT.address, PACKET.setPower), 0);
+});
+
 it('a full queue refuses a command with capacity, and nothing it refused runs', async () => {
   const world = await open({section: {bulbs: [PENDANT], maxPending: 1}});
   await world.clock.advance(1);

@@ -4,6 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {test, type TestContext} from 'node:test';
@@ -16,6 +17,7 @@ import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
 import type {SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
+import {readLights} from '../src/assistant/lights.js';
 import {FIXTURE_TEXT, summarizeSessions} from '../src/assistant/tools.js';
 
 function deferred<T>() {let resolve: (value: T) => void = () => {}; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
@@ -73,6 +75,78 @@ async function page(w: {module: () => CompanionsModule}, profile = 'bunny') {
   return JSON.parse(Buffer.from(content.bytes).toString()) as {messages: {role: string; text: string}[]; currentTask: {question: {kind: string; proposal: {data: {mode: string}; expectedRevision: number | null} | null; answer: string | null} | null} | null};
 }
 
+const unknown = {status: 'unknown'} as const;
+const light = (id: string, label = id): DeviceRecord => ({
+  id, label, kind: 'lifx', revision: 1, configurationRevision: 3, generation: {epoch: 'start-1', sequence: 0}, availability: 'available',
+  capabilities: {power: {supported: true}, brightness: {supported: true, minimum: 0, maximum: 100}, modes: {supported: false},
+    media: {supported: false}, moments: {supported: false}, preview: {supported: false}, scenes: {supported: false}, zones: {supported: false}},
+  desired: {power: unknown, brightness: unknown, mode: unknown}, observed: unknown, pending: 0, pendingKinds: [],
+  lastOutcome: unknown, lastTransmission: unknown, externalControl: unknown,
+});
+
+void test('light status preserves unknown state after copy loss and evidence older than a write', () => {
+  assert.match(readLights(undefined, 'desk-lamp', 1000), /unavailable/);
+  assert.match(readLights([light('desk-lamp')], 'desk-lamp', 1000), /Observed power and brightness are unknown/);
+  const device: DeviceRecord = {...light('desk-lamp'),
+    observed: {status: 'known', observedAtMs: 1000, power: {status: 'known', value: true}, brightness: {status: 'known', value: 60}},
+    lastTransmission: {status: 'known', transmittedAtMs: 2000, operationIds: []},
+  };
+  assert.match(readLights([device], 'desk-lamp', 2000), /Current state is unknown. The observation is stale. Observed power: on/);
+  const noWrite = {...device, lastTransmission: unknown};
+  assert.doesNotMatch(readLights([noWrite], 'desk-lamp', 2000), /unknown|stale/);
+  assert.match(readLights([noWrite], 'desk-lamp', 31_000), /Current state is unknown. The observation is stale/);
+});
+
+void test('a duplicate light label asks for an exact device ID and sends nothing without a specific approval', async context => {
+  const names = [light('first', 'Desk lamp'), light('second', 'Desk lamp')];
+  const provider = counted((_input, turn) => turn === 1 ? call('set_lifx_power', {device: 'Desk lamp', on: false})
+    : turn === 2 ? call('set_lifx_power', {device: 'second', on: false}) : reply('Done.'));
+  const w = await world(context, {provider, tools: ['set_lifx_power'], devices: () => names,
+    dispatch: () => assert.fail('no approval was given')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn off the desk light');
+  await until(() => status(w) === 'waiting');
+  const clarification = (await page(w)).currentTask?.question;
+  assert.equal(clarification?.kind, 'clarification');
+  assert.match(JSON.stringify(clarification), /first, second/);
+  await input(w.core, w.module(), 'second', true);
+  await until(() => status(w) === 'waiting' && task(w)?.questions === 2);
+  assert.deepEqual((await page(w)).currentTask?.question?.proposal, {
+    family: 'power-set', target: 'second', data: {on: false, expectedConfigurationRevision: 3, expectedGeneration: {epoch: 'start-1', sequence: 0}},
+  });
+});
+
+void test('revoking a light tool across a restart stops the saved approval before dispatch', async context => {
+  const tools = ['set_lifx_power'];
+  const w = await world(context, {tools, devices: () => [light('desk-lamp')],
+    dispatch: () => assert.fail('permission was revoked')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'SYNTHETIC_LIFX power desk-lamp off');
+  await until(() => status(w) === 'waiting');
+  tools.length = 0;
+  await w.restart();
+  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('This tool is not permitted')));
+});
+
+void test('the light command stays uncertain after a lost dispatch reply and does not replay after restart', async context => {
+  let attempts = 0;
+  const w = await world(context, {tools: ['set_lifx_power'], devices: () => [light('desk-lamp')], dispatch: data => {
+    attempts += 1;
+    return Promise.resolve({status: 'rejected', requestId: data.requestId, error: errorBody('uncertain-result')});
+  }});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'SYNTHETIC_LIFX power desk-lamp off');
+  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'uncertain');
+  assert.equal(task(w)?.code, 'uncertain-result');
+  await w.restart();
+  assert.equal(status(w), 'uncertain');
+  assert.equal(attempts, 1);
+});
+
 void test('private task pauses, restarts without execution and consumes an explicit saved answer in a new run', async context => {
   const provider = counted();
   const w = await world(context, {provider});
@@ -105,7 +179,7 @@ void test('an approved proposal dispatches one mode-set bound to the proposal an
   const dispatched: {requestId: string; data: {mode: string; expectedRevision?: number}}[] = [];
   const provider = counted();
   const w = await world(context, {provider, tools: ['read_sessions', 'set_mode'], core: () => ({sessions: [], mode: hub(7), synced: true}),
-    dispatch: data => {dispatched.push({requestId: data.requestId, data: data.data}); return Promise.resolve(accepted(data.requestId));}});
+    dispatch: data => {assert.equal(data.family, 'mode-set'); dispatched.push({requestId: data.requestId, data: data.data}); return Promise.resolve(accepted(data.requestId));}});
   assert.deepEqual(w.module().inspectAssistant()?.tools, ['read_sessions', 'set_mode']);
   await control(w.core, w.module(), 'enable');
   assert.equal((await input(w.core, w.module(), 'Please switch the Hub to free mode')).status, 'accepted');
@@ -132,7 +206,7 @@ void test('an approval stays bound to the revision it was proposed against after
   let revision = 3;
   const dispatched: {mode: string; expectedRevision?: number}[] = [];
   const w = await world(context, {provider: counted(), tools: ['set_mode'], core: () => ({sessions: [], mode: hub(revision), synced: true}),
-    dispatch: data => {dispatched.push(data.data); return Promise.resolve({status: 'rejected', requestId: data.requestId, error: errorBody('revision-conflict')});}});
+    dispatch: data => {assert.equal(data.family, 'mode-set'); dispatched.push(data.data); return Promise.resolve({status: 'rejected', requestId: data.requestId, error: errorBody('revision-conflict')});}});
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'quiet mode now'); await until(() => status(w) === 'waiting');
   assert.equal((await page(w)).currentTask?.question?.proposal?.expectedRevision, 3);

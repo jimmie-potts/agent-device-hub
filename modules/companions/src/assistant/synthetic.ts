@@ -1,7 +1,7 @@
 // The labelled synthetic provider (Hub #499, #46): a deterministic script behind the same turn contract as a hosted
 // provider, with no network call and no paid usage. It walks the question, read and approval paths so the catalog and
 // browser journeys exercise the engine without a model account.
-import {ASK_OWNER, DELEGATE_CODING, MODES, READ_FIXTURE, READ_SESSIONS, SET_MODE} from './tools.js';
+import {ASK_OWNER, DELEGATE_CODING, MODES, READ_FIXTURE, READ_LIFX, READ_SESSIONS, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_MODE} from './tools.js';
 import {textBytes, type ModelProvider, type TurnInput, type TurnReply} from './provider.js';
 
 export const SYNTHETIC_QUESTION = 'Which detail should the synthetic result emphasize?';
@@ -23,6 +23,13 @@ export class SyntheticProvider implements ModelProvider {
     const tools = input.transcript.filter(item => item.role === 'tool');
     const last = tools.at(-1);
     let reply: TurnReply;
+    const light = /^SYNTHETIC_LIFX (status|power|brightness) (\S+)(?: (\S+))?$/.exec(owner?.text ?? '');
+    if (tools.length === 0 && light !== null) {
+      const [, action, device, value] = light;
+      const name = action === 'status' ? READ_LIFX : action === 'power' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;
+      const args = action === 'status' ? {device} : action === 'power' ? {device, on: value === 'on'} : {device, percent: Number(value)};
+      if (allows(name)) return Promise.resolve({text: null, calls: [call(name, args, ordinal)], stop: 'tool', units: units(text)});
+    }
     if (tools.length === 0) {
       const mode = MODES.find(value => new RegExp(`\\b${value}\\b`, 'i').test(owner?.text ?? ''));
       // "delegate" proposes a coding task for the allowlisted repository when the tool is allowed (Hub #502); the worker's word comes back as its result.
