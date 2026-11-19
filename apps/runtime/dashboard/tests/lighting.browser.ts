@@ -2,7 +2,7 @@ import {destinationLink, directoryLink} from './navigation-helpers.ts';
 // Synthetic integration proof: the runtime owns metadata and real module queues control only in-memory lamps.
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 const world = await startWorld({lighting: true, nanoleaf: true});
 const browser = await chromium.launch({headless: true});
@@ -75,7 +75,7 @@ try {
     await faultPage.goto(`${world.url}/#/rooms`); await feed(faultPage, 'connected');
     await faultPage.getByText('Manage rooms', {exact: true}).click();
     await faultPage.getByLabel('New room name', {exact: true}).fill('Reading room');
-    await faultPage.route('**/api/sdk/v1/stream', route => route.abort());
+    const releaseFaultStream = await holdDashboardStream(faultPage);
     await faultPage.route('**/api/v2/commands/lighting-layout-set', async route => {
       world.dropDashboardStreams();
       const response = await route.fetch(); forwarded += 1; assert.equal(response.status(), 200); await response.dispose();
@@ -87,7 +87,7 @@ try {
     await faultPage.getByText('Manage rooms', {exact: true}).click();
     await faultPage.getByRole('button', {name: 'Refresh records', exact: true}).click();
     assert.equal(layoutSends.filter(url => url.includes('/commands/')).length, 1, 'refresh never repeats an uncertain layout save');
-    await faultPage.unroute('**/api/sdk/v1/stream'); await feed(faultPage, 'connected');
+    releaseFaultStream(); await feed(faultPage, 'connected');
     await faultPage.getByRole('heading', {name: 'Reading room', exact: true}).waitFor();
     await faultPage.reload(); await feed(faultPage, 'connected');
     await faultPage.getByRole('heading', {name: 'Reading room', exact: true}).waitFor();

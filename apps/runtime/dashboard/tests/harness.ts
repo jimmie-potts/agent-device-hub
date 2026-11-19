@@ -185,6 +185,18 @@ export type World = {
   close(): Promise<void>;
 };
 
+/**
+ * Refuses the page's SDK stream reconnects until the returned release is called; later reconnects go through. The
+ * route stays installed after the release. Removing it with `page.unroute` while a reconnect is being intercepted can
+ * leave that request paused with no answer (#1893). The SDK client then waits out its 45 s idle limit before it tries
+ * again, and the feed stays `reconnecting` past any test deadline.
+ */
+export async function holdDashboardStream(page: Page): Promise<() => void> {
+  let held = true;
+  await page.route('**/api/sdk/v1/stream', route => held ? route.abort() : route.fallback());
+  return () => { held = false; };
+}
+
 /** `module`, handing each worker call it makes to `working` (as the in-memory scenario tier's `holding` does). */
 function holdingWorkers(module: BunnyModule, working: (call: Promise<unknown>) => void): BunnyModule {
   const start = (context: Parameters<BunnyModule['start']>[0]): ReturnType<BunnyModule['start']> => module.start({...context, workers: {...context.workers,
@@ -551,16 +563,4 @@ export function changes(page: Page, sent: string[] = []): string[] {
 /** Waits for the dashboard's main region to show `feed`. */
 export async function feed(page: Page, value: string): Promise<void> {
   await page.locator(`main#main[data-feed="${value}"]`).waitFor();
-}
-
-/**
- * Refuses the page's SDK stream reconnects until the returned release is called; later reconnects go through. The
- * route stays installed after the release. Removing it with `page.unroute` while a reconnect is being intercepted can
- * leave that request paused with no answer (#1893). The SDK client then waits out its 45 s idle limit before it tries
- * again, and the feed stays `reconnecting` past any test deadline.
- */
-export async function holdDashboardStream(page: Page): Promise<() => void> {
-  let held = true;
-  await page.route('**/api/sdk/v1/stream', route => held ? route.abort() : route.fallback());
-  return () => { held = false; };
 }
