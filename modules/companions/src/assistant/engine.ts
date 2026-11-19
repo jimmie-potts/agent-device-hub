@@ -1,9 +1,10 @@
+import {SHOW_SAVE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {createHash, randomUUID} from 'node:crypto';
 import {Annotation, Command as Resume, END, StateGraph, interrupt} from '@langchain/langgraph';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {AssistantControl, AssistantDispatch, AssistantInput, AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
+import {ASSISTANT_LEGACY_TOOL_LIMIT, ASSISTANT_WEMO_OWNER, type AssistantControl, type AssistantDeviceOwner, type AssistantDispatch, type AssistantInput, type AssistantProfile, type AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
@@ -13,9 +14,11 @@ import type {Proposal} from './history-contract.js';
 import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnReply} from './provider.js';
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
+import {ConversationActions} from './catalog-actions.js';
+import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
 import {SyntheticProvider} from './synthetic.js';
-import {chooseLight, lightLabel, lightProposal, lightText, readLights} from './lights.js';
-import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, READ_LIFX, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, summarizeSessions, type CoreCopy} from './tools.js';
+import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices} from './devices.js';
+import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
 
 export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provider.js';
 /** Sends one approved command through the core's tracked dispatcher; the module binds it to its own participant. */
@@ -30,7 +33,8 @@ export type AssistantOptions = {
   tools?: readonly string[];
   core?: () => CoreCopy;
   dispatch?: Dispatch;
-  devices?: () => readonly DeviceRecord[] | undefined;
+  devices?: (owner: AssistantDeviceOwner) => readonly DeviceRecord[] | undefined;
+  readDevice?: (owner: AssistantDeviceOwner, name: unknown, signal: AbortSignal, parent: TraceContext) => Promise<string | undefined>;
   available?: () => boolean;
   preferences?: () => readonly ActivePreference[];
   /** Offers a saved assistant message to the speech coordinator, once per key: the message that ended a turn, or a replay the owner asked for (Hub #500). */
@@ -52,7 +56,7 @@ const profiles: readonly AssistantProfile[] = ['bunny', 'reachy', 'microduck'];
 const profile = (value: unknown): value is AssistantProfile => typeof value === 'string' && profiles.includes(value as AssistantProfile);
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as const, type: 'org.bunny.assistant-state.updated', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-state/2.0', data});
+export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as const, type: 'org.bunny.assistant-state.updated', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-state/${data.tools.length > ASSISTANT_LEGACY_TOOL_LIMIT ? '2.1' : '2.0'}`, data});
 export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the evidence the tools return.';
 export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${String(LIMITS.contextBytes / 1024)} KiB prompt bound; stop using some on the Preferences page and start again.`;
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
@@ -419,7 +423,17 @@ export class AssistantEngine {
       const tool = definition(call.name), permitted = tools.some(permittedTool => permittedTool.name === call.name);
       next = tool === undefined || !permitted ? 'tool' : tool.effect === 'question' ? 'ask' : tool.effect === 'command' ? 'approve' : 'tool';
     }
-    const question = (next === 'ask' || next === 'approve') && call !== undefined ? this.#question(state.taskId, call, copy) : undefined;
+    let question: Question | undefined;
+    const command = call === undefined ? undefined : catalogCommand(call.name);
+    if (next === 'approve' && command !== undefined && call !== undefined) {
+      const selected = await this.#catalog().propose(command, call, active.span.context);
+      const id = `${state.taskId}-q${String(this.#task(state.taskId).questions + 1)}`;
+      if ('code' in selected) result = `refused: ${selected.code}`;
+      else if ('question' in selected) question = {id, kind: 'clarification', text: selected.question, answer: null, call: call.id, proposal: null};
+      else question = {id, kind: 'approval', text: selected.text, answer: null, call: call.id, proposal: selected.proposal};
+    } else if ((next === 'ask' || next === 'approve') && call !== undefined) {
+      question = this.#question(state.taskId, call, copy);
+    }
     // A command the module cannot bind to a synced Hub-mode revision, or whose value is not a mode, is refused to the model in the tool node.
     if (next === 'approve' && question === undefined) next = 'tool';
     if (question?.kind === 'clarification') next = 'ask';
@@ -434,7 +448,9 @@ export class AssistantEngine {
     if (asked && question !== undefined) this.#speak(state.taskId, question.id, question.text, active.span.context);
     return {step: state.step + 1, next, result};
   }
-  /** The question a call asks, or undefined for a command that cannot be proposed: an unknown mode value or no synced Hub-mode revision to bind it to. */
+  #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed);}
+  #catalogActions: ConversationActions | undefined;
+  /** The question a call asks, or undefined when the command cannot be proposed. */
   #question(taskId: string, call: ToolCall, copy: CoreCopy): Question | undefined {
     const id = `${taskId}-q${String(this.#task(taskId).questions + 1)}`;
     if (call.name === ASK_OWNER) {
@@ -449,16 +465,17 @@ export class AssistantEngine {
       const proposal: Proposal = {family: 'coding-dispatch', target: 'assistant', data: {repository, brief: brief.trim()}, expectedRevision: coding.revision};
       return {id, text: `Delegate to the coding worker in ${repository}: ${proposal.data.brief}`.slice(0, 1024), answer: null, kind: 'approval', call: call.id, proposal};
     }
-    if (call.name === SET_LIFX_POWER || call.name === SET_LIFX_BRIGHTNESS) {
-      const selected = chooseLight(this.options.devices?.(), call.input.device);
+    const owner = deviceToolOwner(call.name);
+    if (owner !== undefined) {
+      const selected = chooseDevice(this.options.devices?.(owner), call.input.device);
       if ('matches' in selected) {
         const names = selected.matches.slice(0, 4).map(device => device.id).join(', ');
-        return {id, text: `Which light do you mean? Matching device IDs: ${names}.`, answer: null, kind: 'clarification', call: call.id, proposal: null};
+        return {id, text: `Which ${owner === ASSISTANT_WEMO_OWNER ? "plug" : "light"} do you mean? Matching device IDs: ${names}.`, answer: null, kind: 'clarification', call: call.id, proposal: null};
       }
       if ('code' in selected) return undefined;
-      const result = lightProposal(call, selected.device);
+      const result = deviceProposal(call, selected.device);
       if ('code' in result) return undefined;
-      return {id, text: lightText(result.proposal, lightLabel(selected.device)), answer: null, kind: 'approval', call: call.id, proposal: result.proposal};
+      return {id, text: deviceProposalText(result.proposal, deviceLabel(selected.device)), answer: null, kind: 'approval', call: call.id, proposal: result.proposal};
     }
     const mode = MODES.find(value => value === call.input.mode);
     if (mode === undefined || copy.mode === undefined || !copy.synced) return undefined;
@@ -473,11 +490,12 @@ export class AssistantEngine {
       if (typeof repository !== 'string' || !REPOSITORY.test(repository) || typeof brief !== 'string' || brief.trim() === '' || textBytes(brief) > BRIEF_BYTES) return 'The repository name or the brief is not usable: name an allowlisted repository and write a brief under 4 KiB; nothing was proposed.';
       return 'No coding worker is connected right now, so nothing was proposed; the owner can start the worker on their computer.';
     }
-    if (call.name === SET_LIFX_POWER || call.name === SET_LIFX_BRIGHTNESS) {
-      const selected = chooseLight(this.options.devices?.(), call.input.device);
-      if ('matches' in selected) return 'Multiple lights match. Ask the owner for an exact device ID.';
-      const result = 'code' in selected ? selected : lightProposal(call, selected.device);
-      return 'code' in result ? `refused: ${result.code}; no light change was proposed.` : 'This tool is not permitted.';
+    const owner = deviceToolOwner(call.name);
+    if (owner !== undefined) {
+      const selected = chooseDevice(this.options.devices?.(owner), call.input.device);
+      if ('matches' in selected) return 'Multiple devices match. Ask the owner for an exact device ID.';
+      const result = 'code' in selected ? selected : deviceProposal(call, selected.device);
+      return 'code' in result ? `refused: ${result.code}; no ${owner === ASSISTANT_WEMO_OWNER ? 'plug' : 'light'} change was proposed.` : 'This tool is not permitted.';
     }
     if (MODES.find(value => value === call.input.mode) === undefined) return 'The requested mode is not work, free or quiet; nothing was proposed.';
     if (copy.mode === undefined || !copy.synced) return 'The Hub mode is not synced with the core right now, so a proposal cannot be bound to its revision; nothing was proposed.';
@@ -510,14 +528,25 @@ export class AssistantEngine {
     const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile === 'bunny');
     const tool = definition(call.name), permitted = tools.some(permittedTool => permittedTool.name === call.name);
     const id = `${state.taskId}-step-${String(state.step)}`;
-    if (tool === undefined || !permitted || tool.effect !== 'read') {
-      const reason = tool !== undefined && permitted && tool.effect === 'command' ? this.#proposalRefusal(call) : 'This tool is not permitted.';
+    if (tool === undefined || !permitted || (tool.effect !== 'read' && tool.effect !== 'draft')) {
+      const reason = tool !== undefined && permitted && tool.effect === 'command' ? catalogCommand(call.name) === undefined ? this.#proposalRefusal(call) : state.result : 'This tool is not permitted.';
       // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
       await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result: reason, ok: false, effect: `${id}-refused`}, active.span.context,
         current => {this.store.message(current, `${id}-refused`, 'tool', reason, this.context.clock.now());});
       return {step: state.step};
     }
-    const result = await this.#call(state.taskId, state.step, 'tool', () => Promise.resolve({text: call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), this.context.clock.now()) : call.name === READ_LIFX ? readLights(this.options.devices?.(), call.input.device, this.context.clock.now()) : fail('invalid-state'), units: 0}));
+    const owner = deviceToolOwner(call.name);
+    const result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
+      const now = this.context.clock.now();
+      if (owner !== undefined) {
+        const name = call.input.device;
+        const read = await this.options.readDevice?.(owner, name, signal, parent);
+        return {text: read ?? readDevices(this.options.devices?.(owner), name, now, owner), units: 0};
+      }
+      if (isCatalogTool(call.name)) return {text: await this.#catalog().read(call, parent) ?? fail('invalid-state'), units: 0};
+      const text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now) : fail('invalid-state');
+      return {text, units: 0};
+    });
     await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result, ok: true, effect: id}, active.span.context);
     return {step: state.step + 1};
   }
@@ -525,7 +554,7 @@ export class AssistantEngine {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
     const question = task.question ?? fail('invalid-state'), proposal = question.proposal ?? fail('invalid-state');
     const id = `${state.taskId}-step-${String(state.step)}`, name = proposal.family === 'mode-set' ? SET_MODE : proposal.family === 'coding-dispatch' ? DELEGATE_CODING :
-      proposal.family === 'power-set' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;
+      proposal.family === 'catalog-action' ? catalogTool(proposal.command) : 'owner' in proposal ? SET_WEMO_POWER : proposal.family === 'power-set' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;
     const refuse = async (suffix: string, text: string): Promise<Partial<GraphState>> => {
       // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
       await this.#append(state.taskId, {role: 'tool', call: question.call, name, result: text, ok: false, effect: `${id}-${suffix}`}, active.span.context,
@@ -552,9 +581,20 @@ export class AssistantEngine {
         : {requestId: id, ...proposal};
       const receipt = proposal.family === 'mode-set'
         ? `accepted: the core accepted mode-set ${proposal.data.mode} as operation ${id}; its outcome is tracked separately`
-        : `accepted: ${proposal.family} on ${proposal.target} as operation ${id}; its outcome is tracked separately`;
-      result = await this.#call(state.taskId, state.step, 'tool', (signal, parent) => dispatch(data, parent, signal)
-        .then(answer => settle(answer, receipt)));
+        : `accepted: ${proposal.family === 'catalog-action' ? proposal.command : proposal.family} on ${proposal.target} as operation ${id}; its outcome is tracked separately`;
+      result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
+        const admitByMs = this.context.clock.now() + SHOW_SAVE_WINDOW_MS;
+        if (proposal.family === 'catalog-action') {
+          const refused = this.#catalog().beforeDispatch(proposal, id, admitByMs);
+          if (refused !== undefined) return {text: `refused: ${refused}`, units: 0};
+        }
+        const answer = await dispatch(data.family === 'catalog-action' && data.command === 'nanoleaf-show-save'
+          ? {...data, admitByMs} : data, parent, signal);
+        if (proposal.family === 'catalog-action' && answer.status === 'rejected' && answer.error.error.code !== 'uncertain-result') {
+          this.#catalog().rejected(proposal, id);
+        }
+        return settle(answer, receipt);
+      });
     } else {
       const delegate = this.options.delegate;
       if (delegate === undefined) return refuse('refused', 'This tool is not permitted.');

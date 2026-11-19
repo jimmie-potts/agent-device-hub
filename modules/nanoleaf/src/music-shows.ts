@@ -26,7 +26,9 @@ export function initShows(db: Db): void {
       body TEXT NOT NULL, PRIMARY KEY (show_id, version));
     CREATE TABLE IF NOT EXISTS nanoleaf_show_catalog (id TEXT PRIMARY KEY, revision INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS nanoleaf_measured_shows (show_id TEXT NOT NULL, version INTEGER NOT NULL,
-      PRIMARY KEY (show_id, version));`);
+      PRIMARY KEY (show_id, version));
+    CREATE TABLE IF NOT EXISTS nanoleaf_show_save_receipts (show_id TEXT NOT NULL, version INTEGER NOT NULL,
+      request_id TEXT NOT NULL, PRIMARY KEY (show_id, version));`);
 }
 
 /** Parse once at the owner boundary; presets are resolved into frozen explicit recipes. */
@@ -52,8 +54,9 @@ export function showCatalog(db: Db): ShowCatalog {
   const revision = row?.[0] ?? 0;
   if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) throw new ShowFailure('invalid-state');
   const heads = rows(db, 'SELECT id,version,name FROM nanoleaf_shows ORDER BY id LIMIT ?', SHOW_LIMITS.shows + 1);
-  const versions = rows(db, 'SELECT v.show_id,v.version,v.version_name,m.version FROM nanoleaf_show_versions v LEFT JOIN nanoleaf_measured_shows m '
-    + 'ON v.show_id=m.show_id AND v.version=m.version ORDER BY v.show_id,v.version LIMIT ?', SHOW_LIMITS.versions + 1);
+  const versions = rows(db, 'SELECT v.show_id,v.version,v.version_name,m.version,s.request_id FROM nanoleaf_show_versions v LEFT JOIN nanoleaf_measured_shows m '
+    + 'ON v.show_id=m.show_id AND v.version=m.version LEFT JOIN nanoleaf_show_save_receipts s ON v.show_id=s.show_id AND v.version=s.version '
+    + 'ORDER BY v.show_id,v.version LIMIT ?', SHOW_LIMITS.versions + 1);
   if (row === undefined && (heads.length !== 0 || versions.length !== 0)) throw new ShowFailure('invalid-state');
   if (heads.length > SHOW_LIMITS.shows || versions.length > SHOW_LIMITS.versions) throw new ShowFailure('invalid-state');
   const shows: ShowSummary[] = [];
@@ -62,9 +65,10 @@ export function showCatalog(db: Db): ShowCatalog {
     const [id, version, name] = head;
     if (!validShowId(id) || !versionNumber(version) || !validName(name)) throw new ShowFailure('invalid-state');
     const saved = versions.filter(row => row[0] === id).map(row => {
-      const count = row[1], label = row[2], measured = row[3] !== null;
-      if (!versionNumber(count) || !validName(label)) throw new ShowFailure('invalid-state');
-      return {version: count, versionName: label, ...(measured ? {kind: 'measured' as const} : {})};
+      const count = row[1], label = row[2], measured = row[3] !== null, receipt = row[4];
+      if (!versionNumber(count) || !validName(label) || (receipt !== null && typeof receipt !== 'string')) throw new ShowFailure('invalid-state');
+      return {version: count, versionName: label, ...(measured ? {kind: 'measured' as const} : {}),
+        ...(typeof receipt === 'string' ? {savedByRequest: receipt} : {})};
     });
     if (saved.length !== version || saved.some((item, index) => item.version !== index + 1)) throw new ShowFailure('invalid-state');
     counted += saved.length;
@@ -75,7 +79,7 @@ export function showCatalog(db: Db): ShowCatalog {
 }
 
 /** All writes belong to the caller's outbox transaction, including the catalog and outcome it appends. */
-export function saveShow(db: Db, input: unknown, revision: number): ShowVersion {
+export function saveShow(db: Db, input: unknown, revision: number, requestId?: string): ShowVersion {
   if (!db.isTransaction) throw new TypeError('A show save requires its owner transaction.');
   const next = prepareShowSave(input), catalog = showCatalog(db);
   const head = catalog.shows.find(show => show.id === next.showId);
@@ -89,6 +93,7 @@ export function saveShow(db: Db, input: unknown, revision: number): ShowVersion 
   const encoded = JSON.stringify(version);
   if (Buffer.byteLength(encoded, 'utf8') > SHOW_LIMITS.versionBytes) throw new ShowFailure('capacity');
   execute(db, 'INSERT INTO nanoleaf_show_versions VALUES (?,?,?,?)', version.showId, version.version, version.versionName, encoded);
+  if (requestId !== undefined) execute(db, 'INSERT INTO nanoleaf_show_save_receipts VALUES (?,?,?)', version.showId, version.version, requestId);
   if (version.kind === 'measured') execute(db, 'INSERT INTO nanoleaf_measured_shows VALUES (?,?)', version.showId, version.version);
   execute(db, 'INSERT INTO nanoleaf_shows VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version,name=excluded.name',
     version.showId, version.version, version.name);

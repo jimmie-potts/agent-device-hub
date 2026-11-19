@@ -548,6 +548,12 @@ void describe('moments', () => {
     await within(world, async () => {
       await world.start();
       const send = (id: string, patch: object = {}): Promise<RequestResult> => world.request('moment-play', MOMENT, moment(id, {startAtMs: world.now(), ...patch}));
+      const record = await waitFor(() => world.deviceRecord(), 'the device record');
+      const stale = world.probe.request(`bunny.cmd.moment-play.${DEVICE}`, {type: MOMENT, subject: DEVICE,
+        dataschema: 'https://bunny.invalid/events/moment-play/2.3', data: {requestId: 'stale-moment-approval',
+          ...moment('m-stale-approval', {startAtMs: world.now()}), expectedConfigurationRevision: record.configurationRevision + 1,
+          expectedGeneration: record.generation}}, {timeoutMs: 5000, requestId: 'stale-moment-approval'});
+      assert.equal(await refusal(stale), 'revision-conflict');
       assert.equal(await refusal(send('m-mood', {mood: 'unknown-mood'})), 'unsupported-capability');
       assert.equal(await refusal(send('m-long', {durationMs: 10_001})), 'unsupported-capability');
       await world.outcome(await mode(world, 'work'));

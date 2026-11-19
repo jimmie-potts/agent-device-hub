@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/assistant-state/2.1",
+  "description": "Assistant state 2.1 raises the tool list bound for a fully enabled device catalog. Task and identity fields remain unchanged.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "enabled",
+    "available",
+    "provider",
+    "model",
+    "tools",
+    "tasks"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/id"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/revision"
+    },
+    "enabled": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/enabled"
+    },
+    "available": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/available"
+    },
+    "provider": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/provider"
+    },
+    "model": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/model"
+    },
+    "tools": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tools/items"
+      }
+    },
+    "tasks": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks"
+    }
+  }
+}

@@ -8,7 +8,7 @@ import {SETTING_NAMES} from '../project-map.js';
 import {MUSIC_DIRECTIONS} from '../music-recipe-data.js';
 import {REACTIVE_ID_PATTERN, REACTIVE_LIMITS, REACTIVE_SCHEMA, REACTIVE_TARGET} from '../music-preset-data.js';
 import {MAX_STYLE_LENGTH} from '../music-show-authoring.js';
-import {MUSIC_AUTHORING_MODEL, SHOW_ID_PATTERN, SHOW_LIMITS, SHOW_TARGET} from '../music-show-data.js';
+import {MUSIC_AUTHORING_MODEL, SHOW_CATALOG_SCHEMA, SHOW_ID_PATTERN, SHOW_LIMITS, SHOW_TARGET} from '../music-show-data.js';
 import {PLACEHOLDERS, RESTORES} from '../music-base.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS} from '../music-timeline.js';
 
@@ -97,7 +97,7 @@ const SETTINGS_VIEW = closed({style: {enum: ['classic', 'project']}, coverage: {
 const POINT = {type: 'array', items: {type: 'number'}, minItems: 2, maxItems: 2};
 
 /** The module's payload schemas, by `dataschema`, for validators, the runtime's edge and the module test kit. */
-export const nanoleafSchemas: Readonly<Record<string, object>> = {
+const originalSchemas: Readonly<Record<string, object>> = {
   [schemaOf('nanoleaf-reactive-presets')]: {
     description: 'State: the bounded private library of frozen V1 reactive recipes. Metadata only.',
     ...closed({id: {const: REACTIVE_TARGET}, revision: block('revision'), presets: list(REACTIVE_PRESET, 0, REACTIVE_LIMITS.presets)}),
@@ -110,6 +110,12 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
     description: 'State: private show heads and immutable named version summaries; no media, device output or execution state.',
     ...closed({id: {const: SHOW_TARGET}, revision: block('revision'), shows: list(closed({id: SHOW_ID, name: text(SHOW_LIMITS.name), version: SHOW_VERSION,
       versions: list(closed({version: SHOW_VERSION, versionName: text(SHOW_LIMITS.name), kind: {const: 'measured'}}, ['kind']), 1, SHOW_LIMITS.versions)}), 0, SHOW_LIMITS.shows)}),
+  },
+  [SHOW_CATALOG_SCHEMA]: {
+    description: 'Show metadata with an optional save receipt identifying the request that wrote each immutable version.',
+    ...closed({id: {const: SHOW_TARGET}, revision: block('revision'), shows: list(closed({id: SHOW_ID, name: text(SHOW_LIMITS.name), version: SHOW_VERSION,
+      versions: list(closed({version: SHOW_VERSION, versionName: text(SHOW_LIMITS.name), kind: {const: 'measured'},
+        savedByRequest: block('requestId')}, ['kind', 'savedByRequest']), 1, SHOW_LIMITS.versions)}), 0, SHOW_LIMITS.shows)}),
   },
   [schemaOf('nanoleaf-show-save')]: {
     description: 'Command: save one new immutable show version against the expected head; zero creates a show. Metadata only, with no device instruction.',
@@ -193,6 +199,18 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
     description: 'Command: acknowledge one finished turn the wall shows, for the Nanoleaf consumer. The module sends the core\'s notice-acknowledge for a task it shows, and refuses one it skips without a request.',
     ...closed({requestId: block('requestId'), task: TASK, noticeId: {type: 'string', pattern: '^[0-9a-f]{64}$'}}),
   },
+};
+
+const guardedSchemas = Object.fromEntries((['wallEdit', 'machineEdit', 'animationPlay', 'favoriteEdit', 'acknowledge'] as const).map(name => {
+  const {family} = NANOLEAF_FAMILIES[name];
+  const original = originalSchemas[schemaOf(family)] as {description: string; properties: Record<string, object>};
+  return [BASE + family + '/2.1', {description: original.description,
+    ...closed({...original.properties, expectedConfigurationRevision: block('revision'), expectedGeneration: block('ticket')})}];
+}));
+const showSave = originalSchemas[schemaOf('nanoleaf-show-save')] as {description: string; properties: Record<string, object>};
+export const nanoleafSchemas: Readonly<Record<string, object>> = {...originalSchemas, ...guardedSchemas,
+  [BASE + 'nanoleaf-show-save/2.1']: {description: showSave.description,
+    ...closed({...showSave.properties, admitByMs: block('instantMs')}, ['measurement', 'measurementProof', 'provenance', 'authoringProof'])},
 };
 
 /** The port's map setting for each setting a command names. */

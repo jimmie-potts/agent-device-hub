@@ -1,3 +1,4 @@
+import {catalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
 import {HISTORY_ROWS, readHistoryCursor, type ConversationMessage, type CurrentTask, type Proposal, type RecentConversationPage, type SavedQuestion} from '../assistant/history-contract.js';
 import {LIMITS} from '../assistant/limits.js';
@@ -20,7 +21,8 @@ const invalidPage = (): never => {throw new Error('Invalid conversation window')
 function decodeProposal(value: unknown): Proposal | null {
   if (value === null) return null;
   if (!record(value) || !record(value.data)) return invalidPage();
-  const {family, target, data, expectedRevision} = value;
+  const {family, target, data, expectedRevision, owner} = value;
+  if (family === 'catalog-action') return catalogProposal(value) ?? invalidPage();
   if (integer(expectedRevision) && family === 'mode-set' && target === 'hub' && (data.mode === 'work' || data.mode === 'free' || data.mode === 'quiet')) {
     return {family, target, data: {mode: data.mode}, expectedRevision};
   }
@@ -32,8 +34,12 @@ function decodeProposal(value: unknown): Proposal | null {
     !integer(expectedConfigurationRevision) || !record(expectedGeneration) || typeof expectedGeneration.epoch !== 'string' ||
     !integer(expectedGeneration.sequence)) return invalidPage();
   const guards = {expectedConfigurationRevision, expectedGeneration: {epoch: expectedGeneration.epoch, sequence: expectedGeneration.sequence}};
-  if (family === 'power-set' && typeof data.on === 'boolean') return {family, target, data: {...guards, on: data.on}};
-  if (family === 'brightness-set' && integer(data.percent) && data.percent <= 100) return {family, target, data: {...guards, percent: data.percent}};
+  if (family === 'power-set' && typeof data.on === 'boolean') {
+    const power = {family, target, data: {...guards, on: data.on}} as const;
+    if (owner === 'bunny/modules/wemo') return {...power, owner};
+    if (owner === undefined) return power;
+  }
+  if (owner === undefined && family === 'brightness-set' && integer(data.percent) && data.percent <= 100) return {family, target, data: {...guards, percent: data.percent}};
   return invalidPage();
 }
 

@@ -1,9 +1,10 @@
+import {showConversationJourney} from './show-conversation.browser.ts';
 import {conversationWorkspaceJourney} from './conversation-workspace.browser.ts';
 import {conversationRailJourney} from './conversation-rail.browser.ts';
 import {conversationStateJourney} from './conversation-state.browser.ts';
 import {conversationHistoryJourney} from './conversation-history.browser.ts';
 import {homeSpeechLifetimeJourney, speechJourney, spokenRepliesJourney} from './speech.browser.ts';
-import {lifxConversationJourney} from './lifx-conversation.browser.ts';
+import {lifxConversationJourney, wemoConversationJourney} from './lifx-conversation.browser.ts';
 import {codingDelegationJourney} from './coding-delegation.browser.ts';
 import {companionCardsCheck} from './companion-cards-journey.ts';
 import {speechReadinessJourney} from './speech-readiness.ts';
@@ -26,6 +27,8 @@ try {
   await conversationRailJourney(browser);
   await conversationHistoryJourney(browser);
   await lifxConversationJourney(browser);
+  await wemoConversationJourney(browser);
+  await showConversationJourney(browser);
   await conversationStateJourney(browser);
   await companionCardsCheck(browser);
   await speechJourney(browser);

@@ -3,11 +3,13 @@
 // gets one `moment-play/2.1` at a near-term common start and the browser one present, every surface its own tracked
 // operation. A show starts no generation, changes no mode and never touches the schedule's claims, count or spacing. Its
 // owner permit passes quiet hours and budgets; attention, device holds, pins and each display's own admission still decide.
+import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {ART_SHOW_BROWSER, ART_SHOW_KEY, ART_SHOW_LEAD_MS, ART_SHOW_SUBJECT, artShowPlanId, type ArtShowRequest} from '@jimmie-potts/event-contracts/v2/art-show';
+import {ART_SHOW_BROWSER, ART_SHOW_KEY, ART_SHOW_LEAD_MS, ART_SHOW_SUBJECT, ART_SHOW_EFFECTS_FAMILY,
+  ART_SHOW_EFFECTS_SCHEMA, ART_SHOW_EFFECTS_TYPE, artShowPlanId, type ArtShowEffects, type ArtShowRequest, type ArtShowSkip} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
-import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
-import {Outcome, type Command, type Reply, type TraceContext} from '@jimmie-potts/sdk';
+import {coreValidator, operationEntityId} from '@jimmie-potts/event-contracts/v2/families';
+import {Outcome, type Command, type Reply, type StateDraft, type TraceContext} from '@jimmie-potts/sdk';
 import type {ArtCatalogRead} from './art-catalog.js';
 import type {ArtPermit, ArtPlan, ArtPlanAttempt, ArtPlanResult, ArtPlans} from './art-plans.js';
 import {START_TOLERANCE_MS} from './art-schedule-model.js';
@@ -41,6 +43,31 @@ export type ArtShowOptions = {
 type Refusal = {target: string; error: ErrorBody};
 /** A checked show holding the one show slot. Nothing has been sent. */
 export type PreparedShow = {requestId: string; plan: ArtPlan; refused: readonly Refusal[]};
+type PrepareFailure = ErrorBody & {refused?: readonly Refusal[]};
+
+function skipsForRefusals(refused: readonly Refusal[]): ArtShowSkip[] {
+  return refused.flatMap(({target, error}) => target === ART_SHOW_BROWSER ? [{target, phase: 'present', code: error.error.code}]
+    : [{target, phase: 'prepare', code: error.error.code}, {target, phase: 'present', code: error.error.code}]);
+}
+
+function skippedPhases(prepared: PreparedShow, result: ArtPlanResult | ErrorBody): ArtShowSkip[] {
+  const skips = skipsForRefusals(prepared.refused);
+  if ('error' in result) {
+    const affected = prepared.plan.displays.map(({target}) => ({target, error: result}));
+    if (prepared.plan.browser !== undefined) affected.push({target: ART_SHOW_BROWSER, error: result});
+    return skips.concat(skipsForRefusals(affected));
+  }
+  for (const {target, prepare, moment} of result.displays) {
+    if (prepare.status === 'not-requested') skips.push({target, phase: 'prepare', code: prepare.error.error.code});
+    if (moment.status === 'not-requested') skips.push({target, phase: 'present', code: moment.error.error.code});
+  }
+  if (result.browser?.status === 'not-requested') skips.push({target: ART_SHOW_BROWSER, phase: 'present', code: result.browser.error.error.code});
+  return skips;
+}
+
+const effectDraft = (record: ArtShowEffects): StateDraft => ({
+  type: ART_SHOW_EFFECTS_TYPE, subject: record.id, dataschema: ART_SHOW_EFFECTS_SCHEMA, data: record,
+});
 
 const usable = (artwork: ArtworkSummary, kind: 'ui' | 'pixoo' | 'tidbyt'): string | undefined => artwork.compositions.find(item =>
   item.target === kind && item.outcome === Outcome.succeeded && item.compositionId !== null && item.renditions.length > 0)?.compositionId ?? undefined;
@@ -79,7 +106,7 @@ export function createArtShow(options: ArtShowOptions) {
      * longer retains is `not-found`, an unreadable catalog `unavailable`, a target with no usable composition
      * `unsupported-capability` and an unconfigured display `not-found`, each for that target alone unless no target remains.
      */
-    async prepare(request: ArtShowRequest, replyByMs = Number.POSITIVE_INFINITY): Promise<PreparedShow | ErrorBody> {
+    async prepare(request: ArtShowRequest, replyByMs = Number.POSITIVE_INFINITY): Promise<PreparedShow | PrepareFailure> {
       if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
       if (showing) return errorBody('capacity', {detail: 'another owner art show is still preparing; read its results before a new request'});
       showing = true;
@@ -114,7 +141,7 @@ export function createArtShow(options: ArtShowOptions) {
         }
         if (displays.length > 2) return errorBody('invalid-request', {detail: 'a show presents on at most two displays and the browser'});
         const first = refused[0];
-        if (displays.length === 0 && browser === undefined) return first === undefined ? errorBody('invalid-request') : first.error;
+        if (displays.length === 0 && browser === undefined) return first === undefined ? errorBody('invalid-request') : {...first.error, refused};
         const startAtMs = options.clock() + ART_SHOW_LEAD_MS;
         const plan: ArtPlan = {id: await artShowPlanId(request.requestId), artworkId: artwork.artworkId, startAtMs, prepareUntilMs: startAtMs - 1000,
           toleranceMs: START_TOLERANCE_MS, mood: 'celebrate', priorityClass: 'event', coversStatus: request.coversStatus ?? true,
@@ -153,6 +180,32 @@ export type ArtShowAdmission = {
 };
 
 export class ArtShowPart implements CorePart {
+  readonly families = [ART_SHOW_EFFECTS_FAMILY] as const;
+  #statements: {insert: StatementSync; prune: StatementSync; list: StatementSync} | undefined;
+  readonly open = (db: DatabaseSync): void => {
+    db.exec('CREATE TABLE IF NOT EXISTS art_show_effects (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, record TEXT NOT NULL) STRICT');
+    this.#statements = {
+      insert: db.prepare('INSERT INTO art_show_effects VALUES (?, ?, ?)'),
+      prune: db.prepare('DELETE FROM art_show_effects WHERE id IN (SELECT id FROM art_show_effects ORDER BY revision DESC, id DESC LIMIT -1 OFFSET 64) RETURNING id'),
+      list: db.prepare('SELECT record FROM art_show_effects ORDER BY revision, id'),
+    };
+  };
+  readonly states = (): StateDraft[] => this.#statements?.list.all().map(({record}) => effectDraft(JSON.parse(String(record)) as ArtShowEffects)) ?? [];
+
+  #recordEffects(tx: CoreTransaction, command: Command<ArtShowRequest>, skipped: ArtShowSkip[]): void {
+    const statements = this.#statements;
+    if (statements === undefined || skipped.length === 0) return;
+    const {requestId} = command.data, id = operationEntityId(requestId), revision = tx.revision();
+    const record: ArtShowEffects = {id, revision, requestId, skipped};
+    statements.insert.run(id, revision, JSON.stringify(record));
+    tx.add(`bunny.state.${ART_SHOW_EFFECTS_FAMILY}.${id}`, {kind: 'state', ...effectDraft(record)}, {parent: command});
+    for (const removed of statements.prune.all()) {
+      const retired = String(removed.id);
+      tx.add(`bunny.state.${ART_SHOW_EFFECTS_FAMILY}.${retired}`, {kind: 'removal',
+        type: 'org.bunny.art-show-effects.removed', subject: retired, dataschema: 'https://bunny.invalid/events/removal/2.0',
+        data: {entity: {family: ART_SHOW_EFFECTS_FAMILY, id: retired}, revision, reason: 'retired'}}, {parent: command});
+    }
+  }
   readonly #admission: ArtShowAdmission;
   readonly #show: () => ArtShow | undefined;
   readonly #validator = coreValidator();
@@ -185,7 +238,13 @@ export class ArtShowPart implements CorePart {
       await core.ready;
       const replyByMs = Date.parse(command.expiresat ?? '');
       const prepared = await show.prepare(admitted.data, Number.isNaN(replyByMs) ? undefined : replyByMs);
-      if ('error' in prepared) return prepared;
+      if ('error' in prepared) {
+        if (prepared.refused !== undefined) {
+          const skipped = skipsForRefusals(prepared.refused);
+          await core.transaction(tx => {this.#recordEffects(tx, admitted, skipped);});
+        }
+        return {error: prepared.error};
+      }
       handedOff = true;
       void this.#finish(core, show, admitted, prepared);
       return {status: 'accepted'};
@@ -200,7 +259,11 @@ export class ArtShowPart implements CorePart {
       const result = await show.run(prepared, command);
       if (this.#closed) return;
       let committed: (() => void) | undefined;
-      await core.transaction(tx => {tx.take(command);committed = this.#admission.complete(tx, command, artShowOutcome(result));});
+      await core.transaction(tx => {
+        tx.take(command);
+        this.#recordEffects(tx, command, skippedPhases(prepared, result));
+        committed = this.#admission.complete(tx, command, artShowOutcome(result));
+      });
       committed?.();
     } catch {
       // The tracker's deadline ends the operation uncertain; the fault itself is recorded here (ADR 0012).

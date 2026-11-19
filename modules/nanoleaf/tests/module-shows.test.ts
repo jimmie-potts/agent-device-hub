@@ -153,6 +153,17 @@ suite('module-owned decorative show saves', () => {
     assert.equal(world.outcomes('show-full').length, 0); world.verifyMessages();
   });
 
+  test('an expired Conversation deadline refuses a save even while its SDK request is current', async context => {
+    const world = await ModuleWorld.open(context); await world.start();
+    const result = await world.request('bunny.cmd.nanoleaf-show-save.shows', {type: NANOLEAF_FAMILIES.showSave.type,
+      subject: 'shows', dataschema: 'https://bunny.invalid/events/nanoleaf-show-save/2.1',
+      data: {...data('show-conversation-expired'), admitByMs: world.clock.now() - 1}});
+    assert.equal(result.status === 'rejected' && result.error.error.code, 'expired');
+    assert.equal(world.query('SELECT version FROM nanoleaf_show_versions').length, 0);
+    assert.equal(world.outcomes('show-conversation-expired').length, 0);
+    world.verifyMessages();
+  });
+
   test('an expired queued request cannot create a version', async context => {
     const world = await ModuleWorld.open(context); await world.start();
     const pending = world.operator.request('bunny.cmd.nanoleaf-show-save.shows', {type: NANOLEAF_FAMILIES.showSave.type,

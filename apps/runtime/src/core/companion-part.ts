@@ -10,6 +10,8 @@ import type {CodingDispatch} from '@jimmie-potts/event-contracts/v2/coding';
 import {coreValidator, type AgentOccurrence, type AttentionRaised, type Session30Record, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreChange} from './store.js';
+import {dispatchCatalogAction} from './assistant-actions.js';
+import type {Action, ActionAnswer} from './tracker.js';
 import {LivePublication} from './live-publication.js';
 
 const TYPES = new Set(['org.bunny.attention.raised', 'org.bunny.turn.ended']);
@@ -17,7 +19,8 @@ export class CompanionPart implements CorePart {
   readonly #eligibility = new LivePublication();
   readonly #sessions = new Map<string, Session30Record>();
   #closed = false;
-  constructor(private readonly device: (id: string) => Message<DeviceRecord> | undefined = () => undefined) {}
+  constructor(private readonly device: (id: string) => Message<DeviceRecord> | undefined = () => undefined,
+    private readonly dispatchLighting: (action: Action) => Promise<ActionAnswer> = () => Promise.resolve(errorBody('unavailable'))) {}
   /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
   seed(records: readonly Session30Record[]): void {
     this.#sessions.clear();
@@ -81,12 +84,16 @@ export class CompanionPart implements CorePart {
       if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
       const checked = validator.validate(command, {nowMs: core.clock.now()});
       if (!checked.ok) return {error: checked.error};
+      if (command.data.family === 'catalog-action') {
+        const answer = await dispatchCatalogAction(core, {...command, data: command.data}, this.device, this.dispatchLighting);
+        return 'error' in answer ? answer : {status: 'accepted'};
+      }
       const action = command.data;
       const {family, target, requestId} = action;
       if (family !== 'mode-set' && core.operation(requestId) === undefined) {
         const message = this.device(target);
         if (message === undefined) return errorBody('unavailable');
-        if (message.source !== ASSISTANT_LIGHT_OWNER) return errorBody('forbidden');
+        if (message.source !== ('owner' in action ? action.owner : ASSISTANT_LIGHT_OWNER)) return errorBody('forbidden');
         const record = message.data;
         const capability = family === 'power-set' ? record.capabilities.power : record.capabilities.brightness;
         if (!capability.supported) return errorBody('unsupported-capability');

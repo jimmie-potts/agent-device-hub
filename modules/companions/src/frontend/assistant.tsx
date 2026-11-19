@@ -85,6 +85,10 @@ function TaskControls({context, command, state, profile, live, question, drafts,
           : question.proposal.family === 'coding-dispatch' ? <p>Delegation to the coding worker in repository <strong>{question.proposal.data.repository}</strong>, in a fresh worktree with edits, builds and tests allowed and no push.
             {' '}Brief: <span style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{question.proposal.data.brief}</span>.
             {' '}Bound to coding worker revision {String(question.proposal.expectedRevision)}; a worker changed since then refuses it.</p>
+          : question.proposal.family === 'catalog-action'
+            ? <details><summary>{question.proposal.command} on {question.proposal.target}</summary>
+              <pre style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{JSON.stringify(question.proposal.data, null, 2)}</pre>
+            </details>
           : <p><code>{question.proposal.target}</code> · {question.proposal.family === 'power-set' ? (question.proposal.data.on ? 'Power on' : 'Power off') : `Brightness ${String(question.proposal.data.percent)}%`}</p>}
         <button type="button" disabled={!enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', true);}}>Approve proposal</button>
         <button type="button" className="secondary" disabled={!enabled} onClick={() => {send('decline', true);}}>Decline proposal</button>
@@ -320,8 +324,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             live={live} canStart={!locked && state?.enabled === true && unfinished === undefined}
             readLocked={!connected || historyStatus === 'loading'} loadEarlier={before => {readHistory(before);}} retry={() => {readHistory(failedCursor.current);}}
             renderToolEvidence={message => {
-              const operation = context.operations.find(value => value.requestId === message.id && value.requestedBy === 'bunny/modules/companions'
-                && (value.family === 'power-set' || value.family === 'brightness-set'));
+              const operation = context.operations.find(value => value.requestId === message.id && value.requestedBy === 'bunny/modules/companions');
               if (operation === undefined) return null;
               return <p>Tracked operation {operation.result ?? operation.status}
                 {operation.evidence !== undefined && operation.evidence !== 'none' ? ` · evidence ${operation.evidence}` : ''}

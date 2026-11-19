@@ -34,7 +34,7 @@ import {initialize} from '../database.js';
 import {readReactiveCatalog, saveReactivePreset, ReactiveFailure, REACTIVE_ERRORS} from '../music-presets.js';
 import {REACTIVE_TARGET} from '../music-preset-data.js';
 import {readShowVersion, saveShow, showCatalog, ShowFailure, SHOW_ERRORS} from '../music-shows.js';
-import {SHOW_TARGET, showMeasurement, showProvenance, type ShowMeasurement, type ShowProvenance} from '../music-show-data.js';
+import {SHOW_CATALOG_SCHEMA, SHOW_TARGET, showMeasurement, showProvenance, type ShowMeasurement, type ShowProvenance} from '../music-show-data.js';
 import {favoriteEdit, Failure, validFavoriteEdit} from '../favorites.js';
 import {writeJson} from '../jsonfile.js';
 import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, type Report, type Transact, initJournalAdmissionMarks, journalAdmissionMark} from '../journal.js';
@@ -540,7 +540,7 @@ export class NanoleafRuntime {
     });
     if (families.includes(NANOLEAF_FAMILIES.shows.family)) {
       try {
-        states.push({type: NANOLEAF_FAMILIES.shows.type, subject: SHOW_TARGET, dataschema: schemaOf(NANOLEAF_FAMILIES.shows.family), data: showCatalog(this.#db)});
+        states.push({type: NANOLEAF_FAMILIES.shows.type, subject: SHOW_TARGET, dataschema: SHOW_CATALOG_SCHEMA, data: showCatalog(this.#db)});
       } catch (error) {
         return error instanceof ShowFailure ? errorBody(error.code, {detail: SHOW_ERRORS[error.code]})
           : errorBody('unavailable', {detail: 'The private show library cannot be read.'});
@@ -1026,12 +1026,12 @@ export class NanoleafRuntime {
     await sdk.respond<MomentPlayRequest>(`bunny.cmd.moment-play.${device}`, command=>this.#moment(device,command));
     await sdk.respond<LightingWork>(`bunny.cmd.${MUSIC_WORK}.${device}`, command => this.#musicWork(device, command));
     const {wallEdit, machineEdit, animationPlay, favoriteEdit: favorite, acknowledge} = NANOLEAF_FAMILIES;
-    await sdk.respond<{requestId: string; edit: unknown}>(`bunny.cmd.${wallEdit.family}.${device}`, command => this.#wallEdit(device, command));
+    await sdk.respond<Guards & {edit: unknown}>(`bunny.cmd.${wallEdit.family}.${device}`, command => this.#wallEdit(device, command));
     await sdk.respond<Guards & {edit: unknown}>(`bunny.cmd.${machineEdit.family}.${device}`, command => this.#machineEdit(device, command));
-    await sdk.respond<{requestId: string; animation: Record<string, unknown>}>(`bunny.cmd.${animationPlay.family}.${device}`,
+    await sdk.respond<Guards & {animation: Record<string, unknown>}>(`bunny.cmd.${animationPlay.family}.${device}`,
       command => this.#animation(device, command));
     await sdk.respond<Guards & {edit: Record<string, unknown>}>(`bunny.cmd.${favorite.family}.${device}`, command => this.#favorite(device, command));
-    await sdk.respond<{requestId: string; task: string; noticeId: string}>(`bunny.cmd.${acknowledge.family}.${device}`,
+    await sdk.respond<Guards & {task: string; noticeId: string}>(`bunny.cmd.${acknowledge.family}.${device}`,
       command => this.#acknowledge(device, command));
   }
 
@@ -1068,13 +1068,16 @@ export class NanoleafRuntime {
     return this.#admit(command, (_report, add) => {
       if (command.subject !== SHOW_TARGET) throw new CommandRefused('invalid-request', 'Select the show library.');
       if (expiresMs(command, this.#context.clock.now()) <= this.#context.clock.now()) throw new CommandRefused('expired', 'The show save expired.');
-      const {requestId, measurementProof, authoringProof, ...input} = command.data;
+      const {requestId, measurementProof, authoringProof, admitByMs, ...input} = command.data;
+      if (typeof admitByMs === 'number' && admitByMs <= this.#context.clock.now()) {
+        throw new CommandRefused('expired', 'The approved show save expired.');
+      }
       this.#confirmMeasurement(input, measurementProof);
       this.#confirmAuthoring(input, authoringProof);
       this.#revision = Math.max(this.#revision + 1, Math.floor(this.#context.clock.now()));
-      saveShow(this.#db, input, this.#revision);
+      saveShow(this.#db, input, this.#revision, requestId);
       add(`bunny.state.${NANOLEAF_FAMILIES.shows.family}.${SHOW_TARGET}`, {
-        kind: 'state', type: NANOLEAF_FAMILIES.shows.type, subject: SHOW_TARGET, dataschema: schemaOf(NANOLEAF_FAMILIES.shows.family), data: showCatalog(this.#db),
+        kind: 'state', type: NANOLEAF_FAMILIES.shows.type, subject: SHOW_TARGET, dataschema: SHOW_CATALOG_SCHEMA, data: showCatalog(this.#db),
       }, {parent: command});
       add(`bunny.event.${NANOLEAF_FAMILIES.showSave.family}.${SHOW_TARGET}`, {
         kind: 'outcome', type: 'org.bunny.nanoleaf-show.save.completed', subject: SHOW_TARGET, dataschema: OUTCOME_SCHEMA,
@@ -1154,6 +1157,11 @@ export class NanoleafRuntime {
     const {requestId}=command.data, revision=momentRevision(this.#db,device), mode=controlState(this.#db,device).mode;
     const link=this.#links.get(device);
     if(link===undefined) return errorBody('not-found',{requestId});
+    try {this.#guard(device, command.data);}
+    catch (error) {
+      if (error instanceof CommandRefused) return errorBody(error.code, {requestId, detail: error.detail});
+      throw error;
+    }
     if(!commandSupported(capabilities(this.#db,device),{family:'moment-play',data:command.data}) || mode==='quiet') return errorBody('unsupported-capability',{requestId});
     let freeBase:FreeBase|undefined;
     if(mode==='free') {
@@ -1167,6 +1175,7 @@ export class NanoleafRuntime {
       if(freeBase===undefined) return errorBody('unsupported-capability',{requestId});
     }
     return this.#admit(command,()=>{
+      this.#guard(device, command.data);
       if(momentRevision(this.#db,device)!==revision || controlState(this.#db,device).mode!==mode) throw new CommandRefused('revision-conflict','the device choice changed during the read');
       if(savedLayout(this.#directory,device)===undefined) throw new CommandRefused('invalid-state','the saved Lines layout is not available yet');
       this.#record(command,device,'moment-play');
@@ -1275,9 +1284,10 @@ export class NanoleafRuntime {
     });
   }
 
-  #animation(device: string, command: Command<{requestId: string; animation: Record<string, unknown>}>): Promise<Reply> {
+  #animation(device: string, command: Command<Guards & {animation: Record<string, unknown>}>): Promise<Reply> {
     const {requestId, animation} = command.data;
     return this.#admit(command, report => {
+      this.#guard(device, command.data);
       // The saved device layout places the animation; until the device answered once there is none.
       // The condition clears by itself, so it is the device's state, as for a wall edit then.
       if (savedLayout(this.#directory, device) === undefined) {
@@ -1309,9 +1319,10 @@ export class NanoleafRuntime {
     }
   }
 
-  #wallEdit(device: string, command: Command<{requestId: string; edit: unknown}>): Promise<Reply> {
+  #wallEdit(device: string, command: Command<Guards & {edit: unknown}>): Promise<Reply> {
     const family = NANOLEAF_FAMILIES.wallEdit.family;
     return this.#admit(command, report => {
+      this.#guard(device, command.data);
       const edit = editOf(command.data.edit);
       bumpRevision(this.#db, applyEdit(this.#db, this.#feed.copy, savedLayout(this.#directory, device), device, edit, this.#ids));
       this.#record(command, device, family);
@@ -1383,11 +1394,12 @@ export class NanoleafRuntime {
    * a task it shows. A task it does not show, such as a skipped session from a source not qualified, is refused without
    * sending a request. The core's answer is the outcome.
    */
-  #acknowledge(device: string, command: Command<{requestId: string; task: string; noticeId: string}>): Promise<Reply> {
+  #acknowledge(device: string, command: Command<Guards & {task: string; noticeId: string}>): Promise<Reply> {
     const family = NANOLEAF_FAMILIES.acknowledge.family;
     const {requestId, task, noticeId} = command.data;
     let session: string | undefined;
     return this.#admit(command, () => {
+      this.#guard(device, command.data);
       const copy = this.#feed.copy.envelope;
       const presentedTask = copy === null ? undefined : presented(copy.snapshot).get(task);
       const root = presentedTask?.[0];

@@ -11,8 +11,8 @@ type ToolProperty = {type: 'string'; description: string; enum?: readonly string
   | {type: 'boolean' | 'integer'; description: string};
 export type ToolInputSchema = {type: 'object'; properties: Readonly<Record<string, ToolProperty>>;
   required: readonly string[]; additionalProperties: false};
-/** What a tool does when the model calls it: a question for the owner, a read, or a command that needs the owner's approval. */
-export type ToolEffect = 'question' | 'read' | 'command';
+/** What a tool does when the model calls it: a question, a read, a private draft edit, or an approved command. */
+export type ToolEffect = 'question' | 'read' | 'draft' | 'command';
 export type ToolDefinition = {readonly name: string; readonly description: string; readonly input: ToolInputSchema; readonly effect: ToolEffect};
 export type ToolCall = {id: string; name: string; input: Readonly<Record<string, unknown>>};
 /**

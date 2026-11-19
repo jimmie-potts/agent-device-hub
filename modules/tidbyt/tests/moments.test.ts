@@ -33,12 +33,12 @@ async function play(h: Hosted, overrides: Partial<MomentPlayRequest> = {}): Prom
     requestId: `moment-request-${String(sent)}`, momentId: `moment-${String(sent)}`, mood: 'celebrate', durationMs: 40 * SECOND, priorityClass: 'event',
     coversStatus: true, startAtMs: h.wall(), toleranceMs: 10 * SECOND, ...overrides,
   };
-  return await request(h, 'moment-play', 'org.bunny.moment.play.requested', {...data});
+  return await request(h, 'moment-play', 'org.bunny.moment.play.requested', {...data}, data.expectedGeneration === undefined ? '2.0' : '2.3');
 }
-async function request(h: Hosted, family: string, type: string, data: {requestId: string} & Record<string, unknown>): Promise<{status: string; code?: string}> {
+async function request(h: Hosted, family: string, type: string, data: {requestId: string} & Record<string, unknown>, minor = '2.0'): Promise<{status: string; code?: string}> {
   const client = operators.get(h) ?? h.bus.connect('bunny/parts/operator');
   operators.set(h, client);
-  const result = await client.request(`bunny.cmd.${family}.tidbyt`, {type, subject: 'tidbyt', dataschema: `${SCHEMA_BASE}${family}/2.0`, data}, {timeoutMs: 5000, requestId: data.requestId});
+  const result = await client.request(`bunny.cmd.${family}.tidbyt`, {type, subject: 'tidbyt', dataschema: `${SCHEMA_BASE}${family}/${minor}`, data}, {timeoutMs: 5000, requestId: data.requestId});
   return result.status === 'rejected' ? {status: 'rejected', code: result.error.error.code} : {status: result.status};
 }
 const mode = (h: Hosted, requestId: string, value: string): Promise<{status: string; code?: string}> =>
@@ -78,8 +78,12 @@ test('a moment interrupts at once, holds its pin for its time, returns to the ro
   const h = await host(context, {sessions: [session], playback: playback('playing'), ...onServer(server)});
   await until(() => server.state().installations[STATUS]?.pushes === 1 && server.state().installations[NOW_PLAYING]?.pushes === 1, 'both tiles');
   await until(() => h.device().availability === 'available', 'the record of the first answer');
-  const revision = h.device().configurationRevision;
-  assert.deepEqual(await play(h, {durationMs: 45 * SECOND}), {status: 'accepted'});
+  const {configurationRevision: revision, generation} = h.device();
+  assert.deepEqual(await play(h, {expectedConfigurationRevision: revision + 1, expectedGeneration: generation}),
+    {status: 'rejected', code: 'revision-conflict'});
+  assert.equal(cardStands(server), false);
+  assert.deepEqual(await play(h, {durationMs: 45 * SECOND, expectedConfigurationRevision: revision, expectedGeneration: generation}),
+    {status: 'accepted'});
   await until(() => taken(server), 'the takeover');
   const card = server.state().installations[MOMENT_INSTALLATION];
   assert.equal(card?.pushes, 1);

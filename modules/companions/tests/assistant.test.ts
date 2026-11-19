@@ -4,20 +4,22 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, type ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {test, type TestContext} from 'node:test';
 import {fullDisk, InProcessBus, type Participant, type ModuleContext, type RequestResult} from '@jimmie-potts/sdk';
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
-import {CONTEXT_TOO_LARGE, DECLINED, REFUSED} from '../src/assistant/engine.js';
+import {assistantStateDraft, CONTEXT_TOO_LARGE, DECLINED, REFUSED} from '../src/assistant/engine.js';
 import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
 import type {SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
-import {readLights} from '../src/assistant/lights.js';
+import {readDevices} from '../src/assistant/devices.js';
+import {catalogTools} from '../src/assistant/catalog-tools.js';
 import {FIXTURE_TEXT, summarizeSessions} from '../src/assistant/tools.js';
 
 function deferred<T>() {let resolve: (value: T) => void = () => {}; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
@@ -85,16 +87,16 @@ const light = (id: string, label = id): DeviceRecord => ({
 });
 
 void test('light status preserves unknown state after copy loss and evidence older than a write', () => {
-  assert.match(readLights(undefined, 'desk-lamp', 1000), /unavailable/);
-  assert.match(readLights([light('desk-lamp')], 'desk-lamp', 1000), /Observed power and brightness are unknown/);
+  assert.match(readDevices(undefined, 'desk-lamp', 1000), /unavailable/);
+  assert.match(readDevices([light('desk-lamp')], 'desk-lamp', 1000), /Observed power and brightness are unknown/);
   const device: DeviceRecord = {...light('desk-lamp'),
     observed: {status: 'known', observedAtMs: 1000, power: {status: 'known', value: true}, brightness: {status: 'known', value: 60}},
     lastTransmission: {status: 'known', transmittedAtMs: 2000, operationIds: []},
   };
-  assert.match(readLights([device], 'desk-lamp', 2000), /Current state is unknown. The observation is stale. Observed power: on/);
+  assert.match(readDevices([device], 'desk-lamp', 2000), /Current state is unknown. The observation is stale. Observed power: on/);
   const noWrite = {...device, lastTransmission: unknown};
-  assert.doesNotMatch(readLights([noWrite], 'desk-lamp', 2000), /unknown|stale/);
-  assert.match(readLights([noWrite], 'desk-lamp', 31_000), /Current state is unknown. The observation is stale/);
+  assert.doesNotMatch(readDevices([noWrite], 'desk-lamp', 2000), /unknown|stale/);
+  assert.match(readDevices([noWrite], 'desk-lamp', 31_000), /Current state is unknown. The observation is stale/);
 });
 
 void test('a duplicate light label asks for an exact device ID and sends nothing without a specific approval', async context => {
@@ -114,6 +116,71 @@ void test('a duplicate light label asks for an exact device ID and sends nothing
   assert.deepEqual((await page(w)).currentTask?.question?.proposal, {
     family: 'power-set', target: 'second', data: {on: false, expectedConfigurationRevision: 3, expectedGeneration: {epoch: 'start-1', sequence: 0}},
   });
+});
+
+void test('an owner-approved Wemo power request preserves the exact plug, owner and guards', async context => {
+  const plug: DeviceRecord = {...light('table-plug', 'Table plug'), kind: 'wemo'};
+  const provider = counted((_input, turn) => turn === 1 ? call('set_wemo_power', {device: 'Table plug', on: true}) : reply('Done.'));
+  const commands: AssistantDispatch[] = [];
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug],
+    dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on the table plug');
+  await until(() => status(w) === 'waiting' || status(w) === 'succeeded');
+  assert.equal(status(w), 'waiting', 'the Wemo action needs an explicit approval');
+  const proposal = {
+    family: 'power-set', target: plug.id, owner: 'bunny/modules/wemo',
+    data: {on: true, expectedConfigurationRevision: plug.configurationRevision, expectedGeneration: plug.generation},
+  };
+  assert.deepEqual((await page(w)).currentTask?.question?.proposal, proposal);
+  assert.equal(commands.length, 0);
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'succeeded');
+  assert.equal(commands.length, 1);
+  const saved = commands[0];
+  assert.ok(saved);
+  assert.ok(saved.requestId.startsWith(`${task(w)?.taskId}-step-`));
+  const {requestId, ...effect} = saved;
+  assert.deepEqual(effect, proposal);
+  assert.ok((await page(w)).messages.some(message => message.text.includes(`as operation ${requestId}`)));
+});
+
+void test('duplicate Wemo labels ask for an exact plug before proposing power', async context => {
+  const plugs = ['first-plug', 'second-plug'].map(id => ({...light(id, 'Table plug'), kind: 'wemo'}));
+  const provider = counted(() => call('set_wemo_power', {device: 'Table plug', on: true}));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: () => assert.fail('ambiguous Wemo power cannot be dispatched')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn on the table plug');
+  await until(() => status(w) === 'waiting');
+  const clarification = (await page(w)).currentTask?.question;
+  assert.equal(clarification?.kind, 'clarification');
+  assert.match(JSON.stringify(clarification), /first-plug, second-plug/);
+  assert.equal(clarification?.proposal, null);
+});
+
+void test('a Wemo hold refuses a power proposal without dispatch', async context => {
+  const plug: DeviceRecord = {...light('table-plug'), kind: 'wemo', availability: 'degraded', held: {requestId: 'prior', heldAtMs: 1}};
+  const w = await world(context, {tools: ['set_wemo_power'], devices: () => [plug],
+    dispatch: () => assert.fail('a held plug cannot be dispatched')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'SYNTHETIC_WEMO power table-plug on');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('refused: unavailable')));
+});
+
+void test('a saved Wemo proposal does not use a different power permission after restart', async context => {
+  const tools = ['set_wemo_power'];
+  const w = await world(context, {tools, devices: () => [{...light('table-plug'), kind: 'wemo'}],
+    dispatch: () => assert.fail('the Wemo power permission was revoked')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'SYNTHETIC_WEMO power table-plug off');
+  await until(() => status(w) === 'waiting');
+  tools.splice(0, 1, 'set_lifx_power');
+  await w.restart();
+  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.ok((await page(w)).messages.some(message => message.text.includes('This tool is not permitted')));
 });
 
 void test('revoking a light tool across a restart stops the saved approval before dispatch', async context => {
@@ -145,6 +212,70 @@ void test('the light command stays uncertain after a lost dispatch reply and doe
   await w.restart();
   assert.equal(status(w), 'uncertain');
   assert.equal(attempts, 1);
+});
+
+void test('all rollout tools fit in the published Conversation state and remain opt-in', async context => {
+  const tools = ['read_lifx', 'set_lifx_power', 'set_lifx_brightness', 'read_wemo', 'set_wemo_power', ...catalogTools.map(tool => tool.name)];
+  const w = await world(context, {tools});
+  const state = w.module().inspectAssistant();
+  assert.ok(state);
+  assert.deepEqual(state.tools, tools);
+  assert.ok(tools.length > 32);
+  const payload = {...assistantStateDraft(state), specversion: '1.0', bunnyprofile: '2.0',
+    source: 'bunny/modules/companions', id: 'rollout-state', time: '2026-11-05T00:00:00.000Z', datacontenttype: 'application/json',
+    traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
+  assert.equal(payload.dataschema, 'https://bunny.invalid/events/assistant-state/2.1');
+  assert.equal(coreValidator().validate(payload).ok, true);
+  assert.equal(coreValidator().validate({...payload, dataschema: 'https://bunny.invalid/events/assistant-state/2.0'}).ok, false);
+});
+
+void test('Conversation pages through large show catalogs and can read a saved title at the end', async context => {
+  const w = await world(context, {tools: ['read_light_shows']});
+  const owner = w.bus.connect('bunny/modules/nanoleaf');
+  context.after(() => owner.close());
+  const versions = Array.from({length: 48}, (_, index) => ({version: index + 1, versionName: `Synthetic immutable version ${String(index + 1)}`}));
+  await owner.serveSync(['nanoleaf-shows'], () => ({revision: 1, states: [{
+    type: 'org.bunny.nanoleaf-shows.updated', subject: 'shows', dataschema: 'https://bunny.invalid/events/nanoleaf-shows/2.1',
+    data: {id: 'shows', revision: 1, shows: [{id: 'show-long', name: 'Synthetic catalog', version: versions.length, versions}]},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  const read = async (offset: number, expected: string) => {
+    const prior = task(w)?.taskId;
+    await input(w.core, w.module(), 'SYNTHETIC_CATALOG ' + JSON.stringify({name: 'read_light_shows',
+      input: {view: 'saved', id: 'show-long', offset}}));
+    await until(() => status(w) === 'succeeded' && task(w)?.taskId !== prior);
+    const message = (await page(w)).messages.filter(message => message.role === 'tool').at(-1)?.text;
+    assert.match(message ?? '', new RegExp(expected));
+    const content = JSON.parse(message ?? '{}') as {items: object[]; nextOffset: number | null};
+    assert.equal(content.items.length, 8);
+    assert.equal(content.nextOffset, offset === 0 ? 8 : null);
+  };
+  await read(0, 'Synthetic immutable version 8');
+  await read(40, 'Synthetic immutable version 48');
+});
+
+void test('a lost saved-show playback answer stays uncertain and never sends a second request', async context => {
+  const requests: AssistantDispatch[] = [];
+  const w = await world(context, {tools: ['control_music_lighting_control'], dispatch: data => {
+    requests.push(data);
+    return Promise.resolve({status: 'uncertain', requestId: data.requestId, error: errorBody('uncertain-result')});
+  }});
+  await w.core.serveSync(['music-lighting-state'], () => ({revision: 1, states: [{
+    type: 'org.bunny.music-lighting.updated', subject: 'wall', dataschema: 'https://bunny.invalid/events/music-lighting-state/2.0',
+    data: {id: 'wall', revision: 1, session: {status: 'active', generation: 'specific-show', operationId: 'previous-start',
+      startedAtMs: 1000, show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0}}, last: null},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'SYNTHETIC_CATALOG ' + JSON.stringify({name: 'control_music_lighting_control',
+    input: {owner: 'bunny/core', target: 'wall', arguments: '{"action":"stop"}'}}));
+  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'uncertain');
+  assert.equal(task(w)?.code, 'uncertain-result');
+  assert.deepEqual(requests[0]?.data, {action: 'stop', generation: 'specific-show'});
+  await w.restart();
+  assert.equal(status(w), 'uncertain');
+  assert.equal(requests.length, 1);
 });
 
 void test('private task pauses, restarts without execution and consumes an explicit saved answer in a new run', async context => {

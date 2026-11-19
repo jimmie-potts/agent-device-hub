@@ -1,12 +1,25 @@
 // The labelled synthetic provider (Hub #499, #46): a deterministic script behind the same turn contract as a hosted
 // provider, with no network call and no paid usage. It walks the question, read and approval paths so the catalog and
 // browser journeys exercise the engine without a model account.
-import {ASK_OWNER, DELEGATE_CODING, MODES, READ_FIXTURE, READ_LIFX, READ_SESSIONS, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_MODE} from './tools.js';
+import {ASK_OWNER, DELEGATE_CODING, MODES, READ_FIXTURE, READ_LIFX, READ_SESSIONS, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_MODE, READ_WEMO, SET_WEMO_POWER} from './tools.js';
+import {isCatalogTool} from './catalog-tools.js';
 import {textBytes, type ModelProvider, type TurnInput, type TurnReply} from './provider.js';
 
 export const SYNTHETIC_QUESTION = 'Which detail should the synthetic result emphasize?';
 const units = (text: string): number => Math.ceil(textBytes(text) / 4);
 const call = (name: string, input: Record<string, unknown>, ordinal: number) => ({id: `synthetic-call-${String(ordinal)}`, name, input});
+
+function catalogInput(text: string): {name: string; input: Record<string, unknown>} | undefined {
+  const prefix = 'SYNTHETIC_CATALOG ';
+  if (!text.startsWith(prefix)) return undefined;
+  try {
+    const candidate: unknown = JSON.parse(text.slice(prefix.length));
+    if (typeof candidate !== 'object' || candidate === null || !('name' in candidate) || !('input' in candidate)) return undefined;
+    const {name, input} = candidate;
+    if (typeof name !== 'string' || !isCatalogTool(name) || typeof input !== 'object' || input === null || Array.isArray(input)) return undefined;
+    return {name, input: Object.fromEntries(Object.entries(input))};
+  } catch {return undefined;}
+}
 
 /**
  * Turn one proposes a mode when the owner names one and the tool is allowed, otherwise asks the fixed question. After the
@@ -23,7 +36,18 @@ export class SyntheticProvider implements ModelProvider {
     const tools = input.transcript.filter(item => item.role === 'tool');
     const last = tools.at(-1);
     let reply: TurnReply;
+    const catalog = catalogInput(owner?.text ?? '');
+    if (tools.length === 0 && catalog !== undefined && allows(catalog.name)) {
+      return Promise.resolve({text: null, calls: [call(catalog.name, catalog.input, ordinal)], stop: 'tool', units: units(text)});
+    }
     const light = /^SYNTHETIC_LIFX (status|power|brightness) (\S+)(?: (\S+))?$/.exec(owner?.text ?? '');
+    const plug = /^SYNTHETIC_WEMO (status|power) (\S+)(?: (on|off))?$/.exec(owner?.text ?? '');
+    if (tools.length === 0 && plug !== null) {
+      const [, action, device, value] = plug;
+      const name = action === 'status' ? READ_WEMO : SET_WEMO_POWER;
+      const args = action === 'status' ? {device} : {device, on: value === 'on'};
+      if (allows(name)) return Promise.resolve({text: null, calls: [call(name, args, ordinal)], stop: 'tool', units: units(text)});
+    }
     if (tools.length === 0 && light !== null) {
       const [, action, device, value] = light;
       const name = action === 'status' ? READ_LIFX : action === 'power' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;

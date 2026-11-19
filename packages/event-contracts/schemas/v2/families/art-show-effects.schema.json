@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-show-effects/2.0",
+  "description": "The art-show owner's per-surface refusals before dispatch. A phase with an operation uses that operation's recorded outcome.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "requestId", "skipped"],
+  "properties": {
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "skipped": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target", "phase", "code"],
+        "properties": {
+          "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+          "phase": {"enum": ["prepare", "present"]},
+          "code": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/errorCode"}
+        }
+      }
+    }
+  }
+}

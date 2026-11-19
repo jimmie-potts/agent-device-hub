@@ -42,6 +42,19 @@ test('assistant-dispatch 2.1 requires both LIFX guards and admits only the exact
   invalid({...light('power-set', {...guards, on: false}), subject: 'desk-lamp'});
 });
 
+test('assistant-dispatch 2.2 binds Wemo power to its owning integration and requires both guards', () => {
+  const wemo = {requestId: 'wemo-1', family: 'power-set', target: 'table-plug', owner: 'bunny/modules/wemo',
+    data: {on: true, expectedConfigurationRevision: 2, expectedGeneration: {epoch: 'start-1', sequence: 0}}};
+  const command = data => ({...dispatch(data), dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.2'});
+  valid(command(wemo));
+  valid(command({...wemo, data: {...wemo.data, on: false}}));
+  invalid(command({...wemo, owner: 'bunny/modules/lifx'}));
+  invalid(command({...wemo, family: 'brightness-set'}));
+  invalid(command({...wemo, data: {on: true, expectedConfigurationRevision: 2}}));
+  invalid(command({...wemo, data: {...wemo.data, on: 'true'}}));
+  invalid({...command(wemo), dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.1'});
+});
+
 test('assistant-state carries the provider, model and tool names and refuses unknown providers or extra fields', () => {
   valid(state());
   valid(state({...state().data, provider: 'anthropic', model: 'claude-opus-5-5', tools: ['read_sessions', 'set_mode']}));
