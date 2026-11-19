@@ -125,7 +125,7 @@ try {
     await world.observe(sessionStarted, {identity: {...OTHER, sessionId: 'session-sim-3'}, title: {value: 'Review the inbox', source: 'provider'}});
     await replacement;
     await feed(page, 'connected');
-    assert.match(await row('Plan wave three').innerText(), /Freshness is uncertain/, 'retained rows remain stale while the replacement snapshot is held');
+    assert.match(await row('Plan wave three').innerText(), /The session copy is not synced\./, 'retained rows remain stale while the replacement snapshot is held');
     assert.match(await page.locator('.sidebar-foot').innerText(), /Syncing sessions/, 'a recovered stream alone is not a healthy copy');
     await chip('Plan wave three', 'Stale');
     assert.equal(await page.locator('.agent-summary > div').first().locator('strong').textContent(), '0');
@@ -248,10 +248,11 @@ try {
   assert.equal(world.browserSessions(), 0, 'the page did not sign in by itself');
   await page.getByRole('button', {name: 'Sign in again', exact: true}).click();
   await feed(page, 'connected');
-  // Its work was not running, so the restart leaves it as it was (#1865 step 8).
+  // A restart makes only running work unconfirmed (#1865): the idle session shows as it is once the copy syncs.
   await chip('Port the wall', 'Idle');
+  assert.equal(await row('Port the wall').getAttribute('data-stale'), 'false', 'a restart does not make an idle session uncertain');
   await row('Port the wall').locator('summary').click();
-  assert.equal(await row('Port the wall').getByText('Last known:', {exact: false}).count(), 0, 'nothing marks it stale');
+  await row('Port the wall').getByText(/^Last published change: .* ago\. Not a completion estimate\.$/).waitFor();
   assert.equal(world.browserSessions(), 1);
   checks.push('an ended session offers one sign-in, which restores the page');
 

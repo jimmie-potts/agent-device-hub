@@ -15,3 +15,23 @@ The dashboard SHALL keep one copy of the core's `session` family through SDK syn
 #### Scenario: Silence marks only work
 - **WHEN** one session waits on a question, one holds an unread finished turn and one works, and all three stay silent for ten minutes
 - **THEN** only the working row is marked uncertain, and the notice override stays available for the finished session
+
+### Requirement: Session row label controls
+
+The dashboard SHALL let a person set or clear a session's explicit label from its row using the current synced session revision. It SHALL show requested command, accepted reply and confirmed record evidence separately; an accepted transport answer alone SHALL NOT confirm a label. A conflict SHALL retain the draft and require a refreshed explicit attempt with a new request identity. An unsynced session copy or a pending attempt SHALL disable submission; the session's status, unknown or with unconfirmed work, SHALL NOT, because the label is the owner's own data and the expected-revision guard still refuses a changed record. Reload and reconnect SHALL show durable labels without resending a command. Ending or replacing a session SHALL retire its editor. Controls SHALL support keyboard use.
+
+#### Scenario: Label and clear from the row
+- **WHEN** a person saves a label and then clears it from a current session row
+- **THEN** one command is sent per explicit action, requested and accepted evidence are distinct, and the synced record confirms the label and then its fallback
+
+#### Scenario: Conflict and reconnect
+- **WHEN** the row changes while its label draft is open or the stream is lost during submission
+- **THEN** the draft remains available, submission is disabled while the copy is not synced, and resync does not resend; a conflict requires a new explicit attempt
+
+#### Scenario: Reload and keyboard
+- **WHEN** the person reloads after a confirmed label or uses the row controls with a keyboard
+- **THEN** the durable label is displayed without another command and the controls remain usable
+
+#### Scenario: Label on an uncertain session
+- **WHEN** a session's status is unknown or its work is unconfirmed on a synced copy
+- **THEN** its label can still be set or cleared, and a matching synced record confirms the label

@@ -21,6 +21,7 @@ import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type C
 import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryPage, type HistoryRow, type HistoryRules} from './history.js';
 import type {HistoryDevice} from './history-alarm.js';
 import {inboxTool, historyTool} from './read-tools.js';
+import {PROVIDERS} from '@jimmie-potts/event-contracts/v2/sources';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
 import {ModePart} from './mode.js';
@@ -165,7 +166,7 @@ function sessionsTool(records: () => {revision: number; sessions: readonly Sessi
     name: 'sessions',
     description: 'Read the agent sessions the core holds, optionally only one provider\'s and those whose label, title, project or session ID contains q, ignoring case. '
       + 'Each record carries its revision, which approval recovery takes as expectedRevision. Reading changes nothing, and freshness, attention and unread state stay as observed.',
-    input: {type: 'object', additionalProperties: false, properties: {q: {type: 'string', maxLength: MAX_QUERY}, provider: {enum: ['codex', 'claude']}}},
+    input: {type: 'object', additionalProperties: false, properties: {q: {type: 'string', maxLength: MAX_QUERY}, provider: {enum: [...PROVIDERS]}}},
     output: {type: 'object', additionalProperties: false, required: ['revision', 'sessions'], properties: {revision: {type: 'integer', minimum: 0}, sessions: {type: 'array'}}},
     read: ({q, provider}) => {
       const held = records();

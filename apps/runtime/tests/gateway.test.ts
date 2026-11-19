@@ -10,7 +10,8 @@ import {request as httpRequest, type IncomingMessage} from 'node:http';
 import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {OperationRecord, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {PROVIDERS} from '@jimmie-potts/event-contracts/v2/sources';
 import {
   MAX_REMEMBERED_COMMANDS, MAX_REMEMBERED_PER_PRINCIPAL, MAX_REMEMBERED_PER_SOURCE, SdkError, connectRemote, traceFields, type BunnyModule,
 } from '@jimmie-potts/sdk';
@@ -19,6 +20,7 @@ import {
   revokeCredential,
   tokenDigest, type LogRecord, type Runtime,
 } from '../src/index.js';
+import {OTHER, approvalPrompt, observation, sessionStarted, turnStarted} from './fixtures/agents.js';
 import {createCoreModule} from './fixtures/core.js';
 import {DEVICE_FAMILY, deviceRecord, deviceState} from './fixtures/device.js';
 import {SimulatedLamps, createLampModule} from './fixtures/lamp.js';
@@ -525,6 +527,52 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
     .filter(span => span.name === 'bunny.feed.read' && span.attributes.some(item => item.key === 'http.route' && item.value.stringValue === '/mcp'));
   assert.ok(reads.length >= 1, 'the sign_status call left a read span');
   assert.ok(reads.every(span => span.attributes.some(item => item.key === 'bunny.module' && item.value.stringValue === 'sign') && span.status.code !== 2), 'the span names the module and was not an error');
+});
+
+it('the session reads, the snapshot and core_sessions pass the core\'s records unchanged, filtered by the supported providers (#1865)', async context => {
+  const reader = READER(), hook = HOOK();
+  const g = await gateway(context, [reader, hook]);
+  const {ask, url} = g;
+  const remote = await connectRemote({url, source: hook.source, token: hook.token});
+  context.after(() => remote.close());
+  const codex = {...OTHER, provider: 'codex', client: 'cli', sourceId: 'codex-cli'} as const;
+  for (const [event, options] of [[sessionStarted, {title: {value: 'Port the wall', source: 'provider'}}], [turnStarted, {}], [approvalPrompt('approval-1865'), {}],
+    [sessionStarted, {identity: codex}]] as const) {
+    const {key, draft} = observation(event, Date.now(), options);
+    await remote.publish(key, draft);
+  }
+  const byId = (records: readonly SessionRecord[]): SessionRecord[] => [...records].sort((a, b) => a.id < b.id ? -1 : 1);
+  const family = async (): Promise<SessionRecord[]> => byId(((await ask(url, '/api/v2/families/session', {token: reader.token})).body as {records: SessionRecord[]}).records);
+  await waitFor(async () => {const held = await family(); return held.length === 2 && held.some(record => record.attention.length > 0);}, 5000, 'both sessions, one waiting');
+  // The core's own copy, as any participant syncs it, is what every route passes on.
+  const listener = await connectRemote({url, source: reader.source, token: reader.token});
+  context.after(() => listener.close());
+  const synced = await listener.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  assert.equal(synced.status, 'synced');
+  if (synced.status !== 'synced') return;
+  const records = byId(synced.copy.states().map(message => message.data));
+  await synced.copy.close();
+  assert.deepEqual(await family(), records, 'the family read');
+  const snapshot = await ask(url, '/api/v2/snapshot?families=session', {token: reader.token});
+  assert.deepEqual(byId((snapshot.body as {records: {session: SessionRecord[]}}).records.session), records, 'the snapshot');
+  const accept = {accept: 'application/json, text/event-stream'};
+  const init = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: accept, body: {
+    jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-11-25', capabilities: {}, clientInfo: {name: 'test', version: '1.0.0'}},
+  }});
+  const headers = {...accept, 'mcp-session-id': init.headers.get('mcp-session-id') ?? '', 'mcp-protocol-version': '2025-11-25'};
+  await ask(url, '/mcp', {method: 'POST', token: reader.token, headers, body: {jsonrpc: '2.0', method: 'notifications/initialized'}});
+  const listed = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers, body: {jsonrpc: '2.0', id: 2, method: 'tools/list'}});
+  const tool = (listed.body as {result: {tools: {name: string; inputSchema: {properties: {provider: {enum: string[]}}}}[]}}).result.tools.find(entry => entry.name === 'core_sessions');
+  assert.deepEqual(tool?.inputSchema.properties.provider.enum, [...PROVIDERS], 'the provider filter is the supported-source definition\'s');
+  const sessions = async (args: object): Promise<SessionRecord[]> => {
+    const answer = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers, body: {jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name: 'core_sessions', arguments: args}}});
+    return byId((answer.body as {result: {structuredContent: {data: {result: {sessions: SessionRecord[]}}}}}).result.structuredContent.data.result.sessions);
+  };
+  assert.deepEqual(await sessions({}), records, 'core_sessions');
+  assert.deepEqual(await sessions({provider: 'codex'}), records.filter(record => record.identity.provider === 'codex'));
+  assert.deepEqual(await sessions({provider: 'claude', q: 'WALL'}), records.filter(record => record.title?.value === 'Port the wall'));
+  await g.runtime.stop();
+  assertNoToken(g);
 });
 
 it('a module\'s page and content come with the gateway\'s policy, its settings never show a secret, and a contribution that throws fails only its module', async context => {

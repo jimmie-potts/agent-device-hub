@@ -4,6 +4,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AgentOccurrence, OperationRecord, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {readSession, sessionView, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog,type Cancel,type ModuleScheduler,type StateDraft,type SyncedCopy, Outcome} from '@jimmie-potts/sdk';
 import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
@@ -55,6 +56,27 @@ export type AutomationControls = Pick<Automation, 'rules' | 'rule' | 'interruptS
   log(limit: number, before?: number): (LogEntry & {operation?: Operation})[];
 };
 type DeviceFollower = {copy?: SyncedCopy<DeviceRecord>; fresh:boolean; pending: Promise<void>; retry: Backoff; cancel?: Cancel};
+
+/**
+ * Whether any session the core holds needs the owner, by the hub's shared status (Hub #1865, design decision 10): the
+ * active alert that holds event moments, and the attention gate of the art schedule and the art show.
+ */
+export function ownerNeeded(views: Iterable<SessionView>): boolean {
+  for (const view of views) if (view.status.class === 'needs-owner') return true;
+  return false;
+}
+
+/**
+ * The automation event of one live agent occurrence, which rules match by kind: its kind, an opaque agent from the
+ * session's identity and, on a known turn, an opaque task.
+ */
+export function automationEvent(kind: string, message: Pick<Message<AgentOccurrence>, 'id' | 'data'>): {
+  id: string; source: 'core'; kind: string; delivery: 'live'; agent: string; task?: string;
+} {
+  const data = message.data;
+  return {id: message.id, source: 'core', kind, delivery: 'live', agent: opaque(JSON.stringify(data.identity)),
+    ...(data.turn.status === 'known' ? {task: opaque(`${data.session}\0${data.turn.id}`)} : {})};
+}
 
 export class AutomationPart implements CorePart {
   readonly families = ['power-limit', 'art-schedule', ...AUTOMATION_FAMILIES];
@@ -115,7 +137,8 @@ export class AutomationPart implements CorePart {
   #closed = false;
   #participants: readonly ModeParticipant[] = [];
   readonly #devices = new Map<string, DeviceFollower>();
-  readonly #sessions = new Map<string, SessionRecord>();
+  /** The core's sessions as the shared session view (Hub #1865), from its own committed session messages. */
+  readonly #sessions = new Map<string, SessionView>();
   readonly #eligibility = new LivePublication();
   setParticipants(participants: readonly ModeParticipant[]): void {
     this.#participants=participants;
@@ -238,7 +261,7 @@ export class AutomationPart implements CorePart {
           return Promise.resolve({presentation:'unknown',alert:'unknown',moments:'unknown',unavailable:true});
         const mode=record.desired.mode.status==='known'?record.desired.mode.value:undefined;
         return Promise.resolve({presentation:mode==='quiet'?'quiet':mode==='work'?'status':mode==='free'?'content':'quiet',
-          alert:[...this.#sessions.values()].some(s=>s.attention.length>0)?'active':'none',
+          alert:ownerNeeded(this.#sessions.values())?'active':'none',
           moments:record.capabilities.moments.supported?'supported':'unsupported'});
       },
       sender:async(target,moment,parent)=>{
@@ -255,12 +278,12 @@ export class AutomationPart implements CorePart {
     this.#schedule=createArtSchedule({store:new ArtScheduleStore(database,work=>handle.transaction(work)),shared:store,core:handle,
       scheduler:this.#scheduler,active:()=>!this.#closed&&!this.#signal.aborted,plans:this.#art,
       current:id=>{const device=this.#configured.find(value=>value.id===id);return device!==undefined&&this.#devices.get(device.owner)?.fresh===true?this.#device(id):undefined;},settings:()=>this.#automation?.settings()??structuredClone(DEFAULT_SETTINGS),
-      attention:()=>[...this.#sessions.values()].some(session=>session.attention.length>0),inputs:this.#inputs,choice:this.choice,
+      attention:()=>ownerNeeded(this.#sessions.values()),inputs:this.#inputs,choice:this.choice,
       failed:()=>recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'})});
     const inputs=this.#inputs;
     this.#show=createArtShow({clock:()=>handle.clock.now(),active:()=>!this.#closed&&!this.#signal.aborted,plans:this.#art,art:()=>inputs.ownerArt(),
       retained:(artworkId,timeoutMs)=>this.#artCatalog?.(artworkId,timeoutMs)??Promise.resolve(undefined),
-      attention:()=>[...this.#sessions.values()].some(session=>session.attention.length>0),log:rows=>{store.appendLog(rows);},operation:requestId=>handle.operation(requestId),
+      attention:()=>ownerNeeded(this.#sessions.values()),log:rows=>{store.appendLog(rows);},operation:requestId=>handle.operation(requestId),
       failed:()=>recordLog(handle.log,'operation.failed',{'bunny.operation':'storage','bunny.outcome':Outcome.failed,'bunny.code':'internal'})});
   }
   authorizeAmbient(authorization:string,target:string,compositionId:string):ErrorBody|undefined {
@@ -272,11 +295,17 @@ export class AutomationPart implements CorePart {
   /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
   seed(records: readonly SessionRecord[]): void {
     this.#sessions.clear();
-    for (const record of records) this.#sessions.set(record.id, record);
+    // The store's own records, which it validated when it committed them.
+    for (const record of records) this.#sessions.set(record.id, sessionView(record));
   }
   committed(change: CoreChange): void {
     for (const message of change.messages) {
-      if (message.kind === 'state' && message.type === 'org.bunny.session.updated') this.#sessions.set(message.subject, message.data as SessionRecord);
+      if (message.kind === 'state' && message.type === 'org.bunny.session.updated') {
+        // The core validated its own message before it committed it, so the shared read function always reads it.
+        const view = readSession(message);
+        if (view === undefined) this.#sessions.delete(message.subject);
+        else this.#sessions.set(message.subject, view);
+      }
       if (message.kind === 'removal' && message.type === 'org.bunny.session.removed') this.#sessions.delete(message.subject);
     }
     this.#eligibility.committed(change.messages, new Set(KINDS.keys()));
@@ -290,9 +319,7 @@ export class AutomationPart implements CorePart {
       },{onOverflow:()=>{this.#art?.changed();this.#schedule?.changed();}}),
       ...[...KINDS.values()].map(kind=>handle.sdk.subscribe<AgentOccurrence>(`bunny.event.${kind}.*`,message=>{
         if(this.#closed || message.source!==handle.sdk.source || !this.#eligibility.take(message.id)) return;
-        const data=message.data;
-        this.#automation?.submit({id:message.id,source:'core',kind,delivery:'live',agent:opaque(JSON.stringify(data.identity)),
-          ...(data.turn.status==='known'?{task:opaque(`${data.session}\0${data.turn.id}`)}:{})},{traceparent:message.traceparent});
+        this.#automation?.submit(automationEvent(kind,message),{traceparent:message.traceparent});
       },{onOverflow:()=>{this.#eligibility.clear();}})),
     ]);
   }

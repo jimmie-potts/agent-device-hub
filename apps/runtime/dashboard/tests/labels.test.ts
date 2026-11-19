@@ -26,9 +26,9 @@ void test('matching no-ops confirm at the same revision; clear needs an absent e
   assert.equal(labelEvidence(clear, observed, true, answer), 'accepted');
 });
 
-void test('a stale copy does not confirm and a replaced generation retires the attempt', () => {
+void test('a copy that is not synced does not confirm and a replaced generation retires the attempt', () => {
   assert.equal(labelEvidence(attempt, observed, false, accepted), 'accepted');
-  assert.equal(labelEvidence(attempt, {...observed, uncertain: true}, true, accepted), 'accepted');
+  assert.equal(labelEvidence(attempt, {...observed, uncertain: true}, true, accepted), 'confirmed', 'an uncertain status does not hide a matching synced label (#1865)');
   assert.equal(labelEvidence(attempt, {...observed, generation: 2}, true, accepted), 'retired');
   assert.equal(labelEvidence(attempt, undefined, true, accepted), 'retired');
 });
@@ -40,10 +40,12 @@ void test('refusal and uncertainty do not erase the captured attempt or become r
   assert.deepEqual(attempt, {id: row.id, generation: 1, revision: 4, label: 'Review', requestId: 'label-attempt-1'});
 });
 
-void test('submission needs a live current row, no pending request and at most 80 Unicode scalars', () => {
+void test('submission needs a synced copy, no pending request and at most 80 Unicode scalars', () => {
   assert.equal(labelCanSubmit(row, true, false, 'Review'), true);
   assert.equal(labelCanSubmit(row, false, false, 'Review'), false);
-  assert.equal(labelCanSubmit({...row, uncertain: true}, true, false, null), false);
+  // The label is the owner's own data: an unknown status or unconfirmed work does not block it (#1865).
+  assert.equal(labelCanSubmit({...row, uncertain: true}, true, false, null), true);
+  assert.equal(labelCanSubmit({...row, uncertain: true}, false, false, 'Review'), false);
   assert.equal(labelCanSubmit(row, true, true, null), false);
   assert.equal(labelCanSubmit(row, true, false, ''), false);
   assert.equal(labelCanSubmit(row, true, false, '🐰'.repeat(80)), true);

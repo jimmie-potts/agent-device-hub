@@ -41,17 +41,17 @@ Each numbered group is one pull request on its own `gh-1865-<step>` branch, with
 
 ## 5. Readers: dashboard, gateway, MCP and core parts
 
-- [ ] 5.1 Dashboard rows, status card and Habitat: read through `readSession`, with uncertainty only for unknown status, unconfirmed work or an unsynced copy. The card labels its time as the time since the last change. Evidence: dashboard tests, and Habitat bindings do not churn on progress or reconnect.
-- [ ] 5.2 Notice override control: drop the freshness term and keep the synced copy, selected notice and expected-revision guard. Evidence: the control stays available for a finished session silent for ten minutes (red before).
-- [ ] 5.3 Timeline: title `session/3.0` changes from `status`, keep the old-row rule and fall back otherwise. Evidence: timeline model tests with both row shapes.
-- [ ] 5.4 Automations and the art alert read attention as `needs-owner`. The gateway routes, the snapshot route and `core_sessions` pass records unchanged, and `core_sessions` takes its `provider` filter from the supported-source definition. Evidence: automation and gateway tests, and the shared occurrence sequences trigger the same rules.
-- [ ] 5.5 Run `test:runtime-dashboard:built` with its browser suite, `test:runtime:built` and `test:sdk:built`, and a disposable acceptance exercise of the session rows and Habitat.
+- [x] 5.1 Dashboard rows, status card and Habitat: read through `readSession`, with uncertainty only for unknown status, unconfirmed work or an unsynced copy. The card labels its time as the time since the last change. Evidence: dashboard tests, and Habitat bindings do not churn on progress or reconnect.
+- [x] 5.2 Notice override control: drop the freshness term and keep the synced copy, selected notice and expected-revision guard. Evidence: the control stays available for a finished session silent for ten minutes (red before).
+- [x] 5.3 Timeline: title `session/3.0` changes from `status`, keep the old-row rule and fall back otherwise. Evidence: timeline model tests with both row shapes.
+- [x] 5.4 Automations and the art alert read attention as `needs-owner`. The gateway routes, the snapshot route and `core_sessions` pass records unchanged, and `core_sessions` takes its `provider` filter from the supported-source definition. Evidence: automation and gateway tests, and the shared occurrence sequences trigger the same rules.
+- [x] 5.5 Run `test:runtime-dashboard:built` with its browser suite, `test:runtime:built` and `test:sdk:built`, and a disposable acceptance exercise of the session rows and Habitat.
 
 ## 6. Readers: Codex Desktop and the read-receipt helpers
 
-- [ ] 6.1 Codex Desktop module: read through `readSession` with the same settle rule. Evidence: `test:codex-desktop:built` passes unchanged and runs the shared cases.
-- [ ] 6.2 Read-receipt helpers: accept what `readSession` accepts and keep generation, turn, notice and receipt matching. Evidence: the helper and observer suites pass, and a record they do not accept yields no receipt and no error to the client.
-- [ ] 6.3 `decideReadReceipt` (`packages/event-contracts/src/v2/read-receipts.ts`) reads the view's work state instead of the record's `activity`. Evidence: the read-receipt contract tests and the core store's receipt tests pass.
+- [x] 6.1 Codex Desktop module: read through `readSession` with the same settle rule. Evidence: `test:codex-desktop:built` passes unchanged and runs the shared cases.
+- [x] 6.2 Read-receipt helpers: accept what `readSession` accepts and keep generation, turn, notice and receipt matching. Evidence: the helper and observer suites pass, and a record they do not accept yields no receipt and no error to the client.
+- [x] 6.3 `decideReadReceipt` (`packages/event-contracts/src/v2/read-receipts.ts`) reads the view's work state instead of the record's `activity`. Evidence: the read-receipt contract tests and the core store's receipt tests pass.
 
 ## 7. Core: session logic and storage (focused second review: storage migration, writer exclusion, device-command safety)
 

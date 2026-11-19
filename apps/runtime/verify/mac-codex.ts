@@ -168,8 +168,8 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   await click(signIn, 'Click Sign in again after the simulated restart');
   await page.locator('main#main[data-feed="connected"]').waitFor();
   await page.getByText('Mac Codex', {exact: false}).first().waitFor();
-  await show(finished, 'Feed recovered; the finished record keeps its status across the restart');
-  await t.expect('recovered card preserves Finished and unread, not stale', async () => await finished.innerText() === 'Finished · unread');
+  await show(finished, 'Feed recovered; the retained finished turn still shows unread');
+  await t.expect('recovered card preserves Finished: a restart makes only running work uncertain (#1865)', async () => await finished.innerText() === 'Finished · unread');
   await click(card.locator('summary'), 'Open the recovered card to inspect its retained notice');
   const notice = card.getByText('Turn portable-turn ended', {exact: true});
   await notice.waitFor();

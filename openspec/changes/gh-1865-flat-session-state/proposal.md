@@ -25,6 +25,7 @@ None.
 - `bunny-message-profile`: adds `session/3.0`, the supported-source definition, the shared read function and the case set, and retires session freshness.
 - `runtime-agent-hooks`: the hook builds the observation with the runtime's own adapter.
 - `runtime-dashboard`: session rows and their uncertainty come from the shared status.
+- `agent-status-cards`: cards show Unconfirmed for unconfirmed work and Stale only for an unsynced copy, and label edits are blocked only while the copy is not synced.
 - `runtime-tidbyt`: the status tile marks only unknown status and unconfirmed work.
 - `nanoleaf-module`: the Lines follow the hub's shared status through the shared read function, with no session rule of their own.
 - `bunny-pixoo-module`: the Monitor's uncertainty marker follows the shared status.

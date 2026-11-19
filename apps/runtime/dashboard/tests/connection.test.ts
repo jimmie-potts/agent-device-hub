@@ -256,7 +256,14 @@ function manual(): {scheduler: Scheduler; advance: (ms: number) => Promise<void>
   };
 }
 
-const record = {id: 'b'.repeat(64), revision: 3} as SessionRecord;
+/** A synthetic, idle Claude Code session: a whole record, since the copy reads each one through the shared session view. */
+const record: SessionRecord = {
+  id: 'b'.repeat(64), revision: 3, generation: 1,
+  identity: {provider: 'claude', client: 'code', hostId: 'host-sim', sourceId: 'claude-code', sessionId: 'session-sim-1'},
+  parent: {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'}, activity: 'idle', attention: [], notices: [], read: 'unknown',
+  unavailable: [], ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, freshness: 'current', restartUncertain: false,
+  children: {active: 0, uncertain: 0},
+};
 const state = {kind: 'state', data: record} as Message<SessionRecord>;
 
 /** A participant whose syncs follow `answers` in turn, `synced` or a refusal's code; it records when each sync came. */
@@ -289,6 +296,8 @@ void test('a sync the core refuses is tried again after 1 s, doubling to 30 s, a
   const connection = new DashboardConnection({url: 'http://127.0.0.1:1', scheduler: clock.scheduler, now: clock.now, connect: () => Promise.resolve(script.participant)});
   await connection.start();
   assert.deepEqual([connection.getState().feed, connection.getState().sessions.synced, connection.getState().sessions.records], ['connected', true, [record]]);
+  assert.deepEqual(connection.getState().sessions.views.map(view => [view.id, view.status]), [[record.id, {class: 'quiet', detail: 'idle'}]],
+    'the copy reads each record through the shared session view (#1865)');
   // A later sync fails: the copy stops, and the page keeps its records, no longer synced.
   script.fail('unavailable');
   await clock.advance(0);

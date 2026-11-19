@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionView,type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {assignSession,conversationFor,presentation,reconcileBindings,settingsFrom} from '../src/habitat/session.ts';
 import {exportPreferences,importPreferences,parsePreferences,PREFERENCE_KEYS} from '../src/habitat/preferences.ts';
-function record(n:number):SessionRecord{return {id:`session-${n}`,revision:1,generation:1,identity:{provider:'codex',client:'desktop',hostId:'host-sim',sourceId:'codex-desktop',sessionId:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`},parent:{status:'top-level'},turn:{status:'known',id:'turn-1'},activity:'active',attention:[],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},observedAtMs:n,lastEvidenceAtMs:n,freshness:'current',restartUncertain:false,children:{active:0,uncertain:0}};}
+function stored(n:number):SessionRecord{return {id:`session-${n}`,revision:1,generation:1,identity:{provider:'codex',client:'desktop',hostId:'host-sim',sourceId:'codex-desktop',sessionId:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`},parent:{status:'top-level'},turn:{status:'known',id:'turn-1'},activity:'active',attention:[],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},observedAtMs:n,lastEvidenceAtMs:n,freshness:'current',restartUncertain:false,children:{active:0,uncertain:0}};}
+/** One synthetic Codex Desktop session as the shared session view. */
+const record=(n:number,change:Partial<SessionRecord>={}):SessionView=>sessionView({...stored(n),...change});
 void test('ten stable assignments, overflow, children and an authoritative removal',()=>{
  const records=Array.from({length:12},(_,n)=>record(n)),first=reconcileBindings([],records);
  assert.equal(first.length,10);assert.equal(new Set(first.map(b=>b.bunnyId)).size,10);assert.equal(first[0]?.sessionId,'session-11');
  assert.deepEqual(reconcileBindings(first,records.map(r=>({...r,lastEvidenceAtMs:100-r.lastEvidenceAtMs})).reverse()),first);
  const next=reconcileBindings(first,records.filter(r=>r.id!==first[3]?.sessionId));assert.equal(next.find(b=>b.bunnyId===3)?.sessionId,'session-1');
  for(const binding of first.filter(b=>b.bunnyId!==3))assert.deepEqual(next.find(b=>b.bunnyId===binding.bunnyId),binding);
- assert.deepEqual(reconcileBindings([],[{...record(1),parent:{status:'known',identity:record(0).identity}},{...record(2),parent:{status:'unknown'}}]),[{sessionId:'session-2',bunnyId:0}]);
+ assert.deepEqual(reconcileBindings([],[record(1,{parent:{status:'known',identity:stored(0).identity}}),record(2,{parent:{status:'unknown'}})]),[{sessionId:'session-2',bunnyId:0}]);
 });
 void test('legacy preferences migrate and malformed or duplicate bindings do not multiply residents',()=>{
  assert.deepEqual(settingsFrom(null,JSON.stringify({sessionId:'a',bunnyId:6})).bindings,[{sessionId:'a',bunnyId:6}]);
@@ -20,8 +23,25 @@ void test('legacy preferences migrate and malformed or duplicate bindings do not
 });
 void test('session meaning stays with the shell and qualified navigation is independent of freshness',()=>{
  const current=record(1);assert.equal(presentation(current,true).state,'working');assert.equal(presentation(current,false).uncertain,true);
- assert.equal(conversationFor({...current,freshness:'uncertain'},'Win32').href,`codex://threads/${current.identity.sessionId}`);
- for(const value of [conversationFor(current,'iPhone'),conversationFor({...current,identity:{...current.identity,client:'cli'}},'Win32'),conversationFor({...current,identity:{...current.identity,sessionId:'x/?foo'}},'Win32')])assert.equal(value.href,undefined);
+ assert.equal(conversationFor(record(1,{freshness:'uncertain'}),'Win32').href,`codex://threads/${current.identity.sessionId}`);
+ for(const value of [conversationFor(current,'iPhone'),conversationFor(record(1,{identity:{...current.identity,client:'cli'}}),'Win32'),conversationFor(record(1,{identity:{...current.identity,sessionId:'x/?foo'}}),'Win32')])assert.equal(value.href,undefined);
+});
+void test('a resident is uncertain only for an unknown status, unconfirmed working or an unsynced copy (#1865)',()=>{
+ const question={id:{status:'known',id:'question-1'},kind:'question',turn:{status:'known',id:'turn-1'}} as const;
+ const finished=[{id:'n'.repeat(64),kind:'turn-ended',turn:{status:'known',id:'turn-1'},acknowledgedBy:[]}] as SessionRecord['notices'];
+ assert.deepEqual(presentation(record(1,{freshness:'uncertain'}),true),{state:'working',name:stored(1).identity.sessionId,client:'Codex Desktop',uncertain:true});
+ assert.equal(presentation(record(1,{freshness:'uncertain',attention:[question]}),true).uncertain,false,'a question waits however long it is silent');
+ assert.deepEqual(presentation(record(1,{freshness:'uncertain',activity:'idle',notices:finished}),true),{state:'finished',name:stored(1).identity.sessionId,client:'Codex Desktop',uncertain:false});
+ assert.equal(presentation(record(1,{activity:'unknown'}),true).uncertain,true);
+});
+void test('bindings do not churn on progress or reconnect',()=>{
+ const sessions=Array.from({length:12},(_,n)=>record(n)),first=reconcileBindings([],sessions);
+ // Progress: every session publishes newer evidence in the reverse order, and silence makes work unconfirmed.
+ const progressed=sessions.map((_,n)=>record(n,{revision:5,lastEvidenceAtMs:1000-n,freshness:n%2===0?'uncertain':'current'}));
+ assert.deepEqual(reconcileBindings(first,progressed),first,'newer evidence moves no resident');
+ // Reconnect: the replacement copy brings the same sessions in another order, then one more that waits for a spot.
+ assert.deepEqual(reconcileBindings(first,[...progressed].reverse()),first,'a resynced copy in another order moves no resident');
+ assert.deepEqual(reconcileBindings(first,[...progressed,record(12,{lastEvidenceAtMs:5000})]),first,'a new arrival waits for a free spot');
 });
 function storage(){const data=new Map<string,string>();return {data,getItem:(key:string)=>data.get(key)??null,setItem:(key:string,value:string)=>{data.set(key,value);},removeItem:(key:string)=>{data.delete(key);}};}
 const envelope=(preferences:Record<string,string>):string=>JSON.stringify({schema:'bunny-habitat-settings/1.0',preferences});

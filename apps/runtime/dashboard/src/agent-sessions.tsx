@@ -1,6 +1,7 @@
 // Collection adapter over the shell's existing session copy; no additional connection or state subscription.
 import React, {useLayoutEffect, useMemo, useRef, useState} from 'react';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import {PROVIDERS} from '@jimmie-potts/event-contracts/v2/sources';
 import {AgentStatusCard, AgentStatusSummary} from './agent-status-card.tsx';
 import {LabelEditor} from './label-editor.tsx';
 import {PagedList} from './paged-list.tsx';
@@ -25,8 +26,8 @@ function useColumns(observe: boolean): [React.RefObject<HTMLDivElement | null>, 
   return [grid, columns];
 }
 
-export function AgentSessions({records, synced, live, control, now}: {
-  records: readonly SessionRecord[]; synced: boolean; live: boolean; control: boolean; now: number;
+export function AgentSessions({views, synced, live, control, now}: {
+  views: readonly SessionView[]; synced: boolean; live: boolean; control: boolean; now: number;
 }): React.JSX.Element {
   const [query, setQuery] = useState('');
   const [provider, setProvider] = useState('');
@@ -34,10 +35,10 @@ export function AgentSessions({records, synced, live, control, now}: {
   // as one element that changes only with its value (#1672 PR B round 2).
   const find = useMemo(() => <input type="search" maxLength={120} value={query} onChange={event => {setQuery(event.target.value);}} placeholder="Find a session"/>, [query]);
   // Sessions that need the owner come first, in record order otherwise, so they stay on the first page (#1658).
-  const rows = useMemo(() => {const all = sessionRows(records);return [...all.filter(needsAttention), ...all.filter(row => !needsAttention(row))];}, [records]);
-  const shown = new Set(records.filter(record => matches(record, query, provider)).map(record => record.id));
+  const rows = useMemo(() => {const all = sessionRows(views);return [...all.filter(needsAttention), ...all.filter(row => !needsAttention(row))];}, [views]);
+  const shown = new Set(views.filter(view => matches(view, query, provider)).map(view => view.id));
   const filtering = query !== '' || provider !== '';
-  const providers = [...new Set(['codex', 'claude', ...records.map(record => record.identity.provider)])];
+  const providers = [...new Set([...PROVIDERS, ...views.map(view => view.identity.provider)])];
   const box = useHomeCardBox(), [grid, observed] = useColumns(box === undefined);
   const keys = rows.filter(row => shown.has(row.id)).map(row => `${row.id}:${String(row.generation)}`);
   // In a Home shape (#1672) the columns follow from the card's width and the rows of fixed-size tiles from its height,
