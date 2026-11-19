@@ -75,6 +75,10 @@ The companions module SHALL run every task through one provider behind a tool-ca
 - **WHEN** the section names the Anthropic provider, its model and its key secret
 - **THEN** a `bunny` task sends one request per model call to the Messages API with that model, the fixed instructions, the prompt context, the transcript and the permitted tools; usage tokens are recorded on the call; and the key appears in no record, state, log or page
 
+#### Scenario: Full tool catalog on the hosted provider
+- **WHEN** the permitted tool catalog exceeds the Messages API's strict-tool limit
+- **THEN** the request includes every permitted tool, uses strict mode within the provider's limit, and checks the remaining tool calls against their closed input schemas before they can reach approval or act
+
 #### Scenario: Persona and active preferences enter the prompt
 - **WHEN** the owner has active and inactive explicit preferences and starts a `bunny` task, then edits a preference and stops using another before the next model call
 - **THEN** the first call's prompt carries the `bunny` persona and only the then-active preferences by title and text, the next call reflects the edit and omits the stopped entry, no knowledge entry or earlier conversation appears, and the prompt text reaches no public state, outcome, log or span
