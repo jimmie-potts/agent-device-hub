@@ -1,7 +1,7 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {CompletedOutcome, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {ModeState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {ModeState, Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
 import {opportunityMatches, readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {Outbox, Outcome, fullDisk, recordLog, type AddMessage, type BunnyModule, type StateDraft, type Keyed, type Cancel, type Command, type ModuleContext, type Reply, type SyncedCopy} from '@jimmie-potts/sdk';
@@ -39,7 +39,7 @@ class Owner {
   #connectionClose: (() => void) | undefined;
   #reconnect: Cancel | undefined;
   #stale: Cancel | undefined;
-  #copy: SyncedCopy<SessionRecord | ModeState> | undefined;
+  #copy: SyncedCopy<Session30Record | ModeState> | undefined;
   #synced = false;
   #closed = false;
   #storageDown = false;
@@ -103,7 +103,7 @@ class Owner {
     if (this.#closed) return;
     this.#synced = false;
     try {
-      const result = await this.#context.sdk.sync<SessionRecord | ModeState>(['session', 'mode'], change => {
+      const result = await this.#context.sdk.sync<Session30Record | ModeState>(['session', 'mode'], change => {
         if (change.type === 'failed') {this.#synced = false; this.#interruptAutomatic(); this.#context.scheduler.after(1000, () => {void this.#follow();});}
         else {if (change.type === 'synced') this.#synced = true; this.#checkAutomatic();}
       }, {owner: 'bunny/core', timeoutMs: 2000, onRestarted: () => {this.#synced = false; this.#interruptAutomatic();}});

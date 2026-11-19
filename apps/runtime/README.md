@@ -308,9 +308,11 @@ and exits 1, and the service manager restarts it whole.
   button. Nothing automatically retries or replays an action after a lost answer, reconnect or
   restart.
 - **Sessions tool.** Its manifest (module API 1.2) contributes the MCP read tool
-  `core_sessions`: the sessions it holds at its revision, optionally only one
-  provider's and those whose label, title, project or session ID contains `q`,
-  ignoring case.
+  `core_sessions`: the `session/3.0` records it holds at its revision, each with
+  the hub's shared status, optionally only one provider's and those whose label,
+  title, project or session ID contains `q`, ignoring case. Its description names
+  the status classes and the claims, so a client reads the status rather than
+  inferring one.
 - **Sync and acknowledgment.** It serves `session` through sync, and answers
   `notice-acknowledge` through its session logic with `accepted`,
   `not-found` for an unknown session or notice, `invalid-request` for an unknown

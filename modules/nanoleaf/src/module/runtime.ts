@@ -24,7 +24,7 @@ import {matchesPlaybackProgress, measuredPosition, sameMeasuredItem, type Measur
 import {join} from 'node:path';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type DeviceCommand} from '@jimmie-potts/event-contracts/v2/devices';
-import {sessionEntityId, type MomentPlayRequest, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type MomentPlayRequest, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, Outcome as OutcomeWord, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
   type SyncChange, type ModuleContent, type ModuleContentRequest,
@@ -695,7 +695,7 @@ export class NanoleafRuntime {
     this.#feed.restart();
     let result;
     try {
-      result = await sdk.sync<SessionRecord>(['session'], change => { this.#heard(change); }, {timeoutMs: SYNC_TIMEOUT_MS});
+      result = await sdk.sync<Session30Record>(['session'], change => { this.#heard(change); }, {timeoutMs: SYNC_TIMEOUT_MS});
     } catch (error) {
       if (signal.aborted) return;
       throw error;
@@ -708,7 +708,7 @@ export class NanoleafRuntime {
     scheduler.after(Math.min(SYNC_RETRY_MAX_MS, 1000 * 2 ** Math.min(5, this.#syncAttempts - 1)), () => this.#follow());
   }
 
-  #heard(change: SyncChange<SessionRecord>): void {
+  #heard(change: SyncChange<Session30Record>): void {
     const {scheduler, signal} = this.#context;
     if (signal.aborted) return;
     switch (change.type) {
@@ -1323,7 +1323,7 @@ export class NanoleafRuntime {
         throw new CommandRefused('not-found', 'the wall shows no such finished turn');
       }
       // The copy holds views of the core's session records only, so the identity is one of theirs.
-      session = sessionEntityId(root.identity as SessionRecord['identity']);
+      session = sessionEntityId(root.identity as Session30Record['identity']);
       this.#record(command, device, family);
     }, () => {
       if (session !== undefined) void this.#sendAcknowledgment(device, requestId, session, noticeId, command);
