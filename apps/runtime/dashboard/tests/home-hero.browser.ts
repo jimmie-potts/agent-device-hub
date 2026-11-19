@@ -140,6 +140,15 @@ try {
   assert.equal(reached.length, chipCount, `Tab reaches every chip: ${reached.join(', ')}`);assert.ok(reached.every(text => !text.startsWith('unringed')), reached.join(', '));
   assert.ok(reached.includes('Open Gallery') && reached.includes('Pin art') && reached.includes('Dismiss art'), reached.join(', '));
   report['chipsReached'] = reached;
+  // The hero is outside the grid, so crossing between the grid and one column keeps it and its focused chip.
+  const pin = hero(page).getByRole('button', {name: 'Pin art', exact: true}), heroNode = await hero(page).elementHandle();assert.ok(heroNode !== null);
+  await pin.focus();
+  for (const width of [375, 1440]) {
+    await page.setViewportSize({width, height: width === 375 ? 812 : 900});
+    await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', width === 375 ? 'false' : 'true');
+    assert.equal(await heroNode.evaluate(node => node.isConnected), true, `the hero stays mounted at ${String(width)}`);await expect(pin).toBeFocused();
+  }
+  await heroNode.dispose();
 
   // A refused and an uncertain change show as the card showed them, and nothing is sent again.
   await page.route('**/api/v2/commands/mode-set', route => route.fulfill({status: 409, contentType: 'application/json', body: JSON.stringify({error: {code: 'revision-conflict', retryable: false}})}), {times: 1});

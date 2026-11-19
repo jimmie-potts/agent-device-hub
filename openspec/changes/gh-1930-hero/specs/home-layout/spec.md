@@ -1,0 +1,139 @@
+## MODIFIED Requirements
+
+### Requirement: Layout editing
+Home SHALL offer Edit Home, a source-aware card picker, the shapes each card offers, pointer and keyboard reorder, hide/remove, Cancel, Reset and Done. Editing SHALL disable device controls and SHALL show cards in their real grid placement. On the grid each card's edit bar SHALL be one row showing the card's name and move handle, with its other controls in a panel that opens below it, one card at a time, by pointer or keyboard. It SHALL preserve keyboard focus, desktop and phone layouts and the approved concise header.
+
+#### Scenario: Draft changes and cancellation
+- **WHEN** the owner rearranges cards, changes shapes, opens the picker, switches breakpoints and cancels
+- **THEN** the saved arrangements remain unchanged and no command was sent
+
+#### Scenario: Balanced visible rows
+- **WHEN** the number of visible cards, their shapes or the available page width changes
+- **THEN** cards tile on the unit grid in saved order with equal gaps and no stretched card, phone arrangements and their editor preview use one column
+- **AND** the Hub mode and Art placements take no cell, since Home's hero shows them above the grid
+
+#### Scenario: Alert visibility without a notices section
+- **WHEN** a hidden or removed Inbox or session placement has unresolved items or attention
+- **THEN** its ordinary card stays visible until that evidence clears, with no separate notices section, Your space caption or layout caption
+
+### Requirement: Current catalog and unavailable sources
+The picker SHALL include the registered reusable core, device, light, room, music and exposed numeric cards, with supported sizes or shapes and availability reasons. The Hub mode and Art belong to Home's fixed hero and SHALL NOT be offered, drawn as cards or included in the built-in arrangement; saved arrangements that list them SHALL remain valid, keep those placements through every save and SHALL NOT report them as unknown. A missing source instance SHALL remain unavailable. Unknown retired definitions SHALL be omitted and reported once per saved revision without rewriting the saved layout.
+
+#### Scenario: A saved layout lists the Hub mode and Art cards
+- **WHEN** a saved arrangement lists the Hub mode and Art placements and the owner opens Home, opens the picker and saves through Done
+- **THEN** Home loads without error or unknown-card report, the grid and the picker show neither, the hero shows both, and the save keeps both placements unchanged
+
+#### Scenario: Source loss and definition retirement
+- **WHEN** a saved card's source becomes unavailable or its definition is removed
+- **THEN** source loss preserves an unavailable card while an unknown definition is omitted with one report, and neither condition sends device commands or silently writes layout metadata
+
+### Requirement: Explicit art layout controls persist with Home
+Home's hero SHALL offer the art's Pin or Unpin, Dismiss and, once dismissed, Restore as chips, which SHALL change only the core-owned art placement of the shown arrangement through the existing revision-guarded save, while editing is not in progress. Pin and Unpin SHALL keep the saved art format. Dismissed art SHALL leave Home: the backdrop SHALL be the Quiet glass wash and the hero SHALL offer Restore in place of the art chips. Layout dismissal SHALL remain distinct from negative art feedback and artwork deletion. Desktop and phone arrangements SHALL remain independent. Reset SHALL restore the default arrangement through the existing explicit edit flow. Existing arrangements without art metadata SHALL remain valid.
+
+#### Scenario: Layout choices survive restart
+- **WHEN** the owner pins or dismisses art and its save succeeds
+- **THEN** reload, another browser and runtime restart show that saved choice, Restore remains available for dismissed art and no generation or device command occurred
+
+#### Scenario: Dismissed art leaves Home
+- **WHEN** the owner chooses Dismiss art while an artwork is drawn behind Home, and then Restore art
+- **THEN** the glass layer draws the Quiet glass wash with Restore offered in the hero, and after Restore it draws the artwork again with Open Gallery, Pin or Unpin and Dismiss
+
+#### Scenario: A layout save is uncertain or conflicting
+- **WHEN** another browser changes the revision or a save loses its reply
+- **THEN** the existing conflict or uncertainty controls preserve the owner's evidence, send no automatic retry and do not overwrite the other arrangement
+
+#### Scenario: An older client omits optional art metadata
+- **WHEN** a valid older save retains the art placement but omits its optional format and pin
+- **THEN** the core preserves those existing options while applying unrelated placement changes
+- **AND** explicit new options, removal and reset still take effect
+
+### Requirement: Paged Home list cards
+Inbox, Agent status and Timeline SHALL page their lists through one shared component instead of growing, so a list never makes its card taller than its shape. The component SHALL show Previous and Next controls and a "Page x of y" label once a list needs a second page. On the unit grid, rows per page SHALL be calculated from the card's shape and the grid's known cell size with fixed row, tile and chrome heights, and no list SHALL measure itself or stretch its rows; the pager SHALL sit at the card's bottom with a one-line page label; off the grid they SHALL be Inbox 5, Timeline 5 on Home and 20 on its dedicated page, and Agent status two rows of tiles at the card's current column count. Agent status SHALL list sessions that need the owner first, in record order otherwise; when those sessions fill more than one page, the page label SHALL say so. Paging SHALL run in the browser over records the dashboard already holds and SHALL send no request or command. The Inbox SHALL show its total count on every page, and the Home hero's Check Inbox SHALL show the page holding its item before opening it. In a shaped card an opened entry SHALL take the page, with the pager hidden until it closes, and the list SHALL become the card's only scroll area so no part of a long entry is clipped, while the card's heading and other chrome keep their fixed heights; a change of page size SHALL show the page holding the opened row or the row the owner last chose by paging, opening or Check Inbox; elsewhere entries SHALL open in place with the pager shown. Removing the only entry on the last page SHALL show the previous page. When focus is inside the list at a page change or when its entry is removed or hidden, focus SHALL land on a control inside the list, never on the document body. Focus that has left the list SHALL NOT be moved or scrolled back when an entry is later removed. Saved Home arrangements SHALL keep their widgets and order.
+
+#### Scenario: Page an Inbox of 13 items
+- **WHEN** the Inbox holds 13 items in a Tall card
+- **THEN** it shows the rows its shape holds, the total count and "Page 1 of y" with Previous disabled, the page and pager fit the card, and Next and Previous page by keyboard with focus on a pager control
+
+#### Scenario: Open an item on a later page
+- **WHEN** the owner opens an Inbox item on page 2 in a shaped card
+- **THEN** the item takes the page with Send again and Dismiss reachable by keyboard inside the card, and closing it shows page 2 again
+
+#### Scenario: Dismiss the last item on a page
+- **WHEN** the owner dismisses the only item on the last page
+- **THEN** the previous page is shown and focus is on a control inside the Inbox
+
+#### Scenario: Check Inbox lands on the item's page
+- **WHEN** the Inbox shows another page and the owner chooses Check Inbox in the Home hero
+- **THEN** the page holding the related item is shown, and the item is open and focused
+
+#### Scenario: Focus that left the list stays put
+- **WHEN** the owner moves focus from an Inbox row to a control outside the list and that row is then removed elsewhere
+- **THEN** focus stays on that control and the page does not scroll
+
+#### Scenario: A session that needs the owner is on the first page
+- **WHEN** the last session in record order starts waiting for approval
+- **THEN** it appears on the first page of Agent status; with more waiting sessions than one page holds, the page label says how many need the owner
+
+#### Scenario: Agent status and Timeline use the same pager
+- **WHEN** Agent status or Timeline holds more entries than one page
+- **THEN** the shared pager shows other entries on the next page and returns, with no request sent
+
+### Requirement: Shapes offered and chosen
+Each Home card SHALL declare the shapes it offers and the shape a Standard placement shows. Edit Home SHALL let the owner choose a card's shape among those it offers, in place of Small, Standard and Wide, and the choice SHALL change only the draft until Done. A card without compact content SHALL offer only the shapes its full content fits.
+
+#### Scenario: Change a shape and save
+- **WHEN** the owner changes a card from Tall to Large square in Edit Home and chooses Done
+- **THEN** the save sends no device command, and reload, another browser and runtime restart show the card as Large square
+
+#### Scenario: Art stays mounted across layouts
+- **WHEN** the window crosses between the unit grid and one column with focus on an art chip in Home's hero
+- **THEN** the hero keeps its element and the chip keeps focus
+
+#### Scenario: Only offered shapes
+- **WHEN** the owner opens the shape choice of the Inbox card
+- **THEN** it offers Wide, Tall and Large square
+
+### Requirement: Compact content for a shape
+Every Home card SHALL offer only shapes whose content fits at the 220px unit, with nothing clipped and no stretched card; a closed card SHALL NOT scroll inside. The one exception (owner decision 2026-11-11, "Scroll when open") is an opened Inbox, Agent sessions or Timeline row, whose list scrolls inside its card as the paged list requirement states. Inbox, Agent sessions, Timeline, light, room, Nanoleaf, Pixoo, Tidbyt and Wispr cards SHALL show their own compact content. A module card SHALL learn its shape and its card's outer size from the optional `presentation` field of the SDK frontend context, which the dashboard SHALL set only while the card is placed on the unit grid; the field SHALL be additive, so a module that ignores it keeps its full card. A card without compact content of its own SHALL show a generic compact face with its name, current state and an Open link to the existing page that holds its full content and controls; a Pixoo or Tidbyt card whose module does not serve its card, and an unavailable Wispr card, SHALL show the generic face in one unit and SHALL keep their saved shape when the layout is saved. A control hidden by a shape SHALL be reachable one step away. Device-acting controls shown in a shape SHALL behave as in the full card, and the result of a command sent from a shape SHALL show on the card's face. Outside list cards, no offered shape SHALL leave a blank band (above the first content, between two consecutive content boxes, or below the last) taller than 48px or 15% of the card, whichever is larger; a blank placeholder panel is not content. In Inbox, Agent sessions and Timeline, rows SHALL keep their fixed height and sit at the top, with long names cut short on one line so nothing a closed row shows leaves it, and the Timeline SHALL reserve its status line's height so a refresh does not change its page size: a list with more items than one page shows SHALL leave less than one row, plus the pager's reserve, of space below its rows; a shorter list SHALL leave the rest of the card plain; an empty Inbox SHALL show a short centred message. A room or group with no lights SHALL offer Small square and Wide, and SHALL show a saved Tall or Large square as Wide without rewriting the saved shape. In Edit Home the edit bar SHALL hide only the card's own heading under it and SHALL NOT cover a generic face's icon. The built-in layout SHALL show each card in its Standard shape, and the Inbox's Standard shape SHALL be Wide. The music visualizer SHALL fill its shape.
+
+#### Scenario: Every offered shape fits
+- **WHEN** each card is placed in each shape it offers at 1100, 1440 and 1920 px
+- **THEN** its content height does not exceed the card, no control is cut off and the closed card has no scroll container
+
+#### Scenario: A full list and a short list
+- **WHEN** an Inbox with 13 items, and then with one item and with none, is placed in each shape it offers at 1100, 1440 and 1920 px
+- **THEN** with 13 items each row keeps its height, no row overlaps the pager and less than one row of space is left above it; one item sits at the top at its normal height with no pager; with none the short message is centred
+
+#### Scenario: An opened session scrolls inside its card
+- **WHEN** the owner opens an Agent session in a Large square or Tall card at 1100 or 1440 px
+- **THEN** every control in its detail can be scrolled into view and used inside the card, and the counts and filters keep their heights
+
+#### Scenario: Lists stay still while nobody acts
+- **WHEN** Home has settled at any width from 1100 to 2560 px with 0, 1, 5, 6 or 13 Inbox items
+- **THEN** nothing inside the Inbox, Agent sessions or Timeline card changes for two seconds
+
+#### Scenario: Generic compact face
+- **WHEN** a Wemo plug card is a Small square on Home
+- **THEN** it shows its name, its current state and Open, which leads to its existing device page with its full controls
+
+#### Scenario: Module cards in every shape
+- **WHEN** the Pixoo, Tidbyt and Wispr cards are each placed in each of the four shapes at 1100, 1440 and 1920 px
+- **THEN** each shows its module's own compact content for that shape with nothing past the card, no generic face, and nothing inside it changes for two idle seconds
+
+#### Scenario: A command from a compact Pixoo card
+- **WHEN** the owner chooses Screen off on a Wide Pixoo card
+- **THEN** one power command is sent, as from the full card, and its result shows on the card's face
+
+#### Scenario: A module that cannot draw its card
+- **WHEN** a Pixoo card saved as Tall is shown while the Pixoo module does not serve its card
+- **THEN** it shows the generic face in one unit, and the next save keeps Tall
+
+#### Scenario: A light in one unit
+- **WHEN** a light card is a Small square
+- **THEN** it shows its name, state, artwork and On and Off controls, and its options menu leads to the rest of its controls
+
+## REMOVED Requirements
+
+### Requirement: Bounded art placement preserves functional cards
+**Reason**: Home's hero (#1930, owner decision 5 of epic #1927) replaces the Art card: the presented art is Home's backdrop and its controls are hero chips, so no art card is placed in the grid, pinned or automatically fitted.
+**Migration**: Saved art placements stay valid and keep their pin, format and dismissal; the hero's chips change the pin and the dismissal. Nothing is rewritten.

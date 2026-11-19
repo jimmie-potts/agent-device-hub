@@ -32,7 +32,7 @@ try {
     const surface = await panel.evaluate(el => ({background: getComputedStyle(el).backgroundColor, border: getComputedStyle(el).borderColor}));
     await work.focus(); await work.press('Enter');
     await panel.locator('.hub-mode-choice', {hasText: 'Work'}).waitFor(); await warning.waitFor();
-    assert.equal(await panel.locator('.hub-mode-art [data-mode-icon=work]').count(), 1);
+    assert.equal(await panel.locator('[aria-pressed=true] [data-mode-icon=work]').count(), 1);
     assert.deepEqual(await panel.evaluate(el => ({background: getComputedStyle(el).backgroundColor, border: getComputedStyle(el).borderColor})), surface);
     assert.doesNotMatch(await panel.innerText(), /Saved choice|Latest request|Reapply|Nanoleaf|Pixoo/);
     const beforeInspect = sent.length; await warning.click();
