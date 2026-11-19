@@ -45,7 +45,7 @@ const status = (item: Session30Record): string => `${item.status.class}/${item.s
 /** The session states published since `from`, by session. */
 const states = (w: World, from: number): string[] =>
   w.since(from).filter(message => message.type === 'org.bunny.session.updated').map(message => (message.data as Session30Record).identity.sessionId);
-const historyRows = (w: World): number => (w.rows('SELECT seq FROM core_history WHERE family = \'session\'') as unknown[]).length;
+const historyRows = (w: World): number => (w.rows('SELECT seq FROM core_history WHERE type = \'org.bunny.session.updated\'') as unknown[]).length;
 /** Moves the manual clock and runs what fell due, as the core's timer does. */
 async function advance(w: World, ms: number): Promise<void> {
   w.clock.advance(ms);
@@ -168,6 +168,7 @@ it('records a release before the switch published are published again as session
     const old = {...rest, activity: work.state, attention: attention.items, notices: outcome.notices, read: outcome.read, freshness: 'current',
       restartUncertain: false, children: {active: relationships.children.working, uncertain: relationships.children.unconfirmed}};
     w.db.prepare('UPDATE core_records SET record = ? WHERE family = \'session\' AND id = ?').run(JSON.stringify(old), item.id);
+    w.db.prepare('UPDATE core_history_latest SET record = ? WHERE family = \'session\' AND id = ?').run(JSON.stringify(old), item.id);
   }
   const from = w.published.length, revision = w.store.revision, rows = historyRows(w);
   w.clock.advance(1000);

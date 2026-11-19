@@ -221,10 +221,10 @@ and exits 1, and the service manager restarts it whole.
   - if its store cannot open, as at a first start or when the one-time reset
     falls on a full disk, the core refuses durable work with `capacity` or
     `unavailable` and tries again on demand after a backoff that doubles from
-    1 s to 60 s, and a due expiry or freshness change it cannot commit is tried
+    1 s to 60 s, and a due expiry or work deadline it cannot commit is tried
     again on the same backoff;
   - at the start, a full disk leaves the core running in that state, and a
-    failed start transaction (see Freshness) makes syncs answer `unavailable`
+    failed start transaction (see Aging and restart) makes syncs answer `unavailable`
     until a later attempt, on the same backoff, succeeds. This holds on a real
     full disk at a first start, where the store cannot create its tables, and
     at a restart after a clean stop, since opening a module's database needs no
@@ -241,8 +241,8 @@ and exits 1, and the service manager restarts it whole.
 - **Save cost.** The store times every save that commits session rows (Hub
   #976): one session change, from computing it and serializing its rows to the
   `COMMIT` of its one transaction with records, history, intake and outbox rows.
-  Publication comes after and is not counted. Parts' transactions and freshness
-  refreshes write no session row and are not timed. The store logs
+  Publication comes after and is not counted. Parts' transactions and refreshes
+  that write no session row are not timed. The store logs
   `storage.cost.high` at WARN once a save takes longer than 100 ms
   (`bunny.save.duration_ms`, whole milliseconds rounded up), and
   `storage.cost.normal` at INFO with the time of the first save back within the
@@ -251,33 +251,42 @@ and exits 1, and the service manager restarts it whole.
   and a logger that throws never changes a save. The size condition and its
   `bunny.state.bytes` record retired with the old state block (#1865): with one
   row per session and at most 128 sessions, no save comes near its limit.
-- **Freshness.** Each record's `freshness` holds at the `time` of the message
-  that carries it. A timer publishes a record again, at a new revision, when it
-  turns uncertain five minutes after its last evidence, and a sync brings
-  freshness up to date first. The same timer, on the core's scheduler, expires a
-  session after a day without lifecycle evidence. At each start, one
-  transaction marks the work of every session whose work runs unconfirmed
-  (`restartUncertain`) and publishes those records, with no occurrence, before
-  any other session change (#1865). Questions, outcomes and read evidence stay
-  as stored, and the marking is stored with each session. Only fresh evidence
-  of `turn-started`, `activity-observed` or `attention-resolved` on the
-  session's current turn, produced at or after the start, confirms the work
-  again; the producer's instant is the earlier of the observation's
-  `observedAtMs` and `occurredAtMs`, and the start instant is held in memory
-  only. A delayed event from before the start therefore never confirms work,
-  except from a host whose clock runs ahead of the hub's, a limit the design
-  accepts. One limit: a sync provider
-  cannot name the time the SDK stamps on its answer, a microtask after the core
-  computed the records, so a record that turns uncertain within that
-  millisecond can disagree with its envelope by one millisecond. The core's
-  timer usually publishes the change first.
+- **Publication and status.** The core publishes `session/3.0` (#1865 step 9):
+  each record carries the hub's status, computed by the contracts package's
+  `buildSession` from its work, attention, outcome and relationship claims
+  (see [the shared view](../../packages/event-contracts/README.md#shared-session-view-and-read-function-hub-1865)).
+  A record publishes only when its public meaning changes. A work observation
+  that changes no public member, such as a burst of tool results on a running
+  turn, advances only the session's private progress time and its deadline: it
+  writes the session row, publishes nothing and adds no history row. A
+  record's `lastEvidenceAtMs` is therefore the evidence time of its last
+  published change. At the first start of this release, every session a
+  release before it published as `session/2.x` is published again as
+  `session/3.0`, and history keeps that change against its last `session/2.x`
+  row.
+- **Aging and restart.** The core owns every time-driven change of meaning, on
+  its scheduler and clock. Running work becomes unconfirmed (reason
+  `deadline`) five minutes after its last qualifying work evidence, and the
+  core's timer publishes that change; a sync commits what is due first, so one
+  revision always carries one payload. Attention, outcomes and work that is not
+  running never change through silence. The same timer expires a session after
+  a day without lifecycle evidence. At each start, one transaction marks the
+  work of every session whose work runs unconfirmed (reason `restart`) and
+  publishes those records, with no occurrence, before any other session change.
+  Questions, outcomes and read evidence stay as stored, and both markings are
+  stored with each session. Only fresh evidence of `turn-started`,
+  `activity-observed` or `attention-resolved` on the session's current turn,
+  produced at or after the start, confirms the work again; the producer's
+  instant is the earlier of the observation's `observedAtMs` and
+  `occurredAtMs`, and the start instant is held in memory only. A delayed event
+  from before the start therefore never confirms work, except from a host whose
+  clock runs ahead of the hub's, a limit the design accepts.
 - **Approval recovery.** It answers `approval-recover` (#835), the old Hub's
   operator recovery, through its session logic. The command's
   subject is the session's `id`, and its `expectedRevision` is the session
   record's `revision` that the operator read. The core retires the one approval
   marker without an attention ID that the session holds on `turnId`, only while
-  the session's evidence is uncertain: five minutes without evidence, or running
-  work a restart left unconfirmed. It commits before the reply and publishes `attention-cleared` with
+  the session's running work is unconfirmed for its deadline or a restart. It commits before the reply and publishes `attention-cleared` with
   cause `recovered` and the session at its new revision, in the command's
   trace; no outcome follows. It refuses an unknown session with `not-found`, a
   record that changed since it was read with `revision-conflict`, a session
@@ -897,8 +906,9 @@ documents the worker's evidence and physical limits.
 
 Qualified explicit read actions use the separate
 [Claude terminal plugin and Codex Desktop observer](READ-RECEIPTS.md). Ordinary
-lifecycle hooks do not infer readership. The core publishes session/2.1 only
-for a committed qualified receipt; other sessions retain session/2.0.
+lifecycle hooks do not infer readership. The core publishes a committed
+qualified receipt as read provenance in the session's `session/3.0` outcome
+claim.
 
 `bin/monitor-hook.mjs` is the 2.0 agent hook (#926): the hook command of Claude
 Code and Codex, `node bin/monitor-hook.mjs <producer.json>`, with the hook's

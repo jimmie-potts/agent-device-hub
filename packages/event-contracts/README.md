@@ -180,8 +180,10 @@ The rules:
   evidence, and the owner revision that committed them. An attention occurrence
   also carries the item's own turn, which a clearing observation's turn may have
   left behind.
-- The owner publishes a new revision when a session's freshness or the playback
-  availability changes.
+- The owner publishes a new revision when a session's public meaning or the
+  playback availability changes. A `session/3.0` record changes meaning when any
+  member but its revision and its evidence instants changes, so its
+  `lastEvidenceAtMs` is the evidence time of its last published change.
 - Commands name no device: the envelope `subject` names the target. Their
   replies and outcomes use the profile's reply and outcome payloads.
 - `approval-recover` (Hub #835) is the old Hub's operator recovery, carried as
@@ -307,9 +309,9 @@ for rules a schema cannot state. The core families use it to refuse:
 - an outcome acknowledgment from any source but the core, or whose `subject` is
   not the outcome's `id`;
 - a session `generation` after its `revision`;
-- freshness that disagrees with the envelope `time`: `current` five minutes or
-  more after the last evidence, or `uncertain` before that without a restart
-  (`session/2.0` and `2.1`);
+- in the retained `session/2.0` and `2.1` records, freshness that disagrees
+  with the envelope `time`: `current` five minutes or more after the last
+  evidence, or `uncertain` before that without a restart;
 - a `session/3.0` status that is not `statusOf` of the record's claims;
 - a raised attention item from a turn other than the observation's;
 - repeated notice IDs or unavailable dimensions;
@@ -320,7 +322,8 @@ for rules a schema cannot state. The core families use it to refuse:
 The default schemas keep the 1.x per-record rules:
 - read evidence only from Codex Desktop;
 - no host session ID below a known parent;
-- `restartUncertain` forces `uncertain` freshness;
+- in the retained `session/2.x` records, `restartUncertain` forces `uncertain`
+  freshness;
 - a flourish never covers status;
 - the credential checks on titles, projects and labels.
 
@@ -383,19 +386,21 @@ returns eligibility without changing anything. Qualification comes from the
 trusted caller and must match the authenticated message source, complete feed
 and receipt kind. The current session must match the full identity, generation,
 known turn and named turn-ended notice. Only idle or interrupted sessions without
-known parents qualify. Lifecycle freshness, attention and other consumers'
-acknowledgments stay independent. The helper can accept an old finished result
-without declaring the agent fresh or connected.
+known parents qualify, whether their work is confirmed or not. Work
+confirmation, attention and other consumers' acknowledgments stay independent.
+The helper can accept an old finished result without declaring the agent
+active or connected. It decides on the session's view, its `session/3.0`
+record.
 
 The pure helper does not implement state transitions. The runtime core rechecks
 eligibility and the exact owner view revision in its serialized operation and
-commits read evidence, history and outbox together. Its session/2.1 output
-requires `read: read` and closed `readReceipt` provenance: `noticeId`,
-`observedAtMs`, authenticated `source` and the receipt. The notice must belong
-to the known current finished turn, with no known parent. Current core-family
-registration accepts this output version. Records without provenance keep
-session/2.0; that schema and the retained 1.x reducer still restrict positive
-read evidence to Codex Desktop. Schema acceptance alone does not qualify a
+commits read evidence, history and outbox together. Its `session/3.0` record
+then carries `outcome.read: read` with closed `outcome.readReceipt` provenance:
+`noticeId`, `observedAtMs`, authenticated `source` and the receipt. The notice
+must belong to the known current finished turn, with no known parent. Before
+#1865 step 9 this output was `session/2.1`, which stays registered; records
+without provenance were `session/2.0`. Without provenance, only Codex Desktop
+may report positive read evidence. Schema acceptance alone does not qualify a
 client. See the
 [qualification findings](../../docs/research/explicit-read-receipts.md).
 
@@ -656,28 +661,30 @@ someone lists it.
 
 ### Agent status helper
 
-`@jimmie-potts/event-contracts/v2/status` holds `sessionState`, `highestStatus`
-and `STATUS_COLORS`, copied from `@jimmie-potts/agent-status` and rewritten for
-`session/2.0` records (Hub #918). The 1.x package stays for the old controllers
-until #839. Hub #1865 leaves this helper unchanged; since its group 3 no live
-reader calls it, and the readers use the view's helper below.
+The agent-status helper, copied from `@jimmie-potts/agent-status` (Hub #918), reads
+the shared session view since Hub #1865 and lives in `./v2/session-view`.
+`@jimmie-potts/event-contracts/v2/status` keeps only the state names and
+`STATUS_COLORS` it shares with every device. The 1.x package stays for the old
+controllers until #839.
 
-- `sessionState(record, consumers?)` ranks a root session: `attention` when it
-  has attention, `working` when it is active or has an active child, `done`
-  when a turn-ended notice lacks an acknowledgment, otherwise undefined. Read
-  evidence never retires `done`. By default any consumer's acknowledgment
-  retires it, as LIFX and Tidbyt use the view's helper; `consumers` restricts that to
-  the named ones. Acknowledgments are recorded per consumer, and each caller's
-  policy decides which ones clear what it shows.
+- `sessionState(view, consumers?)` ranks a root session from its status:
+  `attention` when it needs the owner, `working` when it is working (its own
+  work or a working child), `done` when it is finished for the caller,
+  otherwise undefined. Read evidence never retires `done`. By default any
+  consumer's acknowledgment retires it, as LIFX and Tidbyt use it; `consumers`
+  restricts that to the named ones. Acknowledgments are recorded per consumer,
+  and each caller's policy decides which ones clear what it shows.
 - `highestStatus(copy, {acknowledgingConsumers?})` takes a consumer's copy of the
-  session family, `{synced, sessions}`, and returns the highest root state,
-  `idle` or `unknown`. A copy that has not synced, or whose later sync failed,
-  reads as `unknown`. Uncertain freshness never hides a state the owner reports.
+  session family as views, `{synced, sessions}`, and returns the highest root
+  state, `idle` or `unknown`. A copy that has not synced, or whose later sync
+  failed, reads as `unknown`. Unconfirmed work never hides a state the owner
+  reports.
 - `STATUS_COLORS` gives every device the same color for each state.
 
-`tests/status.test.mjs` runs the copied 1.x cases against valid `session/2.0`
-records and checks that both helpers rank the same sessions alike and use the
-same colors.
+`tests/status.test.mjs` runs the copied 1.x cases against valid `session/3.0`
+records and checks that the helper ranks them as the 1.x helper ranks the same
+sessions, with the same colors, except for a notice a known later turn
+superseded.
 
 ### Shared session view and read function (Hub #1865)
 
@@ -689,39 +696,42 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
   and client types derive from it, `supportedSource` and `supportedHook` check
   against it, and `tests/sources.test.mjs` fails when an identity enum of the
   `session` or `lifecycle` schemas differs from it.
-- `session/3.0` is the session family's new major, registered beside 2.0 and
-  2.1. Nothing publishes it until the switch step. It carries the hub's
+- `session/3.0` is the session family's current major, registered beside 2.0
+  and 2.1, which stay for reading retained documents. The core publishes it
+  since #1865 step 9. It carries the hub's
   `status`, a closed class (`needs-owner`, `working`, `finished`, `quiet` or
   `unknown`) with an open kebab-case detail, and the `work`, `attention`,
   `outcome` and `relationships` claims, each with its confidence. It has no
   freshness and no restart uncertainty. The validator refuses a status that is
   not `statusOf` of the record's claims and keeps the 2.x record rules.
 - `src/v2/session-view.ts` (`./v2/session-view`) imports only the import-free
-  `status.ts`, so a browser part can bundle it. It holds `statusOf`,
-  `noticeCounts` (which notices make a session finished: every notice no known
-  later turn superseded, the owner's decision of 2026-11-18), `sessionView(record)`
-  for a `session/2.x` record its copy already validated,
+  `status.ts`, so a browser part can bundle it. A session's view is its
+  `session/3.0` record. The file holds `statusOf`, `noticeCounts` (which
+  notices make a session finished: every notice no known later turn
+  superseded, the owner's decision of 2026-11-18), `buildSession(facts)`, which
+  builds a record and its status from a session's work state and why running
+  work is unconfirmed (`deadline` or `restart`), its attention, notices, read
+  evidence and counted children, and which the core and tests share,
   `forConsumer(view, policy)`, which retires `finished` to `quiet` under a
   reader's acknowledgment and read policy,
   `opportunityMatches(view, opportunity, consumer)`, `knownDetail`, and
-  `sessionState` and `highestStatus` over views with `status.ts`'s colors and
-  ranking. The device readers (LIFX, the Tidbyt tile, the Pixoo Monitor and
-  Nanoleaf) read through them; `status.ts` keeps its helper over 2.x records,
-  which no live reader calls. A detail a reader does not know falls back to its
-  class and never makes an opportunity match.
+  `sessionState` and `highestStatus` over views with `status.ts`'s colors. Every
+  reader reads through them, and a browser part reads the records of a copy the
+  core validated when it published them. A detail a reader does not know falls
+  back to its class and never makes an opportunity match.
 - `src/v2/session.ts` (`./v2/session`) re-exports the view and adds
   `readSession(message)`, which validates a session state message and returns
-  its view, or undefined. It reads `session/2.0` and `2.1` until the core
-  publishes `session/3.0`. A `session/2.x` record's active work is
-  unconfirmed while its freshness is uncertain or it is restart-uncertain;
-  silence never makes attention or an outcome uncertain.
+  its view, or undefined. It reads `session/3.0` only (`SESSION_SCHEMA`), so a
+  reader from an older release, which reads `session/2.x`, finds no record it
+  accepts until it is updated.
 - `fixtures/v2/session-cases.json` is the shared synthetic case set, and
-  `loadSessionCases()` in `./v2/session-cases` expands it into messages for the
+  `loadSessionCases()` in `./v2/session-cases` expands it into messages, each
+  expected record a `session/3.0` state built with `buildSession`, for the
   core's and each reader's tests. `tests/session-cases.test.mjs` runs every
-  case's reader expectations through the shared functions and checks that the
-  helper over records in `status.ts` still gives main's results, and
-  `tests/session.test.mjs` covers the status function, the 2.x mapping, the
-  policies and opportunity matching.
+  case's reader expectations through the shared functions and checks the
+  helper's ranking against the 1.x helper, and `tests/session.test.mjs` covers
+  the status function, the record builder, the policies and opportunity
+  matching.
 
 ### How 1.x error codes merged
 

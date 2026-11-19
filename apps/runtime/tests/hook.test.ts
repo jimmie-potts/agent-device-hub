@@ -18,7 +18,7 @@ import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import type {Envelope} from '@jimmie-potts/agent-state';
 import {MessageValidator, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies, sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {registerCoreFamilies, sessionEntityId, type Identity, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, prepareMessage, publishOnce} from '@jimmie-potts/sdk';
 import {
   HOOK_BUDGET_MS, LIFECYCLE_SCHEMA, lifecycleMessage, producerCredentialId, producerSource, readProducer, runHook,
@@ -154,14 +154,14 @@ function quiet(ran: Ran, what: string, withinMs = 2000): void {
   assert.ok(ran.elapsedMs < withinMs, `${what}: exited after ${Math.round(ran.elapsedMs)} ms, not within ${withinMs} ms`);
 }
 
-async function sessions(world: World): Promise<SessionRecord[]> {
+async function sessions(world: World): Promise<Session30Record[]> {
   const response = await fetch(new URL('/api/v2/families/session', world.url), {headers: {authorization: `Bearer ${world.reader}`}});
   assert.equal(response.status, 200);
-  return (await response.json() as {records: SessionRecord[]}).records;
+  return (await response.json() as {records: Session30Record[]}).records;
 }
 
 /** Waits until the session's record satisfies `ready`, polling the gateway, and returns it. */
-async function until(world: World, sessionId: string, ready: (record: SessionRecord) => boolean, what: string): Promise<SessionRecord> {
+async function until(world: World, sessionId: string, ready: (record: Session30Record) => boolean, what: string): Promise<Session30Record> {
   const id = sessionEntityId(identityOf(sessionId));
   const deadline = performance.now() + 5000;
   for (;;) {
@@ -187,18 +187,18 @@ it('an unchanged 1.x producer file drives the 2.0 hook at each lifecycle version
     await send('SessionStart');
     const started = await until(world, sessionId, () => true, `${version}: the session`);
     // Lifecycle 1.0 carries no project. A start claims no work (#397).
-    assert.deepEqual({activity: started.activity, project: started.project, identity: started.identity},
-      {activity: 'idle', project: version === '1.0' ? undefined : 'demo', identity: identityOf(sessionId)}, version);
+    assert.deepEqual({work: started.work.state, project: started.project, identity: started.identity},
+      {work: 'idle', project: version === '1.0' ? undefined : 'demo', identity: identityOf(sessionId)}, version);
     await send('UserPromptSubmit', {prompt_id: 'prompt-1', prompt: CANARY});
     await until(world, sessionId, record => record.turn.status === 'known' && record.turn.id === 'prompt-1', `${version}: the turn`);
     await send('PermissionRequest', {prompt_id: 'prompt-1', tool_name: 'Bash', tool_input: {command: CANARY}});
-    const asking = await until(world, sessionId, record => record.attention.length === 1, `${version}: the approval prompt`);
-    assert.deepEqual(asking.attention, [{id: {status: 'unknown'}, kind: 'approval', turn: {status: 'known', id: 'prompt-1'}}], version);
+    const asking = await until(world, sessionId, record => record.attention.items.length === 1, `${version}: the approval prompt`);
+    assert.deepEqual(asking.attention.items, [{id: {status: 'unknown'}, kind: 'approval', turn: {status: 'known', id: 'prompt-1'}}], version);
     await send('PostToolUse', {prompt_id: 'prompt-1', tool_use_id: 'tool-1', tool_response: {output: CANARY}});
-    await until(world, sessionId, record => record.attention.length === 0, `${version}: the approval prompt cleared`);
+    await until(world, sessionId, record => record.attention.items.length === 0, `${version}: the approval prompt cleared`);
     await send('Stop', {prompt_id: 'prompt-1'});
-    const ended = await until(world, sessionId, record => record.activity === 'idle' && record.notices.length === 1, `${version}: the finished turn`);
-    assert.equal(ended.notices[0]?.kind, 'turn-ended', version);
+    const ended = await until(world, sessionId, record => record.work.state === 'idle' && record.outcome.notices.length === 1, `${version}: the finished turn`);
+    assert.equal(ended.outcome.notices[0]?.kind, 'turn-ended', version);
     // The hook only reads its producer file and receipt.
     const after = await Promise.all(files.map(file => stat(file)));
     assert.deepEqual(after.map(info => [info.mtimeMs, info.size, info.mode]), before.map(info => [info.mtimeMs, info.size, info.mode]), version);
@@ -225,13 +225,13 @@ it('a subagent\'s start and stop reach the core as a child of its session, and a
   await until(world, 'lead', record => record.turn.status === 'known', 'the lead\'s turn');
   await send('SubagentStart', 'lead', {agent_id: 'helper-1', agent_type: 'Explore', prompt_id: 'prompt-1'});
   const child = await until(world, 'helper-1', () => true, 'the subagent');
-  assert.deepEqual({parent: child.parent, turn: child.turn, activity: child.activity, project: child.project, hostSessionId: child.hostSessionId},
-    {parent: {status: 'known', identity: identityOf('lead')}, turn: {status: 'unknown'}, activity: 'active', project: undefined, hostSessionId: undefined});
-  const lead = await until(world, 'lead', record => record.children.active === 1, 'the lead counting its subagent');
+  assert.deepEqual({parent: child.parent, turn: child.turn, work: child.work.state, project: child.project, hostSessionId: child.hostSessionId},
+    {parent: {status: 'known', identity: identityOf('lead')}, turn: {status: 'unknown'}, work: 'active', project: undefined, hostSessionId: undefined});
+  const lead = await until(world, 'lead', record => record.relationships.children.working === 1, 'the lead counting its subagent');
   assert.deepEqual(lead.parent, {status: 'unknown'});
   await send('SubagentStop', 'lead', {agent_id: 'helper-1', prompt_id: 'prompt-1'});
-  await until(world, 'helper-1', record => record.activity !== 'active', 'the subagent\'s end');
-  await until(world, 'lead', record => record.children.active === 0, 'the lead with no running subagent');
+  await until(world, 'helper-1', record => record.work.state !== 'active', 'the subagent\'s end');
+  await until(world, 'lead', record => record.relationships.children.working === 0, 'the lead with no running subagent');
   // A subagent of a session the core has not seen keeps its known parent.
   await send('SubagentStart', 'unseen-lead', {agent_id: 'helper-2'});
   const orphan = await until(world, 'helper-2', () => true, 'the second subagent');
@@ -270,14 +270,14 @@ it('a subagent\'s start and stop reach the core as a child of its session, and a
   assert.deepEqual((await until(world, 'root', () => true, 'the top-level session')).parent, {status: 'top-level'});
   await send('SubagentStart', 'root', {agent_id: 'helper-4'});
   assert.deepEqual((await until(world, 'helper-4', () => true, 'its subagent')).parent, {status: 'known', identity: identityOf('root')});
-  const counted = await until(world, 'root', record => record.children.active === 1, 'the top-level session counting its subagent');
+  const counted = await until(world, 'root', record => record.relationships.children.working === 1, 'the top-level session counting its subagent');
   assert.deepEqual(counted.parent, {status: 'top-level'}, 'a child does not change its parent\'s parentage');
 });
 
 it('each lifecycle version a producer selected reaches the core as 2.0, with or without a receipt', async context => {
   const world = await hookRuntime(context);
   const desktop = {...HOOK_ENV, CLAUDE_CODE_ENTRYPOINT: 'claude-desktop', CLAUDE_CODE_HOST_SESSION_ID: 'local_0123abcd'};
-  const cases: [string, Shape, Partial<SessionRecord>][] = [
+  const cases: [string, Shape, Partial<Session30Record>][] = [
     ['1.0', {}, {}],
     ['1.0 without a receipt', {receipt: 'none'}, {}],
     ['1.1', {lifecycleVersion: '1.1'}, {project: 'demo'}],

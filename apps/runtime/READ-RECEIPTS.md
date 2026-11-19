@@ -20,21 +20,23 @@ The Node helper performs one existing SDK sync when opening a panel. It binds
 the full identity, known prompt, session generation, finished notice and an
 opaque `viewRevision` equal to `session-<record revision>`. The core compares
 that token for equality only. Any intervening session revision makes the panel
-stale, including a new turn, native unread update, label/freshness change or
-restart. Reopen the panel to bind a current target. No polling loop or provider
+stale, including a new turn, native unread update, label change, work
+confirmation change or restart. Reopen the panel to bind a current target. No polling loop or provider
 read-update request is added.
 
 Both helpers read the core's session records through the shared `readSession`
-function and accept exactly the versions it accepts (Hub #1865). The helpers run
-from the host's installed release. After the core switches to a session version
-that release does not read, the helper finds no record it accepts: the panel
-offers no action, the Codex observer binds no target and no receipt is sent.
+function and accept exactly the versions it accepts (Hub #1865): `session/3.0`
+since #1865 step 9. The helpers run from the host's installed release. A release
+from before that step reads only `session/2.x`, so against a current core its
+helper finds no record it accepts: the panel offers no action, the Codex
+observer binds no target and no receipt is sent, with no error to the client.
 Update the host's release to restore receipts.
 
 The explicit click sends a lifecycle/2.1 occurrence through the authenticated
 gateway. The core rechecks the target in its serialized operation and commits
 read provenance, history and outbox in its existing SQLite transaction. The
-state stream then publishes session/2.1. A repeated action cannot advance the
+state stream then publishes the session's `session/3.0` record with the
+provenance in its outcome claim. A repeated action cannot advance the
 same record twice. A disconnected or timed-out helper reports unconfirmed;
 the core may have committed before connection loss. The helper does not retry.
 
@@ -163,7 +165,7 @@ transaction. A stable action ID and retained receipt provenance prevent replay
 from making another transition, including after restart. This branch uses the
 native seen/accepted revisions. Claude continues to require its displayed
 record's `viewRevision`. Neither branch changes attention, acknowledgment or
-observation freshness.
+work confirmation.
 
 Create a separate private producer as above, using the existing Codex lifecycle
 feed's `provider: codex`, `client: local`, `hostId` and `sourceId`. Do not relabel

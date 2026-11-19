@@ -679,7 +679,7 @@ Gallery controls; this establishes no installed or physical result.
 
 Qualified read receipts (#1354) use
 `node apps/runtime/dashboard/tests/read-receipts.browser.ts` after the root
-build. The real helper and authenticated owner publish session/2.1 to the
+build. The real helper and authenticated owner publish read provenance in the session/3.0 record to the
 dashboard; the journey checks unread before a click, read after confirmation,
 read after reload, and unread for a later turn, with no page command. Hosted
 smoke includes this disposable journey. It uses synthetic metadata and no
