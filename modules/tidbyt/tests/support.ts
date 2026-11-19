@@ -128,7 +128,7 @@ export const finished = (overrides: SessionShape = {}): Session30Record => sessi
 /** The facts of a `session/3.0` record, so a test can change some and build its record again. */
 export function factsOf(record: Session30Record): SessionFacts {
   const {status: _status, work, attention, outcome, relationships, ...rest} = record;
-  const unconfirmed = work.reasons.find((reason): reason is 'deadline' | 'restart' => reason === 'deadline' || reason === 'restart');
+  const unconfirmed = work.reasons.find((reason): reason is 'restart' => reason === 'restart');
   return {
     ...rest, work: work.state, ...(unconfirmed === undefined ? {} : {unconfirmed}), attention: attention.items, notices: outcome.notices,
     read: outcome.read, ...(outcome.readReceipt === undefined ? {} : {readReceipt: outcome.readReceipt}), children: relationships.children,

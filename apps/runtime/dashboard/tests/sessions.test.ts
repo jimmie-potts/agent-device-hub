@@ -8,7 +8,7 @@ import type {Notice} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
 import {
-  CHIP_TEXT, agentSummary, needsAttention, age, chipOf, clientName, faceText, finishedUnread, matches, sessionName, sessionRow, uncertainOf,
+  CHIP_TEXT, agentSummary, needsAttention, age, chipOf, clientName, faceText, finishedUnread, heardAge, matches, sessionName, sessionRow, uncertainOf,
 } from '../src/sessions.ts';
 
 const NOTICE = 'a'.repeat(64);
@@ -91,19 +91,19 @@ void test('the session\'s known next turn clears the earlier finished turn, whil
 
 void test('only an unknown status or unconfirmed working is uncertain: silence never marks a waiting or finished session', () => {
   assert.equal(sessionRow(view()).uncertain, false);
-  // Silence: running work becomes unconfirmed at its deadline and after a restart; nothing else changes.
-  for (const silent of [{unconfirmed: 'deadline'}, {unconfirmed: 'restart'}] as const) {
-    assert.equal(sessionRow(view({...silent, work: 'active'})).uncertain, true, 'unconfirmed work');
-    assert.equal(sessionRow(view({...silent, work: 'active', attention: [question]})).uncertain, false, 'a question waits however long it is silent');
-    assert.equal(sessionRow(view({...silent, notices: finished()})).uncertain, false, 'a finished turn stays finished');
-    assert.equal(sessionRow(view({...silent})).uncertain, false, 'an idle session stays idle');
-  }
+  // Only a restart makes running work unconfirmed; silence changes no claim (Hub #1947).
+  const restart = {unconfirmed: 'restart'} as const;
+  assert.equal(sessionRow(view({...restart, work: 'active'})).uncertain, true, 'unconfirmed work');
+  assert.equal(sessionRow(view({...restart, work: 'active', attention: [question]})).uncertain, false, 'a question waits');
+  assert.equal(sessionRow(view({...restart, notices: finished()})).uncertain, false, 'a finished turn stays finished');
+  assert.equal(sessionRow(view({...restart})).uncertain, false, 'an idle session stays idle');
+  assert.equal(sessionRow(view({work: 'active', lastEvidenceAtMs: 1000, observedAtMs: 1000})).uncertain, false, 'silent work stays confirmed');
   assert.equal(uncertainOf(view({work: 'active', unavailable: [{dimension: 'activity', reason: 'lost'}]})), 'Its work is unconfirmed.', 'lost evidence on running work');
   assert.equal(uncertainOf(view({work: 'unknown'})), 'The hub does not know what this session is doing.');
-  const working = sessionRow(view({work: 'active', unconfirmed: 'deadline'}));
+  const working = sessionRow(view({work: 'active', unconfirmed: 'restart'}));
   assert.deepEqual([faceText(working, true), faceText(working, false), faceText(sessionRow(view()), false)], ['Unconfirmed', 'Stale', 'Stale'],
     'unconfirmed work is named, and a copy that is not synced shows its last records as stale');
-  assert.equal(working.facts.work, 'active, unconfirmed (deadline)');
+  assert.equal(working.facts.work, 'active, unconfirmed (restart)');
   const child = sessionRow(view({parent: {status: 'known', identity: {...record().identity, sessionId: 'parent-1'}}, children: {working: 2, unconfirmed: 1}, read: 'unread'}));
   assert.deepEqual(child.facts, {source: 'host-sim / claude-code', sessionId: 'session-sim-1', work: 'idle', read: 'unread', parent: 'parent-1', children: '2 working / 1 unconfirmed'});
 });
@@ -118,9 +118,19 @@ void test('the search matches the label, title, project or session ID, ignoring 
   assert.deepEqual([age(500), age(42_000), age(180_000)], ['less than 1s', '42s', '3m']);
 });
 
+// Hub #1947: the card shows how long ago the hub last heard from the session, from the record's evidence time against the
+// page's clock. The core publishes that time to the minute, so the age is whole minutes.
+void test('the evidence age is whole minutes from the record\'s evidence time, with hours past the first', () => {
+  assert.deepEqual([heardAge(-5), heardAge(0), heardAge(59_999), heardAge(60_000), heardAge(59 * 60_000 + 59_999), heardAge(3_600_000),
+    heardAge(23 * 3_600_000 + 7 * 60_000)], ['<1m', '<1m', '<1m', '1m', '59m', '1h 0m', '23h 7m']);
+  const busy = sessionRow(view({work: 'active', lastEvidenceAtMs: 5_000, observedAtMs: 5_000}));
+  assert.equal(busy.lastEvidenceAtMs, 5_000, 'the row carries the published evidence time; the page computes its age');
+  assert.equal(heardAge(5_000 + 12 * 60_000 - busy.lastEvidenceAtMs), '12m');
+});
+
 void test('agent summaries count confirmed work separately from retained attention and unread', () => {
   const working = sessionRow(view({work: 'active'}));
-  const unconfirmed = sessionRow(view({work: 'active', unconfirmed: 'deadline'}));
+  const unconfirmed = sessionRow(view({work: 'active', unconfirmed: 'restart'}));
   const unread = sessionRow(view({notices: finished()}));
   const attention = sessionRow(view({attention: [question]}));
   assert.deepEqual(agentSummary([working, unconfirmed, unread, attention], true), {working: 1, attention: 1, unread: 1});

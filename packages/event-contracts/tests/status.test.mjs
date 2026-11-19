@@ -51,8 +51,8 @@ const working = extra => session({work: 'active', ...extra});
 const notice = (acknowledgedBy = []) => ({id: createHash('sha256').update(`notice-${next}`).digest('hex'), kind: 'turn-ended', turn: {status: 'known', id: 't'}, acknowledgedBy});
 const done = extra => session({notices: [notice()], ...extra});
 const desktop = () => ({provider: 'codex', client: 'desktop', hostId: 'host-private', sourceId: 'codex-desktop', sessionId: `session-private-${next + 1}`});
-// Five minutes without qualifying evidence: the core marked running work unconfirmed for its deadline.
-const stale = {unconfirmed: 'deadline', lastEvidenceAtMs: AT - 300_000, observedAtMs: AT - 300_000};
+// Running work a restart left unconfirmed, five minutes after its last evidence. Silence alone changes no claim (Hub #1947).
+const stale = {unconfirmed: 'restart', lastEvidenceAtMs: AT - 300_000, observedAtMs: AT - 300_000};
 
 test('sessionState ranks attention over working over done, and reports nothing outstanding as undefined', () => {
   assert.equal(h.sessionState(asking()), 'attention');

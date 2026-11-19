@@ -15,9 +15,9 @@ import {viewRevision} from '../read-receipts/qualification.js';
 // - Each commit also derives the 2.0 messages it publishes and writes them, the published records, the history rows and
 //   the (source, id) of the intake it took, in the commit's own transaction, through the SDK's outbox. History (#782)
 //   keeps every message the core publishes, a state as a compact change event, and what a part records.
-// - A session's `session/3.0` record publishes only when its public meaning changes (#1865 step 9, design decision 5):
-//   a change that only advances private bookkeeping, such as a work observation's progress time, writes the session
-//   row, publishes nothing and adds no history row.
+// - A session's `session/3.0` record publishes only when its public meaning changes (#1865 step 9, design decision 5),
+//   its evidence time counted at `SESSION_LIMITS.evidenceResolutionMs` (Hub #1947): a work observation that only moves
+//   the evidence time by less than that writes the session row, publishes nothing and adds no history row.
 // - Each save of session rows is timed, and a slow one is recorded (Hub #976; see `SAVE_COST`).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
@@ -36,7 +36,7 @@ import {HistoryAlarm, type HistoryDevice} from './history-alarm.js';
 import {REMOVAL_SCHEMA} from './schemas.js';
 import {DEFAULT_CONSUMERS, SESSION_LIMITS, type Consumer, type RetirementGuard, type StoredSession} from './session/model.js';
 import {meaningChanged, publicRecords} from './session/record.js';
-import {deadlineOf, expiryOf, transition, workDeadlineOf, type Occurrence, type SessionInput, type TransitionResult} from './session/transition.js';
+import {expiryOf, transition, type Occurrence, type SessionInput, type TransitionResult} from './session/transition.js';
 
 export {takeLock, type Lock} from './lock.js';
 
@@ -291,15 +291,15 @@ export class CoreStore {
     }
   }
 
-  /** The next instant running work's deadline passes, a session expires or a guard lapses, or undefined when none will. */
+  /** The next instant a session expires or a guard lapses, or undefined when none will. */
   nextDue(): number | undefined {
-    return deadlineOf(this.#sessions.values(), this.#guards);
+    return expiryOf(this.#sessions.values(), this.#guards);
   }
 
   /**
    * Commits what has fallen due by now, each in its own core transaction: after an open, the start transaction that
    * marks running work unconfirmed; the sessions a day without lifecycle evidence expire with the guards a day old;
-   * running work whose deadline passed becomes unconfirmed; then each record whose public meaning differs from the one
+   * then each record whose public meaning differs from the one
    * last published, as every record of a release before the switch to `session/3.0` does, is published at a new
    * revision. True when it published. Rejects, changing nothing more, when the store refuses a commit.
    */
@@ -335,16 +335,13 @@ export class CoreStore {
   }
 
   /**
-   * Commits what has fallen due, as the core does before every observation: expiry, then the work deadlines, each in its
-   * own transaction (the aging table of design decision 4).
+   * Commits what has fallen due, as the core does before every observation: expiry, in its own transaction (the aging
+   * table of design decision 4, which has no work deadline since Hub #1947).
    */
   async #due(): Promise<'published' | 'nothing' | 'failed'> {
     const before = this.#revision;
     const expiry = expiryOf(this.#sessions.values(), this.#guards);
     if (expiry !== undefined && expiry <= this.#nowMs() && !(await this.#change({kind: 'expiry'}, undefined)).ok) return 'failed';
-    const now = this.#nowMs();
-    if ([...this.#sessions.values()].some(session => (workDeadlineOf(session) ?? Infinity) <= now) &&
-      !(await this.#change({kind: 'deadline'}, undefined)).ok) return 'failed';
     return this.#revision > before ? 'published' : 'nothing';
   }
 
@@ -352,8 +349,7 @@ export class CoreStore {
   async observe(message: Message<LifecycleObservation>): Promise<SessionOutcome> {
     const observation = message.data;
     if (Buffer.byteLength(JSON.stringify(observation)) > SESSION_LIMITS.observationBytes) return {ok: false, code: 'invalid-request'};
-    // Commit what is due before admission, so a freed slot or a fresh record replaces the expired one, and a work
-    // deadline that passed is not hidden by the observation's own change.
+    // Commit what is due before admission, so a freed slot or a fresh record replaces the expired one.
     if (await this.#due() === 'failed') return {ok: false, code: 'storage-failed'};
     return this.#change({kind: 'observation', observation}, {message, observation});
   }

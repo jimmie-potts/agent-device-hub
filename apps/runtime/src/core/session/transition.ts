@@ -8,9 +8,9 @@
 // retention from the core store at main 6adad7e7, with their rules unchanged. agent-state's journal, migrations, startup
 // settlements of older formats and its own timer do not come along: history replaces the journal, the core's first start
 // on this release drops the old session data, and the core's scheduler runs expiry. Restart marking is the core's own
-// (#1865 step 8, design decision 4): agent-state kept restart uncertainty in memory for every session. So is the work
-// deadline (#1865 step 9, the aging table of design decision 4): running work becomes unconfirmed five minutes after its
-// last qualifying evidence, and silence changes nothing else.
+// (#1865 step 8, design decision 4): agent-state kept restart uncertainty in memory for every session. Silence changes no
+// claim (Hub #1947 removed #1865's five-minute work deadline): only a restart, the session's end or its expiry after a
+// day without lifecycle evidence changes a session without evidence.
 import type {
   AgentOccurrence, Attention, AttentionCleared, Identity, KnownId, LifecycleObservation, ReadProvenance, Title,
 } from '@jimmie-potts/event-contracts/v2/families';
@@ -52,8 +52,6 @@ export type SessionInput =
   | {readonly kind: 'recover-approval'; readonly id: string; readonly turnId: string}
   | {readonly kind: 'read-receipt'; readonly id: string; readonly receipt: ReadProvenance}
   | {readonly kind: 'expiry'}
-  /** Running work whose deadline passed becomes unconfirmed. */
-  | {readonly kind: 'deadline'}
   /** The core's start: running work becomes unconfirmed. */
   | {readonly kind: 'start'};
 
@@ -79,27 +77,17 @@ export type TransitionResult = {
   readonly ended: readonly Occurrence[];
   /** Attention and turn occurrences, which go out after its records. */
   readonly occurrences: readonly Occurrence[];
-  /** The next instant a session expires, running work's deadline passes or a guard lapses after the change, if any. */
-  readonly deadlineMs: number | undefined;
+  /** The next instant a session expires or a guard lapses after the change, if any. */
+  readonly dueMs: number | undefined;
 };
 
 const empty = (state: SessionState, outcome: TransitionResult['outcome'], refusal?: Refusal): TransitionResult =>
-  ({outcome, ...(refusal === undefined ? {} : {refusal}), changed: [], removed: [], ended: [], occurrences: [], deadlineMs: deadlineOf(state.sessions.values(), state.guards)});
+  ({outcome, ...(refusal === undefined ? {} : {refusal}), changed: [], removed: [], ended: [], occurrences: [], dueMs: expiryOf(state.sessions.values(), state.guards)});
 
-/** The instant running work's deadline passes, or undefined when it has none to pass: work not running, or already unconfirmed. */
-export const workDeadlineOf = (session: StoredSession): number | undefined =>
-  session.activity !== 'active' || session.restartUnconfirmed === true || session.deadlineUnconfirmed === true ? undefined
-    : (session.progressAtMs ?? session.lastEvidenceAtMs) + SESSION_LIMITS.workDeadlineMs;
-
-/** The next instant a session goes a day without lifecycle evidence, running work's deadline passes, or a guard is a day old. */
-export function deadlineOf(sessions: Iterable<StoredSession>, guards: readonly RetirementGuard[]): number | undefined {
-  let due = Infinity;
-  for (const session of sessions) due = Math.min(due, session.lastEvidenceAtMs + SESSION_LIMITS.sessionAgeMs, workDeadlineOf(session) ?? Infinity);
-  for (const guard of guards) due = Math.min(due, guard.atMs + SESSION_LIMITS.sessionAgeMs);
-  return due === Infinity ? undefined : due;
-}
-
-/** The next instant a session expires or a guard lapses, which an expiry transition handles. */
+/**
+ * The next instant a session goes a day without lifecycle evidence or a guard is a day old, which an expiry transition
+ * handles. It is the only change that falls due without evidence besides the core's start.
+ */
 export function expiryOf(sessions: Iterable<StoredSession>, guards: readonly RetirementGuard[]): number | undefined {
   let due = Infinity;
   for (const session of sessions) due = Math.min(due, session.lastEvidenceAtMs + SESSION_LIMITS.sessionAgeMs);
@@ -114,8 +102,6 @@ export function transition(state: SessionState, input: SessionInput, context: Tr
       return observe(state, input.observation, context);
     case 'expiry':
       return expire(state, context.nowMs);
-    case 'deadline':
-      return deadline(state, context.nowMs);
     case 'start':
       return start(state, context.nowMs);
     case 'recover-approval':
@@ -138,7 +124,7 @@ function changedOne(state: SessionState, after: StoredSession, outcome: 'applied
   const guards = extra.guards ?? state.guards;
   return {
     outcome, changed: [after], removed: extra.removed ?? [], ...(extra.guards === undefined ? {} : {guards: extra.guards}), ended: [], occurrences,
-    deadlineMs: deadlineOf(sessions.values(), guards),
+    dueMs: expiryOf(sessions.values(), guards),
   };
 }
 
@@ -267,7 +253,7 @@ function observe(state: SessionState, observation: LifecycleObservation, context
     const sessions = [...state.sessions.values()].filter(session => !removed.has(session.id));
     return {
       outcome: 'applied', changed: [], removed: [...state.sessions.keys()].filter(key => removed.has(key)).map(key => ({id: key, reason: 'retired' as const})),
-      guards, ended: [{family: 'session-ended', data: observed(observation, previous)}], occurrences: [], deadlineMs: deadlineOf(sessions, guards),
+      guards, ended: [{family: 'session-ended', data: observed(observation, previous)}], occurrences: [], dueMs: expiryOf(sessions, guards),
     };
   }
   const full = previous === undefined && state.sessions.size >= SESSION_LIMITS.sessions;
@@ -294,7 +280,7 @@ function observe(state: SessionState, observation: LifecycleObservation, context
   if (session.parent.status === 'known' || observation.hostSessionId === undefined) delete session.hostSessionId;
   else session.hostSessionId = observation.hostSessionId;
   if (previous !== undefined) keepReceipt(previous, session, kind === 'read-observed');
-  confirm(previous, session, observation, reduced.fresh, context.startedAtMs, now);
+  confirm(previous, session, observation, reduced.fresh, context.startedAtMs);
   return changedOne(state, session, outcome, occurrencesOf(observation, previous, session), displaced ?? {});
 }
 
@@ -304,50 +290,19 @@ const producedAt = (observation: LifecycleObservation): number => Math.min(obser
 const QUALIFYING = new Set<LifecycleObservation['event']['kind']>(['turn-started', 'activity-observed', 'attention-resolved']);
 
 /**
- * Keeps the work claim's markings true to design decision 4 after an observation. Only running work is marked.
+ * Keeps the work claim's restart marking true to design decision 4 after an observation. Only running work is marked.
  * Qualifying evidence on the session's current turn whose producer instant is at or after the core's start, and which
- * the reducer took as fresh lifecycle evidence rather than a repeat, confirms it and advances its progress time, from
- * which its deadline runs; so does evidence after the start that sets work running. Anything else leaves running work
- * as it was. Work that evidence from before the start set running is unconfirmed, since the core cannot tell whether it
- * still runs: a delayed event from before a restart never confirms work.
+ * the reducer took as fresh lifecycle evidence rather than a repeat, confirms it; so does evidence after the start that
+ * sets work running. Anything else leaves running work as it was. Work that evidence from before the start set running
+ * is unconfirmed, since the core cannot tell whether it still runs: a delayed event from before a restart never
+ * confirms work. Silence never marks it (Hub #1947).
  */
-function confirm(previous: StoredSession | undefined, session: StoredSession, observation: LifecycleObservation, fresh: boolean, startedAtMs: number,
-  now: number): void {
+function confirm(previous: StoredSession | undefined, session: StoredSession, observation: LifecycleObservation, fresh: boolean, startedAtMs: number): void {
   const before = producedAt(observation) < startedAtMs;
   const starts = previous?.activity !== 'active';
-  if (session.activity !== 'active') {
-    delete session.restartUnconfirmed;
-    delete session.deadlineUnconfirmed;
-    delete session.progressAtMs;
-  } else if (!before && (starts || fresh && QUALIFYING.has(observation.event.kind) && sameTurn(observation.turn, session.turn))) {
-    delete session.restartUnconfirmed;
-    delete session.deadlineUnconfirmed;
-    session.progressAtMs = now;
-  } else if (starts) {
-    session.restartUnconfirmed = true;
-    delete session.deadlineUnconfirmed;
-    session.progressAtMs = now;
-  }
-}
-
-/**
- * The work deadline (design decision 4): every session whose running work has had no qualifying evidence since its
- * progress time for `workDeadlineMs` becomes unconfirmed, in one change that publishes the changed records and no
- * occurrence. Attention, outcomes and work that is not running never change through silence.
- */
-function deadline(state: SessionState, now: number): TransitionResult {
-  const changed: StoredSession[] = [];
-  for (const session of state.sessions.values()) {
-    const due = workDeadlineOf(session);
-    if (due === undefined || due > now) continue;
-    const next = structuredClone(session);
-    next.deadlineUnconfirmed = true;
-    changed.push(next);
-  }
-  if (changed.length === 0) return empty(state, 'duplicate');
-  const sessions = new Map(state.sessions);
-  for (const session of changed) sessions.set(session.id, session);
-  return {outcome: 'applied', changed, removed: [], ended: [], occurrences: [], deadlineMs: deadlineOf(sessions.values(), state.guards)};
+  if (session.activity !== 'active') delete session.restartUnconfirmed;
+  else if (!before && (starts || fresh && QUALIFYING.has(observation.event.kind) && sameTurn(observation.turn, session.turn))) delete session.restartUnconfirmed;
+  else if (starts) session.restartUnconfirmed = true;
 }
 
 /**
@@ -370,7 +325,7 @@ function start(state: SessionState, now: number): TransitionResult {
   if (changed.length === 0) return empty(state, 'duplicate');
   const sessions = new Map(state.sessions);
   for (const session of changed) sessions.set(session.id, session);
-  return {outcome: 'applied', changed, removed: [], ended: [], occurrences: [], deadlineMs: deadlineOf(sessions.values(), state.guards)};
+  return {outcome: 'applied', changed, removed: [], ended: [], occurrences: [], dueMs: expiryOf(sessions.values(), state.guards)};
 }
 
 /** Whether current archive evidence covers a new Codex Desktop session or a known ancestor, including its missing topmost parent. */
@@ -398,20 +353,20 @@ function expire(state: SessionState, now: number): TransitionResult {
   const sessions = [...state.sessions.values()].filter(session => !gone.includes(session));
   return {
     outcome: 'applied', changed: [], removed: gone.map(session => ({id: session.id, reason: 'expired' as const})), guards, ended: [], occurrences: [],
-    deadlineMs: deadlineOf(sessions, guards),
+    dueMs: expiryOf(sessions, guards),
   };
 }
 
 /**
  * Operator approval recovery: retires the one approval marker without an attention ID that the session holds on
- * `turnId`, only while its work claim is unconfirmed for its deadline or a restart (design decision 10). No observation
+ * `turnId`, only while a core restart left its running work unconfirmed (design decision 10, as Hub #1947 amends it:
+ * silence no longer makes work unconfirmed, so the restart marking is the only one left). No observation
  * started it, so its occurrence carries the session's current turn, the core's instant and unknown ordering.
  */
 function recover(state: SessionState, id: string, turnId: string, now: number): TransitionResult {
   const previous = state.sessions.get(id);
   if (previous === undefined) return empty(state, 'refused', 'not-found');
-  if (previous.turn.status !== 'known' || previous.turn.id !== turnId ||
-    !(previous.restartUnconfirmed === true || previous.deadlineUnconfirmed === true)) return empty(state, 'refused', 'invalid-state');
+  if (previous.turn.status !== 'known' || previous.turn.id !== turnId || previous.restartUnconfirmed !== true) return empty(state, 'refused', 'invalid-state');
   const target = (item: Attention): boolean => item.kind === 'approval' && item.id.status === 'unknown' && item.turn.status === 'known' && item.turn.id === turnId;
   if (previous.attention.filter(target).length !== 1) return empty(state, 'refused', 'invalid-state');
   const session = structuredClone(previous);
@@ -424,7 +379,7 @@ function recover(state: SessionState, id: string, turnId: string, now: number): 
 }
 
 /** Title, label, acknowledgment and read receipt: changes to one known session's metadata or outcome. */
-function command(state: SessionState, input: Exclude<SessionInput, {kind: 'observation' | 'expiry' | 'deadline' | 'recover-approval' | 'start'}>, context: TransitionContext): TransitionResult {
+function command(state: SessionState, input: Exclude<SessionInput, {kind: 'observation' | 'expiry' | 'recover-approval' | 'start'}>, context: TransitionContext): TransitionResult {
   const previous = state.sessions.get(input.id);
   const session = previous === undefined ? undefined : structuredClone(previous);
   switch (input.kind) {

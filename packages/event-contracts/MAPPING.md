@@ -84,9 +84,9 @@ The core builds each record from its stored session with `buildSession`
 | 2.x member | 3.0 home | Notes |
 | --- | --- | --- |
 | `id`, `revision`, `generation`, `identity`, `parent`, `turn`, `unavailable`, `ordering`, `label`, `title`, `project`, `projectId`, `hostSessionId` | the same member | Unchanged. |
-| `observedAtMs`, `lastEvidenceAtMs` | the same member | The instants of the record's last published change. A work observation that changes no public member advances only the core's private progress time and publishes nothing. |
+| `observedAtMs`, `lastEvidenceAtMs` | the same member | The instants of the record's last published change. A record whose meaning is unchanged publishes again once its `lastEvidenceAtMs` is at least one minute past the published one (Hub #1947), so its evidence time lags real evidence by less than a minute. |
 | `activity` | `work /state` | `unknown`, `active`, `idle` or `interrupted`. |
-| `freshness`, `restartUncertain` | `work /confidence`, `/reasons` | Retired. Only running work becomes unconfirmed: reason `deadline` five minutes after its last qualifying work evidence on the core's clock, which the core publishes, and reason `restart` at a core start. Ambiguous or lost activity evidence adds its own reason. Attention, outcomes and idle or interrupted work never change through silence. |
+| `freshness`, `restartUncertain` | `work /confidence`, `/reasons` | Retired. Only running work becomes unconfirmed: reason `restart` at a core start. Ambiguous or lost activity evidence adds its own reason. Silence changes no claim (Hub #1947 removed the five-minute work deadline and its reason `deadline`); a reader shows the evidence age from `lastEvidenceAtMs`. |
 | `attention` | `attention /items` | Unchanged items. The claim's confidence is unconfirmed while the `attention` dimension is ambiguous or lost. |
 | `notices`, `read`, `readReceipt` | `outcome /notices`, `/read`, `/readReceipt` | Unchanged, with per-consumer acknowledgments. `readReceipt` was `session/2.1`'s; a record with read provenance is now an ordinary `session/3.0` record. |
 | `children.active`, `children.uncertain` | `relationships /children/working`, `/unconfirmed` | A child counts as working only while its own work is active and confirmed. |

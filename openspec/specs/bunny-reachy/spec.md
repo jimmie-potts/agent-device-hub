@@ -49,7 +49,7 @@ Automatic expression SHALL default off, require the current core mode and an opp
 - **WHEN** a bare turn ends without a current unacknowledged notice
 - **THEN** no gesture is created and no success is inferred
 #### Scenario: Unconfirmed work does not refuse a waiting question
-- **WHEN** a session whose work turned unconfirmed after five minutes of silence raises an approval
+- **WHEN** a session whose work a core restart left unconfirmed raises an approval
 - **THEN** the approval's opportunity is eligible while it matches, and unconfirmed work alone does not refuse it
 
 ### Requirement: Durable outcomes and isolated failure

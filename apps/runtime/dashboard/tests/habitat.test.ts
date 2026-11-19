@@ -23,21 +23,21 @@ void test('legacy preferences migrate and malformed or duplicate bindings do not
 });
 void test('session meaning stays with the shell and qualified navigation is independent of work confirmation',()=>{
  const current=record(1);assert.equal(presentation(current,true).state,'working');assert.equal(presentation(current,false).uncertain,true);
- assert.equal(conversationFor(record(1,{unconfirmed:'deadline'}),'Win32').href,`codex://threads/${current.identity.sessionId}`);
+ assert.equal(conversationFor(record(1,{unconfirmed:'restart'}),'Win32').href,`codex://threads/${current.identity.sessionId}`);
  for(const value of [conversationFor(current,'iPhone'),conversationFor(record(1,{identity:{...current.identity,client:'cli'}}),'Win32'),conversationFor(record(1,{identity:{...current.identity,sessionId:'x/?foo'}}),'Win32')])assert.equal(value.href,undefined);
 });
 void test('a resident is uncertain only for an unknown status, unconfirmed working or an unsynced copy (#1865)',()=>{
  const question={id:{status:'known',id:'question-1'},kind:'question',turn:{status:'known',id:'turn-1'}} as const;
  const finished=[{id:'n'.repeat(64),kind:'turn-ended',turn:{status:'known',id:'turn-1'},acknowledgedBy:[]}] as Notice[];
- assert.deepEqual(presentation(record(1,{unconfirmed:'deadline'}),true),{state:'working',name:stored(1).identity.sessionId,client:'Codex Desktop',uncertain:true});
- assert.equal(presentation(record(1,{unconfirmed:'deadline',attention:[question]}),true).uncertain,false,'a question waits however long it is silent');
+ assert.deepEqual(presentation(record(1,{unconfirmed:'restart'}),true),{state:'working',name:stored(1).identity.sessionId,client:'Codex Desktop',uncertain:true});
+ assert.equal(presentation(record(1,{unconfirmed:'restart',attention:[question]}),true).uncertain,false,'a question waits however long it is unconfirmed');
  assert.deepEqual(presentation(record(1,{work:'idle',notices:finished}),true),{state:'finished',name:stored(1).identity.sessionId,client:'Codex Desktop',uncertain:false});
  assert.equal(presentation(record(1,{work:'unknown'}),true).uncertain,true);
 });
 void test('bindings do not churn on progress or reconnect',()=>{
  const sessions=Array.from({length:12},(_,n)=>record(n)),first=reconcileBindings([],sessions);
- // Progress: every session publishes newer evidence in the reverse order, and silence makes work unconfirmed.
- const progressed=sessions.map((_,n)=>record(n,{revision:5,lastEvidenceAtMs:1000-n,...(n%2===0?{unconfirmed:'deadline' as const}:{})}));
+ // Progress: every session publishes newer evidence in the reverse order, and a restart makes some work unconfirmed.
+ const progressed=sessions.map((_,n)=>record(n,{revision:5,lastEvidenceAtMs:1000-n,...(n%2===0?{unconfirmed:'restart' as const}:{})}));
  assert.deepEqual(reconcileBindings(first,progressed),first,'newer evidence moves no resident');
  // Reconnect: the replacement copy brings the same sessions in another order, then one more that waits for a spot.
  assert.deepEqual(reconcileBindings(first,[...progressed].reverse()),first,'a resynced copy in another order moves no resident');

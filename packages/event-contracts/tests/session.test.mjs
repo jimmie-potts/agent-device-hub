@@ -12,7 +12,7 @@ import {
 import * as sharedStatus from '../dist/v2/status.js';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8')).valid;
-const TIME = '2026-10-06T12:00:00.000Z', AT = Date.parse(TIME), STALE = 300_000;
+const TIME = '2026-10-06T12:00:00.000Z', AT = Date.parse(TIME), HOUR = 3_600_000;
 const SCHEMA = 'https://bunny.invalid/events/session/';
 const hash = text => createHash('sha256').update(text).digest('hex');
 const known = id => ({status: 'known', id});
@@ -40,8 +40,8 @@ function message(overrides = {}, {time = TIME} = {}) {
 const notice = (turn = 'turn-1', acknowledgedBy = []) => ({id: hash(`notice-${turn}-${acknowledgedBy.join()}`), kind: 'turn-ended', turn: known(turn), acknowledgedBy});
 const approval = (turn = 'turn-1') => ({id: known('approval-1'), kind: 'approval', turn: known(turn)});
 const question = (turn = 'turn-1') => ({id: known('question-1'), kind: 'question', turn: known(turn)});
-// Six minutes without qualifying evidence: the core marked running work unconfirmed for its deadline.
-const silent = {lastEvidenceAtMs: AT - STALE - 60_000, observedAtMs: AT - STALE - 60_000, unconfirmed: 'deadline'};
+// An hour without evidence: silence changes no claim (Hub #1947).
+const silent = {lastEvidenceAtMs: AT - HOUR, observedAtMs: AT - HOUR};
 const read = overrides => {
   const view = readSession(message(overrides));
   assert.ok(view);
@@ -59,7 +59,7 @@ const unconfirmed = reason => ({state: 'active', confidence: 'unconfirmed', evid
 
 test('the status function takes the first rule that matches, in the design\'s order', () => {
   const asked = {items: [question(), approval(), {id: known('input-1'), kind: 'input', turn: known('turn-1')}], confidence: 'confirmed', evidenceAtMs: AT};
-  assert.deepEqual(statusOf(claims({attention: asked, work: unconfirmed('deadline')})), {class: 'needs-owner', detail: 'approval'});
+  assert.deepEqual(statusOf(claims({attention: asked, work: unconfirmed('restart')})), {class: 'needs-owner', detail: 'approval'});
   assert.deepEqual(statusOf(claims({attention: {...asked, items: [question(), {id: known('input-1'), kind: 'input', turn: known('turn-1')}]}})), {class: 'needs-owner', detail: 'input'});
   assert.deepEqual(statusOf(claims({attention: {...asked, items: [question()]}})), {class: 'needs-owner', detail: 'question'});
   assert.deepEqual(statusOf(claims({work: {state: 'active', confidence: 'confirmed', evidenceAtMs: AT, reasons: []}})), {class: 'working', detail: 'confirmed'});
@@ -142,27 +142,34 @@ test('a session/3.0 record keeps its read provenance in its outcome', () => {
   assert.deepEqual(view.outcome, {notices: [finished], read: 'read', readReceipt: receipt, confidence: 'confirmed', evidenceAtMs: AT - 1000});
 });
 
-// Design decisions 3 and 4: the record builder the core publishes with. Active work is unconfirmed for its deadline or a
-// restart; attention and outcomes never become unconfirmed from silence.
+// Design decisions 3 and 4, as Hub #1947 amends them: the record builder the core publishes with. Active work is
+// unconfirmed after a restart; silence makes no claim unconfirmed.
 test('a waiting session needs the owner however long it is silent', () => {
   const asking = read({work: 'active', attention: [approval()], ...silent});
   assert.equal(status(asking), 'needs-owner/approval');
   assert.deepEqual(asking.attention, {items: [approval()], confidence: 'confirmed', evidenceAtMs: silent.lastEvidenceAtMs});
-  assert.deepEqual(asking.work, {state: 'active', confidence: 'unconfirmed', evidenceAtMs: silent.lastEvidenceAtMs, reasons: ['deadline']},
-    'the turn still running under the question is the only claim silence makes unconfirmed');
+  assert.deepEqual(asking.work, {state: 'active', confidence: 'confirmed', evidenceAtMs: silent.lastEvidenceAtMs, reasons: []},
+    'silence leaves the turn still running under the question confirmed');
   const continuing = read({work: 'idle', attention: [question()], ...silent});
   assert.equal(status(continuing), 'needs-owner/question');
   assert.deepEqual(continuing.work.reasons, []);
   assert.equal(continuing.work.confidence, 'confirmed');
 });
 
-test('a working session is working, unconfirmed once its deadline passed', () => {
+test('a working session stays working and confirmed however long it is silent', () => {
   const current = read({work: 'active'});
   assert.equal(status(current), 'working/confirmed');
   assert.deepEqual(current.work, {state: 'active', confidence: 'confirmed', evidenceAtMs: AT - 1000, reasons: []});
   const quiet = read({work: 'active', ...silent});
-  assert.equal(status(quiet), 'working/unconfirmed');
-  assert.deepEqual(quiet.work.reasons, ['deadline']);
+  assert.equal(status(quiet), 'working/confirmed');
+  assert.deepEqual(quiet.work, {state: 'active', confidence: 'confirmed', evidenceAtMs: AT - HOUR, reasons: []}, 'its evidence time shows the silence');
+});
+
+test('the work deadline\'s reason is gone from session/3.0', () => {
+  const value = message({work: 'active', unconfirmed: 'restart'});
+  value.data.work.reasons = ['deadline'];
+  assert.equal(coreValidator().validate(value).ok, false, 'reason deadline is refused');
+  assert.equal(readSession(value), undefined);
 });
 
 test('a restart makes only running work unconfirmed', () => {
@@ -183,8 +190,9 @@ test('children count as working and unconfirmed', () => {
   assert.deepEqual(parent.relationships, {children: {working: 1, unconfirmed: 2}, confidence: 'confirmed'});
   assert.equal(status(parent), 'working/subagent');
   assert.equal(status(read({children: {working: 0, unconfirmed: 2}})), 'quiet/idle');
-  const child = read({identity: identity('session-a-child'), parent: {status: 'known', identity: identity('session-a')}, work: 'active', ...silent});
-  assert.equal(status(child), 'working/unconfirmed');
+  const child = {identity: identity('session-a-child'), parent: {status: 'known', identity: identity('session-a')}, work: 'active', ...silent};
+  assert.equal(status(read(child)), 'working/confirmed', 'a silent child is still working');
+  assert.equal(status(read({...child, unconfirmed: 'restart'})), 'working/unconfirmed');
 });
 
 test('ambiguous or lost evidence makes the claim of its dimension unconfirmed', () => {
@@ -196,12 +204,12 @@ test('ambiguous or lost evidence makes the claim of its dimension unconfirmed', 
 });
 
 // Today's reducer keeps a session active after an `evidence-unavailable` observation with activity `lost`.
-test('ambiguous or lost activity evidence makes active work unconfirmed, after any silence reason', () => {
+test('ambiguous or lost activity evidence makes active work unconfirmed, after a restart', () => {
   const lost = read({work: 'active', unavailable: [{dimension: 'ordering', reason: 'missing'}, {dimension: 'activity', reason: 'lost'}]});
   assert.equal(status(lost), 'working/unconfirmed');
   assert.deepEqual(lost.work.reasons, ['lost']);
-  const both = read({work: 'active', unavailable: [{dimension: 'activity', reason: 'ambiguous'}], ...silent});
-  assert.deepEqual(both.work.reasons, ['deadline', 'ambiguous']);
+  const both = read({work: 'active', unavailable: [{dimension: 'activity', reason: 'ambiguous'}], unconfirmed: 'restart'});
+  assert.deepEqual(both.work.reasons, ['restart', 'ambiguous']);
   assert.equal(read({work: 'active', unavailable: [{dimension: 'activity', reason: 'missing'}]}).work.confidence, 'confirmed', 'missing is not doubt');
   assert.deepEqual(read({work: 'idle', unavailable: [{dimension: 'activity', reason: 'lost'}]}).work.reasons, [], 'only active work is unconfirmed');
 });

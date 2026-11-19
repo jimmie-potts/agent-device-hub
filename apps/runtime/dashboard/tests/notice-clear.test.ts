@@ -44,9 +44,9 @@ void test('the override has no age term: a finished or waiting session silent pa
   assert.equal(overrideAvailable(view(), live), true, 'a finished session silent for ten minutes');
   assert.equal(overrideAvailable(view({unconfirmed: 'restart'}), live), true, 'after a restart');
   const question = {id: {status: 'known', id: 'question-1'}, kind: 'question', turn: {status: 'known', id: 'turn-2'}} as const;
-  assert.equal(overrideAvailable(view({unconfirmed: 'deadline', work: 'active', turn: {status: 'known', id: 'turn-2'}, attention: [question]}), live), true,
+  assert.equal(overrideAvailable(view({unconfirmed: 'restart', work: 'active', turn: {status: 'known', id: 'turn-2'}, attention: [question]}), live), true,
     'a waiting session');
-  assert.equal(overrideAvailable(view({unconfirmed: 'deadline', work: 'active'}), live), false, 'unconfirmed work is the shared uncertainty');
+  assert.equal(overrideAvailable(view({unconfirmed: 'restart', work: 'active'}), live), false, 'unconfirmed work is the shared uncertainty');
   assert.equal(overrideAvailable(view({work: 'unknown', notices: []}), live), false, 'an unknown status');
   for (const missing of [{control: false}, {live: false}, {synced: false}]) assert.equal(overrideAvailable(view(), {...live, ...missing}), false, JSON.stringify(missing));
   assert.equal(overrideAvailable(undefined, live), false);

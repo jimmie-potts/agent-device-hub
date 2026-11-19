@@ -98,7 +98,7 @@ try {
   assert.equal(await focusVisible(page), true, 'focus is visible on a card');
   await page.keyboard.press('Enter');
   await card('Port the wall').locator('details[open]').waitFor();
-  await card('Port the wall').getByText(/^Last published change: .* ago\./).waitFor();
+  await card('Port the wall').getByText(/^Last heard: .* ago, to the minute\./).waitFor();
   await card('Port the wall').locator('.attention', {hasText: 'Approval · blocked attention'}).waitFor();
   await card('Port the wall').locator('dd', {hasText: 'host-sim / claude-code'}).waitFor();
   await shot(page, 'tv-card-open');

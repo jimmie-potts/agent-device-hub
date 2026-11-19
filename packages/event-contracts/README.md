@@ -182,16 +182,19 @@ The rules:
   left behind.
 - The owner publishes a new revision when a session's public meaning or the
   playback availability changes. A `session/3.0` record changes meaning when any
-  member but its revision and its evidence instants changes, so its
-  `lastEvidenceAtMs` is the evidence time of its last published change.
+  member but its revision and its evidence instants changes. It also publishes
+  when its `lastEvidenceAtMs` has moved at least one minute past the published
+  record's (Hub #1947), so a busy session's evidence time lags its real
+  evidence by less than a minute and an idle session publishes nothing.
 - Commands name no device: the envelope `subject` names the target. Their
   replies and outcomes use the profile's reply and outcome payloads.
 - `approval-recover` (Hub #835) is the old Hub's operator recovery, carried as
   a command to the core: `{requestId, turnId, expectedRevision}`, with the
   session's `id` as its `subject` and the session record's `revision` that the
   operator read as `expectedRevision`. The core retires the one approval marker
-  without an attention ID that the session holds on `turnId`, only while the
-  session's evidence is uncertain, and publishes `attention-cleared` with cause
+  without an attention ID that the session holds on `turnId`, only while a
+  core restart left the session's running work unconfirmed (Hub #1947), and
+  publishes `attention-cleared` with cause
   `recovered`. It approves or denies nothing at the agent.
 - `notice-clear` (Hub #1009) is a tracked operator-only override with `requestId`, selected `noticeId` (a 64-character notice hash or null), and required `expectedRevision`. Its subject is the qualified session entity ID. The runtime refuses a changed latest notice/revision, acknowledges every configured consumer atomically, and records the profile's observed metadata completion. Null selects no notice and changes no session state. The family supplies no wire permission flag, provider read evidence or physical-device receipt.
 - `session-label-set` (Hub #1006) is a tracked operator command with
@@ -710,7 +713,7 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
   notices make a session finished: every notice no known later turn
   superseded, the owner's decision of 2026-11-18), `buildSession(facts)`, which
   builds a record and its status from a session's work state and why running
-  work is unconfirmed (`deadline` or `restart`), its attention, notices, read
+  work is unconfirmed (`restart`), its attention, notices, read
   evidence and counted children, and which the core and tests share,
   `forConsumer(view, policy)`, which retires `finished` to `quiet` under a
   reader's acknowledgment and read policy,

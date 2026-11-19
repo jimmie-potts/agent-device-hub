@@ -50,7 +50,10 @@ export type SessionRow = {
   /** One line per attention item, in the record's order. */
   attention: string[];
   notices: NoticeRow[];
-  /** The evidence time of the session's last published change. */
+  /**
+   * When the hub last heard from the session: the core's instant of its last lifecycle evidence, which the record
+   * carries to within `SESSION_LIMITS.evidenceResolutionMs`, one minute (Hub #1947). The page shows its age (`heardAge`).
+   */
   lastEvidenceAtMs: number;
   facts: {source: string; sessionId: string; work: string; read: string; parent: string; children: string};
 };
@@ -173,3 +176,12 @@ export function matches(view: SessionView, query: string, provider: string): boo
 
 /** A duration as the dashboard writes it. */
 export const age = (ms: number): string => ms < 1000 ? 'less than 1s' : ms < 60_000 ? `${Math.floor(ms / 1000)}s` : `${Math.floor(ms / 60_000)}m`;
+
+/**
+ * How long ago the hub last heard from a session, computed against the page's clock from the record's evidence time
+ * (Hub #1947). The core publishes that time to the minute, so the age is in whole minutes, with hours past the first.
+ */
+export function heardAge(ms: number): string {
+  const minutes = Math.floor(Math.max(0, ms) / 60_000);
+  return minutes < 1 ? '<1m' : minutes < 60 ? `${String(minutes)}m` : `${String(Math.floor(minutes / 60))}h ${String(minutes % 60)}m`;
+}

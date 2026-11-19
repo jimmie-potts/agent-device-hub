@@ -95,15 +95,15 @@ export type RecordEnvelope = Omit<Envelope, 'snapshot'> & {snapshot: RecordSnaps
 /**
  * One recorded session as the feed gives it: its own fields, with the hub's status and work claim of the `session/3.0`
  * record the core would publish for it (`buildSession`, then the feed's `sharedSession` with the wall's policy). The
- * recording's restart uncertainty becomes running work unconfirmed for the restart, and its uncertain freshness running
- * work unconfirmed for its deadline; silence changes nothing else. A 1.x `ended` activity, which no record carries, reads
+ * recording's restart uncertainty and its uncertain freshness both become running work unconfirmed for a restart, the
+ * only reason the hub publishes for it since Hub #1947 removed the work deadline; silence changes nothing else. A 1.x `ended` activity, which no record carries, reads
  * as unknown. A missing or malformed generation stays as it is, so the projection's own check still sees it.
  */
 export function hubSession(session: RecordSession): SharedSession {
   const {activity, observationAgeMs: _age, freshness, restartUncertain, children, ...kept} = session;
   const facts = {
     id: identityKeyOf(session), revision: 0, generation: session.generation, identity: session.identity, parent: session.parent, turn: session.turn,
-    work: activity === 'ended' ? 'unknown' : activity, ...(restartUncertain ? {unconfirmed: 'restart'} : freshness === 'uncertain' ? {unconfirmed: 'deadline'} : {}),
+    work: activity === 'ended' ? 'unknown' : activity, ...(restartUncertain || freshness === 'uncertain' ? {unconfirmed: 'restart'} : {}),
     attention: session.attention, notices: session.notices, read: session.read,
     unavailable: session.unavailable.map(({dimension, reason}) => ({dimension, reason})), ordering: session.ordering,
     observedAtMs: session.observedAtMs, lastEvidenceAtMs: session.lastEvidenceAtMs, children: {working: children.active, unconfirmed: children.uncertain},

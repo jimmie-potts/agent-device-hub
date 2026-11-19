@@ -603,14 +603,14 @@ The module SHALL keep no session rule of its own. At its feed boundary it SHALL 
 
 #### Scenario: A question left waiting
 - **WHEN** a task raises a question in Work and stays silent for ten minutes
-- **THEN** its Line keeps the question's alert animation throughout, and a working task silent for the same time holds steady once its work is unconfirmed
+- **THEN** its Line keeps the question's alert animation throughout, a working task silent for the same time keeps working, and only a working task whose work a core restart left unconfirmed holds steady
 
 #### Scenario: An unread finished task
 - **WHEN** a task's turn ends in Work and nobody reads or acknowledges it for ten minutes
 - **THEN** its Line keeps its unread indication throughout, and it turns idle at once when Nanoleaf acknowledges the notice or read evidence arrives, and working when a new turn starts
 
 #### Scenario: A silent subagent under a finished root
-- **WHEN** a task's root finishes its turn while a subagent is working, and the subagent then stays silent for five minutes
+- **WHEN** a task's root finishes its turn while a subagent is working, and a core restart then leaves the subagent's work unconfirmed
 - **THEN** the Line shows the root's unread turn, not held steady, as LIFX and the Tidbyt tile show it done
 
 #### Scenario: Unknown status

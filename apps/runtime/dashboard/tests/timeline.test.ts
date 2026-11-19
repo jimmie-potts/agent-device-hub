@@ -33,7 +33,7 @@ void test('a session/3.0 change is titled from its status, an older row keeps it
   // Rows written as session/3.0: the status names what changed.
   assert.deepEqual([
     session({status: {class: 'needs-owner', detail: 'approval'}, attention: {items: [], confidence: 'confirmed', evidenceAtMs: 1}}),
-    session({status: {class: 'working', detail: 'unconfirmed'}, work: {state: 'active', confidence: 'unconfirmed', evidenceAtMs: 1, reasons: ['deadline']}}),
+    session({status: {class: 'working', detail: 'unconfirmed'}, work: {state: 'active', confidence: 'unconfirmed', evidenceAtMs: 1, reasons: ['restart']}}),
     session({status: {class: 'finished', detail: 'turn-ended'}}), session({status: {class: 'quiet', detail: 'acknowledged'}}),
     session({status: {class: 'unknown', detail: 'lost'}}),
   ], ['Agent needs you', 'Agent working', 'Turn finished', 'Agent quiet', 'Agent activity unknown']);

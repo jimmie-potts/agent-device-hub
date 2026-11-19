@@ -565,8 +565,8 @@ The core SHALL keep each root session's latest host session ID with its record, 
 - **THEN** the core publishes its removal with reason `expired`, and history keeps its earlier `turn.ended`
 
 #### Scenario: Freshness at five minutes
-- **WHEN** five minutes pass on the runtime's clock without qualifying work evidence for a working session, and for a session whose turn ended on a question
-- **THEN** the core's timer publishes the working session with unconfirmed work at a higher revision, a millisecond earlier nothing was published, and the waiting session is not republished and still needs the owner
+- **WHEN** five minutes, and then an hour, pass on the runtime's clock without evidence for a working session, and for a session whose turn ended on a question
+- **THEN** the core publishes neither (Hub #1947), the working session's work stays confirmed, the waiting session still needs the owner, and the core's next timer is the first session's expiry
 
 #### Scenario: After a restart
 - **WHEN** the core restarts on its store holding a working session, a session with a question and a session with an unread finished turn
@@ -633,8 +633,8 @@ The core store SHALL keep each session as a row of its own tables, with its reti
 - **THEN** the core opens its database and runs, health shows it running, an observation is refused with `capacity` and a sync with `unavailable`, and once there is room the next observation is taken and syncs are served
 
 #### Scenario: Retries back off
-- **WHEN** the store refuses a due work deadline for two minutes
-- **THEN** the core tries at 0, 1, 3, 7, 15, 31, 63 and 123 s, logs the transition and two summaries with the refusals since, and publishes the record at the next attempt once there is room
+- **WHEN** the store refuses a due expiry for two minutes
+- **THEN** the core tries at 0, 1, 3, 7, 15, 31, 63 and 123 s, logs the transition and two summaries with the refusals since, and publishes the removal at the next attempt once there is room
 
 #### Scenario: The (source, id) window
 - **WHEN** a hook whose clock runs two hours ahead sends an observation, and a day and an hour later another intake prunes what is due
@@ -935,11 +935,11 @@ The runtime SHALL keep a route map of every route the old Hub serves in `apps/hu
 
 ### Requirement: Operator approval recovery
 
-The core SHALL answer the `approval-recover` command on `bunny.cmd.approval-recover.<session>` through its session logic, carrying the old Hub's `recover-approval`. It SHALL retire the one approval marker without an attention ID that the session holds on `turnId`, only while the session's work claim is unconfirmed for its deadline or a restart; commit before it replies `accepted`; and publish `attention-cleared` with cause `recovered` and the session at its new revision in the command's trace, with no outcome. It SHALL refuse an unknown session with `not-found`, an `expectedRevision` other than the session record's revision with `revision-conflict`, and a session with no such marker or confirmed work with `invalid-state`, changing nothing. The gateway SHALL send it as the caller's source from `POST /api/v2/commands/approval-recover` to a caller with `control`, and from the MCP tool `core_recover_approval`; a remote part with `control` MAY request it through the SDK edge. The core's manifest SHALL contribute the MCP read tool `core_sessions`.
+The core SHALL answer the `approval-recover` command on `bunny.cmd.approval-recover.<session>` through its session logic, carrying the old Hub's `recover-approval`. It SHALL retire the one approval marker without an attention ID that the session holds on `turnId`, only while a core restart left the session's running work unconfirmed, the only marking the core keeps (Hub #1947), so silence alone SHALL never allow it; commit before it replies `accepted`; and publish `attention-cleared` with cause `recovered` and the session at its new revision in the command's trace, with no outcome. It SHALL refuse an unknown session with `not-found`, an `expectedRevision` other than the session record's revision with `revision-conflict`, and a session with no such marker or confirmed work with `invalid-state`, changing nothing. The gateway SHALL send it as the caller's source from `POST /api/v2/commands/approval-recover` to a caller with `control`, and from the MCP tool `core_recover_approval`; a remote part with `control` MAY request it through the SDK edge. The core's manifest SHALL contribute the MCP read tool `core_sessions`.
 
 #### Scenario: Recovery only while evidence is uncertain
-- **WHEN** an approval without an ID is raised on a turn, an operator recovers it while work is confirmed, for an unknown session, then after five minutes with a stale revision, for another turn, with the current revision, and again
-- **THEN** the answers are `invalid-state`, `not-found`, `revision-conflict`, `invalid-state`, `accepted` and `invalid-state`; the accepted recovery clears the marker with an `attention-cleared` occurrence of cause `recovered` in the command's trace, and the core publishes no outcome
+- **WHEN** an approval without an ID is raised on a turn, an operator recovers it while work is confirmed, for an unknown session, after five minutes of silence, then after a core restart with a stale revision, for another turn, with the current revision, and again
+- **THEN** the answers are `invalid-state`, `not-found`, `invalid-state`, `revision-conflict`, `invalid-state`, `accepted` and `invalid-state`; the accepted recovery clears the marker with an `attention-cleared` occurrence of cause `recovered` in the command's trace, and the core publishes no outcome
 
 #### Scenario: The sessions tool
 - **WHEN** `core_sessions` is read before the core starts, and then with no filter, `q`, `provider` and a session ID
@@ -2056,27 +2056,31 @@ The core SHALL accept an explicit operator start of a saved revision for one lig
 
 ### Requirement: Session claims, status and aging
 
-Each stored session SHALL hold separately evidenced claims: work (`active`, `idle`, `interrupted` or `unknown`), attention, outcome (notices, per-consumer acknowledgments and read evidence) and relationships (working and unconfirmed children), each with its evidence time and confidence. The core SHALL compute the session's status from its claims with the contracts package's status function. The core SHALL own every time-driven change of meaning: active work SHALL become unconfirmed, with reason `deadline`, five minutes after its last qualifying work evidence on the core's clock, and the core SHALL publish that change. Attention, outcome and idle or interrupted work SHALL NOT change through silence. Explicit lost or conflicting evidence SHALL change the affected claim and publish at once. Only qualifying evidence for the current turn, `turn-started`, `activity-observed` or `attention-resolved` on that turn, SHALL confirm work. A child SHALL count as working on its parent only while its own work claim is active and confirmed.
+Each stored session SHALL hold separately evidenced claims: work (`active`, `idle`, `interrupted` or `unknown`), attention, outcome (notices, per-consumer acknowledgments and read evidence) and relationships (working and unconfirmed children), each with its evidence time and confidence. The core SHALL compute the session's status from its claims with the contracts package's status function. The core SHALL own every time-driven change of meaning. Silence SHALL NOT change any claim (Hub #1947): a session SHALL keep the work state its evidence gave it until new evidence, a core restart, its end or its expiry after 24 hours without lifecycle evidence. Only a core restart SHALL make running work unconfirmed without explicit evidence saying so, with reason `restart`. Explicit lost or conflicting evidence SHALL change the affected claim and publish at once. Only qualifying evidence for the current turn, `turn-started`, `activity-observed` or `attention-resolved` on that turn, SHALL confirm work. A child SHALL count as working on its parent only while its own work claim is active and confirmed.
 
 #### Scenario: A quiet question
 - **WHEN** a session whose turn ended on a question is silent for ten minutes, and a session whose turn still runs under its question is too
-- **THEN** both still need the owner; the core publishes nothing for the first, and for the second only its running work's deadline, which leaves its attention confirmed
+- **THEN** both still need the owner, the core publishes neither, and the second's running work and attention stay confirmed
 
 #### Scenario: Late evidence for another turn
-- **WHEN** a session's work turned unconfirmed and a tool result arrives for an ended turn
+- **WHEN** a restart left a session's work unconfirmed and a tool result arrives for an ended turn
 - **THEN** work stays unconfirmed and nothing is published for it
 
 #### Scenario: A working child
-- **WHEN** a root is idle, one child's work is confirmed and another child's work turned unconfirmed
+- **WHEN** a root is idle, one child's work is confirmed and a restart left another child's work unconfirmed
 - **THEN** the root's status is `working` with detail `subagent`, and its children count one working and one unconfirmed
+
+#### Scenario: Silent work
+- **WHEN** a working session sends no evidence for an hour
+- **THEN** its work stays active and confirmed, the core publishes nothing for it, and its record's evidence time shows when the hub last heard from it
 
 ### Requirement: Session transitions commit as one result
 
-The core's session logic SHALL be one pure transition from the stored sessions, one input and the core's instant to a result: every changed session, including affected parents and descendants; every removal with its reason and retirement guards; the occurrences in order; and the next deadline. The store SHALL commit the whole result in one transaction or nothing, and SHALL NOT reconstruct a change's cause or derive occurrences by comparing states. A work observation that changes no public member SHALL advance only the session's private progress time and deadline, writing no public revision and no history row. Every change of public meaning, confirmation changes included, SHALL publish at a new revision that history keeps. Transport duplicates by `(source, id)`, semantic duplicates and collisions, ordering watermarks and retired-turn guards SHALL remain four distinct protections.
+The core's session logic SHALL be one pure transition from the stored sessions, one input and the core's instant to a result: every changed session, including affected parents and descendants; every removal with its reason and retirement guards; the occurrences in order; and the next instant a session expires or a guard lapses. The store SHALL commit the whole result in one transaction or nothing, and SHALL NOT reconstruct a change's cause or derive occurrences by comparing states. A record's evidence time SHALL be part of its public meaning at a coarse resolution, one named constant of one minute (`SESSION_LIMITS.evidenceResolutionMs`, Hub #1947): a work observation that changes no other public member SHALL write the session row and publish nothing until its `lastEvidenceAtMs` is at least that resolution past the published record's, and SHALL then publish at a new revision. A busy session SHALL therefore publish for its evidence alone at most once per resolution, its published evidence time SHALL lag the hub's last evidence by less than the resolution, and a silent session SHALL publish nothing. Every change of public meaning, confirmation changes included, SHALL publish at a new revision that history keeps. Transport duplicates by `(source, id)`, semantic duplicates and collisions, ordering watermarks and retired-turn guards SHALL remain four distinct protections.
 
 #### Scenario: Progress without a revision
-- **WHEN** a working session receives ten qualifying work observations for its current turn within a minute
-- **THEN** the first confirmed change publishes once, the rest publish nothing and add no history row, and the work deadline moves to five minutes after the last
+- **WHEN** a working session receives eleven qualifying work observations for its current turn within a minute of its published evidence time, and one more a minute after it
+- **THEN** the first confirmed change publishes once, the eleven publish nothing and add no history row, and the last publishes the new evidence time at a new revision with one history row
 
 #### Scenario: A runtime end with a subagent
 - **WHEN** a runtime end arrives for a root with one child
@@ -2085,6 +2089,10 @@ The core's session logic SHALL be one pure transition from the stored sessions, 
 #### Scenario: A result that cannot commit
 - **WHEN** a part's deriver throws while a transition's result commits
 - **THEN** no session, removal, occurrence, history row or intake record changes
+
+#### Scenario: A busy session's hour
+- **WHEN** a working session sends qualifying work evidence every 1 s, 5 s, 30 s, 59 s, 61 s, 90 s or 5 minutes for an hour, and another is silent for an hour
+- **THEN** the first publishes 60, 60, 60, 30, 59, 40 and 12 revisions with as many history rows, its published evidence time lags its last evidence by less than a minute, and the silent session publishes none
 
 ### Requirement: Root starts do not claim work
 

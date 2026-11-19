@@ -1,13 +1,15 @@
-// Publication on meaning changes and the aging table (Hub #1865 group 9, tasks.md 9.1, design decisions 4 and 5): a
-// work observation that changes no public member advances only the session's private progress time and its deadline,
-// writing the session row, publishing nothing and adding no history row. Every change of public meaning publishes at a
-// new revision, a confirmation change included: running work becomes unconfirmed five minutes after its last qualifying
-// evidence on the core's clock, and the core's timer publishes that. Attention, outcomes and idle work never change
-// through silence. Everything runs on the runtime's manual clock, with no real wait.
+// Publication on meaning changes and the aging table (Hub #1865 group 9, design decisions 4 and 5, as Hub #1947 amends
+// them): silence changes no claim, and only a core restart leaves running work unconfirmed. A record's evidence time is
+// part of its meaning at `SESSION_LIMITS.evidenceResolutionMs`: a work observation that changes no other public member
+// writes the session row and publishes nothing until the evidence time is that far past the published one, which then
+// publishes at a new revision that history keeps. A busy session therefore publishes for its evidence at most once per
+// resolution and an idle one never; the last test measures that. Everything runs on the runtime's manual clock, with no
+// real wait.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {sessionEntityId, type Identity, type LifecycleEvent, type LifecycleObservation, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {SESSION_LIMITS} from '../src/core/session/model.js';
 import {CoreStore} from '../src/core/store.js';
 import {World, commandMessage, lifecycleMessage} from './fixtures/store-world.js';
 import {START, it, manualClock} from './support.js';
@@ -17,7 +19,8 @@ const identity = (sessionId: string, parent?: Identity): {identity: Identity; pa
   parent: parent === undefined ? {status: 'unknown'} : {status: 'known', identity: parent},
 });
 const ROOT = identity('progress-root'), WAITING = identity('progress-waiting');
-const DEADLINE_MS = 300_000;
+const RESOLUTION_MS = SESSION_LIMITS.evidenceResolutionMs;
+const HOUR_MS = 3_600_000;
 const started: LifecycleEvent = {kind: 'turn-started'}, ended: LifecycleEvent = {kind: 'turn-ended'}, progress: LifecycleEvent = {kind: 'activity-observed'};
 const question = (id: string): LifecycleEvent => ({kind: 'question-continuing', attention: {status: 'known', id}});
 
@@ -54,54 +57,49 @@ async function advance(w: World, ms: number): Promise<void> {
   await w.store.drain();
 }
 
-it('a burst of progress publishes once: the rest advance only the private progress time, with no revision and no history row', async context => {
+it('progress within the evidence resolution publishes nothing; evidence a resolution past the published time publishes its time', async context => {
   const w = await open(context);
+  assert.equal(RESOLUTION_MS, 60_000, 'the owner\'s candidate resolution: one minute');
   assert.equal(await take(w, ROOT, started), 'applied');
   await w.store.drain();
   const first = record(w, ROOT);
   assert.equal(status(first), 'working/confirmed');
   const from = w.published.length, rows = historyRows(w);
   let lastAt = 0;
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 11; i++) {
     w.clock.advance(5000);
     assert.equal(await take(w, ROOT, progress), 'applied');
     lastAt = w.clock.now();
   }
   await w.store.drain();
-  assert.deepEqual(states(w, from), [], 'ten qualifying observations within a minute publish nothing');
+  assert.equal(lastAt - first.lastEvidenceAtMs, RESOLUTION_MS - 5000);
+  assert.deepEqual(states(w, from), [], 'eleven qualifying observations within the resolution publish nothing');
   assert.equal(historyRows(w), rows, 'and add no history row');
-  assert.deepEqual(record(w, ROOT), first, 'the record keeps its revision and the instants of its last published change');
+  assert.deepEqual(record(w, ROOT), first, 'the record keeps its revision and the instants of its last publication');
   const stored = w.store.sessions().find(session => session.id === first.id);
-  assert.equal(stored?.progressAtMs, lastAt, 'the private progress time is the last qualifying evidence');
-  assert.equal(stored?.lastEvidenceAtMs, lastAt);
-  assert.equal(w.store.nextDue(), lastAt + DEADLINE_MS, 'the work deadline moved to five minutes after the last');
+  assert.equal(stored?.lastEvidenceAtMs, lastAt, 'the stored session holds the latest evidence time');
+  assert.equal(w.store.nextDue(), lastAt + 86_400_000, 'nothing falls due before the session\'s expiry');
 
-  // A millisecond before the deadline nothing is published; at it the core's timer publishes the confirmation change.
-  await advance(w, lastAt + DEADLINE_MS - 1 - w.clock.now());
-  assert.deepEqual(states(w, from), []);
-  await advance(w, 1);
-  assert.deepEqual(states(w, from), [ROOT.identity.sessionId], 'the deadline is a change of meaning');
-  const unconfirmed = record(w, ROOT);
-  assert.equal(status(unconfirmed), 'working/unconfirmed');
-  assert.deepEqual(unconfirmed.work.reasons, ['deadline']);
-  assert.ok(unconfirmed.revision > first.revision);
-  assert.equal(unconfirmed.lastEvidenceAtMs, lastAt, 'a published change shows the evidence time it rests on');
-  assert.equal(historyRows(w), rows + 1, 'history keeps it');
-
-  // Qualifying evidence on the current turn confirms the work again, which publishes too.
-  const before = w.published.length;
-  w.clock.advance(1000);
+  // Evidence a full resolution after the published evidence time publishes that time, with no other change.
+  w.clock.advance(5000);
   assert.equal(await take(w, ROOT, progress), 'applied');
   await w.store.drain();
-  assert.deepEqual(states(w, before), [ROOT.identity.sessionId]);
-  assert.equal(status(record(w, ROOT)), 'working/confirmed');
-  assert.ok(record(w, ROOT).revision > unconfirmed.revision);
-  assert.equal(historyRows(w), rows + 2);
+  assert.deepEqual(states(w, from), [ROOT.identity.sessionId], 'the evidence time is part of the record\'s meaning at the resolution');
+  const heard = record(w, ROOT);
+  assert.equal(heard.lastEvidenceAtMs, first.lastEvidenceAtMs + RESOLUTION_MS);
+  assert.ok(heard.revision > first.revision);
+  assert.equal(status(heard), 'working/confirmed');
+  assert.equal(historyRows(w), rows + 1, 'history keeps it');
+
+  // An hour of silence publishes nothing and leaves the work confirmed.
+  await advance(w, HOUR_MS);
+  assert.deepEqual(states(w, from), [ROOT.identity.sessionId]);
+  assert.deepEqual(record(w, ROOT), heard);
 });
 
-it('a question after its turn ended is not republished by silence, and one under a running turn changes only its work claim', async context => {
+it('a question is not republished by silence, whether its turn ended or still runs under it', async context => {
   const w = await open(context);
-  // The waiting session's turn ended on its question: its work is idle, so silence has nothing to age.
+  // The waiting session's turn ended on its question.
   assert.equal(await take(w, WAITING, started), 'applied');
   assert.equal(await take(w, WAITING, question('q1')), 'applied');
   assert.equal(await take(w, WAITING, ended), 'applied');
@@ -112,25 +110,25 @@ it('a question after its turn ended is not republished by silence, and one under
   const waiting = record(w, WAITING), running = record(w, ROOT);
   assert.deepEqual([status(waiting), status(running)], ['needs-owner/question', 'needs-owner/question']);
   const from = w.published.length;
+  assert.equal(w.store.nextDue(), Math.min(waiting.lastEvidenceAtMs, running.lastEvidenceAtMs) + 86_400_000, 'only expiry falls due');
   await advance(w, 10 * 60_000);
-  assert.deepEqual(states(w, from), [ROOT.identity.sessionId], 'ten minutes of silence publish only the running work\'s deadline');
-  assert.deepEqual(record(w, WAITING), waiting, 'the waiting session is not republished');
-  const aged = record(w, ROOT);
-  assert.equal(status(aged), 'needs-owner/question', 'both still need the owner');
-  assert.deepEqual([aged.work.confidence, aged.work.reasons, aged.attention.confidence], ['unconfirmed', ['deadline'], 'confirmed']);
-  // Nothing more falls due but expiry.
-  assert.equal(w.store.nextDue(), Math.min(waiting.lastEvidenceAtMs, running.lastEvidenceAtMs) + 86_400_000);
-  await advance(w, 60 * 60_000);
-  assert.deepEqual(states(w, from), [ROOT.identity.sessionId]);
+  await advance(w, HOUR_MS);
+  assert.deepEqual(states(w, from), [], 'an hour of silence publishes nothing');
+  assert.deepEqual([record(w, WAITING), record(w, ROOT)], [waiting, running]);
+  assert.deepEqual([running.work.confidence, running.attention.confidence], ['confirmed', 'confirmed']);
 });
 
-it('late evidence for another turn, and evidence that is not work, leave unconfirmed work unconfirmed', async context => {
+it('late evidence for another turn, and evidence that is not work, leave work a restart left unconfirmed unconfirmed', async context => {
   const w = await open(context);
   assert.equal(await take(w, ROOT, started, 'turn-1'), 'applied');
   assert.equal(await take(w, ROOT, ended, 'turn-1'), 'applied');
   assert.equal(await take(w, ROOT, started, 'turn-2'), 'applied');
-  await advance(w, DEADLINE_MS);
-  assert.equal(status(record(w, ROOT)), 'working/unconfirmed');
+  await w.store.drain();
+  w.clock.advance(1000);
+  await w.crashAndRestart();
+  await w.store.refresh();
+  await w.store.drain();
+  assert.deepEqual([status(record(w, ROOT)), record(w, ROOT).work.reasons], ['working/unconfirmed', ['restart']]);
   const from = w.published.length, revision = record(w, ROOT).revision;
   // A tool result for the ended turn is stale: nothing changes and nothing is published.
   assert.equal(await take(w, ROOT, progress, 'turn-1'), 'stale');
@@ -139,7 +137,7 @@ it('late evidence for another turn, and evidence that is not work, leave unconfi
   assert.equal(record(w, ROOT).revision, revision);
   // A question on the current turn is evidence, but not of work: it publishes for its attention, and work stays unconfirmed.
   assert.equal(await take(w, ROOT, question('q1'), 'turn-2'), 'applied');
-  assert.deepEqual([status(record(w, ROOT)), record(w, ROOT).work.reasons], ['needs-owner/question', ['deadline']]);
+  assert.deepEqual([status(record(w, ROOT)), record(w, ROOT).work.reasons], ['needs-owner/question', ['restart']]);
 });
 
 it('a root with one confirmed and one unconfirmed child is working through its subagent', async context => {
@@ -148,13 +146,56 @@ it('a root with one confirmed and one unconfirmed child is working through its s
   assert.equal(await take(w, ROOT, started), 'applied');
   assert.equal(await take(w, ROOT, ended), 'applied');
   assert.equal(await take(w, second, {kind: 'session-started'}, 'child-turn'), 'applied');
-  w.clock.advance(DEADLINE_MS - 1000);
+  await w.store.drain();
+  // A restart leaves the second child's running work unconfirmed; the first child starts after it.
+  w.clock.advance(1000);
+  await w.crashAndRestart();
+  await w.store.refresh();
   assert.equal(await take(w, first, {kind: 'session-started'}, 'child-turn'), 'applied');
-  await advance(w, 1000);
+  await w.store.drain();
   const root = record(w, ROOT);
   assert.deepEqual(root.relationships.children, {working: 1, unconfirmed: 1});
   assert.equal(status(root), 'working/subagent');
   assert.deepEqual([status(record(w, first)), status(record(w, second))], ['working/confirmed', 'working/unconfirmed']);
+});
+
+// Hub #1947's open design point: how many revisions and history rows the evidence time adds. One session works for an
+// hour at each evidence cadence, on the manual clock; the counts are the publications of evidence alone, since nothing
+// else changes. Each is at most one per resolution, and a silent session adds none.
+it('a busy session publishes its evidence time at most once a minute: revisions and history rows per hour by cadence', async context => {
+  const measured: string[] = [];
+  for (const everyMs of [1000, 5000, 30_000, 59_000, 61_000, 90_000, 300_000]) {
+    const w = await open(context);
+    assert.equal(await take(w, ROOT, started), 'applied');
+    await w.store.drain();
+    const revision = w.store.revision, rows = historyRows(w), from = w.published.length;
+    const end = w.clock.now() + HOUR_MS;
+    let observations = 0;
+    while (w.clock.now() + everyMs <= end) {
+      w.clock.advance(everyMs);
+      assert.equal(await take(w, ROOT, progress), 'applied');
+      observations++;
+    }
+    await w.store.drain();
+    const published = states(w, from).length, added = historyRows(w) - rows;
+    // The published evidence time steps whenever it falls a resolution behind: every ceil(resolution / cadence) observations.
+    const expected = Math.floor(observations / Math.ceil(RESOLUTION_MS / everyMs));
+    assert.equal(published, expected, `every ${String(everyMs)} ms`);
+    assert.equal(added, published, 'each publication adds one history row');
+    assert.equal(w.store.revision - revision, published, 'and one revision');
+    assert.ok(published <= HOUR_MS / RESOLUTION_MS, 'at most one per resolution');
+    assert.ok(w.clock.now() - record(w, ROOT).lastEvidenceAtMs < RESOLUTION_MS, 'the published evidence time lags the last evidence by less than the resolution');
+    measured.push(`every ${String(everyMs / 1000)} s: ${String(observations)} observations, ${String(published)} revisions, ${String(added)} history rows`);
+  }
+  // A silent session: an hour publishes nothing.
+  const w = await open(context);
+  assert.equal(await take(w, ROOT, started), 'applied');
+  await w.store.drain();
+  const rows = historyRows(w), from = w.published.length;
+  await advance(w, HOUR_MS);
+  assert.deepEqual([states(w, from).length, historyRows(w) - rows], [0, 0]);
+  measured.push('silent: 0 revisions, 0 history rows');
+  context.diagnostic(`per session-hour at a ${String(RESOLUTION_MS / 1000)} s resolution: ${measured.join('; ')}`);
 });
 
 /** Rewrites each published record and its latest history row in the session/2.0 shape, as a step-8 release left them. */
