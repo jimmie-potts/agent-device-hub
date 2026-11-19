@@ -195,7 +195,7 @@ void test('settings readback removes the response envelope before an explicit se
 void test('read-only server markup has a labelled Automation page and disabled forms; render sends nothing', context => {
   let calls = 0;
   context.mock.method(globalThis, 'fetch', () => { calls += 1; throw new Error('render must not fetch'); });
-  const state: DashboardState = {feed: 'connected', sessions: {synced: true, records: [], revision: 1, syncs: 1, changedAtMs: 1, refused: undefined},
+  const state: DashboardState = {feed: 'connected', sessions: {synced: true, records: [], views: [], revision: 1, syncs: 1, changedAtMs: 1, refused: undefined},
     runtime: {modules: [], control: false, copies: [], catalogFailed: false}};
   const html = renderToStaticMarkup(createElement(page.AutomationPage,
     {connection: {subscribe: () => () => {}, getState: () => state}, live: true, control: false}));
@@ -212,7 +212,7 @@ void test('read-only server markup has a labelled Automation page and disabled f
 void test('Automation exposes daily art without enabling it or writing during render', context => {
   let writes = 0;
   context.mock.method(globalThis, 'fetch', () => {writes += 1;throw new Error('render must not fetch');});
-  const state: DashboardState = {feed: 'connected', sessions: {synced: true, records: [], revision: 1, syncs: 1, changedAtMs: 1, refused: undefined},
+  const state: DashboardState = {feed: 'connected', sessions: {synced: true, records: [], views: [], revision: 1, syncs: 1, changedAtMs: 1, refused: undefined},
     runtime: {modules: [], control: false, copies: [], catalogFailed: false}};
   const html = renderToStaticMarkup(createElement(page.AutomationPage,
     {connection: {subscribe: () => () => {}, getState: () => state}, live: true, control: false}));

@@ -3,7 +3,7 @@ import React, {useEffect, useId, useRef, useState} from 'react';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {SessionsCopy} from './connection.ts';
 import {sendAction, type ActionReply} from './actions.ts';
-import {noticeAttempt, noticeEvidence, type NoticeAttempt} from './notice-clear.ts';
+import {currentNotice, noticeAttempt, noticeEvidence, overrideAvailable, type NoticeAttempt} from './notice-clear.ts';
 import {sessionName} from './sessions.ts';
 
 export function OperatorTools({sessions, live, control, operations, operationsSynced}: {
@@ -21,9 +21,9 @@ export function OperatorTools({sessions, live, control, operations, operationsSy
     if (confirmation !== undefined) confirm.current?.focus();
     else if (returnFocus.current) {returnFocus.current = false; trigger.current?.focus();}
   }, [confirmation]);
-  const selected = sessions.records.find(record => record.id === selectedId);
-  const current = selected?.notices.at(-1);
-  const available = control && live && sessions.synced && selected?.freshness === 'current' && selected.restartUncertain === false;
+  const selected = sessions.views.find(view => view.id === selectedId);
+  const current = selected === undefined ? undefined : currentNotice(selected);
+  const available = overrideAvailable(selected, {control, live, synced: sessions.synced});
   const unchanged = selected !== undefined && confirmation !== undefined && selected.generation === confirmation.generation &&
     selected.revision === confirmation.revision && current?.id === confirmation.noticeId;
   const pending = attempt !== undefined && answer === undefined;
@@ -47,11 +47,12 @@ export function OperatorTools({sessions, live, control, operations, operationsSy
     <label htmlFor={id}>Session</label><select id={id} value={selectedId} disabled={pending || confirmation !== undefined}
       onChange={event => {setSelectedId(event.target.value); setAttempt(undefined); setAnswer(undefined);}}>
       <option value="">Choose a session</option>
-      {sessions.records.map(record => <option key={record.id} value={record.id}>{sessionName(record)}</option>)}
+      {sessions.views.map(view => <option key={view.id} value={view.id}>{sessionName(view)}</option>)}
     </select>
     <button ref={trigger} type="button" onClick={open} disabled={!available || current === undefined || confirmation !== undefined}>Clear this notice on every device</button>
     {!control && <p className="warning">Read-only connection. Operator controls require control authority.</p>}
-    {control && (!live || !sessions.synced || selected?.freshness === 'uncertain' || selected?.restartUncertain === true) && <p className="warning">Current session evidence is unavailable. Wait for a fresh synced record.</p>}
+    {control && !available && (!live || !sessions.synced || selected !== undefined) && <p className="warning">{!live || !sessions.synced
+      ? 'The session copy is not synced. Wait for a synced record.' : 'The hub does not confirm this session\'s state. Wait for a confirmed record.'}</p>}
     {selected !== undefined && current === undefined && <p>No current notice to clear.</p>}
     {confirmation !== undefined && <form className="edit" aria-label="Confirm notice override" onSubmit={event => {event.preventDefault(); void submit();}}
       onKeyDown={event => {if (event.key === 'Escape' && !pending) {event.preventDefault(); close();}}}>

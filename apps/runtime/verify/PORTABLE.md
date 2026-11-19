@@ -73,8 +73,10 @@ The recording labels its synthetic actions, scrolls the actual status badge
 into view and pauses on Working and Finished. Browser recovery uses visible
 target/pointer/click cues that respect reduced motion. The final screenshot
 keeps the recorded viewport rather than resizing it; other capture steps retain
-their existing full-page default. Recovery must show honest Stale evidence and
-its retained notice, rather than imply a fresh producer observation.
+their existing full-page default. After the restart, recovery must show the
+retained finished turn as Finished · unread with its original notice, because a
+restart makes only running work unconfirmed (#1865, design decision 4); it does
+not imply a fresh producer observation.
 
 The container has no networking, host ports, mounts, devices, engine socket or
 host namespaces. It runs as UID 1000 with dropped capabilities, no new privileges,

@@ -44,7 +44,7 @@ export function LabelEditor({row, live}: {row: SessionRow; live: boolean}): Reac
   };
   const refused = answer !== undefined && 'error' in answer ? answer.error.code : undefined;
   return <div className="session-label">
-    <button ref={trigger} type="button" aria-label={`Edit label for ${row.name}`} aria-expanded={editing} onClick={open} disabled={editing || !live || row.uncertain}>Edit label</button>
+    <button ref={trigger} type="button" aria-label={`Edit label for ${row.name}`} aria-expanded={editing} onClick={open} disabled={editing || !live}>Edit label</button>
     {editing && <form className="edit inline" onSubmit={event => { event.preventDefault(); void submit(draft); }}
       onKeyDown={event => { if (event.key === 'Escape' && !pending) { event.preventDefault(); close(); } }}>
       <fieldset disabled={pending}><label htmlFor={id}>Session label<input id={id} ref={input} value={draft} maxLength={160}
@@ -55,7 +55,7 @@ export function LabelEditor({row, live}: {row: SessionRow; live: boolean}): Reac
         <button type="button" onClick={close} disabled={pending}>Cancel</button>
       </div>
       <p className="hint">Up to 80 characters. Clear restores the session title or native ID.</p>
-      {(!live || row.uncertain) && <p className="warning">Session evidence is stale. Label changes are disabled.</p>}
+      {!live && <p className="warning">The session copy is not synced. Label changes are disabled until it is.</p>}
       <p role="status" data-tone={evidence === 'confirmed' ? 'accepted' : undefined}>{evidence === undefined ? '' : EVIDENCE[evidence]}
         {refused === 'revision-conflict' ? ' The session changed. Your draft is kept; review it and save a new attempt.' : refused !== undefined ? ` Code: ${refused}.` : ''}</p>
     </form>}
