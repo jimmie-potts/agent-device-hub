@@ -245,11 +245,17 @@ suite('the Lines follow the hub\'s shared status', () => {
       await world.advance(1000);
       assert.deepEqual(statuses(world), {[keyOf('asking')]: 'question', [keyOf('done')]: 'unread'});
       assert.deepEqual(held(world), [], 'neither is held steady: the question keeps its alert and the finished turn its unread pulse');
-      await world.restart();
+      // While the module is stopped, the question is answered and a new task starts. The first sync after the restart
+      // is a fresh start: the changed and the new task show their status with no arrival wave.
+      const stopped = world.clock.now();
+      await world.restart(undefined, async () => {
+        await world.core.set('asking', {evidenceAtMs: stopped});
+        await world.core.set('arrived', {evidenceAtMs: stopped});
+      });
       const restarted = world.clock.now();
       await world.until(() => world.writes().some(write => write.atMs >= restarted && write.endpoint === '/effects'), 10_000, 'the tasks shown again');
       await world.advance(5000);
-      assert.deepEqual(statuses(world), {[keyOf('asking')]: 'question', [keyOf('done')]: 'unread'});
+      assert.deepEqual(statuses(world), {[keyOf('asking')]: 'working', [keyOf('done')]: 'unread', [keyOf('arrived')]: 'working'});
       assert.deepEqual(held(world), []);
       assert.deepEqual(world.writes().filter(write => write.atMs >= restarted && write.endpoint === '/effects' && write.loop === false), [],
         'no wave or comet replayed');

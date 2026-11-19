@@ -456,8 +456,11 @@ ten characters and a state word. `ASK` (amber) means the session waits for a
 person, `RUN` (blue) that it or a child works, and `DONE` (green) that a finished
 turn has no consumer's acknowledgment. Rows are ordered ASK, RUN, DONE, then
 newest evidence first. With more than four sessions, the tile draws three rows
-and `+N MORE`. A session whose freshness is uncertain is dimmed with a `?`
-marker. While the copy of the sessions does not follow the core, every row is
+and `+N MORE`. The rows follow the hub's shared session status, read through
+the contracts package's shared read function (#1865). A session is dimmed with
+a `?` marker only when its status is `unknown` or its work is unconfirmed; a
+session that waits for a person or holds a finished turn is never marked for
+its silence. While the copy of the sessions does not follow the core, every row is
 dimmed that way, or the tile reads `FEED ?` when it has no rows; the tile is
 never removed then. When nothing needs showing, the tile leaves the rotation.
 

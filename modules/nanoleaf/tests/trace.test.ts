@@ -100,16 +100,15 @@ function savedState(directory: string): Record<string, unknown> {
 }
 
 /**
- * Design decision 10's rule for the Lines, restated apart from the port (Hub #1865): from the hub's statuses of a task's
- * members, the status the task shows and whether the wall holds it steady for unconfirmed work.
+ * Design decision 10's rule for the Lines, restated apart from the port (Hub #1865): a member's attention, and otherwise
+ * the root's hub status, give the status a task shows; the wall holds it steady only for the root's own unconfirmed work.
  */
 function hubTask(members: readonly StoredSession[]): {status: string; steady: boolean} {
+  const [root] = members;
   const owner = (details: readonly string[]): boolean => members.some(item => item.status.class === 'needs-owner' && details.includes(item.status.detail));
-  const working = members.some(item => item.status.class === 'working');
-  const status = owner(['approval', 'input']) ? 'blocked' : owner(['question']) ? 'question' : working ? 'working'
-    : members[0]?.status.class === 'finished' ? 'unread' : 'idle';
-  const confirmed = members.some(item => item.status.class === 'working' && item.work.state === 'active' && item.work.confidence === 'confirmed');
-  return {status, steady: status === 'working' && !confirmed};
+  const status = owner(['approval', 'input']) ? 'blocked' : owner(['question']) ? 'question' : root?.status.class === 'working' ? 'working'
+    : root?.status.class === 'finished' ? 'unread' : 'idle';
+  return {status, steady: status === 'working' && root?.work.state === 'active' && root.work.confidence === 'unconfirmed'};
 }
 
 /**

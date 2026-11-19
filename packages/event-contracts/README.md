@@ -659,14 +659,14 @@ someone lists it.
 `@jimmie-potts/event-contracts/v2/status` holds `sessionState`, `highestStatus`
 and `STATUS_COLORS`, copied from `@jimmie-potts/agent-status` and rewritten for
 `session/2.0` records (Hub #918). The 1.x package stays for the old controllers
-until #839. Hub #1865 leaves this helper unchanged until each reader's step moves
-the reader onto the view's helper below.
+until #839. Hub #1865 leaves this helper unchanged; since its group 3 no live
+reader calls it, and the readers use the view's helper below.
 
 - `sessionState(record, consumers?)` ranks a root session: `attention` when it
   has attention, `working` when it is active or has an active child, `done`
   when a turn-ended notice lacks an acknowledgment, otherwise undefined. Read
   evidence never retires `done`. By default any consumer's acknowledgment
-  retires it, as LIFX and Tidbyt use it today; `consumers` restricts that to
+  retires it, as LIFX and Tidbyt use the view's helper; `consumers` restricts that to
   the named ones. Acknowledgments are recorded per consumer, and each caller's
   policy decides which ones clear what it shows.
 - `highestStatus(copy, {acknowledgingConsumers?})` takes a consumer's copy of the

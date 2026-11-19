@@ -920,21 +920,25 @@ The module's own differences from Python:
 
 - The Lines follow the hub's shared session status (#1865, design decision 10; owner decision 2026-11-18). The feed
   gives each session's status through the contracts package's shared read function with the wall's acknowledgment and
-  read policy, and `semanticStatus` maps the members' statuses to the task's. Python's own rules are gone: evidence
-  freshness, the retention of an earlier status while evidence was stale and its four clearing exceptions, and the
-  freshness term in counting a subagent as working. Every hub status replaces the shown one at once, so waiting and
-  unread tasks keep their indication until that status changes, and an `unknown` status shows idle. The only steady
-  hold beyond idle's own is a working task with no member whose work is confirmed. A notice a known later turn
-  superseded no longer makes a task unread. The translated tests whose subject was the retired rules assert the new
+  read policy. `semanticStatus` takes a member's attention, a subagent's included, and otherwise the root's hub status:
+  a subagent's work reaches the task only through the root's `subagent` detail, which counts confirmed children, so a
+  silent subagent never hides the root's finished turn (coordinator decision on PR 1915 review). Python's own rules are
+  gone: evidence freshness, the retention of an earlier status while evidence was stale and its four clearing
+  exceptions, and the freshness term in counting a subagent as working. Every hub status replaces the shown one at
+  once, so waiting and unread tasks keep their indication until that status changes, and an `unknown` status shows
+  idle. The only steady hold beyond idle's own is a working task whose root's own active work is unconfirmed. A notice
+  a known later turn superseded no longer makes a task unread. A grandchild's work makes its parent subagent working,
+  not the root, so it shows on no device's root status. The translated tests whose subject was the retired rules assert the new
   rule under new names: in `RecoveryTest`, `test_owner_recovery_clears_a_silent_red_without_clearing_other_state` and
   `test_uncertain_snapshot_shows_the_hub_status_at_once_and_no_old_comet`; in `ChildSessionTest`,
   `test_silent_child_alert_shows_at_once_under_a_current_parent`, `test_child_alert_replaces_unconfirmed_work_at_once`,
-  `test_silent_child_red_escalates_past_a_current_question`, `test_silent_subagent_keeps_its_task_working_steadily`,
+  `test_silent_child_red_escalates_past_a_current_question`,
   `test_read_evidence_clears_a_silent_unread_parent_with_a_subagent`,
-  `test_silent_subagent_clears_when_it_returns_idle_under_a_silent_parent` and
+  `test_silent_subagent_leaves_its_task_idle_under_a_silent_parent` and
   `test_owner_recovery_clears_a_silent_child_approval`, with new expectations in
-  `test_current_child_evidence_is_not_frozen_by_an_uncertain_parent` and
-  `test_notice_lifecycle_follows_documented_count_and_allocation`; in `StaleReadEvidenceTest`,
+  `test_current_child_evidence_is_not_frozen_by_an_uncertain_parent`,
+  `test_notice_lifecycle_follows_documented_count_and_allocation`, `test_silent_subagent_follows_the_owners_active_count`
+  (its last step) and `test_grandchildren_and_ambiguous_parentage` (an active grandchild leaves the task idle); in `StaleReadEvidenceTest`,
   `test_silent_working_follows_the_hubs_next_status`, `test_silent_alerts_clear_when_resolved_and_read` and
   `test_silent_unread_turns_working_steadily_from_unconfirmed_work`.
 

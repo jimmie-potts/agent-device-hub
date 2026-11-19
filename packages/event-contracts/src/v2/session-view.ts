@@ -146,9 +146,9 @@ export function opportunityMatches(view: SessionView, opportunity: CompanionOppo
 }
 
 /**
- * The agent-status helper over views, for the readers that move onto the view in their own steps. Nothing live calls it
- * in group 1: the live readers keep `status.ts`, which keeps today's rule over records until a reader's step moves it.
- * The colors and the ranking are `status.ts`'s.
+ * The agent-status helper over views, which the device readers (LIFX and the Tidbyt tile among them) use since #1865
+ * group 3. `status.ts` keeps its helper over records, which no live reader calls any more. The colors and the ranking are
+ * `status.ts`'s.
  */
 export {STATUS_COLORS, type AgentState, type HighestStatus, type HighestStatusOptions};
 export type {Rgb} from './status.js';

@@ -307,28 +307,28 @@ const isAlert = (status: SqlValue): boolean => status === 'blocked' || status ==
 export type TaskStatus = 'blocked' | 'question' | 'working' | 'unread' | 'idle';
 
 /**
- * A task's status from the hub's statuses of its members (design decision 10). A member that needs the owner with a
+ * A task's status from the hub's statuses (design decision 10). A member, root or subagent, that needs the owner with a
  * question asks; with an approval, input or a detail this version does not know, which falls back to its class, it
- * blocks. A working root or subagent makes the task working, a root finished for this consumer makes it unread, and
- * anything else, a quiet or `unknown` root included, is idle. A subagent's own finished turn is not a task completion.
+ * blocks. Otherwise the task shows its root's status: working, unread when finished for this consumer, and idle when
+ * quiet or `unknown`. A subagent's work reaches the task only through the root's status, whose `subagent` detail counts
+ * the children whose work the hub confirms, so a silent subagent never hides the root's finished turn, as on every other
+ * device. A subagent's own finished turn is not a task completion.
  */
 export function semanticStatus(session: StoredSession, children: readonly StoredSession[] = []): TaskStatus {
-  const members = [session, ...children];
-  const owner = members.filter(item => item.status.class === 'needs-owner');
+  const owner = [session, ...children].filter(item => item.status.class === 'needs-owner');
   if (owner.some(item => item.status.detail !== 'question')) return 'blocked';
   if (owner.length > 0) return 'question';
-  if (members.some(item => item.status.class === 'working')) return 'working';
+  if (session.status.class === 'working') return 'working';
   if (session.status.class === 'finished') return 'unread';
   return 'idle';
 }
 
 /**
- * Whether the wall holds a task steady for the hub's unconfirmed work: the task is working, yet no member's work is
- * active with confirmed evidence. It is the only hold beyond idle's own steady slot and a lost copy's freeze.
+ * Whether the wall holds a task steady for the hub's unconfirmed work: the task is working on its root's own active work,
+ * which evidence no longer confirms. It is the only hold beyond idle's own steady slot and a lost copy's freeze.
  */
-export function heldForUnconfirmedWork(status: TaskStatus, members: readonly StoredSession[]): boolean {
-  return status === 'working'
-    && !members.some(item => item.status.class === 'working' && item.work.state === 'active' && item.work.confidence === 'confirmed');
+export function heldForUnconfirmedWork(status: TaskStatus, root: StoredSession): boolean {
+  return status === 'working' && root.work.state === 'active' && root.work.confidence === 'unconfirmed';
 }
 
 /** What grouping reads of a session: its identity, its parent and whether that parent is ambiguous. */
@@ -435,7 +435,7 @@ export function projectEnvelope(db: Db, copy: SharedCopy, input: Envelope, confi
     const turn: SqlValue = session.turn.status === 'known' ? session.turn.id : '';
     // Every hub status replaces the displayed one at once, whatever the silence; the only steady hold is the hub's
     // unconfirmed work.
-    const stale = snapshot.collector !== 'running' || heldForUnconfirmedWork(status, [session, ...children]);
+    const stale = snapshot.collector !== 'running' || heldForUnconfirmedWork(status, session);
     const priorSession = prior.get(key);
     const wasStale = first(db, 'SELECT 1 FROM shared_stale WHERE session=?', key) !== undefined;
     if (stale) execute(db, 'INSERT OR IGNORE INTO shared_stale VALUES (?)', key);

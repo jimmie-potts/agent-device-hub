@@ -949,9 +949,9 @@ suite('ChildSessionTest', () => {
     assert.deepEqual(c.tasks(1001), {[c.key]: ['blocked', 100, 'current']});
   });
 
-  test('test_silent_subagent_keeps_its_task_working_steadily', context => {
-    // Hub #1865: a subagent whose work the hub no longer confirms is still working in the hub's status, so its task
-    // shows working, held steady, until the hub reports otherwise; the parent's own turns show over it.
+  test('test_silent_subagent_follows_the_owners_active_count', context => {
+    // Hub #1865: the task shows its root's hub status. Five minutes without subagent evidence, the owner no longer counts
+    // it working, so the task follows the parent, as LIFX and Tidbyt do; the parent's own turns show over it.
     const c = new Children(context);
     c.root.notices[0]?.acknowledgedBy.push('nanoleaf');
     c.value.snapshot.sessions.push(childOf(c.root, 'child', 'active'));
@@ -960,7 +960,7 @@ suite('ChildSessionTest', () => {
     assert.deepEqual(c.tasks(1000), {[c.key]: ['working', 100, 'current']});
     c.set(1, childOf(c.root, 'child', 'active', [], false));
     c.advance(1001);
-    assert.deepEqual(c.tasks(1001), {[c.key]: ['working', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['idle', 100, 'current']});
     c.root.turn = {status: 'known', id: 'turn-2'};
     c.root.activity = 'active';
     c.advance(1002);
@@ -968,11 +968,28 @@ suite('ChildSessionTest', () => {
     c.root.activity = 'idle';
     c.root.notices.push({id: 'c'.repeat(64), kind: 'turn-ended', turn: {status: 'known', id: 'turn-2'}, acknowledgedBy: []});
     c.advance(1003);
-    assert.deepEqual(c.tasks(1003), {[c.key]: ['working', 100, 'uncertain']});
-    // The subagent ends: the parent's finished turn shows unread at once.
-    c.set(1, childOf(c.root, 'child'));
+    assert.deepEqual(c.tasks(1003), {[c.key]: ['unread', 100, 'current']});
+    // The parent's own work, no longer confirmed, shows working, held steady.
+    c.root.freshness = 'uncertain';
+    c.root.restartUncertain = true;
+    c.root.activity = 'active';
     c.advance(1004);
-    assert.deepEqual(c.tasks(1004), {[c.key]: ['unread', 100, 'current']});
+    assert.deepEqual(c.tasks(1004), {[c.key]: ['working', 100, 'uncertain']});
+  });
+
+  test('a finished root with an active subagent silent for five minutes shows unread', context => {
+    // Hub #1865, coordinator decision on PR 1915 review: the hub's status of the root is finished, and its subagent's
+    // unconfirmed work does not hide that turn on the Lines, as it does not on LIFX or Tidbyt.
+    const c = new Children(context);
+    c.value.snapshot.sessions.push(childOf(c.root, 'child', 'active'));
+    c.value = recount(c.value);
+    c.select();
+    assert.deepEqual(c.tasks(1000), {[c.key]: ['working', 100, 'current']}, 'the confirmed subagent makes the root working');
+    c.set(1, childOf(c.root, 'child', 'active', [], false));
+    c.advance(1001);
+    assert.equal(hubSession(c.root).status.class, 'finished');
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['unread', 100, 'current']});
+    assert.deepEqual(query(c.path, 'SELECT * FROM shared_stale'), []);
   });
 
   test('test_read_evidence_clears_a_silent_unread_parent_with_a_subagent', context => {
@@ -991,7 +1008,9 @@ suite('ChildSessionTest', () => {
     assert.deepEqual(c.tasks(1002), {[c.key]: ['idle', 100, 'current']});
   });
 
-  test('test_silent_subagent_clears_when_it_returns_idle_under_a_silent_parent', context => {
+  test('test_silent_subagent_leaves_its_task_idle_under_a_silent_parent', context => {
+    // Hub #1865: only the root's own unconfirmed work holds a task steady. A silent subagent under a silent, idle parent
+    // leaves the root quiet in the hub's status, so the task turns idle at once and keeps its Line.
     const c = new Children(context);
     c.root.notices[0]?.acknowledgedBy.push('nanoleaf');
     c.root.freshness = 'uncertain';
@@ -1000,16 +1019,12 @@ suite('ChildSessionTest', () => {
     c.value = recount(c.value);
     c.select();
     assert.deepEqual(c.tasks(1000), {[c.key]: ['working', 100, 'current']});
-    // The subagent's work is no longer confirmed either: the task keeps working steadily.
     c.set(1, childOf(c.root, 'child', 'active', [], false));
     c.advance(1001);
-    assert.deepEqual(c.tasks(1001), {[c.key]: ['working', 100, 'uncertain']});
-    c.advance(1002);
-    assert.deepEqual(c.tasks(1002), {[c.key]: ['working', 100, 'uncertain']});
-    // The subagent finishes: the task turns idle at once and keeps its Line.
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['idle', 100, 'current']});
     c.set(1, childOf(c.root, 'child'));
-    c.advance(1003);
-    assert.deepEqual(c.tasks(1003), {[c.key]: ['idle', 100, 'current']});
+    c.advance(1002);
+    assert.deepEqual(c.tasks(1002), {[c.key]: ['idle', 100, 'current']});
   });
 
   test('test_owner_recovery_clears_a_silent_child_approval', context => {
@@ -1035,9 +1050,12 @@ suite('ChildSessionTest', () => {
     c.value = recount(c.value);
     c.select();
     assert.deepEqual(c.tasks(1000), {[c.key]: ['blocked', 100, 'current']});
+    // Hub #1865: the task shows its root's hub status, whose working children are its own subagents with confirmed
+    // work. A grandchild's work makes its parent subagent working, not the root, so the task stays idle, as the root is
+    // on every other device.
     c.set(2, childOf(child, 'grandchild', 'active'));
     c.advance(1001);
-    assert.deepEqual(c.tasks(1001), {[c.key]: ['working', 100, 'current']});
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['idle', 100, 'current']});
     // Parentage the owner marks ambiguous leaves that session top-level, as in the owner's counts.
     const unsure = childOf(c.root, 'unsure');
     unsure.unavailable.push({kind: 'evidence.unavailable', dimension: 'parent', reason: 'ambiguous'});

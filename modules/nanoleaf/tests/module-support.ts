@@ -269,10 +269,12 @@ export class ModuleWorld {
 
   /**
    * Stops the module and starts a new instance on the same store, folder and device, as a runtime restart does, with a
-   * new section of the configuration file when one is given.
+   * new section of the configuration file when one is given. `whileStopped` runs between the stop and the start, so the
+   * core can change sessions the new instance learns of only from its first sync.
    */
-  async restart(section?: unknown): Promise<void> {
+  async restart(section?: unknown, whileStopped: () => Promise<void> = async () => {}): Promise<void> {
     await this.stopModule();
+    await whileStopped();
     if (section !== undefined) this.#section = section;
     this.harness = this.#fresh();
     await this.start();

@@ -282,7 +282,7 @@
   {
    "id": "child-only",
    "name": "a root that works only through its child",
-   "covers": "design decisions 3 and 10: a working child makes its idle root working until the child's own work is unconfirmed",
+   "covers": "design decisions 3 and 10: a working child makes its idle root working until the child's own work is unconfirmed, and then the root's finished turn shows on every device, Nanoleaf included",
    "since": "now",
    "steps": [
     {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
@@ -312,7 +312,7 @@
      ],
      "readers": {
       "status": {"claude": "finished/turn-ended", "claude-agent": "working/unconfirmed"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": true},
-      "nanoleaf": {"tasks": {"claude": "working"}, "steady": ["claude"]}, "dashboard": {"claude": "finished", "claude-agent": "working"}
+      "nanoleaf": {"tasks": {"claude": "unread"}, "steady": []}, "dashboard": {"claude": "finished", "claude-agent": "working"}
      }}
    ]
   },
