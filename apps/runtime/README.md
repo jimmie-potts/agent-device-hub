@@ -867,7 +867,9 @@ This source path does not qualify installed or physical behavior.
 
 ### Saved show transport
 
-Use the same tracked operator dispatch for a saved decorative show. Select one
+On the Audio page, select a saved decorative version under a light and choose
+**Start saved show**. This starts from position zero with no requested delay.
+The same tracked operator dispatch supports other positions and delays. Select one
 Lines or NL22 light already in Free. Send `start-show` with `showId`, the exact
 `version`, `positionMs`, `startDelayMs` and the light's `expectedRevision`.
 A delay of 0 requests immediate playback. The maximum delay is 30 seconds,

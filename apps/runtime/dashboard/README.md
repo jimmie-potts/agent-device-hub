@@ -534,19 +534,28 @@ lighting** stays available for starting, active, stopping and uncertain
 sessions, independent of an unresolved Start. Start and Stop keep separate
 tracked attempts per light, and every disabled control states its reason.
 
+**Start saved show** plays the exact version selected under one light. Save a
+version on the Nanoleaf Shows page, then choose its name and version in Audio.
+Playback begins at the first cue without Music.app measurement or recording
+synchronization. **Stop Music lighting** uses the show's current generation.
+An unsaved draft or storyboard cannot start playback. The light must still be
+on and in Free.
+
 A failed read or a lost connection keeps the last fresh records as **Last
 known**, with controls disabled until a fresh read. A reconnect reads again on its
 own and sends nothing, and so does a restarted copy; after a failed read,
 **Refresh lighting status** reads again. A lost Start reply stays locked across reload and is never resent.
-`MusicLightingFeed` owns the lighting copy and the preset follower on the existing
-participant, and closes both when Audio unmounts or the connection ends.
+`MusicLightingFeed` owns the lighting copy and both catalog followers on the existing
+participant, and closes them when Audio unmounts or the connection ends.
 
 `tests/music-lighting.browser.ts` runs the real disposable core, gateway and
 Nanoleaf module on simulated Lines and NL22 Light Panels controllers with the
 numeric producer fixture. It covers the passive lifecycle, the stopped, source-lost,
 refused-outside-Free and light-off endings, the ending explanations, stale reads,
 a lost reply, read-only access and microphone exclusion. It also starts and stops
-the NL22 from its own section while the Lines stay idle (#1272).
+the NL22 from its own section while the Lines stay idle (#1272). The saved-show
+case pins an earlier version, exercises refusal and Stop, and reloads without
+starting the show again (#1911).
 It runs in the Music-card browser entry and hosted smoke. This is source
 evidence only; installed and physical acceptance belong to #725.
 

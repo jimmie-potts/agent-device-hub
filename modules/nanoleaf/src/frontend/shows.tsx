@@ -162,7 +162,7 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
 
 export function Shows({context}: {context: FrontendContext}): React.JSX.Element {
   const catalog = useShows(context.api), Command = context.ui.Command;
-  return <div className="nanoleaf-shows"><p>Private cue plans for Nanoleaf. This editor prepares versions only; replay and music synchronization are unavailable.</p>
+  return <div className="nanoleaf-shows"><p>Private cue plans for Nanoleaf. Save a version here, then choose it on the <a href="#/audio">Audio page</a> to start decorative playback.</p>
     <Command context={context} target={SHOW_TARGET} attemptKey="nanoleaf/shows/save">{command => <ShowEditor context={context} catalog={catalog} command={command}/>}</Command>
   </div>;
 }
