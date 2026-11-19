@@ -49,7 +49,7 @@ The system SHALL label arrival and visit fixtures as synthetic, with identity an
 ## ADDED Requirements
 
 ### Requirement: Thirty-second question priority
-An unanswered question, input request or approval SHALL take priority over background cards, simulated social cards, suggestions and automatic speech for 30 seconds from its own evidence instant on the reporting host's clock, as the existing opportunity's validity sets it. The window SHALL be held in memory from admitted coding-attention opportunities and SHALL end early when the attention item clears. The question SHALL stay visible afterward. Unrelated progress SHALL NOT renew the window, and a restart SHALL start no new window. Explicitly requested assistant answers SHALL stay outside this rule. When the reporting host's clock runs ahead of the hub's, or 30 seconds or more behind it, the core SHALL drop that question's opportunity as today, so the question gets no priority window while status devices still show it; a host clock behind by less SHALL shorten the window.
+An unanswered question, input request or approval SHALL take priority over background cards, simulated social cards, suggestions and automatic speech for 30 seconds from its own evidence instant on the reporting host's clock, as the existing opportunity's validity sets it. The companions module SHALL hold the window in memory from every admitted coding-attention opportunity it receives, whether or not its card is shown, and the window SHALL end early when the attention item clears. The browser's suggestion and final speech checks SHALL take the window only from the live question card Reachy presents, so a muted question, or a presented question that a later question replaced, SHALL NOT hold the suggestion page, while the module's check still holds background cards and automatic speech. The question SHALL stay visible afterward. Unrelated progress SHALL NOT renew the window, and a restart SHALL start no new window. Explicitly requested assistant answers SHALL stay outside this rule. When the reporting host's clock runs ahead of the hub's, or 30 seconds or more behind it, the core SHALL drop that question's opportunity as today, so the question gets no priority window while status devices still show it; a host clock behind by less SHALL shorten the window.
 
 #### Scenario: Inside and after the window
 - **WHEN** a question is raised and a background card waits, and the clock moves to 29 s and then 30 s after the question's evidence instant
@@ -58,6 +58,14 @@ An unanswered question, input request or approval SHALL take priority over backg
 #### Scenario: Progress and restart
 - **WHEN** unrelated progress arrives 20 s after a question, and the runtime restarts while the question is still open
 - **THEN** progress does not extend the window, and after the restart no window is open and no card or speech replays
+
+#### Scenario: A muted question
+- **WHEN** the coding-attention category is muted and a question is raised, and a background card waits and the owner inspects a coding suggestion 10 s later
+- **THEN** the module refuses the card with `attention-priority`, and the suggestion page, which sees no presented question card, is not held
+
+#### Scenario: A replaced question
+- **WHEN** question A is presented, question B replaces it 5 s later and B is answered at 10 s, while A is still open
+- **THEN** until 30 s after A's evidence instant the module still refuses background cards and automatic speech with `attention-priority`, and the suggestion page, whose presented card is B's, is not held
 
 #### Scenario: A host clock ahead of the hub
 - **WHEN** the reporting host's clock runs a minute ahead of the hub's and the host reports a question
