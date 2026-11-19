@@ -366,3 +366,24 @@ test('an overwritten seek marker still fences a small correction across a cue bo
   assert.equal(playback.evidence.positionMs, 480);
   assert.notDeepEqual(playback.frame(), laterCue);
 });
+
+test('ordinary measured completion settles the final unscheduled cue for the same or a newer position revision', () => {
+  for (const terminalRevision of [1, 2]) {
+    const playback = measuredPlayback();
+    assert.equal(playback.follow(observedShowPosition(1, 450, 1), 0), 'playing');
+    assert.notEqual(playback.frame(), null, 'the first cue was scheduled');
+    // The worker is delayed throughout the second cue, so it never schedules a frame for that cue.
+    assert.equal(playback.follow(observedShowPosition(terminalRevision, 1000, 1), 550), 'completed');
+    assert.deepEqual(playback.evidence, {showId: 'show-test', version: 1, positionMs: 1000, missedCues: 1});
+    assert.equal(playback.frame(), null);
+  }
+});
+
+test('seeking past a measured excerpt completes without counting intentionally skipped cues or reviving the show', () => {
+  const playback = measuredPlayback();
+  playback.follow(observedShowPosition(1, 450, 1), 0);
+  assert.equal(playback.follow(observedShowPosition(2, 1250, 2, true), 20), 'completed');
+  assert.deepEqual(playback.evidence, {showId: 'show-test', version: 1, positionMs: 1000, missedCues: 0});
+  assert.equal(playback.follow(observedShowPosition(3, 250, 3, true), 30), 'completed');
+  assert.equal(playback.frame(), null);
+});
