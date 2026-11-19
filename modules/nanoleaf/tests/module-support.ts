@@ -1,3 +1,4 @@
+import type {MusicShowAuthoringProvider} from '../src/music-show-authoring-provider.js';
 // The Nanoleaf module's test world (Hub #844): the module hosted as the runtime would (the SDK kit's `ModuleHarness`) on
 // its own in-process bus, a manual clock and scheduler that drive the bus, the module and its worker, a stand-in core
 // that serves `session/3.0` through sync and takes notice acknowledgments, a simulated Lines controller, and parts that
@@ -181,6 +182,7 @@ export type WorldOptions = {
   /** How many messages may wait in one subscription's queue on the world's bus; a fuller one drops, as a slow subscriber's does. */
   maxQueued?: number;
   playbackSyncBuffer?: number;
+  authoringProvider?: MusicShowAuthoringProvider;
   /** Records the module's spans. */
   spans?: RecordedSpans;
   /** The secrets the section names, by name: the synthetic token under `token` by default. */
@@ -217,6 +219,7 @@ export class ModuleWorld {
   readonly #spans: RecordedSpans | undefined;
   readonly #secrets: Readonly<Record<string, string>>;
   readonly #locks: DatabaseSync[] = [];
+  readonly #authoringProvider: MusicShowAuthoringProvider | undefined;
   readonly #playbackSyncBuffer: number | undefined;
   #playbackDeliveryGate: Promise<void> | undefined;
   #content: ModuleManifest['content'];
@@ -225,6 +228,7 @@ export class ModuleWorld {
     this.stateDir = options.stateDir ?? mkdtempSync(join(tmpdir(), 'nanoleaf-module-'));
     this.device = new SimulatedNanoleaf({online: options.online ?? true, now: () => this.clock.now(), ...(options.devices === undefined ? {} : {devices: options.devices})});
     this.#playbackSyncBuffer = options.playbackSyncBuffer;
+    this.#authoringProvider = options.authoringProvider;
     this.#section = options.section ?? SECTION;
     this.#spans = options.spans;
     this.#secrets = options.secrets ?? {token: SYNTHETIC_TOKEN};
@@ -253,7 +257,8 @@ export class ModuleWorld {
   }
 
   #fresh(): ModuleHarness {
-    const module = createNanoleafModule({transport: this.device.request, datagram: this.device.datagram});
+    const module = createNanoleafModule({transport: this.device.request, datagram: this.device.datagram,
+      ...(this.#authoringProvider === undefined ? {} : {authoringProvider: this.#authoringProvider})});
     this.#content = module.manifest.content;
     const wrapped: typeof module = {...module, start: context => module.start({...context, sdk: {...context.sdk,
       sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => {

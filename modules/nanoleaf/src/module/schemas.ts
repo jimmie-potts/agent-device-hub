@@ -7,7 +7,8 @@ import {DIRECTIONS, PATTERNS, PRESETS, SPEEDS} from '../effects.js';
 import {SETTING_NAMES} from '../project-map.js';
 import {MUSIC_DIRECTIONS} from '../music-recipe-data.js';
 import {REACTIVE_ID_PATTERN, REACTIVE_LIMITS, REACTIVE_SCHEMA, REACTIVE_TARGET} from '../music-preset-data.js';
-import {SHOW_CATALOG_SCHEMA, SHOW_ID_PATTERN, SHOW_LIMITS, SHOW_TARGET} from '../music-show-data.js';
+import {MAX_STYLE_LENGTH} from '../music-show-authoring.js';
+import {MUSIC_AUTHORING_MODEL, SHOW_CATALOG_SCHEMA, SHOW_ID_PATTERN, SHOW_LIMITS, SHOW_TARGET} from '../music-show-data.js';
 import {PLACEHOLDERS, RESTORES} from '../music-base.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS} from '../music-timeline.js';
 
@@ -29,6 +30,8 @@ export const NANOLEAF_FAMILIES = {
   reactivePresetSave: {family: 'nanoleaf-reactive-preset-save', kind: 'command', type: 'org.bunny.nanoleaf-reactive-preset.save.requested'},
   shows: {family: 'nanoleaf-shows', kind: 'state', type: 'org.bunny.nanoleaf-shows.updated'},
   showSave: {family: 'nanoleaf-show-save', kind: 'command', type: 'org.bunny.nanoleaf-show.save.requested'},
+  showGenerate: {family: 'nanoleaf-show-generate', kind: 'command', type: 'org.bunny.nanoleaf-show.generate.requested'},
+  showGenerateCancel: {family: 'nanoleaf-show-generate-cancel', kind: 'command', type: 'org.bunny.nanoleaf-show-generate.cancel.requested'},
   wallEdit: {family: 'nanoleaf-wall-edit', kind: 'command', type: 'org.bunny.nanoleaf-wall.edit.requested'},
   machineEdit: {family: 'nanoleaf-machine-edit', kind: 'command', type: 'org.bunny.nanoleaf-machine.edit.requested'},
   animationPlay: {family: 'nanoleaf-animation-play', kind: 'command', type: 'org.bunny.nanoleaf-animation.play.requested'},
@@ -121,8 +124,13 @@ const originalSchemas: Readonly<Record<string, object>> = {
       measurement: closed({item: closed({libraryScopeId: block('routingId'), itemId: {type: 'string', pattern: '^[0-9a-fA-F]{1,128}$'}}),
         analysis: closed({method: {const: 'energy-onset-v1'}, sampleCount: {type: 'integer', minimum: 1, maximum: 18000}})}),
       measurementProof: {type: 'string', pattern: '^[a-f0-9]{64}$'},
-    }, ['measurement', 'measurementProof']),
+      provenance: closed({model: {const: MUSIC_AUTHORING_MODEL}, costUsd: {type: 'number', minimum: 0},
+        confidence: {enum: ['measured-excerpt', 'generic']}, costBasis: {const: 'conservative-region'}}, ['costBasis']),
+      authoringProof: {type: 'string', pattern: '^[a-f0-9]{64}$'},
+    }, ['measurement', 'measurementProof', 'provenance', 'authoringProof']),
   },
+  [schemaOf('nanoleaf-show-generate')]: closed({requestId: block('requestId'), style: text(MAX_STYLE_LENGTH), source: {enum: ['measured', 'generic']}}),
+  [schemaOf('nanoleaf-show-generate-cancel')]: closed({requestId: block('requestId'), generationRequestId: block('requestId')}),
   [schemaOf('nanoleaf-wall')]: {
     description: 'State: one device\'s wall map as the wall editor shows it, from saved state only (Hub #844), with whether its last pass failed or no worker runs (`failing`) and whether a hold after an uncertain write stops its writes until an explicit mode command or fresh control (`held`). `selection` is the light\'s last read selection (#1614): whether it is a scene saved on the light, by opaque scene ID, or the light\'s own placeholder, what a live Music ending over it would put back, and when it was read; `musicBase` is what the latest live Music session\'s ending puts back. It never holds a credential, an address, a favorite, a preset name or a scene name.',
     ...closed({
@@ -202,7 +210,7 @@ const guardedSchemas = Object.fromEntries((['wallEdit', 'machineEdit', 'animatio
 const showSave = originalSchemas[schemaOf('nanoleaf-show-save')] as {description: string; properties: Record<string, object>};
 export const nanoleafSchemas: Readonly<Record<string, object>> = {...originalSchemas, ...guardedSchemas,
   [BASE + 'nanoleaf-show-save/2.1']: {description: showSave.description,
-    ...closed({...showSave.properties, admitByMs: block('instantMs')}, ['measurement', 'measurementProof'])},
+    ...closed({...showSave.properties, admitByMs: block('instantMs')}, ['measurement', 'measurementProof', 'provenance', 'authoringProof'])},
 };
 
 /** The port's map setting for each setting a command names. */

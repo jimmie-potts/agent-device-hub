@@ -3,7 +3,7 @@ import type {ArtRecord, ArtSelection, ArtworkSummary} from '@jimmie-potts/event-
 import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
 import {followCopy, type CopyRead, type Scheduler} from '@jimmie-potts/sdk/remote';
 import {artShowSurfaces, type ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
-import {CATALOG_PAGE_SIZE, catalogOf, latestBrowserArt, selectedBrowserArtwork, showTargetsOf, type CatalogPage, type ShowTarget} from './model.js';
+import {CATALOG_PAGE_SIZE, artworkOf, browserArt, catalogOf, latestBrowserArt, selectedBrowserArtwork, showTargetsOf, type BrowserArt, type CatalogPage, type ShowTarget} from './model.js';
 
 /** What one art copy reports to its page. */
 export type ArtFeed = {record: (value: ArtRecord | undefined) => void; live: (value: boolean) => void; error: (value: string | undefined) => void};
@@ -64,6 +64,20 @@ export function useWidgetArtwork(api: FrontendApi, state: ArtRecord | undefined,
     return artwork === undefined ? {status: 'unavailable'} : {status: 'ready', artwork};
   }
   return lookup !== undefined && loaded?.lookup === lookup ? loaded.result : {status: 'loading'};
+}
+
+/**
+ * The browser still of `artwork` to present: the card rendition when `compact`, otherwise the largest. Its identity
+ * changes only with image-relevant values, so catalog edits such as favorites do not start a new load.
+ */
+export function useBrowserArt(artwork: ArtworkSummary | undefined, compact: boolean): BrowserArt | undefined {
+  const imageKey = artwork === undefined ? '' : JSON.stringify({artworkId: artwork.artworkId, palette: artwork.palette, provenance: artwork.provenance, compositions: artwork.compositions});
+  return useMemo(() => {
+    if (imageKey === '') return undefined;
+    const value: unknown = JSON.parse(imageKey);
+    const art = artworkOf({...((typeof value === 'object' && value !== null) ? value : {}), createdAtMs: 0, favorite: false, feedback: null, variationOf: null});
+    return art === undefined ? undefined : browserArt(art, compact);
+  }, [imageKey, compact]);
 }
 
 export function useGalleryPage(api: FrontendApi, live: boolean, after: number, catalogRevision: string) {

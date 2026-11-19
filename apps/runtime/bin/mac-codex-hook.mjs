@@ -3,16 +3,30 @@
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 
-const EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd']);
+// Root events carry no agent_id. A Codex approval has no request ID, so PermissionRequest needs its turn: the core
+// forgets such an approval at that turn's end.
+const ROOT_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'Interrupt', 'SessionEnd']);
+// Subagent events: the child's agent_id under the parent's session_id. The turn is never forwarded, so a child never
+// borrows its parent's turn (Hub #1867).
+const CHILD_EVENTS = new Set(['SubagentStart', 'SubagentStop']);
 const START_SOURCES = new Set(['startup', 'resume', 'clear', 'fork']);
 const identifier = value => typeof value === 'string' && /^[A-Za-z0-9_.-]{1,128}(?![\s\S])/.test(value);
 
-/** Drop child events whole; select only root identity, without examining content fields. */
+/**
+ * Select only identity, without examining content fields: a root event's session and turn, or a subagent event's
+ * parent session and agent. Any other event with an agent_id, such as a child's PermissionRequest, is dropped whole.
+ */
 export function sanitizeMacCodexHook(raw) {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw) || Object.hasOwn(raw, 'agent_id')) return null;
-  const {hook_event_name, session_id, turn_id} = raw;
-  if (!EVENTS.has(hook_event_name) || !identifier(session_id)) return null;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const {hook_event_name, session_id} = raw;
+  if (!identifier(session_id)) return null;
+  if (CHILD_EVENTS.has(hook_event_name)) {
+    const agent_id = Object.hasOwn(raw, 'agent_id') ? raw.agent_id : undefined;
+    return identifier(agent_id) && agent_id !== session_id ? {hook_event_name, session_id, agent_id} : null;
+  }
+  if (!ROOT_EVENTS.has(hook_event_name) || Object.hasOwn(raw, 'agent_id')) return null;
   if (hook_event_name === 'SessionStart' && !START_SOURCES.has(raw.source)) return null;
+  const {turn_id} = raw;
   const sessionEvent = hook_event_name === 'SessionStart' || hook_event_name === 'SessionEnd';
   if ((!sessionEvent || Object.hasOwn(raw, 'turn_id')) && !identifier(turn_id)) return null;
   return {hook_event_name, session_id, ...(turn_id === undefined ? {} : {turn_id})};

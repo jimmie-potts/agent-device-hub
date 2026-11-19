@@ -280,7 +280,8 @@ jobs:
       # The old dashboard's browser smoke check (#827); the full `test:dashboard:browser` suite runs locally.
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:dashboard:smoke
-      # The runtime dashboard's browser smoke check (#922); the full `test:runtime-dashboard:browser` suite runs locally.
+      # The runtime dashboard's browser smoke check (#922). The full `test:runtime-dashboard:browser` suite runs after each
+      # merge to main that selects the runtime group, in runtime-dashboard-browser.yml (#1942), and blocks no pull request.
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime-dashboard:smoke
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
