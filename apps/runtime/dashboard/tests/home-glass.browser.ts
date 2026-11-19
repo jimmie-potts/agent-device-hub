@@ -141,18 +141,24 @@ async function shot(page: Page, name: string): Promise<void> {
 /**
  * The lowest contrast between any text drawn over the layer and the pixels behind it: panel text, the heading, notices,
  * status lines and empty cells in Home's section, and the footer. Text on a fill of its own (a button, an inset, the
- * edit toolbar) is not over the layer and is skipped. The text is made transparent for the screenshot so only what is
+ * edit toolbar) is not over the layer and is skipped, except the hero's switch and chips (#1930): their fills are
+ * translucent, so their text is measured against the fill as the screenshot draws it over the layer's pixels. The text is made transparent for the screenshot so only what is
  * behind it is measured; that changes no box, so the layer draws nothing new.
  */
-async function contrast(page: Page): Promise<{min: number; runs: number; worst: string}> {
+async function contrast(page: Page): Promise<{min: number; runs: number; worst: string; texts: string[]}> {
   const runs = await page.evaluate(() => {
     const main = document.getElementById('main');if (main === null) throw new Error('contrast: no main');
     const clear = (element: Element): boolean => {const style = getComputedStyle(element);return style.backgroundImage === 'none' && (style.backgroundColor === 'transparent' || /rgba\(.*, 0\)$/.test(style.backgroundColor));};
+    // A translucent fill in the hero lets the layer through; the screenshot composites it, so it counts as ground.
+    const seeThrough = (element: Element): boolean => {
+      const style = getComputedStyle(element), alpha = /rgba\([^)]*,\s*([\d.]+)\)$/.exec(style.backgroundColor)?.[1];
+      return element.closest('[data-hub-mode]') !== null && style.backgroundImage === 'none' && alpha !== undefined && Number(alpha) < 1;
+    };
     const found: {x: number; y: number; width: number; height: number; color: string; text: string}[] = [];
     const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
       const parent = node.parentElement;if (parent === null || (node.textContent ?? '').trim() === '' || !parent.checkVisibility({visibilityProperty: true, opacityProperty: true})) continue;
-      let ground = true;for (let at: Element | null = parent; at !== null && at !== main; at = at.parentElement) if (!clear(at) || Number(getComputedStyle(at).opacity) < 1) {ground = false;break;}
+      let ground = true;for (let at: Element | null = parent; at !== null && at !== main; at = at.parentElement) if (!clear(at) && !seeThrough(at) || Number(getComputedStyle(at).opacity) < 1) {ground = false;break;}
       if (!ground) continue;
       const range = document.createRange();range.selectNodeContents(node);const limit = parent.getBoundingClientRect(), color = getComputedStyle(parent).color;
       for (const rect of range.getClientRects()) {
@@ -180,7 +186,7 @@ async function contrast(page: Page): Promise<{min: number; runs: number; worst: 
       if (ratio < min) {min = ratio;worst = `"${run.text}" at ${String(x)},${String(y)} in ${run.color}`;}
     }
   }
-  return {min, runs: runs.length, worst};
+  return {min, runs: runs.length, worst, texts: runs.map(run => run.text)};
 }
 
 async function open(context: BrowserContext, width = 1440, height = 900): Promise<{page: Page; sent: string[]; errors: string[]}> {
@@ -289,6 +295,7 @@ try {
       await shot(opened.page, `1440-${scheme}-${sample}`);
       const measure = async (state: string): Promise<void> => {
         const measured = await contrast(opened.page), label = `${scheme}/${sample}${state === '' ? '' : `/${state}`}`;
+        if (state === '') for (const text of ['Hub mode', 'Free', 'Work', 'Quiet', 'Open Gallery', 'Dismiss art']) assert.ok(measured.texts.includes(text), `${label}: the hero's ${text} is measured`);
         assert.ok(measured.runs > 20, `${label}: text runs were measured (${String(measured.runs)})`);
         contrasts[label] = Math.round(measured.min * 100) / 100;
         assert.ok(measured.min >= 4.5, `${label}: text over the glass layer keeps 4.5:1 (lowest ${measured.min.toFixed(2)}: ${measured.worst})`);

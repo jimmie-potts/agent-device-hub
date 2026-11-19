@@ -206,6 +206,23 @@ try {
     assert.deepEqual(kept, loaded.layouts[key].find(entry => entry.widget === id), `a save keeps the ${key} ${id} placement as it was`);
   }
   report['savedLayout'] = true;
+  // Reset restores the built-in cards but keeps the hero's placements, so a dismissed art stays dismissed.
+  const dismissed: HomePlacement[] = [{widget: 'hub-mode', size: 'medium', hidden: false, shape: 'wide'}, {widget: 'art', size: 'medium', hidden: true, shape: 'wide', art: {format: 'banner', pinned: true}},
+    {widget: 'sessions', size: 'medium', hidden: false, shape: 'large-square'}];
+  const current = await stored(page);
+  assert.equal(await page.evaluate(async ({revision, desktop, phone}) => (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+    body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: revision, layouts: {desktop, phone}}})})).status, {revision: current.revision, desktop: dismissed, phone: current.layouts.phone}), 200);
+  await page.reload();await feed(page, 'connected');
+  await expect(hero(page).getByRole('button', {name: 'Restore art', exact: true})).toBeEnabled();
+  const beforeReset = await stored(page);
+  await page.getByRole('button', {name: 'Edit Home', exact: true}).click();await page.getByRole('button', {name: 'Reset', exact: true}).click();
+  await page.getByRole('button', {name: 'Done', exact: true}).click();await expect(page.getByText('Home layout saved.', {exact: true})).toBeVisible();
+  const afterReset = await stored(page);
+  for (const id of ['hub-mode', 'art']) assert.deepEqual(afterReset.layouts.desktop.find(entry => entry.widget === id), beforeReset.layouts.desktop.find(entry => entry.widget === id), `Reset keeps the ${id} placement`);
+  assert.notDeepEqual(afterReset.layouts.desktop.map(entry => entry.widget), beforeReset.layouts.desktop.map(entry => entry.widget), 'Reset restored the built-in cards');
+  await expect(hero(page).getByRole('button', {name: 'Restore art', exact: true})).toBeEnabled();await expect(layer(page)).toHaveAttribute('data-glass-backdrop', '');
+  await hero(page).getByRole('button', {name: 'Restore art', exact: true}).click();await expect(layer(page)).toHaveAttribute('data-glass-backdrop', rendition);
+  report['resetKeepsHero'] = true;
 
   // Phone widths, light and dark: no horizontal scroll; the hero fits.
   for (const scheme of ['light', 'dark'] as const) for (const width of [1440, 390, 320]) {

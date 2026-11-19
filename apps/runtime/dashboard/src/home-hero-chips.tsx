@@ -17,7 +17,7 @@ export function HeroStatusChips({runtime, connected, now}: {runtime: RuntimeData
     (copy.records as readonly DeviceRecord[]).filter(record => record.kind === 'wemo').map(record => ({name: record.label ?? record.id,
       power: observedPower(record, connected && copy.synced, now, PLUG_STALE_MS)}))));
   return <>
-    {lights !== undefined && <a className="home-hero-chip" href="#/devices" data-hero-chip="lights">{lights}</a>}
-    {plugs !== undefined && <a className="home-hero-chip" href="#/devices" data-hero-chip="plugs">{plugs}</a>}
+    {lights !== undefined && <a className="home-hero-chip" data-glass-veil href="#/devices" data-hero-chip="lights">{lights}</a>}
+    {plugs !== undefined && <a className="home-hero-chip" data-glass-veil href="#/devices" data-hero-chip="plugs">{plugs}</a>}
   </>;
 }

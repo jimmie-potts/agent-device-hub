@@ -139,13 +139,13 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   // revision-guarded save: Pin or Unpin keeps the saved format, Dismiss hides the art and Restore shows it again.
   const automaticArt = artEntry === undefined || artEntry.art?.pinned === false;
   const artChips = artDismissed
-    ? <button type="button" className="home-hero-chip" disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: false}));}}>Restore art</button>
+    ? <button type="button" className="home-hero-chip" data-glass-veil disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: false}));}}>Restore art</button>
     : artExposed(runtime, connected) ? <>
-      <a className="home-hero-chip" href="#/module/art/gallery">Open Gallery</a>
-      <button type="button" className="home-hero-chip" disabled={artDisabled} onClick={() => {
+      <a className="home-hero-chip" data-glass-veil href="#/module/art/gallery">Open Gallery</a>
+      <button type="button" className="home-hero-chip" data-glass-veil disabled={artDisabled} onClick={() => {
         updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: artEntry?.art?.format ?? 'auto', pinned: automaticArt}}));
       }}>{automaticArt ? 'Pin art' : 'Unpin art'}</button>
-      <button type="button" className="home-hero-chip" disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: true}));}}>Dismiss art</button>
+      <button type="button" className="home-hero-chip" data-glass-veil disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: true}));}}>Dismiss art</button>
     </> : null;
   const locked = !editable || conflict || pending !== undefined;
   // Wide layouts place every card on one unit grid in one of four shapes (#1672). Cards stay flat grid children in saved
@@ -170,7 +170,10 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
     <div className="home-hero-slot" inert={editing}>{renderHero(artChips)}</div>
     {!live && <p role="status" className="hint" data-glass-veil>Home layout is unavailable or stale. Editing is read-only.</p>}
     {editing && <div className="home-edit-toolbar"><div className="actions"><button type="button" data-home-add disabled={locked} onClick={() => {setPicker(value => !value);}}>Add card</button>
-      <button type="button" className="secondary" disabled={locked} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = defaults[breakpoint];change(next);}}>Reset</button></div>
+      <button type="button" className="secondary" disabled={locked} onClick={() => {
+        // Reset keeps the hero's saved placements (#1930), so a dismissed or pinned art survives it.
+        const next = structuredClone(layouts);next[breakpoint] = [...defaults[breakpoint], ...layouts[breakpoint].filter(entry => heroPlacement(entry.widget))];change(next);
+      }}>Reset</button></div>
       <div className="actions" role="group" aria-label="Layout to edit">{(['desktop', 'phone'] as const).map(value => <button key={value} type="button" className="secondary" aria-pressed={selected === value} onClick={() => {setSelected(value);}}>{value === 'desktop' ? 'Desktop' : 'Phone'}</button>)}</div>
       <div className="actions"><button type="button" className="secondary" disabled={pending !== undefined && command.locked} onClick={() => {setDraft(undefined);setPicker(false);setMessage('Changes discarded.');editButton.current?.focus();}}>Cancel</button><button type="button" disabled={locked} onClick={save}>Done</button></div>
     </div>}

@@ -288,8 +288,8 @@ A fixed hero above the cards (#1930, owner decision 5 of epic #1927) shows the
 hub mode as a large word under a small "Hub mode" label, a Work, Free and Quiet
 switch and short chips. It replaces the Hub mode and Art cards: `heroPlacement()`
 in `src/home-catalog.ts` keeps their saved placements out of the grid, the picker
-and the built-in layout, and every save keeps them as they are, so a layout that
-lists them stays valid.
+and the built-in layout, and every save keeps them as they are, Reset included, so
+a layout that lists them stays valid and a dismissed art stays dismissed.
 
 `HubMode` (`src/hub-mode.tsx`) is the same adapter as the card's, so the switch
 sends the same guarded `mode-set` command with the current revision and shows
@@ -298,8 +298,11 @@ and the mode exceptions with their device links as before; nothing is sent again
 `src/hub-mode-hero.tsx` draws it. The switch is one Tab stop: arrow keys, Home and
 End move between segments and Enter or Space selects, so moving sends nothing. The
 selected segment carries `data-glass-thumb`; the glass layer draws the thumb
-there. Without the layer the segment has its own fill. The hero is inert while
-Home is edited.
+there. Without the layer the segment has its own fill. On the layer every
+segment's label takes the full text color, since the thumb marks the selection;
+the label, the word, the switch and each chip are veils, so the artwork behind them
+stays readable under the chips' translucent fills. The hero is inert while Home is
+edited.
 
 The chips, in order: lights on and plugs on from the observed device records the
 shell holds (`src/home-hero.ts`; a stale copy, an unavailable device, unobserved

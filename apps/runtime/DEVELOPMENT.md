@@ -673,7 +673,7 @@ owners with synthetic providers and an outside-checkout private `TMPDIR`.
 The journey checks the hero's Pin or Unpin, Dismiss and Restore art chips (#1930)
 saved per arrangement with independent desktop/phone layouts and restart, card
 geometry and focus kept when art arrives, the forecast chip in the hero bound to
-the drawn backdrop and cleared at expiry, the backdrop following the selection
+the drawn backdrop and cleared when the art is dismissed and at expiry, the backdrop following the selection
 with no Art card on Home; rich rendition decode, stale/unavailable
 content and late-load cancellation; and request/favorite/feedback/variation with
 truthful allowance and job outcomes. Layout-only operations and gallery reads
@@ -785,7 +785,9 @@ restored context draws again; that leaving Home loses the context; and that all
 text drawn over the layer (panels, heading, notices, status lines, empty cells
 and the footer) measures at least 4.5:1 against the pixels behind it for a dark
 and a bright artwork in light and dark appearance, at rest, while reconnecting
-and in Edit Home. With `DASHBOARD_RECEIPTS` set it saves private screenshots.
+and in Edit Home. The hero's switch and chips (#1930) are measured too, against
+their translucent fills as drawn over the layer. With `DASHBOARD_RECEIPTS` set it
+saves private screenshots.
 
 Home's hero (#1930) follows the glass journey in the same chain. After the root
 build, `node apps/runtime/dashboard/tests/home-hero.browser.ts` launches Chromium
@@ -799,7 +801,7 @@ every chip with a visible ring; refused and uncertain results without a second
 send; the hero kept with its focused chip across the one-column threshold;
 dismissed art drawing the Quiet glass wash and Restore drawing it again; a saved
 layout listing the Hub mode and Art cards loading without error, absent from the
-grid and the picker, and kept by a save; no horizontal scroll at 1440, 390 and
+grid and the picker, and kept by a save and by Reset; no horizontal scroll at 1440, 390 and
 320 px in light and dark; and, without WebGL 2, a plain thumb and a working
 switch. `node --test apps/runtime/dashboard/tests/home-hero.test.ts
 apps/runtime/dashboard/tests/glass.test.ts` cover the chips' wording and the

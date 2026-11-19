@@ -70,6 +70,15 @@ export async function artNoticeJourney(): Promise<void> {
       await expect(chip).toBeVisible();
       await page.screenshot({path: join(artifacts, `art-notice-${String(width)}.png`), fullPage: true});
     }
+    // Dismissed art leaves Home, so the forecast bound to it clears; Restore brings both back while the notice is current.
+    await page.setViewportSize({width: 1440, height: 1100});
+    const hero = page.locator('[data-hub-mode]');
+    await hero.getByRole('button', {name: 'Dismiss art', exact: true}).click();
+    await expect.poll(async () => {await page.clock.runFor(50);return notice.count();}).toBe(0);
+    assert.equal(await layer.getAttribute('data-glass-backdrop'), '', 'dismissed art draws the wash');
+    await hero.getByRole('button', {name: 'Restore art', exact: true}).click();
+    await expect.poll(async () => {await page.clock.runFor(50);return chip.count();}).toBe(1);
+    await expect(layer).toHaveAttribute('data-glass-backdrop', rendition);
     await advance(30_001);await expect(notice).toHaveCount(0);await expect(backdrop).toHaveAttribute('data-artwork', artworkId);
     assert.equal(await layer.getAttribute('data-glass-backdrop'), rendition, 'forecast expiry removes only the factual chip, preserving the drawn artwork');
     assert.deepEqual(world.art.state(), calls);assert.deepEqual(errors, []);
