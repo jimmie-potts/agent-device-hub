@@ -99,6 +99,11 @@ void test('a near-black entry with a hue tints only after every lighter one (Hub
     assert.ok(spread(blue[scheme].accent) >= 12, `${scheme}: a near-black hue still tints when it is the only one`);
   }
   assert.deepEqual(themeColors(['#000020', '#200000', '#E0A040', '#2060C0']), themeColors(['#E0A040', '#2060C0']), 'lighter entries keep their order and near-black ones are not reached');
+  // A bucket is named by its darkest corner. Only the four whose whole range reads as black are deferred.
+  for (const bucket of ['#000020', '#000040', '#200000', '#200020']) assert.equal(themeColors([bucket, '#E0A040'])?.dark.accent, amber.dark.accent, `${bucket} reads as black and waits`);
+  for (const bucket of ['#200040', '#002000', '#000060', '#400000', '#202000', '#002040', '#400020', '#200060']) {
+    assert.equal(themeColors([bucket, '#E0A040'])?.dark.accent, themeColors([bucket])?.dark.accent, `${bucket} holds visible colors and tints first`);
+  }
 });
 
 void test('a weak color tints at half strength and a vivid one at full strength (Hub #1920)', () => {

@@ -58,8 +58,12 @@ const STEPS: Record<'light' | 'dark', Record<Role, readonly [lightness: number, 
  * one millionth, and a few near-grey shades also fall below it.
  */
 const HUE_FLOOR = 0.04;
-/** An entry darker than this reads as black, whatever its hue. It tints only when no lighter entry has a hue. */
-const NEAR_BLACK = 0.25;
+/**
+ * An entry darker than this reads as black, whatever its hue, and comes after every lighter entry with a hue. The art
+ * module names a bucket of 32 levels per channel by its darkest corner, so the limit is low enough that only buckets
+ * whose whole range reads as black fall under it: `#000020`, `#000040`, `#200000` and `#200020`.
+ */
+const NEAR_BLACK = 0.2;
 /** The chroma at which an entry tints at full strength. */
 const FULL_TINT = 0.12;
 /** How much of a role's chroma an entry of this chroma uses: in proportion up to full tint, and never under one half. */
