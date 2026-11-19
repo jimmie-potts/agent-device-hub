@@ -9,7 +9,7 @@ import {roomModelFixture} from '../../dist/tests/fixtures/room-model.js';
 
 const world=await startWorld({lighting:true});
 // WebGL runs on SwiftShader on every host. Page compositing stays on Chromium's software compositor (#1893): with
-// SwiftShader as the compositing GPU, every reload or navigation away from a 3D view waited seconds for queued
+// SwiftShader as the compositing GPU, a reload or navigation soon after a 3D view rendered waited seconds for queued
 // software-GPU work while the old WebGL context was destroyed, and timed out on a busy CPU.
 const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-gpu-compositing']});
 try{
