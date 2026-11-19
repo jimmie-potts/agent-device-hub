@@ -6,10 +6,10 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {coreValidator, sessionEntityId} from '../dist/v2/families.js';
 import {
-  forConsumer, highestStatus, knownDetail, noticeCounts, opportunityMatches, READABLE_SESSION_SCHEMAS, readSession, sessionState, sessionView, statusOf,
-  STATUS_COLORS, STATUS_DETAILS,
+  buildSession, forConsumer, highestStatus, knownDetail, noticeCounts, opportunityMatches, READABLE_SESSION_SCHEMAS, readSession, SESSION_SCHEMA,
+  sessionState, statusOf, STATUS_COLORS, STATUS_DETAILS,
 } from '../dist/v2/session.js';
-import * as liveStatus from '../dist/v2/status.js';
+import * as sharedStatus from '../dist/v2/status.js';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8')).valid;
 const TIME = '2026-10-06T12:00:00.000Z', AT = Date.parse(TIME), STALE = 300_000;
@@ -19,18 +19,18 @@ const known = id => ({status: 'known', id});
 const identity = (sessionId, provider = 'claude') =>
   ({provider, client: provider === 'claude' ? 'code' : 'cli', hostId: 'synthetic-host', sourceId: `${provider}-hooks`, sessionId});
 
-/** A session/2.0 state message with nothing outstanding unless overridden, checked against the session family. */
-function message(overrides = {}, {time = TIME, version = '2.0'} = {}) {
+/** A session/3.0 state message built from facts with nothing outstanding unless overridden, checked against the session family. */
+function message(overrides = {}, {time = TIME} = {}) {
   const who = overrides.identity ?? identity('session-a');
-  const data = {
+  const data = buildSession({
     id: sessionEntityId(who), revision: 4, generation: 2, identity: who, parent: {status: 'top-level'}, turn: known('turn-1'),
-    activity: 'idle', attention: [], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'},
-    observedAtMs: AT - 1000, lastEvidenceAtMs: AT - 1000, freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0},
+    work: 'idle', attention: [], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'},
+    observedAtMs: AT - 1000, lastEvidenceAtMs: AT - 1000, children: {working: 0, unconfirmed: 0},
     ...overrides,
-  };
+  });
   const value = {
     specversion: '1.0', bunnyprofile: '2.0', id: `msg-${data.revision}`, source: 'bunny/core', type: 'org.bunny.session.updated', subject: data.id,
-    time, kind: 'state', datacontenttype: 'application/json', dataschema: `${SCHEMA}${version}`,
+    time, kind: 'state', datacontenttype: 'application/json', dataschema: SESSION_SCHEMA,
     traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data,
   };
   const result = coreValidator().validate(value);
@@ -40,8 +40,8 @@ function message(overrides = {}, {time = TIME, version = '2.0'} = {}) {
 const notice = (turn = 'turn-1', acknowledgedBy = []) => ({id: hash(`notice-${turn}-${acknowledgedBy.join()}`), kind: 'turn-ended', turn: known(turn), acknowledgedBy});
 const approval = (turn = 'turn-1') => ({id: known('approval-1'), kind: 'approval', turn: known(turn)});
 const question = (turn = 'turn-1') => ({id: known('question-1'), kind: 'question', turn: known(turn)});
-// Five minutes without evidence: session/2.0 freshness is uncertain at the envelope time.
-const silent = {lastEvidenceAtMs: AT - STALE - 60_000, observedAtMs: AT - STALE - 60_000, freshness: 'uncertain'};
+// Six minutes without qualifying evidence: the core marked running work unconfirmed for its deadline.
+const silent = {lastEvidenceAtMs: AT - STALE - 60_000, observedAtMs: AT - STALE - 60_000, unconfirmed: 'deadline'};
 const read = overrides => {
   const view = readSession(message(overrides));
   assert.ok(view);
@@ -116,78 +116,79 @@ test('a session/3.0 record that needs the owner stays valid an hour after its la
   }
 });
 
-test('readSession reads session/2.0 and 2.1 state messages and nothing else until the switch', () => {
-  assert.deepEqual(READABLE_SESSION_SCHEMAS, [`${SCHEMA}2.0`, `${SCHEMA}2.1`]);
-  const root = readSession(fixtures.session);
-  assert.equal(root?.id, fixtures.session.data.id);
-  assert.equal(root?.revision, 7);
-  assert.equal(root?.generation, 1);
-  assert.deepEqual(root?.identity, fixtures.session.data.identity);
+test('readSession reads session/3.0 state messages and nothing else, and the view is the record', () => {
+  assert.deepEqual(READABLE_SESSION_SCHEMAS, [`${SCHEMA}3.0`]);
+  assert.equal(SESSION_SCHEMA, `${SCHEMA}3.0`);
+  const waiting = fixtures['session-3'];
+  const root = readSession(waiting);
+  assert.deepEqual(root, waiting.data);
   assert.equal(status(root), 'needs-owner/approval');
-  assert.deepEqual(root?.relationships, {children: {working: 1, unconfirmed: 0}, confidence: 'confirmed'});
-  assert.deepEqual([root?.label, root?.title, root?.project, root?.projectId], [fixtures.session.data.label, fixtures.session.data.title, 'agent-device-hub', 'hub']);
-  assert.equal(readSession(fixtures['session-3']), undefined, 'session/3.0 is read only from the switch step');
-  assert.equal(readSession({...fixtures.session, data: {...fixtures.session.data, revision: 'seven'}}), undefined, 'an invalid record');
+  assert.deepEqual(readSession(fixtures['session-3-child'])?.parent, fixtures['session-3-child'].data.parent);
+  for (const name of ['session', 'session-child', 'session-claude']) {
+    assert.equal(coreValidator().validate(fixtures[name]).ok, true, `${name} stays a valid retained document`);
+    assert.equal(readSession(fixtures[name]), undefined, `${name}: no live reader reads session/2.x`);
+  }
+  assert.equal(readSession({...waiting, data: {...waiting.data, revision: 'seven'}}), undefined, 'an invalid record');
   assert.equal(readSession(fixtures.mode), undefined, 'another family');
   for (const value of [undefined, null, 'session', [], {}]) assert.equal(readSession(value), undefined);
 });
 
-test('a session/2.1 record keeps its read provenance in the view', () => {
+test('a session/3.0 record keeps its read provenance in its outcome', () => {
   const finished = notice('turn-1');
   const receipt = {noticeId: finished.id, observedAtMs: AT - 500, source: 'bunny/observer/read-receipts', receipt: {kind: 'owned-ui', viewRevision: 'view-1'}};
-  const view = readSession(message({notices: [finished], read: 'read', readReceipt: receipt}, {version: '2.1'}));
+  const view = readSession(message({notices: [finished], read: 'read', readReceipt: receipt}));
   assert.ok(view);
   assert.equal(status(view), 'finished/turn-ended', 'the class ignores read evidence');
   assert.deepEqual(view.outcome, {notices: [finished], read: 'read', readReceipt: receipt, confidence: 'confirmed', evidenceAtMs: AT - 1000});
 });
 
-// Design decision 4: the read function maps session/2.x to the same claims. Active work is unconfirmed while freshness
-// is uncertain or the record is restart-uncertain; attention and outcomes never become uncertain from silence.
-test('2.x waiting records need the owner however long they are silent', () => {
-  const asking = read({activity: 'active', attention: [approval()], ...silent});
+// Design decisions 3 and 4: the record builder the core publishes with. Active work is unconfirmed for its deadline or a
+// restart; attention and outcomes never become unconfirmed from silence.
+test('a waiting session needs the owner however long it is silent', () => {
+  const asking = read({work: 'active', attention: [approval()], ...silent});
   assert.equal(status(asking), 'needs-owner/approval');
   assert.deepEqual(asking.attention, {items: [approval()], confidence: 'confirmed', evidenceAtMs: silent.lastEvidenceAtMs});
   assert.deepEqual(asking.work, {state: 'active', confidence: 'unconfirmed', evidenceAtMs: silent.lastEvidenceAtMs, reasons: ['deadline']},
     'the turn still running under the question is the only claim silence makes unconfirmed');
-  const continuing = read({activity: 'idle', attention: [question()], ...silent});
+  const continuing = read({work: 'idle', attention: [question()], ...silent});
   assert.equal(status(continuing), 'needs-owner/question');
   assert.deepEqual(continuing.work.reasons, []);
   assert.equal(continuing.work.confidence, 'confirmed');
 });
 
-test('2.x working records are working, unconfirmed after five minutes of silence', () => {
-  const current = read({activity: 'active'});
+test('a working session is working, unconfirmed once its deadline passed', () => {
+  const current = read({work: 'active'});
   assert.equal(status(current), 'working/confirmed');
   assert.deepEqual(current.work, {state: 'active', confidence: 'confirmed', evidenceAtMs: AT - 1000, reasons: []});
-  const quiet = read({activity: 'active', ...silent});
+  const quiet = read({work: 'active', ...silent});
   assert.equal(status(quiet), 'working/unconfirmed');
   assert.deepEqual(quiet.work.reasons, ['deadline']);
 });
 
-test('2.x restart uncertainty makes only running work unconfirmed', () => {
-  const restart = {freshness: 'uncertain', restartUncertain: true};
-  const running = read({activity: 'active', ...restart});
+test('a restart makes only running work unconfirmed', () => {
+  const restart = {unconfirmed: 'restart'};
+  const running = read({work: 'active', ...restart});
   assert.equal(status(running), 'working/unconfirmed');
   assert.deepEqual(running.work.reasons, ['restart']);
-  const finished = read({activity: 'idle', notices: [notice()], ...restart});
+  const finished = read({work: 'idle', notices: [notice()], ...restart});
   assert.equal(status(finished), 'finished/turn-ended', 'a recorded outcome stays');
   assert.deepEqual([finished.work.confidence, finished.outcome.confidence], ['confirmed', 'confirmed']);
-  const asking = read({activity: 'idle', attention: [question()], ...restart});
+  const asking = read({work: 'idle', attention: [question()], ...restart});
   assert.equal(status(asking), 'needs-owner/question', 'a question stays');
   assert.equal(asking.attention.confidence, 'confirmed');
 });
 
-test('2.x child counts map to working and unconfirmed children', () => {
-  const parent = read({children: {active: 1, uncertain: 2}});
+test('children count as working and unconfirmed', () => {
+  const parent = read({children: {working: 1, unconfirmed: 2}});
   assert.deepEqual(parent.relationships, {children: {working: 1, unconfirmed: 2}, confidence: 'confirmed'});
   assert.equal(status(parent), 'working/subagent');
-  assert.equal(status(read({children: {active: 0, uncertain: 2}})), 'quiet/idle');
-  const child = read({identity: identity('session-a-child'), parent: {status: 'known', identity: identity('session-a')}, activity: 'active', ...silent});
+  assert.equal(status(read({children: {working: 0, unconfirmed: 2}})), 'quiet/idle');
+  const child = read({identity: identity('session-a-child'), parent: {status: 'known', identity: identity('session-a')}, work: 'active', ...silent});
   assert.equal(status(child), 'working/unconfirmed');
 });
 
 test('ambiguous or lost evidence makes the claim of its dimension unconfirmed', () => {
-  const view = read({activity: 'unknown', unavailable: [{dimension: 'activity', reason: 'lost'}, {dimension: 'attention', reason: 'ambiguous'},
+  const view = read({work: 'unknown', unavailable: [{dimension: 'activity', reason: 'lost'}, {dimension: 'attention', reason: 'ambiguous'},
     {dimension: 'parent', reason: 'lost'}, {dimension: 'turn', reason: 'missing'}]});
   assert.equal(status(view), 'unknown/lost');
   assert.deepEqual([view.attention.confidence, view.outcome.confidence, view.relationships.confidence], ['unconfirmed', 'confirmed', 'unconfirmed']);
@@ -196,13 +197,13 @@ test('ambiguous or lost evidence makes the claim of its dimension unconfirmed', 
 
 // Today's reducer keeps a session active after an `evidence-unavailable` observation with activity `lost`.
 test('ambiguous or lost activity evidence makes active work unconfirmed, after any silence reason', () => {
-  const lost = read({activity: 'active', unavailable: [{dimension: 'ordering', reason: 'missing'}, {dimension: 'activity', reason: 'lost'}]});
+  const lost = read({work: 'active', unavailable: [{dimension: 'ordering', reason: 'missing'}, {dimension: 'activity', reason: 'lost'}]});
   assert.equal(status(lost), 'working/unconfirmed');
   assert.deepEqual(lost.work.reasons, ['lost']);
-  const both = read({activity: 'active', unavailable: [{dimension: 'activity', reason: 'ambiguous'}], ...silent});
+  const both = read({work: 'active', unavailable: [{dimension: 'activity', reason: 'ambiguous'}], ...silent});
   assert.deepEqual(both.work.reasons, ['deadline', 'ambiguous']);
-  assert.equal(read({activity: 'active', unavailable: [{dimension: 'activity', reason: 'missing'}]}).work.confidence, 'confirmed', 'missing is not doubt');
-  assert.deepEqual(read({activity: 'idle', unavailable: [{dimension: 'activity', reason: 'lost'}]}).work.reasons, [], 'only active work is unconfirmed');
+  assert.equal(read({work: 'active', unavailable: [{dimension: 'activity', reason: 'missing'}]}).work.confidence, 'confirmed', 'missing is not doubt');
+  assert.deepEqual(read({work: 'idle', unavailable: [{dimension: 'activity', reason: 'lost'}]}).work.reasons, [], 'only active work is unconfirmed');
 });
 
 test('each consumer\'s policy retires finished to quiet: by acknowledgment, then by read evidence where it counts', () => {
@@ -219,15 +220,14 @@ test('each consumer\'s policy retires finished to quiet: by acknowledgment, then
   // Two notices of the current turn: both must be acknowledged.
   const twice = read({notices: [notice('turn-1', ['pixoo']), notice('turn-1')]});
   assert.equal(status(forConsumer(twice)), 'finished/turn-ended');
-  const working = read({activity: 'active', notices: [notice()]});
+  const working = read({work: 'active', notices: [notice()]});
   assert.equal(forConsumer(working, {read: true}), working, 'only finished retires');
 });
 
 test('the view\'s sessionState and highestStatus rank views, with status.ts\'s colors', () => {
-  const records = [message({activity: 'active'}).data, message({identity: identity('session-b'), notices: [notice()]}).data];
-  const views = records.map(sessionView);
+  const views = [read({work: 'active'}), read({identity: identity('session-b'), notices: [notice()]})];
   assert.deepEqual(views.map(view => sessionState(view)), ['working', 'done']);
-  assert.equal(STATUS_COLORS, liveStatus.STATUS_COLORS, 'one color table');
+  assert.equal(STATUS_COLORS, sharedStatus.STATUS_COLORS, 'one color table');
   assert.equal(highestStatus({synced: true, sessions: views}), 'working');
   assert.equal(highestStatus({synced: true, sessions: [views[1]]}), 'done');
   assert.equal(highestStatus({synced: false, sessions: views}), 'unknown');
@@ -252,7 +252,7 @@ function opportunity(view, overrides = {}) {
 }
 
 test('an opportunity matches while its generation, identity, turn and item are still the session\'s', () => {
-  const asking = read({activity: 'active', attention: [approval()], ...silent});
+  const asking = read({work: 'active', attention: [approval()], ...silent});
   const raised = opportunity(asking);
   assert.equal(opportunityMatches(asking, raised, 'microduck'), true, 'unconfirmed work does not abandon an approval');
   assert.equal(opportunityMatches(asking, {...raised, generation: asking.generation + 1}, 'microduck'), false, 'another generation');
@@ -260,7 +260,7 @@ test('an opportunity matches while its generation, identity, turn and item are s
   assert.equal(opportunityMatches(asking, {...raised, session: hash('another')}, 'microduck'), false, 'another session');
   assert.equal(opportunityMatches(asking, {...raised, turn: known('turn-0')}, 'microduck'), false, 'another turn');
   assert.equal(opportunityMatches(asking, {...raised, session: null, identity: null, context: 'scenario'}, 'microduck'), false);
-  const cleared = read({activity: 'active'});
+  const cleared = read({work: 'active'});
   assert.equal(opportunityMatches(cleared, opportunity(asking), 'microduck'), false, 'a cleared attention item');
   assert.equal(opportunityMatches(asking, {...raised, attention: {...approval(), id: known('approval-2')}}, 'microduck'), false, 'another item');
   assert.equal(opportunityMatches(asking, {...raised, category: 'simulated-social', cue: 'arrival', sourceKind: 'simulated-apartment'}, 'microduck'), false);

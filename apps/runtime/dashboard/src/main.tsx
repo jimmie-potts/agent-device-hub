@@ -160,7 +160,7 @@ function DiagnosticsCard({links}: {links: Readonly<Record<string, string>> | und
 
 function ConnectionsPage({state, now, links}: {state: DashboardState; now: number; links: Readonly<Record<string, string>> | undefined}): React.JSX.Element {
   const {sessions} = state;
-  const sources = [...new Set(sessions.records.map(record => `${record.identity.provider} / ${record.identity.hostId} / ${record.identity.sourceId}`))];
+  const sources = [...new Set(sessions.views.map(view => `${view.identity.provider} / ${view.identity.hostId} / ${view.identity.sourceId}`))];
   return <section aria-label="Connections"><header className="page"><h1>Connections</h1></header><div className="cards two">
     <div className="card"><h2>Connection</h2><Facts items={[
       ['Feed', FEED_TEXT[state.feed]], ['Core sessions', sessions.synced ? 'Synced' : 'Not synced'], ['Core revision', sessions.revision ?? 'Unknown'],

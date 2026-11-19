@@ -2,7 +2,6 @@ import React, {useEffect, useRef, useState, type RefObject} from 'react';
 import type {CompanionState, SpeechState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {SyncedCopy} from '@jimmie-potts/sdk/remote';
-import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {presentedPriority, replyRefusal, speechRefusal} from '../presentation-policy.js';
 import {speechQualification, type SpeechQualification} from '../speech-qualification.js';
 import {browserSpeechPort, SpeechDriver} from './speech-driver.js';
@@ -142,7 +141,7 @@ export function useSpeechControlsSession(context: FrontendContext, companion: Re
       if (source.kind === 'reply') return replyRefusal({mode: core.mode, synced}) === undefined;
       return speechRefusal(source.card, {
         nowMs: Date.now(), settings: copy.state.settings, mode: core.mode, synced,
-        sessions: core.sessions.map(sessionView), priority: presentedPriority(copy.state), scenarioAttention: false, available: copy.state.availability === 'available',
+        sessions: core.sessions, priority: presentedPriority(copy.state), scenarioAttention: false, available: copy.state.availability === 'available',
       }) === undefined;
     }, changed: next => {if (active) setLocal(next);}});
     session.current = value;

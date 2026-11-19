@@ -1,16 +1,18 @@
 // The shared session view (Hub #1865, design decisions 3, 4 and 10). Its only runtime import is `status.ts`, which has
-// none of its own, so a browser part can bundle it: the status function, the version-independent view of a session
-// record, each consumer's acknowledgment and read policy, opportunity matching, and the agent-status helper over views.
-// `session.ts` adds `readSession`, which validates a message before it reads it.
+// none of its own, so a browser part can bundle it: the status function, the record builder the core and tests share,
+// each consumer's acknowledgment and read policy, opportunity matching, and the agent-status helper over views. Since
+// the core publishes `session/3.0` (#1865 step 9), a session's view is its record: a browser part reads the records of a
+// copy the core validated when it published them. `session.ts` adds `readSession`, which validates a message first.
 import type {CompanionOpportunity} from './companions.js';
 import type {
-  Attention, AttentionKind, Confidence, Identity, KnownId, Notice, Session30Record, SessionRecord, SessionStatus, StatusClass, Unavailable, WorkReason,
+  Attention, AttentionKind, Confidence, Identity, KnownId, Notice, OutcomeClaim, ReadProvenance, RelationshipsClaim, Session30Record, SessionStatus,
+  StatusClass, Unavailable, WorkClaim, WorkReason,
 } from './families.js';
 import {STATUS_COLORS, type AgentState, type HighestStatus, type HighestStatusOptions} from './status.js';
 
 /**
- * A session as every reader sees it, whichever version of the record carried it. Its members are those of
- * `session/3.0`. A reader switches on `status.class`, and a detail it does not know falls back to the class.
+ * A session as every reader sees it: its `session/3.0` record. A reader switches on `status.class`, and a detail it does
+ * not know falls back to the class.
  */
 export type SessionView = Session30Record;
 /** What the status function reads: the record's turn and its claims. */
@@ -65,34 +67,50 @@ const confidenceOf = (unavailable: readonly Unavailable[], dimension: Unavailabl
   unavailable.some(item => item.dimension === dimension && (item.reason === 'ambiguous' || item.reason === 'lost')) ? 'unconfirmed' : 'confirmed';
 
 /**
- * The view of a `session/2.0` or `2.1` record that its copy already validated (design decision 4). Active work is
- * unconfirmed while the record's freshness is uncertain (reason `deadline`) or it is restart-uncertain (reason
- * `restart`), and while an ambiguous or lost activity entry exists (its reason); silence never makes attention or an
- * outcome uncertain. The children map as `working = active` and `unconfirmed = uncertain`. Ambiguous or lost evidence
- * makes the attention, outcome and relationship claims unconfirmed by their dimensions: attention, read and parent.
- * Every claim takes the record's last evidence time. A record that has not been validated goes through `readSession`.
+ * What a session's `session/3.0` record is built from: its public members, its work state with why running work is
+ * unconfirmed besides its evidence, its attention items, its notices and read evidence, and its counted children. The
+ * core builds every record it publishes from its stored sessions with `buildSession`, and tests build theirs the same way.
  */
-export function sessionView(record: SessionRecord): SessionView {
-  const evidenceAtMs = record.lastEvidenceAtMs;
-  const silence: WorkReason[] = record.restartUncertain ? ['restart'] : record.freshness === 'uncertain' ? ['deadline'] : [];
-  const evidence = record.unavailable.flatMap(({dimension, reason}): WorkReason[] =>
+export type SessionFacts = Pick<Session30Record, 'id' | 'revision' | 'generation' | 'identity' | 'parent' | 'turn' | 'unavailable' | 'ordering' |
+  'observedAtMs' | 'lastEvidenceAtMs' | 'label' | 'title' | 'project' | 'projectId' | 'hostSessionId'> & {
+  work: WorkClaim['state'];
+  /** Why running work is unconfirmed without evidence saying so: its deadline passed, or the core restarted. */
+  unconfirmed?: 'deadline' | 'restart';
+  attention: Attention[];
+  notices: Notice[];
+  read: OutcomeClaim['read'];
+  readReceipt?: ReadProvenance;
+  /** The children whose work is active and confirmed, and those whose work the hub cannot confirm. */
+  children: RelationshipsClaim['children'];
+};
+
+/**
+ * The `session/3.0` record of a session's facts (design decisions 3 and 4), with the status of its claims. Active work is
+ * unconfirmed for its deadline or a restart (one reason, the restart first), and while an ambiguous or lost activity
+ * entry exists (its reason, after any other); work that is not active is never unconfirmed. Ambiguous or lost evidence
+ * makes the attention, outcome and relationship claims unconfirmed by their dimensions: attention, read and parent.
+ * Silence never makes attention or an outcome unconfirmed. Every claim takes the record's last evidence time.
+ */
+export function buildSession(facts: SessionFacts): Session30Record {
+  const {lastEvidenceAtMs: evidenceAtMs, unavailable} = facts;
+  const evidence = unavailable.flatMap(({dimension, reason}): WorkReason[] =>
     dimension === 'activity' && (reason === 'ambiguous' || reason === 'lost') ? [reason] : []);
-  const reasons: WorkReason[] = record.activity === 'active' ? [...silence, ...evidence] : [];
+  const reasons: WorkReason[] = facts.work === 'active' ? [...(facts.unconfirmed === undefined ? [] : [facts.unconfirmed]), ...evidence] : [];
   const claims: SessionClaims = {
-    turn: record.turn,
-    work: {state: record.activity, confidence: reasons.length > 0 ? 'unconfirmed' : 'confirmed', evidenceAtMs, reasons},
-    attention: {items: record.attention, confidence: confidenceOf(record.unavailable, 'attention'), evidenceAtMs},
+    turn: facts.turn,
+    work: {state: facts.work, confidence: reasons.length > 0 ? 'unconfirmed' : 'confirmed', evidenceAtMs, reasons},
+    attention: {items: facts.attention, confidence: confidenceOf(unavailable, 'attention'), evidenceAtMs},
     outcome: {
-      notices: record.notices, read: record.read, ...(record.readReceipt === undefined ? {} : {readReceipt: record.readReceipt}),
-      confidence: confidenceOf(record.unavailable, 'read'), evidenceAtMs,
+      notices: facts.notices, read: facts.read, ...(facts.readReceipt === undefined ? {} : {readReceipt: facts.readReceipt}),
+      confidence: confidenceOf(unavailable, 'read'), evidenceAtMs,
     },
-    relationships: {children: {working: record.children.active, unconfirmed: record.children.uncertain}, confidence: confidenceOf(record.unavailable, 'parent')},
-    unavailable: record.unavailable,
+    relationships: {children: facts.children, confidence: confidenceOf(unavailable, 'parent')},
+    unavailable,
   };
-  const {label, title, project, projectId, hostSessionId} = record;
+  const {label, title, project, projectId, hostSessionId} = facts;
   return {
-    id: record.id, revision: record.revision, generation: record.generation, identity: record.identity, parent: record.parent,
-    status: statusOf(claims), ...claims, ordering: record.ordering, observedAtMs: record.observedAtMs, lastEvidenceAtMs: record.lastEvidenceAtMs,
+    id: facts.id, revision: facts.revision, generation: facts.generation, identity: facts.identity, parent: facts.parent,
+    status: statusOf(claims), ...claims, ordering: facts.ordering, observedAtMs: facts.observedAtMs, lastEvidenceAtMs: facts.lastEvidenceAtMs,
     ...(label === undefined ? {} : {label}), ...(title === undefined ? {} : {title}), ...(project === undefined ? {} : {project}),
     ...(projectId === undefined ? {} : {projectId}), ...(hostSessionId === undefined ? {} : {hostSessionId}),
   };
@@ -145,11 +163,7 @@ export function opportunityMatches(view: SessionView, opportunity: CompanionOppo
   }
 }
 
-/**
- * The agent-status helper over views, which the device readers (LIFX and the Tidbyt tile among them) use since #1865
- * group 3. `status.ts` keeps its helper over records, which no live reader calls any more. The colors and the ranking are
- * `status.ts`'s.
- */
+/** The agent-status helper over views, which every device reader uses. The colors and the state names are `status.ts`'s. */
 export {STATUS_COLORS, type AgentState, type HighestStatus, type HighestStatusOptions};
 export type {Rgb} from './status.js';
 /** A consumer's copy of the session family as views, synced as `status.ts`'s copy is. */

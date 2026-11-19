@@ -1,5 +1,5 @@
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import type {Identity, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Identity, Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {Lifecycle21Observation, ReadReceiptObservation, ReadReceiptQualification} from '@jimmie-potts/event-contracts/v2/read-receipts';
 import {producerSource} from '../hook/producer.js';
 
@@ -21,7 +21,7 @@ export const receiptSource = ({provider, client, hostId, sourceId}: ReceiptFeed)
 export const codexReceiptSource = ({provider, client, hostId, sourceId}: ReceiptFeed): string =>
   producerSource({provider, client, hostId, sourceId, feed: CODEX_RECEIPT_FEED}).replace('/hub-', '/codex-read-');
 /** Equality with this token binds a pane to one owner record; it is never parsed or ordered. */
-export const viewRevision = (record: Pick<SessionRecord, 'revision'>): string => `session-${record.revision}`;
+export const viewRevision = (record: Pick<Session30Record, 'revision'>): string => `session-${record.revision}`;
 
 export function isReadReceipt(observation: Lifecycle21Observation): observation is ReadReceiptObservation {
   return observation.event.kind === 'read-receipt-observed';

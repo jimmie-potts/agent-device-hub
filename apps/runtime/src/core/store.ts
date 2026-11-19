@@ -15,12 +15,16 @@ import {viewRevision} from '../read-receipts/qualification.js';
 // - Each commit also derives the 2.0 messages it publishes and writes them, the published records, the history rows and
 //   the (source, id) of the intake it took, in the commit's own transaction, through the SDK's outbox. History (#782)
 //   keeps every message the core publishes, a state as a compact change event, and what a part records.
+// - A session's `session/3.0` record publishes only when its public meaning changes (#1865 step 9, design decision 5):
+//   a change that only advances private bookkeeping, such as a work observation's progress time, writes the session
+//   row, publishes nothing and adds no history row.
 // - Each save of session rows is timed, and a slow one is recorded (Hub #976; see `SAVE_COST`).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  coreValidator, sessionEntityId, type Identity, type LifecycleObservation, type SessionRecord, type Title,
+  coreValidator, sessionEntityId, type Identity, type LifecycleObservation, type Session30Record, type Title,
 } from '@jimmie-potts/event-contracts/v2/families';
+import {SESSION_SCHEMA} from '@jimmie-potts/event-contracts/v2/session';
 import {
   fullDisk, Outbox, recordLog, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
 } from '@jimmie-potts/sdk';
@@ -29,9 +33,10 @@ import {takeLock, type Lock} from './lock.js';
 import {borrowRuntimeOwnership, type CoreOwnership} from '../runtime-ownership.js';
 import {History, type HistoryEntry, type HistoryRules, type WrittenChange, type OperationStep} from './history.js';
 import {HistoryAlarm, type HistoryDevice} from './history-alarm.js';
-import {REMOVAL_SCHEMA, sessionSchema, changed, project, turnsUncertainAt} from './mapping.js';
+import {REMOVAL_SCHEMA} from './schemas.js';
 import {DEFAULT_CONSUMERS, SESSION_LIMITS, type Consumer, type RetirementGuard, type StoredSession} from './session/model.js';
-import {deadlineOf, transition, type Occurrence, type SessionInput, type TransitionResult} from './session/transition.js';
+import {meaningChanged, publicRecords} from './session/record.js';
+import {deadlineOf, expiryOf, transition, workDeadlineOf, type Occurrence, type SessionInput, type TransitionResult} from './session/transition.js';
 
 export {takeLock, type Lock} from './lock.js';
 
@@ -104,7 +109,7 @@ export type StoreOptions = {
    * Hears the published session records once each open has loaded them, before the start transaction, so parts that keep
    * a copy of the sessions from committed changes start from every stored session, not only those a start republishes.
    */
-  opened?: (records: readonly SessionRecord[]) => void;
+  opened?: (records: readonly Session30Record[]) => void;
   /** Parts' derivers, run in each core change's transaction. */
   derivers?: readonly Deriver[];
   /** Parts' tables, created once the lease is held. */
@@ -137,7 +142,7 @@ export type SessionOutcome = {ok: true; revision: number; outcome: 'applied' | '
 type Plan = {
   /** The revision the commit publishes at, or undefined when it publishes nothing. */
   revision: number | undefined;
-  records: SessionRecord[];
+  records: Session30Record[];
   removed: string[];
   messages: {key: string; draft: Draft<object>}[];
   cause: Cause | undefined;
@@ -183,7 +188,7 @@ export class CoreStore {
   /** The retirement guards, oldest first. */
   #guards: RetirementGuard[] = [];
   /** The published session records, by entity ID. */
-  #records = new Map<string, SessionRecord>();
+  #records = new Map<string, Session30Record>();
   #revision = 0;
   /** How many transactions the store has committed: a transaction that did not commit leaves it unchanged. */
   #commits = 0;
@@ -217,7 +222,7 @@ export class CoreStore {
   }
 
   /** The published session records. */
-  records(): SessionRecord[] {
+  records(): Session30Record[] {
     return [...this.#records.values()];
   }
 
@@ -281,26 +286,23 @@ export class CoreStore {
     }
   }
 
-  /** The next instant a current record turns uncertain, a session expires or a guard lapses, or undefined when none will. */
+  /** The next instant running work's deadline passes, a session expires or a guard lapses, or undefined when none will. */
   nextDue(): number | undefined {
-    const instants = [...this.#records.values()].flatMap(record => turnsUncertainAt(record) ?? []);
-    const deadline = deadlineOf(this.#sessions.values(), this.#guards);
-    if (deadline !== undefined) instants.push(deadline);
-    return instants.length === 0 ? undefined : Math.min(...instants);
+    return deadlineOf(this.#sessions.values(), this.#guards);
   }
 
   /**
    * Commits what has fallen due by now, each in its own core transaction: after an open, the start transaction that
-   * marks running work unconfirmed; the sessions a day without lifecycle evidence expire with the guards a day old; then
-   * each record whose freshness or children changed is published at a new revision. Owners compute freshness at each
-   * message's envelope time and raise the revision first when it changed (MAPPING.md). True when it published. Rejects,
-   * changing nothing more, when the store refuses a commit.
+   * marks running work unconfirmed; the sessions a day without lifecycle evidence expire with the guards a day old;
+   * running work whose deadline passed becomes unconfirmed; then each record whose public meaning differs from the one
+   * last published, as every record of a release before the switch to `session/3.0` does, is published at a new
+   * revision. True when it published. Rejects, changing nothing more, when the store refuses a commit.
    */
   async refresh(): Promise<boolean> {
     if (this.#opened === undefined) return false;
     const before = this.#revision;
     if (!await this.#start()) throw new Error('the core store refused the start transaction');
-    if (await this.#expire() === 'failed') throw new Error('the core store refused the expiry');
+    if (await this.#due() === 'failed') throw new Error('the core store refused a due transition');
     const atMs = this.#options.clock.now();
     const plan = this.#plan(undefined, atMs, undefined);
     if (plan.revision !== undefined) await this.#commit(plan, atMs, () => {});
@@ -327,13 +329,17 @@ export class CoreStore {
     return outcome.ok;
   }
 
-  /** Expires what is due, in its own transaction, as the core does before every observation. */
-  async #expire(): Promise<'published' | 'nothing' | 'failed'> {
-    const due = deadlineOf(this.#sessions.values(), this.#guards);
-    if (due === undefined || due > this.#nowMs()) return 'nothing';
+  /**
+   * Commits what has fallen due, as the core does before every observation: expiry, then the work deadlines, each in its
+   * own transaction (the aging table of design decision 4).
+   */
+  async #due(): Promise<'published' | 'nothing' | 'failed'> {
     const before = this.#revision;
-    const outcome = await this.#change({kind: 'expiry'}, undefined);
-    if (!outcome.ok) return 'failed';
+    const expiry = expiryOf(this.#sessions.values(), this.#guards);
+    if (expiry !== undefined && expiry <= this.#nowMs() && !(await this.#change({kind: 'expiry'}, undefined)).ok) return 'failed';
+    const now = this.#nowMs();
+    if ([...this.#sessions.values()].some(session => (workDeadlineOf(session) ?? Infinity) <= now) &&
+      !(await this.#change({kind: 'deadline'}, undefined)).ok) return 'failed';
     return this.#revision > before ? 'published' : 'nothing';
   }
 
@@ -341,8 +347,9 @@ export class CoreStore {
   async observe(message: Message<LifecycleObservation>): Promise<SessionOutcome> {
     const observation = message.data;
     if (Buffer.byteLength(JSON.stringify(observation)) > SESSION_LIMITS.observationBytes) return {ok: false, code: 'invalid-request'};
-    // Expire before admission, so a freed slot or a fresh record replaces the expired one.
-    if (await this.#expire() === 'failed') return {ok: false, code: 'storage-failed'};
+    // Commit what is due before admission, so a freed slot or a fresh record replaces the expired one, and a work
+    // deadline that passed is not hidden by the observation's own change.
+    if (await this.#due() === 'failed') return {ok: false, code: 'storage-failed'};
     return this.#change({kind: 'observation', observation}, {message, observation});
   }
 
@@ -367,7 +374,7 @@ export class CoreStore {
     return this.#change({kind: 'acknowledge-all', id, noticeId}, {message: command}, completing);
   }
 
-  /** Retires the one approval marker without an attention ID on `turnId`, while the session's evidence is uncertain. */
+  /** Retires the one approval marker without an attention ID on `turnId`, while the session's work claim is unconfirmed. */
   recoverApproval(command: Message<unknown>, id: string, turnId: string): Promise<SessionOutcome> {
     return this.#change({kind: 'recover-approval', id, turnId}, {message: command});
   }
@@ -380,9 +387,11 @@ export class CoreStore {
   async readReceipt(message: Message<ReadReceiptObservation>, qualification: ReadReceiptQualification): Promise<boolean> {
     if (!await this.#start()) throw new Error('the core store refused the start transaction');
     const before = this.#records.get(message.subject), observation = message.data, atMs = this.#options.clock.now();
+    // The stored session's own evidence time, which progress may have advanced since the record was published.
+    const evidenceAtMs = this.#sessions.get(message.subject)?.lastEvidenceAtMs ?? 0;
     if (before === undefined || decideReadReceipt(message, before, qualification).status !== 'eligible' ||
-      observation.observedAtMs <= atMs - TAKEN_LIFECYCLE_MS || before.lastEvidenceAtMs <= atMs - TAKEN_LIFECYCLE_MS) return false;
-    const receipt = observation.event.receipt, previous = before.readReceipt;
+      observation.observedAtMs <= atMs - TAKEN_LIFECYCLE_MS || evidenceAtMs <= atMs - TAKEN_LIFECYCLE_MS) return false;
+    const receipt = observation.event.receipt, previous = before.outcome.readReceipt;
     if (receipt.kind === 'owned-ui') {
       if (receipt.viewRevision !== viewRevision(before)) return false;
     } else {
@@ -439,9 +448,10 @@ export class CoreStore {
   }
 
   /**
-   * What a session change, or a freshness refresh when `result` is undefined, writes and publishes at `atMs`: the
-   * `session-ended` occurrences, then the removals, then every record whose public content changed, then the attention and
-   * turn occurrences, all at one new revision, which is raised only for a change that publishes something.
+   * What a session change, or a refresh when `result` is undefined, writes and publishes at `atMs`: the `session-ended`
+   * occurrences, then the removals, then every record whose public meaning changed, then the attention and turn
+   * occurrences, all at one new revision, which is raised only for a change that publishes something. A change that
+   * publishes nothing still writes its sessions.
    */
   #plan(result: TransitionResult | undefined, atMs: number, cause: Cause | undefined, completing?: Completion): Plan {
     const sessions = new Map(this.#sessions);
@@ -451,10 +461,10 @@ export class CoreStore {
       reasons.set(id, reason);
     }
     for (const session of result?.changed ?? []) sessions.set(session.id, session);
-    const projected = project(sessions.values(), atMs);
-    const updated = [...projected.values()].filter(record => changed(this.#records.get(record.id), record));
-    const removed = [...this.#records.keys()].filter(id => !projected.has(id));
     const revision = this.#revision + 1;
+    const projected = publicRecords(sessions.values(), revision);
+    const records = [...projected.values()].filter(record => meaningChanged(this.#records.get(record.id), record));
+    const removed = [...this.#records.keys()].filter(id => !projected.has(id));
     const draft = ({family, data}: Occurrence): Draft<object> & {subject: string} => occurrence(family, {...data, revision});
     const ended = (result?.ended ?? []).map(draft);
     const occurrences = (result?.occurrences ?? []).map(draft);
@@ -463,9 +473,7 @@ export class CoreStore {
       draft: {kind: 'removal', type: 'org.bunny.session.removed', subject: id, dataschema: REMOVAL_SCHEMA,
         data: {entity: {family: 'session', id}, revision, reason: reasons.get(id) ?? 'expired'}} satisfies Draft<object>,
     }));
-    const publishes = updated.length + removed.length + ended.length + occurrences.length > 0;
-    // The revision follows the ID, as the session family lists it.
-    const records = updated.map(({id, ...rest}): SessionRecord => ({id, revision, ...rest}));
+    const publishes = records.length + removed.length + ended.length + occurrences.length > 0;
     const written = result?.changed ?? [], guards = result?.guards;
     return {
       revision: publishes ? revision : undefined, records, removed, cause, completing,
@@ -558,7 +566,7 @@ export class CoreStore {
       ...(this.#options.log === undefined ? {} : {log: this.#options.log}),
       ...(this.#options.trace === undefined ? {} : {trace: this.#options.trace}),
       ...(this.#options.onError === undefined ? {} : {onError: this.#options.onError}),
-      // Every message of one transaction carries the instant its freshness was computed at.
+      // Every message of one transaction carries the transaction's instant.
       clock: {now: () => this.#frozen ?? this.#options.clock.now()},
     });
     return {outbox, statements, history};
@@ -602,10 +610,12 @@ export class CoreStore {
   #loadCaches(statements: Statements): void {
     const stored = statements.revision.get() as {value: number; commits: number} | undefined;
     const revision = stored?.value ?? 0, commits = stored?.commits ?? 0;
-    const records = new Map<string, SessionRecord>();
+    const records = new Map<string, Session30Record>();
     for (const row of statements.records.all() as {record: string}[]) {
-      const record = JSON.parse(row.record) as SessionRecord;
-      records.set(record.id, record);
+      const record = JSON.parse(row.record) as Session30Record;
+      // A record a release before the switch to `session/3.0` published is not served: the first refresh publishes the
+      // session again as `session/3.0`, and history keeps that change against its last `session/2.x` row.
+      if ('status' in record) records.set(record.id, record);
     }
     const sessions = new Map<string, StoredSession>();
     for (const row of statements.sessions.all() as {session: string}[]) {
@@ -803,8 +813,8 @@ function prepare(db: DatabaseSync): Statements {
 
 const familyOf = (draft: Draft<object>): string => draft.dataschema.slice('https://bunny.invalid/events/'.length).split('/')[0] ?? '';
 
-function stateDraft(record: SessionRecord): Draft<SessionRecord> {
-  return {kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchema(record), data: record};
+function stateDraft(record: Session30Record): Draft<Session30Record> {
+  return {kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: SESSION_SCHEMA, data: record};
 }
 
 /** Each agent occurrence family's message type. */

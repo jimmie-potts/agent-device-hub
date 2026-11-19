@@ -3,8 +3,8 @@ import {createHash} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {AgentOccurrence, OperationRecord, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {readSession, sessionView, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
+import type {AgentOccurrence, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {readSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog,type Cancel,type ModuleScheduler,type StateDraft,type SyncedCopy, Outcome} from '@jimmie-potts/sdk';
 import {LivePublication} from './live-publication.js';
 import {Backoff} from './backoff.js';
@@ -293,10 +293,10 @@ export class AutomationPart implements CorePart {
   publishing(message: Message<unknown>): () => void {return this.#eligibility.publishing(message);}
   publicationEnded(change: CoreChange): void {this.#eligibility.ended(change.messages);}
   /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
-  seed(records: readonly SessionRecord[]): void {
+  seed(records: readonly SessionView[]): void {
     this.#sessions.clear();
-    // The store's own records, which it validated when it committed them.
-    for (const record of records) this.#sessions.set(record.id, sessionView(record));
+    // The store's own `session/3.0` records, which it validated when it committed them: each is its session's view.
+    for (const record of records) this.#sessions.set(record.id, record);
   }
   committed(change: CoreChange): void {
     for (const message of change.messages) {

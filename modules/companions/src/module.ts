@@ -16,7 +16,7 @@ import {createHash} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
   type CompanionSettingsSet, type CompanionState, type SpeechState} from '@jimmie-potts/event-contracts/v2/companions';
-import {coreValidator, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, type ModeState, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {readSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog, Outbox, fullDisk, Outcome, type BunnyModule, type Cancel, type Command, type Configured, type ModuleContext, type ModuleContent, type ModuleContentRequest, type Reply,
   type StateDraft, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
@@ -80,7 +80,7 @@ class Companions {
   #qualification: SpeechQualification | undefined;
   #store: CompanionStore | undefined;
   #outbox: Outbox | undefined;
-  #copy: SyncedCopy<SessionRecord | ModeState> | undefined;
+  #copy: SyncedCopy<Session30Record | ModeState> | undefined;
   #synced = false;
   #closed = false;
   #retryMs = 1000;
@@ -227,7 +227,7 @@ class Companions {
     const prior = this.#copy; this.#copy = undefined; await prior?.close();
     let replacing = false;
     try {
-      const result = await context.sdk.sync<SessionRecord | ModeState>(['session', 'mode'], change => {
+      const result = await context.sdk.sync<Session30Record | ModeState>(['session', 'mode'], change => {
         if (change.type === 'failed') {this.#synced = false; this.#pending.clear(); this.#invalidate(); this.#resync();}
         else {
           if (change.type === 'synced') {replacing = false; if (this.#copy !== undefined) this.#synced = true;}

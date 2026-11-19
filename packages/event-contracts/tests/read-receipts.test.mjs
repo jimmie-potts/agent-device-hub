@@ -4,7 +4,7 @@ import test from 'node:test';
 import {MessageValidator} from '../dist/v2/index.js';
 import {registerCoreFamilies, sessionEntityId} from '../dist/v2/families.js';
 import {decideReadReceipt, READ_RECEIPT_SCHEMA, readReceiptValidator, registerReadReceiptFamily} from '@jimmie-potts/event-contracts/v2/read-receipts';
-import {readSession as viewOf, sessionView} from '../dist/v2/session.js';
+import {buildSession, readSession as viewOf} from '../dist/v2/session.js';
 import {loadSessionCases} from '../dist/v2/session-cases.js';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8')).valid;
@@ -14,29 +14,44 @@ function validator(optIn = true) {
   if (optIn) registerReadReceiptFamily(v);
   return v;
 }
+/** The session/3.0 record a receipt targets, with the claims of a retained session/2.0 record's members. */
+function view(record, work = record.activity) {
+  return buildSession({
+    id: record.id, revision: record.revision, generation: record.generation, identity: record.identity, parent: record.parent, turn: record.turn, work,
+    attention: record.attention, notices: record.notices, read: record.read, ...(record.readReceipt === undefined ? {} : {readReceipt: record.readReceipt}),
+    unavailable: record.unavailable, ordering: record.ordering, observedAtMs: record.observedAtMs, lastEvidenceAtMs: record.lastEvidenceAtMs,
+    children: {working: record.children.active, unconfirmed: record.children.uncertain},
+  });
+}
+/**
+ * A receipt for a finished synthetic session: `record` is its retained session/2.0 form, which the 2.1 schema tests
+ * extend, and `session` its session/3.0 record, which receipts are decided on.
+ */
 function example(provider = 'codex', kind = 'provider-client') {
   const identity = {provider, client: provider === 'codex' ? 'local' : 'code',
     hostId: 'synthetic-host', sourceId: `${provider}-local`, sessionId: 'synthetic-session'};
-  const session = {...structuredClone(fixtures.session.data), identity, read: 'unknown', ordering: {status: 'unknown'}};
-  session.id = sessionEntityId(identity);
+  const record = {...structuredClone(fixtures.session.data), identity, read: 'unknown', ordering: {status: 'unknown'}};
+  record.id = sessionEntityId(identity);
+  const session = view(record);
   const receipt = kind === 'provider-client' ? {kind, client: 'desktop', seenRevision: 'rev-z', acceptedRevision: 'rev-a'} :
     {kind, viewRevision: 'view-1'};
   const message = {...structuredClone(fixtures.lifecycle), source: 'bunny/observer/read-receipts', subject: session.id,
     dataschema: READ_RECEIPT_SCHEMA, data: {
       identity, turn: session.turn, parent: {status: 'unknown'}, observedAtMs: 1791288000000, ordering: {status: 'unknown'},
-      event: {kind: 'read-receipt-observed', generation: session.generation, noticeId: session.notices[0].id, receipt},
+      event: {kind: 'read-receipt-observed', generation: session.generation, noticeId: record.notices[0].id, receipt},
     }};
   const {sessionId: _sessionId, ...feed} = identity;
-  return {message, session, qualification: {source: message.source, feed, kind}};
+  return {message, record, session, qualification: {source: message.source, feed, kind}};
 }
 const ineligible = reason => ({status: 'ineligible', reason});
 
+/** A retained session/2.1 message holding a receipt's provenance. */
 function readSession() {
-  const {message, session} = example('claude', 'owned-ui');
-  session.read = 'read';
-  session.readReceipt = {noticeId: message.data.event.noticeId, observedAtMs: message.data.observedAtMs,
+  const {message, record} = example('claude', 'owned-ui');
+  record.read = 'read';
+  record.readReceipt = {noticeId: message.data.event.noticeId, observedAtMs: message.data.observedAtMs,
     source: message.source, receipt: message.data.event.receipt};
-  return {...structuredClone(fixtures.session), subject: session.id, dataschema: 'https://bunny.invalid/events/session/2.1', data: session};
+  return {...structuredClone(fixtures.session), subject: record.id, dataschema: 'https://bunny.invalid/events/session/2.1', data: record};
 }
 
 test('the shared receipt validator is one sealed validator that decides as an opted-in validator of its own does (Hub #1534)', () => {
@@ -83,13 +98,13 @@ test('session/2.1 refuses positive read without matching, closed root provenance
 test('Codex local and Claude code receipts require explicit registration and retain their identity', () => {
   const optedIn = validator(), ordinary = validator(false);
   for (const provider of ['codex', 'claude']) for (const kind of ['provider-client', 'owned-ui']) {
-    const {message, session} = example(provider, kind);
+    const {message, record} = example(provider, kind);
     assert.equal(optedIn.validate(message).ok, true, `${provider}/${kind}`);
-    assert.deepEqual(message.data.identity, session.identity);
+    assert.deepEqual(message.data.identity, record.identity);
     assert.equal(ordinary.validate(message).error.code, 'unsupported-version');
     message.dataschema = 'https://bunny.invalid/events/lifecycle/2.0';
     assert.equal(optedIn.validate(message).ok, false);
-    const projection = {...structuredClone(fixtures.session), subject: session.id, data: session};
+    const projection = {...structuredClone(fixtures.session), subject: record.id, data: record};
     assert.equal(ordinary.validate(projection).ok, true);
     projection.data.read = 'read';
     assert.equal(ordinary.validate(projection).ok, false, 'session/2.0 still refuses positive read evidence here');
@@ -120,7 +135,7 @@ test('opaque native initial revisions survive a qualified explicit read action',
     message.data.event.receipt.seenRevision = 'initial:synthetic-session';
     message.data.event.receipt.acceptedRevision = '00000000-0000-4000-8000-000000000001';
     assert.equal(validator().validate(message).ok, true);
-    assert.deepEqual(decideReadReceipt(message, session, qualification), {status: 'eligible', noticeId: session.notices[0].id});
+    assert.deepEqual(decideReadReceipt(message, session, qualification), {status: 'eligible', noticeId: session.outcome.notices[0].id});
     assert.equal(message.data.event.receipt.seenRevision, 'initial:synthetic-session');
   }
   const {message} = example('codex', 'owned-ui');
@@ -192,10 +207,10 @@ test('delayed receipts cannot apply after a replacement session, turn or finishe
     s => {s.generation++;},
     s => {s.turn = {status: 'unknown'};},
     s => {s.turn = {status: 'known', id: 'next-turn'};},
-    s => {s.notices = [];},
-    s => {s.notices[0].id = 'a'.repeat(64);},
-    s => {s.notices[0].turn = {status: 'known', id: 'other-turn'};},
-    s => {s.notices[0].turn = {status: 'unknown'};},
+    s => {s.outcome.notices = [];},
+    s => {s.outcome.notices[0].id = 'a'.repeat(64);},
+    s => {s.outcome.notices[0].turn = {status: 'known', id: 'other-turn'};},
+    s => {s.outcome.notices[0].turn = {status: 'unknown'};},
     ...['provider', 'client', 'hostId', 'sourceId', 'sessionId'].map(key => s => {s.identity[key] = 'other';}),
   ];
   for (const change of changes) {
@@ -206,39 +221,39 @@ test('delayed receipts cannot apply after a replacement session, turn or finishe
 
 test('known children and unfinished sessions remain ineligible', () => {
   const {message, session, qualification} = example();
-  for (const activity of ['active', 'unknown']) {
-    assert.deepEqual(decideReadReceipt(message, {...session, activity}, qualification), ineligible('unfinished'));
+  for (const state of ['active', 'unknown']) {
+    assert.deepEqual(decideReadReceipt(message, {...session, work: {...session.work, state}}, qualification), ineligible('unfinished'));
   }
   const child = {...session, parent: {status: 'known', identity: {...session.identity, sessionId: 'parent'}}};
   assert.deepEqual(decideReadReceipt(message, child, qualification), ineligible('child'));
 });
 
-test('eligibility reads the view\'s work state and outcome, which session/3.0 carries instead of activity and notices (Hub #1865)', () => {
+test('eligibility reads the record\'s work state and outcome, which session/3.0 carries instead of activity and notices (Hub #1865)', () => {
   for (const provider of ['codex', 'claude']) {
-    const {message, session, qualification} = example(provider, provider === 'claude' ? 'owned-ui' : 'provider-client');
-    for (const activity of ['idle', 'interrupted', 'active', 'unknown']) {
-      const view = sessionView({...structuredClone(session), activity});
-      assert.equal(view.work.state, activity);
-      assert.equal('activity' in view || 'notices' in view, false, 'the view has only the claims');
-      assert.deepEqual(decideReadReceipt(message, view, qualification),
-        activity === 'idle' || activity === 'interrupted' ? {status: 'eligible', noticeId: session.notices[0].id} : ineligible('unfinished'), activity);
+    const {message, record, qualification} = example(provider, provider === 'claude' ? 'owned-ui' : 'provider-client');
+    for (const state of ['idle', 'interrupted', 'active', 'unknown']) {
+      const target = view(record, state);
+      assert.equal(target.work.state, state);
+      assert.equal('activity' in target || 'notices' in target, false, 'the record has only the claims');
+      assert.deepEqual(decideReadReceipt(message, target, qualification),
+        state === 'idle' || state === 'interrupted' ? {status: 'eligible', noticeId: record.notices[0].id} : ineligible('unfinished'), state);
     }
-    const view = sessionView({...structuredClone(session), activity: 'idle'});
+    const finished = view(record, 'idle');
     for (const change of [
       v => {v.generation++;},
       v => {v.turn = {status: 'known', id: 'next-turn'};},
       v => {v.outcome.notices = [];},
       v => {v.outcome.notices[0].turn = {status: 'known', id: 'other-turn'};},
     ]) {
-      const current = structuredClone(view); change(current);
+      const current = structuredClone(finished); change(current);
       assert.deepEqual(decideReadReceipt(message, current, qualification), ineligible('stale-target'), change.toString());
     }
-    const child = {...view, parent: {status: 'known', identity: {...view.identity, sessionId: 'parent'}}};
+    const child = {...finished, parent: {status: 'known', identity: {...finished.identity, sessionId: 'parent'}}};
     assert.deepEqual(decideReadReceipt(message, child, qualification), ineligible('child'));
   }
 });
 
-test('over the shared case set, a receipt decided on a session\'s view is decided as on its record (Hub #1865)', () => {
+test('over the shared case set, receipts are decided on each session/3.0 record as readSession reads it (Hub #1865)', () => {
   const decisions = {};
   for (const sessionCase of loadSessionCases().cases) for (const check of sessionCase.checks) for (const state of check.messages) {
     const record = state.data, {identity} = record;
@@ -247,16 +262,15 @@ test('over the shared case set, a receipt decided on a session\'s view is decide
     if (kind === undefined || record.turn.status !== 'known') continue;
     const {message, qualification} = example(identity.provider, kind);
     const {sessionId: _sessionId, ...feed} = identity;
-    const view = viewOf(state);
-    assert.ok(view, `${sessionCase.id} ${record.id}`);
-    for (const notice of record.notices.filter(item => item.id !== '')) {
+    const target = viewOf(state);
+    assert.deepEqual(target, record, `${sessionCase.id} ${record.id}`);
+    for (const notice of record.outcome.notices.filter(item => item.id !== '')) {
       const receipt = structuredClone(message);
       receipt.subject = record.id;
       Object.assign(receipt.data, {identity, turn: record.turn});
       Object.assign(receipt.data.event, {generation: record.generation, noticeId: notice.id});
-      const fromRecord = decideReadReceipt(receipt, record, {...qualification, feed});
-      assert.deepEqual(decideReadReceipt(receipt, view, {...qualification, feed}), fromRecord, `${sessionCase.id} ${identity.sessionId}`);
-      const outcome = fromRecord.status === 'ineligible' ? fromRecord.reason : fromRecord.status;
+      const decision = decideReadReceipt(receipt, target, {...qualification, feed});
+      const outcome = decision.status === 'ineligible' ? decision.reason : decision.status;
       decisions[outcome] = (decisions[outcome] ?? 0) + 1;
     }
   }
@@ -271,17 +285,15 @@ function freeze(value) {
   }
   return value;
 }
-test('qualified finished receipts leave freshness, attention, parentage and acknowledgments untouched', () => {
+test('qualified finished receipts leave work confirmation, attention, parentage and acknowledgments untouched', () => {
   for (const provider of ['codex', 'claude']) for (const kind of ['provider-client', 'owned-ui']) {
-    for (const activity of ['idle', 'interrupted']) {
+    for (const state of ['idle', 'interrupted']) {
       const input = example(provider, kind);
-      input.session.activity = activity;
-      input.session.freshness = 'uncertain';
-      input.session.restartUncertain = true;
+      input.session = {...input.session, work: {state, confidence: 'unconfirmed', evidenceAtMs: input.session.work.evidenceAtMs, reasons: ['lost']}};
       const before = structuredClone(input);
       freeze(input);
       assert.deepEqual(decideReadReceipt(input.message, input.session, input.qualification),
-        {status: 'eligible', noticeId: input.session.notices[0].id});
+        {status: 'eligible', noticeId: input.session.outcome.notices[0].id});
       assert.deepEqual(input, before);
     }
   }
