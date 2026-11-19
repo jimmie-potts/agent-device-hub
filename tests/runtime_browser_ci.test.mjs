@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 
-import { ISSUE_TITLE, SUITE, decideRun, journeys, report, runSelect, runSuite } from '../scripts/ci-selection/runtime-browser.mjs';
+import { ISSUE_AUTHOR, ISSUE_TITLE, SUITE, decideRun, journeys, report, runSelect, runSuite } from '../scripts/ci-selection/runtime-browser.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const scripts = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).scripts;
@@ -160,12 +160,16 @@ const failed = (extra = {}) => env({
   GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/heads/main', GITHUB_SERVER_URL: 'https://github.com', GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '2',
   SUITE_RESULT: 'failure', FAILED_JOURNEY: 'controls.browser.ts', ...extra,
 });
+const bot = { login: ISSUE_AUTHOR, type: 'Bot' };
 const filler = (count, from = 1) => Array.from({ length: count }, (_, n) => ({ number: from + n, title: `Other issue ${from + n}` }));
 const facts = journey => `- Commit: ${AFTER}\n- Run: https://github.com/${REPO}/actions/runs/123/attempts/2\n- Failing journey: ${journey}\n`;
 
 test('a failure on main comments on the open issue with the fixed title, found on any page', async () => {
-  // A pull request with the title and a near-miss title are older, so picking either would show here.
-  const page2 = [{ number: 700, title: ISSUE_TITLE, pull_request: {} }, { number: 777, title: ISSUE_TITLE }, { number: 501, title: `${ISSUE_TITLE}!` }, ...filler(3, 200)];
+  // A pull request with the title, a near-miss title and a same-title issue by someone else are older, so picking any
+  // of them would show here.
+  const page2 = [{ number: 700, title: ISSUE_TITLE, pull_request: {}, user: bot }, { number: 777, title: ISSUE_TITLE, user: bot },
+    { number: 501, title: `${ISSUE_TITLE}!`, user: bot }, { number: 450, title: ISSUE_TITLE, user: { login: 'someone-else' } },
+    { number: 440, title: ISSUE_TITLE }, ...filler(3, 200)];
   const { fetch, requests } = github([filler(100), page2]);
   assert.deepEqual(await report({ env: failed(), fetch }), { action: 'commented', number: 777 });
   assert.deepEqual(requests.map(item => `${item.method} ${item.url}`), [
@@ -176,7 +180,7 @@ test('a failure on main comments on the open issue with the fixed title, found o
   assert.deepEqual(requests[2].body, { body: `The runtime dashboard browser suite failed again on main.\n\n${facts('`controls.browser.ts`')}` });
   assert.ok(requests.every(item => item.headers.authorization === `Bearer ${TOKEN}`));
   // Two open issues with the title: the older one collects the comments.
-  const twice = github([[{ number: 812, title: ISSUE_TITLE }, { number: 811, title: ISSUE_TITLE }]]);
+  const twice = github([[{ number: 812, title: ISSUE_TITLE, user: bot }, { number: 811, title: ISSUE_TITLE, user: bot }]]);
   assert.deepEqual(await report({ env: failed(), fetch: twice.fetch }), { action: 'commented', number: 811 });
 });
 
@@ -191,6 +195,14 @@ test('a failure on main opens the issue when none is open, naming only the commi
   assert.equal(create.body.body, 'The runtime dashboard browser suite failed after a push to main. The Runtime dashboard browser suite workflow '
     + '(`.github/workflows/runtime-dashboard-browser.yml`) opened this issue and comments on it while it stays open.\n\n' + facts('`test:art:browser`'));
   assert.equal(create.headers['content-type'], 'application/json');
+});
+
+test('a same-title issue opened by anyone else is ignored, so the workflow opens its own', async () => {
+  assert.equal(ISSUE_AUTHOR, 'github-actions[bot]', 'the login of issues the GITHUB_TOKEN opens');
+  const { fetch, requests } = github([[{ number: 12, title: ISSUE_TITLE, user: { login: 'someone-else', type: 'User' } },
+    { number: 13, title: ISSUE_TITLE, user: { login: 'github-actions', type: 'User' } }]]);
+  assert.deepEqual(await report({ env: failed(), fetch }), { action: 'opened', number: 4242 });
+  assert.equal(`${requests.at(-1).method} ${requests.at(-1).url}`, `POST https://api.github.com/repos/${REPO}/issues`);
 });
 
 test('a failure outside a journey, or an unexpected journey value, records no journey name', async () => {
@@ -215,7 +227,7 @@ test('pull requests, manual runs, other branches and passing suites file nothing
 test('the report fails loudly, without the token, when it cannot read, write or identify the run', async () => {
   for (const [label, fake, pattern] of [
     ['list fails', github([], { status: { [`GET /repos/${REPO}/issues`]: 502 } }), /GET \/repos\/jimmie-potts\/agent-device-hub\/issues failed: HTTP 502/],
-    ['comment fails', github([[{ number: 9, title: ISSUE_TITLE }]], { status: { [`POST /repos/${REPO}/issues/9/comments`]: 403 } }), /HTTP 403/],
+    ['comment fails', github([[{ number: 9, title: ISSUE_TITLE, user: bot }]], { status: { [`POST /repos/${REPO}/issues/9/comments`]: 403 } }), /HTTP 403/],
     ['create fails', github([[]], { status: { [`POST /repos/${REPO}/issues`]: 410 } }), /HTTP 410/],
     ['too many pages', github(Array.from({ length: 50 }, (_, n) => filler(100, n * 100 + 1))), /more than 5000 open issues/],
   ]) {

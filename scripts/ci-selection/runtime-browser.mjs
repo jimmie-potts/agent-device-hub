@@ -23,6 +23,9 @@ const ISSUE_PAGE_LIMIT = 50;
 const SHA = /^[0-9a-f]{40}$/;
 const NO_REVISION = '0'.repeat(40);
 const JOURNEY = /^[A-Za-z0-9][\w.:-]{0,119}$/;
+// The login of issues the workflow's GITHUB_TOKEN opens. Anyone can open an issue with the same title in this public
+// repository, so only the workflow's own issue collects the comments.
+export const ISSUE_AUTHOR = 'github-actions[bot]';
 
 const api = env => env.GITHUB_API_URL || 'https://api.github.com';
 const headers = env => ({
@@ -131,13 +134,17 @@ async function request(env, fetch, method, route, body) {
   return response.json();
 }
 
-/** The open issue with the fixed title, or null. Reads every page of open issues; pull requests are not issues. */
+/**
+ * The open issue with the fixed title that the workflow itself opened, or null. Reads every page of open issues; pull
+ * requests and issues by anyone else are ignored.
+ */
 async function openIssue(env, fetch) {
   const matches = [];
   for (let page = 1; page <= ISSUE_PAGE_LIMIT; page += 1) {
     const items = await request(env, fetch, 'GET', `/repos/${env.GITHUB_REPOSITORY}/issues?state=open&per_page=100&page=${page}`);
     if (!Array.isArray(items)) throw new Error('the open-issue list is not a list');
-    matches.push(...items.filter(item => item && !item.pull_request && item.title === ISSUE_TITLE && Number.isSafeInteger(item.number)));
+    matches.push(...items.filter(item => item && !item.pull_request && item.title === ISSUE_TITLE && item.user?.login === ISSUE_AUTHOR
+      && Number.isSafeInteger(item.number)));
     if (items.length < 100) return matches.length ? matches.reduce((a, b) => (a.number < b.number ? a : b)) : null;
   }
   throw new Error(`more than ${ISSUE_PAGE_LIMIT * 100} open issues; refusing to open a possible duplicate`);
