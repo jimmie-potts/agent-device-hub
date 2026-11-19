@@ -10,13 +10,13 @@ import {FeedError} from '../src/errors.js';
 import {writeJson} from '../src/jsonfile.js';
 import {dashboard} from '../src/line-projection.js';
 import {BASELINE, COLORS, effectPayload, pixelColor, travelDelays, zoneColor, type RenderConfig} from '../src/renderer.js';
-import {declared, identityKey, NOT_SELECTED, presented, semanticStatus, sharedRenderConfig, validateConfig, type Envelope, type Identity,
-  type SharedConfig, type SharedSession, type Snapshot} from '../src/shared-input.js';
+import {declared, identityKey, NOT_SELECTED, presented, semanticStatus, sharedRenderConfig, validateConfig, type Identity,
+  type SharedConfig} from '../src/shared-input.js';
 import {transactWith} from '../src/journal.js';
 import {execute, rows, transaction, type Db, type Row} from '../src/sqlite.js';
 import {accept, clone, configure, copyOf, decode, envelope, evictTask, exists, failed, firstSession, fixture, fixtureJson, framesOf, generation,
-  query, selectionConfig, selectionSetup, selectShared, setMode, sharedState, suite, temporary, test, wallView, write,
-  type WallTask} from './support.js';
+  hubEnvelope, hubSession, query, selectionConfig, selectionSetup, selectShared, setMode, sharedState, suite, temporary, test, wallView, write,
+  type RecordEnvelope, type RecordSession, type RecordSnapshot, type WallTask} from './support.js';
 
 const KEY = identityKey(firstSession(envelope()).identity);
 const throwsFeed = (body: () => unknown, code?: string): void => {
@@ -285,7 +285,9 @@ const reddish = (colors: number[][]): boolean => colors.every(([red = 0, , blue 
 const bluish = (colors: number[][]): boolean => colors.every(([red = 0, , blue = 0]) => blue > red);
 
 suite('RecoveryTest', () => {
-  test('test_owner_recovery_clears_stale_red_without_clearing_other_state', context => {
+  test('test_owner_recovery_clears_a_silent_red_without_clearing_other_state', context => {
+    // Hub #1865: the red follows the hub's status, which silence or a restart never makes uncertain, so it stays current
+    // and its recovery shows the next status at once.
     const {path} = selectionSetup(context);
     const layout: RenderConfig = {...structuredClone(LINE_LAYOUT), _mode: 'work'};
     let value = envelope();
@@ -303,13 +305,13 @@ suite('RecoveryTest', () => {
     accept(path, value, 1001);
     assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['blocked']]);
     assert.ok(reddish(renderedColors(path, layout, 1001)));
-    assert.equal(wallView(path, LINE_LAYOUT, 1001).tasks[0]?.statusEvidence, 'uncertain');
+    assert.equal(wallView(path, LINE_LAYOUT, 1001).tasks[0]?.statusEvidence, 'current');
     value = clone(value);
     value.snapshot.revision = 4;
     firstSession(value).attention = [];
     accept(path, value, 1002);
     assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['unread']]);
-    assert.equal(query(path, 'SELECT * FROM shared_stale').length, 1);
+    assert.deepEqual(query(path, 'SELECT * FROM shared_stale'), []);
     assert.deepEqual(query(path, 'SELECT * FROM comets'), []);
     assert.ok(bluish(renderedColors(path, layout, 1002)));
     const snapshot = write(path, db => dashboard(db, LINE_LAYOUT, 1002));
@@ -331,7 +333,9 @@ suite('RecoveryTest', () => {
     assert.deepEqual(query(path, 'SELECT * FROM comets'), []);
   });
 
-  test('test_uncertain_snapshot_retains_last_color_and_recovery_no_old_comet', context => {
+  test('test_uncertain_snapshot_shows_the_hub_status_at_once_and_no_old_comet', context => {
+    // Hub #1865: the wall retains no earlier color. A finished turn that arrives with restart-uncertain evidence shows
+    // unread at once, and its notice, already known, plays no comet.
     const {path} = selectionSetup(context);
     let value = envelope();
     firstSession(value).activity = 'active';
@@ -343,7 +347,8 @@ suite('RecoveryTest', () => {
     session.restartUncertain = true;
     session.freshness = 'uncertain';
     accept(path, value, 1001);
-    assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['working']]);
+    assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['unread']]);
+    assert.deepEqual(query(path, 'SELECT * FROM shared_stale'), []);
     assert.deepEqual(query(path, 'SELECT * FROM comets'), []);
   });
 
@@ -459,12 +464,12 @@ suite('RecoveryTest', () => {
 suite('ReleaseTest', () => {
   test('test_released_owner_clears_only_nanoleaf_on_evidenced_new_turn', () => {
     // The owner's snapshot is recorded from the released agent-state 3.3.0 owner (recorded/owner-snapshot.json).
-    const recorded = fixtureJson('recorded/owner-snapshot.json') as {snapshot: Snapshot; status: string};
+    const recorded = fixtureJson('recorded/owner-snapshot.json') as {snapshot: RecordSnapshot; status: string};
     const session = recorded.snapshot.sessions[0];
     assert.ok(session !== undefined);
     assert.deepEqual(session.notices[0]?.acknowledgedBy, ['nanoleaf']);
     assert.equal(session.read, 'unknown');
-    assert.equal(semanticStatus(session, 'nanoleaf'), 'working');
+    assert.equal(semanticStatus(hubSession(session)), 'working');
     assert.equal(recorded.status, 'working');
   });
 });
@@ -475,7 +480,7 @@ suite('DeviceSwitchTest', () => {
     writeJson(join(path, 'config.json'), {ip: '192.0.2.1', token: 'fake', panelsToken: 'other', devices: {
       panels: {kind: 'panels', ip: '192.0.2.2', token_ref: 'panelsToken'}}});
     setMode(path, 'quiet', 1000, 'panels');
-    const complete = (revision: number): [Envelope, Envelope] => {
+    const complete = (revision: number): [RecordEnvelope, RecordEnvelope] => {
       const active = envelope();
       const first = firstSession(active);
       const notice = first.notices.pop();
@@ -505,8 +510,8 @@ suite('DeviceSwitchTest', () => {
  * A subagent session as the owner records it: its own identity, the evidenced
  * parent and an unknown turn, so its turn-ended notice never clears on a new turn.
  */
-export function childOf(parent: SharedSession, name: string, activity: SharedSession['activity'] = 'idle',
-  attention: readonly ('question' | 'input' | 'approval')[] = [], fresh = true): SharedSession {
+export function childOf(parent: RecordSession, name: string, activity: RecordSession['activity'] = 'idle',
+  attention: readonly ('question' | 'input' | 'approval')[] = [], fresh = true): RecordSession {
   const child = clone(parent);
   delete child.label;
   delete child.projectId;
@@ -526,7 +531,7 @@ const sameIdentity = (a: Identity, b: Identity): boolean =>
   a.provider === b.provider && a.client === b.client && a.hostId === b.hostId && a.sourceId === b.sourceId && a.sessionId === b.sessionId;
 
 /** Owner-derived child counts, which the released validator requires to match. */
-export function recount(value: Envelope): Envelope {
+export function recount(value: RecordEnvelope): RecordEnvelope {
   const sessions = value.snapshot.sessions;
   for (const session of sessions) {
     const counts = {active: 0, uncertain: 0};
@@ -553,8 +558,8 @@ type Seen = Record<string, [unknown, number | null, unknown]>;
 class Children {
   readonly path: string;
   readonly config: JsonObject;
-  value: Envelope = envelope();
-  root: SharedSession;
+  value: RecordEnvelope = envelope();
+  root: RecordSession;
   readonly key: string;
 
   constructor(context: TestContext) {
@@ -574,7 +579,7 @@ class Children {
     this.root = firstSession(this.value);
   }
 
-  set(index: number, session: SharedSession): void {
+  set(index: number, session: RecordSession): void {
     this.value.snapshot.sessions[index] = session;
   }
 
@@ -744,7 +749,7 @@ suite('ChildSessionTest', () => {
     c.value = recount(c.value);
     c.select();
     assert.deepEqual(c.tasks(1000), {[c.key]: ['blocked', 100, 'current']});
-    const cases: [readonly ('question' | 'input' | 'approval')[], SharedSession['activity'], string][] =
+    const cases: [readonly ('question' | 'input' | 'approval')[], RecordSession['activity'], string][] =
       [[[], 'active', 'working'], [['question'], 'idle', 'question'], [[], 'idle', 'idle']];
     for (const [attention, activity, expected] of cases) {
       c.set(1, childOf(c.root, 'child', activity, attention));
@@ -765,11 +770,11 @@ suite('ChildSessionTest', () => {
     c.value.snapshot.sessions.push(childOf(c.root, 'child', 'idle', ['input']));
     c.advance(1001);
     assert.deepEqual(c.tasks(1001), {[c.key]: ['blocked', 100, 'current']});
-    // Without current contributing evidence the uncertain task keeps its last color steadily.
+    // Hub #1865: silence never makes the hub's attention uncertain, so the alert stays current with no evidence age.
     c.set(1, childOf(c.root, 'child', 'idle', ['input'], false));
     firstSession(c.value).activity = 'idle';
     c.advance(1002);
-    assert.deepEqual(c.tasks(1002), {[c.key]: ['blocked', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1002), {[c.key]: ['blocked', 100, 'current']});
   });
 
   test('test_retained_child_tasks_leave_without_disturbing_other_tasks', context => {
@@ -852,21 +857,20 @@ suite('ChildSessionTest', () => {
     assert.deepEqual(c.tasks(1004), {[c.key]: ['unread', 100, 'current']});
     assert.deepEqual(query(c.path, 'SELECT session FROM comets'), [[c.key]]);
     write(c.path, db => execute(db, 'DELETE FROM comets'));
-    const epoch = query(c.path, 'SELECT started FROM activity');
-    // Uncertain evidence keeps the retained notice and its Line steady. Owner read evidence
-    // or full acknowledgment would clear it (#88); uncertain activity does not.
+    // Hub #1865: work the hub reports without confirming evidence shows working, held steady.
     c.root.freshness = 'uncertain';
     c.root.restartUncertain = true;
     c.root.activity = 'active';
     c.advance(1005);
-    assert.deepEqual(c.tasks(1005), {[c.key]: ['unread', 100, 'uncertain']});
-    // Restart or reconnect replaces the projection from the current snapshot without replaying effects.
+    assert.deepEqual(c.tasks(1005), {[c.key]: ['working', 100, 'uncertain']});
+    // Restart or reconnect replaces the projection from the current snapshot without replaying effects: the unread
+    // task returns with an expired wave epoch.
     c.root.freshness = 'current';
     c.root.restartUncertain = false;
     c.root.activity = 'idle';
     c.advance(1006, true);
     assert.deepEqual(c.tasks(1006), {[c.key]: ['unread', 100, 'current']});
-    assert.deepEqual(query(c.path, 'SELECT started FROM activity'), epoch);
+    assert.deepEqual(query(c.path, 'SELECT started FROM activity'), [[996]]);
     assert.deepEqual(query(c.path, 'SELECT session FROM comets'), []);
     // Explicit acknowledgment of the exact notice for this consumer clears the unread pulse while retaining the task and Line.
     c.root.notices[1]?.acknowledgedBy.push('nanoleaf');
@@ -890,32 +894,33 @@ suite('ChildSessionTest', () => {
     assert.deepEqual(query(c.path, 'SELECT started FROM activity'), [[992]]);
   });
 
-  test('test_uncertain_child_alert_stays_steady_under_a_current_parent', context => {
+  test('test_silent_child_alert_shows_at_once_under_a_current_parent', context => {
+    // Hub #1865: a subagent's alert is the hub's attention, which silence never makes uncertain, so it shows at once,
+    // with a wave when it is new and none at a fresh start.
     const c = new Children(context);
     c.root.notices[0]?.acknowledgedBy.push('nanoleaf');
-    // A newly seen alert is shown, but steadily, when only uncertain evidence supplies it.
     c.value.snapshot.sessions.push(childOf(c.root, 'child', 'idle', ['approval'], false));
     c.value = recount(c.value);
     c.select();
-    assert.deepEqual(c.tasks(1000), {[c.key]: ['blocked', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1000), {[c.key]: ['blocked', 100, 'current']});
     assert.deepEqual(query(c.path, 'SELECT started FROM activity'), [[990]]);
     c.set(1, childOf(c.root, 'other', 'idle', ['question']));
     c.advance(1002);
     assert.deepEqual(c.tasks(1002), {[c.key]: ['question', 100, 'current']});
     c.set(1, childOf(c.root, 'other', 'idle', ['question'], false));
     c.advance(1003);
-    assert.deepEqual(c.tasks(1003), {[c.key]: ['question', 100, 'uncertain']});
-    assert.deepEqual(query(c.path, 'SELECT started FROM activity'), [[992]]);
-    // Before this, a first projection with no retained row also stays steady.
+    assert.deepEqual(c.tasks(1003), {[c.key]: ['question', 100, 'current']});
+    assert.deepEqual(query(c.path, 'SELECT started FROM activity'), [[1002]]);
     c.set(1, childOf(c.root, 'late', 'idle', ['approval'], false));
     write(c.path, db => execute(db, 'DELETE FROM sessions'));
     c.advance(1004);
-    assert.deepEqual(c.tasks(1004), {[c.key]: ['blocked', 100, 'uncertain']});
-    assert.deepEqual(query(c.path, 'SELECT started FROM activity'), [[994]]);
+    assert.deepEqual(c.tasks(1004), {[c.key]: ['blocked', 100, 'current']});
+    assert.deepEqual(query(c.path, 'SELECT started FROM activity'), [[1004]]);
   });
 
-  test('test_uncertain_child_alert_is_not_hidden_behind_a_retained_color', context => {
-    // An uncertain parent's working color is retained; a higher subagent alert still shows steadily.
+  test('test_child_alert_replaces_unconfirmed_work_at_once', context => {
+    // Hub #1865: a parent whose work the hub no longer confirms shows working, held steady; a subagent's alert replaces
+    // it at once, and a higher one escalates it.
     const c = new Children(context);
     c.root.activity = 'active';
     c.value = recount(c.value);
@@ -926,14 +931,14 @@ suite('ChildSessionTest', () => {
     assert.deepEqual(c.tasks(1001), {[c.key]: ['working', 100, 'uncertain']});
     c.value.snapshot.sessions.push(childOf(c.root, 'child', 'idle', ['question'], false));
     c.advance(1002);
-    assert.deepEqual(c.tasks(1002), {[c.key]: ['question', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1002), {[c.key]: ['question', 100, 'current']});
     c.set(1, childOf(c.root, 'child', 'idle', ['question', 'approval'], false));
     c.advance(1003);
-    assert.deepEqual(c.tasks(1003), {[c.key]: ['blocked', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1003), {[c.key]: ['blocked', 100, 'current']});
     assert.deepEqual(query(c.path, 'SELECT session FROM comets'), []);
   });
 
-  test('test_uncertain_child_red_escalates_past_a_current_question', context => {
+  test('test_silent_child_red_escalates_past_a_current_question', context => {
     const c = new Children(context);
     c.root.attention = [{id: {status: 'known', id: 'ask'}, kind: 'question', turn: c.root.turn}];
     c.value = recount(c.value);
@@ -941,22 +946,21 @@ suite('ChildSessionTest', () => {
     assert.deepEqual(c.tasks(1000), {[c.key]: ['question', 100, 'current']});
     c.value.snapshot.sessions.push(childOf(c.root, 'child', 'idle', ['approval'], false));
     c.advance(1001);
-    assert.deepEqual(c.tasks(1001), {[c.key]: ['blocked', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['blocked', 100, 'current']});
   });
 
   test('test_silent_subagent_follows_the_owners_active_count', context => {
+    // Hub #1865: the task shows its root's hub status. Five minutes without subagent evidence, the owner no longer counts
+    // it working, so the task follows the parent, as LIFX and Tidbyt do; the parent's own turns show over it.
     const c = new Children(context);
     c.root.notices[0]?.acknowledgedBy.push('nanoleaf');
     c.value.snapshot.sessions.push(childOf(c.root, 'child', 'active'));
     c.value = recount(c.value);
     c.select();
     assert.deepEqual(c.tasks(1000), {[c.key]: ['working', 100, 'current']});
-    // Five minutes without subagent evidence: the owner no longer counts it active, and the
-    // task follows the parent's current evidence, as the owner's counts and Tidbyt do.
     c.set(1, childOf(c.root, 'child', 'active', [], false));
     c.advance(1001);
     assert.deepEqual(c.tasks(1001), {[c.key]: ['idle', 100, 'current']});
-    // The parent's own turns show normally under the silent subagent.
     c.root.turn = {status: 'known', id: 'turn-2'};
     c.root.activity = 'active';
     c.advance(1002);
@@ -965,16 +969,31 @@ suite('ChildSessionTest', () => {
     c.root.notices.push({id: 'c'.repeat(64), kind: 'turn-ended', turn: {status: 'known', id: 'turn-2'}, acknowledgedBy: []});
     c.advance(1003);
     assert.deepEqual(c.tasks(1003), {[c.key]: ['unread', 100, 'current']});
-    // When the parent is uncertain too, the task keeps its last color steadily. Uncertain
-    // activity cannot change it; read evidence or full acknowledgment would (#88).
+    // The parent's own work, no longer confirmed, shows working, held steady.
     c.root.freshness = 'uncertain';
     c.root.restartUncertain = true;
     c.root.activity = 'active';
     c.advance(1004);
-    assert.deepEqual(c.tasks(1004), {[c.key]: ['unread', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1004), {[c.key]: ['working', 100, 'uncertain']});
   });
 
-  test('test_read_evidence_clears_a_stale_unread_parent_with_a_subagent', context => {
+  test('a finished root with an active subagent silent for five minutes shows unread', context => {
+    // Hub #1865, coordinator decision on PR 1915 review: the hub's status of the root is finished, and its subagent's
+    // unconfirmed work does not hide that turn on the Lines, as it does not on LIFX or Tidbyt.
+    const c = new Children(context);
+    c.value.snapshot.sessions.push(childOf(c.root, 'child', 'active'));
+    c.value = recount(c.value);
+    c.select();
+    assert.deepEqual(c.tasks(1000), {[c.key]: ['working', 100, 'current']}, 'the confirmed subagent makes the root working');
+    c.set(1, childOf(c.root, 'child', 'active', [], false));
+    c.advance(1001);
+    assert.equal(hubSession(c.root).status.class, 'finished');
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['unread', 100, 'current']});
+    assert.deepEqual(query(c.path, 'SELECT * FROM shared_stale'), []);
+  });
+
+  test('test_read_evidence_clears_a_silent_unread_parent_with_a_subagent', context => {
+    // Hub #1865: the parent's silence changes nothing the hub reports; read evidence retires unread at once.
     const c = new Children(context);
     c.value.snapshot.sessions.push(childOf(c.root, 'child', 'idle', [], false));
     c.value = recount(c.value);
@@ -983,13 +1002,15 @@ suite('ChildSessionTest', () => {
     c.root.freshness = 'uncertain';
     c.root.restartUncertain = true;
     c.advance(1001);
-    assert.deepEqual(c.tasks(1001), {[c.key]: ['unread', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['unread', 100, 'current']});
     c.root.read = 'read';
     c.advance(1002);
-    assert.deepEqual(c.tasks(1002), {[c.key]: ['idle', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1002), {[c.key]: ['idle', 100, 'current']});
   });
 
-  test('test_silent_subagent_clears_when_it_returns_idle_under_an_uncertain_parent', context => {
+  test('test_silent_subagent_leaves_its_task_idle_under_a_silent_parent', context => {
+    // Hub #1865: only the root's own unconfirmed work holds a task steady. A silent subagent under a silent, idle parent
+    // leaves the root quiet in the hub's status, so the task turns idle at once and keeps its Line.
     const c = new Children(context);
     c.root.notices[0]?.acknowledgedBy.push('nanoleaf');
     c.root.freshness = 'uncertain';
@@ -998,30 +1019,26 @@ suite('ChildSessionTest', () => {
     c.value = recount(c.value);
     c.select();
     assert.deepEqual(c.tasks(1000), {[c.key]: ['working', 100, 'current']});
-    // Parent and silent subagent both uncertain: the task keeps working steadily.
     c.set(1, childOf(c.root, 'child', 'active', [], false));
     c.advance(1001);
-    assert.deepEqual(c.tasks(1001), {[c.key]: ['working', 100, 'uncertain']});
-    c.advance(1002);
-    assert.deepEqual(c.tasks(1002), {[c.key]: ['working', 100, 'uncertain']});
-    // The subagent's current evidence that it finished clears working while retaining the idle task and its Line.
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['idle', 100, 'current']});
     c.set(1, childOf(c.root, 'child'));
-    c.advance(1003);
-    assert.deepEqual(c.tasks(1003), {[c.key]: ['idle', 100, 'uncertain']});
+    c.advance(1002);
+    assert.deepEqual(c.tasks(1002), {[c.key]: ['idle', 100, 'current']});
   });
 
-  test('test_owner_recovery_clears_an_uncertain_child_approval', context => {
+  test('test_owner_recovery_clears_a_silent_child_approval', context => {
     const c = new Children(context);
     c.root.freshness = 'uncertain';
     c.root.restartUncertain = true;
     c.value.snapshot.sessions.push(childOf(c.root, 'child', 'idle', ['approval'], false));
     c.value = recount(c.value);
     c.select();
-    assert.deepEqual(c.tasks(1000), {[c.key]: ['blocked', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1000), {[c.key]: ['blocked', 100, 'current']});
     const child = c.value.snapshot.sessions[1];
     if (child !== undefined) child.attention = [];
     c.advance(1001);
-    assert.deepEqual(c.tasks(1001), {[c.key]: ['unread', 100, 'uncertain']});
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['unread', 100, 'current']});
   });
 
   test('test_grandchildren_and_ambiguous_parentage', context => {
@@ -1033,9 +1050,12 @@ suite('ChildSessionTest', () => {
     c.value = recount(c.value);
     c.select();
     assert.deepEqual(c.tasks(1000), {[c.key]: ['blocked', 100, 'current']});
+    // Hub #1865: the task shows its root's hub status, whose working children are its own subagents with confirmed
+    // work. A grandchild's work makes its parent subagent working, not the root, so the task stays idle, as the root is
+    // on every other device.
     c.set(2, childOf(child, 'grandchild', 'active'));
     c.advance(1001);
-    assert.deepEqual(c.tasks(1001), {[c.key]: ['working', 100, 'current']});
+    assert.deepEqual(c.tasks(1001), {[c.key]: ['idle', 100, 'current']});
     // Parentage the owner marks ambiguous leaves that session top-level, as in the owner's counts.
     const unsure = childOf(c.root, 'unsure');
     unsure.unavailable.push({kind: 'evidence.unavailable', dimension: 'parent', reason: 'ambiguous'});
@@ -1072,8 +1092,9 @@ suite('ChildSessionTest', () => {
 });
 
 suite('StaleReadEvidenceTest', () => {
-  // #88: owner read evidence and full acknowledgment clear a stale retained unread task.
-  const stale = (path: string, value: Envelope): Envelope => {
+  // #88: owner read evidence and full acknowledgment clear a silent unread task. Since Hub #1865 silence changes nothing
+  // the wall shows except unconfirmed work, which holds steady; every other status is the hub's at once.
+  const stale = (path: string, value: RecordEnvelope): RecordEnvelope => {
     const next = clone(value);
     next.snapshot.revision += 1;
     for (const session of next.snapshot.sessions) {
@@ -1083,7 +1104,7 @@ suite('StaleReadEvidenceTest', () => {
     accept(path, next, 1001);
     return next;
   };
-  const change = (path: string, value: Envelope, instant: number, update: (session: SharedSession) => void, index = 0): Envelope => {
+  const change = (path: string, value: RecordEnvelope, instant: number, update: (session: RecordSession) => void, index = 0): RecordEnvelope => {
     const next = clone(value);
     next.snapshot.revision += 1;
     const session = next.snapshot.sessions[index];
@@ -1091,7 +1112,7 @@ suite('StaleReadEvidenceTest', () => {
     accept(path, next, instant);
     return next;
   };
-  const staleUnread = (path: string): Envelope => {
+  const staleUnread = (path: string): RecordEnvelope => {
     const value = envelope();
     selectShared(path, value);
     const next = stale(path, value);
@@ -1129,7 +1150,8 @@ suite('StaleReadEvidenceTest', () => {
     assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['unread']]);
   });
 
-  test('test_other_stale_statuses_stay_frozen_when_read', context => {
+  test('test_silent_working_follows_the_hubs_next_status', context => {
+    // Hub #1865: the wall retains no frozen status; a read, idle session shows idle at once.
     const {path} = selectionSetup(context);
     const value = envelope();
     firstSession(value).activity = 'active';
@@ -1138,10 +1160,10 @@ suite('StaleReadEvidenceTest', () => {
       session.activity = 'idle';
       session.read = 'read';
     });
-    assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['working']]);
+    assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['idle']]);
   });
 
-  test('test_stale_alerts_stay_frozen_when_resolved_and_read', context => {
+  test('test_silent_alerts_clear_when_resolved_and_read', context => {
     for (const [kind, status] of [['question', 'question'], ['approval', 'blocked']] as const) {
       const {path} = selectionSetup(context);
       const value = envelope();
@@ -1153,17 +1175,19 @@ suite('StaleReadEvidenceTest', () => {
         item.attention = [];
         item.read = 'read';
       });
-      assert.deepEqual(query(path, 'SELECT status FROM sessions'), [[status]], kind);
+      assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['idle']], kind);
     }
   });
 
-  test('test_stale_unread_does_not_become_working_from_uncertain_activity', context => {
+  test('test_silent_unread_turns_working_steadily_from_unconfirmed_work', context => {
+    // Hub #1865: active work the hub does not confirm is working, held steady.
     const {path} = selectionSetup(context);
     change(path, staleUnread(path), 1002, session => {
       session.activity = 'active';
       session.read = 'read';
     });
-    assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['unread']]);
+    assert.deepEqual(query(path, 'SELECT status FROM sessions'), [['working']]);
+    assert.deepEqual(query(path, 'SELECT session FROM shared_stale'), [[KEY]]);
   });
 
   test('test_a_read_stale_task_keeps_its_line_until_evicted', context => {
@@ -1198,8 +1222,8 @@ suite('StaleReadEvidenceTest', () => {
 const CLAUDE = {provider: 'claude', client: 'code', hostId: 'host', sourceId: 'claude-source'};
 
 /** A Claude Code session with its own source identity. */
-function claudeSession(name: string, parent?: SharedSession, activity: SharedSession['activity'] = 'idle',
-  attention: readonly ('question' | 'input' | 'approval')[] = []): SharedSession {
+function claudeSession(name: string, parent?: RecordSession, activity: RecordSession['activity'] = 'idle',
+  attention: readonly ('question' | 'input' | 'approval')[] = []): RecordSession {
   let session = clone(firstSession(envelope()));
   delete session.label;
   if (parent !== undefined) session = childOf(parent, name, activity, attention);
@@ -1266,7 +1290,7 @@ suite('UndeclaredSourceTest', () => {
     const stray = claudeSession('claude-child', c.root, 'idle', ['approval']);
     c.value.snapshot.sessions.push(parent, orphan, stray);
     // Grouping runs only over declared sessions, so such a child would be a missing-parent orphan.
-    const [snapshot, skipped] = declared(c.value.snapshot, c.config as unknown as SharedConfig);
+    const [snapshot, skipped] = declared(hubEnvelope(c.value).snapshot, c.config as unknown as SharedConfig);
     assert.deepEqual(skipped, {sessions: 2, sources: [CLAUDE]});
     const orphanKey = identityKey(orphan.identity);
     const tasks = presented(snapshot);

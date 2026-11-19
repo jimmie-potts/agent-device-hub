@@ -1,11 +1,12 @@
 // The status tile's view and frame (Hub #930). Copied from controllers/tidbyt/src/status.ts at main 627e3fe3 and
-// rewritten for the module's synced copy of the core's `session/2.0` records, through the shared status helper in
-// `@jimmie-potts/event-contracts/v2/status` (#918). It reads the owner's calculated state and never reduces lifecycle
-// events itself. The per-session ranking is the shared `sessionState`; this file only owns the 64x32 display
-// vocabulary (ASK, RUN and DONE) and the layout.
+// rewritten for the module's synced copy of the core's sessions, read through the contracts package's shared session
+// read function (Hub #1865), and the shared status helper over its views. It reads the hub's status and never reduces
+// lifecycle events or keeps a session rule of its own. The per-session ranking is the shared `sessionState`; this file
+// only owns the 64x32 display vocabulary (ASK, RUN and DONE) and the layout.
 import {createHash} from 'node:crypto';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {STATUS_COLORS as SHARED_STATUS_COLORS, sessionState as sharedSessionState, type AgentState, type SessionCopy} from '@jimmie-potts/event-contracts/v2/status';
+import {
+  STATUS_COLORS as SHARED_STATUS_COLORS, sessionState as sharedSessionState, type AgentState, type SessionView, type ViewCopy,
+} from '@jimmie-potts/event-contracts/v2/session-view';
 import {dim, fill, text, textWidth, type Rgb} from './draw.js';
 import {fontText, GLYPH_ADVANCE, GLYPH_HEIGHT} from './font.js';
 import {FRAME_BYTES, FRAME_HEIGHT, FRAME_WIDTH, type Frame} from './render.js';
@@ -32,7 +33,7 @@ export const LABEL_CHARS = 10;
 const RANK: Readonly<Record<StatusState, number>> = {ASK: 0, RUN: 1, DONE: 2};
 const DISPLAY: Readonly<Record<AgentState, StatusState>> = {attention: 'ASK', working: 'RUN', done: 'DONE'};
 
-function sessionState(session: SessionRecord, consumers: readonly string[] | undefined): StatusState | undefined {
+function sessionState(session: SessionView, consumers: readonly string[] | undefined): StatusState | undefined {
   const state = sharedSessionState(session, consumers);
   return state === undefined ? undefined : DISPLAY[state];
 }
@@ -41,7 +42,7 @@ function sessionState(session: SessionRecord, consumers: readonly string[] | und
  * The 1.x identity hash, over the identity's fields as a JSON array, so a session without a label keeps the neutral ID it
  * showed before the cutover. The 2.0 entity ID hashes the same fields as an object, which would show another one.
  */
-function identityHash(session: SessionRecord): string {
+function identityHash(session: SessionView): string {
   const {provider, client, hostId, sourceId, sessionId} = session.identity;
   return createHash('sha256').update(JSON.stringify([provider, client, hostId, sourceId, sessionId])).digest('hex');
 }
@@ -49,13 +50,13 @@ function identityHash(session: SessionRecord): string {
 const given = (value: string | undefined): value is string => value !== undefined && value !== '';
 
 /** The owner-resolved label, then the title, the project's display name and its legacy ID, then a neutral hashed ID. */
-function sessionLabel(session: SessionRecord, hash: string): string {
+function sessionLabel(session: SessionView, hash: string): string {
   const chosen = [session.label?.value, session.title?.value, session.project, session.projectId].find(given);
   const shown = chosen ?? `${session.identity.provider === 'codex' ? 'X' : 'C'}-${hash.slice(0, 4)}`;
   return fontText(shown).slice(0, LABEL_CHARS);
 }
 
-type Shown = {session: SessionRecord; state: StatusState; hash: string};
+type Shown = {session: SessionView; state: StatusState; hash: string};
 
 /** ASK, then RUN, then DONE; within a state, the newest evidence first; then by the identity hash, so the order is stable. */
 function order(a: Shown, b: Shown): number {
@@ -67,10 +68,17 @@ function order(a: Shown, b: Shown): number {
 }
 
 /**
- * The status view of a copy of the sessions. A copy that has not synced, or whose later sync failed, is an unavailable
- * feed: its last rows are marked uncertain, or the frame reads `FEED ?`, and it is never idle.
+ * Whether a shown session's row is uncertain from its own status: `unknown`, or working whose work the hub does not
+ * confirm. A session that waits for the owner or holds a finished turn is never uncertain from silence.
  */
-export function statusView(copy: SessionCopy | undefined, options: StatusViewOptions = {}): StatusView {
+const uncertainStatus = (session: SessionView): boolean =>
+  session.status.class === 'unknown' || (session.status.class === 'working' && session.work.state === 'active' && session.work.confidence === 'unconfirmed');
+
+/**
+ * The status view of a copy of the sessions' views. A copy that has not synced, or whose later sync failed, is an
+ * unavailable feed: its last rows are marked uncertain, or the frame reads `FEED ?`, and it is never idle.
+ */
+export function statusView(copy: ViewCopy | undefined, options: StatusViewOptions = {}): StatusView {
   const unavailable = copy === undefined || !copy.synced;
   const shown = (copy?.sessions ?? [])
     .filter(session => session.parent.status !== 'known')
@@ -79,7 +87,7 @@ export function statusView(copy: SessionCopy | undefined, options: StatusViewOpt
     .sort(order);
   const visible = shown.length > STATUS_ROWS ? shown.slice(0, STATUS_ROWS - 1) : shown;
   const rows: StatusRow[] = visible.map(({session, state, hash}) => ({
-    kind: 'session', state, label: sessionLabel(session, hash), uncertain: unavailable || session.freshness === 'uncertain',
+    kind: 'session', state, label: sessionLabel(session, hash), uncertain: unavailable || uncertainStatus(session),
   }));
   if (shown.length > visible.length) rows.push({kind: 'more', count: shown.length - visible.length});
   if (unavailable && rows.length === 0) rows.push({kind: 'feed'});

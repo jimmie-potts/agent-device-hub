@@ -3,7 +3,7 @@
 // it does not accept. Until the core publishes `session/3.0` it reads `session/2.0` and `session/2.1`; the switch step
 // changes it to `session/3.0` in the same pull request as the core. The view, the status function, each consumer's
 // policy, opportunity matching and the agent-status helper over views live in `session-view.ts`, which a browser part
-// can bundle. The live readers keep `status.ts` in group 1; its helper over records is unchanged.
+// can bundle. Since #1865 group 3 no live reader calls `status.ts`'s helper over records, which stays unchanged.
 import {SCHEMA_BASE} from './errors.js';
 import {coreValidator, type SessionRecord} from './families.js';
 import {sessionView, type SessionView} from './session-view.js';
