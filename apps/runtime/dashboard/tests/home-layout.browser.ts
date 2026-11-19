@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, expect} from 'playwright/test';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {approvalPrompt, approvalResolved} from '../../dist/tests/fixtures/agents.js';
 import {destinationLink} from './navigation-helpers.ts';
@@ -144,12 +144,12 @@ try {
     const faultPage = await faultContext.newPage(), faultSends = changes(faultPage);faultPage.setDefaultTimeout(12_000);
     await faultPage.goto(world.url);await feed(faultPage, 'connected');await faultPage.getByRole('button', {name: 'Edit Home', exact: true}).click();
     await faultPage.getByRole('button', {name: 'Reset', exact: true}).click();
-    await faultPage.route('**/api/sdk/v1/stream', route => route.abort());
+    const releaseFaultStream = await holdDashboardStream(faultPage);
     await faultPage.route('**/api/v2/commands/home-layout-set', async route => {world.dropDashboardStreams();const response = await route.fetch();assert.equal(response.status(), 200);await response.dispose();await route.abort();});
     await faultPage.getByRole('button', {name: 'Done', exact: true}).click();
     await faultPage.locator('.home-layout-feedback').filter({hasText: /Uncertain/}).waitFor();assert.equal(faultSends.length, 1);
     await faultPage.reload();await expect(faultPage.getByRole('button', {name: 'Edit Home', exact: true})).toBeDisabled();assert.equal(faultSends.length, 1);
-    await faultPage.unroute('**/api/sdk/v1/stream');await faultPage.reload();await feed(faultPage, 'connected');
+    releaseFaultStream();await faultPage.reload();await feed(faultPage, 'connected');
     await expect(faultPage.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();assert.equal(faultSends.length, 1, 'reconnect and reload never replay the committed save');
   } finally {await faultContext.close();}
   const output = process.env.DASHBOARD_RECEIPTS;if (output !== undefined) await mkdir(output, {recursive: true});

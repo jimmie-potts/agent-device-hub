@@ -6,7 +6,7 @@ import {PACKET} from '@jimmie-potts/lifx';
 import {apartmentArtPath,parseApartmentModel} from '../../src/apartment-model.ts';
 import {syntheticApartmentArtwork} from '../../dist/tests/fixtures/apartment.js';
 import {furnishedFixture} from './apartment-fixture.ts';
-import {changes,feed,type World} from './harness.ts';
+import {changes,feed,holdDashboardStream,type World} from './harness.ts';
 import {openDirectory} from './navigation-helpers.ts';
 
 declare global {
@@ -122,9 +122,9 @@ export async function apartmentJourney(browser:Browser,world:World):Promise<void
     assert.ok(typeof records==='object'&&records!==null&&'device' in records&&Array.isArray(records.device));
     const target:unknown=records.device.find((device:unknown)=>typeof device==='object'&&device!==null&&'id' in device&&device.id==='lamp-b');
     assert.ok(typeof target==='object'&&target!==null&&'configurationRevision' in target&&'generation' in target);
-    await page.route('**/api/sdk/v1/stream',route=>route.abort());world.dropDashboardStreams();
+    const releaseStream=await holdDashboardStream(page);world.dropDashboardStreams();
     await view.locator('.apartment-selection').getByText('Room assignments are stale.').waitFor();
-    await page.unroute('**/api/sdk/v1/stream');await feed(page,'connected');await card.waitFor();
+    releaseStream();await feed(page,'connected');await card.waitFor();
     await replaceLayout('apartment-reassign',{...layout,assignments:[{room:'studio',device:'lamp-a'},{room:'studio',device:'lamp-b'}]});
     await view.locator('.apartment-selection').getByText('This device is not assigned to this room.').waitFor();
     assert.equal(await card.count(),0);

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
-import {changes,feed,startWorld} from './harness.ts';
+import {changes,feed,startWorld,holdDashboardStream} from './harness.ts';
 import {IDENTITY} from '../../dist/tests/fixtures/agents.js';
 const world=await startWorld(),browser=await chromium.launch({headless:true});
 const output=process.env.DASHBOARD_RECEIPTS;if(output!==undefined)await mkdir(output,{recursive:true});
@@ -26,9 +26,9 @@ try{
  await page.locator('#live-bunny').selectOption('9');await page.locator('#live-unbind').click();await page.getByText(/9 assigned · 1 free spots · 3 waiting · Automatic filling paused/).waitFor();assert.equal(await page.locator('#live-auto').isChecked(),false);
  await page.locator('#live-auto').check();await page.getByText('10 assigned · 0 free spots · 2 waiting',{exact:true}).waitFor();
  const saved=await page.evaluate(()=>localStorage.getItem('bunny.burrow.live-bindings.v2'));
- await page.route('**/api/sdk/v1/stream',route=>route.abort());world.dropDashboardStreams();await page.getByText('Session evidence uncertain',{exact:true}).waitFor();
+ const releaseStream=await holdDashboardStream(page);world.dropDashboardStreams();await page.getByText('Session evidence uncertain',{exact:true}).waitFor();
  assert.equal(await page.evaluate(()=>localStorage.getItem('bunny.burrow.live-bindings.v2')),saved);assert.equal(await page.locator('.agent[data-uncertain=true]').count(),10);
- await page.unroute('**/api/sdk/v1/stream');await feed(page,'connected');await page.getByText('10 assigned · 0 free spots · 2 waiting',{exact:true}).waitFor();
+ releaseStream();await feed(page,'connected');await page.getByText('10 assigned · 0 free spots · 2 waiting',{exact:true}).waitFor();
  await page.locator('#live-mode').selectOption('demo');
  await page.locator('#demo').click();await page.locator('.habitat-root .click-pulse').waitFor();
  const pulse=await page.locator('.habitat-root .click-pulse').evaluate(element=>{const style=getComputedStyle(element);return {position:style.position,width:style.width,border:style.borderTopWidth};});assert.deepEqual(pulse,{position:'fixed',width:'40px',border:'3px'});

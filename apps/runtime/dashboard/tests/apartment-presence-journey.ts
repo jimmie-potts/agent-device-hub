@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import type {Browser,Page,Response} from 'playwright';
 import {syntheticApartmentArtwork} from '../../dist/tests/fixtures/apartment.js';
 import {furnishedFixture} from './apartment-fixture.ts';
-import {changes,feed,type World} from './harness.ts';
+import {changes,feed,holdDashboardStream,type World} from './harness.ts';
 
 const panel=(page:Page)=>page.getByRole('region',{name:'Reported anonymous presence',exact:true});
 const marker=(page:Page)=>page.locator('[data-presence-marker]:visible');
@@ -98,14 +98,14 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     report('presence-a',3,2500);await sensorA.getByText(/Room boundary is ambiguous/).waitFor();
     assert.equal(await page.locator('[data-presence-marker]').count(),1);
     report('presence-a',3,2000);await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]').length===2);
-    await page.route('**/api/sdk/v1/stream',route=>route.abort());world.dropDashboardStreams();
+    const releaseStream=await holdDashboardStream(page);world.dropDashboardStreams();
     await view.getByRole('status').filter({hasText:'Presence reports are last-known.'}).waitFor();
     assert.equal(await page.locator('[data-presence-marker]').count(),0);
     assert.equal(await studio.getAttribute('data-occupancy'),'unknown');
     await sensorA.locator('summary').getByText(/Last-known connection: connected.*Last-known hold unknown/).waitFor();
     await sensorA.getByText(/Last-known source status: connected/).waitFor();
     await capture(page,'presence-last-known.png',true);
-    await page.unroute('**/api/sdk/v1/stream');await feed(page,'connected');
+    releaseStream();await feed(page,'connected');
     await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]').length===2);
     source('presence-a','offline');await sensorA.locator('summary').getByText(/disconnected/).waitFor();
     await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]').length===1);

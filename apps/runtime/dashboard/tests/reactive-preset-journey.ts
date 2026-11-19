@@ -7,7 +7,7 @@ import type {Browser} from 'playwright';
 import {connectRemote} from '@jimmie-potts/sdk';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import {reactiveCatalog, type ReactiveCatalog} from '../../../../modules/nanoleaf/dist/src/music-preset-data.js';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
 
 /** Actual private gateway/core/module, synthetic recipes and simulated controllers only. */
 export async function reactivePresetJourney(browser: Browser): Promise<void> {
@@ -114,10 +114,10 @@ export async function reactivePresetJourney(browser: Browser): Promise<void> {
       data: {target: 'reactive-presets', requestId: 'preset-origin', data: {...external, expectedRevision: second.revision}},
     }); assert.equal(cross.status(), 403); await cross.dispose();
     try {
-      await page.route('**/api/sdk/v1/stream', route => route.abort()); world.dropDashboardStreams();
+      const releaseStream = await holdDashboardStream(page); world.dropDashboardStreams();
       await feed(page, 'reconnecting'); await library.getByText(/Saving is disabled/).waitFor(); await expect(save).toBeDisabled();
       releaseRefresh?.();
-      await page.unroute('**/api/sdk/v1/stream'); await feed(page, 'connected');
+      releaseStream(); await feed(page, 'connected');
       await expect.poll(() => reactiveSyncs).toBe(2);
       await expect(save).toBeDisabled();
       await expect(library.getByLabel('New preset name', {exact: true})).toHaveValue('Retained local draft');
