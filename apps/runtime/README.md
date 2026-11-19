@@ -734,9 +734,10 @@ the action route.
 
 The ordinary `playback/2.1` record and receiver selection rule stay compatible.
 Music-configured owners also publish `playback-position/2.0`, with bounded read
-intervals, local item identity and Music-declared selected outputs. This evidence
-does not qualify recording identity, actual speaker routing or synchronized show
-replay. Connection/process/clock changes retire authority; uncertain controls are
+intervals, local item identity and Music-declared selected outputs. Measured
+Nanoleaf excerpts use this evidence to follow the scoped library item and its
+playback position. Exact audio-version matching and speaker-clock timing remain
+outside that evidence. Connection/process/clock changes retire authority; uncertain controls are
 never resent. Startup, private source order and permission packaging need their
 separate installed qualification. No source test provisions a credential or
 controls the installed Music app.

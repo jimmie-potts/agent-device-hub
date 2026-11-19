@@ -1,3 +1,5 @@
+import {sameMeasuredItem, type MeasuredPosition} from './music-show-position.js';
+import type {MeasuredItem} from './music-show-data.js';
 // The live Music session on a light (#1272, design D4): the core's `music-lighting-work` admitted over the Free base the
 // light shows (music-base.ts, #1614), then run by the device's existing locked worker, as a bounded moment is (moments.ts).
 // The frozen saved preset renders the newest fresh feature from the capture binding (music-input.ts, music-effects.ts).
@@ -43,10 +45,11 @@ export const POLL_MS = 25;
 /** A Music session yields to everything a moment yields to, and to a newer moment. */
 const NEWER_THAN_MUSIC = [...NEWER_CHOICES, 'moment.play'] as const;
 class StopExpired extends Error {}
+export class MeasuredShowRefused extends Refused {}
 
 /** A Start as the journal keeps it: the frozen recipe and layout, the Free base and what it was admitted over. */
 type AdmittedSource = {capture: LightingCapture; presetId: string; recipe: MusicRecipeV1}
-  | {show: LightingShow; timeline: MusicTimeline; acceptedAtMs: number; targetMs: number; ownershipEpoch: number};
+  | {show: LightingShow; timeline: MusicTimeline; acceptedAtMs: number; targetMs: number; ownershipEpoch: number; measured?: {item: MeasuredItem; context: string}};
 export type MusicStart = AdmittedSource & {
   kind: typeof MUSIC_PLAY; requestId: string; generation: string;
   layout: {kind: Kind; elements: Element[]}; freeBase: MusicBase; configurationRevision: number; overrides: Overrides;
@@ -62,7 +65,7 @@ export class MusicFeeds {
   readonly #inputs = new Map<string, {generation: string; input: MusicInput}>();
 
   /** `clock` reads the runtime's one clock for both of the input's readings, so a clock step back retires the input. */
-  constructor(readonly clock: () => MusicClock) {}
+  constructor(readonly clock: () => MusicClock, readonly measuredPosition?: () => MeasuredPosition | undefined) {}
 
   /** Opens a new input for an admitted session, retiring any earlier one of the device's. */
   open(device: string, generation: string, binding: MusicBinding): void {
@@ -110,7 +113,7 @@ const probe = (binding: MusicBinding): MusicSample => ({endpointId: binding.endp
  * The Lines and the NL22 Light Panels take a session alike, each on its own device; only the stream differs.
  */
 export function checkMusicStart(db: Db, device: string, start: StartRequest, layout: LayoutEntry | undefined, nowMs: number,
-  expiresMs: number, ownershipEpoch = 0): AdmittedSource & {layout: MusicStart['layout']} {
+  expiresMs: number, ownershipEpoch = 0, currentPosition?: MeasuredPosition): AdmittedSource & {layout: MusicStart['layout']} {
   const control = controlState(db, device);
   if (control.mode !== 'free' || control.revision !== control.applied) throw new Refused('invalid-state', 'Live Music starts only on a light already in Free.');
   if (held(db, control.revision, device)) throw new Refused('unavailable', 'A device hold waits for an explicit choice.');
@@ -126,14 +129,22 @@ export function checkMusicStart(db: Db, device: string, start: StartRequest, lay
   const frozen = {kind: layout.kind, elements: layout.elements.map(element => ({...element, zones: [...element.zones],
     position: element.position === null ? null : [...element.position]}))};
   if (start.action === 'start-show') {
-    let timeline: MusicTimeline;
+    let version;
     try {
-      timeline = readShowVersion(db, start.showId, start.version).timeline;
+      version = readShowVersion(db, start.showId, start.version);
     } catch (error) {
       if (error instanceof ShowFailure && error.code !== 'revision-conflict') throw new Refused(error.code, 'The saved show version is unavailable.');
       throw error;
     }
-    if (start.positionMs > timeline.durationMs) throw new Refused('invalid-request', 'The start position exceeds this show.');
+    const {timeline} = version;
+    const measured = version.kind === 'measured' ? version.measurement.item : undefined;
+    if (measured !== undefined) {
+      if (currentPosition === undefined || currentPosition.paused) throw new MeasuredShowRefused('unavailable', 'Play the Music item and wait for a fresh position.');
+      if (!sameMeasuredItem(measured, currentPosition.item)) throw new MeasuredShowRefused('invalid-state', 'Music is playing a different library item.');
+      if (currentPosition.positionMs >= timeline.durationMs) throw new MeasuredShowRefused('invalid-state', 'Music is past the last cue of this show.');
+    }
+    const positionMs = measured === undefined ? start.positionMs : currentPosition?.positionMs ?? 0;
+    if (positionMs > timeline.durationMs) throw new Refused('invalid-request', 'The start position exceeds this show.');
     try {
       for (const cue of timeline.cues) prepareMusicCueFrames(cue, frozen);
     } catch (error) {
@@ -143,8 +154,9 @@ export function checkMusicStart(db: Db, device: string, start: StartRequest, lay
       throw error;
     }
     if (nowMs >= expiresMs) throw new Refused('expired', 'The Start expired.');
-    return {layout: frozen, timeline, show: {showId: start.showId, version: start.version, positionMs: start.positionMs, missedCues: 0},
-      acceptedAtMs: nowMs, targetMs: nowMs + start.startDelayMs, ownershipEpoch};
+    return {layout: frozen, timeline, show: {showId: start.showId, version: start.version, positionMs, missedCues: 0},
+      acceptedAtMs: nowMs, targetMs: nowMs + (measured === undefined ? start.startDelayMs : 0), ownershipEpoch,
+      ...(measured === undefined || currentPosition === undefined ? {} : {measured: {item: measured, context: currentPosition.context}})};
   }
   if (recipe === undefined) throw new Refused('not-found', 'No saved reactive preset has this ID.');
   let binding: MusicBinding;
@@ -181,8 +193,8 @@ function liveRecipe(db: Db, presetId: string): MusicRecipeV1 {
  * `music.play`, saves the session as starting and wakes the worker. The caller opens the session's input after commit.
  */
 export function admitMusicStart(db: Db, device: string, start: StartRequest, layout: LayoutEntry | undefined, freeBase: MusicBase,
-  configurationRevision: number, nowMs: number, expiresMs: number, report: Report, ownershipEpoch = 0): MusicStart {
-  const source = checkMusicStart(db, device, start, layout, nowMs, expiresMs, ownershipEpoch);
+  configurationRevision: number, nowMs: number, expiresMs: number, report: Report, ownershipEpoch = 0, currentPosition?: MeasuredPosition): MusicStart {
+  const source = checkMusicStart(db, device, start, layout, nowMs, expiresMs, ownershipEpoch, currentPosition);
   const control = controlState(db, device);
   const command: MusicStart = {kind: MUSIC_PLAY, requestId: start.requestId, generation: start.generation,
     ...source, freeBase, configurationRevision, overrides: overrides(db, device)};
@@ -256,6 +268,7 @@ export type MusicPlayback = {
   input: MusicInput | undefined;
   onInputLoss?: (generation: string, loss: MusicInputLoss | undefined) => void;
   ownershipEpoch?: () => number;
+  measuredPosition?: () => MeasuredPosition | undefined;
   /** Recompute from the current store, including current alert/status. */
   current: () => readonly Indication[];
   /** The first frame took the device. */
@@ -272,7 +285,15 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   const prepared = 'show' in command
     ? new PreparedMusic(command.show, command.timeline, command.layout, command.acceptedAtMs, command.targetMs)
     : undefined;
-  const sourceLost = (): boolean => 'show' in command && (options.ownershipEpoch?.() ?? 0) !== command.ownershipEpoch;
+  const measured = 'show' in command ? command.measured : undefined;
+  const aligned = (): MeasuredPosition | undefined => {
+    const position = options.measuredPosition?.();
+    return measured !== undefined && position?.context === measured.context && sameMeasuredItem(position.item, measured.item) ? position : undefined;
+  };
+  const sourceLost = (): boolean => 'show' in command && ((options.ownershipEpoch?.() ?? 0) !== command.ownershipEpoch
+    || measured !== undefined && aligned() === undefined);
+  const advance = () => measured === undefined ? prepared?.advance(clock().monotonicMs)
+    : prepared?.follow(aligned(), clock().monotonicMs);
   const target = {ip: config.ip ?? '', token: config.token ?? ''};
   // A rejected device request ends the session as a device failure, unless the module is stopping.
   let deviceFailed = false;
@@ -347,7 +368,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     if (stale()) return end('manual', 'none');
     if (alerting(current())) return end('alert', 'none', {kind: 'refused', code: 'invalid-state'});
     if (now() >= row.expires * 1000) return end('expired', 'none', {kind: 'expired'});
-    const position = prepared?.advance(clock().monotonicMs);
+    const position = advance();
     if (sourceLost() || position === 'source-lost') return end('source-lost', 'none', {kind: 'refused', code: 'unavailable'});
     if (position === 'completed') return end('completed', 'none', {kind: 'unchanged'});
     const sample = renderer === undefined ? null : input?.current(clock()) ?? null;
@@ -490,6 +511,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   let lastWrite = now() - FRAME_MS;
   let lastSequence = first?.sample.feature.sequence;
   let reportedMisses = prepared?.evidence.missedCues;
+  let reportedPause = false;
   let lastCheck = now();
   for (;;) {
     // Check before sleeping as well as after. A backwards clock step during I/O must not be hidden by the next wait.
@@ -524,7 +546,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
         return end('source-lost', await restore(undefined));
       }
     }
-    const position = prepared?.advance(clock().monotonicMs);
+    const position = advance();
     if (position === 'source-lost') return end('source-lost', await restore(undefined));
     if (position === 'completed') return end('completed', await restore(undefined));
     if (now() - lastCheck >= EXTERNAL_CHECK_MS) {
@@ -559,7 +581,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
           const request = control.command as MusicTransport;
           const at = now();
           const valid = !stopping() && !stale() && !sourceLost() && stopRow() === undefined && request.generation === generation;
-          const applied = at < control.expires * 1000 && valid && prepared.transport(request, clock().monotonicMs);
+          const applied = measured === undefined && at < control.expires * 1000 && valid && prepared.transport(request, clock().monotonicMs);
           if (applied) {
             setShowProgress(db, device, generation, prepared.evidence, request.action === 'pause-show' ||
               (request.action === 'seek-show' && position === 'paused'), report, true);
@@ -570,9 +592,10 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
         continue;
       }
       const evidence = prepared.evidence;
-      if (evidence.missedCues !== reportedMisses) {
+      if (evidence.missedCues !== reportedMisses || measured !== undefined && reportedPause !== (position === 'paused')) {
+        reportedPause = position === 'paused';
         reportedMisses = evidence.missedCues;
-        await transact(report => {setShowProgress(db, device, generation, evidence, position === 'paused', report);});
+        await transact(report => {setShowProgress(db, device, generation, evidence, reportedPause, report);});
         continue;
       }
       if (position !== 'playing' || now() - lastWrite < FRAME_MS) continue;

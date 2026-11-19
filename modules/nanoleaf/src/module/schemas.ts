@@ -104,14 +104,18 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
     ...closed({requestId: block('requestId'), presetId: REACTIVE_ID, expectedRevision: block('revision'), name: text(REACTIVE_LIMITS.name), recipe: musicRecipe(false)}),
   },
   [schemaOf('nanoleaf-shows')]: {
-    description: 'State: private decorative show heads and immutable named version summaries; no media, device output or execution state.',
+    description: 'State: private show heads and immutable named version summaries; no media, device output or execution state.',
     ...closed({id: {const: SHOW_TARGET}, revision: block('revision'), shows: list(closed({id: SHOW_ID, name: text(SHOW_LIMITS.name), version: SHOW_VERSION,
-      versions: list(closed({version: SHOW_VERSION, versionName: text(SHOW_LIMITS.name)}), 1, SHOW_LIMITS.versions)}), 0, SHOW_LIMITS.shows)}),
+      versions: list(closed({version: SHOW_VERSION, versionName: text(SHOW_LIMITS.name), kind: {const: 'measured'}}, ['kind']), 1, SHOW_LIMITS.versions)}), 0, SHOW_LIMITS.shows)}),
   },
   [schemaOf('nanoleaf-show-save')]: {
-    description: 'Command: save one new immutable decorative version against the expected head; zero creates a show. Metadata only, with no device instruction.',
+    description: 'Command: save one new immutable show version against the expected head; zero creates a show. Metadata only, with no device instruction.',
     ...closed({requestId: block('requestId'), showId: SHOW_ID, expectedVersion: {type: 'integer', minimum: 0, maximum: SHOW_LIMITS.versions},
-      name: text(SHOW_LIMITS.name), versionName: text(SHOW_LIMITS.name), timeline: SHOW_TIMELINE}),
+      name: text(SHOW_LIMITS.name), versionName: text(SHOW_LIMITS.name), timeline: SHOW_TIMELINE,
+      measurement: closed({item: closed({libraryScopeId: block('routingId'), itemId: {type: 'string', pattern: '^[0-9a-fA-F]{1,128}$'}}),
+        analysis: closed({method: {const: 'energy-onset-v1'}, sampleCount: {type: 'integer', minimum: 1, maximum: 18000}})}),
+      measurementProof: {type: 'string', pattern: '^[a-f0-9]{64}$'},
+    }, ['measurement', 'measurementProof']),
   },
   [schemaOf('nanoleaf-wall')]: {
     description: 'State: one device\'s wall map as the wall editor shows it, from saved state only (Hub #844), with whether its last pass failed or no worker runs (`failing`) and whether a hold after an uncertain write stops its writes until an explicit mode command or fresh control (`held`). `selection` is the light\'s last read selection (#1614): whether it is a scene saved on the light, by opaque scene ID, or the light\'s own placeholder, what a live Music ending over it would put back, and when it was read; `musicBase` is what the latest live Music session\'s ending puts back. It never holds a credential, an address, a favorite, a preset name or a scene name.',

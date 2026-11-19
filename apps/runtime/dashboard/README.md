@@ -534,12 +534,14 @@ lighting** stays available for starting, active, stopping and uncertain
 sessions, independent of an unresolved Start. Start and Stop keep separate
 tracked attempts per light, and every disabled control states its reason.
 
-**Start saved show** plays the exact version selected under one light. Save a
-version on the Nanoleaf Shows page, then choose its name and version in Audio.
-Playback begins at the first cue without Music.app measurement or recording
-synchronization. **Stop Music lighting** uses the show's current generation.
-An unsaved draft or storyboard cannot start playback. The light must still be
-on and in Free.
+**Start saved show** plays the immutable version selected for one light.
+Save a version on the Nanoleaf **Saved shows** page, then select it in Audio.
+A decorative show begins at zero and uses its own clock. A measured excerpt
+begins at the current position of the associated Mac Music library item and
+follows observed pause and seek. The light refuses a start when the item or
+position is unavailable, and ends a running excerpt when its playback context
+changes or expires. **Stop Music lighting** uses the active generation. The
+light must be on and in Free. Only a saved version can start playback.
 
 A failed read or a lost connection keeps the last fresh records as **Last
 known**, with controls disabled until a fresh read. A reconnect reads again on its

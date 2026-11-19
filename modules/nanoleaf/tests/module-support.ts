@@ -13,7 +13,7 @@ import type {TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {acknowledgmentOf, InProcessBus, type CommandDraft, type Diagnostic, type ModuleContentRequest, type ModuleManifest, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
+import {acknowledgmentOf, InProcessBus, type CommandDraft, type Diagnostic, type ModuleContentRequest, type ModuleManifest, type Participant, type RequestResult, type Scheduler, type SyncHandler, type SyncOptions} from '@jimmie-potts/sdk';
 import {ModuleHarness, type HarnessRecord, type RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {createNanoleafModule, LINES_ADDRESS, lockFile, nanoleafSchemas, SimulatedNanoleaf, SYNTHETIC_TOKEN, type SimulatedKind} from '../src/index.js';
 
@@ -175,6 +175,7 @@ export type WorldOptions = {
   online?: boolean; section?: unknown; stateDir?: string; devices?: Readonly<Record<string, SimulatedKind>>;
   /** How many messages may wait in one subscription's queue on the world's bus; a fuller one drops, as a slow subscriber's does. */
   maxQueued?: number;
+  playbackSyncBuffer?: number;
   /** Records the module's spans. */
   spans?: RecordedSpans;
   /** The secrets the section names, by name: the synthetic token under `token` by default. */
@@ -211,11 +212,14 @@ export class ModuleWorld {
   readonly #spans: RecordedSpans | undefined;
   readonly #secrets: Readonly<Record<string, string>>;
   readonly #locks: DatabaseSync[] = [];
+  readonly #playbackSyncBuffer: number | undefined;
+  #playbackDeliveryGate: Promise<void> | undefined;
   #content: ModuleManifest['content'];
 
   private constructor(options: WorldOptions) {
     this.stateDir = options.stateDir ?? mkdtempSync(join(tmpdir(), 'nanoleaf-module-'));
     this.device = new SimulatedNanoleaf({online: options.online ?? true, now: () => this.clock.now(), ...(options.devices === undefined ? {} : {devices: options.devices})});
+    this.#playbackSyncBuffer = options.playbackSyncBuffer;
     this.#section = options.section ?? SECTION;
     this.#spans = options.spans;
     this.#secrets = options.secrets ?? {token: SYNTHETIC_TOKEN};
@@ -247,6 +251,13 @@ export class ModuleWorld {
     const module = createNanoleafModule({transport: this.device.request, datagram: this.device.datagram});
     this.#content = module.manifest.content;
     const wrapped: typeof module = {...module, start: context => module.start({...context, sdk: {...context.sdk,
+      sync: <T extends object>(families: readonly string[], handler: SyncHandler<T>, options: SyncOptions) => {
+        if (!families.includes('playback-position') || this.#playbackSyncBuffer === undefined) return context.sdk.sync<T>(families, handler, options);
+        return context.sdk.sync<T>(families, async change => {
+          await handler(change);
+          if (change.type === 'updated') await this.#playbackDeliveryGate;
+        }, {...options, maxBuffered: this.#playbackSyncBuffer});
+      },
       publishMessage: (key, message) => (this.refuseShowPublication && key.includes('nanoleaf-show') || this.refuseReactivePublication && key.includes('nanoleaf-reactive'))
         ? Promise.reject(new Error('synthetic publication failure')) : context.sdk.publishMessage(key, message),
     }})};
@@ -261,6 +272,12 @@ export class ModuleWorld {
   async start(): Promise<void> {
     await this.harness.start();
     await this.advance(0);
+  }
+
+  holdPlaybackDelivery(): () => void {
+    let release = (): void => {};
+    this.#playbackDeliveryGate = new Promise<void>(resolve => {release = resolve;});
+    return () => {this.#playbackDeliveryGate = undefined;release();};
   }
 
   content(ref: string, request: ModuleContentRequest) {
