@@ -263,7 +263,8 @@ it('Desktop metadata title commits preserve real core restart uncertainty and ho
   const hook = fixture('hook');
   const first = await run(context, {modules: [createCoreModule(), hook], stateDir: directory, clock, scheduler: clock.scheduler});
   const identity = desktop('restart'), subject = sessionEntityId(identity);
-  const original = {...lifecycleOf({kind: 'turn-ended'}, clock.now(), {identity, hostSessionId: 'host-session'}), label: {value: 'Owner label', origin: 'user' as const}};
+  // Running work, which the restart leaves unconfirmed (#1865 step 8).
+  const original = {...lifecycleOf({kind: 'turn-started'}, clock.now(), {identity, hostSessionId: 'host-session'}), label: {value: 'Owner label', origin: 'user' as const}};
   await contextOf(hook).sdk.publish(`bunny.event.lifecycle.${subject}`, {kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject, dataschema: 'https://bunny.invalid/events/lifecycle/2.0', data: original});
   for (let n = 0; n < 8; n += 1) await flush();
   await first.runtime.stop();
