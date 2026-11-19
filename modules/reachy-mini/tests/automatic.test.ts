@@ -6,7 +6,7 @@ import {test} from 'node:test';
 import {setTimeout as pause} from 'node:timers/promises';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import type {ModeState,SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId,type ModeState,type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
 import {createReachyModule} from '../src/module.js';
 import {SimulatedReachy} from '../src/simulated.js';
@@ -16,7 +16,7 @@ const until=async(check:()=>boolean):Promise<void>=>{for(let n=0;n<400;n++){if(c
 void test('only opted-in current live attention reacts; repeats, other sessions, Quiet and takeover stay silent',{timeout:10000},async t=>{
  const dir=await mkdtemp(join(tmpdir(),'reachy-auto-')),bus=new InProcessBus(),core=bus.connect('bunny/core'),robot=new SimulatedReachy();
  let mode:ModeState={id:'hub',revision:1,mode:'work',selectedAtMs:Date.now()},state:ReachyState|undefined;
- const session:SessionRecord={id:'session-1',revision:1,generation:1,identity:{provider:'codex',client:'desktop',hostId:'host',sourceId:'desktop',sessionId:'s-1'},parent:{status:'top-level'},turn:{status:'unknown'},activity:'active',attention:[{id:{status:'known',id:'a-1'},kind:'approval',turn:{status:'unknown'}}],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},observedAtMs:Date.now(),lastEvidenceAtMs:Date.now(),freshness:'current',restartUncertain:false,children:{active:0,uncertain:0}};
+ const session:SessionRecord={id:sessionEntityId({provider:'codex',client:'desktop',hostId:'host',sourceId:'desktop',sessionId:'s-1'}),revision:1,generation:1,identity:{provider:'codex',client:'desktop',hostId:'host',sourceId:'desktop',sessionId:'s-1'},parent:{status:'top-level'},turn:{status:'unknown'},activity:'active',attention:[{id:{status:'known',id:'a-1'},kind:'approval',turn:{status:'unknown'}}],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},observedAtMs:Date.now(),lastEvidenceAtMs:Date.now(),freshness:'current',restartUncertain:false,children:{active:0,uncertain:0}};
  await core.serveSync(['session','mode'],()=>({revision:1,states:[{type:'org.bunny.session.updated',subject:session.id,dataschema:'https://bunny.invalid/events/session/2.0',data:session},{type:'org.bunny.mode.updated',subject:'hub',dataschema:'https://bunny.invalid/events/mode/2.0',data:mode}]}));
  await core.subscribe<ReachyState>('bunny.state.reachy-state.*',m=>{state=m.data;});
  let dispatches=0;

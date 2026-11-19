@@ -231,6 +231,9 @@ Never copy or mount a live SQLite file for use by another host.
 
 Preserve existing Nanoleaf device behavior. The shared-input cutover is complete,
 and the runtime port keeps shared input only (#26, owner decision 2026-10-06).
+The Lines follow the hub's shared session status with no session rule of their
+own, so waiting and unread tasks keep their indication until that status
+changes (#1865, owner decision 2026-11-18).
 Retain task/effect epochs, source reservations, unread policy, preferences and
 scenes. Preserve Pixoo's simulator startup, originals, referenced renditions,
 playback recovery and explicit Monitor/Media semantics.

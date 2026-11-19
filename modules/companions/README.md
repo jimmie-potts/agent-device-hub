@@ -20,9 +20,17 @@ The module syncs sessions and Hub mode from `bunny/core`; it owns no second
 lifecycle reducer or mode store. It keeps settings, at most 128 admission records and 4,096 consumed-origin receipts,
 separate live/scenario social allowances, and the last presentation in its own
 private SQLite file. Pending candidates are in memory only: one active and at
-most one waiting in each category. Coding attention has priority and survives
-Work/Quiet. Social scenarios require Free, known non-busy/non-media facts and
-no active attention or snooze. Their shared allowance is three episodes per
+most one waiting in each category. Coding attention survives Work/Quiet. A
+question, input request or approval takes priority over background cards,
+social cards, suggestions and automatic speech for 30 seconds from its own
+evidence instant, on the reporting host's clock as the core's opportunity sets
+it. The window is held in memory from admitted coding-attention opportunities
+and ends early when the attention item clears. The question stays shown on
+every status device afterward. Unrelated progress raises no opportunity, so it
+does not renew the window, and a restart opens none. When the reporting host's
+clock runs ahead of the hub's, or 30 seconds or more behind it, the core raises
+no opportunity, so that question gets no window. Social scenarios require Free,
+known non-busy/non-media facts and no question window or snooze. Their shared allowance is three episodes per
 local day, three hours apart across midnight. The local day uses the host's
 IANA timezone, shown with the controls. Scenario records never consume a live
 social slot or establish household perception.
@@ -31,8 +39,11 @@ Labelled arrival/visit and mixed question/arrival fixtures enter the same
 rules/text/presentation path with identity and location unknown. Ordinary core
 snapshots, duplicates, outbox recovery, reconnect, restart and return to Free
 never create reaction opportunities. A saved card is restored as history.
-Enablement, mute, mode, source freshness, attention/turn and expiry are checked
-after asynchronous waits and immediately before new publication.
+Enablement, mute, mode, the opportunity's match to its session (generation,
+identity, turn, and its attention item or notice) and expiry are checked after
+asynchronous waits and immediately before new publication. The module reads
+sessions through the shared session read function. No session freshness,
+restart or age term refuses a card.
 
 From the root with Node 24, run `npm run build`, `npm run typecheck`,
 `npm run lint:js`, `npm run test:companions:built`, the affected runtime/event
@@ -198,8 +209,10 @@ unknown. Inspecting sends no input to the server and changes no clipboard.
 **Copy coding suggestion** rechecks current source, policy and deadline, then
 copies only on that click. No submission, execution, approval or model occurs.
 
-Reachy enablement and **Turn endings** mute govern this optional preview; coding
-attention takes priority. A changed session revision clears check claims and
+Reachy enablement and **Turn endings** mute govern this optional preview; a
+question's 30-second window takes priority. The page reads that window from the
+live question card Reachy presents. The session's own silence never withdraws a
+suggestion; the evidence's five-minute deadline does. A changed session revision clears check claims and
 observation time. Editing any input retires the preview; changing task,
 repository or commits also resets checks. Newer evidence supersedes older input;
 older or contradictory equal-time claims cannot restore the prior preview.
@@ -428,8 +441,9 @@ worker's question among the findings; neither is retried.
 
 A task runs turn → (question | read tool | proposal → approval → act) → turn
 until the model answers without a tool call. `ask_owner` pauses the task with a
-clarification question. `read_sessions` summarizes the core's synced session
-records (provider, client, label or title, activity, attention, freshness and
+clarification question. `read_sessions` summarizes the core's synced sessions
+through the shared session read function (provider, client, label or title, the
+hub's status class and detail, work state and confirmation, attention and
 evidence age; at most 16 sessions and 4 KiB) and needs no approval; an unsynced
 copy says so instead of pretending the list is current. `set_mode` is a
 proposal: the task pauses with an approval question naming the family

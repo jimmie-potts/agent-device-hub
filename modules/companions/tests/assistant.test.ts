@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {ModeState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionView, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {test, type TestContext} from 'node:test';
 import {fullDisk, InProcessBus, type Participant, type ModuleContext, type RequestResult} from '@jimmie-potts/sdk';
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
@@ -15,7 +16,7 @@ import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
 import type {SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
-import {FIXTURE_TEXT} from '../src/assistant/tools.js';
+import {FIXTURE_TEXT, summarizeSessions} from '../src/assistant/tools.js';
 
 function deferred<T>() {let resolve: (value: T) => void = () => {}; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
 async function until(check: () => boolean): Promise<void> {
@@ -30,9 +31,11 @@ function counted(script?: (input: TurnInput, turn: number, signal: AbortSignal) 
 const reply = (text: string): TurnReply => ({text, calls: [], stop: 'end', units: 10});
 const call = (name: string, input: Record<string, unknown> = {}, id = `call-${name}`): TurnReply => ({text: null, calls: [{id, name, input}], stop: 'tool', units: 10});
 const hub = (revision: number, mode: ModeState['mode'] = 'work'): ModeState => ({id: 'hub', revision, mode, selectedAtMs: 0});
-const session = (label: string): SessionRecord => ({id: 'session-1', revision: 1, generation: 1, identity: {provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'desktop', sessionId: 's-1'},
+const record = (label: string, patch: Partial<SessionRecord> = {}): SessionRecord => ({id: 'session-1', revision: 1, generation: 1, identity: {provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'desktop', sessionId: 's-1'},
   parent: {status: 'top-level'}, turn: {status: 'unknown'}, activity: 'active', attention: [{id: {status: 'known', id: 'a-1'}, kind: 'approval', turn: {status: 'unknown'}}], notices: [], read: 'unknown', unavailable: [],
-  ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, label: {value: label, origin: 'user'}});
+  ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, label: {value: label, origin: 'user'}, ...patch});
+/** A session as the module's synced copy reads it, through the shared read function's view. */
+const session = (label: string, patch: Partial<SessionRecord> = {}): SessionView => sessionView(record(label, patch));
 const accepted = (requestId: string): RequestResult => ({status: 'accepted', requestId, reply: {} as never});
 async function world(context: TestContext, options: CompanionsOptions = {}, adapt: (context: ModuleContext) => ModuleContext = context => context) {
   const spans = new RecordedSpans();
@@ -218,7 +221,7 @@ void test('a command the section does not allow is refused to the model without 
   await until(() => status(w) === 'succeeded');
   assert.equal(sends, 0); assert.equal(task(w)?.toolCalls, 1); assert.equal(task(w)?.modelCalls, 3); assert.equal(task(w)?.questions, 0);
   const saved = await page(w), final = saved.messages.at(-1)?.text ?? '';
-  assert.match(final, /not permitted/); assert.match(final, /PRIVATE-LABEL \(codex, desktop\): active; waiting for approval/);
+  assert.match(final, /not permitted/); assert.match(final, /PRIVATE-LABEL \(codex, desktop\): needs-owner \(approval\); work active, confirmed; waiting for approval/);
   assert.equal(JSON.stringify(w.module().inspectAssistant()).includes('PRIVATE-LABEL'), false);
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-LABEL'), false);
   const unsynced = await world(context, {provider: counted(script), tools: ['read_sessions'], core: () => ({sessions: [session('x')], mode: undefined, synced: false})});
@@ -816,4 +819,18 @@ void test('recent conversation reads page backwards without changing saved state
   assert.ok(!('error' in exactBytes));
   assert.equal(exactBytes.bytes.byteLength, LIMITS.pageBytes);
   assert.equal((await page(exactQuery)).older, null);
+});
+
+void test('read_sessions reports each session\'s shared status class and detail and its work confirmation, newest evidence first', () => {
+  const finished = session('FINISHED', {id: 'session-2', identity: {provider: 'claude', client: 'code', hostId: 'host', sourceId: 'code', sessionId: 's-2'}, activity: 'idle', attention: [],
+    turn: {status: 'known', id: 't-1'}, notices: [{id: 'n-1', kind: 'turn-ended', turn: {status: 'known', id: 't-1'}, acknowledgedBy: []}], lastEvidenceAtMs: 3000});
+  const restarted = session('RESTARTED', {id: 'session-3', attention: [], freshness: 'uncertain', restartUncertain: true, lastEvidenceAtMs: 2000});
+  const text = summarizeSessions({sessions: [session('ASKING'), restarted, finished], mode: undefined, synced: true}, 61_000);
+  assert.deepEqual(text.split('\n'), [
+    '3 coding agent session(s):',
+    '- FINISHED (claude, code): finished (turn-ended); work idle, confirmed; last evidence 58 s ago',
+    '- RESTARTED (codex, desktop): working (unconfirmed); work active, unconfirmed; last evidence 59 s ago',
+    '- ASKING (codex, desktop): needs-owner (approval); work active, confirmed; waiting for approval; last evidence 1 min ago',
+  ]);
+  assert.doesNotMatch(text, /freshness|evidence uncertain/);
 });

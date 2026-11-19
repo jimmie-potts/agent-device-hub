@@ -51,18 +51,17 @@ const pixooChildren = (check, view) => !check.synced || view.relationships.child
   named(check).some(([, other]) => ambiguousParent(other));
 
 // Design decision 10, Nanoleaf: each task is a root and its subagents, read with Nanoleaf's policy. A member that needs
-// the owner with `approval` or `input` blocks; with `question` it asks; a working root or member makes the task
-// working; a root finished for Nanoleaf is unread; otherwise the task is idle. A working task with no confirmed working
-// member holds steady.
+// the owner with `approval` or `input` blocks; with `question` it asks. Otherwise the task shows its root's status:
+// working, unread when finished for Nanoleaf, and otherwise idle. A subagent's work reaches the task only through the
+// root's `subagent` detail, which counts confirmed children, as on every other device. A task working on its root's own
+// unconfirmed work holds steady.
 function nanoleaf(check, root) {
   const members = [root, ...childrenOf(check, root)].map(view => policyView(set, 'nanoleaf', view));
   const [own] = members;
   const needs = detail => members.some(view => view.status.class === 'needs-owner' && detail.includes(view.status.detail));
-  const working = members.some(view => view.status.class === 'working');
-  const task = needs(['approval', 'input']) ? 'blocked' : needs(['question']) ? 'question' : working ? 'working'
+  const task = needs(['approval', 'input']) ? 'blocked' : needs(['question']) ? 'question' : own?.status.class === 'working' ? 'working'
     : own?.status.class === 'finished' ? 'unread' : 'idle';
-  const confirmed = members.some(view => view.status.class === 'working' && view.work.state === 'active' && view.work.confidence === 'confirmed');
-  return {task, steady: task === 'working' && !confirmed};
+  return {task, steady: task === 'working' && own?.work.state === 'active' && own.work.confidence === 'unconfirmed'};
 }
 
 // The dashboard chip from its own policy: the attention kind, working, finished, or otherwise the work state.

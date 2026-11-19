@@ -1,17 +1,25 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import type {CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
 import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {inspectEvidence, observationTime, propose, replacementRefusal, type TaskEvidence, type SuggestionContext} from '../src/frontend/suggestion-model.js';
 const now = Date.parse('2026-10-24T12:00:00Z');
 const session: SessionRecord = {id: 'synthetic-session', revision: 2, generation: 1,
   identity: {provider: 'codex', client: 'cli', hostId: 'synthetic-host', sourceId: 'synthetic-source', sessionId: 'synthetic-native-session'},
   parent: {status: 'unknown'}, turn: {status: 'known', id: 'turn-1'}, activity: 'idle', attention: [], notices: [], read: 'unknown',
   unavailable: [], ordering: {status: 'unknown'}, observedAtMs: now, lastEvidenceAtMs: now, freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}};
+const question = {id: {status: 'known', id: 'question-1'}, kind: 'question', turn: {status: 'known', id: 'turn-9'}} as const;
+const asking: SessionRecord = {...session, id: 'asking-session', identity: {...session.identity, sessionId: 'asking-native-session'}, turn: {status: 'known', id: 'turn-9'},
+  activity: 'active', attention: [question]};
+const asked: CompanionOpportunity = {origin: {id: 'raised-1', source: 'bunny/core', type: 'org.bunny.attention.raised'}, sourceKind: 'coding', context: 'live',
+  category: 'coding-attention', cue: 'question', revision: asking.revision, generation: asking.generation, session: asking.id, identity: asking.identity, turn: asking.turn,
+  attention: question, noticeId: null, evidence: 'lifecycle-metadata', occurredAtMs: null, observedAtMs: now, validUntilMs: now + 30_000, busy: null, media: null, visitor: null, location: null};
 const evidence = (): TaskEvidence => ({task: 'synthetic-task', repository: 'synthetic-repo', base: '', head: 'a'.repeat(40), evidenceHead: 'a'.repeat(40),
   observedAtMs: now, session: structuredClone(session), checks: {tests: {status: 'passed', reference: 'test-receipt-1'}, build: {status: 'passed', reference: 'build-receipt-1'},
     browser: {status: 'unrun', reference: 'browser-plan-1'}, accessibility: {status: 'unknown', reference: ''}}});
 const context = (): SuggestionContext => ({nowMs: now, connected: true, available: true,
-  settings: {enabled: true, muted: [], snoozedUntilMs: 0, timeZone: 'UTC'}, mode: 'work', sessions: [structuredClone(session)]});
+  settings: {enabled: true, muted: [], snoozedUntilMs: 0, timeZone: 'UTC'}, mode: 'work', sessions: [sessionView(session)], priority: []});
 void test('passed tests and an explicitly unrun browser check produce an attributed browser prompt', () => {
   const result = propose(evidence(), context());
   assert.equal(result.kind, 'proposal');
@@ -54,19 +62,30 @@ void test('current policy and exact source snapshot fence copy at its final chec
     ['offline output', ctx => {ctx.available = false;}, 'presentation-unavailable'],
     ['disconnected', ctx => {ctx.connected = false;}, 'core-unavailable'],
     ['unknown mode', ctx => {ctx.mode = undefined;}, 'core-unavailable'],
-    ['other session', ctx => {ctx.sessions = [{...session, id: 'other'}];}, 'stale-session'],
-    ['new source revision', ctx => {ctx.sessions = [{...session, revision: 3}];}, 'session-changed'],
-    ['new generation', ctx => {ctx.sessions = [{...session, generation: 2}];}, 'session-changed'],
-    ['other identity', ctx => {ctx.sessions = [{...session, identity: {...session.identity, sessionId: 'other'}}];}, 'session-changed'],
-    ['next turn', ctx => {ctx.sessions = [{...session, turn: {status: 'known', id: 'turn-2'}}];}, 'session-changed'],
-    ['uncertain source', ctx => {ctx.sessions = [{...session, freshness: 'uncertain'}];}, 'stale-session'],
-    ['restart uncertainty', ctx => {ctx.sessions = [{...session, restartUncertain: true}];}, 'stale-session'],
-    ['stale source', ctx => {ctx.sessions = [{...session, lastEvidenceAtMs: now - 300_000}];}, 'stale-session'],
-    ['attention elsewhere', ctx => {ctx.sessions = [session, {...session, id: 'other', attention: [{id: {status: 'unknown'}, kind: 'approval', turn: {status: 'unknown'}}]}];}, 'attention-priority'],
+    ['other session', ctx => {ctx.sessions = [sessionView({...session, id: 'other'})];}, 'stale-session'],
+    ['new source revision', ctx => {ctx.sessions = [sessionView({...session, revision: 3})];}, 'session-changed'],
+    ['new generation', ctx => {ctx.sessions = [sessionView({...session, generation: 2})];}, 'session-changed'],
+    ['other identity', ctx => {ctx.sessions = [sessionView({...session, identity: {...session.identity, sessionId: 'other'}})];}, 'session-changed'],
+    ['next turn', ctx => {ctx.sessions = [sessionView({...session, turn: {status: 'known', id: 'turn-2'}})];}, 'session-changed'],
+    ['question window', ctx => {ctx.sessions = [sessionView(session), sessionView(asking)]; ctx.priority = [asked];}, 'attention-priority'],
   ];
   for (const [name, change, reason] of patches) {const ctx = context(); change(ctx); assert.deepEqual(propose(evidence(), ctx), {kind: 'gap', reason}, name);}
   for (const mode of ['work', 'free', 'quiet'] as const) assert.equal(propose(evidence(), {...context(), mode}).kind, 'proposal');
   assert.deepEqual(propose(evidence(), {...context(), nowMs: now + 300_000}), {kind: 'gap', reason: 'expired-evidence'});
+});
+
+void test('the session\'s silence never withdraws a suggestion; only its exact match, its evidence window and a question\'s 30 s do', () => {
+  for (const patch of [{freshness: 'uncertain' as const, restartUncertain: true}, {freshness: 'uncertain' as const}, {lastEvidenceAtMs: now - 600_000}]) {
+    const result = propose(evidence(), {...context(), sessions: [sessionView({...session, ...patch})]});
+    assert.equal(result.kind, 'proposal', JSON.stringify(patch));
+    if (result.kind === 'proposal') assert.equal(result.validUntilMs, now + 300_000, 'the evidence window alone bounds the proposal');
+  }
+  const waiting = (at: number): SuggestionContext => ({...context(), nowMs: at, sessions: [sessionView(session), sessionView(asking)], priority: [asked]});
+  assert.deepEqual(propose(evidence(), waiting(now + 29_000)), {kind: 'gap', reason: 'attention-priority'});
+  assert.equal(propose(evidence(), waiting(now + 30_000)).kind, 'proposal', 'the question no longer holds priority at 30 s');
+  assert.equal(propose(evidence(), {...waiting(now + 10_000), sessions: [sessionView(session), sessionView({...asking, attention: []})]}).kind, 'proposal',
+    'an answered question ends its window');
+  assert.equal(propose(evidence(), {...waiting(now + 10_000), priority: []}).kind, 'proposal', 'session attention alone opens no window');
 });
 
 void test('supersession is deterministic, scoped and never fills unknown context', () => {
@@ -79,7 +98,7 @@ void test('supersession is deterministic, scoped and never fills unknown context
   assert.equal(replacementRefusal({...input, task: 'other-task'}, prior), undefined);
   assert.equal(replacementRefusal({...input, session: {...session, id: 'other-session'}}, prior), undefined);
   const unknown = {...input, repository: '', session: {...session, turn: {status: 'unknown'} as const}};
-  const result = propose(unknown, {...context(), sessions: [unknown.session]});
+  const result = propose(unknown, {...context(), sessions: [sessionView({...session, turn: {status: 'unknown'}})]});
   assert.equal(result.kind, 'proposal');
   if (result.kind === 'proposal') {assert.match(result.text, /turn: unknown/); assert.match(result.text, /Repository: unknown; base: unknown/);}
   for (const checks of [{...input.checks, build: {status: 'unrun' as const, reference: ''}}, {...input.checks, browser: {status: 'passed' as const, reference: 'browser-1'}}]) {

@@ -47,13 +47,11 @@ An inbox item SHALL be a failed or uncertain operation, which MAY carry its outc
 
 ### Requirement: Shared agent status
 
-The package SHALL provide `sessionState`, `highestStatus` and `STATUS_COLORS` over the shared session read function's view. A root session SHALL rank attention over working over done, a working child SHALL make its root working, unconfirmed work SHALL NOT hide the owner's state, and read evidence SHALL NOT retire done. Acknowledgments are recorded per consumer, and each caller's policy decides which ones count: by default any consumer's acknowledgment SHALL retire done, as LIFX and Tidbyt use it today, and a caller that names acknowledging consumers SHALL count only theirs. `highestStatus` SHALL read a consumer's copy of the session family and SHALL return `unknown` for no copy, a copy that has not synced or one whose sync failed. Every device SHALL use the same colors as the 1.x helper.
+The package SHALL provide `sessionState`, `highestStatus` and `STATUS_COLORS` over the shared session read function's view. A root session SHALL rank attention over working over done, a working child SHALL make its root working, unconfirmed work SHALL NOT hide the owner's state, and read evidence SHALL NOT retire done. A finished turn's notice SHALL count until a known later turn supersedes it, so missing or conflicting turn evidence never hides a recorded outcome (owner decision, 2026-11-18). Acknowledgments are recorded per consumer, and each caller's policy decides which ones count: by default any consumer's acknowledgment SHALL retire done, as LIFX and Tidbyt use it today, and a caller that names acknowledging consumers SHALL count only theirs. `highestStatus` SHALL read a consumer's copy of the session family and SHALL return `unknown` for no copy, a copy that has not synced or one whose sync failed. Every device SHALL use the same colors as the 1.x helper.
 
 #### Scenario: The copied status cases on session records
-- **WHEN** the 1.x status tests and the shared case set run against the view
+- **WHEN** the 1.x status tests, each notice on its session's own turn, and the shared case set run against the view
 - **THEN** they pass, including the acknowledging-consumer cases, and a copy that has not synced reads as `unknown`
-
-Pending: this scenario waits on the owner's answer on status rule 3 (design.md, "Rule 3 pending the owner"); task 3.7 settles it before any live reader moves onto the view.
 
 #### Scenario: Today's acknowledgment scope
 - **WHEN** Pixoo acknowledges a session's only notice, and one caller names no consumers while another names Nanoleaf
@@ -61,9 +59,11 @@ Pending: this scenario waits on the owner's answer on status rule 3 (design.md, 
 
 #### Scenario: The same colors and ranking as 1.x
 - **WHEN** the shared and 1.x helpers judge the same sessions and their colors are compared
-- **THEN** they agree
+- **THEN** they agree, except that a notice a known later turn superseded is not `done` over the view
 
-Pending: the ranking half of this scenario waits on the owner's answer on status rule 3; task 3.7 settles it before any live reader moves onto the view.
+#### Scenario: A superseded notice
+- **WHEN** a root session's unacknowledged notice belongs to a known turn, and the session's known turn is a later one
+- **THEN** the view shows no `done` for it, LIFX and the Tidbyt tile show none, and a notice whose turn or session turn is unknown still shows `done`
 
 ### Requirement: Versioned session output retains explicit receipt provenance
 

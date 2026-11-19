@@ -17,6 +17,7 @@ import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-p
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
   type CompanionSettingsSet, type CompanionState, type SpeechState} from '@jimmie-potts/event-contracts/v2/companions';
 import {coreValidator, type ModeState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {readSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog, Outbox, fullDisk, Outcome, type BunnyModule, type Cancel, type Command, type Configured, type ModuleContext, type ModuleContent, type ModuleContentRequest, type Reply,
   type StateDraft, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
 import {revision} from './revision.js';
@@ -90,6 +91,11 @@ class Companions {
   #scenarioAttention = false;
   #scenarioGeneration = 0;
   #scenarioUntilMs = 0;
+  /**
+   * The admitted live coding-attention opportunities whose question window may still hold priority (Hub #1865,
+   * decision 2). Only memory holds them, so a restart opens no window and replays nothing.
+   */
+  #priority: CompanionOpportunity[] = [];
   readonly #pending = new Map<CompanionCategory, Candidate>();
   readonly #subscriptions: Subscription[] = [];
   readonly #validator = coreValidator();
@@ -106,7 +112,7 @@ class Companions {
     return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.#qualification))};
   }
   async start(context: ModuleContext): Promise<void> {
-    this.#context = context;
+    this.#context = context; this.#priority = [];
     this.#qualification = readSpeechQualification(context.files());
     const database = context.database();
     this.#store = new CompanionStore(database);
@@ -187,7 +193,7 @@ class Companions {
     }
     const core = options.core ?? (() => {
       const records = this.#copy?.states().map(message => message.data) ?? [];
-      return {sessions: records.filter((record): record is SessionRecord => 'identity' in record), mode: records.find((record): record is ModeState => 'mode' in record), synced: this.#synced};
+      return {sessions: this.#views(), mode: records.find((record): record is ModeState => 'mode' in record), synced: this.#synced};
     });
     const dispatch = options.dispatch ?? ((data: AssistantDispatch, parent: TraceContext) => context.sdk.request('bunny.cmd.assistant-dispatch.assistant',
       {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.0', data},
@@ -204,8 +210,15 @@ class Companions {
     const records = this.#copy?.states().map(message => message.data) ?? [];
     const mode = records.find((record): record is ModeState => 'mode' in record);
     return {nowMs: context.clock.now(), settings: saved.state.settings, mode: mode?.mode, synced: this.#synced,
-      sessions: records.filter((record): record is SessionRecord => 'identity' in record), scenarioAttention: event.context === 'scenario' && this.#scenarioAttention && context.clock.now() < this.#scenarioUntilMs,
+      sessions: this.#views(), priority: this.#priority, scenarioAttention: event.context === 'scenario' && this.#scenarioAttention && context.clock.now() < this.#scenarioUntilMs,
       allowance: saved.allowances[event.context], admissions: saved.admissions, available: !this.#closed && !context.signal.aborted};
+  }
+  /** The synced core copy's sessions as the shared read function reads them (Hub #1865). */
+  #views(): SessionView[] {
+    return (this.#copy?.states() ?? []).flatMap(message => {
+      const view = message.type === 'org.bunny.session.updated' ? readSession(message) : undefined;
+      return view === undefined ? [] : [view];
+    });
   }
   async #follow(): Promise<void> {
     const context = this.#context;
@@ -256,6 +269,14 @@ class Companions {
     if (!store.read().received.includes(key)) {this.#decision('input-unavailable', candidate.parent); return;}
     this.#seen.add(key);
     if (this.#seen.size > 4096) {const oldest = this.#seen.values().next().value; if (oldest !== undefined) this.#seen.delete(oldest);}
+    const {event} = candidate;
+    if (event.context === 'live' && event.category === 'coding-attention') {
+      // The question's window opens with its admitted opportunity. Whatever Reachy shows of it, a background card or
+      // speech waiting now loses to it (Hub #1865, decision 2).
+      const now = this.#context?.clock.now() ?? 0;
+      this.#priority = [...this.#priority.filter(item => item.validUntilMs > now).slice(-31), event];
+      this.#invalidate(candidate.parent);
+    }
     const reason = refusal(candidate.event, this.#policy(candidate.event));
     if (reason !== undefined) {this.#decision(reason, candidate.parent); return;}
     const prior = this.#pending.get(candidate.event.category);

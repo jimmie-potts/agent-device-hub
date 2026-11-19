@@ -1,5 +1,8 @@
-import type {CompanionCard, CompanionCategory, CompanionOpportunity, CompanionSettings, SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
-import type {Mode, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {CompanionCard, CompanionCategory, CompanionOpportunity, CompanionSettings, CompanionState, SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
+import type {Mode} from '@jimmie-potts/event-contracts/v2/families';
+import {opportunityMatches, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+/** The consumer whose notice acknowledgment withdraws a companion card's notice (Hub #1865, design decision 10). */
+export const COMPANIONS_CONSUMER = 'companions';
 /** Shared module-local guards for fixed-text output and deliberate browser previews. */
 export function presentationRefusal(settings: CompanionSettings, category: CompanionCategory, available: boolean): string | undefined {
   if (!settings.enabled) return 'disabled';
@@ -7,30 +10,56 @@ export function presentationRefusal(settings: CompanionSettings, category: Compa
   if (!available) return 'presentation-unavailable';
   return undefined;
 }
-export function staleSession(session: SessionRecord | undefined, nowMs: number): boolean {
-  return session === undefined || session.freshness !== 'current' || session.restartUncertain || nowMs - session.lastEvidenceAtMs >= 300_000;
+
+/** Whether an opportunity is inside its own validity window: from its evidence instant until `validUntilMs`. */
+export const withinWindow = (event: CompanionOpportunity, nowMs: number): boolean =>
+  nowMs >= event.observedAtMs && (event.occurredAtMs === null || nowMs >= event.occurredAtMs) && nowMs < event.validUntilMs;
+
+/**
+ * The 30-second question priority (Hub #1865, decision 2). An admitted coding-attention opportunity holds priority
+ * while it is inside its own validity window, which the core set from the reporting host's clock, and while it still
+ * matches its session, so its attention item is still present. Nothing renews it: later progress raises no opportunity.
+ */
+export function attentionPriority(priority: readonly CompanionOpportunity[], sessions: readonly SessionView[], nowMs: number): boolean {
+  return priority.some(event => event.context === 'live' && event.category === 'coding-attention' && withinWindow(event, nowMs) &&
+    sessions.some(view => opportunityMatches(view, event, COMPANIONS_CONSUMER)));
+}
+/**
+ * The browser's admitted coding-attention opportunity: the live question card Reachy presents. A browser part receives
+ * no opportunities itself, so it takes the one the module admitted and published.
+ */
+export function presentedPriority(state: CompanionState | undefined): CompanionOpportunity[] {
+  const opportunity = state?.presentation?.opportunity;
+  return opportunity !== undefined && opportunity.context === 'live' && opportunity.category === 'coding-attention' ? [opportunity] : [];
 }
 
+/**
+ * What the current checks read: the synced core copy as session views, and the admitted coding-attention opportunities
+ * whose question window may still hold priority.
+ */
 export type CurrentPolicy = {nowMs: number; settings: CompanionSettings; mode: Mode | undefined; synced: boolean;
-  sessions: readonly SessionRecord[]; scenarioAttention: boolean; available: boolean};
+  sessions: readonly SessionView[]; priority: readonly CompanionOpportunity[]; scenarioAttention: boolean; available: boolean};
 const same = (left: unknown, right: unknown): boolean => JSON.stringify(left) === JSON.stringify(right);
 
-/** Current evidence checks shared by module admission and the browser's final speech check. */
+/**
+ * Current evidence checks shared by module admission and the browser's final speech check. A live opportunity must
+ * still match its session. No session freshness, restart or age term refuses it (Hub #1865).
+ */
 export function currentRefusal(event: CompanionOpportunity, policy: CurrentPolicy): string | undefined {
   const {nowMs, settings} = policy;
   const presentation = presentationRefusal(settings, event.category, policy.available);
   if (presentation !== undefined) return presentation;
-  if (nowMs < event.observedAtMs || (event.occurredAtMs !== null && nowMs < event.occurredAtMs) || nowMs >= event.validUntilMs) return 'expired';
+  if (!withinWindow(event, nowMs)) return 'expired';
   if (!policy.synced || policy.mode === undefined) return 'core-unavailable';
   if (event.context === 'live') {
-    const session = policy.sessions.find(record => record.id === event.session);
-    if (session === undefined || staleSession(session, nowMs)) return 'stale-source';
+    const session = policy.sessions.find(view => view.id === event.session);
+    if (session === undefined) return 'stale-source';
     if (session.generation !== event.generation || session.revision < event.revision || !same(session.identity, event.identity) || !same(session.turn, event.turn)) return 'obsolete-turn';
     if ((event.turn.status === 'unknown' || event.attention?.id.status === 'unknown') && session.revision !== event.revision) return 'source-changed';
-    if (event.category === 'coding-attention' && !session.attention.some(attention => same(attention, event.attention))) return 'attention-cleared';
-    if (event.category === 'coding-notice' && (event.noticeId === null || !session.notices.some(notice => notice.id === event.noticeId))) return 'obsolete-turn';
+    if (event.category === 'coding-attention' && !session.attention.items.some(attention => same(attention, event.attention))) return 'attention-cleared';
+    if (!opportunityMatches(session, event, COMPANIONS_CONSUMER)) return 'obsolete-turn';
   }
-  const attention = policy.scenarioAttention || policy.sessions.some(session => session.freshness === 'current' && session.attention.length > 0);
+  const attention = policy.scenarioAttention || attentionPriority(policy.priority, policy.sessions, nowMs);
   if (event.category !== 'coding-attention' && attention) return 'attention-priority';
   if (event.category === 'simulated-social') {
     if (policy.mode !== 'free') return 'restrictive-mode';

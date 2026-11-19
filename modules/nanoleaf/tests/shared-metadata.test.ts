@@ -7,17 +7,17 @@ import type {JsonObject} from '../src/compat.js';
 import {withState} from '../src/database.js';
 import * as edits from '../src/edits.js';
 import {allocate, fallbackTitle, lineId, taskProjects} from '../src/project-map.js';
-import {identityKey, SOURCE, type Envelope, type SharedSession} from '../src/shared-input.js';
+import {identityKey, SOURCE} from '../src/shared-input.js';
 import {execute, type Row} from '../src/sqlite.js';
-import {accept, clone, configure, envelope, firstSession, query, selectionSetup, selectShared, suite, test, wallView,
+import {accept, clone, configure, envelope, firstSession, query, selectionSetup, selectShared, suite, test, wallView, type RecordEnvelope, type RecordSession,
   write} from './support.js';
 
 /** SharedMetadataTest.setUp: the selection fixture, Codex metadata files and their paths in the configuration. */
 class Metadata {
   readonly path: string;
   readonly config: JsonObject;
-  value: Envelope = envelope();
-  session: SharedSession;
+  value: RecordEnvelope = envelope();
+  session: RecordSession;
   readonly sid: string;
   key: string;
   readonly metadataPath: string;

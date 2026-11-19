@@ -92,7 +92,9 @@ export class CompanionPart implements CorePart {
       const data = message.data, record = this.#sessions.get(data.session);
       const occurredAtMs = data.occurredAtMs ?? null;
       const at = Math.min(data.observedAtMs, occurredAtMs ?? data.observedAtMs);
-      if (record === undefined || record.freshness !== 'current' || record.restartUncertain || data.observedAtMs > core.clock.now() || (occurredAtMs !== null && occurredAtMs > core.clock.now()) || core.clock.now() >= at + OPPORTUNITY_TTL_MS) return;
+      // The window keeps the reporting host's clock (Hub #1865, decision 2): an instant after the hub's now, or one 30
+      // seconds or more before it, raises nothing. Unconfirmed work, a restart or silence never withholds it.
+      if (record === undefined || data.observedAtMs > core.clock.now() || (occurredAtMs !== null && occurredAtMs > core.clock.now()) || core.clock.now() >= at + OPPORTUNITY_TTL_MS) return;
       const attention = message.type === 'org.bunny.attention.raised' ? (data as AttentionRaised).attention : null;
       const opportunity: CompanionOpportunity = {
         origin: {id: message.id, source: message.source, type: message.type}, sourceKind: 'coding', context: 'live',

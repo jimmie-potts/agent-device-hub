@@ -1,6 +1,8 @@
 import React, {useEffect, useRef, useState} from 'react';
 import type {CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendContext} from '@jimmie-potts/sdk/frontend';
+import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import {presentedPriority} from '../presentation-policy.js';
 import {checkNames, inspectEvidence, observationTime, propose, type CheckName, type CheckResult, type CheckStatus, type TaskEvidence, type SuggestionContext} from './suggestion-model.js';
 
 const emptyChecks = (): Record<CheckName, CheckResult> => ({tests: {status: 'unknown', reference: ''}, build: {status: 'unknown', reference: ''},
@@ -13,7 +15,7 @@ const reasons: Record<string, string> = {
   'task-identity-required': 'Name one task. Keep task and repository text within the form bounds.',
   'matching-head-required': 'Supply matching current and evidence head commits (40 lowercase hex characters). A supplied base must also be a full commit.',
   'expired-evidence': 'Evidence must have an actual observation time within the last five minutes, never in the future.',
-  'stale-session': 'The selected session is unavailable or stale.', 'session-changed': 'The selected session changed. Inspect fresh evidence for its current turn.',
+  'stale-session': 'The selected session is no longer in the current session list.', 'session-changed': 'The selected session changed. Inspect fresh evidence for its current turn.',
   'attention-priority': 'A coding attention request takes priority. Review it on Home.',
   'unsupported-check-claim': 'Use supported statuses and a reference for each passed, failed or skipped check.',
   'no-supported-next-check': 'No supported next check follows from this evidence. A turn ending alone proves no result.',
@@ -36,15 +38,16 @@ export function CodingSuggestions({context, state, live}: {context: FrontendCont
     if (connected && synced) return;
     setAccepted(undefined); setDraft(blank()); setSelected(''); prior.current = undefined; setMessage('');
   }, [connected, synced]);
-  const sessions = context.core?.sessions ?? [];
-  const session = sessions.find(record => record.id === selected);
+  const sessions = (context.core?.sessions ?? []).map(sessionView);
+  const session = sessions.find(view => view.id === selected);
   useEffect(() => {
     setDraft(previous => ({...previous, checks: emptyChecks(), observed: ''}));
     setAccepted(undefined);
     if (selected !== '') setMessage('Session context changed. Supply results for the current session revision.');
   }, [selected, session?.revision, session?.generation]);
   const mode = context.core?.mode;
-  const policy = (): SuggestionContext => ({nowMs: Date.now(), connected: connected && synced, available: live && state.availability === 'available', settings: state.settings, mode, sessions});
+  const policy = (): SuggestionContext => ({nowMs: Date.now(), connected: connected && synced, available: live && state.availability === 'available', settings: state.settings, mode, sessions,
+    priority: presentedPriority(state)});
   const result = accepted === undefined ? undefined : propose(accepted, policy());
   const expiresAt = result?.kind === 'proposal' ? result.validUntilMs : undefined;
   useEffect(() => {
@@ -60,7 +63,8 @@ export function CodingSuggestions({context, state, live}: {context: FrontendCont
   const inspect = (): void => {
     if (locked || session === undefined) {setAccepted(undefined); setMessage('Choose a current coding session.'); return;}
     const input: TaskEvidence = {task: draft.task, repository: draft.repository, base: draft.base, head: draft.head, evidenceHead: draft.evidenceHead,
-      checks: structuredClone(draft.checks), observedAtMs: observationTime(draft.observed), session: structuredClone(session)};
+      checks: structuredClone(draft.checks), observedAtMs: observationTime(draft.observed), session: {id: session.id, revision: session.revision, generation: session.generation,
+      identity: structuredClone(session.identity), turn: structuredClone(session.turn)}};
     const inspection = inspectEvidence(input, policy(), prior.current);
     prior.current = inspection.latest;
     const next = inspection.decision;

@@ -6,6 +6,7 @@ import {expectedCard} from './artwork-oracle.js';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
+import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {InProcessBus, SdkError} from '@jimmie-potts/sdk';
 import {nowPlayingFrame, nowPlayingView} from '../src/nowplaying.js';
@@ -16,14 +17,15 @@ import {createTidbytModule} from '../src/module.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from '../src/simulated.js';
 import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {
-  MINUTE, SECOND, SECTION, STATUS_ONLY, StandIn, asking, calls, finished, flush, host, identity, notice, playback, records, session, shown, test, unavailablePlayback, until,
-  working, type Hosted,
+  MINUTE, SECOND, SECTION, START_MS, STATUS_ONLY, StandIn, asking, calls, finished, flush, host, identity, notice, playback, records, session, shown, test,
+  unavailablePlayback, until, working, type Hosted,
 } from './support.js';
 
 const STATUS = 'agentdevicehub';
 const NOW_PLAYING = 'nowplaying';
 const label = (value: string): NonNullable<SessionRecord['label']> => ({value, origin: 'user'});
-const statusPicture = (sessions: readonly SessionRecord[], synced = true): string[] => picture(statusFrame(statusView({synced, sessions})).rgb);
+const statusPicture = (sessions: readonly SessionRecord[], synced = true): string[] =>
+  picture(statusFrame(statusView({synced, sessions: sessions.map(sessionView)})).rgb);
 function cardPicture(record: PlaybackState, following = true, lostForMs = 0): string[] {
   const view = nowPlayingView({record, following, lostForMs});
   assert.ok(view.card, 'the record shows a card');
@@ -138,6 +140,38 @@ test('the status tile shows the synced sessions, and the now-playing tile what p
   assert.equal(device.kind, 'tidbyt');
   assert.equal(device.availability, 'available');
   assert.ok(device.lastTransmission.status === 'known' && device.lastTransmission.operationIds[0] === 'push');
+  assert.deepEqual(h.problems(), []);
+});
+
+// Hub #1865, design decision 10: the tile shows `?` only for an unknown status, unconfirmed work or an unsynced copy. The
+// core's republished records after six minutes of silence carry that evidence time and uncertain freshness.
+test('a question silent for six minutes shows on the tile without `?`, and only unconfirmed work shows one', async context => {
+  const silent = {at: START_MS - 6 * MINUTE, freshness: 'uncertain'} as const;
+  const question = {id: {status: 'known', id: 'q-1'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}} as const;
+  const sessions = [asking({label: label('asking'), attention: [question], ...silent}), working({label: label('busy'), ...silent})];
+  const h = await host(context, {sessions, section: STATUS_ONLY});
+  await until(() => pushes(h) === 1, 'the first push');
+  const expected = statusFrame({feed: 'available', idle: false, rows: [
+    {kind: 'session', state: 'ASK', label: 'ASKING', uncertain: false}, {kind: 'session', state: 'RUN', label: 'BUSY', uncertain: true},
+  ]});
+  assert.deepEqual(shown(h, STATUS).picture, picture(expected.rgb));
+  assert.deepEqual(h.problems(), []);
+});
+
+// Hub #1865: the tile follows the shared view's finished rule (owner decision, 2026-11-18, option 1). A notice counts until
+// a known later turn supersedes it, so such a notice, still unacknowledged, no longer shows DONE.
+test('a finished turn that a known later turn superseded shows nothing, and the current turn\'s shows DONE', async context => {
+  const who = identity();
+  const notices = [notice()];
+  const h = await host(context, {sessions: [finished({identity: who, label: label('done'), notices, turn: {status: 'known', id: 'turn-2'}})],
+    section: STATUS_ONLY});
+  await h.advance(MINUTE, SECOND);
+  await quiet();
+  assert.equal(pushes(h), 0, 'nothing is waiting to be read');
+  await core(h).set(finished({identity: who, label: label('done'), notices}));
+  await h.advance(15 * SECOND, SECOND);
+  await until(() => pushes(h) === 1, 'the DONE tile');
+  assert.deepEqual(shown(h, STATUS).picture, statusPicture(core(h).records()));
   assert.deepEqual(h.problems(), []);
 });
 
@@ -362,19 +396,29 @@ test('a wall clock set back never holds a tile\'s next write or refresh longer t
 });
 
 test('a fault of the module\'s own is logged once per run, with one record when it clears', async context => {
-  const h = await host(context, {sessions: [working()], section: STATUS_ONLY});
-  await until(() => pushes(h) === 1, 'the first push');
-  // A record the core should never send: the status view cannot read its identity.
-  const broken = {...working(), identity: undefined} as unknown as SessionRecord;
-  await core(h).set(broken);
+  const h = await host(context, {sessions: [], playback: playback('playing')});
+  await until(() => pushes(h, NOW_PLAYING) === 1, 'the first push');
+  // A record the playback owner should never send: the card cannot read what plays. A session record like it never
+  // reaches the status tile, since the shared session read function refuses it (Hub #1865).
+  const broken = {...playback('playing'), revision: 2, playback: undefined} as unknown as PlaybackState;
+  await owner(h).set(broken);
   await h.advance(5 * MINUTE, SECOND);
   const faults = h.logs().filter(entry => entry.event === 'operation.failed' && entry.fields['bunny.code'] === 'internal');
   assert.equal(faults.length, 1, 'one record for the run of faults');
   assert.equal(faults[0]?.level, 'error');
-  await core(h).set({...working(), id: broken.id});
+  await owner(h).set(playback('playing'));
   await h.advance(MINUTE, SECOND);
-  const cleared = h.logs().filter(entry => entry.event === 'operation.completed' && entry.fields['bunny.operation.id'] === undefined && entry.fields['bunny.operation'] === 'status');
+  const cleared = h.logs().filter(entry => entry.event === 'operation.completed' && entry.fields['bunny.operation.id'] === undefined && entry.fields['bunny.operation'] === 'playback');
   assert.equal(cleared.length, 1, 'one record when it clears');
+});
+
+test('a session record the shared read function refuses is no session on the tile, and no fault', async context => {
+  const h = await host(context, {sessions: [working({label: label('kept')})], section: STATUS_ONLY});
+  await until(() => pushes(h) === 1, 'the first push');
+  await core(h).set({...working(), identity: undefined} as unknown as SessionRecord);
+  await h.advance(5 * MINUTE, SECOND);
+  assert.deepEqual(h.logs().filter(entry => entry.event === 'operation.failed'), []);
+  assert.deepEqual(shown(h, STATUS).picture, statusPicture([working({label: label('kept')})]));
 });
 
 test('an authentication refusal inside a run of other failures is still logged, and no span is recorded for a held call', async context => {

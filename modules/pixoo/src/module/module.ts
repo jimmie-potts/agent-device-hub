@@ -16,7 +16,8 @@ import {artCommandRefusal, EXTENDED_ART_STAGE_SCHEMA, MAX_ART_BYTES, type ArtSta
 import {
   commandSupported, registerDeviceFamilies, type Capabilities, type CompletedOutcome, type DeviceCommand, type DeviceRecord,
 } from '@jimmie-potts/event-contracts/v2/devices';
-import {registerCoreFamilies, type MomentEnded, type MomentPlayRequest, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {registerCoreFamilies, type MomentEnded, type MomentPlayRequest, type PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import {readSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog, DeviceAvailability, MAX_UPLOAD_BYTES, Outbox, SdkError, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext, type Reply,
   type ModuleStagedUpload, type ModuleUploadRequest,
   type ModuleContent, type ModuleContentRequest, type Snapshot, type StateDraft, type SyncChange, type TraceContext, Outcome} from '@jimmie-potts/sdk';
@@ -166,7 +167,8 @@ class PixooRuntime {
   readonly #validator = new MessageValidator();
   readonly #availability: DeviceAvailability;
   readonly #deviceClock: DeviceClock;
-  readonly #sessions: Copy<SessionRecord> = {state: 'unavailable', revision: null, records: new Map(), parents: new Map(), warned: false};
+  /** The views of the core's sessions, each read through the shared session read function. */
+  readonly #sessions: Copy<SessionView> = {state: 'unavailable', revision: null, records: new Map(), parents: new Map(), warned: false};
   readonly #playback: Copy<PlaybackState> = {state: 'unavailable', revision: null, records: new Map(), parents: new Map(), warned: false};
   /** The JSON and revision of each record last served or published, by `<family>/<id>`. */
   readonly #shown = new Map<string, Shown>();
@@ -339,8 +341,8 @@ class PixooRuntime {
     monitor.onChange = () => { this.#detailVersion += 1; this.#changed(); };
     monitor.onShown = () => { this.#detailVersion += 1; this.#changed(true); };
     // The copies of the core's sessions and of the playback record, rebuilt by sync and never stored.
-    await this.#follow(['session'], this.#sessions, 'feed', () => { this.#sessionsChanged(); });
-    await this.#follow(['playback'], this.#playback, 'playback', () => { this.#playbackChanged(); });
+    await this.#follow(['session'], this.#sessions, 'feed', () => { this.#sessionsChanged(); }, readSession);
+    await this.#follow(['playback'], this.#playback, 'playback', () => { this.#playbackChanged(); }, message => message.data as PlaybackState);
     this.#after(0, () => this.#tick());
     this.#after(0, () => this.#probe(0));
     this.#after(60_000, () => this.#pruneArt());
@@ -551,9 +553,10 @@ class PixooRuntime {
    * serve, leaves the copy unavailable or stale and tries again after a doubling wait. A copy that followed its owner
    * and lost it is one warning at once. An owner that has not answered since the start, as one that starts later or is
    * not shipped, is a warning only once the wait has grown to its longest; until then each attempt is DEBUG. A recovery
-   * after a warning is one record.
+   * after a warning is one record. `read` gives each record's entry in the copy; a record it does not accept is not one.
    */
-  async #follow<T extends {id: string}>(families: string[], copy: Copy<T>, operation: 'feed' | 'playback', changed: () => void, failures = 0): Promise<void> {
+  async #follow<T extends {id: string; revision: number}>(families: string[], copy: Copy<T>, operation: 'feed' | 'playback', changed: () => void,
+    read: (message: Message<unknown>) => T | undefined, failures = 0): Promise<void> {
     if (this.#stopping) return;
     const {sdk, log} = this.#context;
     const fields = {'bunny.device.id': this.#device, 'bunny.operation': operation};
@@ -565,18 +568,25 @@ class PixooRuntime {
       } else {
         log.debug('operation.failed', {...fields, 'bunny.code': code, 'bunny.attempt_count': failures + 1});
       }
-      this.#after(delay, () => this.#follow(families, copy, operation, changed, failures + 1));
+      this.#after(delay, () => this.#follow(families, copy, operation, changed, read, failures + 1));
     };
     // This attempt's records replace the copy's at its first sync, so an entity the owner no longer has disappears.
     const records = new Map<string, T>();
     const parents = new Map<string, TraceContext>();
-    const handle = (change: SyncChange<T>): void => {
+    const handle = (change: SyncChange<unknown>): void => {
       switch (change.type) {
-        case 'updated':
-          records.set(change.entity.id, change.message.data);
+        case 'updated': {
+          const entry = read(change.message);
+          if (entry === undefined) {
+            records.delete(change.entity.id);
+            parents.delete(change.entity.id);
+            break;
+          }
+          records.set(change.entity.id, entry);
           parents.set(change.entity.id, {traceparent: change.message.traceparent});
-          copy.revision = Math.max(copy.revision ?? 0, (change.message.data as {revision?: number}).revision ?? 0);
+          copy.revision = Math.max(copy.revision ?? 0, entry.revision);
           break;
+        }
         case 'removed':
           records.delete(change.entity.id);
           parents.delete(change.entity.id);
@@ -597,7 +607,7 @@ class PixooRuntime {
     };
     let result;
     try {
-      result = await sdk.sync<T>(families, handle, {timeoutMs: this.#timing.syncMs});
+      result = await sdk.sync(families, handle, {timeoutMs: this.#timing.syncMs});
     } catch (error) {
       // Only a module that is stopping is refused the call itself.
       if (this.#stopping) return;
@@ -1008,7 +1018,7 @@ class PixooRuntime {
     await sdk.respond<NoticeDismissRequest>(key(FAMILIES.dismiss), command =>
       this.#admit(command, FAMILIES.dismiss, undefined, () => this.#dismiss(command), () => {
         const session = this.#sessions.records.get(command.data.session);
-        return session?.notices.some(notice => notice.id === command.data.noticeId) === true ? undefined : errorBody('not-found', {detail: 'no such notice'});
+        return session?.outcome.notices.some(notice => notice.id === command.data.noticeId) === true ? undefined : errorBody('not-found', {detail: 'no such notice'});
       }));
   }
 
