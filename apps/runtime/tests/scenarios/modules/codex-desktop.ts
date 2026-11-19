@@ -8,7 +8,7 @@ import {act, expect, holds, logged, publish, running, session, show, type Harnes
 const desktopIdentity = (sessionId: string): Identity => ({
   provider: 'codex', client: 'desktop', hostId: CODEX_DESKTOP_SIMULATED_SECTION.hostId, sourceId: CODEX_DESKTOP_SIMULATED_SECTION.sourceId, sessionId,
 });
-const desktopRead = (h: Harness, sessionId: string): string => session(h, sessionEntityId(desktopIdentity(sessionId)))?.read ?? 'missing';
+const desktopRead = (h: Harness, sessionId: string): string => session(h, sessionEntityId(desktopIdentity(sessionId)))?.outcome.read ?? 'missing';
 /** A Codex Desktop session's turn ends, as its hook reports it; a subagent names its parent. */
 const desktopTurnEnds = (h: Harness, sessionId: string, parent?: string): Promise<void> =>
   publish(h, turnEnded, {identity: desktopIdentity(sessionId), ...(parent === undefined ? {} : {parent: {status: 'known', identity: desktopIdentity(parent)}})});

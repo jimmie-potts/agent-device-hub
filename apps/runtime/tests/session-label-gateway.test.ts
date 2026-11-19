@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import type {TestContext} from 'node:test';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {connectRemote} from '@jimmie-potts/sdk';
 import {CREDENTIALS_SCHEMA, createCoreModule, type CoreHandle} from '../src/index.js';
 import {SESSION_ID, observation, sessionStarted} from './fixtures/agents.js';
@@ -23,8 +23,8 @@ async function gateway(context: TestContext) {
   const sdk = contextOf(hook).sdk;
   const event = observation(sessionStarted, Date.now());
   await sdk.publish(event.key, event.draft);
-  const record = async (): Promise<SessionRecord> => {
-    const synced = await sdk.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const record = async (): Promise<Session30Record> => {
+    const synced = await sdk.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
     assert.equal(synced.status, 'synced');
     const held = synced.copy.states().find(state => state.subject === SESSION_ID)?.data;
     await synced.copy.close();

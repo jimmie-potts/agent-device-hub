@@ -1494,7 +1494,7 @@ against the authenticated gateway. They run on Linux, where CI runs them, and
 natively on macOS (see
 [Native runs on macOS](../apps/runtime/DEVELOPMENT.md#native-runs-on-macos)).
 `node apps/runtime/dashboard/tests/read-receipts.browser.ts` verifies that the
-real helper's session/2.1 output clears the dashboard's unread row, survives a
+real helper's read provenance, in the session/3.0 record, clears the dashboard's unread row, survives a
 page reload and returns to unread on a new turn without a page command. The
 existing hosted dashboard smoke entry includes this journey. Native
 plugin validation, native offline rendering tests and the real Claude terminal
@@ -1520,15 +1520,16 @@ messages and produce no audio.
   invalid case with its registry code and detail, the capability rule, the
   routing-key subject of every command family, and the Hub-mode table for each
   participating device kind, which must equal the package README's.
-- `packages/event-contracts/tests/status.test.mjs` runs the 2.0 status helper's copied cases against
-  valid `session/2.0` records, and checks its ranking and colors against the 1.x
+- `packages/event-contracts/tests/status.test.mjs` runs the shared status helper's copied cases against
+  valid `session/3.0` records, and checks its ranking and colors against the 1.x
   `@jimmie-potts/agent-status`.
 - `packages/event-contracts/tests/sources.test.mjs` fails when an identity enum of
   the `session` or `lifecycle` schemas differs from the supported-source
   definition (Hub #1865).
 - `packages/event-contracts/tests/session.test.mjs` covers the `session/3.0`
-  status function, the shared read function's `session/2.x` mapping, each
-  reader's acknowledgment and read policy and opportunity matching.
+  status function, the record builder `buildSession`, the shared read
+  function, which reads `session/3.0` only, each reader's acknowledgment and
+  read policy and opportunity matching.
 - `packages/event-contracts/tests/session-cases.test.mjs` runs every case of the
   shared session case set, `fixtures/v2/session-cases.json`, through the shared
   read function. Session readers load the same cases with `loadSessionCases()`.

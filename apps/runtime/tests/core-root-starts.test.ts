@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import type {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
-import {sessionEntityId, type Identity, type LifecycleEvent, type LifecycleObservation, type Parent, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type Identity, type LifecycleEvent, type LifecycleObservation, type Parent, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {World, lifecycleMessage} from './fixtures/store-world.js';
 import {START, it, manualClock} from './support.js';
 
@@ -39,37 +39,37 @@ async function take(w: World, who: Identity, event: LifecycleEvent, at: At = {})
   return result.ok ? result.outcome : result.code;
 }
 
-const record = (w: World, who: Identity): SessionRecord => {
+const record = (w: World, who: Identity): Session30Record => {
   const found = w.store.records().find(item => item.id === sessionEntityId(who));
   assert.ok(found, `${who.sessionId} is held`);
   return found;
 };
-const turnOf = (item: SessionRecord): string | null => item.turn.status === 'known' ? item.turn.id : null;
-const ambiguous = (item: SessionRecord): string[] => item.unavailable.filter(entry => entry.reason === 'ambiguous').map(entry => entry.dimension);
+const turnOf = (item: Session30Record): string | null => item.turn.status === 'known' ? item.turn.id : null;
+const ambiguous = (item: Session30Record): string[] => item.unavailable.filter(entry => entry.reason === 'ambiguous').map(entry => entry.dimension);
 const start: LifecycleEvent = {kind: 'session-started'}, started: LifecycleEvent = {kind: 'turn-started'}, ended: LifecycleEvent = {kind: 'turn-ended'};
 
 it('launch, /clear and /resume without a prompt stay quiet (#397)', async context => {
   const w = await open(context);
   // Launch: a new root with no turn.
   assert.equal(await take(w, claude('launched'), start), 'applied');
-  assert.deepEqual([record(w, claude('launched')).activity, turnOf(record(w, claude('launched')))], ['idle', null]);
+  assert.deepEqual([record(w, claude('launched')).work.state, turnOf(record(w, claude('launched')))], ['idle', null]);
   assert.deepEqual(record(w, claude('launched')).unavailable, [{dimension: 'turn', reason: 'missing'}, {dimension: 'ordering', reason: 'missing'}]);
   // A finished session, then /clear: the new session ID starts quiet.
   assert.equal(await take(w, claude('finished'), started, {turn: 'p1'}), 'applied');
   assert.equal(await take(w, claude('finished'), ended, {turn: 'p1'}), 'applied');
   assert.equal(await take(w, claude('cleared'), start), 'applied');
-  assert.equal(record(w, claude('cleared')).activity, 'idle');
+  assert.equal(record(w, claude('cleared')).work.state, 'idle');
   // In-session /resume: the start carries the command's prompt ID, which selects no work turn.
-  const notices = record(w, claude('finished')).notices;
+  const notices = record(w, claude('finished')).outcome.notices;
   assert.equal(await take(w, claude('finished'), start, {turn: 'resume-command'}), 'applied');
   const resumed = record(w, claude('finished'));
-  assert.deepEqual([resumed.activity, turnOf(resumed), ambiguous(resumed)], ['idle', 'p1', []]);
-  assert.deepEqual(resumed.notices, notices, 'the finished turn\'s notice stays');
+  assert.deepEqual([resumed.work.state, turnOf(resumed), ambiguous(resumed)], ['idle', 'p1', []]);
+  assert.deepEqual(resumed.outcome.notices, notices, 'the finished turn\'s notice stays');
   // /resume of a session the core does not hold: a new root, idle, with no work turn.
   assert.equal(await take(w, claude('elsewhere'), start, {turn: 'resume-command'}), 'applied');
-  assert.deepEqual([record(w, claude('elsewhere')).activity, turnOf(record(w, claude('elsewhere')))], ['idle', null]);
+  assert.deepEqual([record(w, claude('elsewhere')).work.state, turnOf(record(w, claude('elsewhere')))], ['idle', null]);
   assert.deepEqual(record(w, claude('elsewhere')).unavailable, [{dimension: 'turn', reason: 'missing'}, {dimension: 'ordering', reason: 'missing'}]);
-  for (const item of w.store.records()) assert.equal(item.children.active, 0);
+  for (const item of w.store.records()) assert.equal(item.relationships.children.working, 0);
 });
 
 it('mid-turn compaction keeps the active turn, with or without another prompt ID, and makes nothing ambiguous', async context => {
@@ -77,13 +77,13 @@ it('mid-turn compaction keeps the active turn, with or without another prompt ID
   const who = claude('compacting');
   assert.equal(await take(w, who, started, {turn: 'p1'}), 'applied');
   assert.equal(await take(w, who, start), 'applied');
-  assert.deepEqual([record(w, who).activity, turnOf(record(w, who)), ambiguous(record(w, who))], ['active', 'p1', []]);
+  assert.deepEqual([record(w, who).work.state, turnOf(record(w, who)), ambiguous(record(w, who))], ['active', 'p1', []]);
   assert.equal(await take(w, who, start, {turn: 'p9'}), 'applied');
-  assert.deepEqual([record(w, who).activity, turnOf(record(w, who)), ambiguous(record(w, who))], ['active', 'p1', []]);
-  assert.equal(record(w, who).freshness, 'current');
+  assert.deepEqual([record(w, who).work.state, turnOf(record(w, who)), ambiguous(record(w, who))], ['active', 'p1', []]);
+  assert.equal(record(w, who).work.confidence, 'confirmed');
   // The running turn still ends with its notice.
   assert.equal(await take(w, who, ended, {turn: 'p1'}), 'applied');
-  assert.deepEqual([record(w, who).activity, record(w, who).notices.map(notice => notice.turn)], ['idle', [{status: 'known', id: 'p1'}]]);
+  assert.deepEqual([record(w, who).work.state, record(w, who).outcome.notices.map(notice => notice.turn)], ['idle', [{status: 'known', id: 'p1'}]]);
 });
 
 it('a stale or conflicting start cannot replace a newer turn or restore a finished one', async context => {
@@ -93,18 +93,18 @@ it('a stale or conflicting start cannot replace a newer turn or restore a finish
   assert.equal(await take(w, who, ended, {turn: 'p1'}), 'applied');
   // A start that names the finished turn does not bring its work back.
   assert.equal(await take(w, who, start, {turn: 'p1'}), 'applied');
-  assert.deepEqual([record(w, who).activity, turnOf(record(w, who)), ambiguous(record(w, who))], ['idle', 'p1', []]);
+  assert.deepEqual([record(w, who).work.state, turnOf(record(w, who)), ambiguous(record(w, who))], ['idle', 'p1', []]);
   assert.equal(await take(w, who, started, {turn: 'p2'}), 'applied');
   const revision = record(w, who).revision;
   // A delayed start on the retired turn is stale.
   assert.equal(await take(w, who, start, {turn: 'p1'}), 'stale');
   assert.equal(record(w, who).revision, revision);
-  assert.deepEqual([record(w, who).activity, turnOf(record(w, who))], ['active', 'p2']);
+  assert.deepEqual([record(w, who).work.state, turnOf(record(w, who))], ['active', 'p2']);
   // An ordered start below the watermark is stale too.
   const ordered = codex('ordered');
   assert.equal(await take(w, ordered, started, {turn: 't2', sequence: 5}), 'applied');
   assert.equal(await take(w, ordered, start, {turn: 't1', sequence: 4}), 'stale');
-  assert.deepEqual([record(w, ordered).activity, turnOf(record(w, ordered))], ['active', 't2']);
+  assert.deepEqual([record(w, ordered).work.state, turnOf(record(w, ordered))], ['active', 't2']);
 });
 
 it('a child start keeps its meaning as evidenced child work under its known parent', async context => {
@@ -112,9 +112,9 @@ it('a child start keeps its meaning as evidenced child work under its known pare
   const root = claude('root'), child = claude('root-agent');
   assert.equal(await take(w, root, start), 'applied');
   assert.equal(await take(w, child, start, {parent: {status: 'known', identity: root}}), 'applied');
-  assert.equal(record(w, child).activity, 'active');
-  assert.deepEqual(record(w, root).children, {active: 1, uncertain: 0});
-  assert.equal(record(w, root).activity, 'idle', 'the root itself stays quiet');
+  assert.equal(record(w, child).work.state, 'active');
+  assert.deepEqual(record(w, root).relationships.children, {working: 1, unconfirmed: 0});
+  assert.equal(record(w, root).work.state, 'idle', 'the root itself stays quiet');
 });
 
 it('a prompt after the start is work, and its end finishes the turn with a notice', async context => {
@@ -122,12 +122,12 @@ it('a prompt after the start is work, and its end finishes the turn with a notic
   const who = claude('session');
   assert.equal(await take(w, who, start), 'applied');
   assert.equal(await take(w, who, started, {turn: 'p1'}), 'applied');
-  assert.deepEqual([record(w, who).activity, turnOf(record(w, who))], ['active', 'p1']);
+  assert.deepEqual([record(w, who).work.state, turnOf(record(w, who))], ['active', 'p1']);
   assert.equal(await take(w, who, ended, {turn: 'p1'}), 'applied');
-  assert.deepEqual([record(w, who).activity, record(w, who).notices.length, ambiguous(record(w, who))], ['idle', 1, []]);
+  assert.deepEqual([record(w, who).work.state, record(w, who).outcome.notices.length, ambiguous(record(w, who))], ['idle', 1, []]);
   const again = observation(w, who, start);
   assert.equal((await w.take(lifecycleMessage(again, w.clock.now()))).ok, true, 'a start after the turn changes nothing but its evidence');
-  assert.deepEqual([record(w, who).activity, turnOf(record(w, who))], ['idle', 'p1']);
+  assert.deepEqual([record(w, who).work.state, turnOf(record(w, who))], ['idle', 'p1']);
   const repeated = await w.take(lifecycleMessage(structuredClone(again), w.clock.now()));
   assert.equal(repeated.ok && repeated.outcome, 'duplicate', 'the same start under another message ID is a semantic duplicate');
 });
@@ -138,7 +138,7 @@ it('every provider\'s root start is quiet', async context => {
   const w = await open(context);
   for (const who of [codex('local'), codex('cli', 'cli'), codex('desktop', 'desktop')]) {
     assert.equal(await take(w, who, start, {parent: {status: 'top-level'}, turn: 'turn-a'}), 'applied');
-    assert.deepEqual([record(w, who).activity, turnOf(record(w, who))], ['idle', null], who.client);
+    assert.deepEqual([record(w, who).work.state, turnOf(record(w, who))], ['idle', null], who.client);
   }
 });
 

@@ -86,11 +86,11 @@ test('container core refuses a second owner and retains authenticated state acro
   let before;
   for (let i = 0; i < 100; i++) {
     before = (await sessions(url)).find(record => record.id === SESSION_ID);
-    if (before?.activity === 'idle') break;
+    if (before?.work.state === 'idle') break;
     await pause(25);
   }
   assert.equal(before?.title?.value, 'Synthetic container workflow');
-  assert.equal(before?.activity, 'idle');
+  assert.equal(before?.work.state, 'idle');
   await stop(first);
   const lease = await holdRuntimeLease(state); lease.release();
   const marker = join(state, '.restore-pending');

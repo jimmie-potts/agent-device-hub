@@ -10,7 +10,7 @@ import {monitorView, type PlaybackSourceStatus} from '../../src/presentation/sou
 import {readMonitorContent} from '../../src/module/monitor-content.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {MemoryPlaybackStore} from '../helpers/playback-store.js';
-import {sessionView, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {sessionRecord} from './support.js';
 
 const request = (query: Readonly<Record<string, string>> = {}) => ({query, signal: new AbortController().signal});
@@ -26,7 +26,7 @@ void it('reads pending Monitor without rendering, pages projected entity IDs and
   const monitor = new MonitorPresentation(player, {save: async () => {}, clock: () => clock.now(), passive: true,
     renderDashboard: () => { renders++; return [new Uint8Array(12288).fill(23)]; },
     renderCard: () => { renders++; return new Uint8Array(12288).fill(42); }});
-  const synthetic = sessionView(sessionRecord(1000, 1));
+  const synthetic = sessionRecord(1000, 1);
   const sessions: SessionView[] = Array.from({length: 140}, (_, index) => ({...structuredClone(synthetic),
     id: index.toString(16).padStart(64, '0'), label: {value: `界${index}`, origin: 'user'}}));
   const playback: PlaybackSourceStatus = {source: 'current', view: {card: true, status: 'playing', title: 'SYNTHETIC', artist: 'FIXTURE', stale: false}};

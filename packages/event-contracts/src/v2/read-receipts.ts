@@ -1,7 +1,7 @@
 import {MessageValidator, SCHEMA_BASE, type ErrorDetail} from './index.js';
-import {coreFamilies, registerCoreFamilies, sessionEntityId, type Identity, type LifecycleObservation, type Ordering, type SessionRecord} from './families.js';
+import {coreFamilies, registerCoreFamilies, sessionEntityId, type Identity, type LifecycleObservation, type Ordering} from './families.js';
 import {defineFamily, registerFamilies} from './registry.js';
-import {sessionView, type SessionView} from './session-view.js';
+import type {SessionView} from './session-view.js';
 
 /** Opaque revisions identify an observed action; they are neither clocks nor proof of human comprehension. */
 export type ReadReceipt =
@@ -15,7 +15,6 @@ export type ReadReceiptObservation = {
   observedAtMs: number; ordering: Ordering;
 };
 export type Lifecycle21Observation = LifecycleObservation | ReadReceiptObservation;
-export const SESSION_RECEIPT_SCHEMA = `${SCHEMA_BASE}session/2.1`;
 export const READ_RECEIPT_SCHEMA = `${SCHEMA_BASE}lifecycle/2.1`;
 
 const lifecycleCheck = coreFamilies.find(family => family.dataschema === `${SCHEMA_BASE}lifecycle/2.0`)?.check;
@@ -33,11 +32,8 @@ export type ReadReceiptQualification = {
   feed: Pick<Identity, 'provider' | 'client' | 'hostId' | 'sourceId'>;
   kind: ReadReceipt['kind'];
 };
-/**
- * The session a receipt targets: its view (Hub #1865, design decision 10), or a `session/2.x` record, which is decided on
- * its view. The record form goes when the core switches to `session/3.0`.
- */
-export type ReceiptSession = Pick<SessionView, 'identity' | 'generation' | 'turn' | 'parent' | 'work' | 'outcome'> | SessionRecord;
+/** The session a receipt targets: its view (Hub #1865, design decision 10), which is its `session/3.0` record. */
+export type ReceiptSession = Pick<SessionView, 'identity' | 'generation' | 'turn' | 'parent' | 'work' | 'outcome'>;
 export type ReadReceiptDecision =
   | {status: 'invalid'; error: ErrorDetail}
   | {status: 'ineligible'; reason: 'not-receipt' | 'unqualified-source' | 'unknown-session' | 'stale-target' | 'unfinished' | 'child'}
@@ -60,9 +56,16 @@ export function readReceiptValidator(): Pick<MessageValidator, 'validate'> {
   return receiptValidator;
 }
 
+/** Whether the caller's session has the `session/3.0` claims a receipt is decided on. */
+function isView(session: unknown): boolean {
+  if (typeof session !== 'object' || session === null) return false;
+  const {work, outcome} = session as {work?: unknown; outcome?: {notices?: unknown}};
+  return typeof work === 'object' && work !== null && typeof outcome === 'object' && outcome !== null && Array.isArray(outcome.notices);
+}
+
 /**
  * Pure eligibility reference, not a state transition. A later owner must recheck inside its serialized operation.
- * Source qualification is independent of payload validity. Lifecycle freshness and attention are not read evidence.
+ * Source qualification is independent of payload validity. Work confirmation and attention are not read evidence.
  * Only the view's work state decides whether the turn finished: idle or interrupted work, confirmed or not.
  */
 export function decideReadReceipt(input: unknown, session: ReceiptSession | undefined,
@@ -79,15 +82,15 @@ export function decideReadReceipt(input: unknown, session: ReceiptSession | unde
     qualification.feed.hostId !== identity.hostId || qualification.feed.sourceId !== identity.sourceId) {
     return {status: 'ineligible', reason: 'unqualified-source'};
   }
-  if (session === undefined) return {status: 'ineligible', reason: 'unknown-session'};
-  const view = 'work' in session ? session : sessionView(session);
-  if (sessionEntityId(view.identity) !== sessionEntityId(identity) || view.generation !== event.generation ||
-    turn.status !== 'known' || view.turn.status !== 'known' || view.turn.id !== turn.id ||
-    !view.outcome.notices.some(notice => notice.id === event.noticeId && notice.kind === 'turn-ended' &&
+  // A session the caller holds in another shape, such as a `session/2.x` record, is no session this function reads.
+  if (session === undefined || !isView(session)) return {status: 'ineligible', reason: 'unknown-session'};
+  if (sessionEntityId(session.identity) !== sessionEntityId(identity) || session.generation !== event.generation ||
+    turn.status !== 'known' || session.turn.status !== 'known' || session.turn.id !== turn.id ||
+    !session.outcome.notices.some(notice => notice.id === event.noticeId && notice.kind === 'turn-ended' &&
       notice.turn.status === 'known' && notice.turn.id === turn.id)) {
     return {status: 'ineligible', reason: 'stale-target'};
   }
-  if (view.parent.status === 'known') return {status: 'ineligible', reason: 'child'};
-  if (view.work.state !== 'idle' && view.work.state !== 'interrupted') return {status: 'ineligible', reason: 'unfinished'};
+  if (session.parent.status === 'known') return {status: 'ineligible', reason: 'child'};
+  if (session.work.state !== 'idle' && session.work.state !== 'interrupted') return {status: 'ineligible', reason: 'unfinished'};
   return {status: 'eligible', noticeId: event.noticeId};
 }

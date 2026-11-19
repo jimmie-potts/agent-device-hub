@@ -9,7 +9,7 @@
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {operationEntityId, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {StateDraft} from '@jimmie-potts/sdk';
-import {REMOVAL_SCHEMA} from './mapping.js';
+import {REMOVAL_SCHEMA} from './schemas.js';
 import {pending, type Operation} from './operations.js';
 import type {CoreTransaction, Deriver} from './store.js';
 import type {OperationChange} from './tracker.js';

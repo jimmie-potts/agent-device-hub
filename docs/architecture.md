@@ -420,7 +420,8 @@ adoption. These parts exist as source: the message profile 2.0 contract
 (`@jimmie-potts/event-contracts/v2`), its core payload families
 (`@jimmie-potts/event-contracts/v2/families`), its device families with the
 Hub-mode table (`@jimmie-potts/event-contracts/v2/devices`), the shared
-agent-status helper (`@jimmie-potts/event-contracts/v2/status`), the SDK
+session read function and agent-status helper (`@jimmie-potts/event-contracts/v2/session`),
+the SDK
 (`@jimmie-potts/sdk`): its in-process bus with sync, its SSE/HTTP remote
 transport and the module API, and the runtime with its agent-session core and
 fixed shipped modules (`apps/runtime`). It also supports core-only disposable
@@ -491,8 +492,12 @@ signals for actual accessible versions.
 
 The core identifies sessions by provider, source/host and session ID, retaining
 turn and child relationships only where evidenced. Separate sessions in one
-project stay separate. Activity, attention, retained notices, acknowledgment,
-optional provider read evidence and freshness are independent concepts. The owner
+project stay separate. Work, attention, retained notices, acknowledgment,
+optional provider read evidence and confirmation are independent concepts. In the
+current runtime each is a separate claim of the core's `session/3.0` record,
+which carries the hub's status, and only running work becomes unconfirmed: five
+minutes after its last qualifying evidence, or at a core restart. Every reader
+takes that status from the contracts package's shared read function. The owner
 forgets a session after 24 hours without lifecycle evidence, which frees its
 capacity. Expiry is not acknowledgment, readership, success or cancellation. An accepted runtime end on any supported path (Codex Desktop, Codex CLI or Claude Code) retires the known session tree sooner through the same atomic replacement boundary; the owner interprets that evidence once and devices add no end filters or timers. When the owner is full, a new root task may also retire one finished subagent subtree without attention ([#807](https://github.com/jimmie-potts/agent-device-hub/issues/807)). Bounded durable guards reject recognizable delayed events. Opt-in snapshot 1.1 generations let consumers reset a recreated task even if they missed its removal.
 
@@ -623,8 +628,10 @@ export/import. Its host storage boundary requires an exclusive lease and atomic
 revision-checked commits. Current records, chosen labels and notices survive
 journal retention. The journal retains the newest 10,000 events within 24 hours,
 with pruning on writes, startup and an idle timer. The in-memory reference store
-is a test adapter. The current runtime supplies its private core SQLite adapter;
-Pixoo #31 records the retained embedded owner's durability and access controls.
+is a test adapter. The current runtime no longer runs this owner: since Hub
+#1865 its core keeps sessions in its own tables, reduces observations with its
+own session logic and publishes `session/3.0`. Pixoo #31 records the retained
+embedded owner's durability and access controls.
 Observation age and restart uncertainty remain separate from collector health.
 The agent-state reducer sends no device commands, regardless of Media/Free modes.
 The runtime core's separate action dispatcher admits and routes tracked commands
@@ -686,7 +693,7 @@ active state owner.
 
 ## Unified UI and additional devices
 
-The first dashboard shows sessions, attention, freshness, capabilities, device
+The first dashboard shows sessions, attention, uncertainty, capabilities, device
 modes, pending changes and last update outcomes, with explicit supported controls.
 It links to existing advanced editors. A global mode must not silently replace
 Nanoleaf Work/Quiet/Free intent or, before

@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {CompanionOpportunity, CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {sessionView} from '@jimmie-potts/event-contracts/v2/session';
+import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {attentionPriority, presentedPriority, speechRefusal} from '../src/presentation-policy.js';
 import {admissionKey, defaultSettings, localDay, refusal, selectCard, type Policy} from '../src/rules.js';
 const nowMs = Date.parse('2026-10-11T12:00:00Z');
@@ -47,25 +46,26 @@ void test('coding attention has its separate allowance, survives Work/Quiet, and
 // reporting host's instant and the core's 30-second validity; the window lives in the policy's `priority`.
 const identity = {provider: 'claude', client: 'code', hostId: 'synthetic-host', sourceId: 'synthetic-source', sessionId: 'synthetic-session'} as const;
 const question = {id: {status: 'known', id: 'question-1'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}} as const;
-const record = (patch: Partial<SessionRecord> = {}): SessionRecord => ({id: 'synthetic-entity', revision: 3, generation: 2, identity, parent: {status: 'unknown'},
-  turn: {status: 'known', id: 'turn-1'}, activity: 'active', attention: [question], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'},
-  observedAtMs: nowMs, lastEvidenceAtMs: nowMs, freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, ...patch});
+/** A session/3.0 record, which is the session's view. */
+const record = (patch: Partial<SessionFacts> = {}): SessionView => buildSession({id: 'synthetic-entity', revision: 3, generation: 2, identity, parent: {status: 'unknown'},
+  turn: {status: 'known', id: 'turn-1'}, work: 'active', attention: [question], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'},
+  observedAtMs: nowMs, lastEvidenceAtMs: nowMs, children: {working: 0, unconfirmed: 0}, ...patch});
 const asked: CompanionOpportunity = {origin: {id: 'raised-1', source: 'bunny/core', type: 'org.bunny.attention.raised'}, sourceKind: 'coding', context: 'live',
   category: 'coding-attention', cue: 'question', revision: 3, generation: 2, session: 'synthetic-entity', identity, turn: {status: 'known', id: 'turn-1'},
   attention: question, noticeId: null, evidence: 'lifecycle-metadata', occurredAtMs: null, observedAtMs: nowMs, validUntilMs: nowMs + 30_000,
   busy: null, media: null, visitor: null, location: null};
 const notice = (id: string): CompanionOpportunity => ({...asked, origin: {...asked.origin, id}, session: 'other-entity', identity: {...identity, sessionId: 'other-session'},
   category: 'coding-notice', cue: 'turn-ended', attention: null, noticeId: 'notice-1', revision: 1, generation: 1});
-const other = (): SessionRecord => record({id: 'other-entity', revision: 1, generation: 1, identity: {...identity, sessionId: 'other-session'}, activity: 'idle', attention: [],
-  notices: [{id: 'notice-1', kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy: []}]});
-const windowed = (at: number, sessions = [record(), other()]): Policy => ({...policy(), nowMs: at, mode: 'work', sessions: sessions.map(sessionView), priority: [asked]});
+const other = (patch: Partial<SessionFacts> = {}): SessionView => record({id: 'other-entity', revision: 1, generation: 1, identity: {...identity, sessionId: 'other-session'},
+  work: 'idle', attention: [], notices: [{id: 'notice-1', kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy: []}], ...patch});
+const windowed = (at: number, sessions = [record(), other()]): Policy => ({...policy(), nowMs: at, mode: 'work', sessions, priority: [asked]});
 
 void test('a question holds priority over background cards and speech at 29 s and not at 30 s, from its own instant', () => {
   const card = (at: number): CompanionOpportunity => ({...notice(`notice-at-${String(at)}`), observedAtMs: at, validUntilMs: at + 30_000});
   assert.equal(refusal(card(nowMs + 29_000), windowed(nowMs + 29_000)), 'attention-priority');
   assert.equal(refusal(card(nowMs + 30_000), windowed(nowMs + 30_000)), undefined);
-  assert.equal(attentionPriority([asked], [record(), other()].map(sessionView), nowMs + 29_999), true);
-  assert.equal(attentionPriority([asked], [record(), other()].map(sessionView), nowMs + 30_000), false);
+  assert.equal(attentionPriority([asked], [record(), other()], nowMs + 29_999), true);
+  assert.equal(attentionPriority([asked], [record(), other()], nowMs + 30_000), false);
   const spoken = (at: number) => speechRefusal(selectCard(card(at), at, 'seed'), windowed(at));
   assert.equal(spoken(nowMs + 29_000), 'attention-priority', 'the speech check holds automatic speech inside the window');
   assert.equal(spoken(nowMs + 30_000), undefined);
@@ -79,10 +79,11 @@ void test('progress renews nothing, an answered question ends the window, and wo
   assert.equal(refusal(later(nowMs + 30_000), windowed(nowMs + 30_000, progressed)), undefined, 'progress 20 s in does not extend the window');
   assert.equal(refusal(later(nowMs + 10_000), windowed(nowMs + 10_000, [record({attention: []}), other()])), undefined, 'a cleared question ends the window early');
   assert.equal(refusal(later(nowMs + 10_000), {...windowed(nowMs + 10_000), priority: []}), undefined, 'no admitted opportunity, as after a restart, opens no window');
-  const quiet = [record(), other()].map(item => ({...item, freshness: 'uncertain' as const, restartUncertain: true, lastEvidenceAtMs: nowMs - 360_000}));
-  assert.equal(refusal(later(nowMs + 10_000), {...windowed(nowMs + 10_000), sessions: quiet.map(sessionView), priority: []}), undefined,
+  // Six minutes of silence: the running work a restart left unconfirmed; the finished session is unchanged by silence.
+  const quiet = [record({unconfirmed: 'restart', lastEvidenceAtMs: nowMs - 360_000}), other({lastEvidenceAtMs: nowMs - 360_000})];
+  assert.equal(refusal(later(nowMs + 10_000), {...windowed(nowMs + 10_000), sessions: quiet, priority: []}), undefined,
     'a notice from a session silent for six minutes is admitted');
-  assert.equal(refusal(asked, {...windowed(nowMs + 10_000), sessions: quiet.map(sessionView)}), undefined, 'a question from unconfirmed work is admitted');
+  assert.equal(refusal(asked, {...windowed(nowMs + 10_000), sessions: quiet}), undefined, 'a question from unconfirmed work is admitted');
 });
 
 void test('the browser takes the window from the live question card Reachy presents', () => {

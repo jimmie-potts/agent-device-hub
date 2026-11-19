@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type Identity, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {createCoreModule} from '../src/core/core.js';
 import {observation, sessionStarted, turnStarted, approvalPrompt} from './fixtures/agents.js';
 import {contextOf, fixture, it, run, waitFor} from './support.js';
@@ -21,9 +21,9 @@ for (const provider of ['codex', 'claude'] as const) it(`${provider} core publis
   await send(sessionStarted, 1); await send(turnStarted, 2);
   const raised = await send(approvalPrompt('approval-test'), 3);
   await waitFor(async () => {
-    const copy = await sdk.sync<SessionRecord>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
+    const copy = await sdk.sync<Session30Record>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
     if (copy.status !== 'synced') return false;
-    const ready = copy.copy.states().some(state => state.data.attention.length === 1);
+    const ready = copy.copy.states().some(state => state.data.attention.items.length === 1);
     await copy.copy.close(); return ready;
   });
   await new Promise(resolve => setTimeout(resolve, 30));
@@ -35,7 +35,7 @@ for (const provider of ['codex', 'claude'] as const) it(`${provider} core publis
   assert.ok((opportunities[0]?.data.generation ?? 0) > 0);
   await sdk.publishMessage(`bunny.event.lifecycle.${sessionEntityId(identity)}`, raised);
   await send(approvalPrompt('approval-test'), 3);
-  const synced = await sdk.sync<SessionRecord>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
+  const synced = await sdk.sync<Session30Record>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
   if (synced.status === 'synced') await synced.copy.close();
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(opportunities.length, 1, 'duplicates, stale ordering and snapshot cannot mint another opportunity');

@@ -23,7 +23,7 @@ The Pixoo SHALL run in the runtime as the module `pixoo`, created by `createPixo
 
 ### Requirement: Pixoo state and copies
 
-The module SHALL keep only state it owns, in its own SQLite file and private folder: the library's catalog and the player's checkpoint (through `Library.attach`), its revision counter, the status view, Now Playing and moments settings, its last Hub mode and remembered brightness, configuration revision and last outcome, the commands it accepted and has not completed, the commands it completed in the last 24 hours with a digest of each one's content, and each multi-frame rendition's hosted check by rendition and profile. It SHALL rebuild its copies of the core's `session/2.0` records and of the `playback/2.0` or `playback/2.1` record by sync and SHALL NOT store them. A copy that has not synced, or whose owner stopped serving, SHALL be tried again after a doubling wait. A copy that followed its owner and lost it SHALL log one warning. An owner that has not answered since the start SHALL log at DEBUG until the wait reaches its longest, then one warning, and its later arrival SHALL log one recovery.
+The module SHALL keep only state it owns, in its own SQLite file and private folder: the library's catalog and the player's checkpoint (through `Library.attach`), its revision counter, the status view, Now Playing and moments settings, its last Hub mode and remembered brightness, configuration revision and last outcome, the commands it accepted and has not completed, the commands it completed in the last 24 hours with a digest of each one's content, and each multi-frame rendition's hosted check by rendition and profile. It SHALL rebuild its copies of the core's `session/3.0` records and of the `playback/2.0` or `playback/2.1` record by sync and SHALL NOT store them. A copy that has not synced, or whose owner stopped serving, SHALL be tried again after a doubling wait. A copy that followed its owner and lost it SHALL log one warning. An owner that has not answered since the start SHALL log at DEBUG until the wait reaches its longest, then one warning, and its later arrival SHALL log one recovery.
 
 #### Scenario: The library in the module's database
 - **WHEN** the module starts on an empty state directory and imports media
@@ -466,3 +466,15 @@ A moment that reached the device SHALL complete `succeeded` with `transmitted` a
 #### Scenario: A restart during a moment
 - **WHEN** the module restarts with a moment accepted and unfinished
 - **THEN** its command is reported `uncertain`, it does not play, and its moment ID stays refused
+
+### Requirement: Monitor uncertainty from the shared status
+
+The Monitor SHALL read each session through the contracts package's shared session read function. A row SHALL carry the uncertain marker only when the copy's connection is not current, its status is `unknown`, its status is `working` with unconfirmed work, an unavailable warning applies to it, or its parent is ambiguous. Silence, an unknown parent of a root and an unknown turn SHALL NOT mark it. The children marker SHALL show only when the row's unconfirmed child count is above zero, a parent is ambiguous, or the connection is not current.
+
+#### Scenario: A root that waits quietly
+- **WHEN** a hook root with an unknown parent and turn waits on an approval for ten minutes on a current connection
+- **THEN** its row shows the attention without the uncertain marker and without the children marker
+
+#### Scenario: Unconfirmed work and a lost connection
+- **WHEN** a working session's work turns unconfirmed, and then the copy stops following the core
+- **THEN** the row is marked uncertain, and every row is marked once the connection is not current

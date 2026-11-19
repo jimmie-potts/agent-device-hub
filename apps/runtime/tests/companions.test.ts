@@ -108,9 +108,9 @@ for (const output of ['fail', 'hang'] as const) it(`a ${output} at the actual SD
   if (output === 'hang') await w.advance(5001);
   await waitFor(() => w.module.inspect()?.availability === 'unavailable');
   assert.equal(w.module.inspect()?.presentation?.history, true);
-  const held = await contextOf(w.watcher).sdk.sync<{attention: unknown[]}>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
+  const held = await contextOf(w.watcher).sdk.sync<{attention: {items: unknown[]}}>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
   assert.equal(held.status, 'synced');
-  if (held.status === 'synced') {assert.equal(held.copy.states()[0]?.data.attention.length, 1); await held.copy.close();}
+  if (held.status === 'synced') {assert.equal(held.copy.states()[0]?.data.attention.items.length, 1); await held.copy.close();}
   assert.equal(w.module.pending(), 0);
 });
 
@@ -216,9 +216,9 @@ it('a question holds priority over a background card at 29 s and not at 30 s, pr
   assert.equal(w.module.inspect()?.presentation?.opportunity.category, 'coding-attention');
   await at(30_000); await w.command('companion-fixture-run', arrival); await w.advance();
   assert.equal(w.module.inspect()?.presentation?.opportunity.context, 'scenario', 'at 30 s the window has ended, and progress 20 s in did not renew it');
-  const held = await contextOf(w.watcher).sdk.sync<{attention: unknown[]}>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
+  const held = await contextOf(w.watcher).sdk.sync<{attention: {items: unknown[]}}>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 2000});
   assert.equal(held.status, 'synced');
-  if (held.status === 'synced') {assert.equal(held.copy.states()[0]?.data.attention.length, 1, 'the question stays shown'); await held.copy.close();}
+  if (held.status === 'synced') {assert.equal(held.copy.states()[0]?.data.attention.items.length, 1, 'the question stays shown'); await held.copy.close();}
 });
 
 it('a restart opens no question window and replays no card', async context => {

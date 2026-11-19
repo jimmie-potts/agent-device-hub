@@ -13,7 +13,7 @@ import {isReadReceipt, receiptQualification} from '../read-receipts/qualificatio
 import type {DatabaseSync} from 'node:sqlite';
 import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {
-  sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type SessionRecord,
+  sessionEntityId, type ApprovalRecoverRequest, type NoticeAcknowledgeRequest, type NoticeClearRequest, type SessionLabelSetRequest, type Session30Record,
 } from '@jimmie-potts/event-contracts/v2/families';
 import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type Clock, type Command, type LogFields, type Logger, type ModuleContext, type ModuleScheduler, type ModuleTool,
   type Reply, type Sdk, type Snapshot, type StateDraft, type SyncRequest,
@@ -44,7 +44,8 @@ import type {Operation} from './operations.js';
 import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOperatorActions, type Tracked} from './tracker.js';
 import {CORE_MODULE} from '../host.js';
 import {Backoff} from './backoff.js';
-import {LIFECYCLE_TYPE, sessionSchema} from './mapping.js';
+import {LIFECYCLE_TYPE} from './schemas.js';
+import {SESSION_SCHEMA} from '@jimmie-potts/event-contracts/v2/session';
 import {DEFAULT_CONSUMERS, type Consumer} from './session/model.js';
 import {CoreStore, type CoreTransaction, type Deriver, type SessionOutcome} from './store.js';
 import {admitRuntimeOwnership, assertRuntimeOwnership, bindRuntimeOwnership, ownershipUnavailable, type CoreOwnership, type RuntimeOwnership} from '../runtime-ownership.js';
@@ -53,7 +54,7 @@ import {readApartmentContent} from '../apartment/content.js';
 
 export {CORE_MODULE, DEFAULT_CONSUMERS, type Consumer};
 /**
- * The first wait before the core tries again after a failed commit, to publish freshness or to open its store; each
+ * The first wait before the core tries again after a failed commit, to commit what fell due or to open its store; each
  * further failure doubles it, up to `RETRY_MAX_MS`.
  */
 export const REFRESH_RETRY_MS = 1000;
@@ -161,11 +162,13 @@ const MAX_QUERY = 120;
  * `hub_sessions` read them, optionally only one provider's and those whose label, title, project or session ID holds
  * `q`, ignoring case. Reading changes nothing, acknowledges nothing and proves no readership.
  */
-function sessionsTool(records: () => Promise<{revision: number; sessions: readonly SessionRecord[]} | undefined> | undefined): ModuleTool {
+function sessionsTool(records: () => Promise<{revision: number; sessions: readonly Session30Record[]} | undefined> | undefined): ModuleTool {
   return {
     name: 'sessions',
     description: 'Read the agent sessions the core holds, optionally only one provider\'s and those whose label, title, project or session ID contains q, ignoring case. '
-      + 'Each record carries its revision, which approval recovery takes as expectedRevision. Reading changes nothing, and freshness, attention and unread state stay as observed.',
+      + 'Each is a session/3.0 record whose status is the hub\'s shared status, a class (needs-owner, working, finished, quiet or unknown) with a detail, '
+      + 'beside its work, attention, outcome and relationship claims, each confirmed or unconfirmed. Each record carries its revision, which approval recovery '
+      + 'takes as expectedRevision. Reading changes nothing, acknowledges nothing and proves no readership.',
     input: {type: 'object', additionalProperties: false, properties: {q: {type: 'string', maxLength: MAX_QUERY}, provider: {enum: [...PROVIDERS]}}},
     output: {type: 'object', additionalProperties: false, required: ['revision', 'sessions'], properties: {revision: {type: 'integer', minimum: 0}, sessions: {type: 'array'}}},
     read: async ({q, provider}) => {
@@ -353,7 +356,8 @@ class Core {
   /** Why the store is not open, while it is not, and when to try again. */
   #storeDown: ErrorCode = 'unavailable';
   readonly #reopen = new Backoff(REFRESH_RETRY_MS, RETRY_MAX_MS);
-  readonly #freshness = new Backoff(REFRESH_RETRY_MS, RETRY_MAX_MS);
+  /** When to try again after a refresh the store refused. */
+  readonly #due = new Backoff(REFRESH_RETRY_MS, RETRY_MAX_MS);
   /** Since when the store has refused durable work, and when that was last summarized. */
   #degradedSince: number | undefined;
   #summarizedAt = 0;
@@ -663,16 +667,16 @@ class Core {
   }
 
   /**
-   * Commits what has fallen due: expiry, and freshness brought up to date. A refusal is not fatal: the next attempt waits
+   * Commits what has fallen due: expiry and the work deadlines (design decision 4). A refusal is not fatal: the next attempt waits
    * a capped, doubling backoff, and each one is logged at DEBUG only. True when the records are up to date.
    */
   async #refresh(): Promise<boolean> {
     try {
       if (await this.#store.refresh()) this.#recovered();
-      this.#freshness.reset();
+      this.#due.reset();
       return true;
     } catch {
-      this.#freshness.failed(this.#clock.now());
+      this.#due.failed(this.#clock.now());
       this.#degraded(this.#store.takeFailure() === 'full' ? 'capacity' : 'unavailable');
       this.#log.debug('operation.failed', {'bunny.operation': 'status', 'bunny.outcome': 'unavailable'});
       return false;
@@ -783,9 +787,9 @@ class Core {
       if (!checked.ok) return refuse(checked.error.code, 'the acknowledgment is not a valid notice-acknowledge command');
       if (!this.#consumers.some(consumer => consumer.id === consumerId)) return refuse('invalid-request', 'no such consumer');
       if (consumerOf(command.source) !== consumerId) return refuse('forbidden', 'a consumer acknowledges notices for itself only');
-      const record: SessionRecord | undefined = this.#store.records().find(item => item.id === command.subject);
+      const record: Session30Record | undefined = this.#store.records().find(item => item.id === command.subject);
       if (record === undefined) return refuse('not-found', 'no such session');
-      if (!record.notices.some(notice => notice.id === noticeId)) return refuse('not-found', 'no such notice');
+      if (!record.outcome.notices.some(notice => notice.id === noticeId)) return refuse('not-found', 'no such notice');
       // The session's new revision joins the command's trace.
       const result = await this.#session(() => this.#store.acknowledge(command, record.id, noticeId, consumerId));
       if (!result.ok) return refuse(result.refusal.code, result.refusal.detail);
@@ -841,7 +845,7 @@ class Core {
         const down = await this.#ensureStore();
         if (down !== undefined) return errorBody(down.code, {detail: down.detail});
         const {label, expectedRevision} = command.data;
-        const current = (): SessionRecord | undefined => this.#store.records().find(record => record.id === command.subject);
+        const current = (): Session30Record | undefined => this.#store.records().find(record => record.id === command.subject);
         const guard = (): Refusal | undefined => current() === undefined ? {code: 'not-found', detail: 'no such session'} :
           current()?.revision !== expectedRevision ? {code: 'revision-conflict', detail: 'the session changed since it was read; read it again'} : undefined;
         const refusal = guard();
@@ -890,18 +894,18 @@ class Core {
         const down = await this.#ensureStore();
         if (down !== undefined) return errorBody(down.code, {detail: down.detail});
         const {noticeId, expectedRevision} = command.data;
-        const current = (): SessionRecord | undefined => this.#store.records().find(record => record.id === command.subject);
+        const current = (): Session30Record | undefined => this.#store.records().find(record => record.id === command.subject);
         const guard = (): Refusal | undefined => {
           const record = current();
           return record === undefined ? {code: 'not-found', detail: 'no such session'} :
-            record.revision !== expectedRevision || (record.notices.at(-1)?.id ?? null) !== noticeId
+            record.revision !== expectedRevision || (record.outcome.notices.at(-1)?.id ?? null) !== noticeId
               ? {code: 'revision-conflict', detail: 'the session or current notice changed since it was read; read it again'} : undefined;
         };
         const refusal = guard();
         if (refusal !== undefined) return errorBody(refusal.code, {detail: refusal.detail});
         const record = current();
         if (record === undefined) return errorBody('not-found', {detail: 'no such session'});
-        const notice = record.notices.at(-1);
+        const notice = record.outcome.notices.at(-1);
         let committed: (() => void) | undefined;
         const complete = (tx: CoreTransaction): void => { committed = this.#tracker.completeCore(tx, command, {result: OutcomeWord.succeeded, evidence: OutcomeWord.observed}); };
         if (noticeId === null || this.#consumers.every(consumer => notice?.acknowledgedBy.includes(consumer.id) === true)) {
@@ -931,7 +935,7 @@ class Core {
    * The sessions the core holds at its revision, once its store is open and while it runs; undefined otherwise. A pending
    * start transaction commits first (#1865 step 8), so the records read are the ones the core serves.
    */
-  async sessions(): Promise<{revision: number; sessions: readonly SessionRecord[]} | undefined> {
+  async sessions(): Promise<{revision: number; sessions: readonly Session30Record[]} | undefined> {
     if (!this.#store.isOpen || this.#stopped) return undefined;
     return this.#run(async () => {
       if (this.#stopped || await this.#ensureStore() !== undefined) return undefined;
@@ -942,10 +946,10 @@ class Core {
   /**
    * Answers `approval-recover` (Hub #835), the old Hub's operator recovery, through the session logic: it
    * retires the one approval marker without an attention ID that the session holds on `turnId`, only while the
-   * session's evidence is uncertain. `expectedRevision` must be the session record's revision, so an operator who read a
+   * session's work claim is unconfirmed for its deadline or a restart. `expectedRevision` must be the session record's revision, so an operator who read a
    * record that has changed since is refused with `revision-conflict` and reads again. The change commits before the
    * reply, in the command's trace, with `attention-cleared` (cause `recovered`) and the session's new state as its
-   * evidence; no outcome follows. A session with no such marker, or whose evidence is current, is `invalid-state`.
+   * evidence; no outcome follows. A session with no such marker, or whose work is confirmed, is `invalid-state`.
    */
   async #recover(command: Command<ApprovalRecoverRequest>): Promise<Reply> {
     await this.#ready;
@@ -961,7 +965,7 @@ class Core {
       if (!checked.ok) return refuse(checked.error.code, 'the recovery is not a valid approval-recover command');
       const down = await this.#ensureStore();
       if (down !== undefined) return refuse(down.code, down.detail);
-      const record: SessionRecord | undefined = this.#store.records().find(item => item.id === command.subject);
+      const record: Session30Record | undefined = this.#store.records().find(item => item.id === command.subject);
       if (record === undefined) return refuse('not-found', 'no such session');
       if (record.revision !== expectedRevision) return refuse('revision-conflict', 'the session changed since it was read; read it again');
       // The operator's guard is the record's revision, checked above as the core runs this change alone.
@@ -979,7 +983,7 @@ class Core {
 
   /**
    * Serves a sync: the core's records at its revision. What has fallen due commits first, at a new revision when it
-   * changed something, so each record's freshness holds at the sync's time and one revision always carries one payload.
+   * changed something, so each record holds what was due by the sync's time and one revision always carries one payload.
    */
   async #serve(request: Message<SyncRequest>): Promise<Snapshot | ErrorBody> {
     try {await this.#ready;} catch {
@@ -997,7 +1001,7 @@ class Core {
       const {families} = request.data;
       if (families.includes('music-capture-state') && !this.#music.available()) return errorBody('unavailable', {detail: 'the capture owner cannot serve current state'});
       const states: StateDraft[] = families.includes('session') ? this.#store.records().map(record => ({
-        type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchema(record), data: record,
+        type: 'org.bunny.session.updated', subject: record.id, dataschema: SESSION_SCHEMA, data: record,
       })) : [];
       for (const part of this.#parts) {
         if (!(part.families ?? []).some(family => families.includes(family))) continue;
@@ -1014,14 +1018,14 @@ class Core {
   }
 
   /**
-   * Runs the core's next due change on its scheduler: a record turning uncertain (MAPPING.md, `freshness`), a session
+   * Runs the core's next due change on its scheduler: running work's deadline passing (design decision 4), a session
    * expiring or a guard lapsing. After a refresh the store refused, the next attempt waits its backoff instead.
    */
   #schedule(): void {
     this.#timer?.();
     this.#timer = undefined;
     if (this.#stopped) return;
-    const at = this.#freshness.pending ? this.#freshness.next : this.#store.nextDue();
+    const at = this.#due.pending ? this.#due.next : this.#store.nextDue();
     if (at === undefined) return;
     const delay = Math.min(MAX_DELAY_MS, Math.max(0, at - this.#clock.now()));
     this.#timer = this.#scheduler.after(delay, () => this.#run(async () => {

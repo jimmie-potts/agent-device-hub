@@ -303,7 +303,7 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
   }
   if (session.notices.length > SESSION_LIMITS.notices || session.attention.length > SESSION_LIMITS.attention ||
     session.watermarks.length > SESSION_LIMITS.watermarks) return {outcome: 'ambiguous', fresh: false, capacity: true};
-  // Freshness and restart uncertainty describe lifecycle observations only.
+  // Only lifecycle observations are evidence: expiry runs from them, and read evidence does not refresh them.
   if (lifecycle) {
     session.lastEvidenceAtMs = now;
     session.observedAtMs = observation.observedAtMs;

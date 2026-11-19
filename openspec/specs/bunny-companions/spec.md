@@ -23,7 +23,7 @@ The system SHALL reduce supported Codex and Claude metadata once in the core and
 - **AND** restart or return to Free never replays missed opportunities
 
 ### Requirement: Final validity and bounded arbitration
-The system SHALL retain one active reaction and at most one waiting candidate per coding-attention, coding-notice and simulated-social category. It SHALL coalesce source/session candidates, discard obsolete or expired evidence and give coding attention precedence. It SHALL recheck enablement, mute, mode, source freshness, active attention/turn, output availability and expiry after asynchronous waiting and immediately before presentation.
+The system SHALL retain one active reaction and at most one waiting candidate per coding-attention, coding-notice and simulated-social category. It SHALL coalesce source/session candidates, discard obsolete or expired evidence and give coding attention precedence within its question window. It SHALL recheck enablement, mute, mode, the opportunity's match to its session (generation, identity, turn, and the attention item or notice it names), output availability and expiry after asynchronous waiting and immediately before presentation. No session freshness, restart or session-age term SHALL refuse a live card.
 
 #### Scenario: State changes during delivery
 - **WHEN** a delivery waits and attention clears, a turn is superseded, mode changes restrictively, a category is muted, companions are disabled or evidence expires
@@ -35,8 +35,12 @@ The system SHALL retain one active reaction and at most one waiting candidate pe
 - **THEN** the result truthfully reports refusal or unavailable presentation
 - **AND** no second endpoint is tried and emitted state is never claimed to have been seen
 
+#### Scenario: A quiet session's notice
+- **WHEN** a turn-ended opportunity arrives for a session that was silent for six minutes before the turn ended
+- **THEN** the card is admitted while its opportunity matches and is valid
+
 ### Requirement: Isolated simulated social decisions
-The system SHALL label arrival and visit fixtures as synthetic, with identity and location explicitly unknown, and route them through the same admission, text and presentation functions. Social admission SHALL require fresh Free mode, known non-busy/non-media facts, no active coding attention, no snooze, and one shared allowance of three episodes per local day with at least three hours between episodes. Scenario facts, repetition and allowance SHALL remain isolated from live household facts and records. Seeded variation and fixed-clock decisions SHALL be repeatable.
+The system SHALL label arrival and visit fixtures as synthetic, with identity and location explicitly unknown, and route them through the same admission, text and presentation functions. Social admission SHALL require fresh Free mode, known non-busy/non-media facts, no open question priority window, no snooze, and one shared allowance of three episodes per local day with at least three hours between episodes. Scenario facts, repetition and allowance SHALL remain isolated from live household facts and records. Seeded variation and fixed-clock decisions SHALL be repeatable.
 
 #### Scenario: Mixed synthetic priorities
 - **WHEN** a simulated arrival and coding question compete in a labelled scenario
@@ -78,10 +82,10 @@ The Reachy page SHALL accept a bounded owner-supplied form for one known synced 
 - **AND** identical repeated inspection creates no additional admission
 
 ### Requirement: Policy guarded inspect and copy
-Suggestions SHALL reuse Reachy enablement/category mute, current source freshness and attention priority. The page SHALL recheck policy, source context, input and expiry immediately before copy. Copy SHALL occur only on the owner's explicit action; it SHALL change only the clipboard. Keyboard and narrow viewport inspection SHALL be supported.
+Suggestions SHALL reuse Reachy enablement/category mute, the exact synced session, revision, generation and turn, the suggestion's own evidence window and the question priority window. The page SHALL recheck policy, source context, input and expiry immediately before copy. Copy SHALL occur only on the owner's explicit action; it SHALL change only the clipboard. Keyboard and narrow viewport inspection SHALL be supported.
 
 #### Scenario: Policy or source changes
-- **WHEN** Reachy is disabled/muted, output/core is unavailable, attention takes priority, the selected session/turn changes or evidence expires
+- **WHEN** Reachy is disabled/muted, output/core is unavailable, a question's priority window is open, the selected session/turn changes or evidence expires
 - **THEN** the suggestion is unavailable with a reason and cannot be copied
 - **AND** normal session attention remains independent
 
@@ -89,6 +93,10 @@ Suggestions SHALL reuse Reachy enablement/category mute, current source freshnes
 - **WHEN** the owner inspects without copying, explicitly copies, or clipboard access fails
 - **THEN** inspection changes no clipboard, a valid explicit copy contains the attributed prompt, and failure reports that copying could not be confirmed
 - **AND** no composer typing, harness API, submission, approval, task continuation, audio or device command occurs
+
+#### Scenario: A session quiet after its turn
+- **WHEN** the owner inspects a suggestion for a session whose turn ended ten minutes ago, with fresh matching evidence
+- **THEN** the session's silence does not make the suggestion unavailable
 
 ### Requirement: Explicit browser speech availability
 Speech SHALL default to off. Enabling text companions SHALL NOT enable speech. An authorized operator SHALL explicitly select one qualified browser endpoint and declare availability for its current connection. The UI SHALL explain that calls and other applications are not detected and that the operator must mute before interruption-sensitive activity. Quiet, category mute, stale or cleared attention, missing live state and unavailable output SHALL prevent new unsolicited speech. Work and Free SHALL permit a fresh eligible coding question after explicit enablement.
@@ -180,3 +188,30 @@ After restart, an authorized operator SHALL be able to release an orphaned uncer
 #### Scenario: Browser recovery loses its connection
 - **WHEN** the browser disconnects, navigates away or receives an ambiguous reply during recovery
 - **THEN** it submits no automatic retry and enables no speaker
+
+### Requirement: Thirty-second question priority
+An unanswered question, input request or approval SHALL take priority over background cards, simulated social cards, suggestions and automatic speech for 30 seconds from its own evidence instant on the reporting host's clock, as the existing opportunity's validity sets it. The companions module SHALL hold the window in memory from every admitted coding-attention opportunity it receives, whether or not its card is shown, and the window SHALL end early when the attention item clears. The browser's suggestion and final speech checks SHALL take the window only from the live question card Reachy presents, so a muted question, or a presented question that a later question replaced, SHALL NOT hold the suggestion page, while the module's check still holds background cards and automatic speech. The question SHALL stay visible afterward. Unrelated progress SHALL NOT renew the window, and a restart SHALL start no new window. Explicitly requested assistant answers SHALL stay outside this rule. When the reporting host's clock runs ahead of the hub's, or 30 seconds or more behind it, the core SHALL drop that question's opportunity as today, so the question gets no priority window while status devices still show it; a host clock behind by less SHALL shorten the window.
+
+#### Scenario: Inside and after the window
+- **WHEN** a question is raised and a background card waits, and the clock moves to 29 s and then 30 s after the question's evidence instant
+- **THEN** the card is refused with `attention-priority` at 29 s and admitted at 30 s, while the question stays shown
+
+#### Scenario: Progress and restart
+- **WHEN** unrelated progress arrives 20 s after a question, and the runtime restarts while the question is still open
+- **THEN** progress does not extend the window, and after the restart no window is open and no card or speech replays
+
+#### Scenario: A muted question
+- **WHEN** the coding-attention category is muted and a question is raised, and a background card waits and the owner inspects a coding suggestion 10 s later
+- **THEN** the module refuses the card with `attention-priority`, and the suggestion page, which sees no presented question card, is not held
+
+#### Scenario: A replaced question
+- **WHEN** question A is presented, question B replaces it 5 s later and B is answered at 10 s, while A is still open
+- **THEN** until 30 s after A's evidence instant the module still refuses background cards and automatic speech with `attention-priority`, and the suggestion page, whose presented card is B's, is not held
+
+#### Scenario: A host clock ahead of the hub
+- **WHEN** the reporting host's clock runs a minute ahead of the hub's and the host reports a question
+- **THEN** the core raises no opportunity for it, no priority window opens, and the session still needs the owner on every status device
+
+#### Scenario: A host clock behind the hub
+- **WHEN** one host's clock runs 40 seconds behind the hub's and another's runs 10 seconds behind, and each reports a question
+- **THEN** the core raises no opportunity for the first, and the second's priority window ends 20 seconds after the hub received it

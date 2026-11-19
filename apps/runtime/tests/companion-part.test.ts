@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import type {Message, MessageKind} from '@jimmie-potts/event-contracts/v2';
 import type {CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
-import {sessionEntityId, type AttentionRaised, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type AttentionRaised, type Identity} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession, type SessionFacts} from '@jimmie-potts/event-contracts/v2/session';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {CompanionPart} from '../src/core/companion-part.js';
 import type {CoreHandle} from '../src/core/core.js';
@@ -29,13 +30,13 @@ async function setup(context: Parameters<Parameters<typeof it>[1]>[0]) {
   });
   let revision = 0;
   /** One committed live reduction: the session's record and its attention-raised occurrence, observed at `observedAtMs`. */
-  const raise = async (patch: Partial<SessionRecord>, observedAtMs = clock.now()): Promise<CompanionOpportunity | undefined> => {
+  const raise = async (patch: Partial<SessionFacts>, observedAtMs = clock.now()): Promise<CompanionOpportunity | undefined> => {
     revision += 1;
     const attention = {id: {status: 'known', id: `question-${String(revision)}`}, kind: 'question', turn: {status: 'known', id: 'turn-1'}} as const;
-    const record: SessionRecord = {id, revision, generation: 1, identity, parent: {status: 'unknown'}, turn: {status: 'known', id: 'turn-1'}, activity: 'active',
+    const record = buildSession({id, revision, generation: 1, identity, parent: {status: 'unknown'}, turn: {status: 'known', id: 'turn-1'}, work: 'active',
       attention: [attention], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'}, observedAtMs, lastEvidenceAtMs: clock.now(),
-      freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, ...patch};
-    const state = envelope('state', 'org.bunny.session.updated', 'session/2.0', record);
+      children: {working: 0, unconfirmed: 0}, ...patch});
+    const state = envelope('state', 'org.bunny.session.updated', 'session/3.0', record);
     const occurrence = envelope<AttentionRaised>('occurrence', 'org.bunny.attention.raised', 'attention-raised/2.0',
       {session: id, identity, turn: record.turn, observedAtMs, ordering: {status: 'unknown'}, revision, attention});
     const before = raised.length;
@@ -52,10 +53,10 @@ async function setup(context: Parameters<Parameters<typeof it>[1]>[0]) {
 
 it('a question from a session whose work is unconfirmed still raises its opportunity', async context => {
   const {clock, raise} = await setup(context);
-  const restarted = await raise({restartUncertain: true, freshness: 'uncertain'});
+  const restarted = await raise({unconfirmed: 'restart'});
   assert.equal(restarted?.category, 'coding-attention', 'work left unconfirmed by a restart does not withhold the question');
   assert.equal(restarted?.validUntilMs, clock.now() + 30_000);
-  const silent = await raise({freshness: 'uncertain', lastEvidenceAtMs: clock.now() - 360_000});
+  const silent = await raise({unconfirmed: 'deadline', lastEvidenceAtMs: clock.now() - 360_000});
   assert.equal(silent?.cue, 'question', 'work unconfirmed after its deadline does not withhold the question');
 });
 

@@ -33,8 +33,11 @@ export type CoreFamily = PayloadFamily;
 
 /** A moment request's start lies at most this far after the request was sent. */
 export const MOMENT_MAX_LEAD_MS = 60_000;
-/** Freshness is `uncertain` once this long has passed without session evidence. */
-export const STALE_AFTER_MS = 300_000;
+/**
+ * The retained `session/2.0` and `2.1` freshness rule: `uncertain` once this long has passed without session evidence.
+ * Only their validator applies it; `session/3.0`, which the core publishes since #1865 step 9, carries no freshness.
+ */
+const STALE_AFTER_MS = 300_000;
 
 /** A session's native selector. Its provider and client come from the supported-source definition (`sources.ts`). */
 export type Identity = {provider: Provider; client: Client; hostId: string; sourceId: string; sessionId: string};
@@ -56,7 +59,10 @@ export type Notice = {id: string; kind: 'turn-ended'; turn: KnownId; acknowledge
 /** Explicit read provenance (`session/2.1`): the exact finished notice, when the receipt was observed, its source and the receipt. */
 export type ReadProvenance = {noticeId: string; observedAtMs: number; source: string; receipt: ReadReceipt};
 
-/** `org.bunny.session.updated` under `session/2.0` and `2.1`: the full record of one agent session. */
+/**
+ * `org.bunny.session.updated` under `session/2.0` and `2.1`: the full record of one agent session. Both stay registered
+ * for reading retained documents; the core publishes `session/3.0` since #1865 step 9, and no live reader reads these.
+ */
 export type SessionRecord = {
   id: string; revision: number; generation: number; identity: Identity; parent: Parent; turn: KnownId;
   activity: 'unknown' | 'active' | 'idle' | 'interrupted';
@@ -88,7 +94,7 @@ export type RelationshipsClaim = {children: {working: number; unconfirmed: numbe
  * `org.bunny.session.updated` under `session/3.0` (Hub #1865): the full record of one agent session, with the hub's
  * status and its separately evidenced claims in place of `session/2.0`'s freshness and restart uncertainty. The
  * validator refuses a status that is not `statusOf` of the claims. It is registered beside 2.0 and 2.1, and the core
- * publishes it only from the switch step.
+ * publishes it since #1865 step 9.
  */
 export type Session30Record = {
   id: string; revision: number; generation: number; identity: Identity; parent: Parent; turn: KnownId;

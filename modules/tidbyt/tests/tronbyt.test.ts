@@ -8,7 +8,7 @@ import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {BroadcastChannel} from 'node:worker_threads';
 import {SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {CloudFetch} from '../src/cloud.js';
 import {configureTidbyt} from '../src/configuration.js';
 import {NO_CONTROLS, SIMULATED_SECTION} from '../src/module.js';
@@ -17,7 +17,7 @@ import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from '../src/simula
 import {SimulatedTronbyt, TRONBYT_ORIGIN} from '../src/simulated-tronbyt.js';
 import {BRIGHTNESS_CEILING, TronbytConnection, privateServerUrl} from '../src/tronbyt.js';
 import {encodeLosslessRgb} from '../src/webp.js';
-import {MINUTE, SECOND, asking, finished, host, notice, playback, records, shown, test, until, withWriteFailure, working, type HostOptions, type Hosted} from './support.js';
+import {MINUTE, SECOND, asking, finished, host, notice, playback, records, revise, shown, test, until, withWriteFailure, working, type HostOptions, type Hosted} from './support.js';
 
 const STATUS = 'agentdevicehub';
 const NOW_PLAYING = 'nowplaying';
@@ -25,7 +25,7 @@ const KEY = 'synthetic-key';
 const SERVER_KEY = SIMULATED_API_KEY;
 const signal = (): AbortSignal => new AbortController().signal;
 /** A session whose label a test can change, so its frame changes. */
-const relabel = (record: SessionRecord, value: string): SessionRecord => ({...record, label: {value, origin: 'user'}});
+const relabel = (record: Session30Record, value: string): Session30Record => ({...record, label: {value, origin: 'user'}});
 const WEBP = Uint8Array.from([1, 2, 3]);
 const TRONBYT = {url: TRONBYT_ORIGIN, deviceId: SIMULATED_DEVICE};
 const section = (extra: object = {}): object => ({
@@ -515,7 +515,7 @@ test('a pin follows its tile: it is set while the tile stands, cleared when the 
   await until(() => outcomes(h).length === 1, 'the mode');
   assert.equal(server.state().pinnedApp, first);
 
-  await h.core?.set({...done, notices: [notice(['pixoo'])]});
+  await h.core?.set(revise(done, {notices: [notice(['pixoo'])]}));
   await h.advance(16 * SECOND);
   await until(() => server.state().installations[STATUS] === undefined && server.state().pinnedApp === null, 'the tile and its pin both gone');
 
@@ -540,7 +540,7 @@ test('a pin write that fails is a fresh one later, and it is reported once', asy
   await send(h, 'device-mode-set', {requestId: 'pin', mode: 'pin-status'});
   await until(() => outcomes(h).length === 1, 'the mode');
   server.answerNextPatch(500);
-  await h.core?.set({...done, notices: [notice(['pixoo'])]});
+  await h.core?.set(revise(done, {notices: [notice(['pixoo'])]}));
   await h.advance(16 * SECOND);
   await until(() => server.state().calls.some(call => call.method === 'DELETE'), 'the removal');
   await until(() => h.logs().some(entry => entry.event === 'operation.failed' && entry.fields['bunny.operation'] === 'mode'), 'the failed clear');

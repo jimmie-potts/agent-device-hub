@@ -1,6 +1,6 @@
 // The Pixoo runtime module (Hub #843, ADR 0012). It wraps the Pixoo library, player and presentation as the module
 // `pixoo`: its own SQLite file holds the library's catalog, the player's checkpoint, its settings and its outbox, and its
-// private folder holds the media. It follows the core's `session/2.0` records for the status base and the playback owner's
+// private folder holds the media. It follows the core's `session/3.0` records for the status base and the playback owner's
 // `playback/2.0` record for Now Playing, by sync, and stores neither. It takes the Hub's Work, Free and Quiet as its own
 // modes, as policy only (ADR 0014). It answers device, mode, player, playlist and catalog
 // commands on `bunny.cmd.<family>.<device id>`: it refuses before acting with a typed refusal, or accepts, stores its

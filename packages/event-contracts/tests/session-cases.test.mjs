@@ -7,7 +7,6 @@ import {createHash} from 'node:crypto';
 import test from 'node:test';
 import * as legacy from '@jimmie-potts/agent-status';
 import {sessionEntityId} from '../dist/v2/families.js';
-import * as live from '../dist/v2/status.js';
 import {loadSessionCases, noticeIdOf, policyView, statusText} from '../dist/v2/session-cases.js';
 import {forConsumer, highestStatus, opportunityMatches, readSession, sessionState} from '../dist/v2/session.js';
 
@@ -160,23 +159,23 @@ test('the Pixoo markers follow the shared status, not age or an unknown parent',
   assert.ok(pinned >= 7, `${pinned} children-marker expectations`);
 });
 
-// Group 1 is inert: the live 2.x helper that LIFX and the Tidbyt tile call keeps main's rule. Over every check's
-// records it ranks as the 1.x helper does, and where a check pins today's result (S1 to S3 among them), it gives it.
-test('the live status helper gives main\'s results on every case, S1 to S3 included', () => {
-  let pinned = 0;
+// The shared helper ranks every case's roots as the 1.x helper ranks the same sessions, except where a known later turn
+// superseded an unacknowledged notice (status rule 3, owner decision 2026-11-18): the 1.x helper still shows it done.
+test('the view helper ranks every case\'s roots as the 1.x helper does, but for a superseded notice', () => {
+  const superseded = [];
   for (const {check, where} of every()) {
-    const records = check.messages.map(message => message.data);
-    const roots = Object.entries(check.records).filter(([, record]) => record.parent.status !== 'known');
-    for (const [name, record] of roots) {
-      const {id: _id, revision: _revision, ...snapshot} = record;
-      assert.equal(live.sessionState(record), legacy.sessionState({...snapshot, observationAgeMs: 0}), `${where}: ${name} against 1.x`);
+    for (const [name, view] of named(check).filter(([, found]) => isRoot(found))) {
+      const snapshot = {identity: view.identity, parent: view.parent, turn: view.turn, activity: view.work.state, attention: view.attention.items,
+        notices: view.outcome.notices, children: {active: view.relationships.children.working, uncertain: view.relationships.children.unconfirmed}, observationAgeMs: 0};
+      const expected = legacy.sessionState(snapshot);
+      if (sessionState(view) === expected) continue;
+      assert.equal(expected, 'done', `${where}: ${name} against 1.x`);
+      assert.ok(view.outcome.notices.some(notice => notice.turn.status === 'known' && view.turn.status === 'known' && notice.turn.id !== view.turn.id), where);
+      superseded.push(where);
     }
-    if (check.readers.live === undefined) continue;
-    assert.equal(live.highestStatus({synced: check.synced, sessions: records}), check.readers.live.highest, `${where}: live highestStatus`);
-    assert.deepEqual(Object.fromEntries(roots.map(([name, record]) => [name, live.sessionState(record) ?? null])), check.readers.live.states, `${where}: live sessionState`);
-    pinned++;
   }
-  assert.ok(pinned >= 6, `${pinned} live expectations`);
+  // The core acknowledges a superseded notice for Nanoleaf and Pixoo at the later turn's start, so no case differs today.
+  assert.deepEqual(superseded, []);
 });
 
 test('the Nanoleaf tasks follow the hub\'s status with Nanoleaf\'s policy and no session rule of their own', () => {

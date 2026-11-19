@@ -6,7 +6,7 @@ import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingDispatch} from '@jimmie-potts/event-contracts/v2/coding';
-import {coreValidator, type AgentOccurrence, type AttentionRaised, type SessionRecord, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, type AgentOccurrence, type AttentionRaised, type Session30Record, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreChange} from './store.js';
 import {LivePublication} from './live-publication.js';
@@ -14,16 +14,16 @@ import {LivePublication} from './live-publication.js';
 const TYPES = new Set(['org.bunny.attention.raised', 'org.bunny.turn.ended']);
 export class CompanionPart implements CorePart {
   readonly #eligibility = new LivePublication();
-  readonly #sessions = new Map<string, SessionRecord>();
+  readonly #sessions = new Map<string, Session30Record>();
   #closed = false;
   /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
-  seed(records: readonly SessionRecord[]): void {
+  seed(records: readonly Session30Record[]): void {
     this.#sessions.clear();
     for (const record of records) this.#sessions.set(record.id, record);
   }
   committed(change: CoreChange): void {
     for (const message of change.messages) {
-      if (message.kind === 'state' && message.type === 'org.bunny.session.updated') this.#sessions.set(message.subject, message.data as SessionRecord);
+      if (message.kind === 'state' && message.type === 'org.bunny.session.updated') this.#sessions.set(message.subject, message.data as Session30Record);
       if (message.kind === 'removal') this.#sessions.delete(message.subject);
     }
     this.#eligibility.committed(change.messages, TYPES);

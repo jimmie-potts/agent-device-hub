@@ -60,8 +60,8 @@ notice acknowledgment, attention nor lifecycle freshness.
 | `ordering`, `ordering.status`, `ordering.epoch`, `ordering.sequence` | `session /ordering` | The ordering block. Known ordering adds `authority`, which must equal `identity.sourceId`. |
 | `observedAtMs`, `lastEvidenceAtMs` | `session /observedAtMs`, `/lastEvidenceAtMs` | Unchanged. |
 | `observationAgeMs` | derived | This is read context, not record content: it changes every millisecond. A consumer computes `now - lastEvidenceAtMs`. Decided by the coordinator, 2026-10-06: not published; consumers derive it. |
-| `freshness` | `session /freshness` | Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). Freshness must match the envelope `time`, as 1.x's matched `asOfMs`: `uncertain` exactly when the owner restarted since the last evidence or five minutes or more have passed (validator). An owner computes freshness at the envelope `time` of each message it sends, sync re-sends included, and when freshness has changed it bumps the revision before sending. The core (#831) publishes the record again on a timer when it turns uncertain, and brings freshness up to date before it serves a sync. |
-| `restartUncertain` | `session /restartUncertain` | From #1865 step 8, true only while running work is unconfirmed since a core start: the start marks every session whose activity is `active`, and fresh `turn-started`, `activity-observed` or `attention-resolved` evidence on the current turn, produced at or after the start, ends it. Other sessions keep their status across a restart. |
+| `freshness` | `session /freshness` | Retired in `session/3.0` (see [Session 2.x to 3.0](#session-2x-to-30)). Decided by the coordinator, 2026-10-06: the owner publishes a new revision when freshness turns `uncertain` at five minutes. In 1.x a read computed it without a new revision. `restartUncertain: true` forces `uncertain` (schema). Freshness must match the envelope `time`, as 1.x's matched `asOfMs`: `uncertain` exactly when the owner restarted since the last evidence or five minutes or more have passed (validator). An owner computes freshness at the envelope `time` of each message it sends, sync re-sends included, and when freshness has changed it bumps the revision before sending. The core (#831) publishes the record again on a timer when it turns uncertain, and brings freshness up to date before it serves a sync. |
+| `restartUncertain` | `session /restartUncertain` | Retired in `session/3.0`, as the work claim's reason `restart`. From #1865 step 8, true only while running work is unconfirmed since a core start: the start marks every session whose activity is `active`, and fresh `turn-started`, `activity-observed` or `attention-resolved` evidence on the current turn, produced at or after the start, ends it. Other sessions keep their status across a restart. |
 | `children`, `children.active`, `children.uncertain` | `session /children` | The owner's count. The owner republishes the parent when a child changes the count. The cross-record count check in `validateSnapshot` belongs to the owner, because one record cannot check it. |
 | `generation` | `session /generation` | Required, and never after the record's `revision` (validator). Snapshot 1.0 records read as 0. |
 | `label`, `labelOrigin` | `session /label` `{value, origin}` | Snapshots 1.0 and 1.1 hid agent labels, and 1.2 added `labelOrigin`. 2.0 always carries the winning label with its origin. Precedence holds: the owner never lets an agent label replace a user label, and the display order is the label, then the title, then a neutral fallback (`sessionTitle`). The label uses the lifecycle 1.1 credential check, which `setLabel` already applies. |
@@ -70,6 +70,28 @@ notice acknowledgment, attention nor lifecycle freshness.
 | `projectId` | `session /projectId` | The explicit project identity. Names never merge sessions. |
 | `hostSessionId` | `session /hostSessionId` | Routing metadata, never an identity. A record with a known parent never carries it (schema). 1.x kept it in owner memory only; the core (#831) keeps it with the record in its private store, so it survives a restart. |
 | `retiredTurns`, `seen`, `seen[].key`, `seen[].content`, `watermarks`, `watermarks[].dimension`, `watermarks[].epoch`, `watermarks[].sequence`, `metadataObservedAtMs` | owner's store | These durable guards and watermarks stay in the core's store. No consumer reads them. |
+
+## Session 2.x to 3.0
+
+Since [Hub #1865](https://github.com/jimmie-potts/agent-device-hub/issues/1865)
+step 9 the core publishes `session/3.0`, and the shared read function
+`readSession` reads only that version. Nothing converts `session/2.x` records
+at runtime: `session/2.0` and `2.1` stay registered for retained documents, and
+a reader from an older release finds no record it accepts until it is updated.
+The core builds each record from its stored session with `buildSession`
+(`src/v2/session-view.ts`).
+
+| 2.x member | 3.0 home | Notes |
+| --- | --- | --- |
+| `id`, `revision`, `generation`, `identity`, `parent`, `turn`, `unavailable`, `ordering`, `label`, `title`, `project`, `projectId`, `hostSessionId` | the same member | Unchanged. |
+| `observedAtMs`, `lastEvidenceAtMs` | the same member | The instants of the record's last published change. A work observation that changes no public member advances only the core's private progress time and publishes nothing. |
+| `activity` | `work /state` | `unknown`, `active`, `idle` or `interrupted`. |
+| `freshness`, `restartUncertain` | `work /confidence`, `/reasons` | Retired. Only running work becomes unconfirmed: reason `deadline` five minutes after its last qualifying work evidence on the core's clock, which the core publishes, and reason `restart` at a core start. Ambiguous or lost activity evidence adds its own reason. Attention, outcomes and idle or interrupted work never change through silence. |
+| `attention` | `attention /items` | Unchanged items. The claim's confidence is unconfirmed while the `attention` dimension is ambiguous or lost. |
+| `notices`, `read`, `readReceipt` | `outcome /notices`, `/read`, `/readReceipt` | Unchanged, with per-consumer acknowledgments. `readReceipt` was `session/2.1`'s; a record with read provenance is now an ordinary `session/3.0` record. |
+| `children.active`, `children.uncertain` | `relationships /children/working`, `/unconfirmed` | A child counts as working only while its own work is active and confirmed. |
+| none | `status` | The hub's status, `statusOf` of the claims: a closed class and an open detail. The validator refuses any other. |
+| none | `work /evidenceAtMs`, `attention /evidenceAtMs`, `outcome /evidenceAtMs` | Each claim's evidence time, which the core gives as the record's `lastEvidenceAtMs`. |
 
 ## Agent-state snapshot
 
@@ -443,14 +465,16 @@ API 1.1's `moment` command maps to `moment-play` as
 ## Agent status
 
 The source is `@jimmie-potts/agent-status`'s status helper, which LIFX and Tidbyt
-use today. The 2.0 home is `@jimmie-potts/event-contracts/v2/status`, a copy
-rewritten for `session/2.0` records. The 1.x package stays for the old
-controllers until #839.
+used. The 2.0 home is the shared session view, `@jimmie-potts/event-contracts/v2/session-view`
+(re-exported by `./v2/session`), whose helper reads each session's `session/3.0`
+record as its view (#1865). `@jimmie-potts/event-contracts/v2/status` keeps the
+state names and `STATUS_COLORS`. The 1.x package stays for the old controllers
+until #839.
 
 | 1.x name | 2.0 home | Notes |
 | --- | --- | --- |
-| `sessionState` | `sessionState(record, consumers?)` | The same ranking on a `session/2.0` record: attention, then working, then done. Read evidence never retires done. |
-| `highestStatus` | `highestStatus(copy, options)` | Reads a consumer's copy of the session family, `{synced, sessions}`, instead of a snapshot. |
+| `sessionState` | `sessionState(view, consumers?)` | The same ranking on a session's view, from its status: attention, then working, then done. Read evidence never retires done. A notice a known later turn superseded is not done. |
+| `highestStatus` | `highestStatus(copy, options)` | Reads a consumer's copy of the session family as views, `{synced, sessions}` (`ViewCopy`), instead of a snapshot. |
 | `HighestStatusOptions.feedAvailable` | `copy.synced` | A copy that has not synced, or whose later sync failed, reads as `unknown`. |
 | `HighestStatusOptions.acknowledgingConsumers` | `HighestStatusOptions.acknowledgingConsumers` | Unchanged: without it, any consumer's acknowledgment retires done. |
 | `Snapshot.collector` | **no 2.0 home** | Owner health is the runtime's module health (#830, #831), as decided for the snapshot's `collector`. A consumer sees an owner that cannot serve it as a sync that fails. |

@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {registerCoreFamilies, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, Outbox, type BunnyModule, type CommandDraft, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
 import {ModuleHarness, moduleConformance} from '@jimmie-potts/sdk/testing';
 import {createCoreModule, type CoreOptions, type CorePart, type LogRecord, type Runtime, type RuntimeOptions} from '../src/index.js';
@@ -47,8 +47,8 @@ type CoreRun = {
   pixoo: Sdk;
   nanoleaf: Sdk;
   /** The watcher's synced copy of the core's sessions. */
-  sessions: () => SessionRecord[];
-  record: (id?: string) => SessionRecord | undefined;
+  sessions: () => Session30Record[];
+  record: (id?: string) => Session30Record | undefined;
   url: string;
 };
 
@@ -74,7 +74,7 @@ async function coreRun(context: TestContext, options: Partial<RuntimeOptions> & 
   const {core, extra = [], ...rest} = options;
   const {runtime, logs} = await run(context, {modules: [createCoreModule(core), watcher, hook, pixoo, nanoleaf, ...extra], ...rest});
   context.after(() => { assert.deepEqual(invalid, [], 'every message the core published follows profile 2.0'); });
-  const sessions = (): SessionRecord[] => (copy?.states() ?? []).map(state => state.data as SessionRecord);
+  const sessions = (): Session30Record[] => (copy?.states() ?? []).map(state => state.data as Session30Record);
   return {
     runtime, logs, seen, invalid, url: runtime.url, sessions, record: (id = SESSION_ID) => sessions().find(record => record.id === id),
     hook: contextOf(hook).sdk, pixoo: contextOf(pixoo).sdk, nanoleaf: contextOf(nanoleaf).sdk,
@@ -115,13 +115,13 @@ it('an approval prompt is raised and cleared, and a finished turn stays on its s
   const core = await coreRun(context);
   await publish(core.hook, turnStarted, Date.now());
   await publish(core.hook, approvalPrompt('approval-1'), Date.now());
-  await waitFor(() => core.record()?.attention.length === 1, 5000, 'the waiting session');
+  await waitFor(() => core.record()?.attention.items.length === 1, 5000, 'the waiting session');
   await publish(core.hook, approvalResolved('approval-1'), Date.now());
   await publish(core.hook, turnEnded, Date.now());
-  await waitFor(() => core.record()?.activity === 'idle', 5000, 'the finished turn');
+  await waitFor(() => core.record()?.work.state === 'idle', 5000, 'the finished turn');
   const record = core.record();
-  assert.deepEqual(record?.attention, []);
-  assert.equal(record?.notices.length, 1, 'the finished turn\'s unread notice is on the record');
+  assert.deepEqual(record?.attention.items, []);
+  assert.equal(record?.outcome.notices.length, 1, 'the finished turn\'s unread notice is on the record');
   const occurrences = core.seen.filter(message => message.kind === 'occurrence' && message.source === 'bunny/core').map(message => message.type);
   assert.deepEqual(occurrences, ['org.bunny.attention.raised', 'org.bunny.companion-opportunity.raised', 'org.bunny.attention.cleared', 'org.bunny.turn.ended', 'org.bunny.companion-opportunity.raised']);
   assert.equal(core.seen.some(message => message.dataschema.includes('/inbox-item/')), false, 'no inbox item');
@@ -131,8 +131,8 @@ it('a consumer acknowledges a notice for itself only, and each consumer\'s ackno
   const core = await coreRun(context);
   await publish(core.hook, turnStarted, Date.now());
   await publish(core.hook, turnEnded, Date.now());
-  await waitFor(() => core.record()?.notices.length === 1, 5000, 'the notice');
-  const noticeId = core.record()?.notices[0]?.id ?? '';
+  await waitFor(() => core.record()?.outcome.notices.length === 1, 5000, 'the notice');
+  const noticeId = core.record()?.outcome.notices[0]?.id ?? '';
   let lastReply: Message | undefined;
   const ask = async (sdk: Sdk, ...args: Parameters<typeof acknowledge>): Promise<string> => {
     const {key, draft} = acknowledge(...args);
@@ -149,7 +149,7 @@ it('a consumer acknowledges a notice for itself only, and each consumer\'s ackno
 
   assert.equal(await ask(core.pixoo, SESSION_ID, 'pixoo', noticeId), 'accepted');
   await waitFor(() => (core.record()?.revision ?? 0) > revision, 5000, 'the acknowledged record');
-  assert.deepEqual(core.record()?.notices[0]?.acknowledgedBy, ['pixoo'], 'recorded for pixoo only; nanoleaf\'s notice is untouched');
+  assert.deepEqual(core.record()?.outcome.notices[0]?.acknowledgedBy, ['pixoo'], 'recorded for pixoo only; nanoleaf\'s notice is untouched');
   const acknowledged = core.record()?.revision;
   const state = core.seen.filter(message => message.type === 'org.bunny.session.updated').at(-1);
   assert.equal(traceOf(state), traceOf(lastReply), 'the acknowledged record joins the command\'s trace');
@@ -176,22 +176,22 @@ it('an operator recovers the one uncertain approval without an ID once the sessi
   };
   await publish(core.hook, turnStarted, START);
   await publish(core.hook, unknownApproval, START);
-  await waitFor(() => core.record()?.attention.length === 1, 5000, 'the waiting session');
+  await waitFor(() => core.record()?.attention.items.length === 1, 5000, 'the waiting session');
   const waiting = core.record()?.revision ?? -1;
   assert.equal((await ask(SESSION_ID, 'turn-1', waiting)).answer, 'invalid-state', 'evidence is current, so the marker may still be real');
   assert.equal((await ask(OTHER_ID, 'turn-1', waiting)).answer, 'not-found', 'no such session');
-  // Five minutes without evidence: the record turns uncertain at a new revision.
+  // Five minutes without qualifying work evidence: the running work turns unconfirmed at a new revision.
   clock.advance(300_000);
-  await waitFor(() => core.record()?.freshness === 'uncertain', 5000, 'the uncertain record');
+  await waitFor(() => core.record()?.work.reasons.includes('deadline') === true, 5000, 'the unconfirmed work');
   const uncertain = core.record()?.revision ?? -1;
   assert.ok(uncertain > waiting);
   assert.equal((await ask(SESSION_ID, 'turn-1', waiting)).answer, 'revision-conflict', 'the operator read an older record');
   assert.equal((await ask(SESSION_ID, 'turn-2', uncertain)).answer, 'invalid-state', 'no marker on that turn');
-  assert.equal(core.record()?.attention.length, 1, 'no refusal changed the record');
+  assert.equal(core.record()?.attention.items.length, 1, 'no refusal changed the record');
 
   const recovered = await ask(SESSION_ID, 'turn-1', uncertain);
   assert.equal(recovered.answer, 'accepted');
-  await waitFor(() => core.record()?.attention.length === 0, 5000, 'the cleared marker in the copy');
+  await waitFor(() => core.record()?.attention.items.length === 0, 5000, 'the cleared marker in the copy');
   const cleared = core.seen.find(message => message.type === 'org.bunny.attention.cleared');
   assert.equal((cleared?.data as {cause?: string} | undefined)?.cause, 'recovered');
   assert.equal(traceOf(cleared), traceOf(recovered.reply), 'the recovery joins the command\'s trace');
@@ -213,9 +213,9 @@ it('the core\'s sessions tool reads the sessions it holds, filtered by provider 
   const sdk = contextOf(watcher).sdk;
   await publish(sdk, sessionStarted, Date.now(), {title: {value: 'Port Nanoleaf', source: 'provider'}});
   await publish(sdk, sessionStarted, Date.now(), {identity: OTHER});
-  const all = async (): Promise<SessionRecord[]> => ((await tool.read({})) as {sessions: SessionRecord[]}).sessions;
+  const all = async (): Promise<Session30Record[]> => ((await tool.read({})) as {sessions: Session30Record[]}).sessions;
   await waitFor(async () => (await all()).length === 2, 5000, 'both sessions');
-  const titled = (await tool.read({q: 'NANOLEAF'})) as {revision: number; sessions: SessionRecord[]};
+  const titled = (await tool.read({q: 'NANOLEAF'})) as {revision: number; sessions: Session30Record[]};
   assert.deepEqual(titled.sessions.map(record => record.identity.sessionId), [IDENTITY.sessionId]);
   assert.ok(titled.revision > 0);
   assert.deepEqual(((await tool.read({provider: 'codex'})) as {sessions: unknown[]}).sessions, []);
@@ -234,18 +234,18 @@ it('an observation that breaks profile 2.0, or reuses (source, id) with other co
   assert.equal(core.sessions().length, 1);
 });
 
-it('freshness turns uncertain on the core\'s own timer at five minutes, at a revision every copy applies', async context => {
+it('running work turns unconfirmed on the core\'s own timer at five minutes, at a revision every copy applies', async context => {
   const clock = manualClock();
   const core = await coreRun(context, {clock: {now: clock.now}, scheduler: clock.scheduler});
-  await publish(core.hook, sessionStarted, START);
+  await publish(core.hook, turnStarted, START);
   await waitFor(() => core.record() !== undefined, 5000, 'the session');
   const before = core.record();
-  assert.equal(before?.freshness, 'current');
+  assert.equal(before?.work.confidence, 'confirmed');
   clock.advance(299_999);
   await new Promise(resolve => { setImmediate(resolve); });
-  assert.equal(core.record()?.freshness, 'current');
+  assert.equal(core.record()?.work.confidence, 'confirmed');
   clock.advance(1);
-  await waitFor(() => core.record()?.freshness === 'uncertain', 5000, 'the uncertain record in the copy');
+  await waitFor(() => core.record()?.work.reasons.includes('deadline') === true, 5000, 'the unconfirmed work in the copy');
   assert.ok((core.record()?.revision ?? 0) > (before?.revision ?? 0));
 });
 
@@ -351,8 +351,8 @@ it('a full disk refuses an acknowledgment with capacity before it records anythi
   const core = await coreRun(context, {core: {parts: [diskPart(db => { database = db; })]}});
   await publish(core.hook, turnStarted, Date.now());
   await publish(core.hook, turnEnded, Date.now());
-  await waitFor(() => core.record()?.notices.length === 1, 5000, 'the notice');
-  const noticeId = core.record()?.notices[0]?.id ?? '';
+  await waitFor(() => core.record()?.outcome.notices.length === 1, 5000, 'the notice');
+  const noticeId = core.record()?.outcome.notices[0]?.id ?? '';
   const revision = core.record()?.revision;
   assert.ok(database);
   fillDisk(database);
@@ -363,22 +363,22 @@ it('a full disk refuses an acknowledgment with capacity before it records anythi
   database.exec(ROOM);
   const accepted = await core.pixoo.request(key, draft, {timeoutMs: 5000});
   assert.equal(accepted.status, 'accepted');
-  await waitFor(() => core.record()?.notices[0]?.acknowledgedBy.includes('pixoo') === true, 5000, 'the acknowledgment');
+  await waitFor(() => core.record()?.outcome.notices[0]?.acknowledgedBy.includes('pixoo') === true, 5000, 'the acknowledgment');
 });
 
-it('freshness the store cannot publish is tried again on a capped, doubling backoff, with one condition record and a summary a minute', async context => {
+it('a work deadline the store cannot publish is tried again on a capped, doubling backoff, with one condition record and a summary a minute', async context => {
   const clock = manualClock();
   let database: DatabaseSync | undefined;
   const hook = fixture('hook');
   const {logs} = await run(context, {
     modules: [createCoreModule({parts: [diskPart(db => { database = db; })]}), hook], clock: {now: clock.now}, scheduler: clock.scheduler, logLevel: 'debug',
   });
-  await publish(contextOf(hook).sdk, sessionStarted, START);
+  await publish(contextOf(hook).sdk, turnStarted, START);
   await waitFor(() => received(logs, 'accepted').length === 1, 5000, 'the session');
   assert.ok(database);
   fillDisk(database);
   const attempts = (): number => logs.filter(record => record.event_name === 'operation.failed' && record.attributes['bunny.operation'] === 'status').length;
-  // The record turns uncertain at five minutes; the store refuses that and every attempt for the next two minutes.
+  // The running work turns unconfirmed at five minutes; the store refuses that and every attempt for the next two minutes.
   clock.advance(300_000);
   await flush();
   for (let second = 0; second < 125; second += 1) {
@@ -441,12 +441,12 @@ it('a restart with a stored working session on a full disk keeps the core runnin
 
   assert.ok(database);
   database.exec(ROOM);
-  // The next freshness attempt, a second after the failed one, publishes the restart's uncertainty.
+  // The next attempt, a second after the failed one, publishes the restart's marking.
   await waitFor(() => storage(logs).at(-1)?.event_name === 'operation.completed', 5000, 'the recovery');
   const synced = await sync();
   assert.equal(synced.status, 'synced');
   if (synced.status !== 'synced') return;
-  assert.deepEqual(synced.copy.states().map(state => (state.data as SessionRecord).restartUncertain), [true]);
+  assert.deepEqual(synced.copy.states().map(state => (state.data as Session30Record).work.reasons), [['restart']]);
   await synced.copy.close();
   await publish(contextOf(hook).sdk, sessionStarted, Date.now(), {identity: OTHER});
   await waitFor(() => received(logs, 'accepted').length === 1, 5000, 'the observation after room is freed');
@@ -532,8 +532,8 @@ it('the sessions tool commits a pending start transaction before it reads, so it
   assert.equal((await tool.read({}) as {error?: {code: string}}).error?.code, 'unavailable', 'nothing is served while the start cannot commit');
   // Room again, before the core's own retry: the read commits the start first and serves the marked record.
   full = false;
-  const read = await tool.read({}) as {sessions: SessionRecord[]};
-  assert.deepEqual(read.sessions.map(record => record.restartUncertain), [true]);
+  const read = await tool.read({}) as {sessions: Session30Record[]};
+  assert.deepEqual(read.sessions.map(record => record.work.reasons), [['restart']]);
 });
 
 it('a second core never gets the store while the first opens its owner again after a failed commit', async context => {

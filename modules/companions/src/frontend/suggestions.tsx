@@ -1,7 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import type {CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendContext} from '@jimmie-potts/sdk/frontend';
-import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {presentedPriority} from '../presentation-policy.js';
 import {checkNames, inspectEvidence, observationTime, propose, type CheckName, type CheckResult, type CheckStatus, type TaskEvidence, type SuggestionContext} from './suggestion-model.js';
 
@@ -38,7 +37,7 @@ export function CodingSuggestions({context, state, live}: {context: FrontendCont
     if (connected && synced) return;
     setAccepted(undefined); setDraft(blank()); setSelected(''); prior.current = undefined; setMessage('');
   }, [connected, synced]);
-  const sessions = (context.core?.sessions ?? []).map(sessionView);
+  const sessions = context.core?.sessions ?? [];
   const session = sessions.find(view => view.id === selected);
   useEffect(() => {
     setDraft(previous => ({...previous, checks: emptyChecks(), observed: ''}));

@@ -8,16 +8,16 @@ import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {loadSessionCases, noticeIdOf, type CompactOccurrence, type SessionCase} from '@jimmie-potts/event-contracts/v2/session-cases';
-import {sessionEntityId, type Attention, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type Attention, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {World} from './fixtures/store-world.js';
 import {it, manualClock, stateDir} from './support.js';
 
 const cases = loadSessionCases();
 
 /** A record without what the case set numbers by steps, its notices on unknown turns unnamed. */
-function comparable(record: SessionRecord): unknown {
+function comparable(record: Session30Record): unknown {
   const {revision: _revision, generation: _generation, ...rest} = structuredClone(record);
-  for (const notice of rest.notices) if (notice.turn.status === 'unknown') notice.id = '';
+  for (const notice of rest.outcome.notices) if (notice.turn.status === 'unknown') notice.id = '';
   return rest;
 }
 
@@ -29,7 +29,7 @@ const REPORTED = 5;
 const clipped = (value: unknown): string => JSON.stringify(value).slice(0, 400);
 
 /** The records that differ from the expected ones, by entity ID, at most `REPORTED` of them. */
-function recordDifferences(records: readonly SessionRecord[], expected: readonly SessionRecord[]): string[] {
+function recordDifferences(records: readonly Session30Record[], expected: readonly Session30Record[]): string[] {
   const got = new Map(records.map(record => [record.id, JSON.stringify(comparable(record))]));
   const want = new Map(expected.map(record => [record.id, JSON.stringify(comparable(record))]));
   const differences: string[] = [];
@@ -41,15 +41,15 @@ function recordDifferences(records: readonly SessionRecord[], expected: readonly
 }
 
 /** One of the roots a case's fill step adds: the case set gives a fill step's sessions one revision, as one step. */
-const filler = (record: SessionRecord): boolean => /^synthetic-filler-\d{3}$/.test(record.identity.sessionId);
+const filler = (record: Session30Record): boolean => /^synthetic-filler-\d{3}$/.test(record.identity.sessionId);
 
 /**
  * Where the order of the records' revisions and generations differs from the expected order, which the case set gives
  * by steps, at most `REPORTED` places. Every pair of values is compared by the sign of its difference, except two values
  * of different fillers: the core commits a fill step's sessions one by one.
  */
-function orderDifferences(records: readonly SessionRecord[], expected: readonly SessionRecord[]): string[] {
-  const values = (items: readonly SessionRecord[]): {id: string; filler: boolean; name: string; value: number}[] => [...items].sort((a, b) => a.id < b.id ? -1 : 1)
+function orderDifferences(records: readonly Session30Record[], expected: readonly Session30Record[]): string[] {
+  const values = (items: readonly Session30Record[]): {id: string; filler: boolean; name: string; value: number}[] => [...items].sort((a, b) => a.id < b.id ? -1 : 1)
     .flatMap(record => [{id: record.id, filler: filler(record), name: 'revision', value: record.revision}, {id: record.id, filler: filler(record), name: 'generation', value: record.generation}]);
   const got = values(records), want = values(expected);
   if (got.map(item => item.id).join() !== want.map(item => item.id).join()) return ['the records are not the expected ones'];
@@ -153,7 +153,7 @@ it('a check of a full core fails fast with a short report, and orders a fill ste
     : {...record, revision: record.revision + 200, generation: record.generation + 200});
   assert.deepEqual(orderDifferences(committed, expected), []);
   // Every record wrong, and every order reversed: still at most five short differences each.
-  const wrong = expected.map(record => ({...record, revision: 1000 - record.revision, generation: 1000 - record.revision, activity: 'active' as const}));
+  const wrong = expected.map(record => ({...record, revision: 1000 - record.revision, generation: 1000 - record.revision, turn: {status: 'known' as const, id: 'wrong'}}));
   const records = recordDifferences(wrong, expected), order = orderDifferences(wrong, expected);
   assert.deepEqual([records.length, order.length], [REPORTED, REPORTED]);
   assert.ok([...records, ...order].every(text => text.length < 1000));

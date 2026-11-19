@@ -6,7 +6,8 @@ import type {TestContext} from 'node:test';
 import {setImmediate as turn,setTimeout as pause} from 'node:timers/promises';
 import {InProcessBus,type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import type {ModeState,SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {ModeState,Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {SESSION_SCHEMA} from '@jimmie-potts/event-contracts/v2/session';
 import {createMicroDuckModule} from '../src/module.js';
 import {SimulatedMicroDuck} from '../src/simulated.js';
 import {MICRODUCK_SIMULATED_SECTION as section} from '../src/registration.js';
@@ -36,8 +37,8 @@ export async function advanceUntil(clock:TestClock,check:()=>boolean,ms=4000):Pr
 export async function fixture(t:TestContext,transport:MicroDuckTransport=new SimulatedMicroDuck(),clock?:TestClock) {
   const dir=await mkdtemp(join(tmpdir(),'microduck-module-')),bus=new InProcessBus(clock===undefined?{}:{now:clock.now,scheduler:clock.scheduler}),timing=clock===undefined?{}:{clock,scheduler:clock.scheduler};
   const core=bus.connect('bunny/core'),operator=bus.connect('bunny/parts/operator'),states:MicroDuckState[]=[];
-  let mode:ModeState={id:'hub',revision:1,mode:'work',selectedAtMs:Date.now()},sessions:SessionRecord[]=[];
-  await core.serveSync(['session','mode'],()=>({revision:mode.revision,states:[{type:'org.bunny.mode.updated',subject:'hub',dataschema:schemaOf('mode'),data:mode},...sessions.map(s=>({type:'org.bunny.session.updated',subject:s.id,dataschema:schemaOf('session'),data:s}))]}));
+  let mode:ModeState={id:'hub',revision:1,mode:'work',selectedAtMs:Date.now()},sessions:Session30Record[]=[];
+  await core.serveSync(['session','mode'],()=>({revision:mode.revision,states:[{type:'org.bunny.mode.updated',subject:'hub',dataschema:schemaOf('mode'),data:mode},...sessions.map(s=>({type:'org.bunny.session.updated',subject:s.id,dataschema:SESSION_SCHEMA,data:s}))]}));
   await operator.subscribe<MicroDuckState>('bunny.state.microduck-state.*',m=>{states.push(m.data);});
   let host=new ModuleHarness(createMicroDuckModule({transport}),{bus,stateDir:dir,section,...timing});
   t.after(async()=>{await host.stop();await operator.close();await core.close();await rm(dir,{recursive:true,force:true});});await host.start();
@@ -50,6 +51,6 @@ export async function fixture(t:TestContext,transport:MicroDuckTransport=new Sim
   await connected();await (clock===undefined?pause(30):clock.advance(30));
   return {bus,core,operator,command,state,outcome,control,states,get host(){return host;},async restart(){await host.stop();host=new ModuleHarness(createMicroDuckModule({transport}),{bus,stateDir:dir,section,...timing});await host.start();await connected();},
     async mode(value:ModeState['mode']){mode={...mode,revision:mode.revision+1,mode:value};await core.publish('bunny.state.mode.hub',{kind:'state',type:'org.bunny.mode.updated',subject:'hub',dataschema:schemaOf('mode'),data:mode});await pause(20);},
-    async sessions(value:SessionRecord[]){sessions=value;for(const s of value)await core.publish(`bunny.state.session.${s.id}`,{kind:'state',type:'org.bunny.session.updated',subject:s.id,dataschema:schemaOf('session'),data:s});await pause(20);},
+    async sessions(value:Session30Record[]){sessions=value;for(const s of value)await core.publish(`bunny.state.session.${s.id}`,{kind:'state',type:'org.bunny.session.updated',subject:s.id,dataschema:SESSION_SCHEMA,data:s});await pause(20);},
   };
 }

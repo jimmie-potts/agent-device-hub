@@ -2,7 +2,7 @@
 // SQLite file what it rang, so a restart with the prompt still waiting does not ring again. Like the lamp, it is created
 // by its factory with its device transport, `createChimeModule({transport})`. It answers no command and serves nothing;
 // it follows the core's sessions.
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {BunnyModule} from '@jimmie-potts/sdk';
 import type {ConformanceSpec} from '@jimmie-potts/sdk/testing';
 
@@ -45,9 +45,9 @@ export function createChimeModule({transport}: {transport: ChimeTransport}): Bun
       db.exec('CREATE TABLE IF NOT EXISTS rung (session TEXT NOT NULL, attention TEXT NOT NULL, PRIMARY KEY (session, attention)) STRICT');
       const rang = db.prepare('SELECT 1 FROM rung WHERE session = ? AND attention = ?');
       const ring = db.prepare('INSERT INTO rung (session, attention) VALUES (?, ?)');
-      const follow = await sdk.sync<SessionRecord>(['session'], change => {
+      const follow = await sdk.sync<Session30Record>(['session'], change => {
         if (change.type !== 'updated') return;
-        for (const {id, kind} of change.message.data.attention) {
+        for (const {id, kind} of change.message.data.attention.items) {
           if (kind !== 'approval' || id.status !== 'known' || rang.get(change.entity.id, id.id) !== undefined) continue;
           // A fault here escapes the handler, so the runtime stops the chime alone.
           transport.ring({session: change.entity.id, attention: id.id});

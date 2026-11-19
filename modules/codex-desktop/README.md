@@ -63,7 +63,7 @@ matching `thread_name` wins. The current display-text contract rejects credentia
 before truncating to 160 Unicode scalars. Only configured top-level Desktop
 sessions receive provider titles. The core updates a known session's title via
 the owner's queued metadata operation, preserving labels, activity, read state,
-turn, ordering, notices, host session IDs and lifecycle/restart freshness. It
+turn, ordering, notices, host session IDs and work confirmation. It
 cannot establish a session. Explicit labels remain the display winner.
 
 Only `bunny/modules/codex-desktop` may publish these metadata facts to the core.

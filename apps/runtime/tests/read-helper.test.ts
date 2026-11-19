@@ -9,7 +9,7 @@ import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {prepareMessage, publishOnce} from '@jimmie-potts/sdk';
 import {READ_RECEIPT_SCHEMA} from '@jimmie-potts/event-contracts/v2/read-receipts';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
 import {createCoreModule} from '../src/core/core.js';
@@ -17,7 +17,7 @@ import {producerSource, runHook} from '../src/hook/index.js';
 import {runReadHelper, type ReadHelperResult} from '../src/read-receipts/helper.js';
 import {coreSession} from '../src/read-receipts/session.js';
 import {CLAUDE_RECEIPT_FEED, CLAUDE_TERMINAL_VERSION, receiptSource} from '../src/read-receipts/qualification.js';
-import {asSession30, current, servedSessions} from './fixtures/session-owner.js';
+import {asSession20, current, rebuilt, servedSessions} from './fixtures/session-owner.js';
 import {edgeConfig, it, run, waitFor} from './support.js';
 
 const FEED = {provider: 'claude', client: 'code', hostId: 'test-host', sourceId: 'test-hooks'} as const;
@@ -47,7 +47,7 @@ async function setup(context: TestContext, scopes: ('read' | 'ingest')[] = ['rea
   const records = async () => {
     const response = await fetch(`${runtime.url}/api/v2/families/session`, {headers: {authorization: 'Bearer test-reader-token'}});
     assert.equal(response.status, 200);
-    return (await response.json() as {records: SessionRecord[]}).records;
+    return (await response.json() as {records: Session30Record[]}).records;
   };
   await emit('UserPromptSubmit', BIND.promptId);
   await emit('Stop', BIND.promptId);
@@ -59,17 +59,17 @@ it('the helper binds without reading, confirms the owner commit, and refuses a l
   const bound = await runReadHelper(world.producer, BIND);
   assert.equal(bound.status, 'ready');
   assert.ok(bound.status === 'ready');
-  assert.equal((await world.records())[0]?.read, 'unknown');
+  assert.equal((await world.records())[0]?.outcome.read, 'unknown');
   assert.deepEqual(await runReadHelper(world.producer, readInput(bound.target)), {status: 'confirmed'});
   const read = (await world.records())[0];
-  assert.equal(read?.read, 'read');
-  assert.equal(read.readReceipt?.source, world.source);
+  assert.equal(read?.outcome.read, 'read');
+  assert.equal(read.outcome.readReceipt?.source, world.source);
   assert.deepEqual(await runReadHelper(world.producer, readInput(bound.target)), {status: 'confirmed'}, 'a confirmed replay does not publish again');
   assert.equal((await world.records())[0]?.revision, read.revision);
   await world.emit('UserPromptSubmit', 'prompt-b');
   await world.emit('Stop', 'prompt-b');
   assert.equal((await runReadHelper(world.producer, readInput(bound.target))).status, 'unavailable');
-  assert.equal((await world.records())[0]?.read, 'unknown');
+  assert.equal((await world.records())[0]?.outcome.read, 'unknown');
   assert.equal((await runReadHelper(world.producer, BIND)).status, 'unavailable');
 });
 
@@ -93,9 +93,9 @@ it('the delivered executable binds and confirms through the authenticated gatewa
   const bound = await invoke(BIND);
   assert.equal(bound.status, 'ready');
   assert.ok(bound.status === 'ready');
-  assert.equal((await world.records())[0]?.read, 'unknown');
+  assert.equal((await world.records())[0]?.outcome.read, 'unknown');
   assert.deepEqual(await invoke(readInput(bound.target)), {status: 'confirmed'});
-  assert.equal((await world.records())[0]?.read, 'read');
+  assert.equal((await world.records())[0]?.outcome.read, 'read');
 });
 
 it('the gateway rejects ordinary-hook receipts, a foreign feed and activity from the dedicated receipt credential', async context => {
@@ -108,7 +108,7 @@ it('the gateway rejects ordinary-hook receipts, a foreign feed and activity from
   for (const schema of [READ_RECEIPT_SCHEMA, 'https://bunny.invalid/events/lifecycle/2.0']) {
     assert.equal((await send(world.source, world.token, {...bound.target.data, event: {kind: 'turn-started'}}, schema)).status, 'rejected');
   }
-  assert.equal((await world.records())[0]?.read, 'unknown');
+  assert.equal((await world.records())[0]?.outcome.read, 'unknown');
 });
 
 it('unsafe files, unqualified versions, absent metadata and an ingest-only grant never bind', async context => {
@@ -120,7 +120,7 @@ it('unsafe files, unqualified versions, absent metadata and an ingest-only grant
   assert.equal((await runReadHelper(world.producer, BIND)).status, 'unavailable');
   const denied = await setup(context, ['ingest']);
   assert.equal((await runReadHelper(denied.producer, BIND, 500)).status, 'unavailable');
-  assert.equal((await denied.records())[0]?.read, 'unknown');
+  assert.equal((await denied.records())[0]?.outcome.read, 'unknown');
 });
 
 it('a publication without a matching owner commit remains unconfirmed and is not retried', async context => {
@@ -146,24 +146,24 @@ function finishedClaude() {
   return current(found);
 }
 
-it('the helper binds only a record readSession accepts; another version gives no receipt and its ordinary refusal (Hub #1865)', async context => {
-  // A finished Claude root from the shared cases, served as session/2.0 and as session/3.0 by a stand-in core.
+it('the helper binds a session/3.0 record; an older core\'s session/2.0 gives no receipt and its ordinary refusal (Hub #1865)', async context => {
+  // A finished Claude root from the shared cases, served as session/3.0 and as an older core's session/2.0 by a stand-in core.
   const state = finishedClaude();
   const {identity, turn} = state.data;
   assert.ok(turn.status === 'known');
   const feed = {provider: identity.provider, client: identity.client, hostId: identity.hostId, sourceId: identity.sourceId};
   const bind = {...BIND, sessionId: identity.sessionId, promptId: turn.id};
   const runs = [];
-  for (const message of [state, asSession30(state)]) {
+  for (const message of [state, asSession20(state)]) {
     const world = await servedSessions(context, receiptSource(feed), {...feed, feed: CLAUDE_RECEIPT_FEED}, [message]);
     runs.push({accepted: readSession(message) !== undefined, world, bound: await runReadHelper(world.producer, bind)})
   }
-  const ready = runs.filter(item => item.accepted);
-  assert.equal(ready.length, 1, 'readSession reads exactly one of the two versions');
-  const target = ready[0]?.bound;
+  assert.deepEqual(runs.map(item => item.accepted), [true, false], 'readSession reads session/3.0 only');
+  const target = runs[0]?.bound;
   assert.equal(target?.status, 'ready', JSON.stringify(target));
   assert.ok(target?.status === 'ready');
   assert.deepEqual([target.target.data.event.generation, target.target.data.turn], [state.data.generation, turn]);
+  // The owner accepted that a helper meeting a version it does not read stops sending receipts, quietly (design decision 13).
   for (const {world, bound} of runs.filter(item => !item.accepted)) {
     assert.equal(bound.status, 'unavailable');
     assert.ok(bound.status === 'unavailable');
@@ -180,10 +180,7 @@ it('the helper binds no target while the session\'s work still runs, though its 
   const finished = finishedClaude();
   const {identity, turn} = finished.data;
   assert.ok(turn.status === 'known');
-  const running = {...finished, data: {...finished.data, activity: 'active' as const}};
-  // The version readSession reads now: the record, or its session/3.0 form once the core switches.
-  const state = [running, asSession30(running)].find(message => readSession(message) !== undefined);
-  assert.ok(state);
+  const state = {...finished, data: rebuilt(finished.data, {work: 'active'})};
   assert.equal(readSession(state)?.work.state, 'active');
   const feed = {provider: identity.provider, client: identity.client, hostId: identity.hostId, sourceId: identity.sourceId};
   const world = await servedSessions(context, receiptSource(feed), {...feed, feed: CLAUDE_RECEIPT_FEED}, [state]);

@@ -25,7 +25,7 @@ The core SHALL keep each root session's latest host session ID with its record, 
 - **THEN** the core publishes its removal with reason `expired`, and history keeps its earlier `turn.ended`
 
 #### Scenario: Freshness at five minutes
-- **WHEN** five minutes pass on the runtime's clock without qualifying work evidence for a working session, and for a session waiting on a question
+- **WHEN** five minutes pass on the runtime's clock without qualifying work evidence for a working session, and for a session whose turn ended on a question
 - **THEN** the core's timer publishes the working session with unconfirmed work at a higher revision, a millisecond earlier nothing was published, and the waiting session is not republished and still needs the owner
 
 #### Scenario: After a restart
@@ -261,7 +261,7 @@ The catalog SHALL cover an approval prompt reaching every module, a command with
 
 #### Scenario: The agent-session core alone
 - **WHEN** the core runs with no device module, a hook observes two sessions, an approval prompt raised and resolved, a turn's end and one session's runtime end, the panel acknowledges the finished turn's notice and the operator tries to acknowledge it as the panel, and the runtime restarts
-- **THEN** on both transports the reader holds both sessions, hears `attention.raised`, `attention.cleared` with cause `resolved`, `turn.ended` naming the notice and `session.ended`; the finished turn stays on the session record as an unread notice and never becomes an inbox item; the notice is acknowledged by the panel only and the operator's attempt is `forbidden`; and after the restart the session is uncertain until a new turn's evidence makes it current
+- **THEN** on both transports the reader holds both sessions, hears `attention.raised`, `attention.cleared` with cause `resolved`, `turn.ended` naming the notice and `session.ended`; the finished turn stays on the session record as an unread notice and never becomes an inbox item; the notice is acknowledged by the panel only and the operator's attempt is `forbidden`; and after the restart the finished session keeps its status, with no running work to mark unconfirmed, until a new turn's evidence confirms its work
 
 #### Scenario: An unexpected refusal
 - **WHEN** the in-memory harness starts the misconfigured-module seed without its expected refusal, and then with it
@@ -298,8 +298,8 @@ The catalog SHALL cover an approval prompt reaching every module, a command with
 Each stored session SHALL hold separately evidenced claims: work (`active`, `idle`, `interrupted` or `unknown`), attention, outcome (notices, per-consumer acknowledgments and read evidence) and relationships (working and unconfirmed children), each with its evidence time and confidence. The core SHALL compute the session's status from its claims with the contracts package's status function. The core SHALL own every time-driven change of meaning: active work SHALL become unconfirmed, with reason `deadline`, five minutes after its last qualifying work evidence on the core's clock, and the core SHALL publish that change. Attention, outcome and idle or interrupted work SHALL NOT change through silence. Explicit lost or conflicting evidence SHALL change the affected claim and publish at once. Only qualifying evidence for the current turn, `turn-started`, `activity-observed` or `attention-resolved` on that turn, SHALL confirm work. A child SHALL count as working on its parent only while its own work claim is active and confirmed.
 
 #### Scenario: A quiet question
-- **WHEN** a session raises a question and is silent for ten minutes
-- **THEN** its status still needs the owner and the core publishes nothing for the silence
+- **WHEN** a session whose turn ended on a question is silent for ten minutes, and a session whose turn still runs under its question is too
+- **THEN** both still need the owner; the core publishes nothing for the first, and for the second only its running work's deadline, which leaves its attention confirmed
 
 #### Scenario: Late evidence for another turn
 - **WHEN** a session's work turned unconfirmed and a tool result arrives for an ended turn

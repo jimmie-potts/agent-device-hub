@@ -37,7 +37,7 @@ export const inboxScenarios: readonly Scenario[] = [{
       return answer.status === 200 && (JSON.parse(answer.text) as {records: unknown[]}).records.length === 0 || 'shared handling missing';
     }),
     act('the hook records a finished agent turn', async h => { await publish(h, sessionStarted); await publish(h, turnStarted); await publish(h, turnEnded); }),
-    expect('the turn is unread on its session and absent from the inbox', h => session(h)?.notices.length === 1 && items(h).length === 0 || 'turn inbox/unread mismatch'),
+    expect('the turn is unread on its session and absent from the inbox', h => session(h)?.outcome.notices.length === 1 && items(h).length === 0 || 'turn inbox/unread mismatch'),
     expect('history reads filter kind, source, session and time', async h => {
       const answer = await h.gateway({as: 'reader', method: 'GET', path: `/api/v2/history?kind=occurrence&source=bunny%2Fcore&session=${SESSION_ID}&fromAtMs=0&toAtMs=${h.now()}`});
       const rows = (JSON.parse(answer.text) as {rows?: {kind: string; source: string}[]}).rows;

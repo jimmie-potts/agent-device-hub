@@ -5,7 +5,7 @@ import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {operationEntityId, coreValidator, type InboxItem} from '@jimmie-potts/event-contracts/v2/families';
 import {fullDisk, type Command, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
 import type {CoreHandle} from './core.js';
-import {REMOVAL_SCHEMA} from './mapping.js';
+import {REMOVAL_SCHEMA} from './schemas.js';
 import type {Operation} from './operations.js';
 import type {CoreTransaction, Deriver} from './store.js';
 import {BACKGROUND_ACTIONS, OPERATOR_ACTIONS, requesterRefusal, type Action, type ActionAnswer, type OperationChange} from './tracker.js';

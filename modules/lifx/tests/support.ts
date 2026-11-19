@@ -9,7 +9,8 @@ import {test, type TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import {MessageValidator, errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {registerCoreFamilies, sessionEntityId, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {registerCoreFamilies, sessionEntityId, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession, type SessionFacts} from '@jimmie-potts/event-contracts/v2/session';
 import {InProcessBus, acknowledgmentOf, type BunnyModule, type Cancel, type CommandDraft, type Participant, type RequestResult, type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHarness, RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {
@@ -122,22 +123,25 @@ export function fullValidator(): MessageValidator {
   return validator;
 }
 
-const identity = (name: string): SessionRecord['identity'] => ({provider: 'claude', client: 'code', hostId: 'host-a', sourceId: 'claude-code', sessionId: name});
+const identity = (name: string): Session30Record['identity'] => ({provider: 'claude', client: 'code', hostId: 'host-a', sourceId: 'claude-code', sessionId: name});
 /** A session's shown state: what `highestStatus` ranks it as. */
 export type Shown = 'working' | 'attention' | 'done' | 'idle';
 
-/** A valid `session/2.0` record for a root session in `shown`, with its evidence at `atMs`. */
-export function sessionRecord(name: string, shown: Shown, revision: number, atMs: number): SessionRecord {
+/** The facts of a root session in `shown`, with its evidence at `atMs`. */
+export function sessionFacts(name: string, shown: Shown, revision: number, atMs: number): SessionFacts {
   const turn = {status: 'known', id: 'turn-1'} as const;
   return {
     id: sessionEntityId(identity(name)), revision, generation: revision, identity: identity(name), parent: {status: 'top-level'}, turn,
-    activity: shown === 'working' ? 'active' : 'idle',
+    work: shown === 'working' ? 'active' : 'idle',
     attention: shown === 'attention' ? [{id: {status: 'known', id: `approval-${name}`}, kind: 'approval', turn}] : [],
     notices: shown === 'done' ? [{id: 'a'.repeat(64), kind: 'turn-ended', turn, acknowledgedBy: []}] : [],
     read: 'unknown', unavailable: [{dimension: 'read', reason: 'unsupported'}], ordering: {status: 'unknown'},
-    observedAtMs: atMs, lastEvidenceAtMs: atMs, freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0},
+    observedAtMs: atMs, lastEvidenceAtMs: atMs, children: {working: 0, unconfirmed: 0},
   };
 }
+/** A valid `session/3.0` record for a root session in `shown`, with its evidence at `atMs`. */
+export const sessionRecord = (name: string, shown: Shown, revision: number, atMs: number): Session30Record =>
+  buildSession(sessionFacts(name, shown, revision, atMs));
 
 /** The general and LIFX commands, as an operator sends them. */
 export const command = {
@@ -189,7 +193,7 @@ export class World {
   readonly invalid: string[] = [];
   /** Errors the bus reported from the module's handlers. */
   readonly errors: unknown[] = [];
-  readonly sessions = new Map<string, SessionRecord>();
+  readonly sessions = new Map<string, Session30Record>();
   readonly #validator = fullValidator();
   readonly #options: WorldOptions;
   /** The state directory the module's database and private folder live in. */
@@ -274,13 +278,13 @@ export class World {
     return result;
   }
 
-  /** Publishes a session's new record from the stand-in core; `change` adjusts the record before it goes out. */
-  async session(name: string, shown: Shown, change: (record: SessionRecord) => SessionRecord = record => record): Promise<void> {
+  /** Publishes a session's new record from the stand-in core; `change` adjusts the session's facts before it goes out. */
+  async session(name: string, shown: Shown, change: (facts: SessionFacts) => SessionFacts = facts => facts): Promise<void> {
     this.#revision += 1;
-    const record = change(sessionRecord(name, shown, this.#revision, this.clock.now()));
+    const record = buildSession(change(sessionFacts(name, shown, this.#revision, this.clock.now())));
     this.sessions.set(record.id, record);
     await this.#core?.publish(`bunny.state.session.${record.id}`, {
-      kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/session/2.0', data: record,
+      kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/session/3.0', data: record,
     });
     await flush();
   }
@@ -295,7 +299,7 @@ export class World {
       const record = sessionRecord(name, shown, this.#revision, this.clock.now());
       this.sessions.set(record.id, record);
       void this.#core?.publish(`bunny.state.session.${record.id}`, {
-        kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/session/2.0', data: record,
+        kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/session/3.0', data: record,
       });
     }
   }
@@ -359,7 +363,7 @@ export class World {
     this.#core = core;
     await core.serveSync(['session'], () => this.refuseSync ? errorBody('unavailable', {detail: 'the stand-in core refuses'}) : ({
       revision: this.#revision,
-      states: [...this.sessions.values()].map(record => ({type: 'org.bunny.session.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/session/2.0', data: record})),
+      states: [...this.sessions.values()].map(record => ({type: 'org.bunny.session.updated', subject: record.id, dataschema: 'https://bunny.invalid/events/session/3.0', data: record})),
     }));
     await core.subscribe('bunny.event.*.*', async message => {
       if (message.kind !== 'outcome' || this.#options.acknowledged === false) return;

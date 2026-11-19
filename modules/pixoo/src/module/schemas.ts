@@ -5,7 +5,7 @@
 // 256 KiB cap: a playlist holds at most 1,000 items.
 import {SCHEMA_BASE} from '@jimmie-potts/event-contracts/v2';
 import {EXTENDED_ART_DEVICE_SCHEMA, deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Identity} from '@jimmie-potts/event-contracts/v2/families';
 
 const block = (name: string): object => ({$ref: `${SCHEMA_BASE}blocks/2.0#/$defs/${name}`});
 const closed = (properties: Record<string, object>, optional: readonly string[] = []): object => ({
@@ -157,7 +157,7 @@ export const pixooSchemas: Readonly<Record<string, object>> = {...deviceSchemas,
 
 type Guards = {expectedConfigurationRevision?: number; expectedGeneration?: {epoch: string; sequence: number}};
 export type Policy = {mode: 'duration'; durationMs: number} | {mode: 'plays'; totalPlays: number};
-export type Filter = {q?: string | undefined; provider?: 'codex' | 'claude' | undefined; projectId?: string | undefined; session?: SessionRecord['identity'] | undefined};
+export type Filter = {q?: string | undefined; provider?: 'codex' | 'claude' | undefined; projectId?: string | undefined; session?: Identity | undefined};
 export type DisplayRecord = {
   id: string; revision: number; mode: HubMode; pendingMode: HubMode | null; base: 'status' | 'playback'; participating: boolean;
   showing: 'dashboard' | 'card' | 'moment' | 'none';

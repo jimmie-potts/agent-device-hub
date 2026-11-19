@@ -9,7 +9,7 @@ import {MAX_ART_COPIES} from '../src/art.js';
 import type {CloudFetch} from '../src/cloud.js';
 import {acquireLease, type Lease} from '../src/lease.js';
 import {artStage, gifFrames} from './art-fixtures.js';
-import {asking, flush, host, test, until, withWriteFailure, type Hosted} from './support.js';
+import {asking, flush, host, revise, test, until, withWriteFailure, type Hosted} from './support.js';
 
 const section = {id: 'tidbyt', backend: 'tronbyt', tronbyt: {url: TRONBYT_ORIGIN, deviceId: SIMULATED_DEVICE}, secrets: {token: '/nowhere/tronbyt-token'}};
 export async function artRequest(h: Hosted, family: 'art-stage' | 'art-ambient-set', data: Record<string, unknown> & {requestId: string}, source = 'bunny/core') {
@@ -339,7 +339,7 @@ test('a manual pin holds ambient removal; lost session knowledge suppresses the 
   server.pinByHand('missing');
   await h.advance(6000);
   await until(() => server.state().installations.bunnyart === undefined, 'removal after the owner releases the pin');
-  for (const record of h.core?.records() ?? []) await h.core?.set({...record, attention: []});
+  for (const record of h.core?.records() ?? []) await h.core?.set(revise(record, {attention: []}));
   await h.advance(16_000);
   await until(() => server.state().installations.bunnyart !== undefined, 'saved selection returns');
   assert.ok(h.core !== undefined);
@@ -373,7 +373,7 @@ test('a superseded selection waiting on the pin read never resurrects after atte
   assert.equal(server.state().installations.bunnyart, undefined);
   assert.equal((await ambientStatus(h)).selected, null);
   assert.equal(artPushes, 0, 'the superseded composition never reached the server');
-  for (const record of h.core?.records() ?? []) await h.core?.set({...record, attention: []});
+  for (const record of h.core?.records() ?? []) await h.core?.set(revise(record, {attention: []}));
   await h.advance(16_000);
   assert.equal(server.state().installations.bunnyart, undefined, 'clearing attention cannot revive a superseded selection');
   assert.equal(artPushes, 0);

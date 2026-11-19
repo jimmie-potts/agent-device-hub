@@ -1,8 +1,8 @@
 // Deterministic 64x32 RGB frames for the renderer tests and the golden fixtures (Hub #930). Copied from
 // controllers/tidbyt/tests/frames.mjs at main 627e3fe3. The status and now-playing frames are drawn here from the 2.0
 // records that hold what the 1.x fixtures held, so the same golden bytes show the module draws what the runner drew.
-import {sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import {sessionEntityId, type Identity, type PlaybackState, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession, type SessionFacts} from '@jimmie-potts/event-contracts/v2/session';
 import {nowPlayingFrame, nowPlayingView} from '../src/nowplaying.js';
 import {statusFrame, statusView} from '../src/status.js';
 
@@ -24,24 +24,24 @@ function noise(seed: number): () => number {
 }
 
 /**
- * The 1.x `status-titles.json` snapshot's four Codex Desktop sessions as `session/2.0` records: a user label over a
+ * The 1.x `status-titles.json` snapshot's four Codex Desktop sessions as `session/3.0` records: a user label over a
  * title, a title, a project's display name, and none, so the last shows its neutral hashed ID.
  */
-export function titleSessions(): SessionRecord[] {
-  const extras: readonly Partial<SessionRecord>[] = [
+export function titleSessions(): Session30Record[] {
+  const extras: readonly Partial<SessionFacts>[] = [
     {label: {value: 'My choice', origin: 'user'}, title: {value: 'Hidden title', source: 'provider'}, project: 'Device hub'},
     {title: {value: 'Launch review', source: 'provider'}, project: 'Device hub'},
     {project: 'Device hub'},
     {},
   ];
-  return extras.map((extra, index): SessionRecord => {
+  return extras.map((extra, index): Session30Record => {
     const identity: Identity = {provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'source', sessionId: `preview-${index}`};
     const at = 1000 - index;
-    return {
-      id: sessionEntityId(identity), revision: 2, generation: 1, identity, parent: {status: 'unknown'}, turn: {status: 'known', id: 'turn'}, activity: 'active',
-      attention: [], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'}, observedAtMs: at, lastEvidenceAtMs: at, freshness: 'current',
-      restartUncertain: false, children: {active: 0, uncertain: 0}, ...extra,
-    };
+    return buildSession({
+      id: sessionEntityId(identity), revision: 2, generation: 1, identity, parent: {status: 'unknown'}, turn: {status: 'known', id: 'turn'}, work: 'active',
+      attention: [], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'}, observedAtMs: at, lastEvidenceAtMs: at,
+      children: {working: 0, unconfirmed: 0}, ...extra,
+    });
   });
 }
 
@@ -52,7 +52,7 @@ export const goldenPlayback: PlaybackState = {
 };
 
 export const goldenFrames: Readonly<Record<string, () => Uint8Array>> = {
-  'status-titles': () => statusFrame(statusView({synced: true, sessions: titleSessions().map(sessionView)})).rgb,
+  'status-titles': () => statusFrame(statusView({synced: true, sessions: titleSessions()})).rgb,
   black: () => frame(() => [0, 0, 0]),
   'two-tone': () => frame((x, y) => ((x + y) % 2 === 1 ? [255, 0, 12] : [0, 0, 200])),
   'red-gradient': () => frame((x, y) => [(x * 4 + y) & 255, 7, 7]),

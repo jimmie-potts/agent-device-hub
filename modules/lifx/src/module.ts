@@ -15,7 +15,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {errorBody, SCHEMA_BASE, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type Capabilities, type CompletedOutcome, type DeviceCommand, type DeviceRecord, type Tagged} from '@jimmie-potts/event-contracts/v2/devices';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {highestStatus, readSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, type AddMessage, type BunnyModule, type Cancel, type Command, type LogFields, type ModuleContext,
   type Reply, type Snapshot, type Span, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
@@ -193,7 +193,7 @@ class LifxRun {
   #revision = 0;
   #closing = false;
   /** The core's sessions: the copy once its first sync completed, and until then the views its changes delivered. */
-  #copy: SyncedCopy<SessionRecord> | undefined;
+  #copy: SyncedCopy<Session30Record> | undefined;
   readonly #sessions = new Map<string, SessionView>();
   /** Each session message's view, or null for one the shared read function does not accept, read once per message. */
   readonly #views = new WeakMap<object, SessionView | null>();
@@ -683,7 +683,7 @@ class LifxRun {
     this.#synced = false;
     let result;
     try {
-      result = await this.#context.sdk.sync<SessionRecord>(['session'], change => { this.#sessionChanged(change); }, {timeoutMs: SYNC_TIMEOUT_MS});
+      result = await this.#context.sdk.sync<Session30Record>(['session'], change => { this.#sessionChanged(change); }, {timeoutMs: SYNC_TIMEOUT_MS});
     } catch {
       // The module is stopping, and its participant refuses use.
       return;
@@ -700,7 +700,7 @@ class LifxRun {
     }
   }
 
-  #sessionChanged(change: SyncChange<SessionRecord>): void {
+  #sessionChanged(change: SyncChange<Session30Record>): void {
     switch (change.type) {
       case 'updated': {
         const view = this.#viewOf(change.message);
@@ -748,7 +748,7 @@ class LifxRun {
     return this.#copy.states().map(message => this.#viewOf(message)).filter((view): view is SessionView => view !== null);
   }
 
-  #viewOf(message: Message<SessionRecord>): SessionView | null {
+  #viewOf(message: Message<Session30Record>): SessionView | null {
     let view = this.#views.get(message);
     if (view === undefined) {
       view = readSession(message) ?? null;

@@ -35,7 +35,7 @@ it('a remote source\'s snapshots give read, archive and title evidence under the
   try {
     await world.session('one', PC);
     // A running session never settles to read, so only the marker's listing moves it.
-    await world.session('two', {...PC, activity: 'active'});
+    await world.session('two', {...PC, work: 'active'});
     await world.session('one');
     // Nothing is read until the first snapshot: no local home, no reader.
     await world.clock.advance(POLL_MS);
@@ -43,9 +43,9 @@ it('a remote source\'s snapshots give read, archive and title evidence under the
     await snapshot(collector, world, {unread: ['one'], archived: ['closed'], titles: [{id: 'two', title: title('PC title')}]});
     await world.clock.advance(POLL_MS);
     assert.deepEqual(world.evidence().filter(line => !line.endsWith('metadata-observed')), ['one unread']);
-    assert.equal(world.record('one', PC)?.read, 'unread');
+    assert.equal(world.record('one', PC)?.outcome.read, 'unread');
     // The same thread ID on the module's own host is another session, untouched by the PC's marker.
-    assert.equal(world.record('one')?.read, 'unknown');
+    assert.equal(world.record('one')?.outcome.read, 'unknown');
     const archived = metadataOf(world).filter(data => data.identity.sessionId === 'closed');
     assert.ok(archived.length > 0 && archived.every(data => data.identity.hostId === PC.hostId && data.event.kind === 'metadata-observed' && data.event.archived === true));
     assert.deepEqual(metadataOf(world).filter(data => data.title !== undefined).map(data => [data.identity.sessionId, data.identity.hostId, data.title?.value]), [['two', 'pc', 'PC title']]);
@@ -84,7 +84,7 @@ it('a feed whose snapshots stop makes the marker unavailable once and clears arc
     await world.session('one', PC);
     await snapshot(collector, world, {unread: ['one'], archived: ['closed']});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('one', PC)?.read, 'unread');
+    assert.equal(world.record('one', PC)?.outcome.read, 'unread');
     // Snapshots stop: once the last one is stale, a read waits, and the deadline makes the marker unavailable.
     await world.clock.advance(FEED_FRESH_MS + READ_TIMEOUT_MS + POLL_MS);
     const unavailable = world.logs('device.unavailable');
@@ -93,7 +93,7 @@ it('a feed whose snapshots stop makes the marker unavailable once and clears arc
     const closed = metadataOf(world).filter(data => data.identity.sessionId === 'closed').at(-1);
     assert.equal(closed?.event.kind === 'metadata-observed' && closed.event.archived, false);
     // No stale input changes read state meanwhile.
-    assert.equal(world.record('one', PC)?.read, 'unread');
+    assert.equal(world.record('one', PC)?.outcome.read, 'unread');
     await world.clock.advance(60_000);
     assert.equal(world.logs('device.available').length, 0);
     // The next snapshot answers the waiting read at once.
@@ -101,7 +101,7 @@ it('a feed whose snapshots stop makes the marker unavailable once and clears arc
     await world.clock.advance(0);
     assert.equal(world.logs('device.available').length, 1);
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('one', PC)?.read, 'read');
+    assert.equal(world.record('one', PC)?.outcome.read, 'read');
     assert.deepEqual(world.invalid, []);
   } finally {
     await collector.close();
@@ -125,7 +125,7 @@ it('snapshots for another feed, with a mismatched subject or from a source that 
     await snapshot(core, world, {unread: ['one']});
     await world.clock.advance(POLL_MS * 2);
     assert.deepEqual(world.evidence(), []);
-    assert.equal(world.record('one', PC)?.read, 'unknown');
+    assert.equal(world.record('one', PC)?.outcome.read, 'unknown');
     // One record per sender and key: the configured feed on the other key shares the first case's record.
     const refused = world.logs('message.received').filter(entry => entry.fields['bunny.outcome'] === 'rejected');
     // A snapshot nobody configured is a domain refusal (INFO); one a correct sender never makes is WARN (ADR 0012 levels).
@@ -134,7 +134,7 @@ it('snapshots for another feed, with a mismatched subject or from a source that 
     // The configured feed on its own key still works afterwards.
     await snapshot(collector, world, {unread: ['one']});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('one', PC)?.read, 'unread');
+    assert.equal(world.record('one', PC)?.outcome.read, 'unread');
   } finally {
     await core.close();
     await collector.close();
@@ -151,22 +151,22 @@ it('a local and a remote source run side by side, each with its own marker devic
     world.marker.list(['shared']);
     await snapshot(collector, world, {unread: []});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('shared')?.read, 'unread');
-    assert.equal(world.record('shared', PC)?.read, 'unknown');
+    assert.equal(world.record('shared')?.outcome.read, 'unread');
+    assert.equal(world.record('shared', PC)?.outcome.read, 'unknown');
     // The remote session settles to read only from a snapshot received 5 s after its last evidence.
     await world.clock.advance(READ_SETTLE_MS + POLL_MS);
-    assert.equal(world.record('shared', PC)?.read, 'unknown');
+    assert.equal(world.record('shared', PC)?.outcome.read, 'unknown');
     await snapshot(collector, world, {unread: []});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('shared')?.read, 'unread');
-    assert.equal(world.record('shared', PC)?.read, 'read');
+    assert.equal(world.record('shared')?.outcome.read, 'unread');
+    assert.equal(world.record('shared', PC)?.outcome.read, 'read');
     // The local folder stalls while the remote feed goes on: only the local marker is unavailable, under its own name.
     world.marker.stall();
     await snapshot(collector, world, {unread: []});
     await world.clock.advance(POLL_MS + READ_TIMEOUT_MS);
     await snapshot(collector, world, {unread: ['shared']});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('shared', PC)?.read, 'unread');
+    assert.equal(world.record('shared', PC)?.outcome.read, 'unread');
     const unavailable = world.logs('device.unavailable').filter(entry => entry.level === 'warn');
     assert.deepEqual(unavailable.map(entry => entry.fields['bunny.device.id']), [markerDeviceOf(SECTION, false)]);
     assert.equal(markerDeviceOf(PC, false), 'marker:pc:desktop');
@@ -193,15 +193,15 @@ it('a snapshot not newer than the feed\'s last is ignored, so a delayed publicat
     const fresh = world.clock.now();
     await snapshot(collector, world, {observedAtMs: fresh, unread: ['one']});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('one', PC)?.read, 'unread');
+    assert.equal(world.record('one', PC)?.outcome.read, 'unread');
     await snapshot(collector, world, {observedAtMs: fresh + 2000, unread: []});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('one', PC)?.read, 'read');
+    assert.equal(world.record('one', PC)?.outcome.read, 'read');
     // A snapshot observed before the last one arrives late: nothing moves, and it is noted at DEBUG only.
     await snapshot(collector, world, {observedAtMs: fresh + 1000, unread: ['one']});
     await snapshot(collector, world, {observedAtMs: fresh + 2000, unread: ['one']});
     await world.clock.advance(POLL_MS * 2);
-    assert.equal(world.record('one', PC)?.read, 'read');
+    assert.equal(world.record('one', PC)?.outcome.read, 'read');
     const stale = world.logs('message.received').filter(entry => entry.fields['bunny.outcome'] === 'stale');
     assert.equal(stale.length, 2);
     assert.ok(stale.every(entry => entry.level === 'debug'));
@@ -215,31 +215,31 @@ it('a snapshot not newer than the feed\'s last is ignored, so a delayed publicat
     await world.clock.advance(0);
     await snapshot(collector, world, {observedAtMs: fresh + 20_000, unread: ['one']});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('one', PC)?.read, 'read', 'a snapshot behind a future-stamped one was taken while the feed was fresh');
+    assert.equal(world.record('one', PC)?.outcome.read, 'read', 'a snapshot behind a future-stamped one was taken while the feed was fresh');
     await world.clock.advance(FEED_FRESH_MS);
     await snapshot(collector, world, {observedAtMs: fresh + 21_000, unread: ['one']});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('one', PC)?.read, 'read', 'a stale feed took an older-stamped snapshot as evidence');
+    assert.equal(world.record('one', PC)?.outcome.read, 'read', 'a stale feed took an older-stamped snapshot as evidence');
     await snapshot(collector, world, {observedAtMs: fresh + 22_000, unread: ['one']});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('one', PC)?.read, 'unread', 'the feed did not recover after its freshness window and one cycle');
+    assert.equal(world.record('one', PC)?.outcome.read, 'unread', 'the feed did not recover after its freshness window and one cycle');
     // A delayed old snapshot arriving while the feed is stale gives no evidence either: it only moves the baseline.
     await world.clock.advance(FEED_FRESH_MS + READ_TIMEOUT_MS);
     await snapshot(collector, world, {observedAtMs: fresh + 5_000, unread: []});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('one', PC)?.read, 'unread', 'a delayed old snapshot cleared newer attention');
+    assert.equal(world.record('one', PC)?.outcome.read, 'unread', 'a delayed old snapshot cleared newer attention');
     await snapshot(collector, world, {observedAtMs: fresh + 23_000, unread: []});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('one', PC)?.read, 'read');
+    assert.equal(world.record('one', PC)?.outcome.read, 'read');
     // A session that ended 1 s before the snapshot was received does not settle to read from it, however late the module reads it.
     await snapshot(collector, world, {observedAtMs: fresh + 30_000, unread: []});
     await world.clock.advance(0);
     await world.session('two', {...PC, lastEvidenceAtMs: world.clock.now() - 1000});
     await world.clock.advance(READ_SETTLE_MS + POLL_MS);
-    assert.equal(world.record('two', PC)?.read, 'unknown', 'settled from a snapshot older than the session');
+    assert.equal(world.record('two', PC)?.outcome.read, 'unknown', 'settled from a snapshot older than the session');
     await snapshot(collector, world, {observedAtMs: fresh + 40_000, unread: []});
     await world.clock.advance(POLL_MS);
-    assert.equal(world.record('two', PC)?.read, 'read');
+    assert.equal(world.record('two', PC)?.outcome.read, 'read');
     assert.deepEqual(world.invalid, []);
   } finally {
     await collector.close();

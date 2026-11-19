@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type {TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {operationEntityId, sessionTitle, type OperationRecord, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {operationEntityId, sessionTitle, type OperationRecord, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, childOf, noSpans, type Command, type Participant, type Reply, type Responder, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCoreModule, type CoreHandle, type CoreOptions} from '../src/index.js';
@@ -24,7 +24,7 @@ async function labels(context: TestContext, options: CoreOptions = {}, controls:
   sdk?: (participant: Participant) => Sdk; database?: (db: DatabaseSync) => DatabaseSync; dir?: string; seed?: boolean;
 } = {}): Promise<{
   module: ReturnType<typeof createCoreModule>; harness: ModuleHarness; handle: CoreHandle; hook: Participant;
-  record: () => Promise<SessionRecord>;
+  record: () => Promise<Session30Record>;
   db: DatabaseSync; clock: ReturnType<typeof manualClock>; dir: string; commands: Command<object>[]; messages: Message[];
 }> {
   const clock = manualClock(), bus = new InProcessBus({now: clock.now, scheduler: clock.scheduler});
@@ -53,8 +53,8 @@ async function labels(context: TestContext, options: CoreOptions = {}, controls:
   assert.ok(db);
   const hook = bus.connect('bunny/parts/hook');
   context.after(() => hook.close());
-  const record = async (): Promise<SessionRecord> => {
-    const result = await hook.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+  const record = async (): Promise<Session30Record> => {
+    const result = await hook.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
     assert.equal(result.status, 'synced');
     if (result.status !== 'synced') throw new Error('the core did not sync');
     const held = result.copy.states().find(state => state.subject === SESSION_ID)?.data;
@@ -272,14 +272,14 @@ it('a due expiry queued ahead of the label changes the parent revision and refus
   const fresh = observation(turnStarted, world.clock.now(), {turn: 'turn-fresh'});
   await world.hook.publish(fresh.key, fresh.draft);
   const before = await world.record();
-  assert.equal(before.children.uncertain, 1);
+  assert.equal(before.relationships.children.unconfirmed, 1);
   // The child's day ends after the operator read the parent: the core's timer queues the expiry ahead of the label, which
   // still names the revision the operator read.
   world.clock.advance(2);
   const answer = await world.module.operatorActions.dispatch(labelAction('Must conflict', before.revision));
   assert.equal((answer as {error: {code: string}}).error.code, 'revision-conflict');
   const after = await world.record();
-  assert.equal(after.children.uncertain, 0, 'the expiry removed the child');
+  assert.equal(after.relationships.children.unconfirmed, 0, 'the expiry removed the child');
   assert.ok(after.revision > before.revision);
   assert.equal(after.label, undefined);
   assert.deepEqual(world.handle.operation('req-label')?.outcomes, []);
@@ -292,9 +292,9 @@ it('a running responder can complete after its SDK deadline without losing its a
   }}]});
   const copy = await operationCopy(context, world);
   const before = await world.record();
-  const records = Object.getOwnPropertyDescriptor(CoreStore.prototype, 'records')?.value as (this: CoreStore) => SessionRecord[];
+  const records = Object.getOwnPropertyDescriptor(CoreStore.prototype, 'records')?.value as (this: CoreStore) => Session30Record[];
   let delay = true;
-  context.mock.method(CoreStore.prototype, 'records', function (this: CoreStore): SessionRecord[] {
+  context.mock.method(CoreStore.prototype, 'records', function (this: CoreStore): Session30Record[] {
     const held = records.call(this);
     if (delay) { delay = false; world.clock.advance(5001); }
     return held;

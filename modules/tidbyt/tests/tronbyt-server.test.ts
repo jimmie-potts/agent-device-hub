@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import nodeTest from 'node:test';
 import {BRIGHTNESS_CEILING, MOMENT_INSTALLATION, TronbytConnection} from '../src/tronbyt.js';
 import type {CloudFetch} from '../src/cloud.js';
-import {SECOND, finished, host, notice, until} from './support.js';
+import {SECOND, finished, host, notice, revise, until} from './support.js';
 
 const url = process.env.TRONBYT_QUALIFY_URL;
 const device = process.env.TRONBYT_QUALIFY_DEVICE;
@@ -134,7 +134,7 @@ void nodeTest('the module draws its status tile on a real server at a shorter ga
   const status = (await server<Installation>(`/installations/${STATUS}`)).id;
   assert.equal((await server<Device>()).pinnedApp, status);
 
-  await h.core?.set({...done, notices: [notice(['pixoo'])]});
+  await h.core?.set(revise(done, {notices: [notice(['pixoo'])]}));
   await h.advance(2 * SECOND);
   for (let waited = 0; waited < 50 && (await server<Device>()).pinnedApp !== null; waited += 1) await new Promise(resolve => { setTimeout(resolve, 100); });
   assert.equal((await server<Device>()).pinnedApp, null, 'the pin leaves with the tile');

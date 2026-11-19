@@ -21,7 +21,7 @@ import {chmod, mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {MUSIC_PLAYBACK_SOURCE} from '@jimmie-potts/event-contracts/v2/music-playback';
-import type {Identity, LifecycleEvent, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Identity, LifecycleEvent, Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {createLifxModule, LIFX_SIMULATED_SECTION, PACKET, SimulatedLifx, lifxSchemas} from '@jimmie-potts/lifx';
 import {createNanoleafModule, SIMULATED_SECTION as NANOLEAF_SECTION, SYNTHETIC_TOKEN as NANOLEAF_TOKEN,
   LINES_ADDRESS, PANELS_ADDRESS, SimulatedNanoleaf, nanoleafSchemas, type SimulatedState} from '@jimmie-potts/nanoleaf';
@@ -505,11 +505,11 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     acknowledge: async session => {
       const consumer = await connectRemote({url: runtime.url, source: 'bunny/parts/nanoleaf', token: consumerToken});
       try {
-        const synced = await consumer.sync<SessionRecord>(['session'], () => {}, {timeoutMs: 5000});
+        const synced = await consumer.sync<Session30Record>(['session'], () => {}, {timeoutMs: 5000});
         assert.equal(synced.status, 'synced');
         if (synced.status !== 'synced') return;
         const record = synced.copy.states().map(message => message.data).find(item => item.id === session);
-        const notice = record?.notices.find(item => item.acknowledgedBy.length === 0);
+        const notice = record?.outcome.notices.find(item => item.acknowledgedBy.length === 0);
         assert.ok(notice, 'an unread notice for the synthetic device');
         const result = await consumer.request(`bunny.cmd.notice-acknowledge.${session}`, {
           type: 'org.bunny.notice.acknowledge.requested', subject: session,

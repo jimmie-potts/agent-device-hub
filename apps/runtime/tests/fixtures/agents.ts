@@ -6,7 +6,7 @@ import {
 import type {Draft} from '@jimmie-potts/sdk';
 
 export const LIFECYCLE_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.0';
-export const SESSION_SCHEMA = 'https://bunny.invalid/events/session/2.0';
+export const SESSION_SCHEMA = 'https://bunny.invalid/events/session/3.0';
 /** The synthetic Claude Code session every scenario observes. */
 export const IDENTITY: Identity = {provider: 'claude', client: 'code', hostId: 'host-sim', sourceId: 'claude-code', sessionId: 'session-sim-1'};
 /** Its session entity ID, as the core keys it. */

@@ -1,7 +1,7 @@
 // Type-only browser entry for fixed, shipped React contributions (Hub #932). Import no Node module implementation.
 import type {ComponentType, ReactNode} from 'react';
 import type {ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
-import type {HomeShape, Mode, SessionRecord, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {HomeShape, Mode, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import type {SpeechEndpointControl, SpeechOutput, SpeechPlayback} from '@jimmie-potts/event-contracts/v2/companions';
 import type {RemoteEndpointOptions, RequestResult, SyncHandler, SyncResult} from './remote.js';
@@ -71,12 +71,12 @@ export type FrontendContext = {
   readonly operations: readonly OperationRecord[];
   readonly operationsLive: boolean;
   /**
-   * Existing shell-owned core copies for module previews. No new subscription or source authority. `views` holds the
-   * same sessions as `sessions`, read through the shared session view (Hub #1865, design decision 10), which a module
-   * reads in place of the records it carries; the shell always provides it.
+   * Existing shell-owned core copies for module previews. No new subscription or source authority. `sessions` holds the
+   * core's `session/3.0` records, each its session's view (Hub #1865, design decision 10), which the core validated
+   * when it published them.
    */
   readonly core?: {
-    readonly sessions: readonly SessionRecord[]; readonly views?: readonly SessionView[]; readonly sessionsLive: boolean; readonly mode: Mode | undefined; readonly modeLive: boolean;
+    readonly sessions: readonly SessionView[]; readonly sessionsLive: boolean; readonly mode: Mode | undefined; readonly modeLive: boolean;
   };
   /**
    * Present only while the card is placed in a Home shape on the unit grid. Absent on module and device pages, in one

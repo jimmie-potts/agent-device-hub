@@ -20,8 +20,8 @@ it('the marker gives read evidence for the configured producer\'s top-level Desk
     world.marker.list(['one', 'child', 'other', 'cli', 'host-2', 'claude']);
     await world.clock.advance(POLL_MS);
     assert.deepEqual(world.evidence(), ['one unread']);
-    assert.equal(world.record('one')?.read, 'unread');
-    assert.ok(['child', 'other', 'cli', 'host-2', 'claude'].every(name => [...world.sessions.values()].find(record => record.identity.sessionId === name)?.read === 'unknown'));
+    assert.equal(world.record('one')?.outcome.read, 'unread');
+    assert.ok(['child', 'other', 'cli', 'host-2', 'claude'].every(name => [...world.sessions.values()].find(record => record.identity.sessionId === name)?.outcome.read === 'unknown'));
     // Nothing more while the marker and the records stay as they are.
     await world.clock.advance(10_000);
     assert.deepEqual(world.evidence(), ['one unread']);
@@ -52,8 +52,8 @@ it('an unlisted finished session becomes read only once the flag has had time to
   try {
     world.marker.list([]);
     await world.session('viewed');
-    await world.session('interrupted', {activity: 'interrupted'});
-    await world.session('running', {activity: 'active'});
+    await world.session('interrupted', {work: 'interrupted'});
+    await world.session('running', {work: 'active'});
     // Polls at 0, 2 and 4 s: the flag has not had five seconds yet.
     await world.clock.advance(4999);
     assert.deepEqual(world.evidence(), []);
@@ -61,7 +61,7 @@ it('an unlisted finished session becomes read only once the flag has had time to
     assert.deepEqual(world.evidence(), ['viewed read', 'interrupted read']);
     await world.clock.advance(600_000);
     assert.deepEqual(world.evidence(), ['viewed read', 'interrupted read']);
-    assert.equal(world.record('running')?.read, 'unknown');
+    assert.equal(world.record('running')?.outcome.read, 'unknown');
   } finally {
     await world.close();
   }
@@ -100,14 +100,14 @@ it('evidence the core refuses goes out again on a later poll, and once the core 
     world.marker.list(['one']);
     await world.clock.advance(POLL_MS);
     assert.deepEqual(world.evidence(), ['one unread']);
-    assert.equal(world.record('one')?.read, 'unknown', 'the core refused it');
+    assert.equal(world.record('one')?.outcome.read, 'unknown', 'the core refused it');
     // It went out with the first read, at 0 s. The record has not changed, so the first poll 4 s after that sends it
     // again, and the core takes it.
     await world.clock.advance(RESEND_FIRST_MS - POLL_MS - 1);
     assert.deepEqual(world.evidence(), ['one unread']);
     await world.clock.advance(1);
     assert.deepEqual(sentAt(world), [0, 4]);
-    assert.equal(world.record('one')?.read, 'unread');
+    assert.equal(world.record('one')?.outcome.read, 'unread');
     await world.clock.advance(600_000);
     assert.deepEqual(world.evidence(), ['one unread', 'one unread'], 'nothing more once the record agrees');
   } finally {

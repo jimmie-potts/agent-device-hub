@@ -309,13 +309,13 @@ test('hook reaches the real Linux core and its ingest token cannot read state',
     const response = await fetch(route, {headers: {authorization: 'Bearer ' + reader}});
     assert.equal(response.status, 200);
     records = (await response.json()).records;
-    if (records.length === 1 && records[0].notices.length === 1) break;
+    if (records.length === 1 && records[0].outcome.notices.length === 1) break;
     await new Promise(resolve => setTimeout(resolve, 20));
   } while (performance.now() < deadline);
   assert.equal(records.length, 1);
   assert.deepEqual(records[0].identity, {...SOURCE, sessionId: base.session_id});
-  assert.equal(records[0].activity, 'idle');
-  assert.equal(records[0].notices[0]?.kind, 'turn-ended');
+  assert.equal(records[0].work.state, 'idle');
+  assert.equal(records[0].outcome.notices[0]?.kind, 'turn-ended');
   assert.equal(JSON.stringify(records).includes('PRIVATE_CANARY'), false);
   assert.equal(JSON.stringify(logs).includes('PRIVATE_CANARY'), false);
   assert.equal((await fetch(route, {headers: {authorization: 'Bearer ' + TOKEN}})).status, 403);

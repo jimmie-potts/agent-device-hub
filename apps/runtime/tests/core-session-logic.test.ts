@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import type {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
-import type {Identity, Label, LifecycleEvent, LifecycleObservation, Parent, SessionRecord, Title} from '@jimmie-potts/event-contracts/v2/families';
+import type {Identity, Label, LifecycleEvent, LifecycleObservation, Parent, Session30Record, Title} from '@jimmie-potts/event-contracts/v2/families';
 import type {Deriver} from '../src/core/store.js';
 import {World, lifecycleMessage} from './fixtures/store-world.js';
 import {it, manualClock} from './support.js';
@@ -74,7 +74,7 @@ class Sessions {
     return this.observe(sessionId, event, {turn: null, parent: {status: 'known', identity: this.identity(parent)}, ...options});
   }
 
-  record(sessionId: string): SessionRecord {
+  record(sessionId: string): Session30Record {
     const found = this.world.store.records().find(record => record.identity.sessionId === sessionId);
     assert.ok(found, `${sessionId} is held`);
     return found;
@@ -92,7 +92,9 @@ class Sessions {
 const unknownApproval: LifecycleEvent = {kind: 'attention-approval', attention: {status: 'unknown'}};
 const known = (kind: 'attention-approval' | 'attention-input' | 'question-continuing' | 'attention-resolved', id: string): LifecycleEvent => ({kind, attention: {status: 'known', id}});
 const started: LifecycleEvent = {kind: 'turn-started'}, ended: LifecycleEvent = {kind: 'turn-ended'};
-const approvals = (record: SessionRecord): string[][] => record.attention.filter(item => item.kind === 'approval')
+/** Whether a record's running work is unconfirmed for a restart (the work claim's reason `restart`). */
+const restarted = (record: Session30Record): boolean => record.work.reasons.includes('restart');
+const approvals = (record: Session30Record): string[][] => record.attention.items.filter(item => item.kind === 'approval')
   .map(item => [item.turn.status === 'known' ? item.turn.id : 'unknown', item.id.status === 'known' ? item.id.id : 'no-id']);
 const desktop = (sessionId: string): Identity => ({provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'desktop', sessionId});
 const claude = (sessionId: string): Identity => ({provider: 'claude', client: 'code', hostId: 'host', sourceId: 'claude', sessionId});
@@ -116,7 +118,7 @@ it('no-ID questions and input requests on a retired turn stay', async context =>
   await s.observe('session', started);
   for (const kind of ['attention-input', 'question-continuing'] as const) await s.observe('session', {kind, attention: {status: 'unknown'}});
   await s.observe('session', started, {turn: 'turn-2'});
-  assert.deepEqual(s.record('session').attention.map(item => [item.kind, item.turn.status === 'known' ? item.turn.id : '']).sort(), [['input', 'turn-1'], ['question', 'turn-1']]);
+  assert.deepEqual(s.record('session').attention.items.map(item => [item.kind, item.turn.status === 'known' ? item.turn.id : '']).sort(), [['input', 'turn-1'], ['question', 'turn-1']]);
 });
 
 it('markers on the current or an unselected turn stay when another turn starts', async context => {
@@ -157,17 +159,17 @@ it('a tool completion on the approval\'s turn clears the no-ID marker', async co
   assert.equal(await s.observe('session', known('attention-resolved', 'tool-x'), {turn: 'p1'}), 'applied');
   const after = s.record('session');
   assert.deepEqual(approvals(after), []);
-  assert.equal(after.activity, 'active');
+  assert.equal(after.work.state, 'active');
   assert.deepEqual(after.turn, {status: 'known', id: 'p1'});
-  assert.deepEqual(after.notices, before.notices);
-  assert.deepEqual(after.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
+  assert.deepEqual(after.outcome.notices, before.outcome.notices);
+  assert.deepEqual(after.outcome.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
 });
 
 it('a tool completion without a marker changes no attention and adds no ambiguity', async context => {
   const s = await Sessions.open(context, claude);
   await s.observe('session', started, {turn: 'p1'});
   assert.equal(await s.observe('session', known('attention-resolved', 'tool-x'), {turn: 'p1'}), 'applied');
-  assert.deepEqual(s.record('session').attention, []);
+  assert.deepEqual(s.record('session').attention.items, []);
   assert.ok(!s.record('session').unavailable.some(item => item.dimension === 'attention'));
 });
 
@@ -238,7 +240,7 @@ it('question and input markers survive tool completion and turn end', async cont
   for (const kind of ['attention-input', 'question-continuing'] as const) await s.observe('session', {kind, attention: {status: 'unknown'}}, {turn: 'p1'});
   await s.observe('session', known('attention-resolved', 'tool-x'), {turn: 'p1'});
   await s.observe('session', ended, {turn: 'p1'});
-  assert.deepEqual(s.record('session').attention.map(item => item.kind).sort(), ['input', 'question']);
+  assert.deepEqual(s.record('session').attention.items.map(item => item.kind).sort(), ['input', 'question']);
 });
 
 // capacity.test.mjs: Hub #807, subagent records must not crowd new root tasks out of a full core.
@@ -264,7 +266,7 @@ it('a new root task displaces the finished child subtree with the oldest evidenc
     s.advance(1);
     await finishedChild(s, name, parent);
   }
-  assert.equal(s.record('child-old').activity, 'idle');
+  assert.equal(s.record('child-old').work.state, 'idle');
   await fillRoots(s);
   const roots = s.world.store.records().filter(record => record.parent.status !== 'known').length;
   const from = s.world.published.length;
@@ -314,8 +316,8 @@ it('running, unknown or attended subtrees are never displaced', async context =>
   await s.observe('pending-grandchild', unknownApproval, {parent: {status: 'known', identity: source('attended')}});
   s.advance(1);
   await finishedChild(s, 'eligible', 'root-parent');
-  assert.equal(s.record('running').activity, 'active');
-  assert.equal(s.record('subagent').activity, 'unknown');
+  assert.equal(s.record('running').work.state, 'active');
+  assert.equal(s.record('subagent').work.state, 'unknown');
   await fillRoots(s);
   s.advance(1);
   assert.equal(await s.observe('new-root', {kind: 'session-started'}), 'applied');
@@ -416,7 +418,7 @@ it('only lifecycle evidence renews the 24-hour window', async context => {
   await s.observe('renewed', started, {...unknownParent, turn: 'turn-2'});
   const labelled = s.record('labelled');
   assert.equal((await s.world.setLabel(labelled.identity, 'Chosen label')).ok, true);
-  assert.equal((await s.world.acknowledge(labelled.identity, labelled.notices[0]?.id ?? '', 'nanoleaf')).ok, true);
+  assert.equal((await s.world.acknowledge(labelled.identity, labelled.outcome.notices[0]?.id ?? '', 'nanoleaf')).ok, true);
   assert.equal(s.record('labelled').lastEvidenceAtMs, labelled.lastEvidenceAtMs);
   s.advance(DAY - 3_600_000 - 1);
   await s.due();
@@ -439,7 +441,7 @@ it('a restart keeps the window and expires old sessions at startup', async conte
   await s.world.crashAndRestart();
   assert.deepEqual(s.ids(), ['kept']);
   // #1865 step 8: a quiet root has no running work for the restart to leave unconfirmed.
-  assert.equal(s.record('kept').restartUncertain, false);
+  assert.equal(restarted(s.record('kept')), false);
   s.advance(1);
   await s.world.crashAndRestart();
   assert.deepEqual(s.ids(), []);
@@ -452,7 +454,8 @@ it('expiry falls due on the core\'s clock without another provider event', async
   await s.observe('idle', {kind: 'session-started'}, unknownParent);
   s.advance(3_600_000);
   await s.observe('recent', {kind: 'session-started'}, unknownParent);
-  assert.equal(s.world.store.nextDue(), START + 3_600_000 + 300_000, 'freshness first');
+  // #1865 step 9: quiet roots have no running work, so no work deadline comes first: only the idle session's expiry.
+  assert.equal(s.world.store.nextDue(), START + DAY, 'expiry first');
   await s.due();
   s.advance(DAY - 3_600_000);
   assert.deepEqual(s.ids(), ['idle', 'recent'], 'nothing changes until the core\'s timer runs');
@@ -479,9 +482,9 @@ it('late and end-only observations cannot refill expired slots', async context =
   assert.equal(await s.observe('kept', {kind: 'session-started'}, unknownParent), 'applied');
   const fresh = s.record('kept');
   assert.equal(fresh.label, undefined);
-  assert.deepEqual(fresh.notices, []);
-  assert.equal(fresh.read, 'unknown');
-  assert.equal(fresh.restartUncertain, false);
+  assert.deepEqual(fresh.outcome.notices, []);
+  assert.equal(fresh.outcome.read, 'unknown');
+  assert.equal(restarted(fresh), false);
   assert.ok(fresh.generation > kept.generation);
 });
 
@@ -497,15 +500,14 @@ it('expiry forgets notices and attention without acknowledging them and keeps or
   for (const event of [started, {kind: 'attention-input', attention: {status: 'unknown'}} as const, ended]) await s.observe('other', event, {...unknownParent, turn: 'turn-2'});
   await s.world.setLabel(desktop('other'), 'Bystander');
   const other = s.record('other');
-  assert.deepEqual([other.label?.value, other.notices.length, other.attention.length], ['Bystander', 1, 1]);
+  assert.deepEqual([other.label?.value, other.outcome.notices.length, other.attention.items.length], ['Bystander', 1, 1]);
   const from = s.world.published.length;
   s.advance(DAY - 3_600_000);
   await s.due();
   assert.deepEqual(s.ids(), ['child', 'other']);
   assert.deepEqual(s.record('child').parent, parent);
-  const {freshness: _freshness, revision: _revision, ...rest} = s.record('other');
-  const {freshness: _before, revision: _old, ...before} = other;
-  assert.deepEqual(rest, before);
+  // #1865 step 9: silence changes nothing on a session whose work is not running, so it is not even republished.
+  assert.deepEqual(s.record('other'), other);
   assert.equal(s.world.since(from).some(message => message.type === 'org.bunny.attention.cleared' || message.type === 'org.bunny.turn.ended'), false,
     'expiry is no acknowledgment or resolution');
 });
@@ -575,7 +577,7 @@ for (const [provider, client] of [['codex', 'desktop'], ['codex', 'cli'], ['clau
     const fresh = s.record('parent');
     assert.ok(fresh.generation > old.generation);
     assert.equal(fresh.label, undefined);
-    assert.deepEqual([fresh.notices, fresh.attention, fresh.read], [[], [], 'unknown']);
+    assert.deepEqual([fresh.outcome.notices, fresh.attention.items, fresh.outcome.read], [[], [], 'unknown']);
     assert.equal(await s.take(end), 'stale');
     assert.equal(await s.take(first), 'stale');
     assert.deepEqual(s.record('parent'), fresh);
@@ -605,7 +607,7 @@ for (const [provider, client] of [['codex', 'desktop'], ['codex', 'cli'], ['clau
     await s.observe('waiting', known('attention-input', 'input'));
     await s.observe('finished', started);
     await s.observe('finished', ended);
-    await s.world.acknowledge(identity('finished'), s.record('finished').notices[0]?.id ?? '', 'nanoleaf');
+    await s.world.acknowledge(identity('finished'), s.record('finished').outcome.notices[0]?.id ?? '', 'nanoleaf');
     if (client === 'desktop') await s.observe('finished', {kind: 'read-observed', state: 'read'});
     await s.observe('interrupted', started);
     await s.observe('interrupted', {kind: 'turn-interrupted'});
@@ -616,9 +618,10 @@ for (const [provider, client] of [['codex', 'desktop'], ['codex', 'cli'], ['clau
     s.advance(31 * 60_000);
     await s.due();
     assert.deepEqual(s.ids(), ['child', 'finished', 'interrupted', 'long', 'parent', 'waiting']);
-    assert.ok(s.world.store.records().every(record => record.freshness === 'uncertain'));
-    assert.equal(s.record('long').activity, 'active');
-    assert.equal(s.record('finished').notices.length, 1);
+    // #1865 step 9: silence makes only running work unconfirmed, for its deadline; every other claim keeps its meaning.
+    assert.ok(s.world.store.records().every(record => record.work.state === 'active' ? record.work.reasons.includes('deadline') : record.work.confidence === 'confirmed'));
+    assert.equal(s.record('long').work.state, 'active');
+    assert.equal(s.record('finished').outcome.notices.length, 1);
     s.advance(DAY - 31 * 60_000 - 1);
     await s.due();
     assert.equal(s.ids().length, 6);
@@ -645,7 +648,7 @@ it('ending one path\'s last session preserves other paths, including the same se
   assert.deepEqual(keys(), ['codex/desktop/child', 'codex/desktop/shared']);
   assert.equal(await s.observe('never-seen', {kind: 'runtime-ended'}, {identity: cliPath('never-seen'), turn: null}), 'stale');
   assert.equal(await s.observe('child', started, {identity: claudePath('child'), parent: {status: 'known', identity: claudePath('shared')}}), 'stale');
-  assert.deepEqual(s.world.store.records().find(record => record.identity.client === 'desktop' && record.identity.sessionId === 'shared')?.notices[0]?.acknowledgedBy, [],
+  assert.deepEqual(s.world.store.records().find(record => record.identity.client === 'desktop' && record.identity.sessionId === 'shared')?.outcome.notices[0]?.acknowledgedBy, [],
     'another path\'s end acknowledges nothing');
   assert.equal(await s.observe('shared', {kind: 'runtime-ended'}, {identity: desktopPath('shared'), turn: null}), 'applied');
   assert.deepEqual(keys(), []);
@@ -737,16 +740,16 @@ it('archive admission stays specific to Codex Desktop identities', async context
 it('ordinary Desktop provider start stop next start updates activity and consumer notices', async context => {
   const s = await Sessions.open(context, desktop);
   await s.observe('session', started, {...unknownParent, turn: 'turn-one'});
-  assert.equal(s.record('session').activity, 'active');
+  assert.equal(s.record('session').work.state, 'active');
   await s.observe('session', ended, {...unknownParent, turn: 'turn-one'});
-  assert.equal(s.record('session').activity, 'idle');
-  assert.deepEqual(s.record('session').notices.map(notice => notice.acknowledgedBy), [[]]);
+  assert.equal(s.record('session').work.state, 'idle');
+  assert.deepEqual(s.record('session').outcome.notices.map(notice => notice.acknowledgedBy), [[]]);
   await s.observe('session', started, {...unknownParent, turn: 'turn-two'});
   const session = s.record('session');
-  assert.equal(session.activity, 'active');
+  assert.equal(session.work.state, 'active');
   assert.deepEqual(session.turn, {status: 'known', id: 'turn-two'});
   assert.deepEqual(session.ordering, {status: 'unknown'});
-  assert.deepEqual(session.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
+  assert.deepEqual(session.outcome.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
 });
 
 it('unchanged starts and stops with new receipt times cannot revive, refresh or restore notices', async context => {
@@ -756,17 +759,17 @@ it('unchanged starts and stops with new receipt times cannot revive, refresh or 
   s.advance(300_000);
   assert.equal(await s.observe('session', started, {...unknownParent, turn: 'a'}), 'duplicate');
   await s.due();
-  assert.equal(s.record('session').freshness, 'uncertain');
+  assert.deepEqual(s.record('session').work.reasons, ['deadline'], 'a repeated start is no new evidence');
   assert.ok(s.world.store.revision > startedAt);
   s.advance(1);
   await s.observe('session', ended, {...unknownParent, turn: 'a'});
-  await s.world.acknowledge(desktop('session'), s.record('session').notices[0]?.id ?? '', 'dashboard');
+  await s.world.acknowledge(desktop('session'), s.record('session').outcome.notices[0]?.id ?? '', 'dashboard');
   const stopped = s.record('session');
   s.advance(300_000);
   for (const event of [started, ended]) await s.observe('session', event, {...unknownParent, turn: 'a'});
   assert.equal(s.record('session').revision, stopped.revision);
-  assert.equal(s.record('session').activity, 'idle');
-  assert.deepEqual(s.record('session').notices[0]?.acknowledgedBy, ['dashboard']);
+  assert.equal(s.record('session').work.state, 'idle');
+  assert.deepEqual(s.record('session').outcome.notices[0]?.acknowledgedBy, ['dashboard']);
   s.advance(1);
   await s.observe('session', started, {...unknownParent, turn: 'b'});
   const selected = s.record('session');
@@ -776,20 +779,20 @@ it('unchanged starts and stops with new receipt times cannot revive, refresh or 
   }
   assert.equal(s.record('session').revision, selected.revision);
   assert.deepEqual(s.record('session').turn, {status: 'known', id: 'b'});
-  assert.deepEqual(s.record('session').notices[0]?.acknowledgedBy, ['dashboard', 'nanoleaf', 'pixoo']);
+  assert.deepEqual(s.record('session').outcome.notices[0]?.acknowledgedBy, ['dashboard', 'nanoleaf', 'pixoo']);
 });
 
 it('completion before start stays completed and an unseen delayed start has the documented receipt-order limit', async context => {
   const s = await Sessions.open(context, desktop);
   await s.observe('session', ended, {...unknownParent, turn: 'a'});
   await s.observe('session', started, {...unknownParent, turn: 'a', atMs: s.now() + 1});
-  assert.equal(s.record('session').activity, 'idle');
+  assert.equal(s.record('session').work.state, 'idle');
   // Native IDs and timestamps do not prove provider order: this unseen older start wins.
   await s.observe('session', started, {...unknownParent, turn: 'unseen-older', atMs: s.now() - 5000});
   const session = s.record('session');
   assert.deepEqual(session.turn, {status: 'known', id: 'unseen-older'});
-  assert.equal(session.activity, 'active');
-  assert.deepEqual(session.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
+  assert.equal(session.work.state, 'active');
+  assert.deepEqual(session.outcome.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
 });
 
 it('missing and contradictory turn evidence cannot select or clear; a genuinely new start recovers', async context => {
@@ -797,20 +800,20 @@ it('missing and contradictory turn evidence cannot select or clear; a genuinely 
   await s.observe('session', ended, {...unknownParent, turn: 'a'});
   await s.observe('session', started, {...unknownParent, turn: null});
   let session = s.record('session');
-  assert.equal(session.activity, 'unknown');
-  assert.deepEqual(session.notices[0]?.acknowledgedBy, []);
+  assert.equal(session.work.state, 'unknown');
+  assert.deepEqual(session.outcome.notices[0]?.acknowledgedBy, []);
   assert.ok(session.unavailable.some(item => item.dimension === 'turn'));
   await s.observe('session', started, {...unknownParent, turn: 'b'});
   await s.observe('session', ended, {...unknownParent, turn: 'unseen-other'});
   session = s.record('session');
-  assert.equal(session.activity, 'unknown');
+  assert.equal(session.work.state, 'unknown');
   assert.equal(session.turn.status, 'unknown');
   s.advance(1);
   await s.observe('session', started, {...unknownParent, turn: 'b'});
-  assert.equal(s.record('session').activity, 'unknown');
+  assert.equal(s.record('session').work.state, 'unknown');
   await s.observe('session', started, {...unknownParent, turn: 'c'});
   session = s.record('session');
-  assert.equal(session.activity, 'active');
+  assert.equal(session.work.state, 'active');
   assert.deepEqual(session.turn, {status: 'known', id: 'c'});
   assert.ok(!session.unavailable.some(item => item.dimension === 'activity' || item.dimension === 'turn'));
   assert.ok(session.unavailable.some(item => item.dimension === 'ordering'));
@@ -826,15 +829,15 @@ it('retiring a turn preserves its attention and accepts exact resolution without
   await s.observe('session', known('attention-input', 'input'), {...at, turn: 'a'});
   await s.observe('session', known('attention-resolved', 'approval'), {...at, turn: 'b'});
   let session = s.record('session');
-  assert.equal(session.attention.length, 2);
+  assert.equal(session.attention.items.length, 2);
   assert.deepEqual(session.turn, {status: 'known', id: 'b'});
   await s.observe('session', known('attention-resolved', 'approval'), {...at, turn: 'a'});
   session = s.record('session');
-  assert.equal(session.activity, 'active');
+  assert.equal(session.work.state, 'active');
   assert.deepEqual(session.turn, {status: 'known', id: 'b'});
-  assert.deepEqual(session.attention.map(item => item.kind), ['input']);
-  assert.deepEqual(session.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
-  assert.equal(session.read, 'unknown');
+  assert.deepEqual(session.attention.items.map(item => item.kind), ['input']);
+  assert.deepEqual(session.outcome.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
+  assert.equal(session.outcome.read, 'unknown');
 });
 
 it('genuine ordering survives unordered interference and qualified attention can still lead a turn', async context => {
@@ -848,10 +851,10 @@ it('genuine ordering survives unordered interference and qualified attention can
   await s.take(ordered(started, 'b', 3));
   let session = s.record('session');
   assert.deepEqual(session.turn, {status: 'known', id: 'b'});
-  assert.equal(session.attention.length, 1);
-  assert.deepEqual(session.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
+  assert.equal(session.attention.items.length, 1);
+  assert.deepEqual(session.outcome.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
   await s.observe('session', started, {...unknownParent, turn: 'unordered'});
-  assert.notEqual(s.record('session').activity, 'active');
+  assert.notEqual(s.record('session').work.state, 'active');
   await s.observe('session', started, {...unknownParent, turn: 'another-unordered'});
   assert.notDeepEqual(s.record('session').turn, {status: 'known', id: 'another-unordered'});
   // A conflicting payload cannot reuse a qualified native event ID as a fresh start.
@@ -867,10 +870,10 @@ it('two sessions and consumer-scoped manual dismissal stay independent', async c
     await s.observe(sessionId, ended, {...unknownParent, turn: 'a'});
   }
   const first = s.record('session'), second = s.record('other');
-  await s.world.acknowledge(desktop('session'), first.notices[0]?.id ?? '', 'dashboard');
-  assert.equal((await s.world.acknowledge(desktop('other'), first.notices[0]?.id ?? '', 'pixoo')).ok, false, 'another session\'s notice');
+  await s.world.acknowledge(desktop('session'), first.outcome.notices[0]?.id ?? '', 'dashboard');
+  assert.equal((await s.world.acknowledge(desktop('other'), first.outcome.notices[0]?.id ?? '', 'pixoo')).ok, false, 'another session\'s notice');
   await s.observe('session', started, {...unknownParent, turn: 'b'});
-  assert.deepEqual(s.record('session').notices[0]?.acknowledgedBy, ['dashboard', 'nanoleaf', 'pixoo']);
+  assert.deepEqual(s.record('session').outcome.notices[0]?.acknowledgedBy, ['dashboard', 'nanoleaf', 'pixoo']);
   assert.deepEqual(s.record('other'), second);
 });
 
@@ -881,11 +884,11 @@ it('fresh selection can recover activity while conflicting parent evidence stays
   await s.observe('session', known('attention-approval', 'request'), {turn: 'a', parent: parent('other-parent')});
   await s.observe('session', started, {turn: 'b', parent: parent('first-parent')});
   const session = s.record('session');
-  assert.equal(session.activity, 'active');
+  assert.equal(session.work.state, 'active');
   assert.deepEqual(session.turn, {status: 'known', id: 'b'});
   assert.equal(session.parent.status, 'unknown');
   assert.ok(session.unavailable.some(item => item.dimension === 'parent' && item.reason === 'ambiguous'));
-  assert.equal(session.attention.length, 1);
+  assert.equal(session.attention.items.length, 1);
 });
 
 for (const [kind, repeated] of [['turn-started', 'turn-started'], ['turn-ended', 'turn-ended'], ['turn-ended', 'turn-started'], ['turn-interrupted', 'turn-started']] as const) {
@@ -904,11 +907,11 @@ for (const [kind, repeated] of [['turn-started', 'turn-started'], ['turn-ended',
     const session = s.record('session');
     assert.deepEqual(session.parent, {status: 'unknown'});
     assert.ok(session.unavailable.some(item => item.dimension === 'parent' && item.reason === 'ambiguous'));
-    assert.deepEqual([session.activity, session.turn, session.notices, session.lastEvidenceAtMs, session.observedAtMs],
-      [before.activity, before.turn, before.notices, before.lastEvidenceAtMs, before.observedAtMs]);
-    assert.equal(session.freshness, 'uncertain');
+    assert.deepEqual([session.work.state, session.turn, session.outcome.notices, session.lastEvidenceAtMs, session.observedAtMs],
+      [before.work.state, before.turn, before.outcome.notices, before.lastEvidenceAtMs, before.observedAtMs]);
     // #1865 step 8: only running work is left unconfirmed by the restart, and a repeat does not confirm it.
-    assert.equal(session.restartUncertain, before.activity === 'active');
+    assert.equal(restarted(session), before.work.state === 'active');
+    assert.equal(session.work.confidence, before.work.state === 'active' ? 'unconfirmed' : 'confirmed');
     const revision = s.world.store.revision;
     s.advance(1);
     assert.equal(await s.observe('session', {kind: repeated}, {turn: 'a', parent: parent('parent-b')}), kind === 'turn-ended' && repeated === 'turn-started' ? 'stale' : 'duplicate');
@@ -928,10 +931,10 @@ it('retained completions do not evict the 256 most recently superseded turns', a
   s.advance(1);
   for (const turn of ['active-0', 'active-100', 'active-255', 'done-0']) assert.equal(await s.observe('session', started, {...unknownParent, turn}), 'stale');
   assert.deepEqual(s.record('session').turn, {status: 'known', id: 'active-256'});
-  assert.equal(s.record('session').restartUncertain, true);
+  assert.equal(restarted(s.record('session')), true);
   await s.observe('session', started, {...unknownParent, turn: 'active-257'});
   assert.equal(await s.observe('session', started, {...unknownParent, turn: 'active-0'}), 'applied');
-  assert.equal(s.record('session').notices.length, 128);
+  assert.equal(s.record('session').outcome.notices.length, 128);
 });
 
 it('retired identities use a bounded FIFO across restart; retained completions outlive retry-key eviction', async context => {
@@ -943,17 +946,17 @@ it('retired identities use a bounded FIFO across restart; retained completions o
   assert.equal(stored?.seen.length, 256);
   assert.ok(stored?.retiredTurns.includes('turn-0') === false);
   await s.world.crashAndRestart();
-  assert.equal(s.record('session').restartUncertain, true);
+  assert.equal(restarted(s.record('session')), true);
   for (const turn of ['turn-257', 'completed']) {
     await s.observe('session', started, {...unknownParent, turn});
     await s.observe('session', ended, {...unknownParent, turn});
   }
   assert.deepEqual(s.record('session').turn, {status: 'known', id: 'turn-258'});
-  assert.equal(s.record('session').restartUncertain, true);
-  assert.equal(s.record('session').notices.length, 1);
+  assert.equal(restarted(s.record('session')), true);
+  assert.equal(s.record('session').outcome.notices.length, 1);
   await s.observe('session', started, {...unknownParent, turn: 'turn-0'});
   assert.deepEqual(s.record('session').turn, {status: 'known', id: 'turn-0'});
-  assert.equal(s.record('session').restartUncertain, false);
+  assert.equal(restarted(s.record('session')), false);
 });
 
 // core.test.mjs: the reduction rules of agent-state's owner.
@@ -966,17 +969,20 @@ it('explicit recovery retires only an uncertain uncorrelated approval', async co
   await s.observe(ID, started, unknownParent);
   await s.observe(ID, unknownApproval, unknownParent);
   const before = s.record(ID);
-  assert.equal(before.attention[0]?.kind, 'approval');
+  assert.equal(before.attention.items[0]?.kind, 'approval');
   assert.deepEqual(await s.world.recoverApproval(codexCli(ID), 'turn-1'), {ok: false, code: 'invalid-state'});
+  // #1865 step 9: the core's timer commits the work deadline five minutes after the last qualifying evidence.
   s.advance(300_000);
+  await s.due();
+  assert.deepEqual(s.record(ID).work.reasons, ['deadline']);
   assert.equal((await s.world.recoverApproval(codexCli(ID), 'turn-1')).ok, true);
   const after = s.record(ID);
-  assert.deepEqual(after.attention, []);
-  assert.equal(after.activity, before.activity);
+  assert.deepEqual(after.attention.items, []);
+  assert.equal(after.work.state, before.work.state);
   assert.equal(after.lastEvidenceAtMs, before.lastEvidenceAtMs);
   assert.deepEqual(await s.world.recoverApproval(codexCli(ID), 'turn-1'), {ok: false, code: 'invalid-state'});
   await s.world.crashAndRestart();
-  assert.deepEqual(s.record(ID).attention, []);
+  assert.deepEqual(s.record(ID).attention.items, []);
 });
 
 it('read evidence changes only the read dimension', async context => {
@@ -990,21 +996,21 @@ it('read evidence changes only the read dimension', async context => {
   s.advance(300_000);
   assert.equal(await s.take(read('read')), 'applied');
   let session = s.record(ID);
-  assert.equal(session.read, 'read');
-  assert.equal(session.freshness, 'uncertain');
-  assert.deepEqual([session.lastEvidenceAtMs, session.observedAtMs, session.turn, session.activity, session.notices],
-    [before.lastEvidenceAtMs, before.observedAtMs, before.turn, before.activity, before.notices]);
+  assert.equal(session.outcome.read, 'read');
+  assert.equal(session.work.confidence, 'confirmed', 'silence never ages finished work (#1865 step 9)');
+  assert.deepEqual([session.lastEvidenceAtMs, session.observedAtMs, session.turn, session.work.state, session.outcome.notices],
+    [before.lastEvidenceAtMs, before.observedAtMs, before.turn, before.work.state, before.outcome.notices]);
   s.advance(1);
   assert.equal(await s.take(read('unread')), 'applied');
   s.advance(1);
   assert.equal(await s.take(read('read')), 'applied');
-  assert.equal(s.record(ID).read, 'read');
+  assert.equal(s.record(ID).outcome.read, 'read');
   await s.world.crashAndRestart();
   await s.take(read('unread'));
   session = s.record(ID);
-  assert.equal(session.read, 'unread');
+  assert.equal(session.outcome.read, 'unread');
   // #1865 step 8: the finished session had no running work for the restart to leave unconfirmed.
-  assert.equal(session.restartUncertain, false);
+  assert.equal(restarted(session), false);
 });
 
 it('read evidence leaves turn, ordering and metadata evidence unchanged', async context => {
@@ -1015,9 +1021,9 @@ it('read evidence leaves turn, ordering and metadata evidence unchanged', async 
   assert.equal(await s.observe(ID, {kind: 'read-observed', state: 'unread'}, {turn: 'turn-2', epoch: 'epoch-2', sequence: 5,
     parent: {status: 'known', identity: desktop('parent')}, label: {origin: 'user', value: 'Renamed'}}), 'applied');
   const after = s.record(ID);
-  assert.equal(after.read, 'unread');
-  assert.deepEqual([after.turn, after.ordering, after.unavailable, after.parent, after.label, after.activity],
-    [before.turn, before.ordering, before.unavailable, before.parent, before.label, before.activity]);
+  assert.equal(after.outcome.read, 'unread');
+  assert.deepEqual([after.turn, after.ordering, after.unavailable, after.parent, after.label, after.work.state],
+    [before.turn, before.ordering, before.unavailable, before.parent, before.label, before.work.state]);
 });
 
 it('child permission requests remain on the child established by its start', async context => {
@@ -1025,8 +1031,8 @@ it('child permission requests remain on the child established by its start', asy
   await s.child('child', ID, {kind: 'session-started'});
   await s.child('child', ID, unknownApproval);
   assert.deepEqual(s.ids(), ['child']);
-  assert.equal(s.record('child').attention[0]?.kind, 'approval');
-  assert.deepEqual(s.record('child').attention[0]?.turn, {status: 'unknown'});
+  assert.equal(s.record('child').attention.items[0]?.kind, 'approval');
+  assert.deepEqual(s.record('child').attention.items[0]?.turn, {status: 'unknown'});
 });
 
 it('an unordered turn cannot retire a turn supported by a later qualified sequence', async context => {
@@ -1035,7 +1041,7 @@ it('an unordered turn cannot retire a turn supported by a later qualified sequen
   await s.observe(ID, started, {...unknownParent, turn: 'old'});
   const result = await s.observe(ID, ended, {...unknownParent, sequence: 21});
   assert.ok(result === 'applied' || result === 'ambiguous', result);
-  assert.ok(s.record(ID).notices.some(notice => notice.turn.status === 'known' && notice.turn.id === 'turn-1'));
+  assert.ok(s.record(ID).outcome.notices.some(notice => notice.turn.status === 'known' && notice.turn.id === 'turn-1'));
 });
 
 it('unordered successive starts select by receipt and reject a superseded completion', async context => {
@@ -1044,9 +1050,9 @@ it('unordered successive starts select by receipt and reject a superseded comple
   assert.equal(await s.observe(ID, ended, {...unknownParent, turn: 'turn-3'}), 'stale');
   const session = s.record(ID);
   assert.deepEqual(session.turn, {status: 'known', id: 'turn-2'});
-  assert.equal(session.activity, 'active');
+  assert.equal(session.work.state, 'active');
   assert.deepEqual(session.ordering, {status: 'unknown'});
-  assert.equal(session.notices.length, 0);
+  assert.equal(session.outcome.notices.length, 0);
 });
 
 for (const kind of ['attention-approval', 'attention-input', 'question-continuing', 'turn-ended'] as const) {
@@ -1060,9 +1066,9 @@ for (const kind of ['attention-approval', 'attention-input', 'question-continuin
     const session = s.record(ID);
     assert.deepEqual(session.turn, {status: 'known', id: 'turn-2'});
     if (kind === 'turn-ended') {
-      assert.equal(session.activity, 'idle');
-      assert.ok(session.notices.some(notice => notice.turn.status === 'known' && notice.turn.id === 'turn-2'));
-    } else assert.deepEqual(session.attention.map(item => item.turn), [{status: 'known', id: 'turn-2'}]);
+      assert.equal(session.work.state, 'idle');
+      assert.ok(session.outcome.notices.some(notice => notice.turn.status === 'known' && notice.turn.id === 'turn-2'));
+    } else assert.deepEqual(session.attention.items.map(item => item.turn), [{status: 'known', id: 'turn-2'}]);
     assert.equal(await s.take(structuredClone(observation)), 'duplicate');
   });
 }
@@ -1073,11 +1079,11 @@ it('unordered child start and stop permutations yield the same uncertain count a
       const s = await Sessions.open(t, codexCli);
       await s.observe(ID, started, unknownParent);
       for (const kind of [...order, ...order]) await s.child('child', ID, {kind});
-      assert.deepEqual(s.record(ID).children, {active: 0, uncertain: 1});
-      assert.equal(s.record('child').activity, 'unknown');
-      assert.equal(s.record('child').freshness, 'current');
+      assert.deepEqual(s.record(ID).relationships.children, {working: 0, unconfirmed: 1});
+      assert.equal(s.record('child').work.state, 'unknown');
+      assert.deepEqual(s.record('child').work.reasons, [], 'the count comes from evidence, not age');
       await s.world.crashAndRestart();
-      assert.deepEqual(s.record(ID).children, {active: 0, uncertain: 1});
+      assert.deepEqual(s.record(ID).relationships.children, {working: 0, unconfirmed: 1});
     });
   }
 });
@@ -1090,7 +1096,7 @@ it('conflicting parent permutations cannot attribute a child to either parent', 
       for (const [index, parent] of [...parents, parents[0]].entries()) {
         await s.observe('child', {kind: 'activity-observed'}, {sequence: index + 1, parent: {status: 'known', identity: codexCli(parent)}});
       }
-      for (const parent of [ID, 'other-parent']) assert.deepEqual(s.record(parent).children, {active: 0, uncertain: 0});
+      for (const parent of [ID, 'other-parent']) assert.deepEqual(s.record(parent).relationships.children, {working: 0, unconfirmed: 0});
       assert.deepEqual(s.record('child').parent, {status: 'unknown'});
       assert.ok(s.record('child').unavailable.some(item => item.dimension === 'parent' && item.reason === 'ambiguous'));
       await s.world.crashAndRestart();
@@ -1106,8 +1112,8 @@ it('qualified child ordering gives the same idle count in either delivery order'
       await s.observe(ID, started, unknownParent);
       const under = {parent: {status: 'known', identity: codexCli(ID)}} as const;
       for (const sequence of order) await s.observe('child', sequence === 1 ? started : ended, {...under, sequence});
-      assert.deepEqual(s.record(ID).children, {active: 0, uncertain: 0});
-      assert.equal(s.record('child').activity, 'idle');
+      assert.deepEqual(s.record(ID).relationships.children, {working: 0, unconfirmed: 0});
+      assert.equal(s.record('child').work.state, 'idle');
     });
   }
 });
@@ -1118,7 +1124,7 @@ it('parent identity is independent of JSON property order', async context => {
   await s.observe('child', started, {sequence: 1, parent: {status: 'known', identity: codexCli(ID)}});
   const reversed = Object.fromEntries(Object.entries(codexCli(ID)).reverse()) as Identity;
   await s.take({...s.observation('child', {kind: 'activity-observed'}, {sequence: 2}), parent: {identity: reversed, status: 'known'}});
-  assert.deepEqual(s.record(ID).children, {active: 1, uncertain: 0});
+  assert.deepEqual(s.record(ID).relationships.children, {working: 1, unconfirmed: 0});
 });
 
 it('attention identity is independent of JSON property order', async context => {
@@ -1126,7 +1132,7 @@ it('attention identity is independent of JSON property order', async context => 
   await s.observe(ID, known('attention-approval', 'approval'), {...unknownParent, sequence: 1});
   await s.take({...s.observation(ID, {kind: 'attention-approval', attention: {id: 'approval', status: 'known'} as const}, {...unknownParent, sequence: 2}),
     turn: {id: 'turn-1', status: 'known'} as const});
-  assert.equal(s.record(ID).attention.length, 1);
+  assert.equal(s.record(ID).attention.items.length, 1);
 });
 
 it('restart restores committed labels and notices and requires fresh evidence', async context => {
@@ -1136,14 +1142,14 @@ it('restart restores committed labels and notices and requires fresh evidence', 
   assert.equal(await s.observe(ID, ended, {...unknownParent, sequence: 2}), 'applied');
   const before = s.record(ID);
   assert.equal(before.label?.value, 'Build monitor');
-  assert.equal(before.notices.length, 1);
+  assert.equal(before.outcome.notices.length, 1);
   await s.world.crashAndRestart();
   const after = s.record(ID);
   assert.equal(after.label?.value, 'Build monitor');
-  assert.deepEqual(after.notices, before.notices);
+  assert.deepEqual(after.outcome.notices, before.outcome.notices);
   // #1865 step 8: a finished session keeps its status across the restart; only running work turns unconfirmed.
-  assert.equal(after.freshness, 'current');
-  assert.equal(after.restartUncertain, false);
+  assert.equal(after.work.confidence, 'confirmed');
+  assert.equal(restarted(after), false);
 });
 
 it('activity, correlated attention, notices and consumer acknowledgment stay independent', async context => {
@@ -1153,21 +1159,21 @@ it('activity, correlated attention, notices and consumer acknowledgment stay ind
   await s.observe(ID, known('question-continuing', 'question-1'), at(2));
   await s.observe(ID, known('attention-approval', 'approval-1'), at(3));
   await s.observe(ID, {kind: 'activity-observed'}, at(4));
-  assert.equal(s.record(ID).attention.length, 2);
+  assert.equal(s.record(ID).attention.items.length, 2);
   await s.observe(ID, {kind: 'attention-resolved', attention: {status: 'unknown'}}, at(5));
-  assert.equal(s.record(ID).attention.length, 2);
+  assert.equal(s.record(ID).attention.items.length, 2);
   await s.observe(ID, known('attention-resolved', 'approval-1'), at(6));
-  assert.deepEqual(s.record(ID).attention.map(item => item.kind), ['question']);
+  assert.deepEqual(s.record(ID).attention.items.map(item => item.kind), ['question']);
   await s.observe(ID, ended, at(7));
-  const notice = s.record(ID).notices[0];
+  const notice = s.record(ID).outcome.notices[0];
   await s.observe(ID, {kind: 'turn-interrupted'}, at(8));
   assert.equal(await s.observe('someone-else', {kind: 'runtime-ended'}, at(9)), 'stale');
-  assert.equal(s.record(ID).notices.length, 1);
-  assert.equal(s.record(ID).activity, 'interrupted');
+  assert.equal(s.record(ID).outcome.notices.length, 1);
+  assert.equal(s.record(ID).work.state, 'interrupted');
   assert.equal((await s.world.acknowledge(codexCli(ID), notice?.id ?? '', 'pixoo')).ok, true);
-  assert.deepEqual(s.record(ID).notices[0]?.acknowledgedBy, ['pixoo']);
-  assert.equal(s.record(ID).read, 'unknown');
-  assert.equal(s.record(ID).attention.length, 1);
+  assert.deepEqual(s.record(ID).outcome.notices[0]?.acknowledgedBy, ['pixoo']);
+  assert.equal(s.record(ID).outcome.read, 'unknown');
+  assert.equal(s.record(ID).attention.items.length, 1);
 });
 
 it('new evidenced turn retires only its configured notices and rejects late old turns', async context => {
@@ -1177,7 +1183,7 @@ it('new evidenced turn retires only its configured notices and rejects late old 
   await s.observe(ID, started, {...unknownParent, turn: 'turn-2', sequence: 3});
   const current = s.record(ID);
   assert.deepEqual(current.turn, {status: 'known', id: 'turn-2'});
-  assert.deepEqual(current.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
+  assert.deepEqual(current.outcome.notices[0]?.acknowledgedBy, ['nanoleaf', 'pixoo']);
   assert.equal(await s.observe(ID, ended, {...unknownParent, sequence: 4}), 'stale');
   assert.deepEqual(s.record(ID), current);
 });
@@ -1191,7 +1197,7 @@ it('unknown ordering and native ID collisions stay uncertain without clearing st
   const revision = s.world.store.revision;
   assert.equal(await s.take({...event, event: {kind: 'activity-observed'}}), 'duplicate');
   assert.equal(s.world.store.revision, revision);
-  assert.equal(s.record(ID).notices.length, 1);
+  assert.equal(s.record(ID).outcome.notices.length, 1);
   assert.ok(s.record(ID).unavailable.some(item => item.dimension === 'ordering'));
 });
 
@@ -1200,12 +1206,12 @@ it('ordered observations preserve independently reordered activity and attention
   await s.observe(ID, started, {...unknownParent, sequence: 1});
   await s.observe(ID, known('attention-approval', 'approval'), {...unknownParent, sequence: 5});
   await s.observe(ID, ended, {...unknownParent, sequence: 4});
-  assert.equal(s.record(ID).activity, 'idle');
-  assert.equal(s.record(ID).attention.length, 1);
+  assert.equal(s.record(ID).work.state, 'idle');
+  assert.equal(s.record(ID).attention.items.length, 1);
   assert.equal(await s.observe(ID, {kind: 'activity-observed'}, {...unknownParent, sequence: 3}), 'stale');
   await s.observe(ID, known('attention-resolved', 'approval'), {...unknownParent, sequence: 6});
-  assert.equal(s.record(ID).attention.length, 0);
-  assert.equal(s.record(ID).notices.length, 1);
+  assert.equal(s.record(ID).attention.items.length, 0);
+  assert.equal(s.record(ID).outcome.notices.length, 1);
 });
 
 it('observation age and unique child counts are independent of reads', async context => {
@@ -1214,12 +1220,12 @@ it('observation age and unique child counts are independent of reads', async con
   await s.take(start);
   const child = s.observation('child-1', started, {sequence: 1, parent: {status: 'known', identity: codexCli(ID)}});
   for (let index = 0; index < 3; index++) await s.take(structuredClone(child));
-  assert.deepEqual(s.record(ID).children, {active: 1, uncertain: 0});
+  assert.deepEqual(s.record(ID).relationships.children, {working: 1, unconfirmed: 0});
   s.advance(300_000);
   await s.take(structuredClone(start));
   await s.due();
-  assert.equal(s.record(ID).freshness, 'uncertain');
-  assert.deepEqual(s.record(ID).children, {active: 0, uncertain: 1});
+  assert.deepEqual(s.record(ID).work.reasons, ['deadline'], 'a repeated start is no new evidence');
+  assert.deepEqual(s.record(ID).relationships.children, {working: 0, unconfirmed: 1});
 });
 
 it('a failed commit publishes no speculative revision and keeps the committed state', async context => {
@@ -1242,13 +1248,13 @@ it('all consumers acknowledge one notice in one save without changing read or li
   const s = await Sessions.open(context, codexCli);
   await s.observe(ID, started, {...unknownParent, sequence: 1});
   await s.observe(ID, ended, {...unknownParent, sequence: 2});
-  const before = s.record(ID), notice = before.notices.at(-1);
+  const before = s.record(ID), notice = before.outcome.notices.at(-1);
   const revision = s.world.store.revision;
   assert.equal((await s.world.acknowledgeAll(codexCli(ID), notice?.id ?? '')).ok, true);
   const after = s.record(ID);
   assert.equal(s.world.store.revision, revision + 1);
-  assert.deepEqual(after.notices.at(-1)?.acknowledgedBy, ['dashboard', 'nanoleaf', 'pixoo']);
-  assert.deepEqual([after.read, after.lastEvidenceAtMs, after.activity], [before.read, before.lastEvidenceAtMs, before.activity]);
+  assert.deepEqual(after.outcome.notices.at(-1)?.acknowledgedBy, ['dashboard', 'nanoleaf', 'pixoo']);
+  assert.deepEqual([after.outcome.read, after.lastEvidenceAtMs, after.work.state], [before.outcome.read, before.lastEvidenceAtMs, before.work.state]);
   assert.equal((await s.world.acknowledgeAll(codexCli(ID), notice?.id ?? '')).ok && 'duplicate', 'duplicate');
   assert.equal(s.world.store.revision, revision + 1);
 });
@@ -1257,7 +1263,7 @@ it('all-consumer acknowledgment refuses an older retained notice after a newer o
   const s = await Sessions.open(context, codexCli);
   await s.observe(ID, started, {...unknownParent, sequence: 1});
   await s.observe(ID, ended, {...unknownParent, sequence: 2});
-  const old = s.record(ID).notices.at(-1)?.id ?? '';
+  const old = s.record(ID).outcome.notices.at(-1)?.id ?? '';
   await s.observe(ID, started, {...unknownParent, turn: 'turn-2', sequence: 3});
   await s.observe(ID, ended, {...unknownParent, turn: 'turn-2', sequence: 4});
   const before = s.world.store.records();
@@ -1296,7 +1302,7 @@ it('Desktop metadata titles preserve lifecycle evidence, labels and restart unce
   const before = s.record(ID);
   assert.equal((await s.world.title(desktop(ID), {value: 'Provider title', source: 'provider'}, s.now())).ok, true);
   const after = s.record(ID);
-  assert.deepEqual([after.lastEvidenceAtMs, after.label, after.restartUncertain], [before.lastEvidenceAtMs, before.label, true]);
+  assert.deepEqual([after.lastEvidenceAtMs, after.label, restarted(after)], [before.lastEvidenceAtMs, before.label, true]);
   assert.equal(after.title?.value, 'Provider title');
   const older = await s.world.title(desktop(ID), {value: 'Older', source: 'provider'}, s.now() - 1);
   assert.equal(older.ok && older.outcome, 'stale');

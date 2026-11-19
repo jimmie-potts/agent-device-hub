@@ -6,7 +6,6 @@ import {expectedCard} from './artwork-oracle.js';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {deviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
-import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {InProcessBus, SdkError} from '@jimmie-potts/sdk';
 import {nowPlayingFrame, nowPlayingView} from '../src/nowplaying.js';
@@ -15,17 +14,17 @@ import {statusFrame, statusView} from '../src/status.js';
 import {acquireLease, type Lease} from '../src/lease.js';
 import {createTidbytModule} from '../src/module.js';
 import {SIMULATED_API_KEY, SIMULATED_DEVICE, SimulatedCloud} from '../src/simulated.js';
-import type {PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {PlaybackState, Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {
   MINUTE, SECOND, SECTION, START_MS, STATUS_ONLY, StandIn, asking, calls, finished, flush, host, identity, notice, playback, records, session, shown, test,
-  unavailablePlayback, until, working, type Hosted,
+  revise, unavailablePlayback, until, working, type Hosted,
 } from './support.js';
 
 const STATUS = 'agentdevicehub';
 const NOW_PLAYING = 'nowplaying';
-const label = (value: string): NonNullable<SessionRecord['label']> => ({value, origin: 'user'});
-const statusPicture = (sessions: readonly SessionRecord[], synced = true): string[] =>
-  picture(statusFrame(statusView({synced, sessions: sessions.map(sessionView)})).rgb);
+const label = (value: string): NonNullable<Session30Record['label']> => ({value, origin: 'user'});
+const statusPicture = (sessions: readonly Session30Record[], synced = true): string[] =>
+  picture(statusFrame(statusView({synced, sessions})).rgb);
 function cardPicture(record: PlaybackState, following = true, lostForMs = 0): string[] {
   const view = nowPlayingView({record, following, lostForMs});
   assert.ok(view.card, 'the record shows a card');
@@ -33,7 +32,7 @@ function cardPicture(record: PlaybackState, following = true, lostForMs = 0): st
 }
 /** Waits a little real time, so a render that should not start would have shown up. */
 const quiet = (): Promise<void> => new Promise(resolve => { setTimeout(resolve, 150); });
-const core = (h: Hosted): StandIn<SessionRecord> => {
+const core = (h: Hosted): StandIn<Session30Record> => {
   if (h.core === undefined) throw new Error('no core');
   return h.core;
 };
@@ -144,9 +143,9 @@ test('the status tile shows the synced sessions, and the now-playing tile what p
 });
 
 // Hub #1865, design decision 10: the tile shows `?` only for an unknown status, unconfirmed work or an unsynced copy. The
-// core's republished records after six minutes of silence carry that evidence time and uncertain freshness.
+// core's records after six minutes of silence carry that evidence time, with running work unconfirmed at its deadline.
 test('a question silent for six minutes shows on the tile without `?`, and only unconfirmed work shows one', async context => {
-  const silent = {at: START_MS - 6 * MINUTE, freshness: 'uncertain'} as const;
+  const silent = {at: START_MS - 6 * MINUTE, unconfirmed: 'deadline'} as const;
   const question = {id: {status: 'known', id: 'q-1'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}} as const;
   const sessions = [asking({label: label('asking'), attention: [question], ...silent}), working({label: label('busy'), ...silent})];
   const h = await host(context, {sessions, section: STATUS_ONLY});
@@ -237,7 +236,7 @@ test('the status tile is removed once nothing is working, waiting or unacknowled
   const h = await host(context, {sessions: [done], section: STATUS_ONLY});
   await until(() => pushes(h) === 1, 'DONE');
   await h.advance(20 * SECOND);
-  await core(h).set({...done, notices: [notice(['pixoo'])]});
+  await core(h).set(revise(done, {notices: [notice(['pixoo'])]}));
   await until(() => calls(h).includes('DELETE agentdevicehub'), 'the removal');
   assert.deepEqual(calls(h), ['POST agentdevicehub', 'DELETE agentdevicehub'], 'a present installation is deleted without a listing');
   await h.advance(5 * MINUTE, SECOND);
@@ -269,7 +268,7 @@ test('a copy that stops following its owner dims the last rows and never removes
   await until(() => pushes(lost) === 1, 'FEED ?');
   assert.deepEqual(shown(lost, STATUS).picture, statusPicture([], false));
   // The core comes up; the module syncs again after its backoff, and the next push waits for the 15 s gate.
-  const later = new StandIn<SessionRecord>(lost.bus.connect('bunny/core'), 'session');
+  const later = new StandIn<Session30Record>(lost.bus.connect('bunny/core'), 'session');
   await later.open([working({label: label('back')})]);
   await lost.advance(32 * SECOND, SECOND);
   await until(() => pushes(lost) === 2, 'the rows');
@@ -362,7 +361,7 @@ test('a stop while a push is in flight leaves the tile\'s presence unknown, so a
   assert.equal(h.cloud.state().installations[STATUS]?.pushes, 1, 'the cloud took the push');
   const [only] = core(h).records();
   if (only === undefined) throw new Error('no session');
-  await core(h).set({...only, activity: 'idle'});
+  await core(h).set(session({identity: only.identity}));
   await h.start();
   await h.advance(16 * SECOND, SECOND);
   await until(() => calls(h).includes('DELETE agentdevicehub'), 'the removal after the restart');
@@ -415,7 +414,7 @@ test('a fault of the module\'s own is logged once per run, with one record when 
 test('a session record the shared read function refuses is no session on the tile, and no fault', async context => {
   const h = await host(context, {sessions: [working({label: label('kept')})], section: STATUS_ONLY});
   await until(() => pushes(h) === 1, 'the first push');
-  await core(h).set({...working(), identity: undefined} as unknown as SessionRecord);
+  await core(h).set({...working(), identity: undefined} as unknown as Session30Record);
   await h.advance(5 * MINUTE, SECOND);
   assert.deepEqual(h.logs().filter(entry => entry.event === 'operation.failed'), []);
   assert.deepEqual(shown(h, STATUS).picture, statusPicture([working({label: label('kept')})]));
@@ -563,7 +562,7 @@ test('a failed push is not replayed, repeated failures back off, and an uncertai
   const [only] = core(uncertain).records();
   if (only === undefined) throw new Error('no session');
   await uncertain.advance(SECOND);
-  await core(uncertain).set({...only, activity: 'idle'});
+  await core(uncertain).set(session({identity: only.identity}));
   await uncertain.advance(14 * SECOND);
   await until(() => calls(uncertain).length === 2, 'the listing');
   assert.deepEqual(calls(uncertain), ['POST unknown', 'GET list'], 'nothing to delete: the uncertain push left nothing');

@@ -16,8 +16,11 @@ export const SESSION_LIMITS = Object.freeze({
   attention: 64, notices: 128, retiredTurns: 256, seen: 256, watermarks: 256,
   /** A session without lifecycle evidence for a day is removed as expired; a guard is kept for a day. */
   sessionAgeMs: 86_400_000,
-  /** Five minutes without lifecycle evidence make a session's freshness uncertain, and allow approval recovery. */
-  staleMs: 300_000,
+  /**
+   * Running work becomes unconfirmed this long after its private progress time, the last qualifying work evidence on
+   * its current turn (design decision 4), and its approval may then be recovered.
+   */
+  workDeadlineMs: 300_000,
   /**
    * The largest observation the logic takes, as compact JSON. 1.x's owner took events of up to 2,048 bytes; the 2.0 form
    * of such an event can be larger by the ordering authority it names, so this leaves room for it.
@@ -49,11 +52,14 @@ export type StoredSession = {
   attention: Attention[]; notices: Notice[];
   /** Read evidence from the session's own observations. A kept read receipt shows the record as read. */
   read: 'unknown' | 'read' | 'unread';
-  /** Explicit read provenance (`session/2.1`), kept only while its generation, turn and notice still hold. */
+  /** Explicit read provenance, published in the outcome claim and kept only while its generation, turn and notice still hold. */
   readReceipt?: ReadProvenance;
   unavailable: Unavailable[]; ordering: Ordering;
   observedAtMs: number;
-  /** The core's instant of the last lifecycle evidence: freshness and expiry run from it. */
+  /**
+   * The core's instant of the last lifecycle evidence: expiry runs from it. A record shows the value it had at the
+   * record's last published change.
+   */
   lastEvidenceAtMs: number;
   label?: Label; title?: Title; project?: string; projectId?: string;
   /** A root's latest host session ID. Never an identity. */
@@ -63,9 +69,21 @@ export type StoredSession = {
   /**
    * Set while the session's work is active and a core start left it unconfirmed (design decision 4): by the start
    * transaction, or by evidence from before the start that made work active. Only qualifying evidence on the current turn
-   * observed after the start confirms it again. Published as `restartUncertain` until `session/3.0`.
+   * observed after the start confirms it again. Published as the work claim's reason `restart`.
    */
   restartUnconfirmed?: true;
+  /**
+   * Set while the session's work is active and its deadline passed: `workDeadlineMs` after its progress time with no
+   * qualifying evidence since (design decision 4). The same evidence that ends a restart marking ends it. Published as
+   * the work claim's reason `deadline`.
+   */
+  deadlineUnconfirmed?: true;
+  /**
+   * The private progress time: the core's instant of the work evidence that last confirmed running work, from which its
+   * deadline runs. Progress that changes no public member advances it and publishes nothing (design decision 5). A
+   * session a release before #1865 step 9 stored runs its deadline from `lastEvidenceAtMs` instead.
+   */
+  progressAtMs?: number;
   /** Turns a newer turn retired: their late activity is stale. */
   retiredTurns: string[];
   /** Semantic duplicate keys: the observation's key and its content's, and collision markers. */

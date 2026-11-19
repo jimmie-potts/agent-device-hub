@@ -11,7 +11,6 @@ import {DatabaseSync, type SQLInputValue, type StatementResultingChanges, type S
 import {describe, it} from 'node:test';
 import {MAX_MESSAGE_BYTES, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {MomentEnded} from '@jimmie-potts/event-contracts/v2/families';
-import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import type {RequestResult} from '@jimmie-potts/sdk';
 import {checkModuleRecord} from '@jimmie-potts/sdk/testing';
 import sharp from 'sharp';
@@ -87,7 +86,7 @@ void describe('Monitor', () => {
       const requestId = await mode(world, 'work');
       assert.deepEqual((await world.outcome(requestId)).data, {requestId, result: 'succeeded', evidence: 'observed'});
       // The device shows the dashboard the presentation renders from the synced session: two frames, pulsing for approval.
-      const layout = new DashboardPager().layout(monitorView({state: 'current', revision: session.revision, sessions: [sessionView(session)]}), Date.now());
+      const layout = new DashboardPager().layout(monitorView({state: 'current', revision: session.revision, sessions: [session]}), Date.now());
       const expected = renderDashboard(layout).map(frameDigest);
       assert.equal(expected.length, 2);
       await waitFor(() => JSON.stringify(world.device.state().shown?.digests) === JSON.stringify(expected) ? true : undefined, 'the approval dashboard on the device');
@@ -95,7 +94,7 @@ void describe('Monitor', () => {
       assert.deepEqual([display.mode, display.base, display.participating, display.monitor.matched, display.monitor.attention], ['work', 'status', true, 1, 1]);
       // The approval resolves: the dashboard stops pulsing, and the device shows it.
       const resolved = await world.publishSession({attention: []});
-      const calm = renderDashboard(new DashboardPager().layout(monitorView({state: 'current', revision: resolved.revision, sessions: [sessionView(resolved)]}), Date.now())).map(frameDigest);
+      const calm = renderDashboard(new DashboardPager().layout(monitorView({state: 'current', revision: resolved.revision, sessions: [resolved]}), Date.now())).map(frameDigest);
       await waitFor(() => JSON.stringify(world.device.state().shown?.digests) === JSON.stringify(calm) ? true : undefined, 'the calm dashboard on the device', 8000);
       // Its own paints are the device's last transmission, with no request ID.
       const record = await waitFor(() => world.deviceRecord()?.lastTransmission.status === 'known' ? world.deviceRecord() : undefined, 'a transmission');
@@ -874,7 +873,7 @@ void describe('a finished turn', () => {
     const world = await World.open();
     await within(world, async () => {
       await world.start();
-      await world.publishSession({activity: 'idle', notices: [{id: NOTICE, kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy: []}]});
+      await world.publishSession({work: 'idle', notices: [{id: NOTICE, kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy: []}]});
       await waitFor(() => world.display()?.monitor.sessions === 1 ? true : undefined, 'the session in the module\'s copy');
       const requestId = await accepted(world.request(FAMILIES.dismiss, 'org.bunny.pixoo-notice.dismiss.requested', {session: SESSION_ID, noticeId: NOTICE}));
       assert.deepEqual((await world.outcome(requestId)).data, {requestId, result: 'succeeded', evidence: 'observed'});

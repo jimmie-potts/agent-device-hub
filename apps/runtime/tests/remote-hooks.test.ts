@@ -12,7 +12,7 @@ import type {TestContext} from 'node:test';
 import {getCACertificates, setDefaultCACertificates} from 'node:tls';
 import {fileURLToPath} from 'node:url';
 import {normalizeHook, type SourceConfiguration} from '@jimmie-potts/agent-state/providers';
-import {DESKTOP_METADATA_SCHEMA, desktopFeedId, sessionEntityId, type DesktopFeed, type DesktopMetadataSnapshot, type LifecycleObservation, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {DESKTOP_METADATA_SCHEMA, desktopFeedId, sessionEntityId, type DesktopFeed, type DesktopMetadataSnapshot, type LifecycleObservation, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {prepareMessage, publishOnce, traceFields} from '@jimmie-potts/sdk';
 import {lifecycleMessage, producerCredentialId, producerSource, runHook} from '../src/hook/index.js';
@@ -125,7 +125,7 @@ it('a granted legacy local producer keeps its complete source configuration iden
   await waitFor(async () => {
     const response = await fetch(runtime.url + '/api/v2/families/session', {headers: {authorization: 'Bearer ' + reader}});
     assert.equal(response.status, 200);
-    const {records} = await response.json() as {records: SessionRecord[]};
+    const {records} = await response.json() as {records: Session30Record[]};
     return records.length === 1 && records[0]?.identity.hostId === legacy.hostId;
   });
 });
@@ -189,10 +189,10 @@ it('four qualified HTTPS host/provider hooks stay independent, deduplicate and r
     const configuration = sources[index]; assert.ok(configuration);
     await invokeHook(context, configuration.provider === 'codex' ? CODEX_HOOK : HOOK, producer, entry.cert);
   }
-  const read = async (): Promise<SessionRecord[]> => {
+  const read = async (): Promise<Session30Record[]> => {
     const response = await fetch(runtime.url + '/api/v2/families/session', {headers: {authorization: 'Bearer ' + reader}});
     assert.equal(response.status, 200);
-    return (await response.json() as {records: SessionRecord[]}).records;
+    return (await response.json() as {records: Session30Record[]}).records;
   };
   await waitFor(async () => (await read()).length === 4);
   let records = await read();
@@ -207,11 +207,11 @@ it('four qualified HTTPS host/provider hooks stay independent, deduplicate and r
   assert.deepEqual(await publishObservation(0, 'UserPromptSubmit', 8), {status: 'published'});
   assert.deepEqual(await publishObservation(0, 'PermissionRequest', 10), {status: 'published'});
   assert.deepEqual(await publishObservation(1, 'Stop', 10), {status: 'published'});
-  await waitFor(async () => (await read()).some(record => record.identity.hostId === 'pc-sim' && record.identity.provider === 'codex' && record.notices.length === 1));
+  await waitFor(async () => (await read()).some(record => record.identity.hostId === 'pc-sim' && record.identity.provider === 'codex' && record.outcome.notices.length === 1));
   records = await read();
-  assert.equal(records.find(record => record.identity.hostId === 'pc-sim' && record.identity.provider === 'claude')?.attention.length, 1);
+  assert.equal(records.find(record => record.identity.hostId === 'pc-sim' && record.identity.provider === 'claude')?.attention.items.length, 1);
   // The Mac's sessions only started, which claims no work (#397).
-  assert.ok(records.filter(record => record.identity.hostId === 'mac-sim').every(record => record.activity === 'idle' && record.attention.length === 0 && record.notices.length === 0));
+  assert.ok(records.filter(record => record.identity.hostId === 'mac-sim').every(record => record.work.state === 'idle' && record.attention.items.length === 0 && record.outcome.notices.length === 0));
   const staleBefore = logs.filter(record => record.event_name === 'message.received' && record.attributes['bunny.outcome'] === 'stale').length;
   assert.deepEqual(await publishObservation(0, 'Stop', 7), {status: 'published'});
   await waitFor(() => logs.filter(record => record.event_name === 'message.received' && record.attributes['bunny.outcome'] === 'stale').length > staleBefore);
@@ -338,7 +338,7 @@ it('only the derived collector credential of a Desktop feed publishes its snapsh
 
   const response = await fetch(runtime.url + '/api/v2/families/session', {headers: {authorization: 'Bearer ' + reader.token}});
   assert.equal(response.status, 200);
-  assert.deepEqual((await response.json() as {records: SessionRecord[]}).records, [], 'a snapshot changes no session');
+  assert.deepEqual((await response.json() as {records: Session30Record[]}).records, [], 'a snapshot changes no session');
   const received = logs.filter(record => record.event_name === 'message.received');
   assert.ok(received.every(record => record.attributes['bunny.operation'] !== 'lifecycle'), 'the core takes no snapshot in as a lifecycle observation');
   assert.ok(received.every(record => record.attributes['bunny.outcome'] === 'accepted'), 'the core refuses nothing it heard');
@@ -412,10 +412,10 @@ it('a lifecycle observation or Desktop snapshot published on the other family\'s
   }
   await new Promise(resolve => { setTimeout(resolve, 50); });
   assert.deepEqual(heard, [], 'no cross-published message reaches a subscriber');
-  const sessions = async (): Promise<SessionRecord[]> => {
+  const sessions = async (): Promise<Session30Record[]> => {
     const response = await fetch(runtime.url + '/api/v2/families/session', {headers: {authorization: 'Bearer ' + reader.token}});
     assert.equal(response.status, 200);
-    return (await response.json() as {records: SessionRecord[]}).records;
+    return (await response.json() as {records: Session30Record[]}).records;
   };
   assert.deepEqual(await sessions(), [], 'nor the core');
   assert.equal(logs.filter(record => record.event_name === 'message.received').length, 0);

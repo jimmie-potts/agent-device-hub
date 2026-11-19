@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import type {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
-import {sessionEntityId, type Identity, type LifecycleEvent, type LifecycleObservation, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type Identity, type LifecycleEvent, type LifecycleObservation, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {Deriver} from '../src/core/store.js';
 import {World, lifecycleMessage} from './fixtures/store-world.js';
 import {START, it, manualClock} from './support.js';
@@ -41,11 +41,13 @@ async function take(w: World, who: Identity, event: LifecycleEvent, at: At = {})
   return result.ok ? result.outcome : result.code;
 }
 
-const record = (w: World, who: Identity): SessionRecord => {
+const record = (w: World, who: Identity): Session30Record => {
   const found = w.store.records().find(item => item.id === sessionEntityId(who));
   assert.ok(found, `${who.sessionId} is held`);
   return found;
 };
+/** Whether a record's running work is unconfirmed for a restart (the work claim's reason `restart`). */
+const restarted = (item: Session30Record): boolean => item.work.reasons.includes('restart');
 const stored = (w: World, who: Identity): boolean | undefined =>
   w.store.sessions().find(session => session.id === sessionEntityId(who))?.restartUnconfirmed;
 const started: LifecycleEvent = {kind: 'turn-started'}, ended: LifecycleEvent = {kind: 'turn-ended'}, progress: LifecycleEvent = {kind: 'activity-observed'};
@@ -73,13 +75,13 @@ it('a restart marks only running work unconfirmed, in one start transaction that
   assert.deepEqual(sent.map(message => [message.kind, message.subject]), [['state', sessionEntityId(CODEX)], ['state', sessionEntityId(RUNNING)]],
     'only the sessions whose work runs are published again, with no removal and no occurrence');
   assert.equal(w.changes.length, 1, 'one transaction');
-  assert.equal(new Set(sent.map(message => (message.data as SessionRecord).revision)).size, 1, 'at one revision');
-  assert.ok(sent.every(message => (message.data as SessionRecord).restartUncertain && (message.data as SessionRecord).freshness === 'uncertain'));
+  assert.equal(new Set(sent.map(message => (message.data as Session30Record).revision)).size, 1, 'at one revision');
+  assert.ok(sent.every(message => restarted(message.data as Session30Record) && (message.data as Session30Record).work.confidence === 'unconfirmed'));
   // The question and the outcome stay as stored.
-  assert.deepEqual(record(w, CODEX).attention, before.get(sessionEntityId(CODEX))?.attention);
-  assert.equal(record(w, CODEX).activity, 'active');
+  assert.deepEqual(record(w, CODEX).attention.items, before.get(sessionEntityId(CODEX))?.attention.items);
+  assert.equal(record(w, CODEX).work.state, 'active');
   assert.deepEqual(record(w, CLAUDE), before.get(sessionEntityId(CLAUDE)), 'the finished session is not republished and keeps its notice');
-  assert.equal(record(w, CLAUDE).restartUncertain, false);
+  assert.equal(restarted(record(w, CLAUDE)), false);
   assert.deepEqual([stored(w, CODEX), stored(w, CLAUDE), stored(w, RUNNING)], [true, undefined, true], 'the marking is stored with each session');
 
   // The marking is stored: another restart without evidence between changes nothing.
@@ -88,7 +90,7 @@ it('a restart marks only running work unconfirmed, in one start transaction that
   await w.crashAndRestart();
   await w.store.drain();
   assert.deepEqual(w.since(0), []);
-  assert.equal(record(w, RUNNING).restartUncertain, true);
+  assert.equal(restarted(record(w, RUNNING)), true);
 });
 
 it('only qualifying evidence on the current turn, observed after the start, confirms the work again', async context => {
@@ -99,17 +101,17 @@ it('only qualifying evidence on the current turn, observed after the start, conf
   w.clock.advance(1000);
   // A question is evidence, but not of work: the work stays unconfirmed.
   assert.equal(await take(w, RUNNING, question('q2'), {turn: 'r1'}), 'applied');
-  assert.equal(record(w, RUNNING).restartUncertain, true);
-  assert.equal(record(w, RUNNING).freshness, 'uncertain');
-  assert.equal(record(w, RUNNING).attention.length, 1, 'and is taken');
+  assert.equal(restarted(record(w, RUNNING)), true);
+  assert.equal(record(w, RUNNING).work.confidence, 'unconfirmed');
+  assert.equal(record(w, RUNNING).attention.items.length, 1, 'and is taken');
   // Progress on the current turn confirms it.
   assert.equal(await take(w, RUNNING, progress, {turn: 'r1'}), 'applied');
-  assert.equal(record(w, RUNNING).restartUncertain, false);
-  assert.equal(record(w, RUNNING).freshness, 'current');
+  assert.equal(restarted(record(w, RUNNING)), false);
+  assert.equal(record(w, RUNNING).work.confidence, 'confirmed');
   assert.equal(stored(w, RUNNING), undefined);
   // The answer to the waiting session's question is qualifying evidence on its turn.
   assert.equal(await take(w, CODEX, {kind: 'attention-resolved', attention: {status: 'known', id: 'q1'}}, {turn: 't1'}), 'applied');
-  assert.deepEqual([record(w, CODEX).restartUncertain, record(w, CODEX).attention], [false, []]);
+  assert.deepEqual([restarted(record(w, CODEX)), record(w, CODEX).attention.items], [false, []]);
 });
 
 it('a turn that ends after the restart leaves no work to confirm, and a new turn after the start is confirmed', async context => {
@@ -119,9 +121,9 @@ it('a turn that ends after the restart leaves no work to confirm, and a new turn
   await w.crashAndRestart();
   w.clock.advance(1000);
   assert.equal(await take(w, RUNNING, ended, {turn: 'r1'}), 'applied');
-  assert.deepEqual([record(w, RUNNING).activity, record(w, RUNNING).restartUncertain], ['idle', false]);
+  assert.deepEqual([record(w, RUNNING).work.state, restarted(record(w, RUNNING))], ['idle', false]);
   assert.equal(await take(w, RUNNING, started, {turn: 'r2'}), 'applied');
-  assert.deepEqual([record(w, RUNNING).activity, record(w, RUNNING).restartUncertain], ['active', false]);
+  assert.deepEqual([record(w, RUNNING).work.state, restarted(record(w, RUNNING))], ['active', false]);
 });
 
 it('a delayed event from before the core\'s start does not confirm the work again', async context => {
@@ -134,14 +136,15 @@ it('a delayed event from before the core\'s start does not confirm the work agai
   w.clock.advance(500);
   // Progress the hook observed before the restart, delivered after it.
   assert.equal(await take(w, RUNNING, progress, {turn: 'r1', atMs: sent + 2000}), 'applied');
-  assert.equal(record(w, RUNNING).restartUncertain, true, 'the delayed progress does not confirm');
-  assert.equal(record(w, RUNNING).observedAtMs, sent + 2000, 'but is taken');
+  assert.equal(restarted(record(w, RUNNING)), true, 'the delayed progress does not confirm');
+  // It changes no public member, so the record is not published again (design decision 5); the stored session took it.
+  assert.equal(w.store.sessions().find(session => session.id === sessionEntityId(RUNNING))?.observedAtMs, sent + 2000, 'but is taken');
   // Observed after the start, but of an event that occurred before it: the earlier instant counts.
   assert.equal(await take(w, RUNNING, progress, {turn: 'r1', atMs: startAt + 100, occurredAtMs: startAt - 100}), 'applied');
-  assert.equal(record(w, RUNNING).restartUncertain, true);
+  assert.equal(restarted(record(w, RUNNING)), true);
   // Progress from after the start confirms.
   assert.equal(await take(w, RUNNING, progress, {turn: 'r1', atMs: startAt + 400}), 'applied');
-  assert.equal(record(w, RUNNING).restartUncertain, false);
+  assert.equal(restarted(record(w, RUNNING)), false);
 });
 
 it('work that a delayed event from before the start sets running is unconfirmed until evidence from after the start', async context => {
@@ -153,12 +156,12 @@ it('work that a delayed event from before the start sets running is unconfirmed 
   w.clock.advance(500);
   // The finished session's next prompt and a session the core never saw, both observed before the restart.
   assert.equal(await take(w, CLAUDE, started, {turn: 'p2', atMs: sent + 1000}), 'applied');
-  assert.deepEqual([record(w, CLAUDE).activity, record(w, CLAUDE).restartUncertain], ['active', true]);
+  assert.deepEqual([record(w, CLAUDE).work.state, restarted(record(w, CLAUDE))], ['active', true]);
   const late = identity('claude', 'late');
   assert.equal(await take(w, late, started, {turn: 'l1', atMs: sent + 2000}), 'applied');
-  assert.deepEqual([record(w, late).activity, record(w, late).restartUncertain], ['active', true]);
+  assert.deepEqual([record(w, late).work.state, restarted(record(w, late))], ['active', true]);
   assert.equal(await take(w, CLAUDE, progress, {turn: 'p2'}), 'applied');
-  assert.equal(record(w, CLAUDE).restartUncertain, false);
+  assert.equal(restarted(record(w, CLAUDE)), false);
 });
 
 it('a host clock behind the hub delays confirmation to its next evidence; one ahead lets a delayed event confirm, the accepted limit', async context => {
@@ -170,16 +173,16 @@ it('a host clock behind the hub delays confirmation to its next evidence; one ah
   // A host 30 s behind: evidence it observes a second after the start carries an instant before it.
   w.clock.advance(1000);
   assert.equal(await take(w, RUNNING, progress, {turn: 'r1', atMs: w.clock.now() - 30_000}), 'applied');
-  assert.equal(record(w, RUNNING).restartUncertain, true);
+  assert.equal(restarted(record(w, RUNNING)), true);
   w.clock.advance(40_000);
   assert.equal(await take(w, RUNNING, progress, {turn: 'r1', atMs: w.clock.now() - 30_000}), 'applied');
-  assert.equal(record(w, RUNNING).restartUncertain, false, 'its next evidence, now after the start on its own clock, confirms');
+  assert.equal(restarted(record(w, RUNNING)), false, 'its next evidence, now after the start on its own clock, confirms');
   // A host 30 s ahead: progress it sent just before the restart and the hub took just after carries an instant after the start.
   assert.equal(await take(w, CODEX, progress, {turn: 't1', atMs: startAt - 1000 + 30_000}), 'applied');
-  assert.equal(record(w, CODEX).restartUncertain, false, 'a delayed event from a host clock ahead confirms work (design decision 4)');
+  assert.equal(restarted(record(w, CODEX)), false, 'a delayed event from a host clock ahead confirms work (design decision 4)');
 });
 
-it('after a restart an approval can be recovered only where the restart left work unconfirmed, or after five minutes', async context => {
+it('after a restart an approval can be recovered only where the restart or the work deadline left running work unconfirmed', async context => {
   const w = await open(context);
   const approval: LifecycleEvent = {kind: 'attention-approval', attention: {status: 'unknown'}};
   const halted = identity('claude', 'halted');
@@ -195,12 +198,14 @@ it('after a restart an approval can be recovered only where the restart left wor
     const result = await w.recoverApproval(who, 'r1');
     return result.ok ? result.outcome : result.code;
   };
-  assert.deepEqual([record(w, halted).activity, record(w, halted).restartUncertain], ['unknown', false], 'work that is not running is not marked');
+  assert.deepEqual([record(w, halted).work.state, restarted(record(w, halted))], ['unknown', false], 'work that is not running is not marked');
   assert.equal(await recover(halted), 'invalid-state');
   assert.equal(await recover(RUNNING), 'ambiguous', 'recovered');
-  assert.equal(record(w, RUNNING).attention.length, 0);
+  assert.equal(record(w, RUNNING).attention.items.length, 0);
+  // Work that is not running has no deadline (design decision 10): five minutes of silence do not make it recoverable.
   w.clock.advance(300_000);
-  assert.equal(await recover(halted), 'ambiguous', 'five minutes without evidence still allow it');
+  await w.store.refresh();
+  assert.equal(await recover(halted), 'invalid-state', 'silence alone never allows it');
 });
 
 it('a start transaction that cannot commit changes nothing, and no session change commits before it', async context => {
@@ -214,7 +219,7 @@ it('a start transaction that cannot commit changes nothing, and no session chang
   await assert.rejects(w.crashAndRestart());
   const rows = w.snapshot();
   assert.deepEqual(w.published, []);
-  assert.equal(record(w, RUNNING).restartUncertain, false, 'the stored record still says what it said');
+  assert.equal(restarted(record(w, RUNNING)), false, 'the stored record still says what it said');
   assert.equal(await take(w, RUNNING, progress, {turn: 'r1'}), 'storage-failed', 'a session change waits for the start transaction');
   assert.deepEqual(w.snapshot(), rows, 'nothing committed');
   failing = false;
@@ -225,7 +230,7 @@ it('a start transaction that cannot commit changes nothing, and no session chang
   assert.equal(w.changes.length, 2);
   assert.deepEqual(w.changes[0]?.messages.map(message => message.subject), [sessionEntityId(CODEX), sessionEntityId(RUNNING)]);
   assert.deepEqual(w.changes[1]?.messages.map(message => message.subject), [sessionEntityId(CLAUDE)]);
-  assert.deepEqual([record(w, CODEX).restartUncertain, record(w, RUNNING).restartUncertain, record(w, CLAUDE).restartUncertain], [true, true, false]);
+  assert.deepEqual([restarted(record(w, CODEX)), restarted(record(w, RUNNING)), restarted(record(w, CLAUDE))], [true, true, false]);
 });
 
 it('the start clears a marking that a release without it left on work that is not running (#1865 rollback)', async context => {
@@ -239,6 +244,6 @@ it('the start clears a marking that a release without it left on work that is no
   w.clock.advance(10_000);
   await w.crashAndRestart();
   assert.equal(stored(w, CLAUDE), undefined, 'cleared in the start transaction');
-  assert.equal(record(w, CLAUDE).restartUncertain, false);
+  assert.equal(restarted(record(w, CLAUDE)), false);
   assert.deepEqual([stored(w, CODEX), stored(w, RUNNING)], [true, true]);
 });

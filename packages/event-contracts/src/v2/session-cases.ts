@@ -2,17 +2,16 @@
 // `fixtures/v2/session-cases.json` holds an input sequence (observations, commands, clock advances, restarts and the
 // cutover reset), and for each check the expected records, removals and occurrences and each reader's expected output.
 // The core's tests and every session reader's tests load the cases here, so the JSON stays compact: named synthetic
-// sessions, turns by name and times as offsets. The loader expands them into full profile 2.0 messages and refuses a
-// case whose message the core families do not accept. Nothing here is a real session, title, prompt or host.
+// sessions, turns by name and times as offsets. The loader expands them into full profile 2.0 messages, each expected
+// record a `session/3.0` state built with `buildSession`, and refuses a case whose message the core families do not
+// accept. Nothing here is a real session, title, prompt or host.
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {coreValidator, sessionEntityId, type Attention, type Identity, type KnownId, type LifecycleEvent, type LifecycleObservation,
-  type Notice, type NoticeAcknowledgeRequest, type Parent, type SessionRecord, type Unavailable} from './families.js';
+  type Notice, type NoticeAcknowledgeRequest, type Parent, type Session30Record, type Unavailable, type WorkClaim} from './families.js';
 import type {Message} from './index.js';
-import {forConsumer, readSession, type ConsumerPolicy, type SessionView} from './session.js';
+import {buildSession, forConsumer, readSession, SESSION_SCHEMA, type ConsumerPolicy, type SessionView} from './session.js';
 
-/** The session version of a case's records until the core publishes `session/3.0`. */
-const SESSION_SCHEMA = 'https://bunny.invalid/events/session/2.0';
 const LIFECYCLE_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.0';
 const ACKNOWLEDGE_SCHEMA = 'https://bunny.invalid/events/notice-acknowledge/2.0';
 /** The source of synthetic hook observations, and of the Codex Desktop module's own. */
@@ -40,10 +39,14 @@ type CompactStep = {atMs: number} & (
   | {reset: true}
   | {fill: {count: number}}
 );
+/**
+ * One expected record: its work state, why running work is unconfirmed besides its evidence (`deadline` or `restart`),
+ * and its children as `[working, unconfirmed]`. Its status follows from its claims.
+ */
 type CompactRecord = {
-  session: string; revision: number; generation: number; turn: string | null; activity: SessionRecord['activity'];
-  attention?: CompactAttention[]; notices?: CompactNotice[]; read?: SessionRecord['read']; unavailable?: [Unavailable['dimension'], Unavailable['reason']][];
-  ordering?: {epoch: string; sequence: number}; observedAtMs: number; lastEvidenceAtMs: number; restartUncertain?: boolean;
+  session: string; revision: number; generation: number; turn: string | null; work: WorkClaim['state'];
+  attention?: CompactAttention[]; notices?: CompactNotice[]; read?: Session30Record['outcome']['read']; unavailable?: [Unavailable['dimension'], Unavailable['reason']][];
+  ordering?: {epoch: string; sequence: number}; observedAtMs: number; lastEvidenceAtMs: number; unconfirmed?: 'deadline' | 'restart';
   children?: [number, number];
 };
 type CompactCheck = {
@@ -81,11 +84,6 @@ export type ReaderExpectations = {
   pixoo: Record<string, boolean>;
   /** Whether the Pixoo Monitor shows each root row's children marker, where the case pins it. */
   pixooChildren?: Record<string, boolean>;
-  /**
-   * What the live 2.x helper in `status.ts` gives today, over the records with any consumer's acknowledgment: LIFX's
-   * `highestStatus` and each root's `sessionState` (null for none). Group 1 changes neither.
-   */
-  live?: {highest: string; states: Record<string, string | null>};
   /** Each Nanoleaf task's status by its root, and the tasks the Lines hold steady for unconfirmed work. */
   nanoleaf: {tasks: Record<string, NanoleafTask>; steady: string[]};
   /** The dashboard chip of each session. */
@@ -106,9 +104,9 @@ export type CaseStep = {atMs: number} & (
 export type CaseCheck = {
   after: number; atMs: number; synced: boolean;
   /** The expected copy: each record as the session state message the core publishes, at the check's instant. */
-  messages: Message<SessionRecord>[];
+  messages: Message<Session30Record>[];
   /** The records by session name, fillers excluded. */
-  records: Record<string, SessionRecord>;
+  records: Record<string, Session30Record>;
   removed: CaseRemoval[]; occurrences: CompactOccurrence[];
   /** The views readers see: `readSession` of each message, with the case's view overrides applied. */
   views: Record<string, SessionView>;
@@ -165,28 +163,23 @@ export function loadSessionCases(): SessionCases {
     }, where);
   }
 
-  function record(where: string, atMs: number, compact: CompactRecord): Message<SessionRecord> {
+  function record(where: string, atMs: number, compact: CompactRecord): Message<Session30Record> {
     const {identity} = named(compact.session);
-    const parent = parentOf(compact.session);
     const timeMs = startAtMs + atMs;
-    const lastEvidenceAtMs = startAtMs + compact.lastEvidenceAtMs;
-    const restartUncertain = compact.restartUncertain ?? false;
     const notices: Notice[] = (compact.notices ?? []).map(notice => ({
       id: notice.id ?? (notice.turn === null ? '' : noticeIdOf(identity, notice.turn)), kind: 'turn-ended', turn: knownId(notice.turn),
       acknowledgedBy: notice.acknowledgedBy,
     }));
-    const [active, uncertain] = compact.children ?? [0, 0];
-    const data: SessionRecord = {
-      id: sessionEntityId(identity), revision: compact.revision, generation: compact.generation, identity, parent, turn: knownId(compact.turn),
-      activity: compact.activity,
+    const [working, unconfirmed] = compact.children ?? [0, 0];
+    const data = buildSession({
+      id: sessionEntityId(identity), revision: compact.revision, generation: compact.generation, identity, parent: parentOf(compact.session),
+      turn: knownId(compact.turn), work: compact.work, ...(compact.unconfirmed === undefined ? {} : {unconfirmed: compact.unconfirmed}),
       attention: (compact.attention ?? []).map(item => ({id: knownId(item.id), kind: item.kind, turn: knownId(item.turn)})),
-      notices, read: compact.read ?? 'unknown',
+      notices, read: compact.read ?? 'unknown', children: {working, unconfirmed},
       unavailable: (compact.unavailable ?? []).map(([dimension, reason]) => ({dimension, reason})),
       ordering: compact.ordering === undefined ? {status: 'unknown'} : {status: 'known', authority: identity.sourceId, ...compact.ordering},
-      observedAtMs: startAtMs + compact.observedAtMs, lastEvidenceAtMs,
-      freshness: restartUncertain || timeMs - lastEvidenceAtMs >= 300_000 ? 'uncertain' : 'current', restartUncertain,
-      children: {active, uncertain},
-    };
+      observedAtMs: startAtMs + compact.observedAtMs, lastEvidenceAtMs: startAtMs + compact.lastEvidenceAtMs,
+    });
     const id = `${where.replace(/[^A-Za-z0-9_.-]/g, '-')}-${compact.session}`;
     return checked({
       specversion: '1.0', bunnyprofile: '2.0', id, source: 'bunny/core', type: 'org.bunny.session.updated', subject: data.id,
@@ -239,11 +232,11 @@ export function loadSessionCases(): SessionCases {
       const messages = check.records.map(item => record(where, check.atMs, item));
       const fill = check.fill;
       const filled = fill === undefined ? [] : fillers.map(name => record(where, check.atMs, {
-        session: name, revision: fill.revision, generation: fill.revision, turn: null, activity: 'idle',
+        session: name, revision: fill.revision, generation: fill.revision, turn: null, work: 'idle',
         unavailable: [['turn', 'missing'], ['ordering', 'missing']], observedAtMs: 0, lastEvidenceAtMs: 0,
       }));
       const views: Record<string, SessionView> = {};
-      const records: Record<string, SessionRecord> = {};
+      const records: Record<string, Session30Record> = {};
       check.records.forEach((item, at) => {
         const message = messages[at];
         const view = message === undefined ? undefined : readSession(message);

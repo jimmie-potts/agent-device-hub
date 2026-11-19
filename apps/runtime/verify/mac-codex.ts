@@ -7,7 +7,7 @@ import {once} from 'node:events';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import type {CaptureContext} from '@jimmie-potts/app-verify';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {Page, Locator} from 'playwright';
 import {SdkError, connectRemote} from '@jimmie-potts/sdk';
 import {producerCredentialId, producerSource} from '../src/hook/index.js';
@@ -95,10 +95,10 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   const write = (port?: number) => writeFile(producer, JSON.stringify({enabled: true, qualified: true, source: SOURCE,
     endpoint: `${port === undefined ? origin : `http://127.0.0.1:${port}`}/api/monitor/v1/events`, token}), {mode: 0o600});
   await write();
-  const records = async (): Promise<SessionRecord[]> => {
+  const records = async (): Promise<Session30Record[]> => {
     const answer = await fetch(new URL('/api/v2/families/session', origin), {headers: {authorization: `Bearer ${tokens.reader}`}, signal: AbortSignal.timeout(2000)});
     if (answer.status !== 200) throw new Error('synthetic reader refused');
-    return (await answer.json() as {records: SessionRecord[]}).records;
+    return (await answer.json() as {records: Session30Record[]}).records;
   };
   const raw = {session_id: 'portable-root', turn_id: 'portable-turn', source: 'startup', prompt: 'PRIVATE_CANARY',
     last_assistant_message: 'PRIVATE_CANARY', cwd: '/DO_NOT_OPEN', transcript_path: '/DO_NOT_OPEN/transcript.jsonl'};
@@ -110,7 +110,7 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
     const result = await invoke(producer, {...raw, hook_event_name});
     await t.expect(`${hook_event_name} hook exits silently within its budget`, () => result.quiet && result.elapsed < 4000);
   }
-  await t.expect('real core records the shared local known active turn', () => until(async () => (await records()).some(r => r.identity.client === 'local' && r.identity.sessionId === raw.session_id && r.activity === 'active' && r.turn.status === 'known' && r.turn.id === raw.turn_id)));
+  await t.expect('real core records the shared local known active turn', () => until(async () => (await records()).some(r => r.identity.client === 'local' && r.identity.sessionId === raw.session_id && r.work.state === 'active' && r.turn.status === 'known' && r.turn.id === raw.turn_id)));
   await page.getByText('Mac Codex', {exact: false}).first().waitFor();
   const card = page.locator('article.agent-status-card').filter({hasText: 'Mac Codex'}).first();
   const working = card.locator('.chip[data-chip="working"]');
@@ -120,7 +120,7 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   await label('Send synthetic Stop; observe the retained Finished notice');
   const ended = await invoke(producer, {...raw, hook_event_name: 'Stop'});
   await t.expect('Stop publishes silently', () => ended.quiet);
-  await t.expect('real core retains the completed unread notice', () => until(async () => (await records()).some(r => r.activity === 'idle' && r.notices.some(n => n.kind === 'turn-ended'))));
+  await t.expect('real core retains the completed unread notice', () => until(async () => (await records()).some(r => r.work.state === 'idle' && r.outcome.notices.some(n => n.kind === 'turn-ended'))));
   const finished = card.locator('.chip[data-chip="finished"]');
   await finished.waitFor();
   await t.expect('dashboard card renders Finished unread', async () => await finished.innerText() === 'Finished · unread');
@@ -175,7 +175,7 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   await notice.waitFor();
   await show(notice, 'Original turn-ended notice retained');
   await t.expect('retained record survives and lost observation is not invented', async () => {
-    const found = await records(); return found.length === 1 && found[0]?.identity.sessionId === raw.session_id && found[0].notices.some(n => n.kind === 'turn-ended');
+    const found = await records(); return found.length === 1 && found[0]?.identity.sessionId === raw.session_id && found[0].outcome.notices.some(n => n.kind === 'turn-ended');
   });
   await t.expect('rendered page has no private input, token or JavaScript failure', async () => {
     const text = await page.locator('body').innerText(); return !/PRIVATE_CANARY|DO_NOT_OPEN/.test(text) && !text.includes(token) && errors.length === 0;

@@ -749,7 +749,7 @@ nothing left to roll back. A command whose admission meets a full disk is refuse
 
 ## Sessions
 
-The module follows the core's `session/2.0` records through the SDK's sync and keeps its
+The module follows the core's `session/3.0` records through the SDK's sync and keeps its
 copy in memory only (`SessionFeed`, `SharedCopy`).
 
 - A completed sync, the first or one after an overflow, is projected as a fresh start, so

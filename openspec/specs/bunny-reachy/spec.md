@@ -38,7 +38,7 @@ Manual gestures SHALL require takeover. Stop and takeover SHALL clear pending wo
 - **AND** only a guarded new person-command after operator recovery or definitive evidence can settle the hold
 
 ### Requirement: Optional live status expression
-Automatic expression SHALL default off, require current core mode and session evidence, honor Quiet and takeover, have one active and one pending candidate, expire candidates after five seconds and space automatic gestures at least 30 seconds apart.
+Automatic expression SHALL default off, require the current core mode and an opportunity that still matches its session through the contracts package's opportunity match (the same generation, identity and turn, and the attention item still present or the notice still present and not acknowledged by `reachy-mini`), honor Quiet and takeover, have one active and one pending candidate, expire candidates after five seconds and space automatic gestures at least 30 seconds apart. No session freshness or restart term SHALL apply.
 #### Scenario: Recovery and snapshots
 - **WHEN** the module starts, resyncs, reconnects or returns from Quiet
 - **THEN** past opportunities and stored intent produce no motion
@@ -48,6 +48,9 @@ Automatic expression SHALL default off, require current core mode and session ev
 #### Scenario: Notice evidence
 - **WHEN** a bare turn ends without a current unacknowledged notice
 - **THEN** no gesture is created and no success is inferred
+#### Scenario: Unconfirmed work does not refuse a waiting question
+- **WHEN** a session whose work turned unconfirmed after five minutes of silence raises an approval
+- **THEN** the approval's opportunity is eligible while it matches, and unconfirmed work alone does not refuse it
 
 ### Requirement: Durable outcomes and isolated failure
 The module SHALL persist accepted responsibility and outcome outbox records atomically with its state, report unfinished recovery as uncertain and preserve holds. A disconnected vendor SHALL affect only that device.
