@@ -554,6 +554,39 @@ the Wemo owner and the plug's configuration revision and generation. The
 core tracks the existing power command. The plug's queue and hold still
 govern the write, and the core's existing maximum-on policy still applies.
 
+### Device controls and saved content
+
+Enable `read_devices` to look up installed devices by name or ID. Results
+identify the owner, available observations and enabled controls. Use
+`read_playback`, `read_roborock` and `read_volcano` for their own status
+records. Roborock has no cleaning command in this integration. Volcano
+publishes equipment status and supports editing the software session gap.
+
+Each added command has its own name in `assistant.tools`. The
+[Conversation action catalog](../../packages/event-contracts/src/v2/assistant-actions.ts)
+lists the exact command families and eligible owners. Command names take
+the form `control_<family>` with underscores. Existing LIFX and Wemo power
+permissions keep their original names. Conversation shows the target, owner
+and exact values for approval. The existing owner command checks device
+revisions, generation and capability. The tracked operation shows acceptance
+and the available effect evidence separately.
+
+`read_saved_art` offers saved artwork IDs and compositions. After approval,
+`control_art_show` uses the existing `art-show` preparation and presentation
+path. `read_art_show_effects` uses the approved request ID to show each
+display's preparation and presentation evidence. Missing tracked evidence
+stays visible as such.
+
+For light shows, `create_light_show_draft` uses a Nanoleaf starter timeline.
+`edit_light_show_cue` applies edits against the current draft revision.
+`preview_light_show_draft` shows cue timing, colors and intensity.
+`save_light_show` uses a separate approval to write a version to the existing
+Nanoleaf catalog. A failed or conflicted save leaves the draft available.
+`read_light_shows` lists drafts, saved versions and the lighting session state.
+`control_music_lighting_control` approves playback of one exact saved version
+on an eligible light. Stop, pause, resume and seek bind the active generation.
+Drafting, editing, previewing and saving send no lighting command.
+
 ### Conversation history contract
 
 The existing authenticated `GET /modules/companions/content/conversation`

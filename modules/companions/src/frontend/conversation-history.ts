@@ -1,3 +1,4 @@
+import {catalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
 import {HISTORY_ROWS, readHistoryCursor, type ConversationMessage, type CurrentTask, type Proposal, type RecentConversationPage, type SavedQuestion} from '../assistant/history-contract.js';
 import {LIMITS} from '../assistant/limits.js';
@@ -21,6 +22,7 @@ function decodeProposal(value: unknown): Proposal | null {
   if (value === null) return null;
   if (!record(value) || !record(value.data)) return invalidPage();
   const {family, target, data, expectedRevision, owner} = value;
+  if (family === 'catalog-action') return catalogProposal(value) ?? invalidPage();
   if (integer(expectedRevision) && family === 'mode-set' && target === 'hub' && (data.mode === 'work' || data.mode === 'free' || data.mode === 'quiet')) {
     return {family, target, data: {mode: data.mode}, expectedRevision};
   }

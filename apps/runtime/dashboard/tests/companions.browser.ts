@@ -1,3 +1,4 @@
+import {showConversationJourney} from './show-conversation.browser.ts';
 import {conversationWorkspaceJourney} from './conversation-workspace.browser.ts';
 import {conversationRailJourney} from './conversation-rail.browser.ts';
 import {conversationStateJourney} from './conversation-state.browser.ts';
@@ -27,6 +28,7 @@ try {
   await conversationHistoryJourney(browser);
   await lifxConversationJourney(browser);
   await wemoConversationJourney(browser);
+  await showConversationJourney(browser);
   await conversationStateJourney(browser);
   await companionCardsCheck(browser);
   await speechJourney(browser);

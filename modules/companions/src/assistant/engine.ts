@@ -13,6 +13,8 @@ import type {Proposal} from './history-contract.js';
 import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnReply} from './provider.js';
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
+import {ConversationActions} from './catalog-actions.js';
+import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
 import {SyntheticProvider} from './synthetic.js';
 import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices} from './devices.js';
 import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
@@ -420,7 +422,17 @@ export class AssistantEngine {
       const tool = definition(call.name), permitted = tools.some(permittedTool => permittedTool.name === call.name);
       next = tool === undefined || !permitted ? 'tool' : tool.effect === 'question' ? 'ask' : tool.effect === 'command' ? 'approve' : 'tool';
     }
-    const question = (next === 'ask' || next === 'approve') && call !== undefined ? this.#question(state.taskId, call, copy) : undefined;
+    let question: Question | undefined;
+    const command = call === undefined ? undefined : catalogCommand(call.name);
+    if (next === 'approve' && command !== undefined && call !== undefined) {
+      const selected = await this.#catalog().propose(command, call, active.span.context);
+      const id = `${state.taskId}-q${String(this.#task(state.taskId).questions + 1)}`;
+      if ('code' in selected) result = `refused: ${selected.code}`;
+      else if ('question' in selected) question = {id, kind: 'clarification', text: selected.question, answer: null, call: call.id, proposal: null};
+      else question = {id, kind: 'approval', text: selected.text, answer: null, call: call.id, proposal: selected.proposal};
+    } else if ((next === 'ask' || next === 'approve') && call !== undefined) {
+      question = this.#question(state.taskId, call, copy);
+    }
     // A command the module cannot bind to a synced Hub-mode revision, or whose value is not a mode, is refused to the model in the tool node.
     if (next === 'approve' && question === undefined) next = 'tool';
     if (question?.kind === 'clarification') next = 'ask';
@@ -435,7 +447,9 @@ export class AssistantEngine {
     if (asked && question !== undefined) this.#speak(state.taskId, question.id, question.text, active.span.context);
     return {step: state.step + 1, next, result};
   }
-  /** The question a call asks, or undefined for a command that cannot be proposed: an unknown mode value or no synced Hub-mode revision to bind it to. */
+  #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed);}
+  #catalogActions: ConversationActions | undefined;
+  /** The question a call asks, or undefined when the command cannot be proposed. */
   #question(taskId: string, call: ToolCall, copy: CoreCopy): Question | undefined {
     const id = `${taskId}-q${String(this.#task(taskId).questions + 1)}`;
     if (call.name === ASK_OWNER) {
@@ -513,8 +527,8 @@ export class AssistantEngine {
     const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile === 'bunny');
     const tool = definition(call.name), permitted = tools.some(permittedTool => permittedTool.name === call.name);
     const id = `${state.taskId}-step-${String(state.step)}`;
-    if (tool === undefined || !permitted || tool.effect !== 'read') {
-      const reason = tool !== undefined && permitted && tool.effect === 'command' ? this.#proposalRefusal(call) : 'This tool is not permitted.';
+    if (tool === undefined || !permitted || (tool.effect !== 'read' && tool.effect !== 'draft')) {
+      const reason = tool !== undefined && permitted && tool.effect === 'command' ? catalogCommand(call.name) === undefined ? this.#proposalRefusal(call) : state.result : 'This tool is not permitted.';
       // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
       await this.#append(state.taskId, {role: 'tool', call: call.id, name: call.name, result: reason, ok: false, effect: `${id}-refused`}, active.span.context,
         current => {this.store.message(current, `${id}-refused`, 'tool', reason, this.context.clock.now());});
@@ -528,6 +542,7 @@ export class AssistantEngine {
         const read = await this.options.readDevice?.(owner, name, signal, parent);
         return {text: read ?? readDevices(this.options.devices?.(owner), name, now, owner), units: 0};
       }
+      if (isCatalogTool(call.name)) return {text: await this.#catalog().read(call, parent) ?? fail('invalid-state'), units: 0};
       const text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now) : fail('invalid-state');
       return {text, units: 0};
     });
@@ -538,7 +553,7 @@ export class AssistantEngine {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
     const question = task.question ?? fail('invalid-state'), proposal = question.proposal ?? fail('invalid-state');
     const id = `${state.taskId}-step-${String(state.step)}`, name = proposal.family === 'mode-set' ? SET_MODE : proposal.family === 'coding-dispatch' ? DELEGATE_CODING :
-      'owner' in proposal ? SET_WEMO_POWER : proposal.family === 'power-set' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;
+      proposal.family === 'catalog-action' ? catalogTool(proposal.command) : 'owner' in proposal ? SET_WEMO_POWER : proposal.family === 'power-set' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;
     const refuse = async (suffix: string, text: string): Promise<Partial<GraphState>> => {
       // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
       await this.#append(state.taskId, {role: 'tool', call: question.call, name, result: text, ok: false, effect: `${id}-${suffix}`}, active.span.context,
@@ -565,9 +580,15 @@ export class AssistantEngine {
         : {requestId: id, ...proposal};
       const receipt = proposal.family === 'mode-set'
         ? `accepted: the core accepted mode-set ${proposal.data.mode} as operation ${id}; its outcome is tracked separately`
-        : `accepted: ${proposal.family} on ${proposal.target} as operation ${id}; its outcome is tracked separately`;
-      result = await this.#call(state.taskId, state.step, 'tool', (signal, parent) => dispatch(data, parent, signal)
-        .then(answer => settle(answer, receipt)));
+        : `accepted: ${proposal.family === 'catalog-action' ? proposal.command : proposal.family} on ${proposal.target} as operation ${id}; its outcome is tracked separately`;
+      result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
+        if (proposal.family === 'catalog-action') this.#catalog().beforeDispatch(proposal, id);
+        const answer = await dispatch(data, parent, signal);
+        if (proposal.family === 'catalog-action' && answer.status === 'rejected' && answer.error.error.code !== 'uncertain-result') {
+          this.#catalog().rejected(proposal, id);
+        }
+        return settle(answer, receipt);
+      });
     } else {
       const delegate = this.options.delegate;
       if (delegate === undefined) return refuse('refused', 'This tool is not permitted.');

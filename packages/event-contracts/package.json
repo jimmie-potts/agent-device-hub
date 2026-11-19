@@ -48,6 +48,14 @@
       "types": "./dist/v2/companions.d.ts",
       "import": "./dist/v2/companions.js"
     },
+    "./v2/nanoleaf-shows": {
+      "types": "./dist/v2/nanoleaf-shows.d.ts",
+      "import": "./dist/v2/nanoleaf-shows.js"
+    },
+    "./v2/assistant-actions": {
+      "types": "./dist/v2/assistant-actions.d.ts",
+      "import": "./dist/v2/assistant-actions.js"
+    },
     "./v2/assistant": {
       "types": "./dist/v2/assistant.d.ts",
       "import": "./dist/v2/assistant.js"

@@ -1,5 +1,10 @@
 import {chmod, mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {SIMULATED_SECTION as NANOLEAF_SECTION} from '@jimmie-potts/nanoleaf';
+import type {ShowCatalog} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
+import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import {LIFX_SIMULATED_SECTION} from '@jimmie-potts/lifx';
+import {VOLCANO_SIMULATED_SECTION, type VolcanoStatus} from '@jimmie-potts/volcano';
 import {WEMO_SIMULATED_SECTION} from '@jimmie-potts/wemo';
 import {knowledgeScenarios} from '../knowledge.js';
 import {preferenceScenarios} from '../preferences.js';
@@ -8,7 +13,7 @@ import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {ModeState, OperationRecord, PowerLimitRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
 import {approvalPrompt, approvalResolved, sessionStarted, turnEnded, turnStarted} from '../../fixtures/agents.js';
-import {StepFailure, act, answered, answers, bodyOf, deviceState, dispatchOnce, expect, holds, publish, recorded, refusedWith, running, waiting, type Harness, type ModuleRun, type Scenario} from '../framework.js';
+import {StepFailure, act, answered, answers, bodyOf, deviceState, dispatchOnce, expect, holds, publish, recorded, refusedWith, running, waiting, type GatewayAnswer, type Harness, type ModuleRun, type Scenario} from '../framework.js';
 const state = (h: Harness): CompanionState | undefined => h.reader.states<CompanionState>('companion-state', 'bunny/modules/companions')[0]?.data;
 const assistantSyncsBeforeRestart = new WeakMap<Harness, number>();
 const RECENT_CONVERSATION = {as: 'operator', method: 'GET', path: '/modules/companions/content/conversation?profile=bunny&view=recent'} as const;
@@ -284,7 +289,154 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
     expect('no power command repeats after restart', h => wemoEffects(h, 'shelf-lamp')?.writes === 2 &&
       wemoEffects(h, 'desk-lamp')?.writes === 2 || 'a power command repeated'),
   ],
+}, {
+  id: 'assistant-device-catalog', title: 'Conversation uses the installed device owner and exposes read-only status without misrouting writes',
+  seed: {modules: ['core', 'lifx', 'companions', 'roborock', 'volcano'],
+    config: {lifx: LIFX_SIMULATED_SECTION}, sections: {roborock: {id: 'vacuum'}, volcano: VOLCANO_SIMULATED_SECTION,
+      companions: {assistant: {tools: ['read_devices', 'read_roborock', 'read_volcano', 'control_lifx_color_set',
+        'control_power_set', 'control_volcano_session_gap']}}},
+    follows: [{owner: 'bunny/core', families: ['operation']}, {owner: 'bunny/modules/lifx', families: ['device', 'lifx-light']},
+      {owner: 'bunny/modules/volcano', families: ['volcano-status']}, {owner: 'bunny/modules/companions', families: ['assistant-state']}]},
+  steps: [
+    expect('the catalog owners are running', h => running(h, ['core', 'lifx', 'companions', 'roborock', 'volcano'])),
+    act('enable Conversation', h => enableAssistant(h, 'catalog-enable')),
+    expect('Conversation is enabled', h => assistant(h)?.enabled === true || 'assistant disabled'),
+    act('read the configured vacuum', h => catalogInput(h, 'catalog-vacuum', 'read_roborock', {})),
+    expect('the scoped observation returns the vacuum', conversationAnswer((response, h) =>
+      catalogFinished(h) && JSON.stringify(bodyOf(response)).includes('vacuum') || 'vacuum observation missing')),
+    act('try to route generic power to the vacuum', h => catalogInput(h, 'catalog-vacuum-power', 'control_power_set',
+      {owner: 'bunny/modules/roborock', target: 'vacuum', arguments: '{"on":true}'})),
+    expect('the vacuum capability is refused without a tracked device operation', conversationAnswer((response, h) =>
+      catalogFinished(h) && JSON.stringify(bodyOf(response)).includes('unsupported-capability') && catalogOperations(h).length === 0 || 'vacuum write escaped')),
+    act('propose the Volcano software gap setting', h => catalogInput(h, 'catalog-volcano', 'control_volcano_session_gap',
+      {owner: 'bunny/modules/volcano', target: 'volcano', arguments: '{"gapMinutes":30}'})),
+    expect('the software setting awaits approval', h => assistant(h)?.tasks[0]?.status === 'waiting' && catalogOperations(h).length === 0 || 'gap was dispatched early'),
+    act('approve the session gap without operating the device', h => assistantInput(h, 'catalog-volcano-approve', true, 'approve')),
+    expect('the Volcano owner reports the updated gap', h => catalogFinished(h) &&
+      h.reader.states<VolcanoStatus>('volcano-status', 'bunny/modules/volcano')[0]?.data.gapMinutes === 30 || 'software update missing'),
+    expect('the LIFX owner has a qualified available bulb', h => h.reader.states<DeviceRecord>('device', 'bunny/modules/lifx')
+      .some(({data}) => data.id === LIFX_SIMULATED_SECTION.bulbs[0]?.id && data.availability === 'available') || 'light unavailable'),
+    act('propose using the LIFX color contract', h => catalogInput(h, 'catalog-lifx-color', 'control_lifx_color_set',
+      {owner: 'bunny/modules/lifx', target: LIFX_SIMULATED_SECTION.bulbs[0]?.id, arguments: '{"hue":120,"saturation":60}'})),
+    expect('the color proposal awaits approval', h => assistant(h)?.tasks[0]?.status === 'waiting' &&
+      catalogOperations(h).length === 1 || 'color was not safely proposed'),
+    act('approve the exact color change', h => assistantInput(h, 'catalog-lifx-approve', true, 'approve')),
+    expect('the LIFX owner reports one tracked color transmission', h => catalogOperations(h).some(record =>
+      record.family === 'lifx-color-set' && record.target === LIFX_SIMULATED_SECTION.bulbs[0]?.id &&
+      record.evidence === 'transmitted' && record.result === 'succeeded') || 'color transmission missing'),
+  ],
+}, {
+  id: 'assistant-light-show', title: 'Conversation authors and approves an immutable light-show version and generation-bound playback',
+  seed: {modules: ['core', 'nanoleaf', 'companions'], config: {nanoleaf: NANOLEAF_SECTION}, sections: {
+    companions: {assistant: {tools: ['create_light_show_draft', 'edit_light_show_cue', 'preview_light_show_draft', 'save_light_show',
+      'read_light_shows', 'control_music_lighting_control']}},
+  }, follows: [{owner: 'bunny/core', families: ['operation', 'music-lighting-state']},
+    {owner: 'bunny/modules/nanoleaf', families: ['device', 'nanoleaf-shows', 'nanoleaf-wall']}, {owner: 'bunny/modules/companions', families: ['assistant-state']}]},
+  steps: [
+    expect('Conversation and Nanoleaf are available', h => running(h, ['core', 'nanoleaf', 'companions'])),
+    expect('the show catalog is available', h => showCatalog(h) !== undefined || 'no show catalog'),
+    act('enable Conversation', h => enableAssistant(h, 'show-enable')),
+    expect('Conversation is enabled', h => assistant(h)?.enabled === true || 'assistant disabled'),
+    act('create a named warm draft', h => catalogInput(h, 'show-create', 'create_light_show_draft', {name: 'Dawn test', starter: 'warm'})),
+    expect('the draft is retained without a device operation', conversationAnswer((response, h) => {
+      const text = JSON.stringify(bodyOf(response));
+      const id = /show-[0-9a-f-]{36}/.exec(text)?.[0];
+      if (id !== undefined) draftIds.set(h, id);
+      return id !== undefined && text.includes('Preview only') && catalogFinished(h) &&
+        showOperations(h).length === 0 || 'draft preview missing or wrote lighting';
+    })),
+    act('edit the opening cue intensity', h => catalogInput(h, 'show-edit', 'edit_light_show_cue', {
+      draftId: draftIds.get(h), revision: 1, cue: 'opening', changes: '{"intensity":0.25}',
+    })),
+    expect('the revised draft returns its new cue with no lighting effect', conversationAnswer((response, h) =>
+      JSON.stringify(bodyOf(response)).includes('intensity 0.25') && catalogFinished(h) &&
+      showOperations(h).length === 0 || 'edited cue missing or dispatched work')),
+    act('preview the edited draft', h => catalogInput(h, 'show-preview', 'preview_light_show_draft', {draftId: draftIds.get(h)})),
+    expect('preview sends no lighting command', h => catalogFinished(h) && showOperations(h).length === 0 || 'preview wrote lighting'),
+    act('try to play the unsaved draft', h => catalogInput(h, 'show-unsaved', 'control_music_lighting_control',
+      lightingInput({action: 'start-show', showId: draftIds.get(h), version: 1}))),
+    expect('unsaved playback is refused without work', conversationAnswer((response, h) =>
+      JSON.stringify(bodyOf(response)).includes('refused: not-found') && catalogFinished(h) &&
+      showOperations(h).length === 0 || 'unsaved show was not refused')),
+    act('propose saving the exact draft', h => catalogInput(h, 'show-save', 'save_light_show', {draftId: draftIds.get(h), revision: 2, versionName: 'First'})),
+    expect('save awaits approval and the library has no version', h => assistant(h)?.tasks[0]?.status === 'waiting' &&
+      showCatalog(h)?.shows.length === 0 || 'premature save'),
+    act('approve the catalog save', h => assistantInput(h, 'show-save-approve', true, 'approve')),
+    expect('the approved immutable version is stored without a lighting operation', h => showCatalog(h)?.shows.some(show =>
+      show.id === draftIds.get(h) && show.versions[0]?.version === 1 && show.versions[0]?.versionName === 'First') === true &&
+      catalogFinished(h) && showOperations(h).every(record => record.family === 'nanoleaf-show-save') || 'save missing or played lighting'),
+    act('propose a second save against the version Conversation observed', h => catalogInput(h, 'show-save-stale', 'save_light_show',
+      {draftId: draftIds.get(h), revision: 2, versionName: 'Stale proposal'})),
+    expect('a second save proposal remains pending', h => assistant(h)?.tasks[0]?.status === 'waiting' ||
+      'second save did not wait for approval'),
+    act('the owner saves a different version from the existing catalog', h => dispatchOnce(h, 'operator', 'show-other-save', {
+      key: 'bunny.cmd.nanoleaf-show-save.shows', draft: {type: 'org.bunny.nanoleaf-show.save.requested', subject: 'shows',
+        dataschema: 'https://bunny.invalid/events/nanoleaf-show-save/2.0', data: {showId: draftIds.get(h), expectedVersion: 1,
+          name: 'Dawn test', versionName: 'Independent edit', timeline: {version: 1, durationMs: 1000,
+            cues: [{id: 'cue', offsetMs: 0, durationMs: 1000, recipe: {preset: 'ocean'}, intensity: 0.5}]}}}}, 'show-other-save')),
+    expect('the independent version is retained', h => showCatalog(h)?.shows[0]?.version === 2 || 'second catalog version missing'),
+    act('approve the stale Conversation save', h => assistantInput(h, 'show-save-stale-approve', true, 'approve')),
+    expect('the stale save cannot overwrite the library or play a light', conversationAnswer((response, h) =>
+      catalogFinished(h) && JSON.stringify(bodyOf(response)).includes('refused: revision-conflict') &&
+      showCatalog(h)?.shows[0]?.version === 2 && showOperations(h).every(record => record.family === 'nanoleaf-show-save')
+      || 'stale save escape or lighting operation')),
+    act('the owner puts the simulated wall in Free mode', h => dispatchOnce(h, 'operator', 'show-free-mode', {
+      key: 'bunny.cmd.device-mode-set.wall', draft: {type: 'org.bunny.device-mode.set.requested', subject: 'wall',
+        dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'free'}}}, 'show-free-mode')),
+    expect('the wall enters Free mode', h => recorded(h, 'show-free-mode', 'succeeded', 'observed')),
+    expect('the worker finishes the Free base and saves the layout', h => {
+      const wall = h.reader.states<{layout: string; mode: string; modePending: boolean}>('nanoleaf-wall', 'bunny/modules/nanoleaf')[0]?.data;
+      return wall?.layout === 'saved' && wall.mode === 'free' && !wall.modePending || 'Free base is not ready';
+    }, 15_000),
+    act('propose playing version one on the wall', h => catalogInput(h, 'show-play', 'control_music_lighting_control',
+      lightingInput({action: 'start-show', showId: draftIds.get(h), version: 1, startDelayMs: 250}))),
+    expect('play awaits owner approval', conversationAnswer((response, h) => {
+      const text = JSON.stringify(bodyOf(response));
+      return assistant(h)?.tasks[0]?.status === 'waiting' && text.includes('"action":"start-show"') && text.includes('"version":1') &&
+        lightingState(h)?.session.status === 'idle' || 'safe playback proposal missing';
+    })),
+    act('approve playing this version', h => assistantInput(h, 'show-play-approve', true, 'approve')),
+    expect('the selected wall plays the requested immutable version', h => {
+      const session = lightingState(h)?.session;
+      return session?.status === 'active' && 'show' in session && session.show.showId === draftIds.get(h) &&
+        session.show.version === 1 && catalogFinished(h) || `saved show did not start: ${JSON.stringify(lightingState(h))}`;
+    }),
+    act('propose stopping the active wall session', h => catalogInput(h, 'show-stop', 'control_music_lighting_control', lightingInput({action: 'stop'}))),
+    expect('stop is bound to the active generation', conversationAnswer((response, h) => {
+      const session = lightingState(h)?.session;
+      return assistant(h)?.tasks[0]?.status === 'waiting' && session !== undefined && session.status !== 'idle' &&
+        JSON.stringify(bodyOf(response)).includes(`"generation":"${session.generation}"`) || 'generation-bound stop missing';
+    })),
+    act('approve stopping this session only', h => assistantInput(h, 'show-stop-approve', true, 'approve')),
+    expect('the session owner stops playback and reports restoration', h => lightingState(h)?.session.status === 'idle' &&
+      lightingState(h)?.last?.reason === 'stopped' && lightingState(h)?.last?.restoration === 'restored' || 'stop result missing'),
+  ],
 }];
+
+function conversationAnswer(check: (response: GatewayAnswer, h: Harness) => true | string) {
+  return async (h: Harness): Promise<true | string> => check(await h.gateway(RECENT_CONVERSATION), h);
+}
+const draftIds = new WeakMap<Harness, string>();
+const showCatalog = (h: Harness): ShowCatalog | undefined => h.reader.states<ShowCatalog>('nanoleaf-shows', 'bunny/modules/nanoleaf')[0]?.data;
+const catalogOperations = (h: Harness): OperationRecord[] => h.reader.states<OperationRecord>('operation', 'bunny/core').map(({data}) => data)
+  .filter(record => record.requestedBy === 'bunny/modules/companions');
+const showOperations = (h: Harness): OperationRecord[] => h.reader.states<OperationRecord>('operation', 'bunny/core').map(message => message.data)
+  .filter(record => ['music-lighting-control', 'music-lighting-work', 'nanoleaf-show-save'].includes(record.family));
+const lightingState = (h: Harness): LightingState | undefined => h.reader.states<LightingState>('music-lighting-state', 'bunny/core').find(message => message.subject === 'wall')?.data;
+const lightingInput = (data: object) => ({owner: 'bunny/core', target: 'wall', arguments: JSON.stringify(data)});
+
+export const enableAssistant = (h: Harness, id: string) => dispatchOnce(h, 'operator', id, {key: 'bunny.cmd.assistant-control.assistant', draft: {
+  type: 'org.bunny.assistant.control.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-control/2.0',
+  data: {action: 'enable', expectedRevision: assistant(h)?.revision}}}, id);
+const priorTask = new WeakMap<Harness, string | undefined>();
+export const catalogFinished = (h: Harness): boolean => {
+  const task = assistant(h)?.tasks[0];
+  return task?.status === 'succeeded' && task.taskId !== priorTask.get(h);
+};
+export function catalogInput(h: Harness, requestId: string, name: string, input: object): Promise<void> {
+  priorTask.set(h, assistant(h)?.tasks[0]?.taskId);
+  return assistantInput(h, requestId, false, `SYNTHETIC_CATALOG ${JSON.stringify({name, input})}`);
+}
 
 const wemoEffects = (h: Harness, target: string) => deviceState<Record<string, {power: boolean; writes: number}>>(h, 'wemo')[target];
 
@@ -292,7 +444,7 @@ const lifxOperations = (h: Harness): OperationRecord[] => h.reader.states<Operat
   .filter(record => record.requestedBy === 'bunny/modules/companions' && (record.family === 'power-set' || record.family === 'brightness-set'));
 
 const assistant = (h: Harness): AssistantState | undefined => h.reader.states<AssistantState>('assistant-state', 'bunny/modules/companions')[0]?.data;
-async function assistantInput(h: Harness, requestId: string, answer = false, text = answer ? 'SYNTHETIC_ASSISTANT_ANSWER' : 'SYNTHETIC_ASSISTANT_PROMPT'): Promise<void> {
+export async function assistantInput(h: Harness, requestId: string, answer = false, text = answer ? 'SYNTHETIC_ASSISTANT_ANSWER' : 'SYNTHETIC_ASSISTANT_PROMPT'): Promise<void> {
   const state = assistant(h), task = state?.tasks[0];
   const query = new URLSearchParams({family: 'assistant-input', target: 'assistant', requestId, name: 'input.json'});
   const result = await h.gateway({as: 'operator', method: 'POST', path: `/api/v2/modules/companions/upload?${query}`, headers: {'content-type': 'application/octet-stream'},

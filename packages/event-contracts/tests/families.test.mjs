@@ -76,6 +76,7 @@ test('each family has one kind and one type, and its schema is built from the sh
       'music-capture-endpoint', 'music-capture-work', 'music-capture-features', 'music-capture-control', 'music-capture-state',
       'coding-endpoint', 'coding-progress', 'coding-state', 'companion-speech-endpoint', 'companion-speech-state', 'assistant-dispatch'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.1`)
       || (['moment-play', 'art-auto', 'art-dispatch', 'music-capture-control', 'music-capture-state', 'home-layout', 'assistant-dispatch'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`)
+      || (family === 'assistant-dispatch' && dataschema === 'https://bunny.invalid/events/assistant-dispatch/2.3')
       // The session family's new major (Hub #1865), registered beside 2.0 and 2.1.
       || (family === 'session' && dataschema === 'https://bunny.invalid/events/session/3.0'));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);

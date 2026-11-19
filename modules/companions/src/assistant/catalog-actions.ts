@@ -1,0 +1,271 @@
+import {assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
+import type {ArtRecord} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import type {ShowCatalog} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
+import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
+import {Outcome, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
+import {deviceLabel} from './devices.js';
+import {ShowDrafts} from './show-drafts.js';
+import {textBytes, type ToolCall} from './provider.js';
+import {CREATE_SHOW, EDIT_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
+  READ_PLAYBACK, READ_SHOWS, READ_VACUUM, READ_VOLCANO} from './catalog-tools.js';
+
+const CORE = 'bunny/core', NANOLEAF = 'bunny/modules/nanoleaf';
+const PLAYBACK = 'bunny/modules/playback', ART = 'bunny/modules/art', VOLCANO = 'bunny/modules/volcano';
+const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const idList = (value: unknown): value is string[] => Array.isArray(value) && value.length > 0 && value.length <= 3 &&
+  value.every(item => typeof item === 'string' && /^[a-z0-9-]{1,128}$/.test(item)) && new Set(value).size === value.length;
+function textResult(value: unknown): string {
+  const text = JSON.stringify(value);
+  if (textBytes(text) <= 4000) return text;
+  return new TextDecoder().decode(new TextEncoder().encode(text).slice(0, 3950)) + '… (narrow the read to one item)';
+}
+type Proposed = {proposal: CatalogProposal; text: string} | {question: string} | {code: ErrorCode};
+type Refusal = {code: ErrorCode};
+type Match = {owner: string; device: DeviceRecord};
+const normalize = (name: string): string => name.trim().toLocaleLowerCase();
+function matches(device: DeviceRecord, target: string): boolean {
+  return device.id === target || normalize(deviceLabel(device)) === normalize(target);
+}
+
+export class ConversationActions {
+  #drafts: ShowDrafts | undefined;
+  constructor(private readonly context: ModuleContext, private readonly enabled: readonly string[]) {}
+
+  async #snapshot<T extends object>(owner: string, family: string, parent: TraceContext): Promise<readonly T[] | undefined> {
+    const result = await this.context.sdk.sync<T>([family], () => {}, {owner, timeoutMs: 1200, parent});
+    if (result.status !== 'synced') return undefined;
+    try {
+      return result.copy.states().filter(message => message.source === owner).map(message => message.data);
+    } finally {await result.copy.close();}
+  }
+
+  async #deviceRecords(owners: readonly string[], parent: TraceContext): Promise<{rows: Match[]; unreadable: string[]}> {
+    const views = await Promise.all(owners.map(async owner => ({owner, devices: await this.#snapshot<DeviceRecord>(owner, 'device', parent)})));
+    return {rows: views.flatMap(({owner, devices}) => devices?.map(device => ({owner, device})) ?? []),
+      unreadable: views.filter(view => view.devices === undefined).map(view => view.owner)};
+  }
+
+  async #operation(requestId: unknown, parent: TraceContext): Promise<OperationRecord | undefined> {
+    const operations = await this.#snapshot<OperationRecord>(CORE, 'operation', parent);
+    return operations?.find(row => row.requestId === requestId && row.requestedBy === this.context.sdk.source);
+  }
+
+  #authoring(): ShowDrafts {return this.#drafts ??= new ShowDrafts(this.context.database());}
+
+  async #saveData(call: ToolCall, parent: TraceContext): Promise<Record<string, unknown> | Refusal> {
+    const drafts = this.#authoring();
+    let draft = drafts.read(call.input.draftId);
+    if (draft === undefined) return {code: 'not-found'};
+    if (draft.revision !== call.input.revision) return {code: 'revision-conflict'};
+    if (draft.pending !== null) {
+      const result = await this.#operation(draft.pending, parent);
+      if (result?.status === 'completed' && result.result === Outcome.succeeded && result.family === 'nanoleaf-show-save') {
+        drafts.confirmSave(draft);
+        draft = drafts.read(call.input.draftId);
+        if (draft === undefined) return {code: 'not-found'};
+      } else if (result === undefined || result.status === 'sent' || result.status === 'accepted' || result.status === 'uncertain') {
+        return {code: 'uncertain-result'};
+      }
+    }
+    const versionName = call.input.versionName;
+    if (typeof versionName !== 'string') return {code: 'invalid-request'};
+    const value = {...draft.value, versionName};
+    if (draftProblem(value) !== undefined) return {code: 'invalid-request'};
+    const library = (await this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent))?.[0];
+    if (library === undefined) return {code: 'unavailable'};
+    const current = library.shows.find(show => show.id === value.showId);
+    return (current?.version ?? 0) === value.expectedVersion ? value : {code: 'revision-conflict'};
+  }
+
+  /** The input's effect fields never supply routing or revision guards. */
+  async propose(family: CatalogFamily, call: ToolCall, parent: TraceContext): Promise<Proposed> {
+    const route = catalogRoute(family);
+    const owner = family === 'nanoleaf-show-save' ? NANOLEAF : call.input.owner;
+    const name = family === 'nanoleaf-show-save' ? 'shows' : call.input.target;
+    if (typeof owner !== 'string' || typeof name !== 'string' || name.length === 0 || name.length > 128) return {code: 'invalid-request'};
+    let data: Record<string, unknown>;
+    if (family === 'nanoleaf-show-save') {
+      const saved = await this.#saveData(call, parent);
+      if (typeof saved.code === 'string') return {code: saved.code === 'not-found' || saved.code === 'revision-conflict' ||
+        saved.code === 'unavailable' || saved.code === 'uncertain-result' ? saved.code : 'invalid-request'};
+      data = saved;
+    } else {
+      const args = call.input.arguments;
+      if (typeof args !== 'string' || textBytes(args) > MAX_CATALOG_ARGUMENTS) return {code: 'invalid-request'};
+      let value: unknown;
+      try {value = JSON.parse(args);} catch {return {code: 'invalid-request'};}
+      if (!object(value)) return {code: 'invalid-request'};
+      data = value;
+    }
+    let binding: CatalogBinding;
+    if (route.binding === 'device') {
+      const owners = owner === 'auto' ? route.owners : route.owners.filter(source => source === owner);
+      if (owners.length === 0) return {code: 'unsupported-capability'};
+      const {rows, unreadable} = await this.#deviceRecords(owners, parent);
+      const found = rows.filter(({device}) => matches(device, name));
+      const selected = found[0];
+      if (found.length > 1) return {question: `Which device did you mean? ${found.map(({owner, device}) => `${owner} / ${device.id}`).join(', ')}`};
+      if (selected === undefined) return {code: unreadable.length > 0 ? 'unavailable' : 'not-found'};
+      const {device} = selected;
+      if (!permitsDevice(route, device)) return {code: 'unsupported-capability'};
+      if (family === 'wemo-hold-release') {
+        if (device.held === undefined || data.heldRequestId !== device.held.requestId) return {code: 'revision-conflict'};
+      } else if (device.availability !== 'available' || device.held !== undefined) return {code: 'unavailable'};
+      binding = {kind: 'device', target: device.id, owner: selected.owner, configurationRevision: device.configurationRevision, generation: device.generation};
+    } else if (route.binding === 'record') {
+      if (owner !== route.owner) return {code: 'forbidden'};
+      const guarded = family === 'playback-control' ? await this.#playback(name, data, parent)
+        : family === 'volcano-session-gap' ? await this.#volcano(name, data, parent) : await this.#lighting(name, data, parent);
+      if ('code' in guarded) return guarded;
+      ({binding, data} = guarded);
+    } else {
+      if (owner !== route.owner || name !== route.target) return {code: 'forbidden'};
+      binding = {kind: 'fixed', target: route.target, owner};
+    }
+    if (family === 'art-show' && (typeof data.artworkId !== 'string' || !idList(data.targets))) return {code: 'invalid-request'};
+    const proposal = catalogProposal({family: 'catalog-action', command: family, target: binding.target, binding, data});
+    if (proposal === undefined) return {code: 'invalid-request'};
+    const effect = family === 'nanoleaf-show-save'
+      ? `Save draft ${String(data.name)} (${String(data.showId)}) as “${String(data.versionName)}”, version ${Number(data.expectedVersion) + 1}?`
+      : `${family} on ${binding.target} (${binding.owner}): ${JSON.stringify(data)}`;
+    if (effect.length > 1024) return {code: 'capacity'};
+    return {proposal, text: effect};
+  }
+
+  async #volcano(name: string, data: Record<string, unknown>, parent: TraceContext): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
+    const states = await this.#snapshot<{id: string; configurationRevision: number}>(VOLCANO, 'volcano-status', parent);
+    const current = states?.find(row => row.id === name);
+    if (current === undefined) return {code: 'unavailable'};
+    return {binding: {kind: 'record', owner: VOLCANO, target: name, revision: current.configurationRevision}, data};
+  }
+
+  async #playback(name: string, data: Record<string, unknown>, parent: TraceContext): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
+    const records = await this.#snapshot<PlaybackState>(PLAYBACK, 'playback', parent);
+    const current = records?.find(row => row.id === name);
+    if (current === undefined || current.availability !== 'available' || current.playback.status !== 'known') return {code: 'unavailable'};
+    if (!current.playback.controls.some(control => control === data.action)) return {code: 'unsupported-capability'};
+    return {binding: {kind: 'record', owner: PLAYBACK, target: name, revision: current.revision}, data};
+  }
+
+  async #lighting(name: string, data: Record<string, unknown>, parent: TraceContext): Promise<{binding: CatalogBinding; data: Record<string, unknown>} | Refusal> {
+    const lighting = await this.#snapshot<LightingState>(CORE, 'music-lighting-state', parent);
+    const current = lighting?.find(row => row.id === name);
+    if (current === undefined) return {code: 'unavailable'};
+    const {action, showId, version} = data;
+    if (action === 'start-show') {
+      if (current.session.status !== 'idle') return {code: 'invalid-state'};
+      const library = (await this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent))?.[0];
+      if (library === undefined) return {code: 'unavailable'};
+      if (typeof version !== 'number' || !library.shows.some(show => show.id === showId && show.versions.some(item => item.version === version))) return {code: 'not-found'};
+      data = {action, showId, version, positionMs: data.positionMs ?? 0, startDelayMs: data.startDelayMs ?? 0};
+    } else {
+      if (action !== 'stop' && action !== 'pause-show' && action !== 'resume-show' && action !== 'seek-show') return {code: 'invalid-request'};
+      if (current.session.status === 'idle' || !('show' in current.session)) return {code: 'invalid-state'};
+      data = {action, generation: current.session.generation, ...(action === 'seek-show' ? {positionMs: data.positionMs} : {})};
+    }
+    return {binding: {kind: 'record', owner: CORE, target: name, revision: current.revision}, data};
+  }
+
+  beforeDispatch(proposal: CatalogProposal, requestId: string): void {
+    if (proposal.command === 'nanoleaf-show-save' && typeof proposal.data.showId === 'string') {
+      this.#authoring().noteSave(proposal.data.showId, requestId);
+    }
+    if (proposal.command === 'art-show' && idList(proposal.data.targets)) {
+      const db = this.context.database();
+      db.exec('CREATE TABLE IF NOT EXISTS assistant_art_shows (request_id TEXT PRIMARY KEY, targets TEXT NOT NULL)');
+      db.prepare('INSERT INTO assistant_art_shows (request_id, targets) VALUES (?, ?)').run(requestId, JSON.stringify(proposal.data.targets));
+    }
+  }
+
+  rejected(proposal: CatalogProposal, requestId: string): void {
+    if (proposal.command === 'nanoleaf-show-save' && typeof proposal.data.showId === 'string') {
+      this.#authoring().clearSave(proposal.data.showId, requestId);
+    }
+  }
+
+  async read(call: ToolCall, parent: TraceContext): Promise<string | undefined> {
+    const input = call.input;
+    switch (call.name) {
+      case CREATE_SHOW: case EDIT_SHOW: case PREVIEW_SHOW: {
+        const drafts = this.#authoring();
+        const result = call.name === CREATE_SHOW ? drafts.create(input) : call.name === EDIT_SHOW ? drafts.edit(input) : drafts.preview(input.draftId);
+        return 'code' in result ? `refused: ${result.code}` : result.text;
+      }
+      case READ_DEVICES: return this.#readDevices(input, parent);
+      case READ_SHOWS: {
+        const [saved, lighting] = await Promise.all([this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent),
+          this.#snapshot<LightingState>(CORE, 'music-lighting-state', parent)]);
+        return textResult({drafts: this.#authoring().list(), saved: saved?.[0] ?? 'unavailable', lighting: lighting ?? 'unavailable'});
+      }
+      case READ_ART: {
+        const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
+        return art === undefined ? 'Saved art unavailable.' : textResult(art.artworks.map(item => ({
+          artworkId: item.artworkId, createdAtMs: item.createdAtMs, favorite: item.favorite, targets: item.compositions.map(composition => composition.target),
+        })));
+      }
+      case READ_PLAYBACK: {
+        const records = await this.#snapshot<PlaybackState>(PLAYBACK, 'playback', parent);
+        return records === undefined ? 'Playback unavailable.' : textResult(records.map(({id, observedAtMs, availability, playback}) => ({id, observedAtMs, availability, playback})));
+      }
+      case READ_VACUUM: return this.#status('bunny/modules/roborock', 'roborock-vacuum',
+        ['id', 'observedAtMs', 'availability', 'activity', 'status'], parent);
+      case READ_VOLCANO: return this.#status('bunny/modules/volcano', 'volcano-status',
+        ['id', 'observedAtMs', 'availability', 'link', 'heater', 'pump', 'currentDeciC', 'targetDeciC', 'gapMinutes'], parent);
+      case READ_OPERATION: return textResult(await this.#operation(input.requestId, parent) ?? 'Operation unavailable.');
+      case READ_ART_EFFECTS: return this.#artEffects(input.requestId, parent);
+      default: return undefined;
+    }
+  }
+
+  async #status(owner: string, family: string, fields: readonly string[], parent: TraceContext): Promise<string> {
+    const records = await this.#snapshot<Record<string, unknown>>(owner, family, parent);
+    return textResult(records?.map(record => Object.fromEntries(fields.map(key => [key, record[key]]))) ?? 'Status unavailable.');
+  }
+
+  async #readDevices(input: ToolCall['input'], parent: TraceContext): Promise<string> {
+    const {target, owner} = input;
+    if (typeof target !== 'string' || typeof owner !== 'string') return 'refused: invalid-request';
+    const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
+    const {rows, unreadable} = await this.#deviceRecords(owners, parent);
+    const devices = rows.filter(row => target === '' || matches(row.device, target)).map(({owner: source, device}) => ({
+      owner: source, id: device.id, name: deviceLabel(device), availability: device.availability, hold: device.held ?? null,
+      choices: {modes: device.capabilities.modes, media: device.capabilities.media, scenes: device.capabilities.scenes, moments: device.capabilities.moments},
+      observed: device.observed, lastTransmissionAtMs: device.lastTransmission.status === 'known' ? device.lastTransmission.transmittedAtMs : null,
+      controls: this.enabled.filter(tool => {
+        if (tool === 'set_wemo_power') return source === 'bunny/modules/wemo' && device.capabilities.power.supported;
+        if (tool === 'set_lifx_power') return source === 'bunny/modules/lifx' && device.capabilities.power.supported;
+        if (tool === 'set_lifx_brightness') return source === 'bunny/modules/lifx' && device.capabilities.brightness.supported;
+        const family = tool.startsWith('control_') ? tool.slice(8).replaceAll('_', '-') : '';
+        if (!catalogFamily(family)) return false;
+        const route = catalogRoute(family);
+        return route.binding === 'device' && route.owners.some(eligible => eligible === source) && permitsDevice(route, device);
+      }),
+    }));
+    return textResult({devices, unreadable});
+  }
+
+  async #artEffects(requestId: unknown, parent: TraceContext): Promise<string> {
+    if (typeof requestId !== 'string') return 'refused: invalid-request';
+    const db = this.context.database();
+    db.exec('CREATE TABLE IF NOT EXISTS assistant_art_shows (request_id TEXT PRIMARY KEY, targets TEXT NOT NULL)');
+    const row = db.prepare('SELECT targets FROM assistant_art_shows WHERE request_id = ?').get(requestId);
+    if (typeof row?.targets !== 'string') return 'Show request unavailable.';
+    const list: unknown = JSON.parse(row.targets);
+    if (!idList(list)) return 'Show targets unavailable.';
+    const operations = await this.#snapshot<OperationRecord>(CORE, 'operation', parent);
+    if (operations === undefined) return 'Show operations unavailable.';
+    const result = (id: string) => {
+      const record = operations.find(operation => operation.requestId === id);
+      return record === undefined ? {status: 'no tracked operation'} : {status: record.status, result: record.result, evidence: record.evidence, code: record.error?.code};
+    };
+    const effects = await artShowSurfaces(requestId, list);
+    return textResult({show: result(requestId), effects: effects.map(surface => surface.kind === 'browser'
+      ? {target: surface.target, presentation: result(surface.presentRequestId)}
+      : {target: surface.target, preparation: result(surface.prepareRequestId), presentation: result(surface.momentRequestId)})});
+  }
+}
