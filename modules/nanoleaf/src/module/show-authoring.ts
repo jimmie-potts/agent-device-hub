@@ -16,8 +16,8 @@ type GeneratedDraft = Readonly<{timeline: MusicTimeline; provenance: ShowProvena
 type Reply = {status: 'accepted'} | ErrorBody;
 
 const GENERATION_MS = 60_000;
-const MAX_SETTLEMENT_RETRIES = 4;
 const SETTLEMENT_RETRY_MS = 250;
+const MAX_SETTLEMENT_RETRY_MS = 5000;
 const showGeneration = NANOLEAF_FAMILIES.showGenerate;
 const cancelGeneration = NANOLEAF_FAMILIES.showGenerateCancel;
 
@@ -65,7 +65,6 @@ export class ShowAuthoring {
     const {requestId, style} = command.data;
     if (provider === undefined || this.context.signal.aborted) return errorBody('unavailable', {detail: 'Claude is unavailable for Music show generation.'});
     if (style.trim() === '' || style.length > MAX_STYLE_LENGTH) return errorBody('invalid-request', {detail: 'Enter a short style request.'});
-    if (this.#settlement !== undefined) await this.#settle(this.#settlement, MAX_SETTLEMENT_RETRIES);
     const generation = input();
     if ('error' in generation) return generation;
     const controller = new AbortController();
@@ -140,7 +139,7 @@ export class ShowAuthoring {
     await this.#active?.work;
     this.#settlementRetry?.();
     this.#settlementRetry = undefined;
-    if (this.#settlement !== undefined) await this.#settle(this.#settlement, MAX_SETTLEMENT_RETRIES);
+    if (this.#settlement !== undefined) await this.#settle(this.#settlement);
   }
 
   async #generate(command: Command<GenerateShow>, input: GenerationInput, provider: MusicShowAuthoringProvider,
@@ -167,11 +166,11 @@ export class ShowAuthoring {
 
     const settlement = {command, signal, ...(draft === undefined ? {} : {draft}), ...(error === undefined ? {} : {error})};
     this.#settlement = settlement;
-    await this.#settle(settlement, 0);
+    await this.#settle(settlement, SETTLEMENT_RETRY_MS);
   }
 
   /** Repeat only the local outcome transaction. The provider has already finished. */
-  async #settle(settlement: Settlement, attempt: number): Promise<void> {
+  async #settle(settlement: Settlement, retryDelayMs?: number): Promise<void> {
     const {command, signal, draft, error} = settlement;
     const {requestId} = command.data;
     try {
@@ -190,15 +189,15 @@ export class ShowAuthoring {
         this.#settlementRetry = undefined;
       }
     } catch (cause) {
-      if (attempt === 0) {
+      if (retryDelayMs === SETTLEMENT_RETRY_MS) {
         const code: ErrorCode = fullDisk(cause) ? 'capacity' : 'internal';
         recordLog(this.context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.failed,
           'bunny.code': code, 'bunny.request.id': requestId}, command);
       }
-      if (attempt >= MAX_SETTLEMENT_RETRIES || this.context.signal.aborted || this.#settlement !== settlement || this.#settlementRetry !== undefined) return;
-      this.#settlementRetry = this.context.scheduler.after(SETTLEMENT_RETRY_MS * 2 ** attempt, () => {
+      if (retryDelayMs === undefined || this.context.signal.aborted || this.#settlement !== settlement || this.#settlementRetry !== undefined) return;
+      this.#settlementRetry = this.context.scheduler.after(retryDelayMs, () => {
         this.#settlementRetry = undefined;
-        void this.#settle(settlement, attempt + 1);
+        void this.#settle(settlement, Math.min(retryDelayMs * 2, MAX_SETTLEMENT_RETRY_MS));
       });
     }
   }

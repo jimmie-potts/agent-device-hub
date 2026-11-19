@@ -94,6 +94,19 @@ it('a late definitive outcome replaces an uncertain result, and an uncertain one
   assert.deepEqual([twice.status, twice.result, twice.evidence], ['uncertain', 'uncertain', 'transmitted']);
 });
 
+it('a late owner outcome closes local show generation while its spending remains uncertain', () => {
+  const action = accepted(sent({family: 'nanoleaf-show-generate', responder: 'bunny/modules/nanoleaf'}));
+  const provisional = step(action, {type: 'deadline', atMs: action.deadlineAtMs});
+  const atMs = action.deadlineAtMs + 1;
+  const result = {source: 'bunny/modules/nanoleaf', id: 'show-outcome', result: 'uncertain', evidence: 'none',
+    error: {code: 'uncertain-result', retryable: false}, atMs} satisfies TakenOutcome;
+  const unrelated = step(provisional, {type: 'outcome', outcome: {...result, source: 'bunny/modules/lamp'}});
+  assert.equal(unrelated.status, 'uncertain');
+  const finished = step(provisional, {type: 'outcome', outcome: result});
+  assert.deepEqual(shape(finished), ['completed', 'uncertain', 'none', 'uncertain-result']);
+  assert.equal(finished.outcomes.length, 1);
+});
+
 it('a succeeded and a failed outcome for one action are a conflict in either order, and arrival order never picks a winner', () => {
   for (const [first, second] of [['succeeded', 'failed'], ['failed', 'succeeded']] as const) {
     const one = step(accepted(), outcome(first, first === 'succeeded' ? 'observed' : 'none', 'one'));

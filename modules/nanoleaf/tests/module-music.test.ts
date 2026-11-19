@@ -8,7 +8,7 @@ import type {LightingDeviceState, LightingWork} from '@jimmie-potts/event-contra
 import {MUSIC_PLAYBACK_OWNER, type MusicPlaybackField, type PlaybackPositionState} from '@jimmie-potts/event-contracts/v2/music-playback';
 import type {CaptureFeatures, CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture';
 import type {Participant, RequestResult, Snapshot, StateDraft} from '@jimmie-potts/sdk';
-import {LINES_ADDRESS, PANELS_ADDRESS, SYNTHETIC_TOKEN} from '../src/index.js';
+import {configureNanoleaf, LINES_ADDRESS, PANELS_ADDRESS, SYNTHETIC_TOKEN} from '../src/index.js';
 import {saveLayout} from '../src/devices.js';
 import {prepareMusicTimeline} from '../src/music-timeline.js';
 import {measuredDraft} from '../src/frontend/show-model.js';
@@ -1025,9 +1025,17 @@ for (const manual of [{brightness: {value: 20}}, {on: {value: false}}]) {
 }
 
 
+test('Music authoring refuses a device secret path alias before either file is read', () => {
+  for (const claude of [SECTION.secrets.token, '/nowhere/../nowhere/nanoleaf-token', '/nowhere/Nanoleaf-Token']) {
+    const configured = configureNanoleaf({...SECTION, musicAuthoringSecret: 'claude', secrets: {...SECTION.secrets, claude}});
+    assert.ok('error' in configured, 'device token and Claude paths must remain distinct even during credential rotation');
+    assert.equal(configured.error.detail, 'Music authoring must name a separate declared secret file.');
+  }
+});
+
 test('a separate secret name with the same value as a device token leaves generation disabled', async context => {
   const world = await ModuleWorld.open(context, {
-    section: {...SECTION, musicAuthoringSecret: 'claude', secrets: {...SECTION.secrets, claude: SECTION.secrets.token}},
+    section: {...SECTION, musicAuthoringSecret: 'claude', secrets: {...SECTION.secrets, claude: '/nowhere/claude-key'}},
     secrets: {token: SYNTHETIC_TOKEN, claude: SYNTHETIC_TOKEN},
   });
   await world.start();
@@ -1147,8 +1155,10 @@ test('measured authoring uses admitted Music features and saved replay follows t
   await world.until(() => world.logs().some(record => record.event === 'operation.failed'
       && record.fields['bunny.request.id'] === 'authored-excerpt'), 1000, 'outcome transaction refusal');
   assert.equal(world.outcomes('authored-excerpt').length, 0);
+  await world.advance(10_000);
+  assert.equal(world.outcomes('authored-excerpt').length, 0);
   database.exec('DROP TRIGGER stop_draft_commit');
-  await world.until(() => world.outcomes('authored-excerpt').some(message => message.data.result === 'succeeded'), 1000, 'generated cue outcome after recovery');
+  await world.until(() => world.outcomes('authored-excerpt').some(message => message.data.result === 'succeeded'), 5000, 'generated cue outcome after recovery');
   assert.equal(dispatches.filter(id => id === 'authored-excerpt').length, 1, 'local recovery does not resend the provider request');
   const authored = world.content('generated-show-draft', {...reads, query: {requestId: 'authored-excerpt'}});
   assert.ok(authored !== undefined && 'bytes' in authored);
@@ -1159,7 +1169,8 @@ test('measured authoring uses admitted Music features and saved replay follows t
   assert.equal(world.query('SELECT body FROM nanoleaf_show_versions').length, 0, 'generation is not a save');
   assert.equal(world.writes().length, writes, 'generation is not playback');
   assert.equal((await generate('authored-excerpt')).status, 'rejected');
-  assert.equal((await generate('authored-cancel')).status, 'accepted');
+  await publishPosition('abc1', 4.9);
+  assert.equal((await generate('authored-cancel', 'generic')).status, 'accepted');
   assert.equal((await world.request('bunny.cmd.nanoleaf-show-generate-cancel.shows', {
     type: 'org.bunny.nanoleaf-show-generate.cancel.requested', subject: 'shows',
     dataschema: 'https://bunny.invalid/events/nanoleaf-show-generate-cancel/2.0',

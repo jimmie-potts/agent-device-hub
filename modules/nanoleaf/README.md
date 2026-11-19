@@ -620,7 +620,8 @@ exact version you choose, with no provider call during playback.
 Music authoring uses the optional Nanoleaf configuration field
 `musicAuthoringSecret` to name a workspace-scoped Claude API key in the module's
 `secrets` map. Select a workspace that permits Fable 5.2 and its retention
-policy. A key whose value matches a configured device token disables Music
+policy. Configuration refuses a shared key and device-token path before the runtime reads
+either file. A key whose value matches a configured device token disables Music
 authoring. The manual editor is available without a key. Set up the credential
 in the authorized installation window.
 [Anthropic workspace authentication](https://platform.claude.com/docs/en/manage-claude/authentication#select-a-workspace)

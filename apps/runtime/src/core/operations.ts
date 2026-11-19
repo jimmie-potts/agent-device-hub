@@ -165,7 +165,12 @@ function outcome(operation: Operation, taken: TakenOutcome): Operation | undefin
   const current = operation.result;
   // Pending, or only uncertain so far: the outcome settles the operation, a definitive one replacing an uncertain result.
   if (current === undefined || (current === Outcome.uncertain && definitive(taken.result))) return settled;
-  if (current === Outcome.uncertain) return {...base, evidence: strongest(operation.evidence, taken.evidence)};
+  if (current === Outcome.uncertain) {
+    const evidence = strongest(operation.evidence, taken.evidence);
+    // The owner has ended local generation. Its billing result can still be uncertain.
+    if (operation.family === 'nanoleaf-show-generate' && taken.source === 'bunny/modules/nanoleaf') return {...settled, evidence};
+    return {...base, evidence};
+  }
   // Already definitive or in conflict: an uncertain outcome adds its evidence only.
   if (!definitive(taken.result)) return base;
   if (current === 'conflict' || current !== taken.result) {

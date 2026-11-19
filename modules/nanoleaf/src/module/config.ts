@@ -1,6 +1,7 @@
 // The Nanoleaf module's section of the runtime's configuration file (Hub #919): its devices, the token file each one's
 // secret names, the agent sources it shows, and Codex Desktop's metadata files when the owner chose them. `configure`
 // checks it synchronously and reads no file; its refusals carry fixed text that repeats nothing from the section.
+import {resolve} from 'node:path';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import type {Configured} from '@jimmie-potts/sdk';
 import {dumps, isObject} from '../compat.js';
@@ -30,6 +31,7 @@ export type NanoleafConfig = {
 const refuse = (detail: string): ErrorBody => errorBody('invalid-request', {detail});
 const isPath = (value: unknown): value is string =>
   typeof value === 'string' && value.startsWith('/') && value.length <= MAX_PATH && !value.includes('\0');
+const secretPathKey = (path: string): string => resolve(path).normalize('NFC').toLowerCase();
 function isPrivate(address: string): boolean {
   try {
     privateAddress(address);
@@ -85,8 +87,15 @@ export function configureNanoleaf(section: unknown): Configured<NanoleafConfig> 
   const config: NanoleafConfig = {devices, qualifiedSources: sources as Source[]};
   if (Object.hasOwn(section, 'musicAuthoringSecret')) {
     const secret = section.musicAuthoringSecret;
-    if (typeof secret !== 'string' || !SECRET_NAME.test(secret) || !Object.hasOwn(secrets, secret)
-        || devices.some(device => device.secret === secret)) return refuse('Music authoring must name a separate declared secret.');
+    const path = typeof secret === 'string' ? secrets[secret] : undefined;
+    if (typeof secret !== 'string' || !SECRET_NAME.test(secret) || !Object.hasOwn(secrets, secret) || !isPath(path)) {
+      return refuse('Music authoring must name a separate declared secret file.');
+    }
+    const authoringPath = secretPathKey(path);
+    if (devices.some(device => {
+      const tokenPath = secrets[device.secret];
+      return isPath(tokenPath) && secretPathKey(tokenPath) === authoringPath;
+    })) return refuse('Music authoring must name a separate declared secret file.');
     config.musicAuthoringSecret = secret;
   }
   if (Object.hasOwn(section, 'codexMetadata')) {
