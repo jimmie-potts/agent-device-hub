@@ -38,7 +38,7 @@ export async function showConversationJourney(browser: Browser): Promise<void> {
     });
     await tool.locator('summary').click();
     await tool.getByText('Tracked operation succeeded · evidence observed', {exact: true}).waitFor();
-    await send('read_light_shows', {});
+    await send('read_light_shows', {view: 'saved', id, offset: 0});
     await conversation.getByText(/Synthetic result: .*"versionName":"Version one"/s).waitFor();
   } finally {
     await context.close();

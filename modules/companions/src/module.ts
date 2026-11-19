@@ -6,13 +6,12 @@ import {CodingCoordinator, codingStateDraft} from './coding/coordinator.js';
 import {DEFAULT_CODING_BOUNDS, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {Knowledge} from './knowledge/engine.js';
 import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './preferences/engine.js';
-import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {AnthropicProvider, DEFAULT_MODEL, EFFORTS, type Effort, type Transport} from './assistant/anthropic.js';
 import {deviceToolOwner, allowlistable} from './assistant/tools.js';
 import {LIMITS} from './assistant/store.js';
 import {AssistantDeviceCopy} from './assistant/devices.js';
-import {type AssistantDeviceOwner, type AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
+import {ASSISTANT_TOOL_LIMIT, type AssistantDeviceOwner, type AssistantDispatch, type AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {createHash} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {OPPORTUNITY_TTL_MS, type CompanionCategory, type CompanionFixtureRun, type CompanionOpportunity,
@@ -49,7 +48,7 @@ export function configureCompanions(section: unknown): Configured<CompanionsConf
   const provider = assistant.provider ?? 'synthetic';
   if (provider !== 'synthetic' && provider !== 'anthropic') return refuse('assistant.provider must be synthetic or anthropic');
   const tools = assistant.tools ?? [];
-  if (!Array.isArray(tools) || !tools.every(allowlistable) || new Set(tools).size !== tools.length) return refuse('assistant.tools must list each permitted tool name once');
+  if (!Array.isArray(tools) || tools.length > ASSISTANT_TOOL_LIMIT || !tools.every(allowlistable) || new Set(tools).size !== tools.length) return refuse('assistant.tools must list each permitted tool name once');
   if (provider === 'synthetic') {
     if (assistant.model !== undefined || assistant.effort !== undefined) return refuse('the synthetic provider takes no model or effort');
     return {config: {assistant: {provider, tools: [...tools]}}};

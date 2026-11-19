@@ -24,8 +24,9 @@ export class ShowDrafts {
     )`);
   }
 
-  list(): {id: string; revision: number; name: string; expectedVersion: number}[] {
-    const records = this.database.prepare('SELECT id FROM assistant_show_drafts ORDER BY rowid DESC LIMIT 32').all();
+  list(offset: number, limit: number, exactId: string): {id: string; revision: number; name: string; expectedVersion: number}[] {
+    const records = this.database.prepare("SELECT id FROM assistant_show_drafts WHERE ? = '' OR id = ? ORDER BY rowid DESC LIMIT ? OFFSET ?")
+      .all(exactId, exactId, limit, offset);
     return records.flatMap(({id}) => {
       const draft = this.read(id);
       return draft === undefined ? [] : [{id: draft.value.showId, revision: draft.revision, name: draft.value.name, expectedVersion: draft.value.expectedVersion}];
@@ -103,6 +104,12 @@ export class ShowDrafts {
     const pending = this.read(id)?.pending;
     if (pending?.requestId !== requestId) return;
     this.database.prepare('UPDATE assistant_show_drafts SET pending = NULL WHERE id = ? AND pending = ?').run(id, JSON.stringify(pending));
+  }
+
+  bindSaveToHead(draft: Draft, head: number): void {
+    const value = {...draft.value, expectedVersion: head};
+    this.database.prepare('UPDATE assistant_show_drafts SET value = ? WHERE id = ? AND revision = ? AND pending IS NULL')
+      .run(JSON.stringify(value), value.showId, draft.revision);
   }
 
   confirmSave(draft: Draft): void {

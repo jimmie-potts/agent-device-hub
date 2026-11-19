@@ -6,19 +6,20 @@ import {randomUUID} from 'node:crypto';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, type ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {test, type TestContext} from 'node:test';
 import {fullDisk, InProcessBus, type Participant, type ModuleContext, type RequestResult} from '@jimmie-potts/sdk';
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
-import {CONTEXT_TOO_LARGE, DECLINED, REFUSED} from '../src/assistant/engine.js';
+import {assistantStateDraft, CONTEXT_TOO_LARGE, DECLINED, REFUSED} from '../src/assistant/engine.js';
 import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
 import type {SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {readDevices} from '../src/assistant/devices.js';
+import {catalogTools} from '../src/assistant/catalog-tools.js';
 import {FIXTURE_TEXT, summarizeSessions} from '../src/assistant/tools.js';
 
 function deferred<T>() {let resolve: (value: T) => void = () => {}; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
@@ -211,6 +212,46 @@ void test('the light command stays uncertain after a lost dispatch reply and doe
   await w.restart();
   assert.equal(status(w), 'uncertain');
   assert.equal(attempts, 1);
+});
+
+void test('all rollout tools fit in the published Conversation state and remain opt-in', async context => {
+  const tools = ['read_lifx', 'set_lifx_power', 'set_lifx_brightness', 'read_wemo', 'set_wemo_power', ...catalogTools.map(tool => tool.name)];
+  const w = await world(context, {tools});
+  const state = w.module().inspectAssistant();
+  assert.ok(state);
+  assert.deepEqual(state.tools, tools);
+  assert.ok(tools.length > 32);
+  const payload = {...assistantStateDraft(state), specversion: '1.0', bunnyprofile: '2.0',
+    source: 'bunny/modules/companions', id: 'rollout-state', time: '2026-11-05T00:00:00.000Z', datacontenttype: 'application/json',
+    traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
+  assert.equal(payload.dataschema, 'https://bunny.invalid/events/assistant-state/2.1');
+  assert.equal(coreValidator().validate(payload).ok, true);
+  assert.equal(coreValidator().validate({...payload, dataschema: 'https://bunny.invalid/events/assistant-state/2.0'}).ok, false);
+});
+
+void test('Conversation pages through large show catalogs and can read a saved title at the end', async context => {
+  const w = await world(context, {tools: ['read_light_shows']});
+  const owner = w.bus.connect('bunny/modules/nanoleaf');
+  context.after(() => owner.close());
+  const versions = Array.from({length: 48}, (_, index) => ({version: index + 1, versionName: `Synthetic immutable version ${String(index + 1)}`}));
+  await owner.serveSync(['nanoleaf-shows'], () => ({revision: 1, states: [{
+    type: 'org.bunny.nanoleaf-shows.updated', subject: 'shows', dataschema: 'https://bunny.invalid/events/nanoleaf-shows/2.1',
+    data: {id: 'shows', revision: 1, shows: [{id: 'show-long', name: 'Synthetic catalog', version: versions.length, versions}]},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  const read = async (offset: number, expected: string) => {
+    const prior = task(w)?.taskId;
+    await input(w.core, w.module(), 'SYNTHETIC_CATALOG ' + JSON.stringify({name: 'read_light_shows',
+      input: {view: 'saved', id: 'show-long', offset}}));
+    await until(() => status(w) === 'succeeded' && task(w)?.taskId !== prior);
+    const message = (await page(w)).messages.filter(message => message.role === 'tool').at(-1)?.text;
+    assert.match(message ?? '', new RegExp(expected));
+    const content = JSON.parse(message ?? '{}') as {items: object[]; nextOffset: number | null};
+    assert.equal(content.items.length, 8);
+    assert.equal(content.nextOffset, offset === 0 ? 8 : null);
+  };
+  await read(0, 'Synthetic immutable version 8');
+  await read(40, 'Synthetic immutable version 48');
 });
 
 void test('a lost saved-show playback answer stays uncertain and never sends a second request', async context => {

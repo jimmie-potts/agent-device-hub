@@ -11,6 +11,8 @@ export type AssistantProvider = 'synthetic' | 'anthropic';
 export type AssistantTaskSummary = {taskId: string; conversationId: string; profile: AssistantProfile; status: AssistantStatus;
   runId: string | null; questionId: string | null; hasAnswer: boolean; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; usageUnits: number | null; reservedUnits: number};
+export const ASSISTANT_LEGACY_TOOL_LIMIT = 32;
+export const ASSISTANT_TOOL_LIMIT = 64;
 export type AssistantState = {id: 'assistant'; revision: number; enabled: boolean; available: boolean;
   /** The configured provider and model, and the tool names the private section allows; never a key, prompt or transcript. */
   provider: AssistantProvider; model: string; tools: string[]; tasks: AssistantTaskSummary[]};
@@ -37,5 +39,6 @@ export const assistantFamilies = [
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.2'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.3'),
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant'),
+  defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.1'),
 ] as const;
 export function registerAssistantFamilies(validator: MessageValidator): void {registerFamilies(validator, assistantFamilies);}

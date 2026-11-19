@@ -584,7 +584,8 @@ For light shows, `create_light_show_draft` uses a Nanoleaf starter timeline.
 Nanoleaf catalog. Each immutable version can confirm its save by request
 identity after a lost reply. If the save expires without a matching version,
 the owner can make a new approval against the catalog's current revision.
-`read_light_shows` lists drafts, saved versions and the lighting session state.
+`read_light_shows` pages through drafts, saved versions and lighting sessions.
+Supply an exact ID for its records, or leave it empty to list a category.
 `control_music_lighting_control` approves playback of one exact saved version
 on an eligible light. Stop, pause, resume and seek bind the active generation.
 Drafting, editing, previewing and saving send no lighting command.

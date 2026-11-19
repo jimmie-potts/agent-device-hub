@@ -42,7 +42,11 @@ export const catalogTools = [
   define(READ_VACUUM, 'read', 'Read Roborock vacuum status. The integration offers no cleaning controls.', {}),
   define(READ_VOLCANO, 'read', 'Read Volcano observations and the app’s session-gap setting. Equipment controls are unavailable.', {}),
   define(READ_ART, 'read', 'List recent saved artwork IDs and their compositions.', {}),
-  define(READ_SHOWS, 'read', 'List saved show IDs, immutable versions and lighting session state. A draft cannot play.', {}),
+  define(READ_SHOWS, 'read', 'List saved shows, drafts, or lighting sessions in pages. A draft cannot play.', {
+    view: {type: 'string', enum: ['saved', 'drafts', 'lighting'], description: 'Which records to read.'},
+    id: text('Exact show, draft or light ID for details, or empty to list.'),
+    offset: integer('Use zero to start and nextOffset for the next page.'),
+  }),
   define(READ_OPERATION, 'read', 'Read a tracked command result, including evidence and error. Acceptance alone does not confirm the effect.', {requestId: text('Exact operation ID from the approved action.')}),
   define(READ_ART_EFFECTS, 'read', 'Read per-display preparation and presentation operations for an approved saved-art show.', {requestId: text('The art-show operation ID.')}),
   define(CREATE_SHOW, 'draft', 'Create a private, editable light-show draft from the chosen starting timeline. Send no lighting command.', {

@@ -35,8 +35,10 @@ type Proposed = {proposal: CatalogProposal; text: string} | {question: string} |
 type Refusal = {code: ErrorCode};
 type Match = {owner: string; device: DeviceRecord};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
-function matches(device: DeviceRecord, target: string): boolean {
-  return device.id === target || normalize(deviceLabel(device)) === normalize(target);
+function matchingDevices(rows: readonly Match[], target: string, owner: string): readonly Match[] {
+  const exact = rows.filter(({device}) => device.id === target);
+  if (owner !== 'auto' && exact.length > 0) return exact;
+  return rows.filter(({device}) => device.id === target || normalize(deviceLabel(device)) === normalize(target));
 }
 
 export class ConversationActions {
@@ -72,6 +74,9 @@ export class ConversationActions {
     const readStarted = this.context.clock.now();
     const library = (await this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent))?.[0];
     if (library === undefined) return {code: 'unavailable'};
+    draft = drafts.read(call.input.draftId);
+    if (draft === undefined) return {code: 'not-found'};
+    if (draft.revision !== call.input.revision) return {code: 'revision-conflict'};
     const {showId, expectedVersion} = draft.value;
     const current = library.shows.find(show => show.id === showId);
     const pending = draft.pending;
@@ -80,20 +85,22 @@ export class ConversationActions {
       if (saved?.savedByRequest === pending.requestId) {
         drafts.confirmSave(draft);
       } else if (readStarted >= pending.admitByMs) {
-        // The owner checks this same deadline inside its save transaction. A new approval is safe after this fresh read.
-        drafts.clearSave(draft.value.showId, pending.requestId);
+        // The owner checks this same deadline inside its save transaction. A fresh approval can proceed.
+        drafts.clearSave(showId, pending.requestId);
       } else {
         return {code: 'uncertain-result'};
       }
-      draft = drafts.read(call.input.draftId);
+      draft = drafts.read(showId);
       if (draft === undefined) return {code: 'not-found'};
-      if (draft.revision !== call.input.revision) return {code: 'revision-conflict'};
     }
     const versionName = call.input.versionName;
     if (typeof versionName !== 'string') return {code: 'invalid-request'};
-    const value = {...draft.value, versionName};
+    const head = current?.version ?? 0;
+    if (head < draft.value.expectedVersion) return {code: 'revision-conflict'};
+    const value = {...draft.value, expectedVersion: head, versionName};
     if (draftProblem(value) !== undefined) return {code: 'invalid-request'};
-    return (current?.version ?? 0) === value.expectedVersion ? value : {code: 'revision-conflict'};
+    if (head > draft.value.expectedVersion) drafts.bindSaveToHead(draft, head);
+    return value;
   }
 
   /** The input's effect fields never supply routing or revision guards. */
@@ -121,7 +128,7 @@ export class ConversationActions {
       const owners = owner === 'auto' ? route.owners : route.owners.filter(source => source === owner);
       if (owners.length === 0) return {code: 'unsupported-capability'};
       const {rows, unreadable} = await this.#deviceRecords(owners, parent);
-      const found = rows.filter(({device}) => matches(device, name));
+      const found = matchingDevices(rows, name, owner);
       const selected = found[0];
       if (found.length > 1) return {question: `Which device did you mean? ${found.map(({owner, device}) => `${owner} / ${device.id}`).join(', ')}`};
       if (selected === undefined) return {code: unreadable.length > 0 ? 'unavailable' : 'not-found'};
@@ -218,11 +225,7 @@ export class ConversationActions {
         return 'code' in result ? `refused: ${result.code}` : result.text;
       }
       case READ_DEVICES: return this.#readDevices(input, parent);
-      case READ_SHOWS: {
-        const [saved, lighting] = await Promise.all([this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent),
-          this.#snapshot<LightingState>(CORE, 'music-lighting-state', parent)]);
-        return textResult({drafts: this.#authoring().list(), saved: saved?.[0] ?? 'unavailable', lighting: lighting ?? 'unavailable'});
-      }
+      case READ_SHOWS: return this.#readShows(input, parent);
       case READ_ART: {
         const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
         return art === undefined ? 'Saved art unavailable.' : textResult(art.artworks.map(item => ({
@@ -243,6 +246,28 @@ export class ConversationActions {
     }
   }
 
+  async #readShows(input: ToolCall['input'], parent: TraceContext): Promise<string> {
+    const {view, id, offset} = input;
+    if (typeof id !== 'string' || id.length > 128 || typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0) {
+      return 'refused: invalid-request';
+    }
+    const size = 8;
+    const page = (items: readonly unknown[]) => JSON.stringify({items: items.slice(0, size), nextOffset: items.length > size ? offset + size : null});
+    if (view === 'drafts') return page(this.#authoring().list(offset, size + 1, id));
+    if (view === 'lighting') {
+      const states = await this.#snapshot<LightingState>(CORE, 'music-lighting-state', parent);
+      return states === undefined ? 'Lighting sessions unavailable.' : page(states.filter(state => id === '' || id === state.id)
+        .map(({id, revision, session, last}) => ({id, revision, session, last})).slice(offset, offset + size + 1));
+    }
+    if (view !== 'saved') return 'refused: invalid-request';
+    const catalog = (await this.#snapshot<ShowCatalog>(NANOLEAF, 'nanoleaf-shows', parent))?.[0];
+    if (catalog === undefined) return 'Saved shows unavailable.';
+    if (id === '') return page(catalog.shows.slice(offset, offset + size + 1).map(({id, name, version}) => ({id, name, latestVersion: version})));
+    const show = catalog.shows.find(row => row.id === id);
+    if (show === undefined) return 'refused: not-found';
+    return page(show.versions.slice(offset, offset + size + 1).map(({version, versionName, kind}) => ({showId: id, version, versionName, kind})));
+  }
+
   async #status(owner: string, family: string, fields: readonly string[], parent: TraceContext): Promise<string> {
     const records = await this.#snapshot<Record<string, unknown>>(owner, family, parent);
     return textResult(records?.map(record => Object.fromEntries(fields.map(key => [key, record[key]]))) ?? 'Status unavailable.');
@@ -254,7 +279,7 @@ export class ConversationActions {
     const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
     if (owners.length === 0) return 'refused: unsupported-capability';
     const {rows, unreadable} = await this.#deviceRecords(owners, parent);
-    const selected = rows.filter(row => target === '' || matches(row.device, target));
+    const selected = target === '' ? rows : matchingDevices(rows, target, owner);
     if (target === '') return textResult({devices: selected.map(({owner, device}) => ({owner, id: device.id,
       name: deviceLabel(device), lastReportedAvailability: device.availability})), unreadable});
     if (selected.length > 1) return textResult({matches: selected.map(({owner, device}) => ({owner, id: device.id})),

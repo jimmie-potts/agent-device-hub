@@ -387,6 +387,17 @@ export const scenarios: readonly Scenario[] = [...preferenceScenarios, ...knowle
       catalogFinished(h) && JSON.stringify(bodyOf(response)).includes('refused: revision-conflict') &&
       showCatalog(h)?.shows[0]?.version === 2 && showOperations(h).every(record => record.family === 'nanoleaf-show-save')
       || 'stale save escape or lighting operation')),
+    act('request a fresh explicit save of the draft as a new version', h => catalogInput(h, 'show-save-fresh', 'save_light_show',
+      {draftId: draftIds.get(h), revision: 2, versionName: 'Third version'})),
+    expect('the fresh approval is bound to the current catalog head', conversationAnswer((response, h) =>
+      assistant(h)?.tasks[0]?.status === 'waiting' && JSON.stringify(bodyOf(response)).includes('"expectedVersion":2') ||
+        'the draft did not bind a fresh save to the current head')),
+    act('approve appending the third version', h => assistantInput(h, 'show-save-fresh-approve', true, 'approve')),
+    expect('all three immutable versions remain selectable', h => {
+      const versions = showCatalog(h)?.shows[0]?.versions;
+      return catalogFinished(h) && versions?.map(version => version.versionName).join('|') === 'First|Independent edit|Third version' ||
+        'an earlier version or the new save is missing';
+    }),
     act('the owner puts the simulated wall in Free mode', h => dispatchOnce(h, 'operator', 'show-free-mode', {
       key: 'bunny.cmd.device-mode-set.wall', draft: {type: 'org.bunny.device-mode.set.requested', subject: 'wall',
         dataschema: 'https://bunny.invalid/events/device-mode-set/2.0', data: {mode: 'free'}}}, 'show-free-mode')),
