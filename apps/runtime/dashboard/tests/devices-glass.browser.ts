@@ -182,7 +182,15 @@ try {
     // Scrolling the directory moves the glass with the cards, then it rests again.
     await page.goto(`${world.url}/#/devices`);await feed(page, 'connected');await PAGES[0].ready(page).waitFor();
     await page.setViewportSize({width: 1024, height: 600});await page.mouse.wheel(0, 300);await followsBoxes(page, `${scheme}: scrolled`);
-    await page.setViewportSize({width: 1440, height: 900});
+    // A window resize draws one frame, after the page has settled, and software rendering draws at most about a million
+    // pixels, as on Home (#1967).
+    for (const [width, height] of [[2560, 1000], [1440, 900]] as const) {
+      const settled = await rest(page);await page.setViewportSize({width, height});await followsBoxes(page, `${scheme}: ${String(width)}px`);
+      assert.equal(await frames(page) - settled, 1, `${scheme}: one window resize to ${String(width)}px draws one frame`);
+    }
+    const backing = await layer(page).evaluate(node => ({software: (node as HTMLCanvasElement).dataset['glassSoftware'] !== undefined, pixels: (node as HTMLCanvasElement).width * (node as HTMLCanvasElement).height}));
+    if (backing.software) assert.ok(backing.pixels <= 1_010_000, `software rendering draws at most a million pixels (${String(backing.pixels)})`);
+    report['software'] = backing.software;
     // The popout keeps its own fill over the glass; expanding a brand moves no panel.
     const menu = await openDeviceMenu(page);await menu.getByRole('menuitem', {name: 'Nanoleaf', exact: true}).click();
     assert.notEqual(await page.locator('.device-menu').evaluate(element => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0)', 'the popout has its own fill');

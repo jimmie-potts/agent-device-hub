@@ -991,7 +991,8 @@ with `openAudio` and a page outside the hardware inventory with `jumpTo`.
 `node apps/runtime/dashboard/tests/devices-glass.browser.ts` checks those pages
 on the glass layer with SwiftShader, as `home-glass.browser.ts` does for Home:
 every card's glass follows its box at 1440, 390 and 320px and after scrolling,
-the card surfaces are clear, nothing draws at rest, the visible veils stay few,
+the card surfaces are clear, nothing draws at rest, a window resize draws one
+frame and software rendering stays under about a million pixels, the visible veils stay few,
 text over the layer keeps 4.5:1 at 1440px in light and dark (the phone widths'
 lowest values are recorded), the popout keeps its fill, leaving releases the
 layer, and with WebGL 2 missing or a lost context the Quiet glass panels stay
