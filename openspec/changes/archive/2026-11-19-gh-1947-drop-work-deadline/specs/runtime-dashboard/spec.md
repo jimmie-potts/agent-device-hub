@@ -12,7 +12,7 @@ The dashboard SHALL keep one copy of the core's `session` family through SDK syn
 - **WHEN** the runtime ends the page's stream and the hook observes a turn's end and a new session meanwhile
 - **THEN** the page syncs again and shows the finished turn unread and the new session, and sends no command
 
-#### Scenario: Silence marks only work
+#### Scenario: Silence marks no row, and only unconfirmed work does
 - **WHEN** one session waits on a question, one holds an unread finished turn and one works, all three stay silent for ten minutes, and a fourth's work a core restart left unconfirmed
 - **THEN** only the fourth row is marked uncertain, silence marks none of the other three, each of the three faces says the hub heard from it ten minutes ago, and the notice override stays available for the finished session
 

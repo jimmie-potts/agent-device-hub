@@ -817,8 +817,9 @@ source/session/work/read/parent/child evidence and optional label editing.
 Collapse and filtering retain drafts; replacing a generation retires them.
 Read-only callers see the same evidence without label controls. A card is
 uncertain only when the hub's status is unknown, its working status has
-unconfirmed work (**Unconfirmed**, in the working chip's color), which only a
-core restart leaves, or the copy is not synced (**Stale**). Silence never makes
+unconfirmed work (**Unconfirmed**, in the working chip's color), which a core
+restart or lost or ambiguous activity evidence on running work leaves, or the
+copy is not synced (**Stale**). Silence never makes
 a session uncertain; its evidence age shows it instead. Uncertain cards retain their last-known state in the
 expanded evidence and contribute no current Working count. Needs you and Unread
 counts describe retained evidence across the full copy, independent of filters.

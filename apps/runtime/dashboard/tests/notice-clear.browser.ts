@@ -68,10 +68,11 @@ try {
   } finally {await context.close();}
 } finally {try {await browser?.close();} finally {await world.close();}}
 
-// Silence marks no row (Hub #1865, design decision 10, as Hub #1947 amends it): one session waits on a question, one holds
-// an unread finished turn and one works, and all three stay silent for ten minutes on the world's clock, which the page
-// shares. No row is uncertain, in the rows or in Habitat; each face says the hub heard from it ten minutes ago, from the
-// record's evidence time against the page's clock; and the notice override stays available for the finished session.
+// Silence marks no row, and only unconfirmed work does (Hub #1865, design decision 10, as Hub #1947 amends it): one session
+// waits on a question, one holds an unread finished turn and one works, and all three stay silent for ten minutes on the
+// world's clock, which the page shares. No row is uncertain, in the rows or in Habitat; each face says the hub heard from
+// it ten minutes ago, from the record's evidence time against the page's clock; and the notice override stays available
+// for the finished session. A runtime restart then leaves the running work unconfirmed: only that row is marked.
 const clock = worldClock();
 const silent = await startWorld({clock});
 let quietBrowser: Browser | undefined;
@@ -114,6 +115,19 @@ try {
     await page.locator('.habitat-root .agent[data-assigned=true]').nth(3).waitFor();
     assert.equal(await page.locator('.habitat-root .agent[data-uncertain=true]').count(), 0, 'Habitat marks no resident from silence');
     assert.deepEqual(sent, [], 'reading the silent sessions sends nothing');
-    process.stdout.write(`${JSON.stringify({passed: true, checks: ['ten minutes of silence mark no row, each face shows its evidence age, and the override stays available for a finished session']})}\n`);
+    // A restart ends the browser session and leaves the running work unconfirmed (reason restart); nothing else changes.
+    await silent.restart();
+    await feed(page, 'ended');
+    await page.getByRole('button', {name: 'Sign in again', exact: true}).click();
+    await feed(page, 'connected');
+    await (await destinationLink(page, /^Home/)).click();
+    await card('Keep working').locator('.chip', {hasText: 'Unconfirmed'}).waitFor();
+    assert.deepEqual(await Promise.all([...SILENT, 'Arrive later'].map(name => card(name).getAttribute('data-stale'))), ['false', 'false', 'true', 'false'],
+      'only the work the restart left unconfirmed is marked');
+    await card('Ask a question').locator('.chip', {hasText: 'Question'}).waitFor();
+    await card('Port the wall').locator('.chip', {hasText: 'Finished · unread'}).waitFor();
+    await card('Keep working').locator('.agent-heard', {hasText: '10m ago'}).waitFor();
+    assert.deepEqual(sent, [], 'the restart and the sign-in send no command');
+    process.stdout.write(`${JSON.stringify({passed: true, checks: ['ten minutes of silence mark no row, each face shows its evidence age, and the override stays available for a finished session', 'after a restart only the unconfirmed working row is marked']})}\n`);
   } finally {await context.close();}
 } finally {try {await quietBrowser?.close();} finally {await silent.close();}}
