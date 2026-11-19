@@ -1,6 +1,6 @@
 ## Context
 
-Home renders its cards as React elements on a CSS grid (`home-layout.tsx`, #1672). The accepted Clear reference draws the artwork and the glass with one fragment shader. The style guide allows a drawn layer on the dashboard (owner decision 2, PR #1936). The art module hands the shell a decoded backdrop image through #1928, built in parallel.
+Home renders its cards as React elements on a CSS grid (`home-layout.tsx`, #1672). The accepted Clear reference draws the artwork and the glass with one fragment shader. The style guide allows a drawn layer on the dashboard (owner decision 2, PR #1936). The art module hands the shell a decoded backdrop image through #1928 (`useArtBackdrop`, `useShowArtBackdrop`).
 
 ## Goals / Non-Goals
 
@@ -23,7 +23,8 @@ Home renders its cards as React elements on a CSS grid (`home-layout.tsx`, #1672
 
 - [SwiftShader is slow] → the journey waits for rest by frame count, not by time; the drawing work is bounded by the visible panels.
 - [A card surface with a fixed state meaning] → the Inbox attention surface wins over the transparent rule and keeps its fill.
-- [#1928 not merged] → a temporary adapter copies the agreed types; a disposable journey supplies synthetic pictures with a page event. It is replaced when #1928 merges.
+- [Bitmap lifetime] → the art source closes replaced bitmaps after commit, so the layer uploads a new image in a layout effect and, after a context restore, re-uploads only the current image.
+- [Synthetic art is dark and small] → the journey serves dark and bright synthetic pixels through the real content route, padded to the rendition's byte count.
 
 ## Migration Plan
 

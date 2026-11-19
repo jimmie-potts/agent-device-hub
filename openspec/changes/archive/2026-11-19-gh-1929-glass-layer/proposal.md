@@ -8,7 +8,7 @@ The owner accepted the Clear Home prototype (epic [#1927](https://github.com/jim
 - Home mounts the layer with its panels joined by a smooth minimum; the rail and phone bar are frosted over the backdrop.
 - Without WebGL 2, or after a lost context, Home keeps its Quiet glass panels and every control.
 - The glass colors are skin tokens; the Quiet glass wash colors become tokens the shell and the layer share.
-- Until the art backdrop export of [#1928](https://github.com/jimmie-potts/agent-device-hub/issues/1928) merges, a temporary adapter supplies no artwork outside a disposable journey.
+- Home's backdrop is the art module's backdrop export from [#1928](https://github.com/jimmie-potts/agent-device-hub/issues/1928); the layer reports the rendition it has drawn.
 
 ## Capabilities
 
