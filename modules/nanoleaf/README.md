@@ -585,6 +585,34 @@ or expired position evidence ends the show. The start uses the configured
 library scope and item identifier. It gives no assurance of audio-version
 identity or speaker-clock timing.
 
+### Draft a show with Claude
+
+In **Saved shows**, describe the colors, effects or mood you want. Choose the
+current measured excerpt or a generic sequence. Both use the current Mac Music
+title and artist. The measured option also sends derived timing and intensity
+spans. Anthropic retains these inputs for 30 days for Claude Fable 5.2. The
+request excludes audio, Music library identifiers and device data.
+[Claude Fable 5.2 model documentation](https://platform.claude.com/docs/en/models/fable-5-2/overview)
+
+The runtime makes one attempt per request. The Music ledger uses a USD 20
+monthly ceiling and USD 3 daily allowance, separate from Art. A cancelled or
+unanswered attempt can still incur a charge. A response with usable provider
+usage shows the accounted cost on its draft. A lost answer keeps the
+reservation charged against the allowance. Restart ends unfinished requests
+without resending them.
+
+A measured draft stays within the available cue spans. A generic draft uses
+elapsed time up to 30 seconds. The storyboard and cue editor let you inspect
+and change both. **Save new version** saves the current edit with its generation
+route, accounted cost and confidence in `nanoleaf-show-version/2.1`. Manually
+authored versions continue to use `nanoleaf-show-version/2.0`. Audio plays the
+exact version you choose, with no provider call during playback.
+
+Music authoring uses the optional Nanoleaf configuration field
+`musicAuthoringSecret` to name a separately declared Claude key in the module's
+`secrets` map. The ordinary module startup and editor work when the key is
+absent. Set up this credential in the authorized installation window.
+
 ## Families
 
 The module answers each device's own keys, `bunny.cmd.<family>.<device id>`, and serves
@@ -608,7 +636,9 @@ the wall pages (#934) apply that rule.
 | `nanoleaf-reactive-presets` | state | The bounded private library of frozen reactive recipes at `reactive-presets` |
 | `nanoleaf-reactive-preset-save` | command | Save one immutable named reactive recipe against the current library revision, with a metadata-only outcome |
 | `nanoleaf-shows` | state | The private decorative library's immutable version summaries, with subject `shows` |
-| `nanoleaf-show-save` | command | Append a guarded named decorative version at target `shows`, with a metadata-only outcome |
+| `nanoleaf-show-save` | command | Append a guarded named version at target `shows`, with a metadata-only outcome |
+| `nanoleaf-show-generate` | command | Request one Claude draft at target `shows`; read the result at `generated-show-draft?requestId=<id>` after completion |
+| `nanoleaf-show-generate-cancel` | command | Ask the module to stop waiting for an active generation at target `shows` |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |
 | `moment-play` | command | Bounded Lines moments in Work or over a named Free base; terminal outcome follows restoration |
 | `music-lighting-work` | command | From the core only: start a live Music session on the Lines or the NL22 over the Free base it shows, or stop it; Start completes with its streaming entry, Stop after its restoration |

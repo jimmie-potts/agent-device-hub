@@ -22,6 +22,7 @@ export type NanoleafConfig = {
   devices: DeviceSection[];
   /** The agent sources whose sessions the wall shows; others are skipped and counted. */
   qualifiedSources: Source[];
+  musicAuthoringSecret?: string;
   /** Codex Desktop's local project catalog and title index, read only, when the owner chose them. */
   codexMetadata?: {path: string; titleIndexPath?: string};
 };
@@ -49,7 +50,7 @@ export function configureNanoleaf(section: unknown): Configured<NanoleafConfig> 
   if (!isObject(section)) return refuse('the section must be a JSON object');
   const known = new Set(Object.keys(section).filter(key => key !== 'secrets'));
   for (const key of known) {
-    if (!['devices', 'qualifiedSources', 'codexMetadata'].includes(key)) return refuse('the section names a setting the Nanoleaf module does not take');
+    if (!['devices', 'qualifiedSources', 'codexMetadata', 'musicAuthoringSecret'].includes(key)) return refuse('the section names a setting the Nanoleaf module does not take');
   }
   const secrets = isObject(section.secrets) ? section.secrets : {};
   const listed = section.devices;
@@ -82,6 +83,12 @@ export function configureNanoleaf(section: unknown): Configured<NanoleafConfig> 
     return refuse('qualifiedSources must list 1 to 128 distinct agent sources');
   }
   const config: NanoleafConfig = {devices, qualifiedSources: sources as Source[]};
+  if (Object.hasOwn(section, 'musicAuthoringSecret')) {
+    const secret = section.musicAuthoringSecret;
+    if (typeof secret !== 'string' || !SECRET_NAME.test(secret) || !Object.hasOwn(secrets, secret)
+        || devices.some(device => device.secret === secret)) return refuse('Music authoring must name a separate declared secret.');
+    config.musicAuthoringSecret = secret;
+  }
   if (Object.hasOwn(section, 'codexMetadata')) {
     const metadata = section.codexMetadata;
     if (!isObject(metadata) || !isPath(metadata.path) || Object.keys(metadata).some(key => key !== 'path' && key !== 'titleIndexPath')

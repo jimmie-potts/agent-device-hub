@@ -2606,6 +2606,16 @@ Keep shared build, typecheck, lint,
 contract and workflow checks. These checks use synthetic plans and establish
 no installation, playback, physical timing or light output.
 
+Music show AI authoring (#724) uses the existing `test:nanoleaf:built` CI
+discovery for `music-show-authoring.test.js`,
+`music-show-authoring-provider.test.js` and `module-music.test.js`. These checks
+cover output and timing validation, provider disclosure, cancellation, spend
+accounting, and generated save and replay using simulated Lines and NL22.
+The existing `node apps/runtime/dashboard/tests/nanoleaf-pages.browser.ts`
+journey covers generation in the Saved shows editor. Run it and the smoke
+check alongside the shared build, typecheck, lint, contract and workflow
+checks. Use the synthetic provider and tracks for source evidence.
+
 The internal prepared-music timeline helper (#1273) is covered by
 `modules/nanoleaf/tests/music-timeline.test.ts`, discovered by the existing
 `test:nanoleaf:built` CI suite. After the root build, its focused check is

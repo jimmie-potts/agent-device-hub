@@ -10,6 +10,7 @@ import type {CaptureFeatures, CaptureState} from '@jimmie-potts/event-contracts/
 import type {Participant, RequestResult, Snapshot, StateDraft} from '@jimmie-potts/sdk';
 import {LINES_ADDRESS, PANELS_ADDRESS, SYNTHETIC_TOKEN} from '../src/index.js';
 import {saveLayout} from '../src/devices.js';
+import {prepareMusicTimeline} from '../src/music-timeline.js';
 import {measuredDraft} from '../src/frontend/show-model.js';
 import {deviceCommand, ModuleWorld, SECTION, type WorldOptions} from './module-support.js';
 import {test} from './support.js';
@@ -1024,8 +1025,24 @@ for (const manual of [{brightness: {value: 20}}, {on: {value: false}}]) {
 }
 
 
-test('measured drafts consume Music features without writes and measured replay follows the scoped item on both lights', async context => {
-  const world = await ModuleWorld.open(context, {...WITH_PANELS, playbackSyncBuffer: 2});
+test('measured authoring uses admitted Music features and saved replay follows the scoped item on both lights', async context => {
+  const dispatches: string[] = [];
+  const world = await ModuleWorld.open(context, {...WITH_PANELS, playbackSyncBuffer: 2, authoringProvider: async (input, signal, requestId) => {
+    dispatches.push(requestId);
+    if (requestId === 'authored-cancel') return await new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => {reject(new Error('synthetic cancelled dispatch'));}, {once: true});
+    });
+    assert.equal(requestId, 'authored-excerpt', 'saved playback must not ask the model again');
+    assert.equal(input.title, 'Synthetic song');
+    assert.equal(input.artist, 'Synthetic artist');
+    assert.equal(input.style, 'A cool blue gradient with a soft pulse');
+    assert.ok(input.analysis);
+    assert.deepEqual(Object.keys(input.analysis).sort(), ['method', 'sampleCount', 'spans']);
+    const span = input.analysis.spans.at(0);
+    assert.ok(span);
+    return {costUsd: 0.012, draft: {cues: [{startMs: span.offsetMs, endMs: span.offsetMs + span.durationMs,
+      effect: 'pulse', palette: ['#4655ff', '#48777a'], intensity: 0.45}]}};
+  }});
   const playback = world.bus.connect(MUSIC_PLAYBACK_OWNER);
   const core = world.bus.connect('bunny/core');
   const capture: CaptureState = {id: 'music', revision: 1, endpointId: CAPTURE.endpointId, availability: 'available',
@@ -1085,16 +1102,44 @@ test('measured drafts consume Music features without writes and measured replay 
   assert.equal(prepared.measurement?.analysis.method, 'energy-onset-v1');
   assert.ok((prepared.timeline.cues[0]?.offsetMs ?? 0) > 0);
   assert.equal(world.writes().length, writes, 'measurements and preparation do not take control');
+  const generate = (requestId: string) => world.request('bunny.cmd.nanoleaf-show-generate.shows', {
+    type: 'org.bunny.nanoleaf-show.generate.requested', subject: 'shows',
+    dataschema: 'https://bunny.invalid/events/nanoleaf-show-generate/2.0',
+    data: {requestId, source: 'measured', style: 'A cool blue gradient with a soft pulse'},
+  });
+  assert.equal((await generate('authored-excerpt')).status, 'accepted');
+  await world.until(() => world.outcomes('authored-excerpt').some(message => message.data.result === 'succeeded'), 1000, 'generated cue outcome');
+  const authored = world.content('generated-show-draft', {...reads, query: {requestId: 'authored-excerpt'}});
+  assert.ok(authored !== undefined && 'bytes' in authored);
+  const generated = JSON.parse(Buffer.from(authored.bytes).toString()) as Record<string, unknown>;
+  assert.deepEqual(generated.provenance, {model: 'claude-fable-5-2', costUsd: 0.012, confidence: 'measured-excerpt'});
+  assert.deepEqual(generated.measurement, prepared.measurement);
+  const authoredTimeline = prepareMusicTimeline(generated.timeline);
+  assert.equal(world.query('SELECT body FROM nanoleaf_show_versions').length, 0, 'generation is not a save');
+  assert.equal(world.writes().length, writes, 'generation is not playback');
+  assert.equal((await generate('authored-excerpt')).status, 'rejected');
+  assert.equal((await generate('authored-cancel')).status, 'accepted');
+  assert.equal((await world.request('bunny.cmd.nanoleaf-show-generate-cancel.shows', {
+    type: 'org.bunny.nanoleaf-show-generate.cancel.requested', subject: 'shows',
+    dataschema: 'https://bunny.invalid/events/nanoleaf-show-generate-cancel/2.0',
+    data: {requestId: 'cancel-authoring', generationRequestId: 'authored-cancel'},
+  })).status, 'accepted');
+  await world.until(() => world.outcomes('authored-cancel').some(message => message.data.result === 'uncertain'), 1000, 'cancelled dispatch outcome');
+  assert.deepEqual(dispatches, ['authored-excerpt', 'authored-cancel']);
+  const cancelledDraft = world.content('generated-show-draft', {...reads, query: {requestId: 'authored-cancel'}});
+  assert.ok(cancelledDraft !== undefined && 'error' in cancelledDraft && cancelledDraft.error.code === 'not-found');
   const save = await world.request('bunny.cmd.nanoleaf-show-save.shows', {
     type: 'org.bunny.nanoleaf-show.save.requested', subject: 'shows', dataschema: 'https://bunny.invalid/events/nanoleaf-show-save/2.0',
     data: {requestId: 'measured-save', showId: 'show-color', expectedVersion: 0, name: 'Measured', versionName: 'Excerpt',
-      measurement: prepared.measurement, measurementProof: prepared.measurementProof, timeline: {...prepared.timeline, durationMs: 20_000,
-        cues: [...prepared.timeline.cues, showCue('seek-target', 10_000, 10_000, '#00ff00')]}},
+      ...generated, timeline: {...authoredTimeline, durationMs: 20_000,
+        cues: [...authoredTimeline.cues, showCue('seek-target', 10_000, 10_000, '#00ff00')]}},
   });
   assert.equal(save.status, 'accepted');
   const saved = world.query('SELECT body FROM nanoleaf_show_versions')[0]?.[0];
   assert.equal(typeof saved, 'string');
   assert.ok(!String(saved).includes('measurementProof'));
+  assert.ok(!String(saved).includes('authoringProof'));
+  assert.match(String(saved), /claude-fable-5-2/);
   await publishPosition('abc2', 2);
   assert.deepEqual(await startColorShow(session, 'measured-wrong'), {status: 'rejected', code: 'invalid-state'});
   assert.equal(world.writes().length, writes, 'a mismatched item does not take control');
@@ -1110,7 +1155,7 @@ test('measured drafts consume Music features without writes and measured replay 
     type: 'org.bunny.nanoleaf-show.save.requested', subject: 'shows',
     dataschema: 'https://bunny.invalid/events/nanoleaf-show-save/2.0',
     data: {requestId: 'measured-edit', showId: 'show-color', expectedVersion: 1, name: 'Measured', versionName: 'Edited excerpt',
-      measurement: prepared.measurement, timeline: {...prepared.timeline, cues: prepared.timeline.cues.map(cue => ({...cue, intensity: 0.1}))}},
+      measurement: prepared.measurement, provenance: generated.provenance, timeline: {...authoredTimeline, cues: authoredTimeline.cues.map(cue => ({...cue, intensity: 0.1}))}},
   });
   assert.equal(edited.status, 'accepted');
   const savedEdit = readVersion(2);

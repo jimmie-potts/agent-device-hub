@@ -1,4 +1,4 @@
-import {SHOW_LIMITS, SHOW_VERSION_SCHEMA, showMeasurement, validShowId, type ShowSave, type ShowVersion} from '../music-show-data.js';
+import {AUTHORED_SHOW_VERSION_SCHEMA, SHOW_LIMITS, SHOW_VERSION_SCHEMA, showMeasurement, showProvenance, validShowId, type ShowSave, type ShowVersion} from '../music-show-data.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS, type MusicCue, type MusicTimeline} from '../music-timeline-data.js';
 import type {Direction, Pattern, Speed} from '../effect-data.js';
 
@@ -14,19 +14,41 @@ const name = (value: unknown): value is string => typeof value === 'string' && [
 /** Content is unknown at the browser boundary. Return only the exact requested canonical version. */
 export function showVersion(value: unknown, id: string, version: number): ShowVersion {
   if (!object(value) || (value.kind !== 'decorative' && value.kind !== 'measured')
-      || !exact(value, ['schema', 'showId', 'version', 'name', 'versionName', 'kind', 'timeline', ...(value.kind === 'measured' ? ['measurement'] : [])])
-      || value.schema !== SHOW_VERSION_SCHEMA || value.showId !== id || !validShowId(id) || value.version !== version
+      || (value.schema !== SHOW_VERSION_SCHEMA && value.schema !== AUTHORED_SHOW_VERSION_SCHEMA)
+      || !exact(value, ['schema', 'showId', 'version', 'name', 'versionName', 'kind', 'timeline',
+        ...(value.kind === 'measured' ? ['measurement'] : []), ...(value.schema === AUTHORED_SHOW_VERSION_SCHEMA ? ['provenance'] : [])])
+      || value.showId !== id || !validShowId(id) || value.version !== version
       || !integer(version, 1, SHOW_LIMITS.versions) || !name(value.name) || !name(value.versionName)) throw new Error('Invalid show version.');
-  const base = {schema: SHOW_VERSION_SCHEMA, showId: id, version, name: value.name, versionName: value.versionName, timeline: timeline(value.timeline)} satisfies Omit<ShowVersion, 'kind'>;
+  const provenance = showProvenance(value.provenance);
+  if (value.schema === AUTHORED_SHOW_VERSION_SCHEMA && (provenance === undefined
+      || (provenance.confidence === 'measured-excerpt') !== (value.kind === 'measured'))) throw new Error('Invalid show provenance.');
+  const base = {schema: value.schema, showId: id, version, name: value.name, versionName: value.versionName, timeline: timeline(value.timeline),
+    ...(provenance === undefined ? {} : {provenance})} satisfies Omit<ShowVersion, 'kind'>;
   if (value.kind === 'decorative') return {...base, kind: 'decorative'};
   const measurement = showMeasurement(value.measurement);
   if (measurement === undefined) throw new Error('Invalid show measurement.');
   return {...base, kind: 'measured', measurement};
 }
 
+const validProof = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+
+export function generatedDraft(value: unknown, showId: string): ShowSave {
+  if (!object(value) || !validShowId(showId) || !validProof(value.authoringProof)) throw new Error('Invalid generated draft.');
+  const provenance = showProvenance(value.provenance);
+  if (provenance === undefined) throw new Error('Invalid show provenance.');
+  const base = {showId, expectedVersion: 0, name: 'Claude light show', versionName: 'First draft',
+    timeline: timeline(value.timeline), provenance, authoringProof: value.authoringProof};
+  if (provenance.confidence === 'generic' && exact(value, ['timeline', 'provenance', 'authoringProof'])) return base;
+  if (provenance.confidence === 'measured-excerpt' && exact(value, ['timeline', 'provenance', 'authoringProof', 'measurement', 'measurementProof'])) {
+    const measurement = showMeasurement(value.measurement);
+    if (measurement !== undefined && validProof(value.measurementProof)) return {...base, measurement, measurementProof: value.measurementProof};
+  }
+  throw new Error('Invalid generated draft source.');
+}
+
 export function measuredDraft(value: unknown, showId: string): ShowSave {
   if (!object(value) || !exact(value, ['item', 'analysis', 'timeline', 'measurementProof']) || !validShowId(showId)
-      || typeof value.measurementProof !== 'string' || !/^[0-9a-f]{64}$/.test(value.measurementProof)) throw new Error('Invalid measured draft.');
+      || !validProof(value.measurementProof)) throw new Error('Invalid measured draft.');
   const measurement = showMeasurement({item: value.item, analysis: value.analysis});
   if (measurement === undefined) throw new Error('Invalid show measurement.');
   return {showId, expectedVersion: 0, name: 'Measured excerpt', versionName: 'First draft', timeline: timeline(value.timeline), measurement, measurementProof: value.measurementProof};

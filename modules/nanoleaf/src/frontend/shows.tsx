@@ -1,8 +1,8 @@
 import React, {useEffect, useRef, useState} from 'react';
 import type {FrontendApi, FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
-import {SHOW_LIMITS, SHOW_TARGET, type ShowCatalog, type ShowSave} from '../music-show-data.js';
+import {MUSIC_AUTHORING_MODEL, SHOW_LIMITS, SHOW_TARGET, type ShowCatalog, type ShowSave} from '../music-show-data.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS, selectMusicCue, type MusicCue, type MusicTimeline} from '../music-timeline-data.js';
-import {DIRECTION_CHOICES, draftProblem, measuredDraft, PATTERN_CHOICES, showVersion, spatial, SPEED_CHOICES, starter, STARTERS} from './show-model.js';
+import {DIRECTION_CHOICES, draftProblem, generatedDraft, measuredDraft, PATTERN_CHOICES, showVersion, spatial, SPEED_CHOICES, starter, STARTERS} from './show-model.js';
 import {followShows, type CatalogView} from './show-feed.js';
 import './shows.css';
 
@@ -74,7 +74,60 @@ function CueEditor({cue, index, measured, disabled, update, remove}: {
   </fieldset>;
 }
 
-function ShowEditor({context, catalog, command}: {context: FrontendContext; catalog: ReturnType<typeof useShows>; command: FrontendCommand}): React.JSX.Element {
+function ShowAuthoring({context, generate, cancel, reading, canOpen, open, dirty}: {
+  context: FrontendContext; generate: FrontendCommand; cancel: FrontendCommand; reading: boolean; canOpen: boolean;
+  open: (requestId: string) => void; dirty: boolean;
+}): React.JSX.Element {
+  const [style, setStyle] = useState('');
+  const [source, setSource] = useState<'measured' | 'generic'>('measured');
+  const requestId = generate.requestId;
+  const operation = context.operations.find(value => value.requestId === requestId && value.family === 'nanoleaf-show-generate' && value.target === SHOW_TARGET);
+  const ready = operation?.status === 'completed' && operation.result === 'succeeded' && operation.evidence === 'observed';
+  const active = operation?.status === 'accepted';
+  const online = context.connected && context.control && context.operationsLive;
+  const disabled = !online || generate.locked || cancel.locked || reading;
+  return <section aria-label="Claude show generation">
+    <h2>Draft a show with Claude</h2>
+    <p>Each request makes one paid Anthropic API attempt with {MUSIC_AUTHORING_MODEL}. Music has its own
+      spending limits of $3 USD per day and $20 USD per month.</p>
+    <p>Claude receives your style request and the current Music track’s title and artist. Measured mode also sends
+      derived energy and onset measurements. Anthropic retains the sent data for 30 days. Audio stays on your Mac.</p>
+    <div className="show-fields">
+      <label>Timing source<select value={source} disabled={disabled} onChange={event => {setSource(event.target.value === 'generic' ? 'generic' : 'measured');}}>
+        <option value="measured">Measured excerpt</option>
+        <option value="generic">Generic sequence</option>
+      </select></label>
+      <label>Mood or style<input placeholder="Slow amber pulses with a bright finish" value={style} maxLength={500} disabled={disabled}
+        onChange={event => {setStyle(event.target.value);}}/></label>
+    </div>
+    <div className="show-actions">
+      <button type="button" className="secondary" disabled={disabled} onClick={() => {setStyle('Ocean drift with slow blue and teal waves');}}>Use ocean drift style</button>
+      <button type="button" className="secondary" disabled={disabled} onClick={() => {setStyle('Warm rise with amber pulses and a bright gold finish');}}>Use warm rise style</button>
+    </div>
+    <p>{source === 'measured'
+      ? <>Start measuring the current track on the <a href="#/audio">Audio page</a>. The cues follow the available excerpt measurements.</>
+      : 'Generic cues use decorative timing. Use this option when track measurements are unavailable.'}</p>
+    <div className="show-actions">
+      <button type="button" disabled={disabled || style.trim() === ''} onClick={() => {
+        void generate.run({family: 'nanoleaf-show-generate', target: SHOW_TARGET, requestId: crypto.randomUUID(), data: {style: style.trim(), source}});
+      }}>Generate paid draft</button>
+      {active && requestId !== undefined && <button type="button" className="secondary" disabled={!online || cancel.locked} onClick={() => {
+        void cancel.run({family: 'nanoleaf-show-generate-cancel', target: SHOW_TARGET, requestId: crypto.randomUUID(), data: {generationRequestId: requestId}});
+      }}>Cancel generation</button>}
+      {ready && requestId !== undefined && <button type="button" className="secondary" disabled={!canOpen || reading} onClick={() => {open(requestId);}}>
+        {reading ? 'Opening draft…' : 'Open generated draft'}</button>}
+    </div>
+    {ready && dirty && <p className="hint">Opening the generated draft replaces the current unsaved draft.</p>}
+    {ready && !dirty && <p className="hint">Open the result to preview and edit it before saving.</p>}
+    {requestId !== undefined && <p role="status">{ready ? 'Generated draft ready to open.' : generate.text}</p>}
+    {active && cancel.requestId !== undefined && <p role="status">{cancel.text}</p>}
+    {!ready && operation?.error !== undefined && <p role="alert">{operation.error.detail ?? 'Generation did not produce a draft.'} Your current draft is retained.</p>}
+  </section>;
+}
+
+function ShowEditor({context, catalog, command, generate, cancel}: {
+  context: FrontendContext; catalog: ReturnType<typeof useShows>; command: FrontendCommand; generate: FrontendCommand; cancel: FrontendCommand;
+}): React.JSX.Element {
   const [draft, setDraft] = useState<ShowSave>();
   const [dirty, setDirty] = useState(false);
   const [selectedShow, setSelectedShow] = useState('');
@@ -82,6 +135,7 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
   const [reading, setReading] = useState(false), [readFailed, setReadFailed] = useState(false);
   const [preparing, setPreparing] = useState(false), [prepareFailed, setPrepareFailed] = useState(false);
   const [pendingRead, setPendingRead] = useState(false), [readCancelled, setReadCancelled] = useState(false);
+  const [openingGenerated, setOpeningGenerated] = useState(false), [generatedFailed, setGeneratedFailed] = useState(false);
   const [sending, setSending] = useState(false);
   const [submitted, setSubmitted] = useState<{requestId: string; draft: ShowSave}>();
   const readSequence = useRef(0), readActive = useRef(false), sendingRef = useRef(false), mounted = useRef(true);
@@ -92,7 +146,7 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
     if (draft !== submitted.draft) {setSubmitted(undefined); return;}
     setDraft(current => {
       if (current !== submitted.draft) return current;
-      const {measurementProof: _measurementProof, ...saved} = current;
+      const {measurementProof: _measurementProof, authoringProof: _authoringProof, ...saved} = current;
       return {...saved, expectedVersion: saved.expectedVersion + 1};
     });
     setDirty(false); setSelectedShow(submitted.draft.showId); setSelectedVersion(String(submitted.draft.expectedVersion + 1)); setSubmitted(undefined);
@@ -103,7 +157,7 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
   const conflict = draft !== undefined && (head?.version ?? 0) !== draft.expectedVersion;
   const live = context.connected && catalog.live && catalog.value !== undefined;
   const locked = command.locked || sending;
-  const editable = context.control && !locked && !reading && !preparing;
+  const editable = context.control && !locked && !reading && !preparing && !openingGenerated;
   const problem = draft === undefined ? undefined : draftProblem(draft);
   const change = (next: ShowSave): void => {setDraft(next); setDirty(true);};
   const load = (): void => {
@@ -114,7 +168,8 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
       if (!mounted.current || sequence !== readSequence.current) return;
       const saved = showVersion(value, id, version);
       setDraft({showId: saved.showId, expectedVersion: saved.version, name: saved.name, versionName: saved.versionName, timeline: saved.timeline,
-        ...(saved.kind === 'measured' ? {measurement: saved.measurement} : {})});
+        ...(saved.kind === 'measured' ? {measurement: saved.measurement} : {}),
+        ...(saved.provenance === undefined ? {} : {provenance: saved.provenance})});
       setSelectedShow(id); setSelectedVersion(String(version)); setDirty(false); setReading(false);
     }).catch(() => {if (mounted.current && sequence === readSequence.current) {setReadFailed(true); setReading(false);}})
       .finally(() => {readActive.current = false; if (mounted.current) setPendingRead(false);});
@@ -127,6 +182,17 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
       if (mounted.current && sequence === readSequence.current) change(measuredDraft(value, `show-${crypto.randomUUID()}`));
     }).catch(() => {if (mounted.current && sequence === readSequence.current) setPrepareFailed(true);})
       .finally(() => {readActive.current = false; if (mounted.current) setPreparing(false);});
+  };
+  const openGenerated = (requestId: string): void => {
+    if (!context.connected || !editable || readActive.current) return;
+    const sequence = ++readSequence.current;
+    readActive.current = true; setOpeningGenerated(true); setGeneratedFailed(false);
+    void context.api.read(`/modules/nanoleaf/content/generated-show-draft?requestId=${encodeURIComponent(requestId)}`).then(value => {
+      if (!mounted.current || sequence !== readSequence.current) return;
+      change(generatedDraft(value, `show-${crypto.randomUUID()}`));
+      setReadFailed(false); setReadCancelled(false); setPrepareFailed(false);
+    }).catch(() => {if (mounted.current && sequence === readSequence.current) setGeneratedFailed(true);})
+      .finally(() => {readActive.current = false; if (mounted.current) setOpeningGenerated(false);});
   };
   const save = (): void => {
     if (draft === undefined || !editable || !live || !context.operationsLive || problem !== undefined || conflict || !dirty || sendingRef.current) return;
@@ -142,7 +208,7 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
         {catalog.value?.shows.map(show => <option key={show.id} value={show.id}>{show.name}</option>)}</select></label>
         <label>Saved version<select aria-label="Saved version" value={String(version)} disabled={locked || reading} onChange={event => {setSelectedVersion(event.target.value);}}>
           {currentShow.versions.map(item => <option key={item.version} value={item.version}>v{item.version} · {item.versionName}</option>)}</select></label>
-        <button type="button" className="secondary" disabled={!context.connected || locked || pendingRead || preparing} onClick={load}>{reading ? 'Reading version…' : pendingRead ? 'Read still pending' : 'Open saved version'}</button></div>}
+        <button type="button" className="secondary" disabled={!context.connected || locked || pendingRead || preparing || openingGenerated} onClick={load}>{reading ? 'Reading version…' : pendingRead ? 'Read still pending' : 'Open saved version'}</button></div>}
       {reading && <button type="button" className="secondary" onClick={() => {readSequence.current++; setReading(false); setReadCancelled(true);}}>Cancel version read</button>}
       {readCancelled && <p role="status">Version read cancelled. Your draft is retained.</p>}
       {dirty && <p className="hint">Opening a saved version, opening a starter or preparing an excerpt replaces this unsaved draft.</p>}
@@ -160,11 +226,17 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
       </button>
       {prepareFailed && <p role="alert">No measured excerpt is available for the current Mac Music item. Any earlier draft is retained.</p>}
     </section>}
+    {context.control && <ShowAuthoring context={context} generate={generate} cancel={cancel} reading={openingGenerated}
+      canOpen={context.connected && editable && !pendingRead} open={openGenerated} dirty={dirty}/>}
+    {generatedFailed && <p role="alert">The generated cues could not be opened. Your current draft is retained.</p>}
     {!context.control && <p>Read-only access. You can inspect saved versions; editing requires control access.</p>}
     {!live && <p role="status">{catalog.failed ? 'The show library is unavailable.' : 'The show library is stale or still loading.'} Saving is disabled.</p>}
     <p role="status" aria-live="polite">{command.text.replace('The module observed the result.', 'The library save was observed.')}</p>
     {draft !== undefined && <section className="show-draft" aria-label="Show draft"><h2>{dirty ? 'Unsaved draft' : `Saved version ${draft.expectedVersion}`}</h2>
       {draft.measurement !== undefined && <p>Captured excerpt for a scoped Mac Music library item. Replay uses the matching item and its current playback position.</p>}
+      {draft.provenance !== undefined && <p>Generated with {draft.provenance.model} via the Anthropic API.
+        {' '}{draft.provenance.confidence === 'measured-excerpt' ? 'Claude drafted from a measured excerpt. Edits can change cue timing.' : 'Claude drafted a generic sequence with decorative timing.'}
+        {' '}Recorded generation cost is {draft.provenance.costUsd.toLocaleString('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 6})} USD.</p>}
       <div className="show-fields"><label>Show name<input value={draft.name} maxLength={160} disabled={!editable} onChange={event => {change({...draft, name: event.target.value});}}/></label>
       <label>Version name<input value={draft.versionName} maxLength={160} disabled={!editable} onChange={event => {change({...draft, versionName: event.target.value});}}/></label>
       <label>Show duration (ms)<input type="number" min={MIN_MUSIC_CUE_MS} max={MAX_MUSIC_DURATION_MS} step={draft.measurement === undefined ? 100 : 1} value={draft.timeline.durationMs} disabled={!editable}
@@ -187,6 +259,12 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
 export function Shows({context}: {context: FrontendContext}): React.JSX.Element {
   const catalog = useShows(context.api), Command = context.ui.Command;
   return <div className="nanoleaf-shows"><p>Private cue plans for Nanoleaf. Save a version here, then choose it on the <a href="#/audio">Audio page</a> to start playback.</p>
-    <Command context={context} target={SHOW_TARGET} attemptKey="nanoleaf/shows/save">{command => <ShowEditor context={context} catalog={catalog} command={command}/>}</Command>
+    <Command context={context} target={SHOW_TARGET} attemptKey="nanoleaf/shows/save">{command =>
+      <Command context={context} target={SHOW_TARGET} attemptKey="nanoleaf/shows/generate">{generate =>
+        <Command context={context} target={SHOW_TARGET} attemptKey="nanoleaf/shows/cancel">{cancel =>
+          <ShowEditor context={context} catalog={catalog} command={command} generate={generate} cancel={cancel}/>
+        }</Command>}
+      </Command>}
+    </Command>
   </div>;
 }

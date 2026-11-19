@@ -34,7 +34,7 @@ import {initialize} from '../database.js';
 import {readReactiveCatalog, saveReactivePreset, ReactiveFailure, REACTIVE_ERRORS} from '../music-presets.js';
 import {REACTIVE_TARGET} from '../music-preset-data.js';
 import {readShowVersion, saveShow, showCatalog, ShowFailure, SHOW_ERRORS} from '../music-shows.js';
-import {SHOW_TARGET, showMeasurement, type ShowMeasurement} from '../music-show-data.js';
+import {SHOW_TARGET, showMeasurement, showProvenance, type ShowMeasurement, type ShowProvenance} from '../music-show-data.js';
 import {favoriteEdit, Failure, validFavoriteEdit} from '../favorites.js';
 import {writeJson} from '../jsonfile.js';
 import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, type Report, type Transact, initJournalAdmissionMarks, journalAdmissionMark} from '../journal.js';
@@ -61,6 +61,8 @@ import {ReadTimingProbe} from './read-timing.js';
 import {NANOLEAF_FAMILIES, OUTCOME_SCHEMA, schemaOf} from './schemas.js';
 import {editorContent} from './editor-content.js';
 import {showContent} from './show-content.js';
+import {createMusicShowAuthoringProvider, type MusicShowAuthoringProvider} from '../music-show-authoring-provider.js';
+import {ShowAuthoring, type CancelGeneration, type GenerateShow} from './show-authoring.js';
 import {musicPreviewContent} from './music-preview-content.js';
 import {
   animationsView, capabilities, configurationRevision, deviceRecord, MODULE_TABLES, nextTransmission, savedLayout, savedTransmission, selectionText, STATE_TYPES,
@@ -174,6 +176,7 @@ export class NanoleafRuntime {
   #playback: PlaybackPositionState | undefined;
   #captureState: CaptureState | undefined;
   #captureLive = false;
+  readonly #showAuthoring: ShowAuthoring;
   readonly #measurementKey = randomBytes(32);
   #positionLive = false;
   #positionEpoch = 0;
@@ -184,7 +187,7 @@ export class NanoleafRuntime {
   readonly #feeds: MusicFeeds;
   readonly #readTiming: ReadTimingProbe;
 
-  private constructor(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, directory: string, db: Db) {
+  private constructor(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, directory: string, db: Db, authoringProvider: MusicShowAuthoringProvider | undefined) {
     this.#context = context;
     this.#config = config;
     this.#directory = directory;
@@ -196,6 +199,10 @@ export class NanoleafRuntime {
     this.#ids = config.devices.map(device => device.id);
     const {sdk, clock, log, trace} = context;
     this.#outbox = new Outbox({sdk, database: db, clock, log, trace});
+    this.#showAuthoring = new ShowAuthoring(context, db, this.#outbox, authoringProvider, ({measurement, provenance}) => ({
+      authoringProof: this.#authoringProof(provenance, measurement),
+      ...(measurement === undefined ? {} : {measurementProof: this.#measurementProof(measurement)}),
+    }));
     this.#readTiming = new ReadTimingProbe(context.scheduler);
     this.#availability = new DeviceAvailability({log, clock});
     const metadata = config.codexMetadata === undefined ? null
@@ -211,7 +218,7 @@ export class NanoleafRuntime {
    * the core's sessions, which the core serves before it awaits anything.
    */
   static async start(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, transport: LightRequest,
-    datagram: LightDatagram, readWithDiagnostics?: typeof classifiedRead): Promise<NanoleafRuntime> {
+    datagram: LightDatagram, readWithDiagnostics?: typeof classifiedRead, authoringProvider?: MusicShowAuthoringProvider): Promise<NanoleafRuntime> {
     const db = context.database();
     const directory = context.files();
     initialize(db, () => context.clock.now() / 1000);
@@ -223,7 +230,11 @@ export class NanoleafRuntime {
     writeJson(join(directory, 'config.json'), registryFile(config));
     const tokens = new Map<string, string>();
     for (const device of config.devices) if (!tokens.has(device.secret)) tokens.set(device.secret, await context.secrets.read(device.secret));
-    const runtime = new NanoleafRuntime(context, config, directory, db);
+    if (authoringProvider === undefined && config.musicAuthoringSecret !== undefined) {
+      const key = await context.secrets.read(config.musicAuthoringSecret).catch(() => '');
+      if (key.trim() !== '') authoringProvider = createMusicShowAuthoringProvider({key: key.trim(), db, now: () => context.clock.now()});
+    }
+    const runtime = new NanoleafRuntime(context, config, directory, db, authoringProvider);
     for (const device of config.devices) {
       const saved = savedTransmission(db, device.id);
       if (saved !== undefined) runtime.#written.set(device.id, {latest: saved, commandWritten: false});
@@ -277,12 +288,17 @@ export class NanoleafRuntime {
       recordLog(log, 'outbox.deferred', {'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'});
     }
     await this.#endStoredCommands();
+    await this.#showAuthoring.recover();
     this.#feed.configure(sharedConfig(this.#config.qualifiedSources));
     for (const device of this.#ids) this.#changed(device);
     this.#flushNow();
     await sdk.serveSync([...SERVED], request => this.#snapshot(request.data.families));
     await sdk.respond<{requestId: string} & Record<string, unknown>>(`bunny.cmd.${NANOLEAF_FAMILIES.showSave.family}.${SHOW_TARGET}`,
       command => this.#showSave(command));
+    await sdk.respond<GenerateShow>(`bunny.cmd.${NANOLEAF_FAMILIES.showGenerate.family}.${SHOW_TARGET}`,
+      command => this.#showAuthoring.start(command, () => this.#authoringInput(command.data)));
+    await sdk.respond<CancelGeneration>(`bunny.cmd.${NANOLEAF_FAMILIES.showGenerateCancel.family}.${SHOW_TARGET}`,
+      command => this.#showAuthoring.cancel(command));
     await sdk.respond<{requestId: string} & Record<string, unknown>>(`bunny.cmd.${NANOLEAF_FAMILIES.reactivePresetSave.family}.${REACTIVE_TARGET}`,
       command => this.#reactiveSave(command));
     // Music features reach a live session by subscription only; a gap in them is source loss for every session (#1272).
@@ -304,12 +320,11 @@ export class NanoleafRuntime {
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (ref === 'music-preview') return musicPreviewContent(request);
     if (ref === 'show-version') return showContent(this.#db, request);
+    if (ref === 'generated-show-draft') return this.#showAuthoring.content(request);
     if (ref === 'measured-show-draft') {
       if (request === undefined || Object.keys(request.query).length !== 0) return errorBody('invalid-request');
       if (request.signal.aborted) return errorBody('cancelled');
-      const position = this.#currentPosition(), analysis = this.#analysis;
-      const result = position !== undefined && analysis?.context === position.context && sameMeasuredItem(position.item, analysis.item)
-        ? analysis.planner.result() : undefined;
+      const result = this.#currentAnalysis();
       return result === undefined
         ? errorBody('unavailable', {detail: 'Play a Music item with measurement active before preparing a measured show.'})
         : {type: 'application/json', bytes: Buffer.from(JSON.stringify({...result, measurementProof: this.#measurementProof(result)}))};
@@ -320,6 +335,7 @@ export class NanoleafRuntime {
   /** Stops following, ends each supervisor at its next wait, and waits for them. */
   async stop(): Promise<void> {
     this.#flush?.();
+    await this.#showAuthoring.stop();
     await Promise.allSettled([...this.#supervisors.values()]);
   }
 
@@ -637,6 +653,52 @@ export class NanoleafRuntime {
       this.#retireMeasurement();
       if (change === undefined) this.#captureLive = false;
     }
+  }
+
+  #currentAnalysis(position = this.#currentPosition()) {
+    const analysis = this.#analysis;
+    return position !== undefined && analysis?.context === position.context && sameMeasuredItem(position.item, analysis.item)
+      ? analysis.planner.result() : undefined;
+  }
+
+  #authoringInput({source, style}: GenerateShow) {
+    const now = this.#context.clock.now();
+    const position = this.#currentPosition(now), evidence = this.#playback?.evidence;
+    if (position === undefined || evidence?.status !== 'observed') {
+      return errorBody('unavailable', {detail: 'Open a Music library item before generating a draft.'});
+    }
+    const {title, artist} = evidence.observation.metadata;
+    if (title.status !== 'observed' || artist.status !== 'observed' || title.value.trim() === '' || artist.value.trim() === ''
+        || title.interval.earliestAtMs > now || now - title.interval.earliestAtMs >= 5000
+        || artist.interval.earliestAtMs > now || now - artist.interval.earliestAtMs >= 5000) {
+      return errorBody('unavailable', {detail: 'Current Music track title and artist are required.'});
+    }
+    if (source === 'generic') return {disclosure: {title: title.value, artist: artist.value, style, analysis: null}};
+    const measured = this.#currentAnalysis(position);
+    if (measured === undefined) return errorBody('unavailable', {detail: 'Play the Music item with measurement active, or choose a generic sequence.'});
+    const {analysis, item, timeline} = measured;
+    const spans = timeline.cues.map(({offsetMs, durationMs, intensity}) => ({offsetMs, durationMs, intensity}));
+    return {disclosure: {title: title.value, artist: artist.value, style, analysis: {...analysis, spans}}, measurement: {item, analysis}};
+  }
+
+  #authoringProof(provenance: ShowProvenance, measurement: ShowMeasurement | undefined): string {
+    return createHmac('sha256', this.#measurementKey)
+      .update(JSON.stringify(['authoring', provenance, measurement === undefined ? null : this.#measurementProof(measurement)])).digest('hex');
+  }
+
+  #confirmAuthoring(input: Record<string, unknown>, proof: unknown): void {
+    if (input.provenance === undefined && proof === undefined) return;
+    const provenance = showProvenance(input.provenance);
+    if (provenance === undefined) throw new ShowFailure('invalid-request');
+    const measurement = showMeasurement(input.measurement);
+    const expected = this.#authoringProof(provenance, measurement);
+    if (typeof proof === 'string' && /^[a-f0-9]{64}$/.test(proof)
+        && timingSafeEqual(Buffer.from(proof, 'hex'), Buffer.from(expected, 'hex'))) return;
+    if (typeof input.showId === 'string' && typeof input.expectedVersion === 'number' && input.expectedVersion > 0) {
+      const prior = readShowVersion(this.#db, input.showId, input.expectedVersion);
+      if (prior.provenance !== undefined && this.#authoringProof(prior.provenance, prior.kind === 'measured' ? prior.measurement : undefined) === expected) return;
+    }
+    throw new CommandRefused('invalid-state', 'Read the generated draft again before saving its provenance.');
   }
 
   #measurementProof({item, analysis}: ShowMeasurement): string {
@@ -997,8 +1059,9 @@ export class NanoleafRuntime {
     return this.#admit(command, (_report, add) => {
       if (command.subject !== SHOW_TARGET) throw new CommandRefused('invalid-request', 'Select the show library.');
       if (expiresMs(command, this.#context.clock.now()) <= this.#context.clock.now()) throw new CommandRefused('expired', 'The show save expired.');
-      const {requestId, measurementProof, ...input} = command.data;
+      const {requestId, measurementProof, authoringProof, ...input} = command.data;
       this.#confirmMeasurement(input, measurementProof);
+      this.#confirmAuthoring(input, authoringProof);
       this.#revision = Math.max(this.#revision + 1, Math.floor(this.#context.clock.now()));
       saveShow(this.#db, input, this.#revision);
       add(`bunny.state.${NANOLEAF_FAMILIES.shows.family}.${SHOW_TARGET}`, {

@@ -5,13 +5,21 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
 import type {Browser} from 'playwright';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, feed, startWorld, type WorldOptions} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {musicPlaybackProducer} from './music-playback-producer.ts';
 
 /** Real gateway/core/module, synthetic plans and controller. No installed service or media is selected. */
 export async function showEditorJourney(browser: Browser): Promise<void> {
-  const world = await startWorld({nanoleaf: true, musicCapture: true, musicPlayback: true});
+  type AuthoringProvider = NonNullable<WorldOptions['musicShowAuthoring']>;
+  const calls: Parameters<AuthoringProvider>[0][] = [];
+  const world = await startWorld({nanoleaf: true, musicCapture: true, musicPlayback: true, musicShowAuthoring: input => {
+    calls.push(input);
+    const span = input.analysis?.spans[0];
+    assert.ok(span !== undefined, 'the browser chose a measured excerpt');
+    assert.equal(calls.length, 1, 'only the explicitly generated draft calls the fake provider');
+    return Promise.resolve({draft: {cues: [{startMs: span.offsetMs, endMs: span.offsetMs + span.durationMs, effect: 'pulse', palette: ['#4f85ff'], intensity: 0.45}]}, costUsd: 0.0123});
+  }});
   let capture: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
   let playback: Awaited<ReturnType<typeof musicPlaybackProducer>> | undefined;
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
@@ -195,8 +203,31 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
       await result.dispose();
     }
     assert.equal(draftStatus, 200, 'the runtime prepared a draft from the synthetic producer feeds');
+    const authoring = editor.getByRole('region', {name: 'Claude show generation', exact: true});
+    const generate = authoring.getByRole('button', {name: 'Generate paid draft', exact: true});
+    await authoring.getByText(/one paid Anthropic API attempt.*\$3 USD per day and \$20 USD per month/).waitFor();
+    await authoring.getByText(/current Music track’s title and artist.*Audio stays on your Mac/).waitFor();
+    assert.equal(await generate.isDisabled(), true, 'generation requires a style');
+    await editor.getByRole('button', {name: 'Use Ocean drift', exact: true}).click();
+    await editor.getByLabel('Show name', {exact: true}).fill('Existing edits');
+    await authoring.getByRole('button', {name: 'Use warm rise style', exact: true}).click();
+    await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic amber surge');
     const commandsBeforeDraft = sent.length;
-    await prepare.click();
+    await playback.observe();
+    await generate.click();
+    const openGenerated = authoring.getByRole('button', {name: 'Open generated draft', exact: true});
+    await openGenerated.waitFor();
+    assert.equal(await editor.getByLabel('Show name', {exact: true}).inputValue(), 'Existing edits', 'generation leaves local edits in place until the result is opened');
+    assert.equal(sent.length, commandsBeforeDraft + 1, 'exactly one explicit generate command');
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0] && {title: calls[0].title, artist: calls[0].artist, style: calls[0].style},
+      {title: 'Synthetic Music', artist: 'Synthetic artist', style: 'Synthetic amber surge'});
+    await page.route('**/modules/nanoleaf/content/generated-show-draft?**', route => route.fulfill({status: 200, json: {timeline: {}}}), {times: 1});
+    await openGenerated.click();
+    await editor.getByRole('alert').filter({hasText: 'The generated cues could not be opened.'}).waitFor();
+    assert.equal(await editor.getByLabel('Show name', {exact: true}).inputValue(), 'Existing edits');
+    await openGenerated.click();
+    await editor.getByText(/Claude drafted from a measured excerpt.*Recorded generation cost is \$0.0123 USD/).waitFor();
     await editor.getByRole('heading', {name: 'Unsaved draft', exact: true}).waitFor();
     await editor.getByRole('heading', {name: 'Measured cue storyboard', exact: true}).waitFor();
     await editor.getByLabel('Show name', {exact: true}).fill('Synthetic captured excerpt');
@@ -205,7 +236,7 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     const finalCueDuration = 8000;
     await cues.last().getByLabel('Duration (ms)', {exact: true}).fill(String(finalCueDuration));
     await editor.getByLabel('Show duration (ms)', {exact: true}).fill(String(finalCueOffset + finalCueDuration));
-    assert.equal(sent.length, commandsBeforeDraft, 'preparing and editing a measured excerpt send no command');
+    assert.equal(sent.length, commandsBeforeDraft + 1, 'opening, previewing and editing generated cues send no command');
     await editor.getByRole('button', {name: 'Save new version', exact: true}).click();
     await editor.getByRole('heading', {name: 'Saved version 1', exact: true}).waitFor();
     assert.equal(saves.length, 4);
@@ -217,6 +248,9 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.ok(typeof savedExcerpt.measurement === 'object' && savedExcerpt.measurement !== null && 'item' in savedExcerpt.measurement);
     assert.deepEqual(savedExcerpt.measurement.item, playback.item);
     assert.equal('measurementProof' in savedExcerpt, false);
+    assert.equal('authoringProof' in savedExcerpt, false);
+    assert.ok('provenance' in savedExcerpt);
+    assert.deepEqual(savedExcerpt.provenance, {model: 'claude-fable-5-2', costUsd: 0.0123, confidence: 'measured-excerpt'});
     await editor.getByLabel('Show', {exact: true}).selectOption(first.data.showId);
     await editor.getByRole('button', {name: 'Open saved version', exact: true}).click();
     await editor.getByRole('heading', {name: 'Saved version 3', exact: true}).waitFor();
@@ -295,9 +329,10 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.equal(await editor.getByRole('button', {name: 'Use Ocean drift', exact: true}).isDisabled(), true);
     assert.equal(saves.length, 5, 'uncertainty is not retried on reload');
     assert.deepEqual(errors, []);
+    assert.equal(calls.length, 1, 'saved playback, stop, edit and reload do not call the provider');
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'offline-decorative-shows', browserSaveRequests: saves.length,
       immutableVersions: true, staleSave: 409, readonly: 403, crossOrigin: 403, malformed: 400, authoringDeviceChanges: 0,
-      preview: 'cue storyboard only', measuredExcerpt: 'prepared, edited, saved and reopened using synthetic producers', forgedProvenanceRefused: true, measuredAudio: 'wrong item refused, matching item started and stopped, v1 pinned while v2 saved', noResend: true})}\n`);
+      preview: 'cue storyboard only', measuredExcerpt: 'generated, edited, saved and reopened using synthetic producers and fake Claude', generationCalls: calls.length, malformedGenerationReadPreservedEdits: true, forgedProvenanceRefused: true, measuredAudio: 'wrong item refused, matching item started and stopped, v1 pinned while v2 saved', noResend: true})}\n`);
   } catch (error) {
     const receipts = process.env.DASHBOARD_RECEIPTS, page = context.pages()[0];
     if (receipts !== undefined && page !== undefined) {
