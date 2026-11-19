@@ -4,6 +4,8 @@ import type {Rgb, Zone} from './effects.js';
 import {locateMusicCuePhase, MusicTimelineCursor, prepareMusicCueFrames, type CueZonePhase, type MusicCue,
   type MusicTimeline, type PreparedMusicCue, type TimelineSample} from './music-timeline.js';
 
+import type {MeasuredPosition} from './music-show-position.js';
+
 export type ShowTransport = {action: 'pause-show' | 'resume-show'} | {action: 'seek-show'; positionMs: number};
 
 type TimedSample = Extract<TimelineSample, {positionMs: number}>;
@@ -27,6 +29,7 @@ export class PreparedMusic {
   #scheduled = new Set<string>();
   #sample: TimedSample | undefined;
   #lastClock: number;
+  #positionRevision = -1;
   #cached: {cue: MusicCue; frames: PreparedMusicCue} | undefined;
 
   constructor(private readonly show: LightingShow, private readonly timeline: MusicTimeline, private readonly layout: LayoutEntry,
@@ -54,6 +57,30 @@ export class PreparedMusic {
       : undefined;
     if (sample?.kind === 'stopped') return 'source-lost';
     return this.#track(this.#cursor.sample({generation: this.#cursor.generation, monotonicMs: now}));
+  }
+
+  follow(position: MeasuredPosition | undefined, now: number): PreparedStatus {
+    if (position === undefined || position.revision < this.#positionRevision || !this.readClock(now)) return 'source-lost';
+    if (position.positionMs >= this.timeline.durationMs) return 'completed';
+    if (position.revision === this.#positionRevision) return this.advance(now);
+    this.#positionRevision = position.revision;
+    if (this.#sample === undefined) {
+      const initial = this.#cursor.startAt({positionMs: position.positionMs, monotonicMs: now});
+      this.#nextUnsettled = this.#firstUnelapsed(position.positionMs);
+      this.#track(initial);
+    } else {
+      const sample = this.#cursor.sample({generation: this.#cursor.generation, monotonicMs: now});
+      if (position.discontinuity || sample === null || !('positionMs' in sample)
+          || Math.abs(sample.positionMs - position.positionMs) > 100 || position.paused !== (sample.kind === 'paused')) {
+        this.#nextUnsettled = this.#firstUnelapsed(position.positionMs);
+        this.#scheduled.clear();
+        this.#track(this.#cursor.seek({generation: this.#cursor.generation, monotonicMs: now, positionMs: position.positionMs}));
+      }
+    }
+    const input = {generation: this.#cursor.generation, monotonicMs: now};
+    if (position.paused && this.#sample?.kind === 'playing') return this.#track(this.#cursor.pause(input));
+    if (!position.paused && this.#sample?.kind === 'paused') return this.#track(this.#cursor.resume(input));
+    return this.#track(this.#cursor.sample(input));
   }
 
   transport(control: ShowTransport, now: number): boolean {

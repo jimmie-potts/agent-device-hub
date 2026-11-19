@@ -45,7 +45,7 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
   const showId = useId();
   const versions = (shows.value?.shows ?? []).flatMap(show => show.versions.map(version => ({
     key: `${show.id}:${String(version.version)}`, showId: show.id, version: version.version,
-    label: `${show.name} · v${String(version.version)} · ${version.versionName}`,
+    label: `${show.name} · v${String(version.version)} · ${version.versionName}${version.kind === 'measured' ? ' · Measured excerpt' : ''}`,
   })));
   const saved = versions.find(version => version.key === showChoice);
   const list = presets.value?.presets ?? [];
@@ -99,7 +99,7 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
       }}>Start Music lighting</button>
     </div>
     {session.status === 'idle' && startReason !== undefined && <p className="music-note">Start unavailable: {startReason}</p>}
-    <h4>Saved decorative show</h4>
+    <h4>Saved show</h4>
     <label htmlFor={showId}>Saved show and version</label>
     <select id={showId} value={saved?.key ?? ''} disabled={!shows.live || versions.length === 0 || session.status !== 'idle' || start.locked || stop.locked}
       onChange={event => {setShowChoice(event.currentTarget.value);}}>
@@ -163,7 +163,7 @@ export function MusicLightingCard({connection, connected, coreLive, control, ope
   return <article className="music-capture-card music-lighting-card" aria-label="Music lighting">
     <h2>Music lighting</h2>
     <p className="music-note">Both starts require the light on and in Free mode. Live lighting follows Music.app measurement and ends if that input is lost.
-      Saved decorative shows play from the beginning using their own clock. Neither uses the microphone. Nothing restarts automatically.</p>
+      Decorative shows start at the beginning. Measured excerpts follow the matching Mac Music item from its current position. Nothing restarts automatically after a session ends.</p>
     {!live && <p role="status">Lighting status is stale or unavailable. Controls are disabled until a fresh read.</p>}
     {live && view.records.length === 0 && <p>No qualified Nanoleaf light is configured for Music lighting.</p>}
     {presets.live && presets.value?.presets.length === 0 && <p className="music-note">No saved reactive presets yet. Save one in the{' '}

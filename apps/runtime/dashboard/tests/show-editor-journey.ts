@@ -5,10 +5,14 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import type {Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
+import {musicCaptureProducer} from './music-capture-producer.ts';
+import {musicPlaybackProducer} from './music-playback-producer.ts';
 
 /** Real gateway/core/module, synthetic plans and controller. No installed service or media is selected. */
 export async function showEditorJourney(browser: Browser): Promise<void> {
-  const world = await startWorld({nanoleaf: true});
+  const world = await startWorld({nanoleaf: true, musicCapture: true, musicPlayback: true});
+  let capture: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
+  let playback: Awaited<ReturnType<typeof musicPlaybackProducer>> | undefined;
   const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
   try {
     const page = await context.newPage(); page.setDefaultTimeout(12_000);
@@ -33,7 +37,7 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
       assert.equal(response.status(), 200); const value: unknown = await response.json(); await response.dispose(); return value;
     };
     await page.goto(`${world.url}/#/audio`); await feed(page, 'connected');
-    await page.getByRole('link', {name: 'Decorative shows', exact: true}).click();
+    await page.getByRole('link', {name: 'Saved shows', exact: true}).click();
     const editor = page.locator('.nanoleaf-shows'); await editor.waitFor();
     await editor.getByText('Your private library is empty. Choose a starter to prepare a draft.', {exact: true}).waitFor();
     await delay(300);
@@ -129,6 +133,95 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.equal(saves.length, 2, 'reload retains only attempt identity and sends no save');
     await editor.getByRole('button', {name: 'Open saved version', exact: true}).click();
     await editor.getByRole('heading', {name: 'Saved version 3', exact: true}).waitFor();
+    const prepare = editor.getByRole('button', {name: 'Prepare measured show', exact: true});
+    const priorName = await editor.getByLabel('Show name', {exact: true}).inputValue();
+    const beforePrepareCommands = sent.length;
+    await prepare.click();
+    await editor.getByRole('alert').filter({hasText: 'No measured excerpt is available'}).waitFor();
+    assert.equal(await editor.getByLabel('Show name', {exact: true}).inputValue(), priorName);
+
+    const measurement = {item: {libraryScopeId: 'fixture-library', itemId: 'F17E'}, analysis: {method: 'energy-onset-v1', sampleCount: 3}};
+    const measuredTimeline = {version: 1, durationMs: 1300, cues: [{id: 'fixture-pulse', offsetMs: 1000, durationMs: 300, intensity: 0.45,
+      recipe: {pattern: 'pulse', colors: ['#4f85ff'], speed: 'medium', loop: true}}]};
+    let draftReads = 0;
+    // This browser fixture replaces only the measured draft response. The authenticated save/read use the real runtime.
+    await page.route('**/modules/nanoleaf/content/measured-show-draft', async route => {
+      assert.equal(route.request().method(), 'GET');
+      draftReads++;
+      await route.fulfill({status: 200, json: {...measurement, timeline: measuredTimeline, measurementProof: '0'.repeat(64)}});
+    }, {times: 1});
+    await prepare.click();
+    await editor.getByRole('heading', {name: 'Unsaved draft', exact: true}).waitFor();
+    await editor.getByText('Captured excerpt for a scoped Mac Music library item.', {exact: false}).waitFor();
+    await editor.getByRole('heading', {name: 'Measured cue storyboard', exact: true}).waitFor();
+    await editor.getByLabel('Show name', {exact: true}).fill('Synthetic measured excerpt');
+    await cues.nth(0).getByLabel('Intensity (%)', {exact: true}).fill('50');
+    assert.equal(sent.length, beforePrepareCommands, 'preparing and inspecting an excerpt send no command');
+    const deniedSave = page.waitForResponse(response => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/v2/commands/nanoleaf-show-save');
+    await editor.getByRole('button', {name: 'Save new version', exact: true}).click();
+    assert.equal((await deniedSave).ok(), false, 'the real runtime refuses an excerpt without authentic capture provenance');
+    assert.equal(saves.length, 3);
+    const measuredSave = saves[2];
+    assert.ok(measuredSave);
+    const missing = await context.request.get(`${world.url}/modules/nanoleaf/content/show-version?showId=${measuredSave.data.showId}&version=1`);
+    assert.equal(missing.status(), 404); await missing.dispose();
+    assert.equal(draftReads, 1);
+    assert.equal(await editor.getByLabel('Show name', {exact: true}).inputValue(), 'Synthetic measured excerpt');
+    assert.equal(await cues.nth(0).getByLabel('Intensity (%)', {exact: true}).inputValue(), '50');
+    assert.deepEqual(outputState(), deviceBefore, 'preparation, editing and a denied save leave the controller unchanged');
+    assert.deepEqual(await world.nanoleafWall(), wallBefore, 'measured authoring leaves device state unchanged');
+    // Both producer roles publish synthetic observations to the real gateway. No draft response is intercepted below.
+    playback = await musicPlaybackProducer(world.url, world.musicPlaybackToken);
+    capture = await musicCaptureProducer(world.url, world.musicCaptureToken);
+    await editor.getByRole('region', {name: 'Measured shows', exact: true}).getByRole('link', {name: 'Audio page', exact: true}).click();
+    await page.getByRole('button', {name: 'Start measuring Music', exact: true}).click();
+    await page.getByText('Receiving Music measurements.', {exact: true}).waitFor();
+    await page.getByRole('link', {name: 'Saved shows', exact: true}).click();
+    await editor.waitFor();
+    await playback.observe();
+    const draftUrl = `${world.url}/modules/nanoleaf/content/measured-show-draft`;
+    let draftStatus = 503;
+    for (let attempt = 0; attempt < 12 && draftStatus !== 200; attempt++) {
+      if (attempt !== 0) await delay(300);
+      await playback.observe();
+      const result = await context.request.get(draftUrl);
+      draftStatus = result.status();
+      await result.dispose();
+    }
+    assert.equal(draftStatus, 200, 'the runtime prepared a draft from the synthetic producer feeds');
+    const commandsBeforeDraft = sent.length;
+    await prepare.click();
+    await editor.getByRole('heading', {name: 'Unsaved draft', exact: true}).waitFor();
+    await editor.getByRole('heading', {name: 'Measured cue storyboard', exact: true}).waitFor();
+    await editor.getByLabel('Show name', {exact: true}).fill('Synthetic captured excerpt');
+    await cues.nth(0).getByLabel('Intensity (%)', {exact: true}).fill('50');
+    assert.equal(sent.length, commandsBeforeDraft, 'preparing and editing a measured excerpt send no command');
+    await editor.getByRole('button', {name: 'Save new version', exact: true}).click();
+    await editor.getByRole('heading', {name: 'Saved version 1', exact: true}).waitFor();
+    assert.equal(saves.length, 4);
+    const accepted = saves[3];
+    assert.ok(accepted);
+    const savedExcerpt = await read(accepted.data.showId, 1);
+    assert.ok(typeof savedExcerpt === 'object' && savedExcerpt !== null && 'kind' in savedExcerpt && 'measurement' in savedExcerpt);
+    assert.equal(savedExcerpt.kind, 'measured');
+    assert.ok(typeof savedExcerpt.measurement === 'object' && savedExcerpt.measurement !== null && 'item' in savedExcerpt.measurement);
+    assert.deepEqual(savedExcerpt.measurement.item, playback.item);
+    assert.equal('measurementProof' in savedExcerpt, false);
+    await editor.getByLabel('Show', {exact: true}).selectOption(first.data.showId);
+    await editor.getByRole('button', {name: 'Open saved version', exact: true}).click();
+    await editor.getByRole('heading', {name: 'Saved version 3', exact: true}).waitFor();
+    await editor.getByLabel('Show', {exact: true}).selectOption(accepted.data.showId);
+    await editor.getByRole('button', {name: 'Open saved version', exact: true}).click();
+    await editor.getByRole('heading', {name: 'Measured cue storyboard', exact: true}).waitFor();
+    assert.equal(await cues.nth(0).getByLabel('Intensity (%)', {exact: true}).inputValue(), '50');
+    assert.deepEqual(outputState(), deviceBefore, 'successful measured authoring and reopening leave the controller unchanged');
+    assert.deepEqual(await world.nanoleafWall(), wallBefore);
+    if (receipts !== undefined) await page.screenshot({path: join(receipts, 'shows-measured-excerpt.png'), fullPage: true});
+    await editor.getByLabel('Show', {exact: true}).selectOption(first.data.showId);
+    await editor.getByRole('button', {name: 'Open saved version', exact: true}).click();
+    await editor.getByRole('heading', {name: 'Saved version 3', exact: true}).waitFor();
+
     // No real send: a lost-response fixture proves the retained UI lock and no retry through reload.
     await page.route('**/api/v2/commands/nanoleaf-show-save', route => route.fulfill({status: 503, contentType: 'application/json',
       body: '{"error":{"code":"uncertain-result","retryable":false,"detail":"Synthetic lost response."}}'}), {times: 1});
@@ -139,11 +232,11 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.equal(await editor.getByRole('button', {name: 'Save new version', exact: true}).isDisabled(), true);
     await page.reload(); await feed(page, 'connected'); await editor.waitFor();
     assert.equal(await editor.getByRole('button', {name: 'Use Ocean drift', exact: true}).isDisabled(), true);
-    assert.equal(saves.length, 3, 'uncertainty is not retried on reload');
+    assert.equal(saves.length, 5, 'uncertainty is not retried on reload');
     assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'offline-decorative-shows', browserSaveRequests: saves.length,
       immutableVersions: true, staleSave: 409, readonly: 403, crossOrigin: 403, malformed: 400, deviceChanges: 0,
-      preview: 'cue storyboard only', noResend: true})}\n`);
+      preview: 'cue storyboard only', measuredExcerpt: 'prepared, edited, saved and reopened using synthetic producers', forgedProvenanceRefused: true, noResend: true})}\n`);
   } catch (error) {
     const receipts = process.env.DASHBOARD_RECEIPTS, page = context.pages()[0];
     if (receipts !== undefined && page !== undefined) {
@@ -152,5 +245,8 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
       await writeFile(join(receipts, 'shows-failure.html'), await page.content());
     }
     throw error;
-  } finally {await context.close(); await world.close();}
+  } finally {
+    try {await Promise.all([capture?.close(), playback?.close(), context.close()]);}
+    finally {await world.close();}
+  }
 }

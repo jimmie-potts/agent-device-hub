@@ -1,4 +1,4 @@
-import {SHOW_LIMITS, SHOW_VERSION_SCHEMA, validShowId, type ShowSave, type ShowVersion} from '../music-show-data.js';
+import {SHOW_LIMITS, SHOW_VERSION_SCHEMA, showMeasurement, validShowId, type ShowSave, type ShowVersion} from '../music-show-data.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS, type MusicCue, type MusicTimeline} from '../music-timeline-data.js';
 import type {Direction, Pattern, Speed} from '../effect-data.js';
 
@@ -13,10 +13,23 @@ const name = (value: unknown): value is string => typeof value === 'string' && [
 
 /** Content is unknown at the browser boundary. Return only the exact requested canonical version. */
 export function showVersion(value: unknown, id: string, version: number): ShowVersion {
-  if (!object(value) || !exact(value, ['schema', 'showId', 'version', 'name', 'versionName', 'kind', 'timeline'])
+  if (!object(value) || (value.kind !== 'decorative' && value.kind !== 'measured')
+      || !exact(value, ['schema', 'showId', 'version', 'name', 'versionName', 'kind', 'timeline', ...(value.kind === 'measured' ? ['measurement'] : [])])
       || value.schema !== SHOW_VERSION_SCHEMA || value.showId !== id || !validShowId(id) || value.version !== version
-      || !integer(version, 1, SHOW_LIMITS.versions) || value.kind !== 'decorative' || !name(value.name) || !name(value.versionName)) throw new Error('Invalid show version.');
-  return {schema: SHOW_VERSION_SCHEMA, showId: id, version, name: value.name, versionName: value.versionName, kind: 'decorative', timeline: timeline(value.timeline)};
+      || !integer(version, 1, SHOW_LIMITS.versions) || !name(value.name) || !name(value.versionName)) throw new Error('Invalid show version.');
+  const base = {schema: SHOW_VERSION_SCHEMA, showId: id, version, name: value.name, versionName: value.versionName, timeline: timeline(value.timeline)} satisfies Omit<ShowVersion, 'kind'>;
+  if (value.kind === 'decorative') return {...base, kind: 'decorative'};
+  const measurement = showMeasurement(value.measurement);
+  if (measurement === undefined) throw new Error('Invalid show measurement.');
+  return {...base, kind: 'measured', measurement};
+}
+
+export function measuredDraft(value: unknown, showId: string): ShowSave {
+  if (!object(value) || !exact(value, ['item', 'analysis', 'timeline', 'measurementProof']) || !validShowId(showId)
+      || typeof value.measurementProof !== 'string' || !/^[0-9a-f]{64}$/.test(value.measurementProof)) throw new Error('Invalid measured draft.');
+  const measurement = showMeasurement({item: value.item, analysis: value.analysis});
+  if (measurement === undefined) throw new Error('Invalid show measurement.');
+  return {showId, expectedVersion: 0, name: 'Measured excerpt', versionName: 'First draft', timeline: timeline(value.timeline), measurement, measurementProof: value.measurementProof};
 }
 
 function timeline(value: unknown): MusicTimeline {

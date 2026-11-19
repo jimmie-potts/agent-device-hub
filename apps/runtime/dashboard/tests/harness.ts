@@ -20,6 +20,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {chmod, mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {MUSIC_PLAYBACK_SOURCE} from '@jimmie-potts/event-contracts/v2/music-playback';
 import type {Identity, LifecycleEvent, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {createLifxModule, LIFX_SIMULATED_SECTION, PACKET, SimulatedLifx, lifxSchemas} from '@jimmie-potts/lifx';
 import {createNanoleafModule, SIMULATED_SECTION as NANOLEAF_SECTION, SYNTHETIC_TOKEN as NANOLEAF_TOKEN,
@@ -61,6 +62,8 @@ export type WorldOptions = {
   artSchedule?: {choice: () => number};
   /** A numeric-only fake Music producer may use the existing endpoint role; no native helper. */
   musicCapture?: boolean;
+  /** A synthetic playback observation producer over the disposable gateway and real Playback owner. */
+  musicPlayback?: boolean;
   /** A dedicated synthetic Claude terminal receipt producer for the real helper. */
   readReceipts?: boolean;
   /** The real read-only Tidbyt module over its synthetic cloud. */
@@ -140,6 +143,7 @@ export type World = {
   /** The coding-worker credential's token when the world was started with `coding`; never written anywhere else. */
   readonly codingToken: string;
   readonly musicCaptureToken: string;
+  readonly musicPlaybackToken: string;
   readonly stateDir: string;
   /** Every record the runtime wrote, across restarts. */
   readonly logs: LogRecord[];
@@ -224,6 +228,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const readerToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const codingToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const musicCaptureToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
+  const musicPlaybackToken = `${TOKEN_MARKER}_${randomBytes(24).toString('base64url')}`;
   const receiptToken = randomBytes(32).toString('base64url');
   const receipt = receiptSource(IDENTITY);
   const credentials = join(configDir, 'edge-credentials.json');
@@ -233,6 +238,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.readReceipts === true ? [{id: receipt.slice('bunny/parts/'.length), source: receipt, digest: tokenDigest(receiptToken), scopes: ['read', 'ingest']}] : []),
     ...(options.coding === true ? [{id: 'coding-worker', source: 'bunny/parts/coding-worker', digest: tokenDigest(codingToken), scopes: [], role: 'coding-worker'}] : []),
     ...(options.musicCapture === true ? [{id: 'music-producer', source: 'bunny/parts/music-producer', digest: tokenDigest(musicCaptureToken), scopes: [], role: 'music-producer'}] : []),
+    ...(options.musicPlayback === true ? [{id: 'music-playback', source: MUSIC_PLAYBACK_SOURCE, digest: tokenDigest(musicPlaybackToken), scopes: [], role: 'music-playback-producer'}] : []),
   ]}));
   const art = new SimulatedArt();
   const roborock=new SimulatedRoborock();
@@ -283,6 +289,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       {provider: 'codex', client: 'desktop', hostId: 'host-sim', sourceId: 'desktop'}], secrets: {token: nanoleafToken}}} : {},
     ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config} : {},
     ...(options.pixooPages === true || options.playbackArtwork !== undefined) ? {playback: playbackFactory.simulatedSection.config} : {},
+    ...(options.musicPlayback === true ? {playback: {id: 'playback', sources: [{kind: 'music'}]}} : {}),
     ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
   const config = join(configDir, 'runtime-config.json');
   if (options.tidbyt === true) await writePrivate(join(configDir, 'tidbyt-token'), TIDBYT_KEY);
@@ -326,7 +333,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
         url.includes('/points/') ? weatherJson(pointsBody()) : url.includes('/alerts/') ? weatherJson(alertsBody())
           : weatherJson(hourlyBody(clock.now(), [{shortForecast: 'Sunny', precipitation: 0}, {shortForecast: 'Chance Rain Showers', precipitation: 40}], clock.now() - 1000)))})]), ...(options.art === true ? [createArtModule({providers: simulatedProviders(art.call.bind(art))})] : []), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}, ...(options.clock === undefined ? {} : {monotonic: now})})]
-        : options.pixooPages === true ? [playbackFactory.simulate()] : []),
+        : options.pixooPages === true || options.musicPlayback === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request, datagram: lines.datagram})] : [])]
       .map(module => options.clock?.working === undefined ? module : holdingWorkers(module, options.clock.working)),
@@ -362,7 +369,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       assert.ok(!('error' in result));assert.equal(result.browser?.status, 'tracked');
     },
     ...(options.readReceipts === true ? {readProducer} : {}),
-    readerToken, codingToken, musicCaptureToken,
+    readerToken, codingToken, musicCaptureToken, musicPlaybackToken,
     credentialAction:async(family,target,data)=>{
       const response=await fetch(`${runtime.url}/api/v2/commands/${family}`,{method:'POST',headers:{authorization:`Bearer ${consumerToken}`,'content-type':'application/json'},body:JSON.stringify({target,data,requestId:randomUUID()})});
       return {status:response.status,body:await response.json()};
