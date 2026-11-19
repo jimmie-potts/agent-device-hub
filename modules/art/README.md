@@ -250,6 +250,25 @@ catalog, preference or durable state. Theme consumers may use only ready visible
 art. The runtime shell applies bounded decorative colors from that evidence;
 browser-local lock/default preferences remain outside the art catalog.
 
+`ArtBackdropSource` gives the shell the decoded presented image for Home's
+backdrop (Hub #1928). The shell mounts it once on Home through its module
+frontend scope, and it renders nothing visible. It follows the same record and
+selection as the Home widget, but loads that composition's largest still, since
+the backdrop fills the page. It reads each rendition once through the same
+content route and validates it like the widget; another artwork with the same
+rendition reuses the decoded bitmap. `useArtBackdrop` returns its status
+(`none`, `loading`, `ready`, `stale` or `unavailable`) and the last ready image:
+an `ImageBitmap` with its size, artwork, composition and rendition IDs and
+palette. A newer image that is loading, stale or failed leaves that image in
+place, and an obsolete load never replaces a newer one. With nothing to
+present, or no source mounted, it reports `none` with no image. Gallery
+browsing never changes it. The source owns the bitmaps: a replaced one closes
+after consumers have committed the new value, and all close when it unmounts,
+so a consumer uploads a new image in a layout effect when its identity changes.
+The shell reports the rendition it has drawn with `useShowArtBackdrop`, or
+`null` when it draws none. `useArtPresentation` combines that evidence with
+the visible widget's, so one surface going idle does not erase the other's.
+
 The existing core Home owner stores optional art shape and pin metadata. A pinned
 art row reserves space independently of image arrival. Unpinned art uses only
 unused viewport space after functional cards, and disappears when no complete
