@@ -1,4 +1,4 @@
-import React, {useEffect, useLayoutEffect, useRef} from 'react';
+import React, {useLayoutEffect, useRef} from 'react';
 import {readScene, sameScene, type GlassScene} from './glass-scene.ts';
 import {createGlassRenderer, luminance, parseColor, type GlassColor, type GlassPicture, type GlassRenderer, type GlassTokens} from './glass-renderer.ts';
 import './glass.css';
@@ -148,7 +148,7 @@ export function GlassLayer({onState, backdrop = null, onBackdrop, fuse = false}:
   }, []);
   // A new picture is uploaded before paint, while the caller still holds its bitmap open.
   useLayoutEffect(() => {glass.current?.backdrop(backdrop);}, [backdrop]);
-  useEffect(() => {glass.current?.fuse(fuse);}, [fuse]);
+  useLayoutEffect(() => {glass.current?.fuse(fuse);}, [fuse]);
   return <>
     <canvas ref={canvas} className="glass-layer" aria-hidden="true"/>
     <div ref={probe} className="glass-tokens" hidden>{TOKENS.map(name => <i key={name} data-glass-token={name}/>)}</div>
