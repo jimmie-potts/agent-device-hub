@@ -1,7 +1,7 @@
 ## 1. Design checkpoint
 
 - [x] 1.1 Write the input/state mapping, versions, binding, expiry, capacity and previous-release helper design (design.md). Evidence: this change at the checkpoint commit.
-- [ ] 1.2 Record the coordinator's answers to the open questions and the integration order with #1947 in design.md. Evidence: design.md has no open question left.
+- [ ] 1.2 Record the owner's answers to open questions 1 to 5 in design.md (question 6 and the order with #1947 are recorded). Evidence: design.md has no open question left.
 - [ ] 1.3 Start from the main the coordinator names; rebase the `bunny-message-profile` and `bunny-runtime` deltas onto #1947's text if it merged. Evidence: `npm run check:workflow` passes.
 
 ## 2. Contracts

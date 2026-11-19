@@ -150,7 +150,7 @@ Automations take the native occurrences as they take every agent's: a rule on `a
 
 The helpers run from each host's installed release and accept only what its `readSession` accepts (`apps/runtime/src/read-receipts/session.ts`). The SDK client stores synced messages without validating them. A previous-release helper therefore skips a native `session/3.1` record and serves the Codex and Claude `session/3.0` records exactly as before. A native record never matches a helper's own entity in any case. The disposable acceptance exercise runs the previous release's Claude read helper against this change's runtime with a native task present and checks that bind and read still confirm.
 
-If every record moved to `3.1` instead, every previous-release helper would stop sending receipts until its host is updated, as #1865 step 9 did. Open question 6 asks the coordinator to confirm the per-record choice.
+If every record moved to `3.1` instead, every previous-release helper would stop sending receipts until its host is updated, as #1865 step 9 did. The coordinator chose the per-record versions (open question 6).
 
 ### 12. Component boundaries (ADR 0012)
 
@@ -165,18 +165,18 @@ The relationship claim, child counting and `relationships.children` stay as they
 
 ## Open questions
 
-Product questions for the owner, each with a recommendation. The accepted decisions on #505 and #1855 do not answer them.
+Questions 1 to 5 are product questions for the owner, each with a recommendation; the accepted decisions on #505 and #1855 do not answer them. Question 6 is decided.
 
 1. **Terminal outcomes on devices.** A failed or cancelled task is `finished` with its result as detail. Devices that show only the class show it as done (green) until acknowledged, as they show any finished Codex or Claude turn. Options: (a) all three results are `finished`; detail-aware surfaces (dashboard, Habitat, Conversation) name the result; (b) as (a), but a task the owner cancelled leaves no unread notice (`quiet`, as a Codex interrupt does); (c) as (b), and a failed task also leaves none. Recommendation: (b). A failure is something the owner should look at; the owner's own cancel is not.
 2. **Delegation wait.** While the coding worker runs a delegated task, the task's own run has ended and the worker reports through its own path. Options: (a) `quiet`/`idle`; (b) keep the run's work `active`, so devices show working until the worker's word resumes the task; after a restart it reads as unconfirmed. Recommendation: (a) for this slice: the task itself makes no running-work claim, and worker reporting, which would show the worker's work truthfully, is deferred.
 3. **Demo profiles.** Options: report tasks of all three profiles, or only the `bunny` profile. Recommendation: all three, titled by persona: their questions need the owner too, and the Conversation rail already marks them.
 4. **Companion opportunities.** The companion part turns every `attention-raised` and `turn-ended` into a Reachy coding opportunity with a 30-second priority window. Options: (a) none for the native source; (b) include it, which also needs `companion-opportunity/2.1` and Reachy and MicroDuck adoption. Recommendation: (a). Conversation already speaks its own question and result, so a Reachy card would repeat it.
 5. **The assistant's own reads.** Options: `read_sessions` and coding suggestions list native sessions, or leave them out. Recommendation: leave them out. Both are about coding agent sessions, and listing the task that is asking would describe itself.
-6. **Version per record** (engineering, for the coordinator). Publish native records as `session/3.1` and keep Codex and Claude records `session/3.0` (decision 2), or publish everything as `3.1`. Recommendation: per record. Previous-release read helpers keep working, and no installed host update is needed for receipts.
+6. **Version per record** (engineering). Decided by the coordinator on 2026-11-19: native records are `session/3.1` and Codex and Claude records stay `session/3.0` (decision 2). Previous-release read helpers keep working, and no installed host update is needed for receipts.
 
 ## Integration with #1947
 
-#1947 edits `session/3.0` in place (the work claim's `deadline` reason), the status builder, the core's session model, record builder, transition and store, and the case set. This change copies `session/3.0` into `3.1` and edits the same TypeScript files. Recommended order: #1947 merges first; this change then starts from that main, copies the amended `3.0`, and keeps one place for each rule. If this change merged first, #1947 would have to amend `3.1` identically.
+#1947 edits `session/3.0` in place (the work claim's `deadline` reason), the status builder, the core's session model, record builder, transition and store, and the case set. This change copies `session/3.0` into `3.1` and edits the same TypeScript files. Order (coordinator, 2026-11-19): #1947 merges first. This change then starts from the main that contains it, copies the amended `3.0` into `3.1`, and rebases its specification deltas onto #1947's text. #1947 removes the work deadline and the `deadline` work reason, renames the transition result's `deadlineMs` to `dueMs`, and publishes a record again once its evidence time moves a minute past the published one; every native observation already changes meaning, so that rule adds nothing for native sessions.
 
 Files this change edits that #1947 also edits: `packages/event-contracts/src/v2/families.ts`, `session-view.ts`, `fixtures/v2/session-cases.json`, `fixtures/v2/families.json`, `README.md`, `apps/runtime/src/core/session/{model,record,transition}.ts`, `core/store.ts`, `core/core.ts`, and the `bunny-runtime` and `bunny-message-profile` specifications. #1867 edits the Mac Codex hook wrapper, which this change does not touch.
 
