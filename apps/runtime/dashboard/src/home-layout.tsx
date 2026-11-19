@@ -3,10 +3,9 @@ import type {HomeArrangements, HomeLayoutRecord, HomePlacement, LightingSelectio
 import type {RuntimeData} from './runtime-feeds.ts';
 import {useAttempt} from './command-control.tsx';
 import {NavLink} from './navigation.tsx';
-import {addHomeCard, defaultHomeArrangements, homeCardShapes, homeCardState, homeCatalog, savedHomeCard, shapeOf, withShapes, type HomeCardDefinition} from './home-catalog.ts';
-import {HOME_GAP, HOME_UNIT, artShape, homeColumns, packShapes, shapeArtFormat, shapeName, shapeSpan, shapeStoredSize, trailingFit, type HomeShape, type ShapePlacement} from './home-shapes.ts';
+import {addHomeCard, artExposed, defaultHomeArrangements, heroPlacement, homeCardShapes, homeCardState, homeCatalog, savedHomeCard, shapeOf, withShapes, type HomeCardDefinition} from './home-catalog.ts';
+import {HOME_GAP, HOME_UNIT, homeColumns, packShapes, shapeName, shapeSpan, type HomeShape, type ShapePlacement} from './home-shapes.ts';
 import {HomeShapeContext, type HomeCardBox} from './home-shape-context.ts';
-import {HomeArtSlot} from './home-art-slot.tsx';
 import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
 import {GlassLayer, type GlassBackdrop, type GlassState} from './glass-layer.tsx';
@@ -34,9 +33,16 @@ function CompactFace({card, state, open}: {card: HomeCardDefinition; state: stri
   </article>;
 }
 
-export function HomeLayout({runtime, connected, operations, operationsLive, attention, inbox, renderCard}: {
+/**
+ * Home: the hero, then the owner's cards on the unit grid over the glass layer. `renderHero` draws the hero (#1930) with
+ * the art chips Home owns, because they change the saved arrangement: Open Gallery, Pin or Unpin and Dismiss, or Restore
+ * once the art is dismissed. The hero replaces the Hub mode and Art cards, so their saved placements are kept in the
+ * arrangement but never drawn in the grid, offered in the picker or reported as unknown.
+ */
+export function HomeLayout({runtime, connected, operations, operationsLive, attention, inbox, renderCard, renderHero}: {
   runtime: RuntimeData; connected: boolean; operations: readonly OperationRecord[]; operationsLive: boolean;
   attention: boolean; inbox: boolean; renderCard: (card: HomeCardDefinition, placement: HomePlacement, selections: LightingSelection[]) => React.ReactNode;
+  renderHero: (artChips: React.ReactNode) => React.ReactNode;
 }): React.JSX.Element {
   const catalog = useMemo(() => homeCatalog(runtime, connected), [runtime, connected]);
   const copy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'home-layout');
@@ -59,8 +65,6 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   // backdrop source (#1928) owns the bitmap; a new image is uploaded in the layer's layout effect, and any state
   // without an image is the Quiet glass wash. The layer reports the rendition it has drawn, or null, as evidence.
   const [glass, setGlass] = useState<GlassState>('quiet'), backdropImage = useArtBackdrop().image, showBackdrop = useShowArtBackdrop();
-  const backdrop = useMemo<GlassBackdrop | null>(() => backdropImage === null ? null
-    : {id: backdropImage.renditionId, bitmap: backdropImage.bitmap, width: backdropImage.width, height: backdropImage.height}, [backdropImage]);
   const onBackdrop = useCallback((id: string | null) => {showBackdrop(id);}, [showBackdrop]);
   useLayoutEffect(() => {
     const node = grid.current;if (node === null) return;
@@ -96,14 +100,16 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
       setDraft(undefined);setPending(undefined);setPicker(false);setMessage('Home layout saved.');editButton.current?.focus();
     } else if (command.requestId === pending.id && !command.locked && operation?.result !== 'succeeded') {setPending(undefined);setMessage(command.text);}
   }, [pending, operations, live, record, command.locked, command.requestId, command.text]);
-  const unknown = entries.filter(entry => savedHomeCard(entry.widget, catalog) === undefined);
+  const unknown = entries.filter(entry => !heroPlacement(entry.widget) && savedHomeCard(entry.widget, catalog) === undefined);
   const reported = useRef(new Set<number>());
   useEffect(() => {
     if (record !== undefined && unknown.length > 0 && !reported.current.has(record.revision)) {reported.current.add(record.revision);setMessage('Some saved cards are no longer registered and were omitted. Review the layout before saving.');}
   }, [record, unknown.length]);
-  const artEntry = entries.find(entry => entry.widget === 'art'), artCard = savedHomeCard('art', catalog);
-  const automaticArt = !editing && artEntry?.hidden !== true && (artEntry === undefined || artEntry.art?.pinned === false) && artCard !== undefined && artCard.reason === undefined;
-  const shown = entries.filter(entry => (entry.widget !== 'art' || editing || entry.art?.pinned !== false) && (!entry.hidden || protectedCard(entry.widget)) && savedHomeCard(entry.widget, catalog) !== undefined);
+  // Dismissed art leaves Home: the backdrop is the Quiet glass wash, and the hero offers Restore.
+  const artEntry = entries.find(entry => entry.widget === 'art'), artDismissed = artEntry?.hidden === true;
+  const backdrop = useMemo<GlassBackdrop | null>(() => backdropImage === null || artDismissed ? null
+    : {id: backdropImage.renditionId, bitmap: backdropImage.bitmap, width: backdropImage.width, height: backdropImage.height}, [backdropImage, artDismissed]);
+  const shown = entries.filter(entry => !heroPlacement(entry.widget) && (!entry.hidden || protectedCard(entry.widget)) && savedHomeCard(entry.widget, catalog) !== undefined);
   for (const id of ['inbox', 'sessions']) if (protectedCard(id) && !shown.some(entry => entry.widget === id)) shown.push({widget: id, size: id === 'inbox' ? 'small' : 'medium', hidden: false});
   const change = (next: HomeArrangements): void => {if (draft !== undefined && editable && !conflict && pending === undefined) setDraft({...draft, layouts: next});};
   const move = (id: string, target: string): void => {
@@ -118,30 +124,29 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const save = (): void => {
     if (!editable || draft === undefined || conflict || pending !== undefined) return;
     const value = structuredClone(draft.layouts);
-    for (const key of ['desktop', 'phone'] as const) value[key] = value[key].filter(entry => savedHomeCard(entry.widget, catalog) !== undefined);
+    for (const key of ['desktop', 'phone'] as const) value[key] = value[key].filter(entry => heroPlacement(entry.widget) || savedHomeCard(entry.widget, catalog) !== undefined);
     const layouts = withShapes(value, catalog), id = crypto.randomUUID();setPending({id, base: draft.base, layouts});setMessage('Saving Home layout…');
     void command.run({family: 'home-layout-set', target: 'home', requestId: id, data: {expectedRevision: draft.base, layouts}});
   };
+  // The hero is inert while Home is edited, so art chips always save the current saved arrangement.
   const updateArt = (next: HomeArrangements): void => {
-    if (draft !== undefined) {change(next);return;}
-    if (!editable || record === undefined || pending !== undefined) return;
+    if (!editable || record === undefined || pending !== undefined || draft !== undefined) return;
     const layouts = withShapes(next, catalog), id = crypto.randomUUID();setPending({id, base: record.revision, layouts});setMessage('Saving Art placement…');
     void command.run({family: 'home-layout-set', target: 'home', requestId: id, data: {expectedRevision: record.revision, layouts}});
   };
   const artDisabled = !editable || pending !== undefined || conflict;
-  // On the unit grid the art card's shape is chosen in Edit Home; the format choice stays for one-column layouts.
-  const artControls = (entry: HomePlacement | undefined, automatic: boolean, gridded: boolean, pinShape?: HomeShape): React.ReactNode => <div className="home-art-controls" role="group" aria-label="Art placement">
-    {!gridded && <label>Art shape <select value={entry?.art?.format ?? 'auto'} disabled={artDisabled} onChange={event => {
-      const value = event.target.value;
-      // The format also sets the shape the art card has on the grid.
-      if (value === 'auto' || value === 'banner' || value === 'square' || value === 'tall') updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: value, pinned: true}, shape: artShape(value), size: shapeStoredSize[artShape(value)]}));
-    }}><option value="auto">Auto</option><option value="banner">Banner</option><option value="square">Square</option><option value="tall">Tall</option></select></label>}
-    <button type="button" className="secondary" disabled={artDisabled} onClick={() => {
-      // Pinning automatic art on the grid keeps the shape it has now.
-      updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: pinShape === undefined ? entry?.art?.format ?? 'auto' : shapeArtFormat[pinShape], pinned: automatic}, ...(pinShape === undefined ? {} : {shape: pinShape, size: shapeStoredSize[pinShape]})}));
-    }}>{automatic ? 'Pin art' : 'Unpin art'}</button>
-    <button type="button" className="secondary" disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: true}));}}>{gridded ? 'Dismiss' : 'Dismiss art widget'}</button>
-  </div>;
+  // The Art card's placement controls, as hero chips (#1930). Each changes only the saved arrangement, through the same
+  // revision-guarded save: Pin or Unpin keeps the saved format, Dismiss hides the art and Restore shows it again.
+  const automaticArt = artEntry === undefined || artEntry.art?.pinned === false;
+  const artChips = artDismissed
+    ? <button type="button" className="home-hero-chip" disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: false}));}}>Restore art</button>
+    : artExposed(runtime, connected) ? <>
+      <a className="home-hero-chip" href="#/module/art/gallery">Open Gallery</a>
+      <button type="button" className="home-hero-chip" disabled={artDisabled} onClick={() => {
+        updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: artEntry?.art?.format ?? 'auto', pinned: automaticArt}}));
+      }}>{automaticArt ? 'Pin art' : 'Unpin art'}</button>
+      <button type="button" className="home-hero-chip" disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: true}));}}>Dismiss art</button>
+    </> : null;
   const locked = !editable || conflict || pending !== undefined;
   // Wide layouts place every card on one unit grid in one of four shapes (#1672). Cards stay flat grid children in saved
   // order; the Phone arrangement and narrow screens stack every card at its content height with its full content.
@@ -149,11 +154,6 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const columns = homeColumns(width), cell = (width - HOME_GAP * (columns - 1)) / columns;
   const shapes = new Map(shown.flatMap(entry => {const definition = savedHomeCard(entry.widget, catalog);return definition === undefined ? [] : [[entry.widget, shapeOf(entry, definition)] as const];}));
   const packed = narrow || width === 0 ? undefined : packShapes(shown.flatMap(entry => {const shape = shapes.get(entry.widget);return shape === undefined ? [] : [{id: entry.widget, shape}];}), columns);
-  // Automatic art on the grid takes the largest shape that fits the empty cells after the last card, or else a Wide row
-  // of its own after it, so a layout change never pushes it out of view. It depends only on the grid's columns and the
-  // cards' cells, never on image arrival or the viewport's height, and it is never saved.
-  const artFit = packed !== undefined && automaticArt ? trailingFit(packed, columns, homeCardShapes({id: 'art', source: {kind: 'core'}}).shapes)
-    ?? {column: 1, row: packed.rows + 1, columns: 2, rows: 1} : undefined;
   const area = (place: ShapePlacement): React.CSSProperties => ({gridColumn: `${String(place.column)} / span ${String(place.columns)}`, gridRow: `${String(place.row)} / span ${String(place.rows)}`});
   const categories = ['All', ...new Set(catalog.map(card => card.category))];
   const query = search.trim().toLocaleLowerCase();
@@ -161,12 +161,13 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const lights = shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];});
   // A placed card's outer size follows from the grid alone: its cells plus the gaps between them (#1672).
   const boxOf = (place: ShapePlacement, shape: HomeShape): HomeCardBox => ({shape, width: place.columns * cell + (place.columns - 1) * HOME_GAP, height: place.rows * cell + (place.rows - 1) * HOME_GAP});
-  const fitShape = (place: ShapePlacement): HomeShape => place.columns === 2 ? place.rows === 2 ? 'large-square' : 'wide' : place.rows === 2 ? 'tall' : 'square';
   return <div className={`home-layout${editing ? ' is-editing' : ''}${breakpoint === 'phone' ? ' home-phone' : ''}`} ref={host} data-glass={glass}>
     <GlassLayer onState={setGlass} backdrop={backdrop} onBackdrop={onBackdrop} fuse/>
     <header className="page home-layout-heading"><h1 data-glass-veil>Home</h1><div className="actions" data-glass-veil><NavLink route={{kind: 'timeline'}}>Timeline</NavLink>{!editing && <button type="button" className="secondary" ref={editButton} disabled={!editable} onClick={() => {
       if (record === undefined) return;setSelected(natural);setOptionsFor(undefined);setDraft({base: record.revision, layouts: structuredClone(current)});setMessage('');
     }}>Edit Home</button>}</div></header>
+    {/* Editing disables the hero's controls as it does the cards'. */}
+    <div className="home-hero-slot" inert={editing}>{renderHero(artChips)}</div>
     {!live && <p role="status" className="hint" data-glass-veil>Home layout is unavailable or stale. Editing is read-only.</p>}
     {editing && <div className="home-edit-toolbar"><div className="actions"><button type="button" data-home-add disabled={locked} onClick={() => {setPicker(value => !value);}}>Add card</button>
       <button type="button" className="secondary" disabled={locked} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = defaults[breakpoint];change(next);}}>Reset</button></div>
@@ -191,9 +192,8 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
       const place = packed?.cards.get(entry.widget), shape = place === undefined ? undefined : shapes.get(entry.widget);
       const offered = homeCardShapes(definition), generic = shape !== undefined && offered.generic.includes(shape);
       const content = generic ? <CompactFace card={definition} state={homeCardState(definition, runtime, connected)} open={offered.open}/>
-        : entry.widget === 'art' ? <HomeArtSlot panel="art" automatic={false} shaped={place !== undefined} format={entry.art?.format ?? 'auto'} home={host}>{artControls(entry, entry.art?.pinned === false, place !== undefined)}<div className="home-art-content" inert={editing}>{renderCard(definition, entry, [])}</div></HomeArtSlot>
-          : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, entry, lights);
-      return <div key={entry.widget} className={`home-layout-card${entry.widget === 'art' && place === undefined ? ' home-art-row' : ''}${shape === undefined ? '' : ` home-shape-${shape}`}`} data-home-card={entry.widget} data-glass-panel={entry.widget === 'art' ? undefined : entry.widget} data-home-shape={shape} data-home-offers={offered.shapes.join(' ')}
+        : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, entry, lights);
+      return <div key={entry.widget} className={`home-layout-card${shape === undefined ? '' : ` home-shape-${shape}`}`} data-home-card={entry.widget} data-glass-panel={entry.widget} data-home-shape={shape} data-home-offers={offered.shapes.join(' ')}
         style={place === undefined ? undefined : area(place)} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
         if (!editing || drag.current === undefined) return;event.preventDefault();event.stopPropagation();const source = drag.current;drag.current = undefined;move(source, entry.widget);
       }}>
@@ -217,22 +217,17 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
             }}><ShapeIcon shape={value}/></button>;
           })}</span>}
           <button type="button" className="secondary" aria-label={`Hide ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts), found = next[breakpoint].find(value => value.widget === entry.widget);if (found !== undefined) found.hidden = true;change(next);focusAfterRemoval(index);}}>Hide</button>
-          <button type="button" className="secondary" aria-label={entry.widget === 'art' ? 'Remove Art reservation and allow automatic placement' : `Remove ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = next[breakpoint].filter(value => value.widget !== entry.widget);change(next);focusAfterRemoval(index);}}>{entry.widget === 'art' ? 'Auto' : '×'}</button>
+          <button type="button" className="secondary" aria-label={`Remove ${definition.name}`} title={reason} disabled={locked || required} onClick={() => {const next = structuredClone(layouts);next[breakpoint] = next[breakpoint].filter(value => value.widget !== entry.widget);change(next);focusAfterRemoval(index);}}>×</button>
           {required && <small>{reason}</small>}
           </div>}
         </div>}
-        <div className="home-card-content" inert={editing && entry.widget !== 'art'}><HomeShapeContext.Provider value={generic || shape === undefined || place === undefined ? undefined : boxOf(place, shape)}>{content}</HomeShapeContext.Provider></div>
+        <div className="home-card-content" inert={editing}><HomeShapeContext.Provider value={generic || shape === undefined || place === undefined ? undefined : boxOf(place, shape)}>{content}</HomeShapeContext.Provider></div>
       </div>;
     })}
       {editing && packed?.holes.map(hole => <div key={`${String(hole.row)}:${String(hole.column)}`} className="home-hole" aria-hidden="true" data-glass-veil style={{gridColumn: String(hole.column), gridRow: String(hole.row)}}><span>Empty</span></div>)}
-      {/* Automatic art is the grid's last child in both layouts, so it stays mounted across the one-column threshold. */}
-      {automaticArt && (packed === undefined || artFit !== undefined) && <div key="automatic-art" className={`home-layout-card${artFit === undefined ? ' home-art-row' : ` home-shape-${fitShape(artFit)}`}`} data-home-card="art" data-home-shape={artFit === undefined ? undefined : fitShape(artFit)} data-art-placement="automatic" style={artFit === undefined ? undefined : area(artFit)}>
-        <div className="home-card-content"><HomeShapeContext.Provider value={artFit === undefined ? undefined : boxOf(artFit, fitShape(artFit))}><HomeArtSlot panel="art" automatic shaped={artFit !== undefined} format={artEntry?.art?.format ?? 'auto'} home={host}>{artControls(artEntry, true, artFit !== undefined, artFit === undefined ? undefined : fitShape(artFit))}<div className="home-art-content">{renderCard(artCard, artEntry ?? {widget: 'art', size: 'medium', hidden: false}, [])}</div></HomeArtSlot></HomeShapeContext.Provider></div>
-      </div>}
     </div>
-    {!editing && artEntry?.hidden === true && <button type="button" className="secondary home-art-restore" data-glass-veil disabled={locked} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: false}));}}>Restore art widget</button>}
     {shown.length === 0 && <p data-glass-veil>No cards here. Choose Edit Home to add one.</p>}
-    {editing && entries.some(entry => entry.hidden) && <div className="home-hidden" data-glass-veil><span>Hidden</span>{entries.filter(entry => entry.hidden).map(entry => {
+    {editing && entries.some(entry => entry.hidden && !heroPlacement(entry.widget)) && <div className="home-hidden" data-glass-veil><span>Hidden</span>{entries.filter(entry => entry.hidden && !heroPlacement(entry.widget)).map(entry => {
       const card = savedHomeCard(entry.widget, catalog);return card === undefined ? null : <button type="button" key={entry.widget} className="secondary" disabled={locked || card.reason !== undefined} onClick={() => {change(addHomeCard(layouts, breakpoint, card));}}>Show {card.name}</button>;
     })}</div>}
     <p role="status" className="hint home-layout-feedback" data-glass-veil>{pending !== undefined || command.locked ? command.text : message}</p>

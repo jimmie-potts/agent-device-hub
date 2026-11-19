@@ -78,6 +78,11 @@
   --glass-edge:#d6faf2;
   --glass-ink:var(--muted-dense);
   --glass-rail:light-dark(rgb(255 255 255/.3),rgb(10 14 26/.2));
+  /* Home's hero over the artwork (#1930): its chips, the switch's track and a soft halo behind its large text. */
+  --glass-chip:light-dark(rgb(255 255 255/.5),rgb(8 12 22/.42));
+  --glass-chip-edge:light-dark(rgb(255 255 255/.75),rgb(255 255 255/.2));
+  --glass-track:light-dark(rgb(28 39 64/.08),rgb(0 0 0/.16));
+  --glass-halo:light-dark(rgb(255 255 255/.7),rgb(0 0 0/.55));
   --shell-rail:light-dark(#e2e9f5,#1b2436);
   --shell-shadow:0 12px 28px light-dark(#50628016,#00000030),inset 0 1px 0 light-dark(#ffffff,#ffffff14);
   --shell-drawer-shadow:0 20px 44px light-dark(#3b4c6e2e,#00000075);

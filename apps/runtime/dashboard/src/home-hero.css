@@ -1,0 +1,37 @@
+/* Home's hero (#1930): the "Hub mode" label, the mode as a large word, the Work, Free and Quiet switch and the status
+   chips, over the page above the cards. Without the glass layer they sit on the Quiet glass wash with the Quiet glass
+   surfaces; on the layer ([data-glass=webgl]) the chips and the track turn to glass over the artwork and the layer draws
+   the switch's thumb, so the selected segment's own fill steps aside. */
+.home-hero{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end;gap:14px;min-block-size:min(42vh,380px);padding-block:var(--space-m) 26px;min-inline-size:0}
+.home-hero-mode{display:grid;gap:6px;min-inline-size:0;max-inline-size:100%}
+.home-hero-label{margin:0;font-size:var(--type-label);letter-spacing:.14em;text-transform:uppercase;font-weight:650;color:var(--muted-dense)}
+.home-hero-word{margin:0;font-size:clamp(3.4rem,7.5vw,6rem);font-weight:700;letter-spacing:-.045em;line-height:1;color:var(--text);overflow-wrap:break-word}
+.home-hero-controls{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-s) var(--space-m);max-inline-size:100%}
+.home-hero-switch{display:inline-grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:2px;padding:3px;max-inline-size:100%;border:1px solid var(--edge-dense);border-radius:999px;background:var(--inset)}
+.shell .home-hero-switch button{display:flex;align-items:center;justify-content:center;gap:8px;min-inline-size:0;min-block-size:40px;padding:0 clamp(10px,3vw,18px);border:1px solid transparent;border-radius:999px;background:transparent;color:var(--muted-dense);font-weight:600}
+.home-hero-switch button svg{flex:none;inline-size:18px;block-size:18px}
+.shell .home-hero-switch button:hover:not(:disabled){background:var(--raised);color:var(--text)}
+.shell .home-hero-switch button[aria-pressed=true]{background:var(--panel);border-color:var(--edge-dense);color:var(--text)}
+.home-hero-meta{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-s)}
+.home-hero-chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-inline-size:100%}
+.shell .home-hero-chip{display:inline-flex;align-items:center;gap:8px;min-block-size:40px;max-inline-size:100%;padding:6px 14px;box-sizing:border-box;border:1px solid var(--edge-dense);border-radius:20px;background:var(--panel);color:var(--text);font-size:var(--type-small);font-weight:500;line-height:1.3;text-decoration:none;cursor:pointer}
+.shell button.home-hero-chip:hover:not(:disabled),.shell a.home-hero-chip:hover{background:var(--raised);color:var(--text)}
+.shell .home-hero-chip:disabled{cursor:default;opacity:.6}
+.shell .home-hero-chip.hub-mode-issue{color:var(--pending-text)}
+.home-hero-exceptions>summary{list-style:none}
+.home-hero-exceptions>summary::-webkit-details-marker{display:none}
+.home-hero-exceptions[open]{flex-basis:100%}
+.home-hero-exception-list{margin-block-start:8px;padding:var(--space-s) var(--space-m);border:1px solid var(--edge-dense);border-radius:var(--radius);background:var(--panel);font-size:var(--type-small)}
+.home-hero-exception-list ul{margin:0;padding-inline-start:18px}
+/* The forecast chip's words come from the art module, which keeps its kind and its separation from the art in the
+   chip's accessible text. */
+.home-hero-chips .art-notice-chip>span:not(.hint){overflow-wrap:anywhere}
+
+/* On the glass layer. */
+[data-glass=webgl] .home-hero{text-shadow:0 1px 10px var(--glass-halo)}
+[data-glass=webgl] .home-hero-switch{border-color:var(--glass-chip-edge);background:var(--glass-track)}
+.shell [data-glass=webgl] .home-hero-switch button[data-glass-thumb]{background:transparent;border-color:transparent;box-shadow:none}
+.shell [data-glass=webgl] .home-hero-chip{border-color:var(--glass-chip-edge);background:var(--glass-chip);-webkit-backdrop-filter:saturate(1.3);backdrop-filter:saturate(1.3);text-shadow:none}
+.shell [data-glass=webgl] .home-hero-exception-list{border-color:var(--glass-chip-edge);background:var(--glass-chip);-webkit-backdrop-filter:blur(18px) saturate(1.3);backdrop-filter:blur(18px) saturate(1.3);text-shadow:none}
+@media(max-width:600px){.home-hero{min-block-size:min(36vh,300px)}.home-hero-word{font-size:clamp(2.8rem,14vw,3.4rem)}}
+@media(prefers-reduced-motion:no-preference){.shell .home-hero-switch button{transition:background-color 140ms ease-out,color 140ms ease-out}.shell .home-hero-chip{transition:background-color 140ms ease-out}}

@@ -119,7 +119,7 @@ try {
       await openConnections(page);
       await page.getByRole('heading', {name: 'Connections', exact: true}).waitFor();
       await (await destinationLink(page, /^Home/)).click();
-      const panel = page.locator('[data-widget="hub-mode"]');
+      const panel = page.locator('[data-hub-mode]');
       await panel.getByRole('button', {name: 'Quiet', exact: true}).click();
       await panel.getByRole('button', {name: 'Quiet', exact: true, pressed: true}).waitFor();
       assert.equal(commands(), 1);

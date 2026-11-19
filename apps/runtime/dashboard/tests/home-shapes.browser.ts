@@ -113,15 +113,16 @@ async function save(page: Page, desktop: HomePlacement[], phone: HomePlacement[]
       body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record.revision, layouts: {desktop, phone}}})});
     return saved.status;
   }, {desktop, phone}), 200);
-  // Inbox and Agent sessions stay on Home while they hold items or attention, saved or not.
-  const wanted = desktop.filter(entry => !entry.hidden && !['inbox', 'sessions'].includes(entry.widget)).map(entry => `${entry.widget}=${entry.shape ?? '?'}`);
-  await expect.poll(() => page.locator('.home-layout-grid > [data-home-card]:not([data-art-placement=automatic])').evaluateAll((nodes, wanted) => nodes.flatMap(node => {
+  // Inbox and Agent sessions stay on Home while they hold items or attention, saved or not. The Hub mode and Art
+  // placements are the hero's (#1930) and never cards.
+  const wanted = desktop.filter(entry => !entry.hidden && !['inbox', 'sessions', 'hub-mode', 'art'].includes(entry.widget)).map(entry => `${entry.widget}=${entry.shape ?? '?'}`);
+  await expect.poll(() => page.locator('.home-layout-grid > [data-home-card]').evaluateAll((nodes, wanted) => nodes.flatMap(node => {
     const id = (node as HTMLElement).dataset.homeCard ?? '', shape = (node as HTMLElement).dataset.homeShape ?? '?';
     return id === 'inbox' || id === 'sessions' ? [] : [`${id}=${wanted.some(value => value.startsWith(`${id}=`) && value.endsWith('=?')) ? '?' : shape}`];
   }), wanted)).toEqual(wanted);
   await settle(page);
 }
-const placement = (widget: string, shape: HomeShape): HomePlacement => ({widget, size: storedSize[shape], hidden: false, shape, ...(widget === 'art' ? {art: {format: shape === 'wide' ? 'banner' : shape === 'tall' ? 'tall' : 'square', pinned: true}} : {})});
+const placement = (widget: string, shape: HomeShape): HomePlacement => ({widget, size: storedSize[shape], hidden: false, shape});
 
 type Box = {id: string; shape: string | null; offers: string[]; left: number; top: number; right: number; bottom: number; overflow: number; empty: number; clipped: string[]; scrollers: string[]};
 /**
@@ -309,33 +310,18 @@ try {
   const initial = await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.homeCard ?? ''));
   const find = (prefix: string): string => {const id = initial.find(value => value.startsWith(prefix));assert.ok(id !== undefined, `${prefix} in ${initial.join(', ')}`);return id;};
   const pixoo = find('device:bunny/modules/pixoo:'), tidbyt = find('device:bunny/modules/tidbyt:'), lamps = initial.filter(id => id.startsWith('light:device:'));
-  const all = [...new Set([...initial, 'timeline', 'duck-latest', 'reachy', 'music-visualizer', 'art', 'light:room:studio', 'wispr'])];
-  const representative: HomePlacement[] = [placement('hub-mode', 'wide'), placement('inbox', 'tall'), placement('sessions', 'large-square'), placement('wispr', 'square'),
+  // The Hub mode and Art are the hero above the grid (#1930), so they are not cards here.
+  const all = [...new Set([...initial, 'timeline', 'duck-latest', 'reachy', 'music-visualizer', 'light:room:studio', 'wispr'])];
+  const representative: HomePlacement[] = [placement('music-visualizer', 'wide'), placement('inbox', 'tall'), placement('sessions', 'large-square'), placement('wispr', 'square'),
     placement(lamps[0] ?? '', 'tall'), placement(pixoo, 'square'), placement(lamps[1] ?? '', 'square'), placement('timeline', 'tall'), placement(tidbyt, 'square'),
-    placement('music-visualizer', 'wide'), placement('light:room:studio', 'wide'), placement('art', 'large-square')];
+    placement(lamps[2] ?? '', 'large-square'), placement('light:room:studio', 'wide')];
 
-  const order = async (): Promise<string[]> => page.locator('.home-layout-grid > [data-home-card]:not([data-art-placement=automatic])').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.homeCard ?? ''));
+  const order = async (): Promise<string[]> => page.locator('.home-layout-grid > [data-home-card]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.homeCard ?? ''));
   if (part('tiles')) {
     // AC1: the built-in layout, before any save, tiles on the unit grid; so do three mixed layouts with all four shapes.
     const value = await measure(page);assert.equal(value.columns, 5);assert.ok(Math.abs(value.cell - 225.6) < 1, String(value.cell));tiles(value);
     assert.deepEqual(misfits(value.cards), []);assert.deepEqual(halfEmpty(value.cards), []);assert.deepEqual(await listFits(page), []);
     await shot(page, 'final5-default-1440');
-    // F3: automatic art stays in view at every width: trailing empty cells, or a Wide row of its own after the last card.
-    // The sweep runs at 1x scale in its own page: 2x screenshots at 2560px exhaust the renderer.
-    const sweepContext = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'}), sweep = await sweepContext.newPage();
-    const sweepErrors: string[] = [];sweep.on('pageerror', error => {sweepErrors.push(error.message);});sweep.on('console', message => {if (message.type() === 'error') sweepErrors.push(message.text().slice(0, 300));});
-    await sweep.goto(world.url);await feed(sweep, 'connected');
-    const automatic = sweep.locator('.home-layout-grid > [data-art-placement="automatic"]'), missing: number[] = [];
-    for (let width = 620; width <= 2560; width += 60) {
-      await sweep.setViewportSize({width, height: 1000});await settle(sweep);
-      // Art appears once the grid has repacked for the new width.
-      try {await expect(automatic).toHaveCount(1, {timeout: 3000});await expect(automatic).toBeVisible({timeout: 3000});} catch {missing.push(width);}
-    }
-    // No render loop blanks the page while resizing (React error 185 came from lists that measured themselves).
-    assert.deepEqual(sweepErrors, [], 'no page errors while resizing');
-    await sweepContext.close();
-    assert.deepEqual(missing, [], 'automatic art is present at every width on the built-in layout');
-    await page.setViewportSize({width: 1440, height: 1000});await settle(page);
     // F9: the Phone editor preview stays one column on a desktop window, and Cancel leaves the desktop grid.
     await page.getByRole('button', {name: 'Edit Home', exact: true}).click();await page.getByRole('button', {name: 'Phone', exact: true}).click();
     assert.equal(await page.locator('.home-layout-grid').getAttribute('data-packed'), 'false');
@@ -343,8 +329,8 @@ try {
     assert.equal(lefts.length, 1, 'the Phone preview is one column');
     await page.getByRole('button', {name: 'Cancel', exact: true}).click();await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', 'true');
     const mixed: HomePlacement[][] = [representative,
-      [placement('sessions', 'large-square'), placement('hub-mode', 'large-square'), placement(lamps[0] ?? '', 'square'), placement(lamps[1] ?? '', 'square'), placement(lamps[2] ?? '', 'square'), placement('timeline', 'large-square'), placement(pixoo, 'square')],
-      [placement('inbox', 'tall'), placement('timeline', 'tall'), placement(lamps[0] ?? '', 'tall'), placement(lamps[1] ?? '', 'tall'), placement('hub-mode', 'wide'), placement(lamps[2] ?? '', 'wide'), placement(tidbyt, 'square'), placement('light:room:studio', 'square')]];
+      [placement('sessions', 'large-square'), placement('music-visualizer', 'large-square'), placement(lamps[0] ?? '', 'square'), placement(lamps[1] ?? '', 'square'), placement(lamps[2] ?? '', 'square'), placement('timeline', 'large-square'), placement(pixoo, 'square')],
+      [placement('inbox', 'tall'), placement('timeline', 'tall'), placement(lamps[0] ?? '', 'tall'), placement(lamps[1] ?? '', 'tall'), placement('music-visualizer', 'wide'), placement(lamps[2] ?? '', 'wide'), placement(tidbyt, 'square'), placement('light:room:studio', 'square')]];
     const seen = new Set<string>();
     for (const layout of mixed) {
       await save(page, layout);
@@ -368,12 +354,12 @@ try {
       return [...host.querySelectorAll('summary, .chip, .agent-caret')].filter(node => {const rect = node.getBoundingClientRect();return rect.width > 0 && (rect.left < bounds.left - 1 || rect.right > bounds.right + 1);}).map(node => node.className);
     }), [], 'approval text and disclosure controls fit inside the attention tile');
     // F9: a hidden placement takes no room: the next card packs where it would have been.
-    await save(page, [placement('hub-mode', 'wide'), {...placement(lamps[0] ?? '', 'square'), hidden: true}, placement(lamps[1] ?? '', 'square')]);
+    await save(page, [placement('music-visualizer', 'wide'), {...placement(lamps[0] ?? '', 'square'), hidden: true}, placement(lamps[1] ?? '', 'square')]);
     const packedHidden = new Map((await measure(page)).cards.map(card => [card.id, card]));
     assert.equal(packedHidden.has(lamps[0] ?? ''), false, 'a hidden card is not shown');
-    assert.ok(Math.abs((packedHidden.get(lamps[1] ?? '')?.left ?? 0) - (packedHidden.get('hub-mode')?.right ?? 0) - 16) <= 1, 'the next card takes the hidden card\'s cell');
+    assert.ok(Math.abs((packedHidden.get(lamps[1] ?? '')?.left ?? 0) - (packedHidden.get('music-visualizer')?.right ?? 0) - 16) <= 1, 'the next card takes the hidden card\'s cell');
     // Dense first fit: a square saved after a large square fills the hole an earlier row left; the DOM keeps saved order.
-    const backfill = [placement(lamps[0] ?? '', 'square'), placement('sessions', 'large-square'), placement('hub-mode', 'large-square'), placement('timeline', 'large-square'), placement(pixoo, 'square')];
+    const backfill = [placement(lamps[0] ?? '', 'square'), placement('sessions', 'large-square'), placement('music-visualizer', 'large-square'), placement('timeline', 'large-square'), placement(pixoo, 'square')];
     await save(page, backfill);
     const filled = new Map((await measure(page)).cards.map(card => [card.id, card]));
     assert.ok((filled.get(pixoo)?.top ?? 0) < (filled.get('timeline')?.top ?? 0), 'the later square is placed above the large square saved before it');
@@ -392,23 +378,23 @@ try {
     await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
     await expect(page.locator('.home-hole').first()).toBeVisible();
     // F1: each card's bar shows its name; its other controls open below it, one card at a time, by keyboard too.
-    const toggle = page.getByRole('button', {name: 'Options for Hub mode', exact: true});
+    const toggle = page.getByRole('button', {name: 'Options for Music visualizer', exact: true});
     await toggle.focus();await page.keyboard.press('Enter');await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    // Hub mode is first, so Earlier is disabled and Tab moves straight to Later.
-    await page.keyboard.press('Tab');await expect(page.getByRole('button', {name: 'Move Hub mode later', exact: true})).toBeFocused();
-    const choice = page.getByRole('group', {name: 'Shape of Hub mode', exact: true});
+    // Music visualizer is first, so Earlier is disabled and Tab moves straight to Later.
+    await page.keyboard.press('Tab');await expect(page.getByRole('button', {name: 'Move Music visualizer later', exact: true})).toBeFocused();
+    const choice = page.getByRole('group', {name: 'Shape of Music visualizer', exact: true});
     await expect(choice.getByRole('button')).toHaveCount(4);
     await expect(choice.getByRole('button', {name: 'Wide', exact: true})).toHaveAttribute('aria-pressed', 'true');
     for (let index = 0; index < 8 && !await choice.getByRole('button', {name: 'Large square', exact: true}).evaluate(node => node === document.activeElement); index += 1) await page.keyboard.press('Tab');
     await expect(choice.getByRole('button', {name: 'Large square', exact: true})).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(page.locator('[data-home-card="hub-mode"]')).toHaveAttribute('data-home-shape', 'large-square');
+    await expect(page.locator('[data-home-card="music-visualizer"]')).toHaveAttribute('data-home-shape', 'large-square');
     await shot(page, 'final5-edit-home-1440');
     // The screenshot clears focus; Escape from a control in the panel closes it and returns focus to its button.
     await choice.getByRole('button', {name: 'Large square', exact: true}).focus();await page.keyboard.press('Escape');await expect(toggle).toBeFocused();await expect(choice).toHaveCount(0);
     await page.getByRole('button', {name: 'Options for Inbox', exact: true}).click();
     await expect(page.getByRole('group', {name: 'Shape of Inbox', exact: true}).getByRole('button')).toHaveCount(3);
-    await expect(page.getByRole('group', {name: 'Shape of Hub mode', exact: true})).toHaveCount(0);
+    await expect(page.getByRole('group', {name: 'Shape of Music visualizer', exact: true})).toHaveCount(0);
     // The Phone arrangement is one column: no shape choice there.
     await page.getByRole('button', {name: 'Phone', exact: true}).click();
     await expect(page.locator('.home-shape-choice')).toHaveCount(0);
@@ -417,19 +403,19 @@ try {
     await expect(page.getByText('Home layout saved.', {exact: true})).toBeVisible();
     assert.deepEqual(sent, ['/api/v2/commands/home-layout-set'], 'only the layout save is sent');
     await page.reload();await feed(page, 'connected');
-    await expect(page.locator('[data-home-card="hub-mode"]')).toHaveAttribute('data-home-shape', 'large-square');
+    await expect(page.locator('[data-home-card="music-visualizer"]')).toHaveAttribute('data-home-shape', 'large-square');
     const stored = await page.evaluate(async () => {
       const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': HomeLayoutRecord[]}};
       return data.records['home-layout'][0]?.layouts;
     });
-    assert.deepEqual(stored?.desktop.find(entry => entry.widget === 'hub-mode'), {widget: 'hub-mode', size: 'medium', hidden: false, shape: 'large-square'});
+    assert.deepEqual(stored?.desktop.find(entry => entry.widget === 'music-visualizer'), {widget: 'music-visualizer', size: 'medium', hidden: false, shape: 'large-square'});
     assert.ok(stored?.desktop.every(entry => entry.shape !== undefined) === true && stored.phone.every(entry => entry.shape !== undefined), 'the save stores a shape for every placement');
     // Cancel discards a shape change.
     await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
-    await page.getByRole('button', {name: 'Options for Hub mode', exact: true}).click();
-    await page.getByRole('group', {name: 'Shape of Hub mode', exact: true}).getByRole('button', {name: 'Small square', exact: true}).click();
+    await page.getByRole('button', {name: 'Options for Music visualizer', exact: true}).click();
+    await page.getByRole('group', {name: 'Shape of Music visualizer', exact: true}).getByRole('button', {name: 'Small square', exact: true}).click();
     await page.getByRole('button', {name: 'Cancel', exact: true}).click();
-    await expect(page.locator('[data-home-card="hub-mode"]')).toHaveAttribute('data-home-shape', 'large-square');
+    await expect(page.locator('[data-home-card="music-visualizer"]')).toHaveAttribute('data-home-shape', 'large-square');
   }
 
   if (part('convert')) {
@@ -447,8 +433,9 @@ try {
       const sent = changes(loaded);
       await loaded.reload();await feed(loaded, 'connected');
       // Home shows the built-in layout until the saved record syncs, so wait for the saved order and shapes.
-      await expect.poll(() => loaded.locator('.home-layout-grid > [data-home-card]:not([data-art-placement=automatic])').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.homeCard ?? ''))).toEqual(old.map(entry => entry.widget));
-      await expect.poll(async () => Object.fromEntries((await measure(loaded)).cards.map(card => [card.id, card.shape]))).toEqual({'hub-mode': 'wide', inbox: 'tall', sessions: 'large-square', [lamps[0] ?? '']: 'tall', [lamps[1] ?? '']: 'large-square', [pixoo]: 'square', timeline: 'large-square', art: 'wide'});
+      // The old layout's Hub mode and Art placements stay saved but are the hero's (#1930), so the grid omits them.
+      await expect.poll(() => loaded.locator('.home-layout-grid > [data-home-card]').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.homeCard ?? ''))).toEqual(old.map(entry => entry.widget).filter(id => id !== 'hub-mode' && id !== 'art'));
+      await expect.poll(async () => Object.fromEntries((await measure(loaded)).cards.map(card => [card.id, card.shape]))).toEqual({inbox: 'tall', sessions: 'large-square', [lamps[0] ?? '']: 'tall', [lamps[1] ?? '']: 'large-square', [pixoo]: 'square', timeline: 'large-square'});
       tiles(await measure(loaded));
       await shot(loaded, 'final5-converted-old-layout-1440');
       await observePageTime(loaded, 500, () => {assert.deepEqual(sent, [], 'loading an old-format layout writes nothing');});
@@ -457,7 +444,7 @@ try {
 
   if (part('paging')) {
     // AC5: Inbox rows per page follow its shape; an opened item takes the page and stays reachable; F11 stuck-row case.
-    await save(page, [placement('inbox', 'tall'), placement('hub-mode', 'wide')]);
+    await save(page, [placement('inbox', 'tall'), placement('music-visualizer', 'wide')]);
     const inbox = page.locator('[data-home-card="inbox"]'), list = inbox.locator('[data-paged-list="Inbox"]'), rows = list.locator('[data-paged-key]:not([hidden])');
     // Rows per page are calculated from the card's shape and the grid: a Tall Inbox at 1440 holds five rows and its pager.
     await expect(rows).toHaveCount(5);const perPage = 5, pages = Math.ceil(13 / perPage);
@@ -476,7 +463,7 @@ try {
     await reachable();assert.deepEqual(misfits((await measure(page)).cards), []);
     await shot(page, 'final5-inbox-opened-item-1440');
     for (const shape of ['wide', 'large-square'] as const) {
-      await save(page, [placement('inbox', shape), placement('hub-mode', 'wide')]);await expect(rows).toHaveCount(1);await reachable();
+      await save(page, [placement('inbox', shape), placement('music-visualizer', 'wide')]);await expect(rows).toHaveCount(1);await reachable();
       assert.deepEqual(misfits((await measure(page)).cards), [], `opened item in ${shape}`);
     }
     // Open, change the width off the grid, close there, and change back: the page returns with no row stuck open.
@@ -493,9 +480,9 @@ try {
     await expect(rows).toHaveCount(perPage);await expect(list.locator('.paged-list-pager')).toHaveCount(1);
     // And with the shape: open in Large square, change to Tall, close, change back.
     await rows.first().locator('details.inbox-entry > summary').click();await expect(rows).toHaveCount(1);
-    await save(page, [placement('inbox', 'tall'), placement('hub-mode', 'wide')]);await expect(rows).toHaveCount(1);
+    await save(page, [placement('inbox', 'tall'), placement('music-visualizer', 'wide')]);await expect(rows).toHaveCount(1);
     await rows.first().locator('details.inbox-entry > summary').click();await expect(rows).toHaveCount(perPage);
-    await save(page, [placement('inbox', 'large-square'), placement('hub-mode', 'wide')]);await expect(rows).toHaveCount(perPage);
+    await save(page, [placement('inbox', 'large-square'), placement('music-visualizer', 'wide')]);await expect(rows).toHaveCount(perPage);
     await expect(list.locator('details[open]')).toHaveCount(0);
     // Timeline in one row shows its latest entries and Open Timeline, with no pager.
     await save(page, [placement('timeline', 'square')]);
@@ -520,7 +507,6 @@ try {
         failures.push(...misfits(value.cards).map(text => `${String(width)}: ${text}`));
         failures.push(...halfEmpty(value.cards).map(text => `${String(width)} half empty: ${text}`));
         failures.push(...(await listFits(page)).map(text => `${String(width)} list: ${text}`));
-        const hub = value.cards.find(card => card.id === 'hub-mode');if (hub !== undefined) console.log(`hub-mode ${String(hub.shape)} at ${String(width)}: largest blank band ${String(hub.empty)}px of ${String(Math.round(hub.bottom - hub.top))}`);
         // F1: in Edit Home every card's name stays visible in a one-row edit bar.
         await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
         const bars = await page.locator('.home-layout-grid > [data-home-card]').evaluateAll(nodes => nodes.map(node => {
@@ -566,20 +552,8 @@ try {
     await page.unroute('**/api/v2/commands/power-set');
     assert.deepEqual(misfits((await measure(page)).cards), []);
     await shot(page, 'final5-light-results-1440');
-    // F15: the art card keeps its element, image and focused control across the one-column threshold and back.
-    await save(page, representative);
-    const unpin = page.locator('[data-home-card="art"]').getByRole('button', {name: 'Unpin art', exact: true});
-    const artNode = await page.locator('[data-home-card="art"] .home-art-content').elementHandle();assert.ok(artNode !== null);
-    await unpin.focus();
-    for (const width of [375, 1440]) {
-      await page.setViewportSize({width, height: width === 375 ? 812 : 1000});
-      await expect(page.locator('.home-layout-grid')).toHaveAttribute('data-packed', width === 375 ? 'false' : 'true');await settle(page);
-      assert.equal(await artNode.evaluate(node => node.isConnected), true, `the art stays mounted at ${String(width)}`);
-      assert.equal(await unpin.evaluate(node => node === document.activeElement), true, `focus stays on Unpin art at ${String(width)}`);
-    }
-    await artNode.dispose();
     // F17: Agent sessions calculates tile columns and rows together, so a resize shows no intermediate page count.
-    await save(page, [placement('sessions', 'large-square'), placement('hub-mode', 'wide')]);
+    await save(page, [placement('sessions', 'large-square'), placement('music-visualizer', 'wide')]);
     const sessionsList = page.locator('[data-home-card="sessions"] [data-paged-list="Agent sessions"]');
     const settled = async (): Promise<string | null> => {await settle(page);return sessionsList.getAttribute('data-pages');};
     const at1440 = await settled();
@@ -655,7 +629,7 @@ try {
   if (part('opened')) {
     // F22: an opened session or Inbox item scrolls inside its card; nothing outside the scroll area is clipped.
     for (const shape of ['large-square', 'tall'] as const) {
-      await save(page, [placement('sessions', shape), placement('hub-mode', 'wide')]);
+      await save(page, [placement('sessions', shape), placement('music-visualizer', 'wide')]);
       for (const width of [1100, 1440]) {
         await page.setViewportSize({width, height: 1000});await measure(page);
         for (const which of ['first', 'long'] as const) {
@@ -680,7 +654,7 @@ try {
       }
     }
     // An Inbox item with its command evidence open, longer than a Wide card.
-    await save(page, [placement('inbox', 'wide'), placement('hub-mode', 'wide')]);
+    await save(page, [placement('inbox', 'wide'), placement('music-visualizer', 'wide')]);
     for (const width of [1100, 1440]) {
       await page.setViewportSize({width, height: 1000});await measure(page);
       const item = page.locator('[data-home-card="inbox"] [data-paged-key]:not([hidden])').first();
@@ -695,7 +669,7 @@ try {
   if (part('long')) {
     // F23: long names stay inside their fixed rows. The long session title comes from the synthetic world; for Inbox and
     // Timeline rows this check puts a long name into the first rows' text, then reloads.
-    await save(page, [placement('sessions', 'large-square'), placement('inbox', 'tall'), placement('timeline', 'tall'), placement('hub-mode', 'wide')]);
+    await save(page, [placement('sessions', 'large-square'), placement('inbox', 'tall'), placement('timeline', 'tall'), placement('music-visualizer', 'wide')]);
     const long = 'A very long name that would wrap to several lines in a narrow card if it were allowed to';
     for (const width of [1100, 1440, 1920]) {
       await page.setViewportSize({width, height: 1000});await measure(page);
@@ -781,7 +755,7 @@ try {
       await page.locator(`[data-home-card="${id}"] details.light-options[open] > summary`).click();await expect(page.locator(`[data-home-card="${id}"] details.light-options[open]`)).toHaveCount(0);
     }
     // Wide Pixoo over Wide Wispr: the last link is clicked by pointer and opens its page.
-    await save(page, [placement(pixoo, 'wide'), placement('hub-mode', 'wide'), placement(lamps[0] ?? '', 'square'), placement('wispr', 'wide')]);
+    await save(page, [placement(pixoo, 'wide'), placement('music-visualizer', 'wide'), placement(lamps[0] ?? '', 'square'), placement('wispr', 'wide')]);
     const reach = await menuReach(pixoo);if (reach !== 'reachable') failures.push(`${pixoo}@wide: ${reach}`);
     else {
       const last = page.locator(`[data-home-card="${pixoo}"] .light-options-body a`).last(), box = await last.boundingBox();assert.ok(box !== null);
@@ -925,7 +899,7 @@ try {
     assert.ok(large !== undefined && Math.abs(large.width - large.height) <= 1 && large.width >= large.card * 0.4 && large.bodyTop - large.artTop - large.height >= 0 && large.bodyTop - large.artTop - large.height <= 12, `Large square media and controls: ${JSON.stringify(large)}`);
     await closeLive();
     // Home with the three cards in larger shapes, at each width and in Edit Home.
-    const showcase = [placement('hub-mode', 'wide'), placement(pixoo, 'tall'), placement(tidbyt, 'wide'), placement('wispr', 'large-square'), placement('inbox', 'wide'), placement('timeline', 'tall'), placement(lamps[0] ?? '', 'square'), placement('sessions', 'large-square')];
+    const showcase = [placement('music-visualizer', 'wide'), placement(pixoo, 'tall'), placement(tidbyt, 'wide'), placement('wispr', 'large-square'), placement('inbox', 'wide'), placement('timeline', 'tall'), placement(lamps[0] ?? '', 'square'), placement('sessions', 'large-square')];
     await save(page, showcase);
     for (const width of [1100, 1440, 1920]) {
       await page.setViewportSize({width, height: 1000});const value = await measure(page);tiles(value);
@@ -988,10 +962,7 @@ try {
   if (receipts !== undefined && part('shots')) {
     await save(page, [placement(lamps[0] ?? '', 'large-square'), placement(lamps[1] ?? '', 'wide'), placement(lamps[2] ?? '', 'tall'), placement('light:room:studio', 'square')]);
     await shot(page, 'final5-lights-four-shapes-1440');
-    // Hub mode in its four shapes, the Inbox's three shapes with a full list, and Agent sessions in its two.
-    const hubShots: string[] = [];
-    for (const shape of shapes) {await save(page, [placement('hub-mode', shape)]);hubShots.push(await picture(page, 'hub-mode'));}
-    await sheet('final5-hub-mode-four-shapes-1440', hubShots);
+    // The Inbox's three shapes with a full list, and Agent sessions in its two.
     const inboxShots: string[] = [];
     for (const shape of ['wide', 'tall', 'large-square'] as const) {await save(page, [placement('inbox', shape)]);await expect(page.locator('[data-home-card="inbox"]')).toHaveAttribute('data-home-shape', shape);inboxShots.push(await picture(page, 'inbox'));}
     await sheet('final5-inbox-three-shapes-full-1440', inboxShots);

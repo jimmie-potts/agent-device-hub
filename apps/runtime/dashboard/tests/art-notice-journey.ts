@@ -44,31 +44,34 @@ export async function artNoticeJourney(): Promise<void> {
     await panel.getByRole('button', {name: 'Save art settings', exact: true}).click();await expect(panel).toContainText('Daily art settings saved.');
     await expect.poll(async () => (await read()).weather).toBe('fresh');
     const planned = (await read()).nextOpportunity;assert.ok(planned !== null);assert.ok(planned.startAtMs > clock.now() + 45_000);
+    // Home draws the presented artwork as its backdrop and shows the notice as a hero chip (#1930), bound to that artwork.
     await page.goto(`${world.url}/#/`);await feed(page, 'connected');
-    await page.getByRole('button', {name: 'Edit Home', exact: true}).click();await page.getByRole('button', {name: 'Add card', exact: true}).click();
-    await page.getByRole('button', {name: 'Add Art', exact: true}).click();await page.getByRole('button', {name: 'Close', exact: true}).click();
-    await page.getByRole('button', {name: 'Done', exact: true}).click();
-    const image = page.locator('[data-home-card="art"] .art-image'), notice = image.locator('.art-notice');
-    await expect(image).toHaveAttribute('data-art-image-state', 'ready');await expect(image).toHaveAttribute('data-artwork', artworkId);
+    const backdrop = page.locator('[data-art-backdrop]'), layer = page.locator('.home-layout .glass-layer');
+    const notice = page.locator('[data-hub-mode] .art-notice-status'), chip = notice.getByRole('link');
+    await expect(backdrop).toHaveAttribute('data-art-backdrop', 'ready');await expect(backdrop).toHaveAttribute('data-artwork', artworkId);
+    const rendition = await backdrop.getAttribute('data-rendition');assert.ok(rendition !== null && rendition !== '');
+    await expect.poll(async () => {await page.clock.runFor(100);return layer.getAttribute('data-glass-backdrop');}).toBe(rendition);
     await expect(notice).toHaveCount(0);
     await advance(planned.startAtMs - 45_000 - clock.now());
     await expect.poll(async () => (await read()).lastOpportunityId).toBe(planned.id);
     await expect(notice).toHaveCount(0, {timeout: 1000});
     await advance(planned.startAtMs - clock.now());
-    await expect(notice).toBeVisible();await expect(notice).toHaveAttribute('data-art-opportunity', planned.id);
-    await expect(notice).toContainText('Rain forecast');await expect(notice).toContainText('Chance of rain');
-    await expect(notice).toContainText('separate from the imagined artwork');
-    await expect(image).toHaveAttribute('data-artwork', artworkId);assert.deepEqual(world.art.state(), calls, 'saved scheduled art sends no provider request');
-    const pixels = await image.locator('canvas').evaluate(node => {if (!(node instanceof HTMLCanvasElement)) throw new Error('missing-canvas');return node.toDataURL();});
+    await expect(chip).toBeVisible();await expect(notice).toHaveAttribute('data-art-opportunity', planned.id);await expect(notice).toHaveAttribute('data-artwork', artworkId);
+    // The art widget's words: what it is, the forecast and its separation from the art, which the chip keeps in its text.
+    await expect(chip).toContainText('Rain forecast');await expect(chip).toContainText('Chance of rain');
+    await expect(chip).toContainText('separate from the imagined artwork');
+    assert.match(await chip.getAttribute('title') ?? '', /^Rain forecast: Chance of rain at .+\. Weather forecast, separate from the imagined artwork\.$/);
+    await expect(chip).toHaveAttribute('href', '#/automation');
+    await chip.focus();await expect(chip).toBeFocused();
+    await expect(backdrop).toHaveAttribute('data-artwork', artworkId);assert.deepEqual(world.art.state(), calls, 'saved scheduled art sends no provider request');
     for (const width of [1440, 390, 320]) {
-      await page.setViewportSize({width, height: 1100});await image.scrollIntoViewIfNeeded();
+      await page.setViewportSize({width, height: 1100});await chip.scrollIntoViewIfNeeded();
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      await expect(notice).toBeVisible();
+      await expect(chip).toBeVisible();
       await page.screenshot({path: join(artifacts, `art-notice-${String(width)}.png`), fullPage: true});
     }
-    await advance(30_001);await expect(notice).toHaveCount(0);await expect(image).toHaveAttribute('data-artwork', artworkId);
-    assert.equal(await image.locator('canvas').evaluate(node => {if (!(node instanceof HTMLCanvasElement)) throw new Error('missing-canvas');return node.toDataURL();}), pixels,
-      'forecast expiry removes only the factual label, preserving the decoded artwork');
+    await advance(30_001);await expect(notice).toHaveCount(0);await expect(backdrop).toHaveAttribute('data-artwork', artworkId);
+    assert.equal(await layer.getAttribute('data-glass-backdrop'), rendition, 'forecast expiry removes only the factual chip, preserving the drawn artwork');
     assert.deepEqual(world.art.state(), calls);assert.deepEqual(errors, []);
     await page.screenshot({path: join(artifacts, 'art-notice-expired.png'), fullPage: true});
     console.log(`Scheduled art notice browser passed; synthetic screenshots: ${artifacts}`);

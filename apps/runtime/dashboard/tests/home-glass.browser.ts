@@ -237,7 +237,7 @@ try {
 
   // Edit Home: reordering and reshaping cards moves their glass; the draft is discarded.
   await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
-  await cardOptions(page, 'Hub mode');await page.getByRole('button', {name: 'Move Hub mode later', exact: true}).click();
+  await cardOptions(page, 'Agent status');await page.getByRole('button', {name: 'Move Agent status later', exact: true}).click();
   await followsBoxes(page, 'edit: moved');
   await cardOptions(page, 'Inbox');await page.getByRole('button', {name: 'Large square', exact: true}).click();
   await followsBoxes(page, 'edit: reshaped');

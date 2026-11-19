@@ -1,6 +1,6 @@
 // Home card shapes on one unit grid (#1672). Pure functions of saved order, shapes and the grid's width; the browser
 // places each card on a CSS grid with these coordinates. They read and write nothing else.
-import type {HomeArtFormat, HomePlacement, HomeShape, HomeSize} from '@jimmie-potts/event-contracts/v2/families';
+import type {HomePlacement, HomeShape, HomeSize} from '@jimmie-potts/event-contracts/v2/families';
 export type {HomeShape} from '@jimmie-potts/event-contracts/v2/families';
 
 /** The owner's unit (D1, 2026-11-11): columns are at least this wide, and each row is one column tall. */
@@ -27,12 +27,10 @@ export function shapeBox(shape: HomeShape, cell = HOME_UNIT, gap = HOME_GAP): {w
 
 /**
  * The shape a placement shows: its saved shape when the card offers it, otherwise the conversion of its saved width
- * (Small prefers one column, Standard the card's Standard shape, Wide two columns and two rows), and for art its saved
- * format (banner Wide, tall Tall, square and auto Large square).
+ * (Small prefers one column, Standard the card's Standard shape, Wide two columns and two rows).
  */
-export function placementShape(entry: Pick<HomePlacement, 'size' | 'shape' | 'art'>, offered: readonly HomeShape[], standard: HomeShape): HomeShape {
+export function placementShape(entry: Pick<HomePlacement, 'size' | 'shape'>, offered: readonly HomeShape[], standard: HomeShape): HomeShape {
   if (entry.shape !== undefined && offered.includes(entry.shape)) return entry.shape;
-  if (entry.art !== undefined) return pick(artShape(entry.art.format), offered, standard);
   return shapeForSize(entry.size, offered, standard);
 }
 export function shapeForSize(size: HomeSize, offered: readonly HomeShape[], standard: HomeShape): HomeShape {
@@ -40,13 +38,6 @@ export function shapeForSize(size: HomeSize, offered: readonly HomeShape[], stan
     : size === 'large' ? ['large-square', 'wide', 'tall', 'square'] : [standard, 'tall', 'wide', 'large-square', 'square'];
   return wanted.find(shape => offered.includes(shape)) ?? offered[0] ?? 'square';
 }
-/** The shape an art format shows on the grid: banner Wide, tall Tall, square and auto Large square. */
-export const artShape = (format: HomeArtFormat): HomeShape => format === 'banner' ? 'wide' : format === 'tall' ? 'tall' : 'large-square';
-const pick = (shape: HomeShape, offered: readonly HomeShape[], standard: HomeShape): HomeShape => offered.includes(shape) ? shape : offered.includes(standard) ? standard : offered[0] ?? 'square';
-/** The shapes each art format agrees with; equal to the contracts' `homeArtShapes`, which the core checks. */
-export const artFormatShapes: Readonly<Record<HomeArtFormat, readonly HomeShape[]>> = {banner: ['wide'], tall: ['tall'], square: ['square', 'large-square'], auto: ['large-square']};
-/** The art format an older dashboard shows for an art card in a shape. */
-export const shapeArtFormat: Readonly<Record<HomeShape, Exclude<HomeArtFormat, 'auto'>>> = {square: 'square', wide: 'banner', tall: 'tall', 'large-square': 'square'};
 
 /** Columns for a grid `width` px wide: as many units of at least `unit` px as fit with `gap` between them, and at least two. */
 export function homeColumns(width: number, unit = HOME_UNIT, gap = HOME_GAP): number {
@@ -81,23 +72,4 @@ export function packShapes(cards: readonly {id: string; shape: HomeShape}[], col
   const holes: {column: number; row: number}[] = [];
   for (let row = 0; row < filled.length; row += 1) for (let column = 0; column < width; column += 1) if (free(row, column)) holes.push({column: column + 1, row: row + 1});
   return {cards: placed, rows: filled.length, holes};
-}
-
-/** The largest offered shape that fits wholly in the trailing empty cells of a packing (automatic art), if any. */
-export function trailingFit(packing: ShapePacking, columns: number, offered: readonly HomeShape[]): ShapePlacement | undefined {
-  const empty = new Set(packing.holes.map(hole => `${String(hole.row)}:${String(hole.column)}`));
-  // Only cells after every occupied cell, in reading order, count as trailing: the free run at the end of the last row.
-  let lastEnd = 0;
-  for (const place of packing.cards.values()) lastEnd = Math.max(lastEnd, (place.row + place.rows - 2) * columns + place.column + place.columns - 1);
-  const trailing = (row: number, column: number): boolean => (row - 1) * columns + column > lastEnd && (row > packing.rows || empty.has(`${String(row)}:${String(column)}`));
-  for (const shape of ['large-square', 'wide', 'tall', 'square'] as const) {
-    if (!offered.includes(shape)) continue;
-    const span = shapeSpan[shape];
-    for (let row = 1; row <= packing.rows; row += 1) for (let column = 1; column + span.columns - 1 <= columns; column += 1) {
-      let fits = true;
-      for (let r = row; r < row + span.rows && fits; r += 1) for (let c = column; c < column + span.columns && fits; c += 1) fits = trailing(r, c) && r <= packing.rows;
-      if (fits) return {column, row, columns: span.columns, rows: span.rows};
-    }
-  }
-  return undefined;
 }

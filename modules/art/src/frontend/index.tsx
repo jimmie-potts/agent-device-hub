@@ -8,6 +8,7 @@ import {ART_TARGETS, TARGET_LABELS, browserArt, latestBrowserArt, money, reasonT
 export {ArtPresentationProvider, useArtBackdrop, useArtPresentation, useShowArtBackdrop} from './presentation.js';
 export type {ArtPresentation, PresentedArt} from './presentation.js';
 export {ArtBackdropSource} from './backdrop-source.js';
+export {PresentedArtNotice} from './notice-label.js';
 export type {ArtBackdrop, ArtBackdropImage} from './backdrop.js';
 import './style.css';
 

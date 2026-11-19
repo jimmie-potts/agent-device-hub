@@ -2,6 +2,7 @@
 // from the page; the layer hands it a scene and the skin's colors for every frame it draws.
 import {MAX_PANELS, MAX_VEILS, type GlassScene} from './glass-scene.ts';
 import {FRAGMENT, PANEL_TEXELS, VERTEX} from './glass-shader.ts';
+import type {GlassThumb, ThumbBox} from './glass-thumb.ts';
 
 /** A color as 0-1 channels and an alpha that the shader reads as an amount. */
 export type GlassColor = readonly [number, number, number, number];
@@ -32,6 +33,8 @@ export type GlassFrame = {
   washBox: readonly [number, number, number, number];
   /** The join between panels (0 keeps them apart). */
   merge: number;
+  /** A switch's thumb, drawn as its own glass capsule, or null for none. */
+  thumb: GlassThumb | null;
 };
 /** The backdrop texture's source: a decoded picture the caller owns and keeps open while it is current. */
 export type GlassPicture = {bitmap: ImageBitmap; width: number; height: number};
@@ -42,6 +45,7 @@ export type GlassRenderer = {
   dispose: () => void;
 };
 
+const NO_THUMB: ThumbBox = [0, 0, 0, 0];
 /** WCAG's target is 4.5:1; the veil aims a little higher so the grain and rounding never take it below. */
 const CONTRAST = 5;
 
@@ -106,6 +110,7 @@ export function createGlassRenderer(gl: WebGL2RenderingContext): GlassRenderer {
       gl.uniform1i(at('uCount'), count);gl.uniform1i(at('uVeilCount'), Math.min(scene.veils.length, MAX_VEILS));gl.uniform4fv(at('uVeils'), veils);gl.uniform1fv(at('uVeilEdges'), edges);
       color4('uVeil', tokens.veil);color4('uVeilDeep', tokens.veilDeep);color4('uTone', tokens.tone);color4('uRim', tokens.rim);color4('uShadow', tokens.shadow);
       color4('uWashStart', tokens.washStart);color4('uWashEnd', tokens.washEnd);gl.uniform4f(at('uWashBox'), ...frame.washBox);
+      gl.uniform4f(at('uThumbA'), ...frame.thumb?.lead ?? NO_THUMB);gl.uniform4f(at('uThumbB'), ...frame.thumb?.lag ?? NO_THUMB);
       gl.uniform3f(at('uEdge'), tokens.edge[0], tokens.edge[1], tokens.edge[2]);gl.uniform3f(at('uBg'), tokens.bg[0], tokens.bg[1], tokens.bg[2]);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },

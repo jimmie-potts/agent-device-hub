@@ -90,7 +90,7 @@ try {
   await page.getByRole('heading', {name: 'Settings', level: 1, exact: true}).waitFor();
   await page.goBack();
   await page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
-  const quiet = page.locator('[data-widget="hub-mode"]').getByRole('button', {name: 'Quiet', exact: true});
+  const quiet = page.locator('[data-hub-mode]').getByRole('button', {name: 'Quiet', exact: true});
   await tabTo(page, quiet);
   assert.equal(await focusVisible(page), true, 'focus is visible on a mode button');
   const face = card('Port the wall').locator('summary');
@@ -116,13 +116,13 @@ try {
   await card('Port the wall').locator('.chip', {hasText: 'Stale'}).waitFor();
   await shot(page, 'tv-stale');
   await feed(phone.page, 'connected');
-  const phoneQuiet = phone.page.locator('[data-widget="hub-mode"]').getByRole('button', {name: 'Quiet', exact: true});
+  const phoneQuiet = phone.page.locator('[data-hub-mode]').getByRole('button', {name: 'Quiet', exact: true});
   await phoneQuiet.click();
-  await phone.page.locator('[data-widget="hub-mode"]').getByRole('button', {name: 'Quiet', exact: true, pressed: true}).waitFor();
+  await phone.page.locator('[data-hub-mode]').getByRole('button', {name: 'Quiet', exact: true, pressed: true}).waitFor();
   assert.equal(modeCommands(phone.sent), 1);
   await tv.context.setOffline(false);
   await feed(page, 'connected');
-  await page.locator('[data-widget="hub-mode"]').getByRole('button', {name: 'Quiet', exact: true, pressed: true}).waitFor();
+  await page.locator('[data-hub-mode]').getByRole('button', {name: 'Quiet', exact: true, pressed: true}).waitFor();
   await card('Port the wall').locator('.chip', {hasText: 'Waiting for approval'}).waitFor();
   assert.equal(modeCommands(tv.sent), 0, 'the television shows the other browser\'s mode without repeating it');
   assert.equal(tv.sent.length, 0);

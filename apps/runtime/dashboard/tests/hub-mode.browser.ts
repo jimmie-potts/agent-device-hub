@@ -23,10 +23,10 @@ try {
       assert.equal(nativeCalls(), count);
     };
     await page.goto(world.url); await feed(page, 'connected');
-    const panel = page.locator('[data-widget="hub-mode"]'), inbox = page.locator('[data-inbox-panel]');
+    const panel = page.locator('[data-hub-mode]'), inbox = page.locator('[data-inbox-panel]');
     const work = panel.getByRole('button', {name: 'Work', exact: true});
     const warning = panel.getByRole('button', {name: 'Check Inbox', exact: true});
-    const calls = async (n: number): Promise<void> => {await page.waitForFunction(() => document.querySelector('[data-widget="hub-mode"] .hub-control-sr')?.textContent?.includes('Selection completed')); assert.equal(nativeCalls(), n);};
+    const calls = async (n: number): Promise<void> => {await page.waitForFunction(() => document.querySelector('[data-hub-mode] .hub-control-sr')?.textContent?.includes('Selection completed')); assert.equal(nativeCalls(), n);};
     await work.waitFor(); await panel.locator('.hub-mode-choice', {hasText: 'Free'}).waitFor();
     assert.equal(requests(), 0); assert.equal(nativeCalls(), 0, 'startup sends no native command');
     const surface = await panel.evaluate(el => ({background: getComputedStyle(el).backgroundColor, border: getComputedStyle(el).borderColor}));
@@ -53,7 +53,7 @@ try {
     await work.click(); await warning.waitFor(); assert.equal(requests(), 2, 'selected Work explicitly reapplies');
     world.modeResult('none'); await work.click();
     await waitForCalls(6);
-    await page.waitForFunction(() => document.querySelector('[data-widget="hub-mode"] .hub-control-sr')?.textContent?.includes('Check Inbox'));
+    await page.waitForFunction(() => document.querySelector('[data-hub-mode] .hub-control-sr')?.textContent?.includes('Check Inbox'));
     assert.equal(requests(), 3); assert.equal(await warning.count(), 1, 'acceptance cannot clear a prior issue');
     await world.completeMode('succeeded'); await warning.waitFor({state: 'detached'});
     assert.equal(await inbox.locator('[data-inbox]').count(), 1, 'resolved historical Inbox evidence remains');

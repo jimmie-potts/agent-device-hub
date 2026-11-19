@@ -1,6 +1,7 @@
 import React, {useLayoutEffect, useRef} from 'react';
 import {readScene, sameScene, type GlassScene} from './glass-scene.ts';
 import {createGlassRenderer, luminance, parseColor, type GlassColor, type GlassPicture, type GlassRenderer, type GlassTokens} from './glass-renderer.ts';
+import {stepThumb, thumbSettled, type GlassThumb} from './glass-thumb.ts';
 import './glass.css';
 
 /**
@@ -18,8 +19,8 @@ import './glass.css';
  * - `fuse` joins neighboring panels with a smooth minimum so they lean together; without it panels stay apart.
  *
  * The canvas takes no pointer input and the layer sends nothing. It draws only while something changes or eases: a box
- * moved or resized, the page scrolled, the window resized, the skin or appearance changed, the backdrop changed, or
- * the first appearance (700 ms) is still running. Boxes are read at most once per frame. Leaving the page releases the
+ * moved or resized, the page scrolled, the window resized, the skin or appearance changed, the backdrop changed, a
+ * switch's thumb is still travelling (glass-thumb.ts), or the first appearance (700 ms) is still running. Boxes are read at most once per frame. Leaving the page releases the
  * context, the observers and the listeners.
  */
 export type GlassState = 'webgl' | 'quiet';
@@ -53,6 +54,7 @@ function readTokens(probe: HTMLElement): GlassTokens {
     shadow: value('shadow'), edge: value('edge'), bg, washStart: value('wash-start'), washEnd: value('wash-end')};
 }
 const sameTokens = (a: GlassTokens, b: GlassTokens): boolean => JSON.stringify(a) === JSON.stringify(b);
+const thumbOf = (thumb: GlassThumb | null): string => thumb === null ? '' : [...thumb.lead, ...thumb.lag].map(value => value.toFixed(1)).join(',');
 const boxesOf = (scene: GlassScene): string => scene.panels.map(panel => `${panel.id}:${[panel.rect.x, panel.rect.y, panel.rect.width, panel.rect.height].map(value => value.toFixed(1)).join(',')}`).join('|');
 
 type Glass = {backdrop: (picture: GlassBackdrop | null) => void; fuse: (value: boolean) => void; dispose: () => void};
@@ -64,6 +66,8 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   try {gl = canvas.getContext('webgl2', {alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'low-power'});} catch {gl = null;}
   let renderer: GlassRenderer | null = null, picture: GlassBackdrop | null = null, merge = 0, disposed = false;
   let raf = 0, born = -1, frames = 0, scene: GlassScene | undefined, tokens: GlassTokens | undefined, size = '', drawnBackdrop: string | null | undefined;
+  // The switch thumb and when it last moved; -1 while it rests, so its next step is one frame long, not the idle time.
+  let thumb: GlassThumb | null = null, thumbAt = -1;
   // What the next frame must look at. A frame that finds nothing new draws nothing.
   let readBoxes = true, readSkin = true, force = true, resizing = false, settling: GlassScene | undefined, settleFrames = 0, state: GlassState = 'quiet';
   const setState = (next: GlassState): void => {if (next !== state) {state = next;callbacks.state(next);}};
@@ -102,15 +106,22 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
     if (readSkin) {readSkin = false;const next = readTokens(probe);if (tokens === undefined || !sameTokens(tokens, next)) {tokens = next;changed = true;}}
     if (readBoxes) {readBoxes = false;const next = readScene(root, doc, {width, height});if (scene === undefined || !sameScene(scene, next)) {scene = next;changed = true;}}
     if (born < 0) born = still.matches ? -APPEAR_MS : now;
-    const appearing = now - born < APPEAR_MS;
+    const appearing = now - born < APPEAR_MS, goal = scene?.thumb ?? null;
+    let travelling = false;
+    if (!thumbSettled(thumb, goal)) {
+      thumb = stepThumb(thumb, goal, thumbAt < 0 ? 1 / 60 : Math.min((now - thumbAt) / 1000, 0.1), still.matches);
+      changed = true;travelling = !thumbSettled(thumb, goal);
+    }
+    thumbAt = travelling ? now : -1;
     if (!changed && !appearing) return;
     if (tokens === undefined || scene === undefined) return;
     const t = Math.min(1, Math.max(0, (now - born) / APPEAR_MS)), scroll = doc.scrollingElement ?? doc.documentElement;
-    renderer.draw({scene, tokens, width, height, dpr, appear: 1 - (1 - t) ** 3, depth: Math.min(1, scroll.scrollTop / (height * 0.4)), merge,
+    renderer.draw({scene, tokens, width, height, dpr, appear: 1 - (1 - t) ** 3, depth: Math.min(1, scroll.scrollTop / (height * 0.4)), merge, thumb,
       washBox: [-scroll.scrollLeft, -scroll.scrollTop, scroll.clientWidth, Math.max(scroll.scrollHeight, height)]});
     frames += 1;canvas.dataset['glassFrames'] = String(frames);canvas.dataset['glassBoxes'] = boxesOf(scene);canvas.dataset['glassBackdrop'] = picture?.id ?? '';
+    canvas.dataset['glassCapsules'] = thumbOf(thumb);
     setState('webgl');report(picture?.id ?? null);
-    if (appearing) schedule();
+    if (appearing || travelling) schedule();
   };
   function schedule(): void {if (raf === 0 && !disposed) raf = view.requestAnimationFrame(frame);}
   const boxes = (): void => {readBoxes = true;schedule();};
@@ -139,7 +150,7 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   observePanels();
   // Cards added, removed, reordered or reshaped (Edit Home, paging, a new record), and marks that change.
   const page = new MutationObserver(records => {if (records.some(record => record.type === 'childList')) observePanels();boxes();});
-  page.observe(root, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-glass-panel', 'data-glass-veil', 'style', 'class', 'hidden']});
+  page.observe(root, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-glass-panel', 'data-glass-veil', 'data-glass-thumb', 'style', 'class', 'hidden']});
   // An element added or removed before the root, or beside one of its ancestors.
   const around = new MutationObserver(() => {observePanels();boxes();});
   for (let node = root.parentElement; node !== null && node !== doc.documentElement; node = node.parentElement) around.observe(node, {childList: true});

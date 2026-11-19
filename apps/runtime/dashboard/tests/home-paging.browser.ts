@@ -110,7 +110,7 @@ try {
   assert.equal(await page.evaluate(() => scrollY), scrolled, 'a row removed elsewhere does not scroll the page');
 
   // Hub mode's Check Inbox shows the page holding its item, then opens and focuses it.
-  const panel = page.locator('[data-widget="hub-mode"]'), warning = panel.getByRole('button', {name: 'Check Inbox', exact: true});
+  const panel = page.locator('[data-hub-mode]'), warning = panel.getByRole('button', {name: 'Check Inbox', exact: true});
   const work = panel.getByRole('button', {name: 'Work', exact: true});
   await work.focus();await work.press('Enter');await warning.waitFor();
   const wall = inbox.locator('[data-inbox]').filter({hasText: 'wall'}).first();
