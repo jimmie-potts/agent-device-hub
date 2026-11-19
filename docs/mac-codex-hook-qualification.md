@@ -46,8 +46,11 @@ excluded. SessionEnd reflects the client's emitted evidence; switching away
 from a Desktop chat does not establish that the client emitted it.
 
 A Codex approval carries no request ID. The core forgets it at its turn's Stop,
-when a newer turn retires its turn, at the session's end or by operator
-recovery, and never correlates it otherwise. The hook makes no permission
+when a newer turn retires its turn or at the session's end, and never
+correlates it otherwise. An approval left by an Interrupt cannot be cleared by
+operator recovery: the Interrupt leaves the work unknown, and recovery needs
+work that a restart left unconfirmed. Such an approval stays until a newer
+prompt, a SessionEnd or the 24-hour expiry. The hook makes no permission
 decision: Codex shows its normal approval prompt once the hook exits. The
 [provider qualification record](provider-qualification.md#mac-codex-approvals-and-subagents)
 lists what is documented, implemented and observed for these events.
