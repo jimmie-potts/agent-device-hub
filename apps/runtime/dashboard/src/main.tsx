@@ -404,14 +404,14 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     data-rail-wide={ended ? 'expanded' : railAttribute(rail.saved.wide)} data-rail-narrow={ended ? 'expanded' : railAttribute(rail.saved.narrow)}
     data-drawer={drawer ? 'open' : undefined} data-rail-short={railShort ? '' : undefined}>
     <a className="skip" href="#main" inert={drawer || jump} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
-    <header className="phone-bar" inert={jump}>
+    <header className="phone-bar" inert={jump} data-glass-veil>
       <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-description={conversationWaiting ? 'A conversation needs your answer' : undefined}
         aria-expanded={drawer} aria-controls="rail" onClick={() => { setDrawer(open => !open); }}><RailIcon name="menu"/>{conversationWaiting && <span className="rail-attention"/>}</button>
       <span className="phone-brand">B.U.N.N.Y.</span>
       <button type="button" className="secondary rail-button phone-jump" aria-label="Jump to a page" aria-haspopup="dialog" onClick={openJump}><RailIcon name="search"/></button>
       {ended && <button type="button" className="phone-sign-in" inert={drawer} onClick={signInAgain}>Sign in again</button>}
     </header>
-    <aside id="rail" ref={railElement} inert={jump} onClick={event => {
+    <aside id="rail" ref={railElement} inert={jump} data-glass-veil onClick={event => {
       if (!drawer || !(event.target instanceof Element) || event.target.closest('a') === null) return;
       setDrawer(false);
       menuButton.current?.focus();
@@ -487,7 +487,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         <h2>{route.kind === 'component' ? `No component named ${route.id}` : 'Nothing at this address'}</h2>
         <p>This address is not declared by the current runtime. <NavLink route={{kind: 'home'}}>Go to the home</NavLink>.</p>
       </div></section>}
-      {!workspace && <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>}
+      {!workspace && <footer data-glass-veil>B.U.N.N.Y. / Source observations and deliberate controls</footer>}
     </main>
   </div></PinTargetsProvider></DeviceModesProvider></ArtThemeProvider></ArtPresentationProvider>;
 }

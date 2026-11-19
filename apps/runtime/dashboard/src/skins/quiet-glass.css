@@ -63,7 +63,21 @@
   --card-flip-duration:240ms;
   --grid-image:none;
   --grid-size:auto;
-  --shell-background:radial-gradient(ellipse at 0 0,light-dark(#cbd9f4,#293650),transparent 65%),radial-gradient(ellipse at 100% 100%,light-dark(#ebdcde,#302b3f),transparent 65%),var(--bg);
+  --shell-wash-start:light-dark(#cbd9f4,#293650);
+  --shell-wash-end:light-dark(#ebdcde,#302b3f);
+  --shell-background:radial-gradient(ellipse at 0 0,var(--shell-wash-start),transparent 65%),radial-gradient(ellipse at 100% 100%,var(--shell-wash-end),transparent 65%),var(--bg);
+  /* The glass layer (#1929). Each color's alpha is the amount the shader uses: the veil over the artwork (deeper as
+     the page scrolls), the glass tone a panel mixes toward, the rim's light, the shadow, the bevel's tint, the faintest
+     text drawn on glass that the automatic veil keeps readable, and the frosted rail over the artwork. */
+  --glass-radius:34px;
+  --glass-veil:light-dark(rgb(244 246 251/.58),rgb(7 11 20/.13));
+  --glass-veil-deep:light-dark(rgb(244 246 251/.58),rgb(7 11 20/.22));
+  --glass-tone:light-dark(rgb(255 255 255/.62),rgb(0 0 0/.14));
+  --glass-rim:#ffffff;
+  --glass-shadow:light-dark(rgb(0 0 0/.114),rgb(0 0 0/.38));
+  --glass-edge:#d6faf2;
+  --glass-ink:var(--muted-dense);
+  --glass-rail:light-dark(rgb(255 255 255/.3),rgb(10 14 26/.2));
   --shell-rail:light-dark(#e2e9f5,#1b2436);
   --shell-shadow:0 12px 28px light-dark(#50628016,#00000030),inset 0 1px 0 light-dark(#ffffff,#ffffff14);
   --shell-drawer-shadow:0 20px 44px light-dark(#3b4c6e2e,#00000075);

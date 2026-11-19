@@ -7,8 +7,10 @@ import {fitArt, type ArtFit} from './home-art.ts';
  * grid (`shaped`) the card's shape sizes the art instead. The element tree is the same either way, so crossing between
  * the grid and one column keeps the art mounted, its image and its focused control (#1672).
  */
-export function HomeArtSlot({automatic, format, home, shaped = false, children}: {
+export function HomeArtSlot({automatic, format, home, shaped = false, panel, children}: {
   automatic: boolean; format: HomeArtFormat; home: React.RefObject<HTMLDivElement | null>; shaped?: boolean; children: React.ReactNode;
+  /** The glass panel id of the art's box (#1929); the box, not the row, is the card's surface. */
+  panel?: string;
 }): React.JSX.Element {
   const host = useRef<HTMLDivElement>(null), [fit, setFit] = useState<ArtFit>();
   useEffect(() => {
@@ -30,7 +32,7 @@ export function HomeArtSlot({automatic, format, home, shaped = false, children}:
     return () => {observer.disconnect();owner.removeEventListener('pointerdown', down);window.removeEventListener('pointerup', up);window.removeEventListener('pointercancel', up);owner.removeEventListener('focusout', blur);window.removeEventListener('resize', measure);};
   }, [automatic, format, home, shaped]);
   return <div className={`home-art-slot${shaped ? ' home-art-slot-shaped' : ''}`} ref={host} data-art-placement={automatic ? 'automatic' : 'reserved'}>
-    <div className={`home-art-box${shaped ? ' home-art-shaped' : ''}`} data-art-format={shaped ? undefined : fit?.format} hidden={!shaped && fit === undefined}
+    <div className={`home-art-box${shaped ? ' home-art-shaped' : ''}`} data-glass-panel={panel} data-art-format={shaped ? undefined : fit?.format} hidden={!shaped && fit === undefined}
       style={shaped || fit === undefined ? undefined : {width: fit.width, height: fit.height}}>{children}</div>
   </div>;
 }
