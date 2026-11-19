@@ -37,9 +37,13 @@ async function held(page:Page,panel:Locator,effects:readonly {yaw:number}[],step
 async function available(clock:WorldClock,panel:Locator):Promise<void> {
   await clock.advance(200);await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();
 }
-/** An admitted neutral input confirms zero head input from the next observations and holds for 800 ms of world time. */
-async function neutralCompletes(clock:WorldClock,panel:Locator):Promise<void> {
-  await panel.getByText('Active neutral neutral phase',{exact:true}).waitFor();await clock.advance(900);
+/**
+ * An admitted neutral input confirms zero head input from the next observations and holds for 800 ms of world time.
+ * Time moves only once the input is sent (`effects` grew past `before`), so the hold starts before time does.
+ */
+async function neutralCompletes(clock:WorldClock,panel:Locator,effects:readonly {yaw:number}[],before:number):Promise<void> {
+  await panel.getByText('Active neutral neutral phase',{exact:true}).waitFor();
+  await expect.poll(()=>effects.length,{message:'the neutral input is sent'}).toBe(before+1);await clock.advance(900);
 }
 const screenshot = join(await browserArtifactDirectory(), 'microduck-browser.png');
 const clock=worldClock(),world=await startWorld({microduck:true,companions:true,clock}),browser=await chromium.launch({headless:true});
@@ -114,13 +118,15 @@ try {
   assert.equal((await world.credentialAction('inbox-handle',saved.id,{action:'send-again',expectedRevision:saved.revision})).status,403);
   assert.equal(await world.credentialInboxResend(saved.id,saved.revision),true,'SDK inbox access cannot resend robot work');
   assert.equal(await page.evaluate(async saved=>{const response=await fetch('/api/v2/commands/inbox-handle',{method:'POST',headers:{'content-type':'application/json','bunny-request':'1'},body:JSON.stringify({target:saved.id,requestId:crypto.randomUUID(),data:{action:'send-again',expectedRevision:saved.revision}})});await response.arrayBuffer();return response.status;},saved),403,'browser saved-command resend is refused too');
-  const neutral=panel.getByRole('button',{name:'Neutral head input',exact:true});assert.equal(await neutral.isDisabled(),true);await acknowledgment.check();await neutral.click();
-  await neutralCompletes(clock,panel);await held(page,panel,world.microduck.effects,'the acknowledged neutral input',acknowledgment.waitFor({state:'hidden'}));
+  const neutral=panel.getByRole('button',{name:'Neutral head input',exact:true});assert.equal(await neutral.isDisabled(),true);await acknowledgment.check();
+  let sent=world.microduck.effects.length;await neutral.click();
+  await neutralCompletes(clock,panel,world.microduck.effects,sent);await held(page,panel,world.microduck.effects,'the acknowledged neutral input',acknowledgment.waitFor({state:'hidden'}));
   await panel.getByText('Last operation: succeeded',{exact:true}).waitFor();assert.equal(world.microduck.effects.at(-1)?.yaw,0);
   world.microduck.loseReply=true;await neutral.click();await held(page,panel,world.microduck.effects,'the lost-reply neutral command',acknowledgment.waitFor());assert.equal(await stop.isEnabled(),true);
   await acknowledgment.check();await neutral.click();await page.waitForFunction(()=>document.querySelector<HTMLInputElement>('.microduck-panel input[type="checkbox"]')?.checked===false);
-  assert.equal(await neutral.isDisabled(),true);world.microduck.loseReply=false;await acknowledgment.check();await neutral.click();
-  await neutralCompletes(clock,panel);await held(page,panel,world.microduck.effects,'the second acknowledged neutral input',acknowledgment.waitFor({state:'hidden'}));
+  assert.equal(await neutral.isDisabled(),true);world.microduck.loseReply=false;await acknowledgment.check();
+  sent=world.microduck.effects.length;await neutral.click();
+  await neutralCompletes(clock,panel,world.microduck.effects,sent);await held(page,panel,world.microduck.effects,'the second acknowledged neutral input',acknowledgment.waitFor({state:'hidden'}));
   const before=world.microduck.effects.length;await page.reload();await feed(page,'connected');await panel.getByRole('status').filter({hasText:'Simulator available'}).waitFor();assert.equal(world.microduck.effects.length,before);
   for(const width of [320,390,1440]){await page.setViewportSize({width,height:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
   assert.deepEqual(errors,[],'MicroDuck controls page must have no uncaught page errors');
