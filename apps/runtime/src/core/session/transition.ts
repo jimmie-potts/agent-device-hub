@@ -304,15 +304,19 @@ function confirm(previous: StoredSession | undefined, session: StoredSession, ob
 /**
  * The core's start (design decision 4): every stored session whose work is running becomes unconfirmed, in one change
  * that publishes the changed records and no occurrence. Questions, outcomes and read evidence stay as stored. A session
- * already due to expire is left to the expiry that follows.
+ * already due to expire is left to the expiry that follows. A marking on work that is not running, which only a release
+ * that does not keep the marking can leave behind, is cleared in the same change.
  */
 function start(state: SessionState, now: number): TransitionResult {
   const changed: StoredSession[] = [];
   for (const session of state.sessions.values()) {
-    if (session.activity !== 'active' || session.restartUnconfirmed === true || session.lastEvidenceAtMs <= now - SESSION_LIMITS.sessionAgeMs) continue;
-    const marked = structuredClone(session);
-    marked.restartUnconfirmed = true;
-    changed.push(marked);
+    if (session.lastEvidenceAtMs <= now - SESSION_LIMITS.sessionAgeMs) continue;
+    const running = session.activity === 'active';
+    if (running === (session.restartUnconfirmed === true)) continue;
+    const next = structuredClone(session);
+    if (running) next.restartUnconfirmed = true;
+    else delete next.restartUnconfirmed;
+    changed.push(next);
   }
   if (changed.length === 0) return empty(state, 'duplicate');
   return {outcome: 'applied', changed, removed: [], ended: [], occurrences: [], deadlineMs: deadlineOf(state.sessions.values(), state.guards)};

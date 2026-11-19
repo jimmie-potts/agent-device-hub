@@ -513,6 +513,29 @@ it('a restart whose start-up maintenance falls on a full disk starts the core an
   await waitFor(() => received(logs, 'accepted').length === 1, 5000, 'the observation once there is room');
 });
 
+it('the sessions tool commits a pending start transaction before it reads, so it never serves records from before the start (#1865)', async context => {
+  let full = false;
+  const disk: CorePart = {derive: () => { if (full) throw Object.assign(new Error('database or disk is full'), {errcode: 13}); }};
+  const dir = await stateDir(context);
+  const clock = manualClock();
+  const first = fixture('hook');
+  const {runtime: before, logs: earlier} = await run(context, {modules: [createCoreModule(), first], stateDir: dir, clock: {now: clock.now}, scheduler: clock.scheduler});
+  await publish(contextOf(first).sdk, turnStarted, START);
+  await waitFor(() => received(earlier, 'accepted').length === 1, 5000, 'the running session');
+  await before.stop();
+  clock.advance(1000);
+  full = true;
+  const module = createCoreModule({parts: [disk]});
+  await run(context, {modules: [module], stateDir: dir, clock: {now: clock.now}, scheduler: clock.scheduler});
+  const tool = module.manifest.tools?.find(entry => entry.name === 'sessions');
+  assert.ok(tool);
+  assert.equal((await tool.read({}) as {error?: {code: string}}).error?.code, 'unavailable', 'nothing is served while the start cannot commit');
+  // Room again, before the core's own retry: the read commits the start first and serves the marked record.
+  full = false;
+  const read = await tool.read({}) as {sessions: SessionRecord[]};
+  assert.deepEqual(read.sessions.map(record => record.restartUncertain), [true]);
+});
+
 it('a second core never gets the store while the first opens its owner again after a failed commit', async context => {
   const dir = await stateDir(context);
   let database: DatabaseSync | undefined;

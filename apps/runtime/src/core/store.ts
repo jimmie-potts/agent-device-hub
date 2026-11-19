@@ -373,8 +373,9 @@ export class CoreStore {
   }
 
   /**
-   * The core calls this on its serialized intake. A pending start transaction commits first, so the target is checked
-   * against the record as it stands; after that no await separates target checking from the SQLite commit.
+   * The core calls this on its serialized intake. A pending start transaction commits first, so eligibility is judged
+   * against the record as it then stands. Only that settling awaits before the target is read; the target is checked
+   * again inside the receipt's own transaction, where a change between the two rolls the receipt back.
    */
   async readReceipt(message: Message<ReadReceiptObservation>, qualification: ReadReceiptQualification): Promise<boolean> {
     if (!await this.#start()) throw new Error('the core store refused the start transaction');

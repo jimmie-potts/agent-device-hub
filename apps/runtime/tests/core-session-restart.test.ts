@@ -227,3 +227,18 @@ it('a start transaction that cannot commit changes nothing, and no session chang
   assert.deepEqual(w.changes[1]?.messages.map(message => message.subject), [sessionEntityId(CLAUDE)]);
   assert.deepEqual([record(w, CODEX).restartUncertain, record(w, RUNNING).restartUncertain, record(w, CLAUDE).restartUncertain], [true, true, false]);
 });
+
+it('the start clears a marking that a release without it left on work that is not running (#1865 rollback)', async context => {
+  const w = await open(context);
+  await three(w);
+  // A step-7 release keeps the stored marking it does not know of, while the work it marked has since stopped.
+  const id = sessionEntityId(CLAUDE);
+  const row = w.rows(`SELECT session FROM core_sessions WHERE id = '${id}'`)[0] as {session: string} | undefined;
+  assert.ok(row);
+  w.db.prepare('UPDATE core_sessions SET session = ? WHERE id = ?').run(JSON.stringify({...JSON.parse(row.session) as object, restartUnconfirmed: true}), id);
+  w.clock.advance(10_000);
+  await w.crashAndRestart();
+  assert.equal(stored(w, CLAUDE), undefined, 'cleared in the start transaction');
+  assert.equal(record(w, CLAUDE).restartUncertain, false);
+  assert.deepEqual([stored(w, CODEX), stored(w, RUNNING)], [true, true]);
+});
