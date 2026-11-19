@@ -226,7 +226,9 @@ semantics, keyboard order, text cues, or which control is primary.
   `apps/dashboard/src/skins/neon-geometry-wars.css`. Pages read their owning
   layer's tokens and add no raw colors to layout files.
 - Runtime `skins/art-theme.ts` derives a closed set of light/dark decorative
-  color values from bounded palette data. `skins/art-theme.css` supplies the
+  color values from bounded palette data: the palette supplies a hue and a
+  tint strength, and each role keeps a fixed lightness step, so surfaces stay
+  apart for every palette. `skins/art-theme.css` supplies the
   static background washes. The shared shell applies only this allowlist and
   removes it for the default preference; no generated styling program is used.
 - The wall status tokens moved into the application token layer with the

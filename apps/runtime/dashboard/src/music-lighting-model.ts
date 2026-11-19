@@ -146,7 +146,8 @@ export function endingText(last: LightingEnded, restores?: Restores): string {
   const reason = last.reason === 'source-lost' && last.missedCues !== undefined ? 'the show lost its clock or ownership updates' : REASONS[last.reason];
   const hint = last.missedCues !== undefined && last.code === 'not-found' ? 'The saved show version is unavailable.'
     : last.missedCues !== undefined && last.code === 'unsupported-capability' ? 'The light cannot render this show with its saved layout or stream.'
-      : last.code === undefined ? undefined : CODE_HINTS[last.code];
+      : last.missedCues !== undefined && (last.code === 'invalid-state' || last.code === 'unavailable') ? undefined
+        : last.code === undefined ? undefined : CODE_HINTS[last.code];
   const restoration = last.restoration === 'restored' && restores === 'color' ? 'The base colour and brightness were restored.'
     : last.restoration === 'none' && restores === 'nothing' && RESTORING.has(last.reason)
       ? 'Nothing was put back: the session started over a selection the light cannot select again, so the light keeps what it last showed.'
@@ -225,10 +226,17 @@ export function controlText(text: string): string {
     .replace('Nothing was sent to the device.', 'No lighting work was sent.').replace('No evidence of a device effect.', 'No light evidence.') +
     (hint === undefined ? '' : ` ${hint}`);
 }
+const MEASURED_WORK_REFUSALS: ReadonlySet<string> = new Set([
+  'Play the Music item and wait for a fresh position.',
+  'Music is playing a different library item.',
+  'Music is past the last cue of this show.',
+]);
+
 /** The light module's answer to the core's work command, which is still not proof of a physical effect. */
-export function workText(text: string): string {
+export function workText(text: string, detail?: string): string {
+  const hint = detail !== undefined && MEASURED_WORK_REFUSALS.has(detail) ? ` ${detail}` : '';
   return text.replace('The module observed the result.', 'The light module observed the result.')
-    .replace('Transmitted; physical effect was not observed.', 'Written to the light; the physical effect was not observed.');
+    .replace('Transmitted; physical effect was not observed.', 'Written to the light; the physical effect was not observed.') + hint;
 }
 
 /** The core's work request ID for one operator command and light, as `lightingWorkRequestId` derives it in the core. */

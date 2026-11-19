@@ -60,7 +60,7 @@ export function createNanoleafModule({transport, datagram, readWithDiagnostics}:
   return {
     manifest: {
       name: NANOLEAF_MODULE, apiVersion: '1.3', configure: configureNanoleaf,
-      pages: [{id: 'wall', title: 'Wall', presentation: 'react'}, {id: 'shows', title: 'Decorative shows', presentation: 'react'}],
+      pages: [{id: 'wall', title: 'Wall', presentation: 'react'}, {id: 'shows', title: 'Saved shows', presentation: 'react'}],
       content: (ref, request) => running === undefined
         ? errorBody('unavailable', {detail: 'The Nanoleaf module is not running.'}) : running.content(ref, request),
     },

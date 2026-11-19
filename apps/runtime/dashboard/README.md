@@ -534,12 +534,14 @@ lighting** stays available for starting, active, stopping and uncertain
 sessions, independent of an unresolved Start. Start and Stop keep separate
 tracked attempts per light, and every disabled control states its reason.
 
-**Start saved show** plays the exact version selected under one light. Save a
-version on the Nanoleaf Shows page, then choose its name and version in Audio.
-Playback begins at the first cue without Music.app measurement or recording
-synchronization. **Stop Music lighting** uses the show's current generation.
-An unsaved draft or storyboard cannot start playback. The light must still be
-on and in Free.
+**Start saved show** plays the immutable version selected for one light.
+Save a version on the Nanoleaf **Saved shows** page, then select it in Audio.
+A decorative show begins at zero and uses its own clock. A measured excerpt
+begins at the current position of the associated Mac Music library item and
+follows observed pause and seek. The light refuses a start when the item or
+position is unavailable, and ends a running excerpt when its playback context
+changes or expires. **Stop Music lighting** uses the active generation. The
+light must be on and in Free. Only a saved version can start playback.
 
 A failed read or a lost connection keeps the last fresh records as **Last
 known**, with controls disabled until a fresh read. A reconnect reads again on its
@@ -790,7 +792,12 @@ live changes:
   `unauthenticated` or `forbidden` sync answer ends the link too. It never signs in
   by itself.
 
-`src/sessions.ts` derives names, chip priority and evidence from each record.
+`src/sessions.ts` derives names, chip priority and evidence from each session's
+shared view (`@jimmie-potts/event-contracts/v2/session-view`, #1865). The copy
+reads every record into that view once, and the rows, Habitat and the notice
+override read only the view: they show the hub's status and apply only the
+dashboard's acknowledgment and read policy. A status detail this version does
+not know falls back to its class, so an unknown attention detail shows **Needs you**.
 `AgentStatusCard` takes a derived row, live evidence, a clock and an optional
 action slot; it acquires no connection and sends no command. `AgentStatusSummary`
 can render independently. `AgentSessions` composes both with search, provider
@@ -800,11 +807,15 @@ starting another feed.
 
 Card faces show the label (then title or native ID), project/client and state.
 Approval, input and question attention add amber highlighting and text. Native
-card disclosure reveals freshness, attention lines, retained notices and their
-acknowledgments, source/session/activity/read/parent/child evidence and optional
-label editing. Collapse and filtering retain drafts; replacing a generation
-retires them. Read-only callers see the same evidence without label controls.
-Stale/disconnected cards say **Stale**, retain their last-known state in the
+card disclosure reveals the time since the session's last published change,
+labeled as such, attention lines, retained notices and their acknowledgments,
+source/session/work/read/parent/child evidence and optional label editing.
+Collapse and filtering retain drafts; replacing a generation retires them.
+Read-only callers see the same evidence without label controls. A card is
+uncertain only when the hub's status is unknown, its working status has
+unconfirmed work (**Unconfirmed**, in the working chip's color), or the copy is not synced
+(**Stale**). Silence never makes a session that waits for the owner or holds a
+finished turn uncertain. Uncertain cards retain their last-known state in the
 expanded evidence and contribute no current Working count. Needs you and Unread
 counts describe retained evidence across the full copy, independent of filters.
 No separate attention box is placed on Home. Inspecting a card never clears a notice.
@@ -815,8 +826,10 @@ session removes the row. Missing read evidence or an unknown turn never counts
 as read. The page never clears a finished turn itself or on a timer, and has no
 row acknowledge button (owner decision, 2026-10-08). Clearing a notice on every
 device is the confirmed **Clear this notice on every device** override in Connections' **Operator
-tools** section (#1009). Select a session and confirm its current notice. Control authority and
-current synced session evidence are required; a changed notice or revision is refused. Requested
+tools** section (#1009). Select a session and confirm its current notice. Control authority, a
+synced copy and a session the dashboard does not mark uncertain are required, with no freshness
+term, so a finished session stays clearable however long it is silent; a changed notice or
+revision is refused. Requested
 state, the accepted or uncertain reply, operation completion and the synced consumer acknowledgments
 remain separate. The result comes from those records, never an accepted reply alone. The override
 acknowledges all configured consumers atomically, preserves consumer self-acknowledgment, and proves
@@ -898,6 +911,19 @@ action/link colors and two static background washes. Fixed text, focus,
 attention, warning, error, pending and device colors do not change. Loading,
 stale, hidden or unavailable art retains the last valid theme; it supplies no
 new palette. No generated CSS, script, texture URL or extra image is accepted.
+
+The artwork supplies only a hue and how strong the tint is. Each decorative
+role keeps a fixed lightness step close to Quiet glass in light and dark
+appearance, so the page background, inset, panel and raised surfaces stay
+apart for every palette (Hub #1920). The tint comes from the first palette
+color that has a hue and does not read as black; the next one tints the second
+wash. A near-black color with a hue comes after every lighter one: it tints
+the interface only when no lighter color has a hue, and it can tint the second
+wash when one lighter color has a hue.
+A palette with no hue (black, white, grey and a few near-grey shades) gives
+neutral surfaces on the same steps. Card and control edges keep the 3:1
+contrast against their panel that every art theme has had, so they are
+stronger than the default skin's edges.
 
 **Lock current colors** freezes the current palette, including a default with
 no palette. **Restore default** keeps Quiet glass until **Follow artwork** is
@@ -1090,7 +1116,7 @@ filters, keyboard and read-only presentation.
 
 ## Shared habitat
 
-`#/habitat` presents ten resident bunnies in one four-room home. It uses the shell's existing session copy; it opens no second participant and sends no agent or device command. Live mode retains stable assignments, fills free places from the newest eligible sessions and leaves overflow waiting. Known children stay with the root's existing activity projection. Disconnect or resync retains assignments and marks evidence uncertain. Demo mode and music are explicitly simulated.
+`#/habitat` presents ten resident bunnies in one four-room home. It uses the shell's existing session copy; it opens no second participant and sends no agent or device command. Live mode retains stable assignments, fills free places from the newest eligible sessions and leaves overflow waiting. Known children stay with the root's existing activity projection. Disconnect or resync retains assignments and marks evidence uncertain. Otherwise a resident is uncertain by the session rows' rule: an unknown status or unconfirmed working, never silence alone (#1865). Demo mode and music are explicitly simulated.
 
 The canvas geometry, sprite poses, furniture masks and routes retain the reviewed private prototype. The JavaScript renderer is scoped to its mount and returns a typed cleanup API; allocation, preferences and the shell adapter are TypeScript. Each mount owns its model, event listeners and animation frame. Navigation destroys them. Pause motion and reduced motion keep text and final poses available. If artwork or canvas is unavailable, a session list remains visible.
 

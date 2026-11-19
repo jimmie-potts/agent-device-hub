@@ -7,7 +7,7 @@ import {chromium} from 'playwright';
 import {expect} from 'playwright/test';
 import {connectRemote} from '@jimmie-potts/sdk';
 import {CAPTURE_MAX_CLOCK_SKEW_MS, CAPTURE_VALIDITY_MS, CAPTURE_WINDOW_MS, type CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture-data';
-import {startWorld, changes, feed} from './harness.ts';
+import {startWorld, changes, feed, holdDashboardStream} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {worldClock} from './world-clock.ts';
@@ -111,14 +111,14 @@ try {
   const second = await context.newPage(); await second.goto(world.url + '/#/audio'); await feed(second, 'connected');
   await second.getByRole('meter', {name: 'Input level', exact: true}).waitFor(); assert.equal(producer.commands.length, 1); await second.close();
   await page.reload(); await feed(page, 'connected'); await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(1); assert.equal(producer.commands.length, 1);
-  await page.route('**/api/sdk/v1/stream', route => route.abort()); world.dropDashboardStreams();
+  const releaseStream = await holdDashboardStream(page); world.dropDashboardStreams();
   await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(0); await expect(stop).toBeDisabled();
-  await page.unroute('**/api/sdk/v1/stream'); await feed(page, 'connected'); await expect(stop).toBeEnabled();
+  releaseStream(); await feed(page, 'connected'); await expect(stop).toBeEnabled();
   assert.equal(producer.commands.length, 1);
   await stop.click(); await card.getByText(/Stop: Completed: succeeded/).waitFor(); await expect(start).toBeEnabled();
   assert.equal(producer.commands.length, 2); await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(0);
   producer.automatic(false);
-  await page.route('**/api/sdk/v1/stream', route => route.abort());
+  const releaseLostReplyStream = await holdDashboardStream(page);
   await page.route('**/api/sdk/v1/sync', route => route.abort());
   let lostReplies = 0;
   await page.route('**/api/v2/commands/music-capture-control', async route => {
@@ -127,7 +127,7 @@ try {
   }, {times: 1});
   await start.click(); await card.getByText(/Start: Uncertain result/).waitFor();
   await expect(start).toBeDisabled(); assert.equal(producer.commands.length, 3);
-  await page.unroute('**/api/sdk/v1/sync'); await page.unroute('**/api/sdk/v1/stream'); await feed(page, 'connected');
+  await page.unroute('**/api/sdk/v1/sync'); releaseLostReplyStream(); await feed(page, 'connected');
   await expect(stop).toBeEnabled(); await page.reload(); await feed(page, 'connected');
   await expect(stop).toBeEnabled(); assert.equal(producer.commands.length, 3); assert.equal(lostReplies, 1);
   await card.getByText('Starting measurement. Waiting for source evidence.', {exact: true}).waitFor(); await expect(card.getByRole('meter', {name: 'Input level', exact: true})).toHaveCount(0);

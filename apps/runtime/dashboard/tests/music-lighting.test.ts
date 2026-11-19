@@ -115,6 +115,9 @@ void test('status, endings and outcomes keep saved, reported and restored eviden
   assert.match(controlText('Refused (unsupported-capability) without changing state.'), /Only Music.app capture/);
   assert.equal(controlText('Accepted. Waiting for completion.'), 'Accepted. Waiting for completion.');
   assert.equal(workText('Completed: succeeded. Transmitted; physical effect was not observed.'), 'Completed: succeeded. Written to the light; the physical effect was not observed.');
+  assert.match(workText('Refused (invalid-state).', 'Music is playing a different library item.'), /different library item/);
+  assert.match(workText('Refused (unavailable).', 'Play the Music item and wait for a fresh position.'), /fresh position/);
+  assert.equal(workText('Refused (unavailable).', 'Private source path'), 'Refused (unavailable).');
 });
 
 void test('the browser derives the same work ID as the core', async () => {

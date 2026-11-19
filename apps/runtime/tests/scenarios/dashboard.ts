@@ -25,7 +25,7 @@ const acknowledgedBy = (h: Harness, consumers: readonly string[]): Outcome => {
 /**
  * The dashboard's sessions (Hub #922): a browser signed in by a trusted loopback page reads the core's sessions on
  * `/api/v2`, as the dashboard's page loads from the gateway, and the dashboard's chip comes from its row helper
- * over the record alone. Sessions appear as the hook observes them, and an approval prompt is raised and cleared.
+ * over the record's shared session view alone (Hub #1865). Sessions appear as the hook observes them, and an approval prompt is raised and cleared.
  */
 const browserSessions = async (h: Harness): Promise<SessionRecord[] | string> => {
   const answer = await h.gateway({as: 'browser', method: 'GET', path: '/api/v2/families/session'});
@@ -37,7 +37,7 @@ const dashboardShows = (expected: string, id = SESSION_ID) => async (h: Harness)
   const records = await browserSessions(h);
   if (typeof records === 'string') return records;
   const record = records.find(item => item.id === id);
-  const shown = record === undefined ? 'absent' : chipOf(record);
+  const shown = record === undefined ? 'absent' : chipOf(sessionView(record));
   return shown === expected || `the dashboard shows ${shown}`;
 };
 const dashboardSessions: Scenario = {
@@ -66,7 +66,7 @@ const dashboardSessions: Scenario = {
     expect('the dashboard shows it waiting for the approval', dashboardShows('approval')),
     act('the hook observes the approval resolved', h => publish(h, approvalResolved('approval-1'))),
     expect('the dashboard shows it working again', dashboardShows('working')),
-    expect('the reader\'s synced copy agrees', h => (session(h) !== undefined && chipOf(session(h) as SessionRecord) === 'working') || 'the copy disagrees'),
+    expect('the reader\'s synced copy agrees', h => (session(h) !== undefined && chipOf(sessionView(session(h) as SessionRecord)) === 'working') || 'the copy disagrees'),
   ],
 };
 

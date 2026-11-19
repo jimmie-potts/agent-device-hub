@@ -28,6 +28,25 @@ void test('compact changes never reconstruct unrecorded state and unknown types 
   assert.equal(historyFace(row({data: {}}, {kind: 'occurrence', type: 'org.bunny.attention.raised'})).title, 'Attention requested');
 });
 
+void test('a session/3.0 change is titled from its status, an older row keeps its rule, and anything else falls back (#1865)', () => {
+  const session = (changed: Record<string, unknown>): string => historyFace(row({family: 'session', id: 's1', revision: 4, previous: 3, changed}, {kind: 'change'})).title;
+  // Rows written as session/3.0: the status names what changed.
+  assert.deepEqual([
+    session({status: {class: 'needs-owner', detail: 'approval'}, attention: {items: [], confidence: 'confirmed', evidenceAtMs: 1}}),
+    session({status: {class: 'working', detail: 'unconfirmed'}, work: {state: 'active', confidence: 'unconfirmed', evidenceAtMs: 1, reasons: ['deadline']}}),
+    session({status: {class: 'finished', detail: 'turn-ended'}}), session({status: {class: 'quiet', detail: 'acknowledged'}}),
+    session({status: {class: 'unknown', detail: 'lost'}}),
+  ], ['Agent needs you', 'Agent working', 'Turn finished', 'Agent quiet', 'Agent activity unknown']);
+  assert.equal(session({status: {class: 'resting', detail: 'later'}}), 'Agent updated', 'a class this version does not know');
+  assert.equal(session({status: 'working'}), 'Agent updated', 'a status that is not a record of its own');
+  assert.equal(session({title: {value: 'Renamed', source: 'provider'}}), 'Agent updated', 'a 3.0 row without a status change');
+  assert.equal(session({attention: {items: [{kind: 'question'}], confidence: 'confirmed', evidenceAtMs: 1}}), 'Agent updated', 'a 3.0 attention claim is not an old array');
+  // Rows written as session/2.0 or 2.1 keep today's rule.
+  assert.equal(session({attention: [{kind: 'approval'}]}), 'Attention updated');
+  assert.equal(session({activity: 'active'}), 'Agent working');
+  assert.equal(session({activity: 'idle', freshness: 'uncertain'}), 'Agent updated');
+});
+
 void test('categories and stable newest-first ordering preserve unknown Hub records in All', () => {
   const rows = [row({family: 'session'}, {seq: 2, kind: 'change'}), row({kind: 'device'}, {seq: 3}), row({}, {seq: 4, type: 'org.bunny.mode.set.requested'}), row({}, {seq: 1, atMs: 2000})];
   assert.deepEqual(selectedHistory(rows, 'All').map(value => value.seq), [1, 4, 3, 2]);

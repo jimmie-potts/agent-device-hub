@@ -4,7 +4,7 @@ import {PATTERNS, SPEEDS, DIRECTIONS} from '../src/effects.js';
 import {prepareMusicTimeline} from '../src/music-timeline.js';
 import {selectMusicCue} from '../src/music-timeline-data.js';
 import {SHOW_VERSION_SCHEMA} from '../src/music-show-data.js';
-import {DIRECTION_CHOICES, draftProblem, PATTERN_CHOICES, showVersion, SPEED_CHOICES, starter, STARTERS} from '../src/frontend/show-model.js';
+import {DIRECTION_CHOICES, draftProblem, measuredDraft, PATTERN_CHOICES, showVersion, SPEED_CHOICES, starter, STARTERS} from '../src/frontend/show-model.js';
 import {suite, test} from './support.js';
 
 suite('offline show editor model', () => {
@@ -35,6 +35,25 @@ suite('offline show editor model', () => {
     assert.notEqual(draftProblem({...draft, name: ' '}), undefined);
     assert.notEqual(draftProblem({...draft, timeline: {...draft.timeline, durationMs: 0}}), undefined);
   });
+  test('a captured excerpt becomes an editable draft and a measured saved version keeps its playback binding', () => {
+    const {timeline} = starter('ocean', 'show-one');
+    const measurement = {item: {libraryScopeId: 'fixture-library', itemId: 'FEED'}, analysis: {method: 'energy-onset-v1', sampleCount: 14}};
+    const measurementProof = 'a'.repeat(64);
+    const response = {...measurement, timeline, measurementProof};
+    const draft = measuredDraft(response, 'show-one');
+    assert.deepEqual(draft, {showId: 'show-one', expectedVersion: 0, name: 'Measured excerpt', versionName: 'First draft', timeline, measurement, measurementProof});
+    assert.equal(draftProblem(draft), undefined);
+    const saved = {schema: SHOW_VERSION_SCHEMA, kind: 'measured', showId: draft.showId, version: 1,
+      name: draft.name, versionName: draft.versionName, timeline, measurement};
+    assert.deepEqual(showVersion(saved, 'show-one', 1), saved);
+    assert.throws(() => showVersion({...saved, measurement: undefined}, 'show-one', 1));
+    assert.throws(() => showVersion({...saved, kind: 'decorative'}, 'show-one', 1));
+    assert.throws(() => measuredDraft({...response, measurementProof: undefined}, 'show-one'));
+    assert.throws(() => measuredDraft({...response, measurementProof: 'G'.repeat(64)}, 'show-one'));
+    assert.throws(() => measuredDraft({...response, pcm: []}, 'show-one'));
+    assert.throws(() => measuredDraft({...response, item: {itemId: 'FEED'}}, 'show-one'));
+  });
+
   test('the editor bundle reaches no server compiler, storage, renderer or Node builtin', async () => {
     const result = await build({entryPoints: ['modules/nanoleaf/src/frontend/shows.tsx'], bundle: true, platform: 'browser', format: 'esm',
       write: false, outdir: '/private/tmp/unused-show-bundle', metafile: true, external: ['react', 'react/jsx-runtime'], logLevel: 'silent'});

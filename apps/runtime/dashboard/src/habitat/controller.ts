@@ -1,16 +1,16 @@
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {CHIP_TEXT,clientName,sessionName} from '../sessions.ts';
 import {mountHabitat,type HabitatRenderer} from './renderer.js';
 import {assignSession,conversationFor,eligibleSessions,presentation,reconcileBindings,settingsFrom,type Binding} from './session.ts';
 const KEY='bunny.burrow.live-bindings.v2';
-export type HabitatController={update:(records:readonly SessionRecord[],synced:boolean)=>void;destroy:()=>void};
+export type HabitatController={update:(records:readonly SessionView[],synced:boolean)=>void;destroy:()=>void};
 /** Presentation over the shell's copy: no participant, API client, timer or second reducer. */
 export function createHabitat(root:HTMLElement,unavailable:()=>void):HabitatController{
  const el=<T extends HTMLElement>(id:string):T=>{const element=root.querySelector<T>(`[id="${id}"]`);if(element===null)throw new Error('habitat-template-unavailable');return element;};
  let storage:Storage|undefined;
  let settings=settingsFrom(null),storageFailed=false;
  try{storage=root.ownerDocument.defaultView?.localStorage;if(storage!==undefined)settings=settingsFrom(storage.getItem(KEY),storage.getItem('bunny.burrow.live-binding.v1'));}catch{storageFailed=true;}
- let records:readonly SessionRecord[]=[],synced=false,mode:'live'|'demo'='live',destroyed=false,ready=false;
+ let records:readonly SessionView[]=[],synced=false,mode:'live'|'demo'='live',destroyed=false,ready=false;
  const abort=new AbortController();let renderer:HabitatRenderer|null=null;
  const bindingFor=(id:number):Binding|undefined=>settings.bindings.find(b=>b.bunnyId===id);
  const persist=():void=>{try{if(storage===undefined){storageFailed=true;return;}storage.setItem(KEY,JSON.stringify(settings));storageFailed=false;}catch{storageFailed=true;}};
