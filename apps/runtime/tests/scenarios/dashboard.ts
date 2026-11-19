@@ -12,7 +12,6 @@ import {DashboardPager, FAMILIES as PIXOO, SIMULATED_SECTION as PIXOO_SECTION, f
 import {NANOLEAF_FAMILIES, SIMULATED_SECTION as NANOLEAF_SECTION} from '@jimmie-potts/nanoleaf';
 import {PLAYBACK_SECTION} from './modules/playback.js';
 import {chipOf} from '../../dashboard/src/sessions.js';
-import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {OTHER, SESSION_ID, approvalPrompt, approvalResolved, runtimeEnded, sessionStarted, turnEnded, turnStarted} from '../fixtures/agents.js';
 import {
   CORE_FAMILIES, StepFailure, act, answers, bodyOf, deviceState, dispatchOnce, expect, holds, publish, sendOnce, session, show, type Harness, type Outcome, type Scenario,
