@@ -26,8 +26,10 @@ export async function speechReadinessJourney(browser: Browser): Promise<void> {
       }
     }});
     const now = Date.now(), attention = {kind: 'question', id: {status: 'known', id: 'attention-test'}, turn: {status: 'unknown'}};
-    const session = {id: 'session-test', revision: 1, generation: 1, freshness: 'current', restartUncertain: false, lastEvidenceAtMs: now,
-      identity: {provider: 'codex', sessionId: 'synthetic', hostId: 'test', sourceId: 'test'}, turn: {status: 'unknown'}, attention: [attention], notices: []};
+    // A whole session/2.0 record, as the core publishes it: the page reads it through the shared session view.
+    const session = {id: 'session-test', revision: 1, generation: 1, freshness: 'current', restartUncertain: false, lastEvidenceAtMs: now, observedAtMs: now,
+      identity: {provider: 'codex', client: 'cli', sessionId: 'synthetic', hostId: 'test', sourceId: 'test'}, parent: {status: 'unknown'}, turn: {status: 'unknown'},
+      activity: 'active', attention: [attention], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'}, children: {active: 0, uncertain: 0}};
     const card = {opportunity: {origin: {source: 'bunny/core', id: 'event-test', type: 'org.bunny.attention.raised'}, sourceKind: 'coding', context: 'live',
       category: 'coding-attention', cue: 'question', revision: 1, generation: 1, session: session.id, identity: session.identity, turn: session.turn, attention,
       noticeId: null, evidence: 'lifecycle-metadata', occurredAtMs: now, observedAtMs: now, validUntilMs: now + 30000,

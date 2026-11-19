@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {test} from 'node:test';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import type {ModeState,SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId,type ModeState,type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
 import {createMicroDuckModule} from '../src/module.js';
 import {SimulatedMicroDuck} from '../src/simulated.js';
@@ -18,7 +18,7 @@ void test('only opted-in current live attention reacts; repeats, other sessions,
  const dir=await mkdtemp(join(tmpdir(),'microduck-auto-')),clock=new TestClock(),bus=new InProcessBus({now:clock.now,scheduler:clock.scheduler}),core=bus.connect('bunny/core'),robot=new SimulatedMicroDuck(clock);
  const pause=(ms:number):Promise<void>=>clock.advance(ms),until=async(check:()=>boolean):Promise<void>=>{for(let n=0;n<400;n++){if(check())return;await pause(5);}assert.fail('missing evidence');};
  let mode:ModeState={id:'hub',revision:1,mode:'work',selectedAtMs:clock.now()},state:MicroDuckState|undefined;
- const session:SessionRecord={id:'session-1',revision:1,generation:1,identity:{provider:'codex',client:'desktop',hostId:'host',sourceId:'desktop',sessionId:'s-1'},parent:{status:'top-level'},turn:{status:'unknown'},activity:'active',attention:[{id:{status:'known',id:'a-1'},kind:'approval',turn:{status:'unknown'}}],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},observedAtMs:clock.now(),lastEvidenceAtMs:clock.now(),freshness:'current',restartUncertain:false,children:{active:0,uncertain:0}};
+ const session:SessionRecord={id:sessionEntityId({provider:'codex',client:'desktop',hostId:'host',sourceId:'desktop',sessionId:'s-1'}),revision:1,generation:1,identity:{provider:'codex',client:'desktop',hostId:'host',sourceId:'desktop',sessionId:'s-1'},parent:{status:'top-level'},turn:{status:'unknown'},activity:'active',attention:[{id:{status:'known',id:'a-1'},kind:'approval',turn:{status:'unknown'}}],notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},observedAtMs:clock.now(),lastEvidenceAtMs:clock.now(),freshness:'current',restartUncertain:false,children:{active:0,uncertain:0}};
  await core.serveSync(['session','mode'],()=>({revision:1,states:[{type:'org.bunny.session.updated',subject:session.id,dataschema:'https://bunny.invalid/events/session/2.0',data:session},{type:'org.bunny.mode.updated',subject:'hub',dataschema:'https://bunny.invalid/events/mode/2.0',data:mode}]}));
  let firstReaction:'unarmed'|'waiting'|'transmitted'|'quiet'='unarmed';
  await core.subscribe<MicroDuckState>('bunny.state.microduck-state.*',async m=>{

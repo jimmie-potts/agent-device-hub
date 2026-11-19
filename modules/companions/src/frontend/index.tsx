@@ -16,7 +16,7 @@ const labels: Readonly<Record<CompanionCategory, string>> = {'coding-attention':
 const reasons: Readonly<Record<string, string>> = {
   'invalid-input': 'The opportunity input was refused.', 'awaiting-publication': 'Card stored; publication is pending. Whether it was seen is unknown.', disabled: 'Reachy is disabled.', presented: 'A card was published. Whether it was seen is unknown.', 'settings-saved': 'Controls saved.',
   'scenario-admitted': 'Synthetic scenario accepted.', 'category-muted': 'This category is muted.', expired: 'The evidence expired.',
-  'core-unavailable': 'Current core state is unavailable.', 'stale-source': 'The source evidence is stale.', 'obsolete-turn': 'The turn changed.',
+  'core-unavailable': 'Current core state is unavailable.', 'stale-source': 'The session is no longer in the current session list.', 'obsolete-turn': 'The turn changed.',
   'source-changed': 'The session changed while turn or attention identity was unknown.', 'attention-cleared': 'The attention item was cleared.', 'attention-priority': 'Coding attention takes priority.',
   'restrictive-mode': 'Social reactions require Free mode.', 'unknown-context': 'Busy or media evidence is unknown.', busy: 'The scenario is busy.',
   media: 'The scenario has active media.', snoozed: 'Social reactions are snoozed.', 'social-budget': 'The daily social allowance is used.',

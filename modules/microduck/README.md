@@ -38,9 +38,12 @@ on its own after 1 s, doubling to 30 s, through the SDK's shared `followCopy`
 final refusal waits for a reconnect. Only the read repeats; no control,
 gesture or Stop request is sent again.
 
-Automatic expression defaults off. It needs exactly one fresh eligible coding
-session, core-owned first-live opportunities, current non-Quiet mode, the witnessed
-vendor pair and fresh sensor evidence. Automatic/manual cue spacing is 30/two
+Automatic expression defaults off. It needs a core-owned first-live opportunity
+that still matches its session through the shared session read function (the
+same generation, identity and turn, and the attention item or an unacknowledged
+notice), current non-Quiet mode, the witnessed vendor pair and fresh sensor
+evidence. Other sessions do not matter, and no session freshness or restart term
+applies. Automatic/manual cue spacing is 30/two
 seconds; neutral and local controls are exempt. One active program and one latest
 automatic candidate are allowed. No manual queue or automatic motion retry exists.
 
