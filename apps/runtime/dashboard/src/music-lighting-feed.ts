@@ -1,44 +1,52 @@
 // Read-only Audio-page scope for Music lighting (#722): the core's per-light session records and the Nanoleaf module's
-// saved reactive presets, both over the shell's existing participant. Opening, refreshing or closing sends no command.
+// saved reactive presets and decorative shows over the shell's existing participant. Opening, refreshing or closing sends no command.
 import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
+import type {ShowCatalogView, ShowSync} from '@jimmie-potts/nanoleaf/frontend';
 import type {ReactiveCatalogView, ReactiveSync} from '@jimmie-potts/nanoleaf/reactive-presets';
 import type {RemoteParticipant, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import {lightingRecord} from './music-lighting-model.ts';
 
 export const NANOLEAF_OWNER = 'bunny/modules/nanoleaf';
-export type MusicLightingView = {synced: boolean; records: readonly LightingState[]; presets: ReactiveCatalogView};
+export type MusicLightingView = {synced: boolean; records: readonly LightingState[]; presets: ReactiveCatalogView; shows: ShowCatalogView};
+const emptyCatalog = {value: undefined, live: false, pending: true, failed: false};
+export const emptyLightingView: MusicLightingView = {synced: false, records: [], presets: emptyCatalog, shows: emptyCatalog};
 /** The Wall page's own catalog follower, `followReactivePresets`, supplied by the page that bundles it. */
 export type PresetFollower = (sync: ReactiveSync, show: (view: ReactiveCatalogView) => void, retained?: ReactiveCatalogView['value']) => () => void;
+export type ShowFollower = (sync: ShowSync, show: (view: ShowCatalogView) => void, retained?: ShowCatalogView['value']) => () => void;
 type LightingParticipant = Pick<RemoteParticipant, 'sync'>;
 
 export class MusicLightingFeed {
-  #view: MusicLightingView = {synced: false, records: [], presets: {value: undefined, live: false, pending: true, failed: false}};
+  #view: MusicLightingView = emptyLightingView;
   readonly #listeners = new Set<() => void>();
   readonly #participant: LightingParticipant;
   readonly #follow: PresetFollower;
+  readonly #followShows: ShowFollower;
   readonly #onClosed: () => void;
   #copy: SyncedCopy<LightingState> | undefined;
   #presets: () => void = () => {};
+  #shows: () => void = () => {};
   #epoch = 0;
   #closed = false;
-  constructor({participant, follow, onClosed = () => {}}: {participant: LightingParticipant; follow: PresetFollower; onClosed?: () => void}) {
-    this.#participant = participant; this.#follow = follow; this.#onClosed = onClosed;
+  constructor({participant, follow, followShows, onClosed = () => {}}: {participant: LightingParticipant; follow: PresetFollower; followShows: ShowFollower; onClosed?: () => void}) {
+    this.#participant = participant; this.#follow = follow; this.#followShows = followShows; this.#onClosed = onClosed;
   }
   readonly getSnapshot = (): MusicLightingView => this.#view;
   readonly subscribe = (listener: () => void): (() => void) => {this.#listeners.add(listener); return () => {this.#listeners.delete(listener);};};
 
-  /** One explicit read of both copies. A failed read leaves the view stale until the next explicit refresh. */
+  /** One explicit read of the lighting and catalog copies. A failed read leaves the view stale until the next explicit refresh. */
   async refresh(): Promise<boolean> {
     if (this.#closed) return false;
     const epoch = ++this.#epoch;
     const current = (): boolean => !this.#closed && this.#epoch === epoch;
     this.#update({synced: false});
-    this.#presets();
+    this.#presets(); this.#shows();
     // The replaced copy closes in the background: its close waits for the edge, and the card keeps Refresh disabled until
     // this read settles. Its handler checks the epoch, so nothing it delivers meanwhile reaches the view.
     const previous = this.#copy; this.#copy = undefined; void previous?.close().catch(() => {});
     this.#presets = this.#follow((changed, options) => this.#participant.sync(['nanoleaf-reactive-presets'], changed, {...options, owner: NANOLEAF_OWNER, timeoutMs: 5000}),
       presets => {if (current()) this.#update({presets});}, this.#view.presets.value);
+    this.#shows = this.#followShows((changed, options) => this.#participant.sync(['nanoleaf-shows'], changed, {...options, owner: NANOLEAF_OWNER, timeoutMs: 5000}),
+      shows => {if (current()) this.#update({shows});}, this.#view.shows.value);
     let completed = false, restarted = false;
     try {
       const result = await this.#participant.sync<LightingState>(['music-lighting-state'], change => {
@@ -57,7 +65,7 @@ export class MusicLightingFeed {
 
   async close(): Promise<void> {
     if (this.#closed) return;
-    this.#closed = true; ++this.#epoch; this.#presets(); this.#update({synced: false}); this.#onClosed();
+    this.#closed = true; ++this.#epoch; this.#presets(); this.#shows(); this.#update({synced: false}); this.#onClosed();
     const copy = this.#copy; this.#copy = undefined; await copy?.close();
   }
 

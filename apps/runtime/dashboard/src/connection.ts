@@ -17,7 +17,7 @@ import {RuntimeFeeds, type RuntimeData} from './runtime-feeds.ts';
 import {moduleOwner} from './modules.ts';
 import {sendAction, sendUpload} from './actions.ts';
 import {MusicCaptureFeed} from './music-capture-feed.ts';
-import {MusicLightingFeed, type PresetFollower} from './music-lighting-feed.ts';
+import {MusicLightingFeed, type PresetFollower, type ShowFollower} from './music-lighting-feed.ts';
 
 /** The source every browser session acts as, which the runtime's gateway gives the dashboard (Hub #835). */
 export const DASHBOARD_SOURCE = 'bunny/parts/dashboard';
@@ -167,13 +167,13 @@ export class DashboardConnection {
   }
 
   /** Audio's Music lighting reads (#722) use the shell participant; opening the scope sends no lighting command. */
-  openMusicLighting(follow: PresetFollower): MusicLightingFeed {
+  openMusicLighting(follow: PresetFollower, followShows: ShowFollower): MusicLightingFeed {
     const participant = this.#participant;
     if (participant === undefined || this.#closed || this.#state.feed !== 'connected' || this.#state.runtime.catalogFailed ||
       this.#state.runtime.modules?.some(module => module.name === 'core' && module.state === 'running' && module.serves.includes('music-lighting-state')) !== true) {
       throw new SdkError(errorBody('unavailable', {detail: 'Music lighting status is unavailable.'}));
     }
-    const scope = new MusicLightingFeed({participant, follow, onClosed: () => {this.#musicScopes.delete(scope);}});
+    const scope = new MusicLightingFeed({participant, follow, followShows, onClosed: () => {this.#musicScopes.delete(scope);}});
     this.#musicScopes.add(scope); return scope;
   }
 

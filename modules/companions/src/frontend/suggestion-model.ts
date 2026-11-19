@@ -1,13 +1,21 @@
-import {presentationRefusal, staleSession} from '../presentation-policy.js';
-import type {CompanionSettings} from '@jimmie-potts/event-contracts/v2/companions';
-import type {Mode, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {attentionPriority, presentationRefusal} from '../presentation-policy.js';
+import type {CompanionOpportunity, CompanionSettings} from '@jimmie-potts/event-contracts/v2/companions';
+import type {Mode} from '@jimmie-potts/event-contracts/v2/families';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 export const checkNames = ['tests', 'build', 'browser', 'accessibility'] as const;
 export type CheckName = typeof checkNames[number];
 export type CheckStatus = 'passed' | 'failed' | 'skipped' | 'unrun' | 'unknown';
 export type CheckResult = {status: CheckStatus; reference: string};
+/** The selected session as the suggestion names it: the exact entity, revision, generation, identity and turn. */
+export type SessionSnapshot = Pick<SessionView, 'id' | 'revision' | 'generation' | 'identity' | 'turn'>;
 export type TaskEvidence = {task: string; repository: string; base: string; head: string; evidenceHead: string; observedAtMs: number;
-  session: SessionRecord; checks: Record<CheckName, CheckResult>};
-export type SuggestionContext = {nowMs: number; connected: boolean; available: boolean; settings: CompanionSettings; mode: Mode | undefined; sessions: readonly SessionRecord[]};
+  session: SessionSnapshot; checks: Record<CheckName, CheckResult>};
+/**
+ * The page's current facts: the synced sessions as views and the admitted coding-attention opportunities whose
+ * 30-second question window holds priority over suggestions.
+ */
+export type SuggestionContext = {nowMs: number; connected: boolean; available: boolean; settings: CompanionSettings; mode: Mode | undefined;
+  sessions: readonly SessionView[]; priority: readonly CompanionOpportunity[]};
 export type Suggestion = {kind: 'proposal'; text: string; target: CheckName; validUntilMs: number} | {kind: 'gap'; reason: string};
 export const EVIDENCE_TTL_MS = 300_000;
 /** Require an unambiguous UTC millisecond instant from the deliberate form. */
@@ -29,10 +37,11 @@ export function propose(input: TaskEvidence, context: SuggestionContext): Sugges
   if (!sha(input.head) || !sha(input.evidenceHead) || input.head !== input.evidenceHead || (input.base !== '' && !sha(input.base))) return gap('matching-head-required');
   if (!Number.isSafeInteger(input.observedAtMs) || input.observedAtMs < 0 || input.observedAtMs > context.nowMs || context.nowMs >= input.observedAtMs + EVIDENCE_TTL_MS) return gap('expired-evidence');
   const current = context.sessions.find(session => session.id === input.session.id);
-  if (current === undefined || staleSession(current, context.nowMs) || current.lastEvidenceAtMs > context.nowMs) return gap('stale-session');
+  // The session's own silence or age never withdraws a suggestion; its evidence window and exact match do (Hub #1865).
+  if (current === undefined) return gap('stale-session');
   if (current.revision !== input.session.revision || current.generation !== input.session.generation ||
       JSON.stringify(current.identity) !== JSON.stringify(input.session.identity) || JSON.stringify(current.turn) !== JSON.stringify(input.session.turn)) return gap('session-changed');
-  if (context.sessions.some(session => session.freshness === 'current' && session.attention.length > 0)) return gap('attention-priority');
+  if (attentionPriority(context.priority, context.sessions, context.nowMs)) return gap('attention-priority');
   if (Object.keys(input.checks).length !== checkNames.length || checkNames.some(name => {
     const check = input.checks[name];
     return check === undefined || !statuses.includes(check.status) || !bounded(check.reference, 500) ||
@@ -44,7 +53,7 @@ export function propose(input: TaskEvidence, context: SuggestionContext): Sugges
   if (target === undefined) return gap('no-supported-next-check');
   const action = failed === undefined ? `Please run the unrun ${target} check and report its result and evidence reference.` :
     `Please investigate the failed ${target} check using its evidence reference, then report the cause and a proposed next step.`;
-  const validUntilMs = Math.min(input.observedAtMs + EVIDENCE_TTL_MS, current.lastEvidenceAtMs + EVIDENCE_TTL_MS);
+  const validUntilMs = input.observedAtMs + EVIDENCE_TTL_MS;
   const text = [`Owner-supplied evidence; results and repository revisions are not independently verified.`,
     `Target task: ${input.task}; session: ${current.identity.provider}/${current.identity.sessionId}; turn: ${current.turn.status === 'known' ? current.turn.id : 'unknown'}.`,
     `Source host: ${current.identity.hostId}; source: ${current.identity.sourceId}; session entity: ${current.id}; source revision/generation: ${current.revision}/${current.generation}.`,

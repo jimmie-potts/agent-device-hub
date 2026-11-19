@@ -3,6 +3,7 @@ import {errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contr
 import type {CompletedOutcome, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {ModeState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
+import {opportunityMatches, readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {Outbox, Outcome, fullDisk, recordLog, type AddMessage, type BunnyModule, type StateDraft, type Keyed, type Cancel, type Command, type ModuleContext, type Reply, type SyncedCopy} from '@jimmie-potts/sdk';
 import {configureMicroDuck, type MicroDuckConfig} from './configuration.js';
 import {families, gestures, controls, stages, schemaOf, typeOf, type Family, type Gesture, type Control, type Guards, type Observation, type MicroDuckState} from './contracts.js';
@@ -151,14 +152,17 @@ class Owner {
     try{return age>=0n&&age<=500000000n&&this.#transport.guard()===latest.session;}catch{return false;}
   }
   #mode(): string | undefined {return this.#copy?.states().map(x => x.data).find((x): x is ModeState => 'mode' in x)?.mode;}
+  /**
+   * The opportunity still matches its session under the shared read function (generation, identity, turn, and the
+   * attention item or the notice MicroDuck has not acknowledged), plus MicroDuck's own conditions: a synced copy, a mode
+   * other than Quiet and the opportunity's validity. Other sessions do not matter, and no session freshness or restart
+   * term applies (Hub #1865, owner decision 3 of 2026-11-16).
+   */
   #eligible(event: CompanionOpportunity): boolean {
     if (!this.#synced || this.#mode() === undefined || this.#mode() === 'quiet' || event.context !== 'live' || event.session === null || this.#context.clock.now() >= event.validUntilMs) return false;
-    const sessions=this.#copy?.states().map(x=>x.data).filter((x):x is SessionRecord=>'identity'in x&&x.freshness==='current'&&!x.restartUncertain)??[];
-    if(sessions.length!==1)return false;
-    const session=sessions.find(x=>x.id===event.session);
-    if (session === undefined || session.freshness !== 'current' || session.restartUncertain || session.generation !== event.generation) return false;
-    if (event.category === 'coding-attention') return event.attention !== null && session.attention.some(x => x.kind === event.attention?.kind && JSON.stringify(x.id) === JSON.stringify(event.attention?.id));
-    return event.category === 'coding-notice' && event.noticeId !== null && session.notices.some(x => x.id === event.noticeId && !x.acknowledgedBy.includes('microduck'));
+    const message = this.#copy?.states().find(x => x.type === 'org.bunny.session.updated' && 'id' in x.data && x.data.id === event.session);
+    const view = message === undefined ? undefined : readSession(message);
+    return view !== undefined && opportunityMatches(view, event, 'microduck');
   }
   #checkAutomatic(): void {if(!this.#synced||this.#mode()===undefined||this.#mode()==='quiet'){this.#interrupt();return;}if (this.#active?.work.action.kind === 'gesture' && this.#active.work.action.automatic && !this.#candidateEligible(this.#active.work.action.opportunityId)) this.#interruptAutomatic();}
   readonly #opportunities = new Map<string, {event:CompanionOpportunity;expiresAtMs:number}>();
