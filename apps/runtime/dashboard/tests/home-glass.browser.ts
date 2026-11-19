@@ -10,35 +10,66 @@ import sharp from 'sharp';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
 import {changes, feed, startWorld} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
+import {artworkOf, browserArt} from '../../../../modules/art/dist/src/frontend/model.js';
 
 const receipts = process.env.DASHBOARD_RECEIPTS;
-const world = await startWorld({lighting: true, inbox: true});
+const world = await startWorld({lighting: true, inbox: true, art: true});
 const browser = await chromium.launch({headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-gpu-compositing']});
 type Sample = 'dark' | 'bright';
 
 /**
- * Hands the page a synthetic artwork: a dark night scene or a bright day scene, drawn in the page and decoded to an
- * ImageBitmap. Until #1928 merges, the shell's temporary backdrop adapter takes it from the `bunny-synthetic-backdrop`
- * event; afterwards this journey serves these pixels through the art module's content route instead.
+ * A synthetic artwork: a dark night scene or a bright day scene in flat, unsmoothed shapes, as PNG bytes of the given
+ * size. Flat shapes keep it smaller than the provider's own picture, so it can stand in for it byte for byte.
  */
-async function showSample(page: Page, kind: Sample | null): Promise<void> {
-  await page.evaluate(async value => {
-    if (value === null) {window.dispatchEvent(new CustomEvent('bunny-synthetic-backdrop', {detail: null}));return;}
-    const canvas = document.createElement('canvas');canvas.width = 1536;canvas.height = 1024;
-    const context = canvas.getContext('2d');if (context === null) throw new Error('sample-2d');
-    const bright = value === 'bright', sky = context.createLinearGradient(0, 0, 0, 1024);
-    for (const [at, color] of (bright ? [[0, '#fff7e0'], [0.55, '#ffe2a8'], [1, '#bfe6ff']] : [[0, '#0b1230'], [0.6, '#1d2a5c'], [1, '#091018']]) as [number, string][]) sky.addColorStop(at, color);
-    context.fillStyle = sky;context.fillRect(0, 0, 1536, 1024);
-    context.fillStyle = bright ? '#ffffff' : '#f4c25a';context.beginPath();context.arc(1080, 300, 160, 0, 7);context.fill();
-    context.fillStyle = bright ? '#ff9a3c' : '#7b3fa0';context.beginPath();context.moveTo(0, 760);context.lineTo(500, 520);context.lineTo(900, 820);context.lineTo(1536, 600);context.lineTo(1536, 1024);context.lineTo(0, 1024);context.fill();
-    context.fillStyle = bright ? '#2a9d8f' : '#e76f51';context.fillRect(200, 200, 140, 380);
-    for (let index = 0; index < 40; index += 1) {
-      context.fillStyle = bright ? `hsl(${String(index * 9)},90%,${String(70 + index % 3 * 8)}%)` : `hsl(${String(200 + index * 4)},70%,${String(20 + index % 4 * 10)}%)`;
-      context.fillRect((index * 97) % 1536, 860 + (index * 37) % 150, 60, 30);
-    }
-    const bitmap = await createImageBitmap(canvas);
-    window.dispatchEvent(new CustomEvent('bunny-synthetic-backdrop', {detail: {bitmap, renditionId: `synthetic-${value}`}}));
-  }, kind);
+async function sampleBytes(kind: Sample, width: number, height: number, length: number): Promise<Buffer> {
+  const bright = kind === 'bright', scale = (value: number, of: number): string => String(Math.round(value * of / 1000));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${String(width)}" height="${String(height)}" shape-rendering="crispEdges">
+    <rect width="100%" height="100%" fill="${bright ? '#fff3d6' : '#0d1533'}"/>
+    <rect y="${scale(450, height)}" width="100%" height="${scale(250, height)}" fill="${bright ? '#bfe6ff' : '#1d2a5c'}"/>
+    <circle cx="${scale(700, width)}" cy="${scale(300, height)}" r="${scale(160, height)}" fill="${bright ? '#ffffff' : '#f4c25a'}"/>
+    <rect y="${scale(760, height)}" width="100%" height="${scale(240, height)}" fill="${bright ? '#ff9a3c' : '#7b3fa0'}"/>
+    <rect x="${scale(130, width)}" y="${scale(200, height)}" width="${scale(90, width)}" height="${scale(370, height)}" fill="${bright ? '#2a9d8f' : '#e76f51'}"/></svg>`;
+  const png = await sharp(Buffer.from(svg)).png({compressionLevel: 9, palette: true, colors: 8, effort: 10}).toBuffer();
+  assert.ok(png.length <= length, `the ${kind} sample (${String(png.length)} bytes) fits the rendition's ${String(length)} bytes`);
+  // The art module checks the byte count; a PNG decoder ignores the padding after its end.
+  return Buffer.concat([png, Buffer.alloc(length - png.length)]);
+}
+/** Which sample replaces each rendition's bytes, by content path, and which one the next new rendition gets. */
+const samples = new Map<string, Sample>();let nextSample: Sample = 'dark';
+/** Serves the art module's real content route with the samples' pixels in place of the synthetic provider's. */
+async function substitute(context: BrowserContext): Promise<void> {
+  await context.route('**/modules/art/content/**', async route => {
+    const answer = await route.fetch();
+    if (!(answer.headers()['content-type'] ?? '').startsWith('image/')) {await route.fulfill({response: answer});return;}
+    const path = new URL(route.request().url()).pathname, original = await answer.body(), {width = 1, height = 1} = await sharp(original).metadata();
+    const kind = samples.get(path) ?? nextSample;samples.set(path, kind);
+    await route.fulfill({response: answer, body: await sampleBytes(kind, width, height, original.length)});
+  });
+}
+/** Creates one artwork through the Gallery, as the art backdrop journey does, and returns its backdrop still. */
+async function generate(creator: Page, kind: Sample): Promise<{artworkId: string; compositionId: string; renditionId: string}> {
+  nextSample = kind;
+  for (const target of ['Tidbyt', 'Pixoo']) {const box = creator.getByRole('checkbox', {name: target, exact: true});if (await box.count() > 0) await box.uncheck();}
+  const calls = world.art.state().imageCalls, tiles = creator.locator('[data-gallery-art]');
+  const previous = await tiles.count() === 0 ? null : await tiles.first().getAttribute('data-gallery-art');
+  await creator.getByLabel('What would you like to see?', {exact: true}).fill(`Synthetic ${kind} glass backdrop`);
+  await creator.getByRole('button', {name: 'Create art', exact: true}).click();
+  await expect.poll(() => world.art.state().imageCalls).toBe(calls + 1);
+  await expect(creator.locator('[data-art-job]').first()).toContainText('succeeded');
+  if (previous !== null) await expect(tiles.first()).not.toHaveAttribute('data-gallery-art', previous);
+  const id = await tiles.first().getAttribute('data-gallery-art');assert.ok(id !== null);
+  const read = await fetch(`${world.url}/modules/art/content/artwork.${id}`, {headers: {authorization: `Bearer ${world.readerToken}`}});
+  assert.equal(read.status, 200);const artwork = artworkOf(await read.json());assert.ok(artwork !== undefined);
+  const still = browserArt(artwork, false);assert.ok(still !== undefined);
+  for (const composition of artwork.compositions) for (const rendition of composition.renditions) samples.set(`/modules/art/content/${rendition.ref}`, kind);
+  return {artworkId: artwork.artworkId, compositionId: still.compositionId, renditionId: still.rendition.renditionId};
+}
+type Artwork = Awaited<ReturnType<typeof generate>>;
+/** Presents an artwork and waits until the layer has drawn its backdrop and reported it to the art source. */
+async function present(page: Page, artwork: Artwork): Promise<void> {
+  await world.presentArt(artwork.artworkId, artwork.compositionId);
+  await expect(page.locator('[data-art-backdrop]')).toHaveAttribute('data-rendition', artwork.renditionId, {timeout: 30_000});
+  await expect(layer(page)).toHaveAttribute('data-glass-backdrop', artwork.renditionId, {timeout: 30_000});
 }
 
 const layer = (page: Page): Locator => page.locator('.home-layout .glass-layer');
@@ -143,7 +174,7 @@ async function contrast(page: Page): Promise<{min: number; runs: number; worst: 
 }
 
 async function open(context: BrowserContext, width = 1440, height = 900): Promise<{page: Page; sent: string[]; errors: string[]}> {
-  const page = await context.newPage();page.setDefaultTimeout(30_000);await page.setViewportSize({width, height});
+  await substitute(context);const page = await context.newPage();page.setDefaultTimeout(30_000);await page.setViewportSize({width, height});
   const errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
   const sent = changes(page);
   await page.goto(world.url);await feed(page, 'connected');
@@ -159,17 +190,19 @@ try {
   // AC1: the backdrop is drawn and the glass follows each card's box.
   const context = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference'});
   const {page, sent, errors} = await open(context);
-  const requests: string[] = [];page.on('request', request => {requests.push(request.url());});
   await expect(page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
   assert.ok(await rest(page) > 1, 'the first appearance eases over several frames, then stops');
+  await expect(page.locator('[data-art-backdrop]')).toHaveAttribute('data-art-backdrop', /^(none|stale)$/);
   assert.equal(await layer(page).getAttribute('data-glass-backdrop'), '', 'with no artwork the layer draws the Quiet glass wash');
   assert.deepEqual((await surfaces(page)).filled, ['inbox'], 'the card surfaces are see-through over the glass, except the Inbox that needs attention');
   assert.equal(await layer(page).evaluate(node => getComputedStyle(node).pointerEvents), 'none', 'the canvas takes no pointer input');
   assert.notEqual(await page.locator('#rail').evaluate(node => getComputedStyle(node).backdropFilter), 'none', 'the rail is frosted over the backdrop');
   await shot(page, '1440-wash');
   const empty = await page.screenshot({clip: {x: 1200, y: 10, width: 40, height: 30}});
-  await showSample(page, 'dark');
-  await expect(layer(page)).toHaveAttribute('data-glass-backdrop', 'synthetic-dark');
+  // Two artworks through the real art module and its backdrop source, drawn from the samples' pixels.
+  const creator = await context.newPage();await creator.goto(`${world.url}/#/module/art/gallery`);await feed(creator, 'connected');
+  const dark = await generate(creator, 'dark'), bright = await generate(creator, 'bright');await creator.close();
+  await present(page, dark);
   assert.notDeepEqual(await page.screenshot({clip: {x: 1200, y: 10, width: 40, height: 30}}), empty, 'the artwork replaces the wash behind the page');
   report['panels'] = await followsBoxes(page, 'loaded');
   await shot(page, '1440-dark-sample');
@@ -222,7 +255,6 @@ try {
   const canvas = await layer(page).elementHandle();assert.ok(canvas !== null);
   await page.goto(`${world.url}#/settings`);await page.getByRole('heading', {name: 'Settings', exact: true}).waitFor();
   assert.equal(await canvas.evaluate(node => (node as HTMLCanvasElement).getContext('webgl2')?.isContextLost() ?? true), true, 'leaving Home releases the context');
-  assert.ok(requests.every(url => !url.includes('/modules/art/')), 'the layer requests nothing');
   assert.deepEqual(sent.filter(path => !path.includes('/commands/') && path !== '/api/sdk/v1/request'), []);
   assert.deepEqual(errors, []);
   await context.close();
@@ -234,7 +266,7 @@ try {
     const opened = await open(themed);
     await expect(opened.page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
     for (const sample of ['dark', 'bright'] as const) {
-      await showSample(opened.page, sample);await expect(layer(opened.page)).toHaveAttribute('data-glass-backdrop', `synthetic-${sample}`);await rest(opened.page);
+      await present(opened.page, sample === 'dark' ? dark : bright);await rest(opened.page);
       await shot(opened.page, `1440-${scheme}-${sample}`);
       const measured = await contrast(opened.page);
       assert.ok(measured.runs > 20, `${scheme}/${sample}: text runs were measured`);
@@ -248,8 +280,9 @@ try {
   // AC4: without WebGL 2 the cards keep their Quiet glass panels and work.
   const plain = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
   await plain.addInitScript(() => {
-    const original = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {return kind === 'webgl2' ? null : Reflect.apply(original, this, [kind, ...rest]) as RenderingContext | null;} as typeof original;
+    const original = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext')?.value as (this: HTMLCanvasElement, ...args: unknown[]) => RenderingContext | null;
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {configurable: true, writable: true,
+      value(this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {return kind === 'webgl2' ? null : original.call(this, kind, ...rest);}});
   });
   const fallback = await open(plain);
   await expect(layer(fallback.page)).toHaveAttribute('data-glass-fallback', 'no-webgl2');

@@ -10,7 +10,7 @@ import {HomeArtSlot} from './home-art-slot.tsx';
 import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
 import {GlassLayer, type GlassBackdrop, type GlassState} from './glass-layer.tsx';
-import {useArtBackdrop, useShowArtBackdrop} from './art-backdrop.ts';
+import {useArtBackdrop, useShowArtBackdrop} from '@jimmie-potts/art/frontend';
 import './home-layout.css';
 import './home-shapes.css';
 
@@ -55,7 +55,9 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   // The grid's width decides its columns (#1672); measured before paint and on every resize.
   const grid = useRef<HTMLDivElement>(null), [width, setWidth] = useState(0);
   // Home draws on the glass layer (#1929): the presented artwork behind the page and every card on clear glass. Until
-  // the layer draws its first frame, and without WebGL 2, the cards keep their Quiet glass panels.
+  // the layer draws its first frame, and without WebGL 2, the cards keep their Quiet glass panels. The art module's
+  // backdrop source (#1928) owns the bitmap; a new image is uploaded in the layer's layout effect, and any state
+  // without an image is the Quiet glass wash. The layer reports the rendition it has drawn, or null, as evidence.
   const [glass, setGlass] = useState<GlassState>('quiet'), backdropImage = useArtBackdrop().image, showBackdrop = useShowArtBackdrop();
   const backdrop = useMemo<GlassBackdrop | null>(() => backdropImage === null ? null
     : {id: backdropImage.renditionId, bitmap: backdropImage.bitmap, width: backdropImage.width, height: backdropImage.height}, [backdropImage]);

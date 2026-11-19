@@ -995,8 +995,9 @@ artwork, deeper as the page scrolls in dark appearance), `--glass-tone`,
 `--bg`, `--shell-wash-start` and `--shell-wash-end`. A color's alpha is the amount
 the shader uses. An automatic veil inside panels and under veil marks mixes in
 just enough of the veil color to keep `--glass-ink` (the faintest text,
-`--muted-dense`) at 5:1. Until the art backdrop export (#1928) merges,
-`src/art-backdrop.ts` supplies no artwork outside the disposable glass journey.
+`--muted-dense`) at 5:1. Home's backdrop is the art module's `useArtBackdrop`
+image (#1928); any state without an image draws the wash, and the rendition the
+layer has drawn, or null, goes back through `useShowArtBackdrop`.
 
 ## Build and checks
 
