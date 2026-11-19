@@ -1,12 +1,14 @@
 import {createHash} from 'node:crypto';
 import {Ajv2020} from 'ajv/dist/2020.js';
-import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies, sessionEntityId, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {READ_RECEIPT_SCHEMA, registerReadReceiptFamily, type ReadReceiptObservation} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {sessionEntityId} from '@jimmie-potts/event-contracts/v2/families';
+import {READ_RECEIPT_SCHEMA, type ReadReceiptObservation} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {connectRemote, prepareMessage, publishOnce, type RemoteParticipant, type SyncedCopy} from '@jimmie-potts/sdk';
 import {canonical, readProducer} from '../hook/producer.js';
 import {CODEX_RECEIPT_FEED, codexReceiptSource, type ReceiptFeed} from './qualification.js';
 import type {AcceptedCodexRead, CodexReadTarget} from './codex-observer.js';
+import {coreSession} from './session.js';
 
 export type CodexReadPublisher = {
   bind(threadId: string, turnId: string): CodexReadTarget | undefined;
@@ -19,15 +21,10 @@ const validFeed = new Ajv2020({strict: true}).compile<ReceiptFeed & {feed: strin
   type: 'object', additionalProperties: false, required: ['provider', 'client', 'hostId', 'sourceId', 'feed'],
   properties: {provider: {const: 'codex'}, client: {const: 'local'}, hostId: id, sourceId: id, feed: {const: CODEX_RECEIPT_FEED}},
 });
-const validator = new MessageValidator(); registerCoreFamilies(validator);
-registerReadReceiptFamily(validator);
-
-function session(message: unknown): Message<SessionRecord> | undefined {
-  const checked = validator.validate<SessionRecord>(message);
-  return checked.ok && checked.value.source === 'bunny/core' && checked.value.kind === 'state' &&
-    checked.value.type === 'org.bunny.session.updated' &&
-    ['https://bunny.invalid/events/session/2.0', 'https://bunny.invalid/events/session/2.1'].includes(checked.value.dataschema)
-    ? checked.value : undefined;
+/** A session state message the core published, with its view, or undefined for anything `coreSession` does not accept. */
+function session(message: Message<object> | undefined): {message: Message<object>; view: SessionView} | undefined {
+  const view = coreSession(message);
+  return message === undefined || view === undefined ? undefined : {message, view};
 }
 
 /** Opens a live owner copy, never polling or replaying native actions missed during an outage. */
@@ -58,13 +55,13 @@ export async function openCodexReadPublisher(path: string, onGap: () => void, ti
 
     const current = (threadId: string) => fresh && !closed ? session(copy?.get({family: 'session', id: sessionEntityId({...feed, sessionId: threadId})})) : undefined;
     const bind = (threadId: string, turnId: string): CodexReadTarget | undefined => {
-      const record = current(threadId)?.data;
-      if (record === undefined || record.identity.provider !== provider || record.identity.client !== client ||
-        record.identity.hostId !== hostId || record.identity.sourceId !== sourceId || record.identity.sessionId !== threadId ||
-        record.turn.status !== 'known' || record.turn.id !== turnId || record.parent.status === 'known' ||
-        (record.activity !== 'idle' && record.activity !== 'interrupted')) return undefined;
-      const notice = record.notices.find(item => item.kind === 'turn-ended' && item.turn.status === 'known' && item.turn.id === turnId);
-      return notice === undefined ? undefined : {identity: {...record.identity}, turnId, generation: record.generation, noticeId: notice.id};
+      const view = current(threadId)?.view;
+      if (view === undefined || view.identity.provider !== provider || view.identity.client !== client ||
+        view.identity.hostId !== hostId || view.identity.sourceId !== sourceId || view.identity.sessionId !== threadId ||
+        view.turn.status !== 'known' || view.turn.id !== turnId || view.parent.status === 'known' ||
+        (view.work.state !== 'idle' && view.work.state !== 'interrupted')) return undefined;
+      const notice = view.outcome.notices.find(item => item.kind === 'turn-ended' && item.turn.status === 'known' && item.turn.id === turnId);
+      return notice === undefined ? undefined : {identity: {...view.identity}, turnId, generation: view.generation, noticeId: notice.id};
     };
     return {bind, close, accept: receipt => {
       const target = receipt.target, latest = bind(target.identity.sessionId, target.turnId);
@@ -74,7 +71,7 @@ export async function openCodexReadPublisher(path: string, onGap: () => void, ti
         parent: {status: 'unknown'}, observedAtMs: receipt.observedAtMs, ordering: {status: 'unknown'},
         event: {kind: 'read-receipt-observed', generation: target.generation, noticeId: target.noticeId,
           receipt: {kind: 'provider-client', client: 'desktop', seenRevision: receipt.seenRevision, acceptedRevision: receipt.acceptedRevision}}};
-      const subject = sessionEntityId(target.identity), parent = current(target.identity.sessionId);
+      const subject = sessionEntityId(target.identity), parent = current(target.identity.sessionId)?.message;
       const message = prepareMessage(source, {kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject, dataschema: READ_RECEIPT_SCHEMA, data},
         parent === undefined ? {} : {parent});
       message.id = createHash('sha256').update(canonical({source, target, seen: receipt.seenRevision, accepted: receipt.acceptedRevision})).digest('hex');

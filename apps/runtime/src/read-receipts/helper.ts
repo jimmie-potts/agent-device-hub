@@ -1,10 +1,12 @@
 import {Ajv2020} from 'ajv/dist/2020.js';
-import {MessageValidator, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies, sessionEntityId, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {READ_RECEIPT_SCHEMA, registerReadReceiptFamily, type Lifecycle21Observation, type ReadReceiptObservation} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import {errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import {sessionEntityId} from '@jimmie-potts/event-contracts/v2/families';
+import {READ_RECEIPT_SCHEMA, readReceiptValidator, type Lifecycle21Observation, type ReadReceiptObservation} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {connectRemote, prepareMessage, publishOnce, SdkError, type RemoteParticipant} from '@jimmie-potts/sdk';
 import {readProducer} from '../hook/producer.js';
 import {CLAUDE_RECEIPT_FEED, CLAUDE_TERMINAL_VERSION, isReadReceipt, receiptSource, viewRevision, type ReceiptFeed} from './qualification.js';
+import {coreSession} from './session.js';
 export {CLAUDE_RECEIPT_FEED, CLAUDE_TERMINAL_VERSION, receiptSource} from './qualification.js';
 
 type Input = {action: 'bind'; version: string; surface: 'terminal'; sessionId: string; promptId: string}
@@ -24,18 +26,6 @@ const validFeed = ajv.compile<ReceiptFeed & {feed: string}>({type: 'object', add
   required: ['provider', 'client', 'hostId', 'sourceId', 'feed'], properties: {
     provider: {const: 'claude'}, client: {const: 'code'}, hostId: id, sourceId: id, feed: {const: CLAUDE_RECEIPT_FEED},
   }});
-const validator = new MessageValidator();
-registerCoreFamilies(validator);
-registerReadReceiptFamily(validator);
-
-function session(message: unknown): SessionRecord | undefined {
-  const checked = validator.validate<SessionRecord>(message);
-  return checked.ok && checked.value.source === 'bunny/core' && checked.value.kind === 'state' &&
-    checked.value.type === 'org.bunny.session.updated' &&
-    ['https://bunny.invalid/events/session/2.0', 'https://bunny.invalid/events/session/2.1'].includes(checked.value.dataschema)
-    ? checked.value.data : undefined;
-}
-
 function bounded<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) return Promise.reject(new SdkError(errorBody('unavailable')));
   return new Promise((resolve, reject) => {
@@ -62,7 +52,7 @@ export async function runReadHelper(path: string, raw: unknown, timeoutMs = 2400
     const feed = {provider, client, hostId, sourceId}, source = receiptSource(feed);
     let target: Message<ReadReceiptObservation> | undefined;
     if (input.action === 'read') {
-      const checked = validator.validate<Lifecycle21Observation>(input.target);
+      const checked = readReceiptValidator().validate<Lifecycle21Observation>(input.target);
       if (!checked.ok || checked.value.dataschema !== READ_RECEIPT_SCHEMA || !isReadReceipt(checked.value.data) ||
         checked.value.source !== source || checked.value.data.event.receipt.kind !== 'owned-ui') {
         return {status: 'unavailable', ...errorBody('invalid-message')};
@@ -82,24 +72,24 @@ export async function runReadHelper(path: string, raw: unknown, timeoutMs = 2400
     const entity = sessionEntityId(identity);
     let confirmed: (() => void) | undefined;
     const confirmation = new Promise<void>(resolve => {confirmed = resolve;});
-    const matches = (record: SessionRecord | undefined): boolean => {
-      const receipt = target?.data.event.receipt;
-      return receipt?.kind === 'owned-ui' && record?.id === entity && record.read === 'read' &&
-        record.generation === target?.data.event.generation && record.turn.status === 'known' &&
-        target.data.turn.status === 'known' && record.turn.id === target.data.turn.id &&
-        record.readReceipt?.source === source && record.readReceipt.noticeId === target?.data.event.noticeId &&
-        record.readReceipt.receipt.kind === 'owned-ui' && record.readReceipt.receipt.viewRevision === receipt.viewRevision;
+    const matches = (view: SessionView | undefined): boolean => {
+      const receipt = target?.data.event.receipt, read = view?.outcome.readReceipt;
+      return receipt?.kind === 'owned-ui' && view?.id === entity && view.outcome.read === 'read' &&
+        view.generation === target?.data.event.generation && view.turn.status === 'known' &&
+        target.data.turn.status === 'known' && view.turn.id === target.data.turn.id &&
+        read?.source === source && read.noticeId === target?.data.event.noticeId &&
+        read.receipt.kind === 'owned-ui' && read.receipt.viewRevision === receipt.viewRevision;
     };
     const synced = await bounded(participant.sync<object>(['session'], change => {
       if (change.type === 'failed') controller.abort();
-      if (change.type === 'updated' && matches(session(change.message))) confirmed?.();
+      if (change.type === 'updated' && matches(coreSession(change.message))) confirmed?.();
     }, {timeoutMs, owner: 'bunny/core', onRestarted: () => {controller.abort();}}), controller.signal);
     if (synced.status !== 'synced') return {status: 'unavailable', ...synced.error};
-    const current = session(synced.copy.get({family: 'session', id: entity}));
+    const current = coreSession(synced.copy.get({family: 'session', id: entity}));
     if (input.action === 'bind') {
       if (current === undefined || current.turn.status !== 'known' || current.turn.id !== input.promptId || current.parent.status === 'known' ||
-        (current.activity !== 'idle' && current.activity !== 'interrupted')) return {status: 'unavailable', ...errorBody('invalid-state')};
-      const turn = current.turn, notice = current.notices.find(item => item.turn.status === 'known' && item.turn.id === turn.id);
+        (current.work.state !== 'idle' && current.work.state !== 'interrupted')) return {status: 'unavailable', ...errorBody('invalid-state')};
+      const turn = current.turn, notice = current.outcome.notices.find(item => item.turn.status === 'known' && item.turn.id === turn.id);
       if (notice === undefined) return {status: 'unavailable', ...errorBody('invalid-state')};
       const data: ReadReceiptObservation = {identity: current.identity, turn, parent: {status: 'unknown'}, observedAtMs: Date.now(), ordering: {status: 'unknown'},
         event: {kind: 'read-receipt-observed', generation: current.generation, noticeId: notice.id,

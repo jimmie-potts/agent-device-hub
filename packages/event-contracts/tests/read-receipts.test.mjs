@@ -4,6 +4,8 @@ import test from 'node:test';
 import {MessageValidator} from '../dist/v2/index.js';
 import {registerCoreFamilies, sessionEntityId} from '../dist/v2/families.js';
 import {decideReadReceipt, READ_RECEIPT_SCHEMA, readReceiptValidator, registerReadReceiptFamily} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import {readSession as viewOf, sessionView} from '../dist/v2/session.js';
+import {loadSessionCases} from '../dist/v2/session-cases.js';
 
 const fixtures = JSON.parse(readFileSync(new URL('../fixtures/v2/families.json', import.meta.url), 'utf8')).valid;
 function validator(optIn = true) {
@@ -209,6 +211,57 @@ test('known children and unfinished sessions remain ineligible', () => {
   }
   const child = {...session, parent: {status: 'known', identity: {...session.identity, sessionId: 'parent'}}};
   assert.deepEqual(decideReadReceipt(message, child, qualification), ineligible('child'));
+});
+
+test('eligibility reads the view\'s work state and outcome, which session/3.0 carries instead of activity and notices (Hub #1865)', () => {
+  for (const provider of ['codex', 'claude']) {
+    const {message, session, qualification} = example(provider, provider === 'claude' ? 'owned-ui' : 'provider-client');
+    for (const activity of ['idle', 'interrupted', 'active', 'unknown']) {
+      const view = sessionView({...structuredClone(session), activity});
+      assert.equal(view.work.state, activity);
+      assert.equal('activity' in view || 'notices' in view, false, 'the view has only the claims');
+      assert.deepEqual(decideReadReceipt(message, view, qualification),
+        activity === 'idle' || activity === 'interrupted' ? {status: 'eligible', noticeId: session.notices[0].id} : ineligible('unfinished'), activity);
+    }
+    const view = sessionView({...structuredClone(session), activity: 'idle'});
+    for (const change of [
+      v => {v.generation++;},
+      v => {v.turn = {status: 'known', id: 'next-turn'};},
+      v => {v.outcome.notices = [];},
+      v => {v.outcome.notices[0].turn = {status: 'known', id: 'other-turn'};},
+    ]) {
+      const current = structuredClone(view); change(current);
+      assert.deepEqual(decideReadReceipt(message, current, qualification), ineligible('stale-target'), change.toString());
+    }
+    const child = {...view, parent: {status: 'known', identity: {...view.identity, sessionId: 'parent'}}};
+    assert.deepEqual(decideReadReceipt(message, child, qualification), ineligible('child'));
+  }
+});
+
+test('over the shared case set, a receipt decided on a session\'s view is decided as on its record (Hub #1865)', () => {
+  const decisions = {};
+  for (const sessionCase of loadSessionCases().cases) for (const check of sessionCase.checks) for (const state of check.messages) {
+    const record = state.data, {identity} = record;
+    const kind = identity.provider === 'claude' && identity.client === 'code' ? 'owned-ui'
+      : identity.provider === 'codex' && identity.client === 'local' ? 'provider-client' : undefined;
+    if (kind === undefined || record.turn.status !== 'known') continue;
+    const {message, qualification} = example(identity.provider, kind);
+    const {sessionId: _sessionId, ...feed} = identity;
+    const view = viewOf(state);
+    assert.ok(view, `${sessionCase.id} ${record.id}`);
+    for (const notice of record.notices.filter(item => item.id !== '')) {
+      const receipt = structuredClone(message);
+      receipt.subject = record.id;
+      Object.assign(receipt.data, {identity, turn: record.turn});
+      Object.assign(receipt.data.event, {generation: record.generation, noticeId: notice.id});
+      const fromRecord = decideReadReceipt(receipt, record, {...qualification, feed});
+      assert.deepEqual(decideReadReceipt(receipt, view, {...qualification, feed}), fromRecord, `${sessionCase.id} ${identity.sessionId}`);
+      const outcome = fromRecord.status === 'ineligible' ? fromRecord.reason : fromRecord.status;
+      decisions[outcome] = (decisions[outcome] ?? 0) + 1;
+    }
+  }
+  // The cases reach eligible finished roots and targets a later turn made stale; the test above covers unfinished work.
+  assert.ok(decisions.eligible > 0 && decisions['stale-target'] > 0, JSON.stringify(decisions));
 });
 
 function freeze(value) {

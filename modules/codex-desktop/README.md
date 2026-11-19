@@ -32,7 +32,7 @@ only `@jimmie-potts/sdk` and `@jimmie-potts/event-contracts`.
 | `codexDesktopOptions` | `src/configuration.ts` | The same three members and checks, as `configure`; a refusal is the shared error body with fixed text. `convertHubCodexDesktop` is an optional legacy conversion utility. |
 | `unreadSessions` | `src/marker.ts` | Unchanged. |
 | `createDesktopRead`'s `refresh` | `src/marker.ts` (`readMarker`), `src/reader.ts`, `src/serve.ts`, `src/transport.ts` | The same stamp, size bound and reread of a file that changed while it was read, now in the reader's own process. The reader never reads a special file, and its open cannot block on one. |
-| `readEvents` | `src/evidence.ts` | The same rules on the core's `session/2.0` records; each piece of evidence is a `read-observed` lifecycle observation. |
+| `readEvents` | `src/evidence.ts` | The same rules on the core's session records, read through `readSession` since Hub #1865; each piece of evidence is a `read-observed` lifecycle observation. |
 | `startDesktopRead` | `src/module.ts` | The same 2 s poll, one read at a time, now with a read deadline, the marker's availability and evidence sent again for an unchanged record after a doubling wait instead of on every poll. |
 | `tests/codex-desktop.test.mjs`: the parser and configuration cases | `tests/marker.test.ts`, `tests/configuration.test.ts` | The same cases. |
 | The read state, settle and unusable marker cases | `tests/module.test.ts`, and with the real core `apps/runtime/tests/codex-desktop.test.ts` | The same decisions, observed as published observations; the real core's reduction in the runtime's test. |
@@ -129,13 +129,16 @@ The module follows the core's sessions through sync, reads the marker every 2 s
 and, for each configured top-level Desktop session whose read state the marker
 changes, publishes one `org.bunny.lifecycle.observed` occurrence with a
 `read-observed` event to the core, from `bunny/modules/codex-desktop`, on
-`bunny.event.lifecycle.<session ID>`. The Hub's rules hold:
+`bunny.event.lifecycle.<session ID>`. It reads each session through the shared
+`readSession` function (Hub #1865) and skips a record that function does not
+accept. The Hub's rules hold:
 
 - Only the configured producer's Codex Desktop sessions count, and never a
   subagent: Desktop lists unopened subagent threads indefinitely.
 - A listed session is unread. An unlisted one is read once it was unread, or,
   when its read state is unknown and no turn is known to run, five seconds after
-  its last evidence, when Desktop has had time to set the flag.
+  its last evidence, when Desktop has had time to set the flag. A known running
+  turn is the view's active work, confirmed or not.
 - An unusable marker, missing, unreadable, oversized, malformed or of another
   format, gives no evidence, and the module logs each change of that once.
 - The observation names the session's turn, an unknown parent and unknown

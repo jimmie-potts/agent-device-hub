@@ -24,6 +24,13 @@ stale, including a new turn, native unread update, label/freshness change or
 restart. Reopen the panel to bind a current target. No polling loop or provider
 read-update request is added.
 
+Both helpers read the core's session records through the shared `readSession`
+function and accept exactly the versions it accepts (Hub #1865). The helpers run
+from the host's installed release. After the core switches to a session version
+that release does not read, the helper finds no record it accepts: the panel
+offers no action, the Codex observer binds no target and no receipt is sent.
+Update the host's release to restore receipts.
+
 The explicit click sends a lifecycle/2.1 occurrence through the authenticated
 gateway. The core rechecks the target in its serialized operation and commits
 read provenance, history and outbox in its existing SQLite transaction. The
