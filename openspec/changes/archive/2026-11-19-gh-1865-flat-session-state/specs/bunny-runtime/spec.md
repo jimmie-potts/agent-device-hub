@@ -24,7 +24,7 @@ The core SHALL keep each root session's latest host session ID with its record, 
 - **WHEN** a session has had no lifecycle evidence for 24 hours
 - **THEN** the core publishes its removal with reason `expired`, and history keeps its earlier `turn.ended`
 
-#### Scenario: The work deadline at five minutes
+#### Scenario: Freshness at five minutes
 - **WHEN** five minutes pass on the runtime's clock without qualifying work evidence for a working session, and for a session whose turn ended on a question
 - **THEN** the core's timer publishes the working session with unconfirmed work at a higher revision, a millisecond earlier nothing was published, and the waiting session is not republished and still needs the owner
 
