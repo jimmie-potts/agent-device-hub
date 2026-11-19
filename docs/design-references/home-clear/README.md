@@ -46,7 +46,7 @@ Things to try, because the stills cannot show them:
 
 ## What is sample
 
-Every device, name, state and number is invented, and every control changes
+Every device, name, state and number is sample data, and every control changes
 only the page's own memory. The picture is a drawn stand-in for the presented
 artwork. Links show a note instead of leaving the page. The rail is a static
 copy of the dashboard's rail.
