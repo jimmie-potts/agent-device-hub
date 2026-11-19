@@ -224,7 +224,7 @@ suite('animations and favorites', () => {
 
 // Hub #1865, design decision 10 and the owner's decision of 2026-11-18: the Lines follow the hub's shared status and keep no
 // session rule of their own. Five minutes of silence reach the module as the core's republished record, whose evidence is
-// that old and whose freshness is uncertain.
+// that old and whose running work is unconfirmed for its deadline.
 suite('the Lines follow the hub\'s shared status', () => {
   const QUESTION = [{id: {status: 'known', id: 'ask'}, kind: 'question', turn: {status: 'known', id: 't1'}}] as const;
   const keyOf = (name: string): string => identityKey({...QUALIFIED, sessionId: name});
@@ -241,7 +241,7 @@ suite('the Lines follow the hub\'s shared status', () => {
       await world.advance(3000);
       const silent = world.clock.now() - 360_000;
       await world.core.set('asking', {attention: [...QUESTION], evidenceAtMs: silent});
-      await world.core.set('done', {activity: 'idle', notices: done.notices, evidenceAtMs: silent});
+      await world.core.set('done', {work: 'idle', notices: done.outcome.notices, evidenceAtMs: silent});
       await world.advance(1000);
       assert.deepEqual(statuses(world), {[keyOf('asking')]: 'question', [keyOf('done')]: 'unread'});
       assert.deepEqual(held(world), [], 'neither is held steady: the question keeps its alert and the finished turn its unread pulse');
@@ -272,8 +272,8 @@ suite('the Lines follow the hub\'s shared status', () => {
     await world.advance(3000);
     const silent = world.clock.now() - 360_000;
     await world.core.set('busy', {evidenceAtMs: silent});
-    await world.core.set('lost', {activity: 'unknown', evidenceAtMs: silent});
-    await world.core.set('newcomer', {activity: 'unknown', evidenceAtMs: silent});
+    await world.core.set('lost', {work: 'unknown', evidenceAtMs: silent});
+    await world.core.set('newcomer', {work: 'unknown', evidenceAtMs: silent});
     await world.advance(1000);
     assert.deepEqual(statuses(world), {[keyOf('busy')]: 'working', [keyOf('lost')]: 'idle', [keyOf('newcomer')]: 'idle'});
     assert.deepEqual(held(world), [keyOf('busy')], 'only the working task whose work the hub no longer confirms is held steady');
@@ -352,7 +352,7 @@ suite('restarts, holds and offline devices', () => {
     assert.ok(record !== undefined);
     world.core.holdAcknowledgments = true;
     const ack = moduleCommand(NANOLEAF_FAMILIES.acknowledge.family, NANOLEAF_FAMILIES.acknowledge.type,
-      {requestId: 'ack-held', task: identityKey(record.identity), noticeId: record.notices[0]?.id ?? ''});
+      {requestId: 'ack-held', task: identityKey(record.identity), noticeId: record.outcome.notices[0]?.id ?? ''});
     assert.equal((await world.request(ack.key, ack.draft)).status, 'accepted');
     await world.until(() => world.core.acknowledgments.length === 1, 1000, 'the core took the request');
     const machine = machineEdit('machine-waiting', revision(world), {kind: 'settings', settings: {coverage: 'status'}});
@@ -427,7 +427,7 @@ suite('notice acknowledgment', () => {
     await world.start();
     const record = await world.core.finish('alpha');
     await world.until(() => shown(world, 'unread'), 5000, 'the finished turn shown');
-    const notice = record.notices[0]?.id ?? '';
+    const notice = record.outcome.notices[0]?.id ?? '';
     const {key, draft} = moduleCommand(NANOLEAF_FAMILIES.acknowledge.family, NANOLEAF_FAMILIES.acknowledge.type,
       {requestId: 'ack-1', task: identityKey(record.identity), noticeId: notice});
     assert.equal((await world.request(key, draft)).status, 'accepted');
@@ -443,7 +443,7 @@ suite('notice acknowledgment', () => {
     const record = await world.core.finish('beta', 't1', {...UNQUALIFIED, sessionId: 'beta'});
     await world.advance(2000);
     const {key, draft} = moduleCommand(NANOLEAF_FAMILIES.acknowledge.family, NANOLEAF_FAMILIES.acknowledge.type,
-      {requestId: 'ack-skipped', task: identityKey(record.identity), noticeId: record.notices[0]?.id ?? ''});
+      {requestId: 'ack-skipped', task: identityKey(record.identity), noticeId: record.outcome.notices[0]?.id ?? ''});
     const result = await world.request(key, draft);
     assert.equal(result.status === 'rejected' && result.error.error.code, 'not-found');
     await world.advance(1000);

@@ -83,7 +83,7 @@ export class DashboardConnection {
   readonly #moduleScopes = new Set<ModuleScope>();
   readonly #musicScopes = new Set<MusicCaptureFeed | MusicLightingFeed>();
   readonly #speechChecks = new Set<() => void>();
-  #copy: SyncedCopy<SessionRecord> | undefined;
+  #copy: SyncedCopy<SessionView> | undefined;
   #closed = false;
   /** The `sync.completed` last counted. */
   #lastSync: string | undefined;

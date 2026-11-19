@@ -12,9 +12,10 @@ export async function suggestionsReconnectJourney(context: BrowserContext): Prom
     const Component = frontend.pages.find(page => page.id === 'reachy').Component;
     const session = {id: 'synthetic-session', revision: 2, generation: 1,
       identity: {provider: 'codex', client: 'cli', hostId: 'synthetic-host', sourceId: 'synthetic-source', sessionId: 'synthetic-native-session'},
-      parent: {status: 'unknown'}, turn: {status: 'known', id: 'turn-1'}, activity: 'idle', attention: [], notices: [], read: 'unknown',
-      unavailable: [], ordering: {status: 'unknown'}, observedAtMs: Date.now(), lastEvidenceAtMs: Date.now(),
-      freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}};
+      parent: {status: 'unknown'}, turn: {status: 'known', id: 'turn-1'}, status: {class: 'quiet', detail: 'idle'},
+      work: {state: 'idle', confidence: 'confirmed', evidenceAtMs: Date.now(), reasons: []}, attention: {items: [], confidence: 'confirmed', evidenceAtMs: Date.now()},
+      outcome: {notices: [], read: 'unknown', confidence: 'confirmed', evidenceAtMs: Date.now()}, relationships: {children: {working: 0, unconfirmed: 0}, confidence: 'confirmed'},
+      unavailable: [], ordering: {status: 'unknown'}, observedAtMs: Date.now(), lastEvidenceAtMs: Date.now()};
     const state = {id: 'reachy', revision: 1, settings: {enabled: true, muted: [], snoozedUntilMs: 0, timeZone: 'UTC'},
       presentation: null, decision: 'settings-saved', availability: 'available'};
     const fixture = window.fixture = {calls: 0, copied: [], closed: 0};

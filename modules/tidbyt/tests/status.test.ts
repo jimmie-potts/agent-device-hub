@@ -1,19 +1,19 @@
 // The status tile's view and frame (Hub #930). Copied from controllers/tidbyt/tests/status.test.mjs at main 627e3fe3 and
-// converted to `session/2.0` records and a synced copy instead of a 1.x snapshot. A faulted collector has no 2.0 home: a
+// converted to `session/3.0` records and a synced copy instead of a 1.x snapshot. A faulted collector has no 2.0 home: a
 // copy that has not synced, or whose later sync failed, is the unavailable feed (MAPPING.md, "Agent status").
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
-import {sessionView, type ViewCopy} from '@jimmie-potts/event-contracts/v2/session-view';
+import type {ViewCopy} from '@jimmie-potts/event-contracts/v2/session-view';
 import {FRAME_BYTES, renderFrame, type Frame} from '../src/render.js';
 import {STATUS_COLORS, statusFrame, statusView, type StatusView} from '../src/status.js';
 import {titleSessions} from './frames.js';
-import {asking, finished, identity, notice, session, START_MS, working} from './support.js';
+import {asking, finished, identity, notice, session, START_MS, working, type SessionShape} from './support.js';
 
-const label = (value: string): NonNullable<SessionRecord['label']> => ({value, origin: 'user'});
-/** A copy of the sessions as the module reads it: each record's view from the shared read function. */
-const copy = (sessions: readonly SessionRecord[], synced = true): ViewCopy => ({synced, sessions: sessions.map(sessionView)});
+const label = (value: string): NonNullable<Session30Record['label']> => ({value, origin: 'user'});
+/** A copy of the sessions as the module reads it: each `session/3.0` record is its view. */
+const copy = (sessions: readonly Session30Record[], synced = true): ViewCopy => ({synced, sessions});
 const rowSummary = (view: StatusView): string[] => view.rows.map(row => {
   switch (row.kind) {
     case 'session':
@@ -30,7 +30,7 @@ void test('multiple sessions show ASK, RUN and DONE in order and omit idle, unkn
   const view = statusView(copy([
     finished({label: label('docs')}),
     session({label: label('idle')}),
-    session({label: label('unknown'), activity: 'unknown'}),
+    session({label: label('unknown'), work: 'unknown'}),
     working({label: label('child'), parent: {status: 'known', identity: {...parent.identity, sessionId: 'child-1'}}}),
     parent,
     asking({label: label('review-bot')}),
@@ -41,7 +41,7 @@ void test('multiple sessions show ASK, RUN and DONE in order and omit idle, unkn
 });
 
 void test('a root session whose child is active counts as working', () => {
-  const view = statusView(copy([session({label: label('parent'), children: {active: 1, uncertain: 0}})]));
+  const view = statusView(copy([session({label: label('parent'), children: {working: 1, unconfirmed: 0}})]));
   assert.deepEqual(rowSummary(view), ['PARENT RUN']);
   assert.equal(view.idle, false);
 });
@@ -68,7 +68,7 @@ void test('read evidence does not retire DONE; acknowledgment by a configured co
 });
 
 void test('a session with no evidence of work is never shown as done, and an empty synced copy is idle', () => {
-  const view = statusView(copy([session({activity: 'unknown'}), session({activity: 'idle'}), session({activity: 'interrupted'})]));
+  const view = statusView(copy([session({work: 'unknown'}), session({work: 'idle'}), session({work: 'interrupted'})]));
   assert.deepEqual(view.rows, []);
   assert.equal(view.idle, true);
 });
@@ -95,7 +95,7 @@ void test('labels prefer the user label, then the project ID, then a neutral has
 
 void test('titles follow explicit labels and precede project display names and legacy IDs', () => {
   const title = {value: 'Review the launch plan', source: 'provider'} as const;
-  const first = (extra: Partial<SessionRecord>): string => {
+  const first = (extra: SessionShape): string => {
     const [row] = statusView(copy([working(extra)])).rows;
     return row?.kind === 'session' ? row.label : '';
   };
@@ -107,9 +107,9 @@ void test('titles follow explicit labels and precede project display names and l
 });
 
 void test('unconfirmed work marks one row; an unavailable copy marks every row and never reports idle', () => {
-  const view = statusView(copy([working({label: label('stale'), freshness: 'uncertain'}), asking({label: label('fresh')})]));
+  const view = statusView(copy([working({label: label('stale'), unconfirmed: 'deadline'}), asking({label: label('fresh')})]));
   assert.deepEqual(rowSummary(view), ['FRESH ASK', 'STALE RUN?']);
-  const restarted = statusView(copy([working({label: label('restarted'), freshness: 'uncertain', restartUncertain: true})]));
+  const restarted = statusView(copy([working({label: label('restarted'), unconfirmed: 'restart'})]));
   assert.deepEqual(rowSummary(restarted), ['RESTARTED RUN?']);
   const lost = statusView(copy([working({label: label('x')})], false));
   assert.equal(lost.feed, 'unavailable');
@@ -124,7 +124,8 @@ void test('unconfirmed work marks one row; an unavailable copy marks every row a
 // Hub #1865, design decision 10: the tile marks `?` only for an unknown status, unconfirmed work or an unsynced copy. A
 // session that waits for the owner or holds a finished turn is never `?` from its silence.
 void test('a question silent for ten minutes and a silent finished turn show without `?`, and unconfirmed work shows with one', () => {
-  const silent = {at: START_MS - 10 * 60_000, freshness: 'uncertain'} as const;
+  // The core marked the running work unconfirmed at its deadline; silence changes no other claim.
+  const silent = {at: START_MS - 10 * 60_000, unconfirmed: 'deadline'} as const;
   const question = [{id: {status: 'known', id: 'q-1'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}}] as const;
   const view = statusView(copy([
     asking({label: label('asking'), attention: [...question], ...silent}),
@@ -173,7 +174,7 @@ void test('the status frame is a valid renderer frame with a state-colored marke
 void test('uncertain rows are dimmed and use a ? marker; overflow and feed rows are drawn', () => {
   const same = identity();
   const fresh = statusFrame(statusView(copy([working({identity: same, label: label('same')})])));
-  const stale = statusFrame(statusView(copy([working({identity: same, label: label('same'), freshness: 'uncertain'})])));
+  const stale = statusFrame(statusView(copy([working({identity: same, label: label('same'), unconfirmed: 'deadline'})])));
   assert.ok(brightest(rowPixels(stale, 0)) < brightest(rowPixels(fresh, 0)) / 2, 'a stale row is dimmed');
   const marker = (frame: Frame): boolean[] => rowPixels(frame, 0).filter((_, i) => i % 64 < 3).map(p => p.some(v => v > 0));
   assert.notDeepEqual(marker(stale), marker(fresh), 'the marker\'s shape changes');

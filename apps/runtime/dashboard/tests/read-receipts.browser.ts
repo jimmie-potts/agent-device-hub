@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {connectRemote} from '@jimmie-potts/sdk';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {SESSION_RECEIPT_SCHEMA} from '@jimmie-potts/event-contracts/v2/read-receipts';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {SESSION_SCHEMA} from '@jimmie-potts/event-contracts/v2/session';
 import {runReadHelper} from '../../dist/src/read-receipts/helper.js';
 import {CLAUDE_TERMINAL_VERSION} from '../../dist/src/read-receipts/qualification.js';
 import {IDENTITY} from '../../dist/tests/fixtures/agents.js';
@@ -33,14 +33,14 @@ try {
   assert.deepEqual(await runReadHelper(world.readProducer, {action: 'read', version: CLAUDE_TERMINAL_VERSION,
     surface: 'terminal', target: selected.target}), {status: 'confirmed'});
   await chip('Idle');
-  const synced = await reader.sync<SessionRecord>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 3000});
+  const synced = await reader.sync<Session30Record>(['session'], () => {}, {owner: 'bunny/core', timeoutMs: 3000});
   assert.equal(synced.status, 'synced');
   assert.ok(synced.status === 'synced');
   const record = synced.copy.states()[0];
   assert.ok(record);
-  assert.equal(record?.dataschema, SESSION_RECEIPT_SCHEMA);
-  assert.equal(record.data.read, 'read');
-  assert.ok(record.data.readReceipt);
+  assert.equal(record?.dataschema, SESSION_SCHEMA);
+  assert.equal(record.data.outcome.read, 'read');
+  assert.ok(record.data.outcome.readReceipt);
   await page.reload();
   await feed(page, 'connected');
   await chip('Idle');
@@ -50,7 +50,7 @@ try {
   assert.deepEqual(sent, []);
   assert.deepEqual(errors, []);
   process.stdout.write(JSON.stringify({journey: 'qualified-read-receipt', passed: true,
-    checks: ['bind keeps unread', 'session/2.1 clears the unread row', 'reload sync retains read', 'a new turn returns to unread', 'no dashboard command or browser error']}) + '\n');
+    checks: ['bind keeps unread', 'the receipt\'s provenance clears the unread row', 'reload sync retains read', 'a new turn returns to unread', 'no dashboard command or browser error']}) + '\n');
 } finally {
   await reader.close();
   await browser.close();

@@ -422,7 +422,7 @@ suite('publication', () => {
     const writes = world.writes().length;
     // An acknowledgment and a saved favorite each complete, writing nothing.
     const ack = moduleCommand(NANOLEAF_FAMILIES.acknowledge.family, NANOLEAF_FAMILIES.acknowledge.type,
-      {requestId: 'ack', task: identityKey(record.identity), noticeId: record.notices[0]?.id ?? ''});
+      {requestId: 'ack', task: identityKey(record.identity), noticeId: record.outcome.notices[0]?.id ?? ''});
     const save = moduleCommand(NANOLEAF_FAMILIES.favoriteEdit.family, NANOLEAF_FAMILIES.favoriteEdit.type,
       {requestId: 'save', edit: {kind: 'save', name: 'Evening', animation: {preset: 'ocean'}}});
     for (const {key, draft} of [ack, save]) assert.equal((await world.request(key, draft)).status, 'accepted');

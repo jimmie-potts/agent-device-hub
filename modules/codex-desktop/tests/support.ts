@@ -7,7 +7,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies, sessionEntityId, type Identity, type LifecycleObservation, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {registerCoreFamilies, sessionEntityId, type Identity, type LifecycleObservation, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession, SESSION_SCHEMA, type SessionFacts} from '@jimmie-potts/event-contracts/v2/session';
 import {InProcessBus, type Cancel, type Participant, type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCodexDesktopModule, SimulatedMarker, type MarkerTransport} from '../src/index.js';
@@ -15,7 +16,6 @@ import {createCodexDesktopModule, SimulatedMarker, type MarkerTransport} from '.
 export const START_MS = Date.parse('2026-10-07T12:00:00.000Z');
 /** The module's section: the Codex home is a synthetic path, which only a real reader would read. */
 export const SECTION = {home: '/home/owner/.codex', hostId: 'host', sourceId: 'desktop'};
-const SESSION_SCHEMA = 'https://bunny.invalid/events/session/2.0';
 
 export function it(name: string, body: (context: TestContext) => void | Promise<void>): void {
   void test(name, {timeout: 30_000}, body);
@@ -70,9 +70,9 @@ export function manualClock(start = START_MS): ManualClock {
 export type SessionShape = {
   provider?: Identity['provider']; client?: Identity['client']; hostId?: string; sourceId?: string;
   /** The session's parent: a known one makes it a subagent. */
-  parent?: SessionRecord['parent'];
-  activity?: SessionRecord['activity'];
-  read?: SessionRecord['read'];
+  parent?: Session30Record['parent'];
+  work?: SessionFacts['work'];
+  read?: SessionFacts['read'];
   /** When its last lifecycle evidence came. */
   lastEvidenceAtMs?: number;
 };
@@ -81,16 +81,19 @@ export const identityOf = (sessionId: string, shape: SessionShape = {}): Identit
   provider: shape.provider ?? 'codex', client: shape.client ?? 'desktop', hostId: shape.hostId ?? SECTION.hostId, sourceId: shape.sourceId ?? SECTION.sourceId, sessionId,
 });
 
-/** A valid `session/2.0` record for one session with a finished turn, at `revision`. */
-export function sessionRecord(sessionId: string, revision: number, atMs: number, shape: SessionShape = {}): SessionRecord {
+/**
+ * A valid `session/3.0` record for one session, idle unless the shape says otherwise, at `revision`. Running work whose
+ * last evidence is five minutes or more old is unconfirmed for its deadline, as the core publishes it.
+ */
+export function sessionRecord(sessionId: string, revision: number, atMs: number, shape: SessionShape = {}): Session30Record {
   const identity = identityOf(sessionId, shape);
   const evidenceAtMs = shape.lastEvidenceAtMs ?? atMs;
-  return {
+  return buildSession({
     id: sessionEntityId(identity), revision, generation: 1, identity, parent: shape.parent ?? {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'},
-    activity: shape.activity ?? 'idle', attention: [], notices: [], read: shape.read ?? 'unknown', unavailable: [], ordering: {status: 'unknown'},
-    observedAtMs: evidenceAtMs, lastEvidenceAtMs: evidenceAtMs, freshness: atMs - evidenceAtMs >= 300_000 ? 'uncertain' : 'current', restartUncertain: false,
-    children: {active: 0, uncertain: 0},
-  };
+    work: shape.work ?? 'idle', ...(atMs - evidenceAtMs >= 300_000 ? {unconfirmed: 'deadline' as const} : {}),
+    attention: [], notices: [], read: shape.read ?? 'unknown', unavailable: [], ordering: {status: 'unknown'},
+    observedAtMs: evidenceAtMs, lastEvidenceAtMs: evidenceAtMs, children: {working: 0, unconfirmed: 0},
+  });
 }
 
 export type WorldOptions = {
@@ -111,7 +114,7 @@ export class World {
   readonly invalid: string[] = [];
   readonly errors: unknown[] = [];
   /** The stand-in core's sessions, by entity ID. */
-  readonly sessions = new Map<string, SessionRecord>();
+  readonly sessions = new Map<string, Session30Record>();
   readonly #validator = new MessageValidator();
   readonly #options: WorldOptions;
   readonly dir: string;
@@ -157,7 +160,7 @@ export class World {
   }
 
   /** Publishes a session's record from the stand-in core at a new revision. */
-  async session(sessionId: string, shape: SessionShape = {}): Promise<SessionRecord> {
+  async session(sessionId: string, shape: SessionShape = {}): Promise<Session30Record> {
     this.#revision += 1;
     return this.#put(sessionRecord(sessionId, this.#revision, this.clock.now(), shape));
   }
@@ -168,7 +171,7 @@ export class World {
   }
 
   /** The record of one session, as the stand-in core holds it now. */
-  record(sessionId: string, shape: SessionShape = {}): SessionRecord | undefined {
+  record(sessionId: string, shape: SessionShape = {}): Session30Record | undefined {
     return this.sessions.get(sessionEntityId(identityOf(sessionId, shape)));
   }
 
@@ -191,7 +194,7 @@ export class World {
     await rm(this.dir, {recursive: true, force: true});
   }
 
-  async #put(record: SessionRecord): Promise<SessionRecord> {
+  async #put(record: Session30Record): Promise<Session30Record> {
     this.sessions.set(record.id, record);
     await this.#core?.publish(`bunny.state.session.${record.id}`, {kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: SESSION_SCHEMA, data: record});
     await flush();
@@ -215,7 +218,7 @@ export class World {
       const record = this.sessions.get(message.subject);
       if (record === undefined) return;
       this.#revision += 1;
-      await this.#put({...record, revision: this.#revision, read: message.data.event.state});
+      await this.#put({...record, revision: this.#revision, outcome: {...record.outcome, read: message.data.event.state}});
     });
   }
 }

@@ -14,8 +14,7 @@ import {readJson} from '../src/jsonfile.js';
 import type {Report} from '../src/journal.js';
 import {setMode as commandMode} from '../src/modes.js';
 import {fallbackTitle, Metadata, owners, palette, pending, settings, taskProjects, type MapSettings, type Patch, type Role} from '../src/project-map.js';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import {buildSession, type SessionFacts} from '@jimmie-potts/event-contracts/v2/session-view';
 import {sharedSession} from '../src/module/feed.js';
 import {evictionToken, presented, selected, SharedCopy, state, visibleTasks, type Envelope, type SharedConfig, type SharedSession,
   type SharedState, type Snapshot} from '../src/shared-input.js';
@@ -94,20 +93,22 @@ export type RecordSnapshot = Omit<Snapshot, 'sessions'> & {sessions: RecordSessi
 export type RecordEnvelope = Omit<Envelope, 'snapshot'> & {snapshot: RecordSnapshot};
 
 /**
- * One recorded session as the feed gives it: its own fields, with the hub's status and work claim that the shared read
- * function finds in the same record (`sessionView`, then the feed's `sharedSession` with the wall's policy). A 1.x
- * `ended` activity, which no 2.x record carries, reads as unknown. A missing or malformed generation stays as it is, so
- * the projection's own check still sees it.
+ * One recorded session as the feed gives it: its own fields, with the hub's status and work claim of the `session/3.0`
+ * record the core would publish for it (`buildSession`, then the feed's `sharedSession` with the wall's policy). The
+ * recording's restart uncertainty becomes running work unconfirmed for the restart, and its uncertain freshness running
+ * work unconfirmed for its deadline; silence changes nothing else. A 1.x `ended` activity, which no record carries, reads
+ * as unknown. A missing or malformed generation stays as it is, so the projection's own check still sees it.
  */
 export function hubSession(session: RecordSession): SharedSession {
   const {activity, observationAgeMs: _age, freshness, restartUncertain, children, ...kept} = session;
-  const record = {
+  const facts = {
     id: identityKeyOf(session), revision: 0, generation: session.generation, identity: session.identity, parent: session.parent, turn: session.turn,
-    activity: activity === 'ended' ? 'unknown' : activity, attention: session.attention, notices: session.notices, read: session.read,
+    work: activity === 'ended' ? 'unknown' : activity, ...(restartUncertain ? {unconfirmed: 'restart'} : freshness === 'uncertain' ? {unconfirmed: 'deadline'} : {}),
+    attention: session.attention, notices: session.notices, read: session.read,
     unavailable: session.unavailable.map(({dimension, reason}) => ({dimension, reason})), ordering: session.ordering,
-    observedAtMs: session.observedAtMs, lastEvidenceAtMs: session.lastEvidenceAtMs, freshness, restartUncertain, children,
-  } as unknown as SessionRecord;
-  const {status, work} = sharedSession(sessionView(record));
+    observedAtMs: session.observedAtMs, lastEvidenceAtMs: session.lastEvidenceAtMs, children: {working: children.active, unconfirmed: children.uncertain},
+  } as unknown as SessionFacts;
+  const {status, work} = sharedSession(buildSession(facts));
   return {...kept, status, work};
 }
 const identityKeyOf = (session: RecordSession): string => sha256Hex(JSON.stringify(session.identity));

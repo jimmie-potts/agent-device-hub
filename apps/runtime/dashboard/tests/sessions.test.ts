@@ -4,27 +4,26 @@
 // showed, and uncertainty only for an unknown status or unconfirmed work. The shared case set runs through the rows.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {sessionView, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import type {Notice} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
 import {
   CHIP_TEXT, agentSummary, needsAttention, age, chipOf, clientName, faceText, finishedUnread, matches, sessionName, sessionRow, uncertainOf,
 } from '../src/sessions.ts';
 
 const NOTICE = 'a'.repeat(64);
-/** A synthetic, current, idle Claude Code session record. */
-function record(change: Partial<SessionRecord> = {}): SessionRecord {
+/** The facts of a synthetic, confirmed, idle Claude Code session. */
+function record(change: Partial<SessionFacts> = {}): SessionFacts {
   return {
     id: 'b'.repeat(64), revision: 4, generation: 1,
     identity: {provider: 'claude', client: 'code', hostId: 'host-sim', sourceId: 'claude-code', sessionId: 'session-sim-1'},
-    parent: {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'}, activity: 'idle', attention: [], notices: [], read: 'unknown',
-    unavailable: [], ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, freshness: 'current', restartUncertain: false,
-    children: {active: 0, uncertain: 0}, ...change,
+    parent: {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'}, work: 'idle', attention: [], notices: [], read: 'unknown',
+    unavailable: [], ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, children: {working: 0, unconfirmed: 0}, ...change,
   };
 }
-/** The same session as every dashboard reader sees it. */
-const view = (change: Partial<SessionRecord> = {}): SessionView => sessionView(record(change));
-const finished = (acknowledgedBy: string[] = []): SessionRecord['notices'] => [{id: NOTICE, kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy}];
+/** The session's session/3.0 record, which is its view, as every dashboard reader sees it. */
+const view = (change: Partial<SessionFacts> = {}): SessionView => buildSession(record(change));
+const finished = (acknowledgedBy: string[] = []): Notice[] => [{id: NOTICE, kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy}];
 const question = {id: {status: 'known', id: 'question-1'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}} as const;
 const approval = {id: {status: 'known', id: 'approval-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}} as const;
 
@@ -44,13 +43,13 @@ void test('a session is named by its label, then its title, then its native ID, 
 });
 
 void test('the chip follows the hub status: attention over work over a finished turn, and names the attention', () => {
-  assert.equal(chipOf(view({activity: 'active', attention: [question, approval], notices: finished()})), 'approval', 'an approval outranks a question');
-  assert.equal(chipOf(view({activity: 'active', attention: [question]})), 'question');
-  assert.equal(chipOf(view({activity: 'active', notices: finished()})), 'working');
-  assert.equal(chipOf(view({activity: 'idle', children: {active: 1, uncertain: 0}})), 'working', 'a working child keeps its root working');
+  assert.equal(chipOf(view({work: 'active', attention: [question, approval], notices: finished()})), 'approval', 'an approval outranks a question');
+  assert.equal(chipOf(view({work: 'active', attention: [question]})), 'question');
+  assert.equal(chipOf(view({work: 'active', notices: finished()})), 'working');
+  assert.equal(chipOf(view({work: 'idle', children: {working: 1, unconfirmed: 0}})), 'working', 'a working child keeps its root working');
   assert.equal(chipOf(view({notices: finished()})), 'finished');
-  assert.deepEqual([chipOf(view()), chipOf(view({activity: 'interrupted'})), chipOf(view({activity: 'unknown'}))], ['idle', 'interrupted', 'unknown']);
-  const row = sessionRow(view({activity: 'active', attention: [question, approval]}));
+  assert.deepEqual([chipOf(view()), chipOf(view({work: 'interrupted'})), chipOf(view({work: 'unknown'}))], ['idle', 'interrupted', 'unknown']);
+  const row = sessionRow(view({work: 'active', attention: [question, approval]}));
   assert.deepEqual(row.attention, ['Question · continuing', 'Approval · blocked attention']);
   assert.equal(row.chipText, 'Waiting for approval');
   assert.equal(CHIP_TEXT.finished, 'Finished · unread');
@@ -60,9 +59,9 @@ void test('a detail this version does not know falls back to its class', () => {
   const waiting = view({attention: [question]});
   assert.equal(chipOf({...waiting, status: {class: 'needs-owner', detail: 'review'}}), 'needs-owner');
   assert.equal(CHIP_TEXT['needs-owner'], 'Needs you');
-  assert.equal(chipOf({...view({activity: 'active'}), status: {class: 'working', detail: 'remote'}}), 'working');
+  assert.equal(chipOf({...view({work: 'active'}), status: {class: 'working', detail: 'remote'}}), 'working');
   assert.equal(chipOf({...view({notices: finished()}), status: {class: 'finished', detail: 'failed-remotely'}}), 'finished');
-  assert.equal(chipOf({...view({activity: 'interrupted'}), status: {class: 'quiet', detail: 'paused'}}), 'interrupted');
+  assert.equal(chipOf({...view({work: 'interrupted'}), status: {class: 'quiet', detail: 'paused'}}), 'interrupted');
 });
 
 void test('a finished turn stays unread until the record holds evidence that clears it, never inferred from missing evidence', () => {
@@ -86,26 +85,26 @@ void test('positive read evidence on the record clears a finished turn', () => {
 void test('the session\'s known next turn clears the earlier finished turn, while an unknown turn proves nothing', () => {
   assert.equal(chipOf(view({turn: {status: 'known', id: 'turn-2'}, notices: finished()})), 'idle', 'turn-2 started after turn-1 ended');
   assert.equal(chipOf(view({turn: {status: 'unknown'}, notices: finished()})), 'finished', 'an unknown current turn is no evidence of a next one');
-  const unknownNotice: SessionRecord['notices'] = [{id: NOTICE, kind: 'turn-ended', turn: {status: 'unknown'}, acknowledgedBy: []}];
+  const unknownNotice: Notice[] = [{id: NOTICE, kind: 'turn-ended', turn: {status: 'unknown'}, acknowledgedBy: []}];
   assert.equal(chipOf(view({turn: {status: 'known', id: 'turn-2'}, notices: unknownNotice})), 'finished', 'a notice on an unknown turn stays');
 });
 
 void test('only an unknown status or unconfirmed working is uncertain: silence never marks a waiting or finished session', () => {
   assert.equal(sessionRow(view()).uncertain, false);
-  // Silence: the 2.x record's freshness is uncertain after five minutes and after a restart.
-  for (const silent of [{freshness: 'uncertain'}, {freshness: 'uncertain', restartUncertain: true}] as const) {
-    assert.equal(sessionRow(view({...silent, activity: 'active'})).uncertain, true, 'unconfirmed work');
-    assert.equal(sessionRow(view({...silent, activity: 'active', attention: [question]})).uncertain, false, 'a question waits however long it is silent');
+  // Silence: running work becomes unconfirmed at its deadline and after a restart; nothing else changes.
+  for (const silent of [{unconfirmed: 'deadline'}, {unconfirmed: 'restart'}] as const) {
+    assert.equal(sessionRow(view({...silent, work: 'active'})).uncertain, true, 'unconfirmed work');
+    assert.equal(sessionRow(view({...silent, work: 'active', attention: [question]})).uncertain, false, 'a question waits however long it is silent');
     assert.equal(sessionRow(view({...silent, notices: finished()})).uncertain, false, 'a finished turn stays finished');
     assert.equal(sessionRow(view({...silent})).uncertain, false, 'an idle session stays idle');
   }
-  assert.equal(uncertainOf(view({activity: 'active', unavailable: [{dimension: 'activity', reason: 'lost'}]})), 'Its work is unconfirmed.', 'lost evidence on running work');
-  assert.equal(uncertainOf(view({activity: 'unknown'})), 'The hub does not know what this session is doing.');
-  const working = sessionRow(view({activity: 'active', freshness: 'uncertain'}));
+  assert.equal(uncertainOf(view({work: 'active', unavailable: [{dimension: 'activity', reason: 'lost'}]})), 'Its work is unconfirmed.', 'lost evidence on running work');
+  assert.equal(uncertainOf(view({work: 'unknown'})), 'The hub does not know what this session is doing.');
+  const working = sessionRow(view({work: 'active', unconfirmed: 'deadline'}));
   assert.deepEqual([faceText(working, true), faceText(working, false), faceText(sessionRow(view()), false)], ['Unconfirmed', 'Stale', 'Stale'],
     'unconfirmed work is named, and a copy that is not synced shows its last records as stale');
   assert.equal(working.facts.work, 'active, unconfirmed (deadline)');
-  const child = sessionRow(view({parent: {status: 'known', identity: {...record().identity, sessionId: 'parent-1'}}, children: {active: 2, uncertain: 1}, read: 'unread'}));
+  const child = sessionRow(view({parent: {status: 'known', identity: {...record().identity, sessionId: 'parent-1'}}, children: {working: 2, unconfirmed: 1}, read: 'unread'}));
   assert.deepEqual(child.facts, {source: 'host-sim / claude-code', sessionId: 'session-sim-1', work: 'idle', read: 'unread', parent: 'parent-1', children: '2 working / 1 unconfirmed'});
 });
 
@@ -120,8 +119,8 @@ void test('the search matches the label, title, project or session ID, ignoring 
 });
 
 void test('agent summaries count confirmed work separately from retained attention and unread', () => {
-  const working = sessionRow(view({activity: 'active'}));
-  const unconfirmed = sessionRow(view({activity: 'active', freshness: 'uncertain'}));
+  const working = sessionRow(view({work: 'active'}));
+  const unconfirmed = sessionRow(view({work: 'active', unconfirmed: 'deadline'}));
   const unread = sessionRow(view({notices: finished()}));
   const attention = sessionRow(view({attention: [question]}));
   assert.deepEqual(agentSummary([working, unconfirmed, unread, attention], true), {working: 1, attention: 1, unread: 1});
@@ -133,7 +132,7 @@ void test('agent summaries count confirmed work separately from retained attenti
 
 void test('unread summary evidence survives higher-priority attention and work', () => {
   const notices = finished();
-  const working = sessionRow(view({activity: 'active', notices}));
+  const working = sessionRow(view({work: 'active', notices}));
   const attention = sessionRow(view({notices, attention: [approval]}));
   assert.deepEqual(agentSummary([working, attention], true), {working: 1, attention: 1, unread: 2});
   assert.equal(working.chip, 'working');

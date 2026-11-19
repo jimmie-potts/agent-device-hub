@@ -1,27 +1,27 @@
 // The shared synthetic session cases (Hub #1865, design decision 10) through the module's read rules. The module reads
 // each session through `readSession` and settles on the view's work state. For every case's expected copy, the evidence
-// it gives over the views equals what today's rule over the records gives, with the Desktop session listed or not, and
-// read at the check's instant or once the flag has had time to appear.
+// it gives equals what the settle rule, written out here over each `session/3.0` record's work and outcome claims,
+// gives, with the Desktop session listed or not, and read at the check's instant or once the flag has had time to appear.
 import assert from 'node:assert/strict';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
 import {READ_SETTLE_MS, readEvidence, type DesktopSource} from '../src/index.js';
 import {it} from './support.js';
 
-/** Today's rule over `session/2.0` records, as the module applied it before it read views. */
-function recordEvidence(records: readonly SessionRecord[], unread: ReadonlySet<string>, source: DesktopSource, nowMs: number): string[] {
+/** The settle rule over `session/3.0` records: a reference the module's code over views must agree with. */
+function recordEvidence(records: readonly Session30Record[], unread: ReadonlySet<string>, source: DesktopSource, nowMs: number): string[] {
   return records.flatMap(record => {
-    const {identity} = record;
+    const {identity} = record, {read} = record.outcome;
     if (identity.provider !== 'codex' || identity.client !== 'desktop' || identity.hostId !== source.hostId || identity.sourceId !== source.sourceId ||
       record.parent.status === 'known') return [];
-    const settled = record.read === 'unknown' && record.activity !== 'active' && nowMs - record.lastEvidenceAtMs >= READ_SETTLE_MS;
-    const state = unread.has(identity.sessionId) ? 'unread' : record.read === 'unread' || settled ? 'read' : undefined;
-    return state !== undefined && state !== record.read ? [`${identity.sessionId} ${state}`] : [];
+    const settled = read === 'unknown' && record.work.state !== 'active' && nowMs - record.lastEvidenceAtMs >= READ_SETTLE_MS;
+    const state = unread.has(identity.sessionId) ? 'unread' : read === 'unread' || settled ? 'read' : undefined;
+    return state !== undefined && state !== read ? [`${identity.sessionId} ${state}`] : [];
   });
 }
 
-it('every shared case gives the same read evidence through the view as today\'s rule over its records', () => {
+it('every shared case gives the read evidence the settle rule gives over its records', () => {
   const cases = loadSessionCases();
   const desktop = cases.sessions.desktop?.identity;
   assert.ok(desktop);
@@ -48,7 +48,7 @@ it('the settle rule waits on the view\'s active work, whatever the record\'s age
   const desktop = cases.sessions.desktop?.identity;
   assert.ok(desktop);
   const message = cases.cases.flatMap(sessionCase => sessionCase.checks.flatMap(check => check.messages))
-    .find(item => item.data.identity.client === 'desktop' && item.data.read === 'unknown');
+    .find(item => item.data.identity.client === 'desktop' && item.data.outcome.read === 'unknown');
   assert.ok(message);
   const view = readSession(message);
   assert.ok(view);

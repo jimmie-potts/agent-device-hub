@@ -4,8 +4,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import type {ModeState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {sessionView, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
+import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {test, type TestContext} from 'node:test';
 import {fullDisk, InProcessBus, type Participant, type ModuleContext, type RequestResult} from '@jimmie-potts/sdk';
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
@@ -31,11 +31,11 @@ function counted(script?: (input: TurnInput, turn: number, signal: AbortSignal) 
 const reply = (text: string): TurnReply => ({text, calls: [], stop: 'end', units: 10});
 const call = (name: string, input: Record<string, unknown> = {}, id = `call-${name}`): TurnReply => ({text: null, calls: [{id, name, input}], stop: 'tool', units: 10});
 const hub = (revision: number, mode: ModeState['mode'] = 'work'): ModeState => ({id: 'hub', revision, mode, selectedAtMs: 0});
-const record = (label: string, patch: Partial<SessionRecord> = {}): SessionRecord => ({id: 'session-1', revision: 1, generation: 1, identity: {provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'desktop', sessionId: 's-1'},
-  parent: {status: 'top-level'}, turn: {status: 'unknown'}, activity: 'active', attention: [{id: {status: 'known', id: 'a-1'}, kind: 'approval', turn: {status: 'unknown'}}], notices: [], read: 'unknown', unavailable: [],
-  ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, label: {value: label, origin: 'user'}, ...patch});
-/** A session as the module's synced copy reads it, through the shared read function's view. */
-const session = (label: string, patch: Partial<SessionRecord> = {}): SessionView => sessionView(record(label, patch));
+/** A session as the module's synced copy reads it: its session/3.0 record, which is its view. */
+const session = (label: string, patch: Partial<SessionFacts> = {}): SessionView => buildSession({id: 'session-1', revision: 1, generation: 1,
+  identity: {provider: 'codex', client: 'desktop', hostId: 'host', sourceId: 'desktop', sessionId: 's-1'},
+  parent: {status: 'top-level'}, turn: {status: 'unknown'}, work: 'active', attention: [{id: {status: 'known', id: 'a-1'}, kind: 'approval', turn: {status: 'unknown'}}], notices: [], read: 'unknown', unavailable: [],
+  ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, children: {working: 0, unconfirmed: 0}, label: {value: label, origin: 'user'}, ...patch});
 const accepted = (requestId: string): RequestResult => ({status: 'accepted', requestId, reply: {} as never});
 async function world(context: TestContext, options: CompanionsOptions = {}, adapt: (context: ModuleContext) => ModuleContext = context => context) {
   const spans = new RecordedSpans();
@@ -822,9 +822,9 @@ void test('recent conversation reads page backwards without changing saved state
 });
 
 void test('read_sessions reports each session\'s shared status class and detail and its work confirmation, newest evidence first', () => {
-  const finished = session('FINISHED', {id: 'session-2', identity: {provider: 'claude', client: 'code', hostId: 'host', sourceId: 'code', sessionId: 's-2'}, activity: 'idle', attention: [],
+  const finished = session('FINISHED', {id: 'session-2', identity: {provider: 'claude', client: 'code', hostId: 'host', sourceId: 'code', sessionId: 's-2'}, work: 'idle', attention: [],
     turn: {status: 'known', id: 't-1'}, notices: [{id: 'n-1', kind: 'turn-ended', turn: {status: 'known', id: 't-1'}, acknowledgedBy: []}], lastEvidenceAtMs: 3000});
-  const restarted = session('RESTARTED', {id: 'session-3', attention: [], freshness: 'uncertain', restartUncertain: true, lastEvidenceAtMs: 2000});
+  const restarted = session('RESTARTED', {id: 'session-3', attention: [], unconfirmed: 'restart', lastEvidenceAtMs: 2000});
   const text = summarizeSessions({sessions: [session('ASKING'), restarted, finished], mode: undefined, synced: true}, 61_000);
   assert.deepEqual(text.split('\n'), [
     '3 coding agent session(s):',

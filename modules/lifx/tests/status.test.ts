@@ -67,7 +67,7 @@ it('idle paints warm white 2700 K at zero saturation, at the brightness cap', as
 // until a known later turn supersedes it, so such a notice, still unread, no longer paints done.
 it('a notice a known later turn superseded paints idle, not done', async () => {
   const world = await open({section: ONE});
-  await world.session('s', 'done', record => ({...record, turn: {status: 'known', id: 'turn-2'}}));
+  await world.session('s', 'done', facts => ({...facts, turn: {status: 'known', id: 'turn-2'}}));
   await world.mode(PENDANT.id, 'work');
   assert.equal(paints(world), 1);
   assert.deepEqual(shownColor(world.network, PENDANT.address), {hue: 0, saturation: 0, brightness: 50, kelvin: 2700, power: true}, 'warm white idle');
@@ -115,7 +115,7 @@ it('transitions only: a repeated or newer record of the same shown status sends 
   await world.mode(PENDANT.id, 'work');
   assert.equal(paints(world), 1, 'entering Work paints the current status once');
   await world.session('s', 'working');
-  await world.session('s', 'working', record => ({...record, turn: {status: 'known', id: 'turn-2'}}));
+  await world.session('s', 'working', facts => ({...facts, turn: {status: 'known', id: 'turn-2'}}));
   await world.clock.advance(60_000);
   assert.equal(paints(world), 1, 'new evidence of the same status sends no write');
   await world.session('s', 'done');
@@ -174,15 +174,15 @@ it('a session copy that ends after it synced leaves the status unknown: a mode c
   world.errors.splice(0);
 });
 
-it('uncertain freshness: a finished turn idle past five minutes still paints done until acknowledged (#439)', async () => {
+it('silence: a finished turn idle past five minutes still paints done until acknowledged (#439)', async () => {
   const world = await open({section: ONE});
   await world.clock.advance(6 * 60_000);
-  await world.session('s', 'done', record => ({...record, lastEvidenceAtMs: world.clock.now() - 6 * 60_000, observedAtMs: world.clock.now() - 6 * 60_000, freshness: 'uncertain'}));
+  await world.session('s', 'done', facts => ({...facts, lastEvidenceAtMs: world.clock.now() - 6 * 60_000, observedAtMs: world.clock.now() - 6 * 60_000}));
   await world.mode(PENDANT.id, 'work');
   assert.equal(paints(world), 1);
   assert.ok(Math.abs((shownColor(world.network, PENDANT.address)?.hue ?? -10) - hueOf(STATUS_COLORS.done)) <= 1, 'done paints green');
   // Any consumer's acknowledgment retires done, as today: the module passes no acknowledging consumers.
-  await world.session('s', 'done', record => ({...record, notices: record.notices.map(notice => ({...notice, acknowledgedBy: ['pixoo']}))}));
+  await world.session('s', 'done', facts => ({...facts, notices: facts.notices.map(notice => ({...notice, acknowledgedBy: ['pixoo']}))}));
   await world.clock.advance(1);
   assert.equal(paints(world), 2);
   assert.equal(shownColor(world.network, PENDANT.address)?.kelvin, 2700, 'idle once acknowledged');

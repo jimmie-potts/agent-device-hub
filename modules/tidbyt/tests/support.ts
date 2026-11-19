@@ -8,7 +8,8 @@ import {test as nodeTest, type TestContext} from 'node:test';
 import type {DatabaseSync} from 'node:sqlite';
 import {MessageValidator, errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession, type SessionFacts} from '@jimmie-potts/event-contracts/v2/session';
 import {InProcessBus, type ModuleManifest, type Participant, type Scheduler, type Snapshot} from '@jimmie-potts/sdk';
 import {ModuleHarness, RecordedSpans, type HarnessRecord} from '@jimmie-potts/sdk/testing';
 import type {CloudFetch} from '../src/cloud.js';
@@ -105,23 +106,36 @@ let sessions = 0;
 export const identity = (sessionId = `session-${++sessions}`, provider: Identity['provider'] = 'claude'): Identity =>
   ({provider, client: provider === 'codex' ? 'cli' : 'code', hostId: 'host-sim', sourceId: 'source-sim', sessionId});
 
-/** A `session/2.0` record with nothing outstanding unless overridden, fresh at `atMs`. */
-export function session(overrides: Partial<SessionRecord> & {at?: number} = {}): SessionRecord {
+/** What a test sets of a session: its facts, and `at`, the instant of its evidence. */
+export type SessionShape = Partial<SessionFacts> & {at?: number};
+/** A `session/3.0` record with nothing outstanding unless overridden, with its evidence at `at`. */
+export function session(overrides: SessionShape = {}): Session30Record {
   const {at = START_MS, ...rest} = overrides;
   const who = rest.identity ?? identity();
-  return {
+  return buildSession({
     id: sessionEntityId(who), revision: 1, generation: 1, identity: who, parent: {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'},
-    activity: 'idle', attention: [], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'}, observedAtMs: at, lastEvidenceAtMs: at,
-    freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, ...rest,
+    work: 'idle', attention: [], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'}, observedAtMs: at, lastEvidenceAtMs: at,
+    children: {working: 0, unconfirmed: 0}, ...rest,
+  });
+}
+export const working = (overrides: SessionShape = {}): Session30Record => session({work: 'active', ...overrides});
+export const asking = (overrides: SessionShape = {}): Session30Record => session({
+  work: 'active', attention: [{id: {status: 'known', id: 'ask-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}], ...overrides,
+});
+export const notice = (acknowledgedBy: string[] = []): Session30Record['outcome']['notices'][number] =>
+  ({id: 'a'.repeat(64), kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy});
+export const finished = (overrides: SessionShape = {}): Session30Record => session({notices: [notice()], ...overrides});
+/** The facts of a `session/3.0` record, so a test can change some and build its record again. */
+export function factsOf(record: Session30Record): SessionFacts {
+  const {status: _status, work, attention, outcome, relationships, ...rest} = record;
+  const unconfirmed = work.reasons.find((reason): reason is 'deadline' | 'restart' => reason === 'deadline' || reason === 'restart');
+  return {
+    ...rest, work: work.state, ...(unconfirmed === undefined ? {} : {unconfirmed}), attention: attention.items, notices: outcome.notices,
+    read: outcome.read, ...(outcome.readReceipt === undefined ? {} : {readReceipt: outcome.readReceipt}), children: relationships.children,
   };
 }
-export const working = (overrides: Partial<SessionRecord> & {at?: number} = {}): SessionRecord => session({activity: 'active', ...overrides});
-export const asking = (overrides: Partial<SessionRecord> & {at?: number} = {}): SessionRecord => session({
-  activity: 'active', attention: [{id: {status: 'known', id: 'ask-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}}], ...overrides,
-});
-export const notice = (acknowledgedBy: string[] = []): SessionRecord['notices'][number] =>
-  ({id: 'a'.repeat(64), kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy});
-export const finished = (overrides: Partial<SessionRecord> & {at?: number} = {}): SessionRecord => session({notices: [notice()], ...overrides});
+/** The record with some of its facts changed, its status following from its claims. */
+export const revise = (record: Session30Record, overrides: Partial<SessionFacts>): Session30Record => buildSession({...factsOf(record), ...overrides});
 
 export const PLAYBACK_ID = SIMULATED_SECTION.nowPlaying.playback;
 /** A `playback/2.0` record: a track playing, unless overridden. */
@@ -133,7 +147,7 @@ export function playback(player: 'playing' | 'paused' | 'stopped' | 'inactive' |
 }
 export const unavailablePlayback = (): PlaybackState => ({id: PLAYBACK_ID, revision: 1, availability: 'unavailable', playback: {status: 'unknown'}});
 
-const SESSION_SCHEMA = 'https://bunny.invalid/events/session/2.0';
+const SESSION_SCHEMA = 'https://bunny.invalid/events/session/3.0';
 const PLAYBACK_SCHEMA = 'https://bunny.invalid/events/playback/2.0';
 
 /**
@@ -203,7 +217,7 @@ export const isDevice = (message: Message): boolean => message.dataschema === DE
 
 export type HostOptions = {
   /** The core's sessions at start. `absent` hosts no core, so the first sync of the sessions is refused. */
-  sessions?: readonly SessionRecord[] | 'absent';
+  sessions?: readonly Session30Record[] | 'absent';
   /** The playback record at start, or `absent` for no playback owner. Defaults to none playing. */
   playback?: PlaybackState | 'absent';
   /** The module's section. Defaults to the simulated section with the API key's file. */
@@ -232,7 +246,7 @@ export type Hosted = {
   harness: ModuleHarness;
   clock: ReturnType<typeof manualClock>;
   cloud: SimulatedCloud;
-  core: StandIn<SessionRecord> | undefined;
+  core: StandIn<Session30Record> | undefined;
   playback: StandIn<PlaybackState> | undefined;
   bus: InProcessBus;
   published: Message[];
@@ -284,9 +298,9 @@ export async function host(context: TestContext, options: HostOptions = {}): Pro
   const watcher = bus.connect('bunny/parts/watcher');
   const published: Message[] = [];
   await watcher.subscribe('bunny.*.*.*', message => { published.push(message); });
-  let core: StandIn<SessionRecord> | undefined;
+  let core: StandIn<Session30Record> | undefined;
   if (options.sessions !== 'absent') {
-    core = new StandIn<SessionRecord>(bus.connect('bunny/core'), 'session');
+    core = new StandIn<Session30Record>(bus.connect('bunny/core'), 'session');
     await core.open(options.sessions ?? []);
   }
   let owner: StandIn<PlaybackState> | undefined;

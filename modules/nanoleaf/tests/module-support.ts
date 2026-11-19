@@ -1,6 +1,6 @@
 // The Nanoleaf module's test world (Hub #844): the module hosted as the runtime would (the SDK kit's `ModuleHarness`) on
 // its own in-process bus, a manual clock and scheduler that drive the bus, the module and its worker, a stand-in core
-// that serves `session/2.0` through sync and takes notice acknowledgments, a simulated Lines controller, and parts that
+// that serves `session/3.0` through sync and takes notice acknowledgments, a simulated Lines controller, and parts that
 // send commands and keep what was published. Every message the world sees is checked against profile 2.0, with the core
 // and device families and the module's own registered. Nothing reaches a device, a port or personal state.
 import assert from 'node:assert/strict';
@@ -12,12 +12,13 @@ import {DatabaseSync, constants} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {registerCoreFamilies, sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {registerCoreFamilies, sessionEntityId, type Identity, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession, type SessionFacts} from '@jimmie-potts/event-contracts/v2/session';
 import {acknowledgmentOf, InProcessBus, type CommandDraft, type Diagnostic, type ModuleContentRequest, type ModuleManifest, type Participant, type RequestResult, type Scheduler, type SyncHandler, type SyncOptions} from '@jimmie-potts/sdk';
 import {ModuleHarness, type HarnessRecord, type RecordedSpans} from '@jimmie-potts/sdk/testing';
 import {createNanoleafModule, LINES_ADDRESS, lockFile, nanoleafSchemas, SimulatedNanoleaf, SYNTHETIC_TOKEN, type SimulatedKind} from '../src/index.js';
 
-export const SESSION_SCHEMA = 'https://bunny.invalid/events/session/2.0';
+export const SESSION_SCHEMA = 'https://bunny.invalid/events/session/3.0';
 /**
  * The families a reader syncs from the module, and the owner it names: `device` is a shared family, which every device
  * module serves for its own devices, so a reader syncs it from `bunny/modules/nanoleaf` by name (Hub #967).
@@ -69,9 +70,12 @@ const settle = async (): Promise<void> => {
 };
 
 export type SessionOptions = {
-  identity?: Identity; activity?: SessionRecord['activity']; turn?: string; attention?: SessionRecord['attention'];
-  notices?: SessionRecord['notices']; read?: SessionRecord['read']; title?: string; generation?: number;
-  /** The session's last evidence, now by default. Five minutes or more before now, the core reports it uncertain. */
+  identity?: Identity; work?: SessionFacts['work']; turn?: string; attention?: SessionFacts['attention'];
+  notices?: SessionFacts['notices']; read?: SessionFacts['read']; title?: string; generation?: number;
+  /**
+   * The session's last evidence, now by default. Five minutes or more before now, the core reports running work
+   * unconfirmed for its deadline; silence changes nothing else.
+   */
   evidenceAtMs?: number;
 };
 
@@ -79,11 +83,11 @@ export type SessionOptions = {
 export const noticeId = (name: string): string => createHash('sha256').update(name).digest('hex');
 
 /**
- * The stand-in core: it serves `session/2.0` through sync, publishes each change at a new revision, and takes the
+ * The stand-in core: it serves `session/3.0` through sync, publishes each change at a new revision, and takes the
  * module's notice acknowledgments, keeping each request it got.
  */
 export class StandInCore {
-  readonly sessions = new Map<string, SessionRecord>();
+  readonly sessions = new Map<string, Session30Record>();
   readonly acknowledgments: Message[] = [];
   revision = 1;
   /** While set, the core takes each acknowledgment and answers none until `releaseAcknowledgments`. */
@@ -119,28 +123,29 @@ export class StandInCore {
   }
 
   /** Publishes a session's record at the next revision. */
-  async set(name: string, options: SessionOptions = {}): Promise<SessionRecord> {
+  async set(name: string, options: SessionOptions = {}): Promise<Session30Record> {
     const identity = options.identity ?? {...QUALIFIED, sessionId: name};
     const id = sessionEntityId(identity);
     this.revision += 1;
     const turn = options.turn ?? 't1';
     const evidenceAtMs = options.evidenceAtMs ?? this.clock.now();
-    const record: SessionRecord = {
+    const record = buildSession({
       id, revision: this.revision, generation: options.generation ?? 0, identity, parent: {status: 'top-level'}, turn: {status: 'known', id: turn},
-      activity: options.activity ?? 'active', attention: options.attention ?? [], notices: options.notices ?? [], read: options.read ?? 'unknown',
+      work: options.work ?? 'active', ...(this.clock.now() - evidenceAtMs >= 300_000 ? {unconfirmed: 'deadline' as const} : {}),
+      attention: options.attention ?? [], notices: options.notices ?? [], read: options.read ?? 'unknown',
       unavailable: [], ordering: {status: 'unknown'}, observedAtMs: evidenceAtMs, lastEvidenceAtMs: evidenceAtMs,
-      freshness: this.clock.now() - evidenceAtMs >= 300_000 ? 'uncertain' : 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, ...(options.title === undefined ? {} : {title: {value: options.title, source: 'provider'}}),
-    };
+      children: {working: 0, unconfirmed: 0}, ...(options.title === undefined ? {} : {title: {value: options.title, source: 'provider'}}),
+    });
     this.sessions.set(id, record);
     await this.#participant?.publish(`bunny.state.session.${id}`, {kind: 'state', ...this.#draft(record)});
     return record;
   }
 
   /** A finished turn: idle with one unread notice. */
-  finish(name: string, turn = 't1', identity?: Identity): Promise<SessionRecord> {
+  finish(name: string, turn = 't1', identity?: Identity): Promise<Session30Record> {
     // Only Codex Desktop reports read evidence.
     const desktop = (identity ?? QUALIFIED).client === 'desktop';
-    return this.set(name, {activity: 'idle', turn, read: desktop ? 'unread' : 'unknown', notices: [{id: noticeId(`${name}:${turn}`), kind: 'turn-ended', turn: {status: 'known', id: turn},
+    return this.set(name, {work: 'idle', turn, read: desktop ? 'unread' : 'unknown', notices: [{id: noticeId(`${name}:${turn}`), kind: 'turn-ended', turn: {status: 'known', id: turn},
       acknowledgedBy: []}], ...(identity === undefined ? {} : {identity})});
   }
 
@@ -166,7 +171,7 @@ export class StandInCore {
     await participant?.close();
   }
 
-  #draft(record: SessionRecord): {type: string; subject: string; dataschema: string; data: SessionRecord} {
+  #draft(record: Session30Record): {type: string; subject: string; dataschema: string; data: Session30Record} {
     return {type: 'org.bunny.session.updated', subject: record.id, dataschema: SESSION_SCHEMA, data: record};
   }
 }

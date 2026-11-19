@@ -8,7 +8,8 @@ import {test} from 'node:test';
 import {setImmediate as turn} from 'node:timers/promises';
 import {InProcessBus,type Scheduler} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import {sessionEntityId,type Identity,type ModeState,type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId,type Identity,type ModeState} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession,SESSION_SCHEMA} from '@jimmie-potts/event-contracts/v2/session';
 import type {CompanionOpportunity} from '@jimmie-potts/event-contracts/v2/companions';
 import {createReachyModule} from '../src/module.js';
 import {SimulatedReachy} from '../src/simulated.js';
@@ -30,11 +31,11 @@ void test('an approval from a session whose work is unconfirmed gestures; a supe
   const identity:Identity={provider:'claude',client:'code',hostId:'synthetic-host',sourceId:'synthetic-source',sessionId:'synthetic-session'};
   const approval={id:{status:'known',id:'approval-1'},kind:'approval',turn:{status:'known',id:'turn-2'}} as const;
   // Work left unconfirmed by a restart, as the hub reports a running turn it has not heard from since.
-  const session:SessionRecord={id:sessionEntityId(identity),revision:5,generation:2,identity,parent:{status:'unknown'},turn:{status:'known',id:'turn-2'},activity:'active',attention:[approval],
-    notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},observedAtMs:clock.now(),lastEvidenceAtMs:clock.now()-360_000,freshness:'uncertain',restartUncertain:true,children:{active:0,uncertain:0}};
+  const session=buildSession({id:sessionEntityId(identity),revision:5,generation:2,identity,parent:{status:'unknown'},turn:{status:'known',id:'turn-2'},work:'active',attention:[approval],
+    notices:[],read:'unknown',unavailable:[],ordering:{status:'unknown'},observedAtMs:clock.now(),lastEvidenceAtMs:clock.now()-360_000,unconfirmed:'restart',children:{working:0,unconfirmed:0}});
   const mode:ModeState={id:'hub',revision:1,mode:'work',selectedAtMs:clock.now()};
   let state:ReachyState|undefined,dispatches=0;
-  await core.serveSync(['session','mode'],()=>({revision:10,states:[{type:'org.bunny.session.updated',subject:session.id,dataschema:'https://bunny.invalid/events/session/2.0',data:session},
+  await core.serveSync(['session','mode'],()=>({revision:10,states:[{type:'org.bunny.session.updated',subject:session.id,dataschema:SESSION_SCHEMA,data:session},
     {type:'org.bunny.mode.updated',subject:'hub',dataschema:'https://bunny.invalid/events/mode/2.0',data:mode}]}));
   await core.subscribe<ReachyState>('bunny.state.reachy-state.*',m=>{state=m.data;});
   await core.respond<Record<string,unknown>&{requestId:string;target:string}>('bunny.cmd.reachy-dispatch.reachy',async c=>{dispatches++;const {target,...data}=c.data;

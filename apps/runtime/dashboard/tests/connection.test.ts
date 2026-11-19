@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict';
 import test, {type TestContext} from 'node:test';
 import {errorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession} from '@jimmie-potts/event-contracts/v2/session-view';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {Diagnostic, RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, Scheduler, SyncChange, SyncResult, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import type {SpeechOutput} from '@jimmie-potts/event-contracts/v2/companions';
@@ -256,31 +257,30 @@ function manual(): {scheduler: Scheduler; advance: (ms: number) => Promise<void>
   };
 }
 
-/** A synthetic, idle Claude Code session: a whole record, since the copy reads each one through the shared session view. */
-const record: SessionRecord = {
+/** A synthetic, idle Claude Code session: a whole session/3.0 record, which is the session's view. */
+const record: Session30Record = buildSession({
   id: 'b'.repeat(64), revision: 3, generation: 1,
   identity: {provider: 'claude', client: 'code', hostId: 'host-sim', sourceId: 'claude-code', sessionId: 'session-sim-1'},
-  parent: {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'}, activity: 'idle', attention: [], notices: [], read: 'unknown',
-  unavailable: [], ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, freshness: 'current', restartUncertain: false,
-  children: {active: 0, uncertain: 0},
-};
-const state = {kind: 'state', data: record} as Message<SessionRecord>;
+  parent: {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'}, work: 'idle', attention: [], notices: [], read: 'unknown',
+  unavailable: [], ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, children: {working: 0, unconfirmed: 0},
+});
+const state = {kind: 'state', data: record} as Message<Session30Record>;
 
 /** A participant whose syncs follow `answers` in turn, `synced` or a refusal's code; it records when each sync came. */
 function scripted(answers: readonly ('synced' | ErrorCode)[], at: () => number): {participant: RemoteParticipant; syncs: number[]; closed: () => boolean; fail: (code: ErrorCode) => void} {
   const syncs: number[] = [];
-  let handler: ((change: SyncChange<SessionRecord>) => void) | undefined;
+  let handler: ((change: SyncChange<Session30Record>) => void) | undefined;
   let closed = false;
   const participant = {
     openEndpoint: () => Promise.reject(new Error('no endpoint was expected')),
     subscribe: () => Promise.resolve({close: () => Promise.resolve()}),
-    sync: (_families: readonly string[], handle: (change: SyncChange<SessionRecord>) => void): Promise<SyncResult<SessionRecord>> => {
+    sync: (_families: readonly string[], handle: (change: SyncChange<Session30Record>) => void): Promise<SyncResult<Session30Record>> => {
       syncs.push(at());
       handler = handle;
       const answer = answers[syncs.length - 1] ?? 'unavailable';
       if (answer !== 'synced') return Promise.resolve({status: 'rejected', requestId: 'r', error: errorBody(answer, {detail: 'refused'})});
       const copy = {states: () => [state], get: () => state, close: () => Promise.resolve()};
-      return Promise.resolve({status: 'synced', copy, message: {data: {requestId: 'r', revision: 3, members: []}, id: `done-${syncs.length}`}} as unknown as SyncResult<SessionRecord>);
+      return Promise.resolve({status: 'synced', copy, message: {data: {requestId: 'r', revision: 3, members: []}, id: `done-${syncs.length}`}} as unknown as SyncResult<Session30Record>);
     },
     close: () => {
       closed = true;
@@ -295,20 +295,20 @@ void test('a sync the core refuses is tried again after 1 s, doubling to 30 s, a
   const script = scripted(['synced', 'unavailable', 'capacity', 'unavailable', 'unavailable', 'unavailable', 'unavailable', 'synced'], clock.now);
   const connection = new DashboardConnection({url: 'http://127.0.0.1:1', scheduler: clock.scheduler, now: clock.now, connect: () => Promise.resolve(script.participant)});
   await connection.start();
-  assert.deepEqual([connection.getState().feed, connection.getState().sessions.synced, connection.getState().sessions.records], ['connected', true, [record]]);
+  assert.deepEqual([connection.getState().feed, connection.getState().sessions.synced, connection.getState().sessions.views], ['connected', true, [record]]);
   assert.deepEqual(connection.getState().sessions.views.map(view => [view.id, view.status]), [[record.id, {class: 'quiet', detail: 'idle'}]],
-    'the copy reads each record through the shared session view (#1865)');
+    'each session/3.0 record is its session\'s view (#1865)');
   // A later sync fails: the copy stops, and the page keeps its records, no longer synced.
   script.fail('unavailable');
   await clock.advance(0);
-  assert.deepEqual([connection.getState().sessions.synced, connection.getState().sessions.records, connection.getState().sessions.refused], [false, [record], 'unavailable']);
+  assert.deepEqual([connection.getState().sessions.synced, connection.getState().sessions.views, connection.getState().sessions.refused], [false, [record], 'unavailable']);
   for (const wait of [1000, 2000, 4000, 8000, 16_000, 30_000, 30_000]) {
     const before = script.syncs.length;
     await clock.advance(wait - 1);
     assert.equal(script.syncs.length, before, `not before ${wait} ms`);
     await clock.advance(1);
     assert.equal(script.syncs.length, before + 1, `after ${wait} ms`);
-    if (script.syncs.length < 8) assert.deepEqual([connection.getState().sessions.synced, connection.getState().sessions.records], [false, [record]], 'kept and stale');
+    if (script.syncs.length < 8) assert.deepEqual([connection.getState().sessions.synced, connection.getState().sessions.views], [false, [record]], 'kept and stale');
   }
   assert.deepEqual(script.syncs, [0, 1000, 3000, 7000, 15_000, 31_000, 61_000, 91_000], 'one retry loop, capped at 30 s');
   assert.deepEqual([connection.getState().feed, connection.getState().sessions.synced], ['connected', true], 'synced again');
@@ -323,7 +323,7 @@ void test('a sync refused as unauthenticated ends the link at once, with no retr
     await connection.start();
     script.fail('unavailable');
     await clock.advance(1000);
-    assert.deepEqual([connection.getState().feed, connection.getState().sessions.records, script.closed()], ['ended', [record], true], code);
+    assert.deepEqual([connection.getState().feed, connection.getState().sessions.views, script.closed()], ['ended', [record], true], code);
     await clock.advance(60_000);
     assert.equal(script.syncs.length, 2, `${code}: never tried again`);
   }
@@ -335,10 +335,10 @@ void test('retained records stay stale until the SDK replacement snapshot comple
     let overflow: () => void = () => {};
     let finish: () => void = () => {};
     let requests = 0;
-    let copy: SyncedCopy<SessionRecord> | undefined;
+    let copy: SyncedCopy<Session30Record> | undefined;
     const answer = (requestId: string): SyncAnswer => ({
       status: 'served', requestId,
-      states: [{...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/2.0'}],
+      states: [{...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/3.0'}],
       completed: {...state, source: 'bunny/core', id: `done-${requests}`, kind: 'sync-completed',
         data: {requestId, revision: 3, members: [{family: 'session', id: record.id}]}},
     });
@@ -357,8 +357,8 @@ void test('retained records stay stale until the SDK replacement snapshot comple
       restarted: () => { diagnose({event: 'sync.restarted', source: 'bunny/parts/dashboard', level: 'debug'}); },
     };
     const participant = {
-      sync: async (families: readonly string[], handler: SyncHandler<SessionRecord>, options: SyncOptions) => {
-        const result = await startSync<SessionRecord>(transport, families, handler, options);
+      sync: async (families: readonly string[], handler: SyncHandler<Session30Record>, options: SyncOptions) => {
+        const result = await startSync<Session30Record>(transport, families, handler, options);
         if (result.status === 'synced') copy = result.copy;
         return result;
       },
@@ -377,7 +377,7 @@ void test('retained records stay stale until the SDK replacement snapshot comple
       await new Promise(resolve => { setImmediate(resolve); });
       assert.equal(requests, 2, 'the real SDK copy requested a replacement snapshot');
       const pending = connection.getState();
-      assert.deepEqual([pending.feed, pending.sessions.synced, pending.sessions.records, pending.sessions.syncs],
+      assert.deepEqual([pending.feed, pending.sessions.synced, pending.sessions.views, pending.sessions.syncs],
         ['connected', false, [record], 1], 'stream recovery cannot make retained rows current');
       finish();
       await new Promise(resolve => { setImmediate(resolve); });
@@ -395,10 +395,10 @@ void test('applied session callbacks cannot restore freshness during an interrup
   let overflow = (): void => {};
   let finish = (): void => {};
   let requests = 0;
-  let copy: SyncedCopy<SessionRecord> | undefined;
+  let copy: SyncedCopy<Session30Record> | undefined;
   const answer = (requestId: string, revision: number): SyncAnswer => ({
     status: 'served', requestId,
-    states: ['a', 'b'].map(id => ({...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/2.0',
+    states: ['a', 'b'].map(id => ({...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/3.0',
       data: {...record, id, revision}})),
     completed: {...state, source: 'bunny/core', id: `done-${requests}`, kind: 'sync-completed',
       data: {requestId, revision, members: ['a', 'b'].map(id => ({family: 'session', id}))}},
@@ -418,8 +418,8 @@ void test('applied session callbacks cannot restore freshness during an interrup
     restarted: () => {diagnose({event: 'sync.restarted', source: 'bunny/parts/dashboard', pattern: 'sync session', level: 'debug'});},
   };
   const participant = {
-    sync: async (families: readonly string[], handler: SyncHandler<SessionRecord>, options: SyncOptions) => {
-      const result = await startSync<SessionRecord>(transport, families, handler, options);
+    sync: async (families: readonly string[], handler: SyncHandler<Session30Record>, options: SyncOptions) => {
+      const result = await startSync<Session30Record>(transport, families, handler, options);
       if (result.status === 'synced') copy = result.copy;
       return result;
     },
@@ -432,14 +432,14 @@ void test('applied session callbacks cannot restore freshness during an interrup
   await connection.start();
   let interrupted = false;
   connection.subscribe(() => {
-    if (!interrupted && connection.getState().sessions.records.some(row => row.revision === 2)) {
+    if (!interrupted && connection.getState().sessions.views.some(row => row.revision === 2)) {
       interrupted = true; overflow();
     }
   });
   overflow();
   await new Promise(resolve => {setImmediate(resolve);});
   assert.equal(requests, 3);
-  assert.deepEqual(connection.getState().sessions.records.map(row => [row.id, row.revision]), [['a', 2], ['b', 2]], 'all applied records remain projected');
+  assert.deepEqual(connection.getState().sessions.views.map(row => [row.id, row.revision]), [['a', 2], ['b', 2]], 'all applied records remain projected');
   assert.equal(connection.getState().sessions.syncs, 1, 'obsolete completion is not counted');
   assert.equal(connection.getState().sessions.synced, false, 'core sessions stay unavailable until the third snapshot completes');
   finish();
@@ -454,10 +454,10 @@ void test('a late initial session-sync promise cannot restore freshness after it
   let finish = (): void => {};
   let release = (): void => {};
   let requests = 0;
-  let copy: SyncedCopy<SessionRecord> | undefined;
+  let copy: SyncedCopy<Session30Record> | undefined;
   const held = new Promise<void>(resolve => {release = resolve;});
   const answer = (requestId: string): SyncAnswer => ({status: 'served', requestId,
-    states: [{...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/2.0'}],
+    states: [{...state, source: 'bunny/core', dataschema: 'https://bunny.invalid/events/session/3.0'}],
     completed: {...state, source: 'bunny/core', id: `done-${requests}`, kind: 'sync-completed',
       data: {requestId, revision: 3, members: [{family: 'session', id: record.id}]}},
   });
@@ -475,8 +475,8 @@ void test('a late initial session-sync promise cannot restore freshness after it
     restarted: () => {diagnose({event: 'sync.restarted', source: 'bunny/parts/dashboard', pattern: 'sync session', level: 'debug'});},
   };
   const participant = {
-    sync: async (families: readonly string[], handler: SyncHandler<SessionRecord>, options: SyncOptions) => {
-      const result = await startSync<SessionRecord>(transport, families, handler, options);
+    sync: async (families: readonly string[], handler: SyncHandler<Session30Record>, options: SyncOptions) => {
+      const result = await startSync<Session30Record>(transport, families, handler, options);
       if (result.status === 'synced') copy = result.copy;
       await held;
       return result;

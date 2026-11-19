@@ -9,7 +9,8 @@ import {DatabaseSync} from 'node:sqlite';
 import {deflateSync, crc32} from 'node:zlib';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
 import {registerDeviceFamilies, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {registerCoreFamilies, sessionEntityId, type Identity, type PlaybackState, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession, SESSION_SCHEMA, type SessionFacts} from '@jimmie-potts/event-contracts/v2/session';
 import {
   InProcessBus, type BunnyModule, type Cancel, type CommandDraft, type Participant, type RequestResult, type Scheduler, type StateDraft, type Subscription,
 } from '@jimmie-potts/sdk';
@@ -29,16 +30,16 @@ export const FAST: NonNullable<PixooOptions['timing']> = {reachMs: 60, probeMs: 
 export const IDENTITY: Identity = {provider: 'claude', client: 'code', hostId: 'host-sim', sourceId: 'claude-code', sessionId: 'session-sim-1'};
 export const SESSION_ID = sessionEntityId(IDENTITY);
 
-/** A synthetic `session/2.0` record observed at `atMs`, current, with `patch` applied. */
-export function sessionRecord(atMs: number, revision: number, patch: Partial<SessionRecord> = {}): SessionRecord {
-  return {
-    id: SESSION_ID, revision, generation: 1, identity: IDENTITY, parent: {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'}, activity: 'active',
+/** A synthetic `session/3.0` record observed at `atMs`, its work confirmed, with `patch` applied to its facts. */
+export function sessionRecord(atMs: number, revision: number, patch: Partial<SessionFacts> = {}): Session30Record {
+  return buildSession({
+    id: SESSION_ID, revision, generation: 1, identity: IDENTITY, parent: {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'}, work: 'active',
     attention: [], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'}, observedAtMs: atMs, lastEvidenceAtMs: atMs,
-    freshness: 'current', restartUncertain: false, children: {active: 0, uncertain: 0}, label: {value: 'Build', origin: 'user'}, ...patch,
-  };
+    children: {working: 0, unconfirmed: 0}, label: {value: 'Build', origin: 'user'}, ...patch,
+  });
 }
-export const sessionState = (record: SessionRecord): StateDraft<SessionRecord> =>
-  ({type: 'org.bunny.session.updated', subject: record.id, dataschema: schemaOf('session'), data: record});
+export const sessionState = (record: Session30Record): StateDraft<Session30Record> =>
+  ({type: 'org.bunny.session.updated', subject: record.id, dataschema: SESSION_SCHEMA, data: record});
 
 /** A synthetic `playback/2.0` record, playing a track observed at `atMs`. */
 export function playbackRecord(atMs: number, revision: number, title = 'Harvest Moon', player: 'playing' | 'paused' = 'playing'): PlaybackState {
@@ -170,7 +171,7 @@ export class World {
   readonly player: Participant;
   harness: ModuleHarness;
   module: BunnyModule;
-  sessions: SessionRecord[] = [];
+  sessions: Session30Record[] = [];
   playback: PlaybackState[] = [];
   revision = 1;
   readonly #validator = validator();
@@ -312,7 +313,7 @@ export class World {
   }
 
   /** Publishes a new session record from the stand-in core. */
-  async publishSession(patch: Partial<SessionRecord> = {}): Promise<SessionRecord> {
+  async publishSession(patch: Partial<SessionFacts> = {}): Promise<Session30Record> {
     this.revision += 1;
     const record = sessionRecord(this.now(), this.revision, patch);
     this.sessions = [record];

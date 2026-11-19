@@ -14,7 +14,7 @@ import {SimulatedTronbyt, TRONBYT_ORIGIN} from '../src/simulated-tronbyt.js';
 import {SIMULATED_DEVICE} from '../src/simulated.js';
 import {renderTile} from '../src/tiles.js';
 import {MOMENT_INSTALLATION} from '../src/tronbyt.js';
-import {SECOND, asking, finished, flush, host, playback, records, test, until, withWriteFailure, working, type Hosted, type HostOptions} from './support.js';
+import {SECOND, asking, finished, flush, host, playback, records, revise, test, until, withWriteFailure, working, type Hosted, type HostOptions} from './support.js';
 
 const STATUS = 'agentdevicehub';
 const NOW_PLAYING = 'nowplaying';
@@ -142,7 +142,7 @@ test('attention keeps a moment off the display, and ends one at once', async con
   assert.deepEqual(await play(h), {status: 'rejected', code: 'invalid-state'}, 'attention already stands');
   assert.deepEqual(momentCalls(server).filter(call => call !== 'POST push'), []);
 
-  for (const record of h.core?.records() ?? []) await h.core?.set({...record, attention: []});
+  for (const record of h.core?.records() ?? []) await h.core?.set(revise(record, {attention: []}));
   await h.advance(SECOND);
   assert.deepEqual(await play(h), {status: 'accepted'});
   await until(() => taken(server), 'the takeover');

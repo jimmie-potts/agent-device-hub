@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type {OperationRecord, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
-import {sessionView, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {errorBody} from '@jimmie-potts/event-contracts/v2/errors';
 import {noticeAttempt, noticeEvidence, overrideAvailable} from '../src/notice-clear.ts';
 
-/** A synthetic Claude Code session whose turn ended, as the shared session view. */
-function view(change: Partial<SessionRecord> = {}): SessionView {
-  return sessionView({
+/** A synthetic Claude Code session whose turn ended: its session/3.0 record, which is its view. */
+function view(change: Partial<SessionFacts> = {}): SessionView {
+  return buildSession({
     id: 'a'.repeat(64), revision: 8, generation: 1,
     identity: {provider: 'claude', client: 'code', hostId: 'host-sim', sourceId: 'claude-code', sessionId: 'session-sim-1'},
-    parent: {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'}, activity: 'idle', attention: [], read: 'unknown',
+    parent: {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'}, work: 'idle', attention: [], read: 'unknown',
     notices: [{id: 'b'.repeat(64), kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy: []}],
-    unavailable: [], ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, freshness: 'current', restartUncertain: false,
-    children: {active: 0, uncertain: 0}, ...change,
+    unavailable: [], ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000,
+    children: {working: 0, unconfirmed: 0}, ...change,
   });
 }
 const record = view();
@@ -38,15 +38,16 @@ void test('a notice override distinguishes transport, completion and current own
   assert.equal(uncertain.reply, 'uncertain'); assert.deepEqual(uncertain.acknowledgedBy, evidence.acknowledgedBy, 'a lost reply does not hide independent owner evidence');
 });
 
-void test('the override has no freshness term: a finished or waiting session silent past five minutes stays available (#1865)', () => {
+void test('the override has no age term: a finished or waiting session silent past five minutes stays available (#1865)', () => {
   const live = {control: true, live: true, synced: true};
-  assert.equal(overrideAvailable(view({freshness: 'uncertain'}), live), true, 'a finished session silent for ten minutes');
-  assert.equal(overrideAvailable(view({freshness: 'uncertain', restartUncertain: true}), live), true, 'after a restart');
+  // Silence and a restart never change a finished session's record, whose last change may be long ago.
+  assert.equal(overrideAvailable(view(), live), true, 'a finished session silent for ten minutes');
+  assert.equal(overrideAvailable(view({unconfirmed: 'restart'}), live), true, 'after a restart');
   const question = {id: {status: 'known', id: 'question-1'}, kind: 'question', turn: {status: 'known', id: 'turn-2'}} as const;
-  assert.equal(overrideAvailable(view({freshness: 'uncertain', activity: 'active', turn: {status: 'known', id: 'turn-2'}, attention: [question]}), live), true,
+  assert.equal(overrideAvailable(view({unconfirmed: 'deadline', work: 'active', turn: {status: 'known', id: 'turn-2'}, attention: [question]}), live), true,
     'a waiting session');
-  assert.equal(overrideAvailable(view({freshness: 'uncertain', activity: 'active'}), live), false, 'unconfirmed work is the shared uncertainty');
-  assert.equal(overrideAvailable(view({activity: 'unknown', notices: []}), live), false, 'an unknown status');
+  assert.equal(overrideAvailable(view({unconfirmed: 'deadline', work: 'active'}), live), false, 'unconfirmed work is the shared uncertainty');
+  assert.equal(overrideAvailable(view({work: 'unknown', notices: []}), live), false, 'an unknown status');
   for (const missing of [{control: false}, {live: false}, {synced: false}]) assert.equal(overrideAvailable(view(), {...live, ...missing}), false, JSON.stringify(missing));
   assert.equal(overrideAvailable(undefined, live), false);
 });

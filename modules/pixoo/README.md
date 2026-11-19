@@ -43,7 +43,7 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 | `src/library` | SQLite catalog, playlists, checkpoints and media retention; `Library.attach` opens it in the module's database |
 | `src/media` | Bounded rendering through sharp, GIF encoding and decoding, the media store and its child process |
 | `src/playback` | The player, traversal and the library-backed store |
-| `src/presentation` | Monitor presentation over `session/2.0`, the agent dashboard renderer, Now Playing cards over `playback/2.0` or `playback/2.1` and the pixel font |
+| `src/presentation` | Monitor presentation over the shared view of `session/3.0`, the agent dashboard renderer, Now Playing cards over `playback/2.0` or `playback/2.1` and the pixel font |
 | `src/migration` | The [library migration](#library-migration): reading the installed library (`installed.ts`), the copy (`migrate.ts`), the verifier (`verify.ts`), the report (`contracts.ts`) and a synthetic library of the installed schema (`synthetic.ts`) |
 | `tests/unit`, `tests/integration`, `tests/helpers` | The moved Vitest tests, which run from `dist/tests` |
 | `tests/module` | The module's node:test suites: the module test kit, its behavior, its configuration, its store on a full database and the library migration |
@@ -225,7 +225,7 @@ The module keeps only state it owns, in its SQLite file and its private folder:
 cannot commit, as on a full disk, throws SQLite's own error and leaves the saved
 settings and the configuration revision as they were.
 
-Its copies of the core's `session/2.0` records and of the `playback/2.0` or `playback/2.1` record
+Its copies of the core's `session/3.0` records and of the `playback/2.0` or `playback/2.1` record
 come from sync and are never stored. A copy that has not synced is tried again
 after a doubling wait from 1 s to 60 s. An owner that has not answered since
 the start, such as a playback owner that starts later, logs at DEBUG until that
