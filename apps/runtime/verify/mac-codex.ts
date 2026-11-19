@@ -168,12 +168,12 @@ export async function captureMacCodex(t: CaptureContext): Promise<void> {
   await click(signIn, 'Click Sign in again after the simulated restart');
   await page.locator('main#main[data-feed="connected"]').waitFor();
   await page.getByText('Mac Codex', {exact: false}).first().waitFor();
-  await show(finished, 'Feed recovered; the retained record is honestly marked Stale');
-  await t.expect('recovered card preserves Finished while showing uncertain freshness', async () => await finished.innerText() === 'Stale');
+  await show(finished, 'Feed recovered; the finished record keeps its status across the restart');
+  await t.expect('recovered card preserves Finished and unread, not stale', async () => await finished.innerText() === 'Finished · unread');
   await click(card.locator('summary'), 'Open the recovered card to inspect its retained notice');
   const notice = card.getByText('Turn portable-turn ended', {exact: true});
   await notice.waitFor();
-  await show(notice, 'Original turn-ended notice retained; freshness remains uncertain');
+  await show(notice, 'Original turn-ended notice retained');
   await t.expect('retained record survives and lost observation is not invented', async () => {
     const found = await records(); return found.length === 1 && found[0]?.identity.sessionId === raw.session_id && found[0].notices.some(n => n.kind === 'turn-ended');
   });

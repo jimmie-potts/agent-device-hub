@@ -132,7 +132,9 @@ it('a prompt after the start is work, and its end finishes the turn with a notic
   assert.equal(repeated.ok && repeated.outcome, 'duplicate', 'the same start under another message ID is a semantic duplicate');
 });
 
-it('every provider\'s root start is quiet, and so is a start from an older hook release', async context => {
+// A start from an older hook release reaches the core in the same wire form (hook-golden.test.ts), and hook.test.ts shows
+// each producer-file lifecycle version's start quiet.
+it('every provider\'s root start is quiet', async context => {
   const w = await open(context);
   for (const who of [codex('local'), codex('cli', 'cli'), codex('desktop', 'desktop')]) {
     assert.equal(await take(w, who, start, {parent: {status: 'top-level'}, turn: 'turn-a'}), 'applied');

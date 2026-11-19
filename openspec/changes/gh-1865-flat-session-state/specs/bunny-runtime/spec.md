@@ -30,7 +30,7 @@ The core SHALL keep each root session's latest host session ID with its record, 
 
 #### Scenario: After a restart
 - **WHEN** the core restarts on its store holding a working session, a session with a question and a session with an unread finished turn
-- **THEN** the working session is published with work unconfirmed for the restart, the other two keep their status and are not republished, the host session ID is kept, and work is confirmed again only by qualifying evidence observed after the start
+- **THEN** the working session, and the session whose turn still runs under its question, are published with their running work unconfirmed for the restart, the question's session still needing the owner; the finished session keeps its status and is not republished; the host session ID is kept; and work is confirmed again only by qualifying evidence observed after the start
 
 #### Scenario: Start order
 - **WHEN** a module after the core syncs the sessions and republishes an outcome its outbox kept in its own start

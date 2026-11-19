@@ -248,9 +248,10 @@ try {
   assert.equal(world.browserSessions(), 0, 'the page did not sign in by itself');
   await page.getByRole('button', {name: 'Sign in again', exact: true}).click();
   await feed(page, 'connected');
-  await chip('Port the wall', 'Stale');
+  // Its work was not running, so the restart leaves it as it was (#1865 step 8).
+  await chip('Port the wall', 'Idle');
   await row('Port the wall').locator('summary').click();
-  await row('Port the wall').getByText('Last known: Idle.', {exact: false}).waitFor();
+  assert.equal(await row('Port the wall').getByText('Last known:', {exact: false}).count(), 0, 'nothing marks it stale');
   assert.equal(world.browserSessions(), 1);
   checks.push('an ended session offers one sign-in, which restores the page');
 
