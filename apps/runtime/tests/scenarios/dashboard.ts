@@ -1,12 +1,11 @@
 // The dashboard's catalog scenarios (Hub #922), shared unchanged by the in-memory harness and disposable runs.
 // Their fixture identities and consumer policy belong here; the shared catalog only collects these definitions.
-import {sessionEntityId, type OperationRecord, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type OperationRecord, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {LIFX_SIMULATED_SECTION} from '@jimmie-potts/lifx';
 import {deviceAction, operationView} from '../../dashboard/src/devices.js';
 import {SIGN_SECTION} from '../fixtures/sign.js';
 import {FIXTURE_CONSUMERS} from '../fixtures/core.js';
-import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {DashboardPager, FAMILIES as PIXOO, SIMULATED_SECTION as PIXOO_SECTION, frameDigest, monitorView, renderDashboard, type DisplayRecord,
   type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {NANOLEAF_FAMILIES, SIMULATED_SECTION as NANOLEAF_SECTION} from '@jimmie-potts/nanoleaf';
@@ -18,7 +17,7 @@ import {
 } from './framework.js';
 
 const acknowledgedBy = (h: Harness, consumers: readonly string[]): Outcome => {
-  const held = session(h)?.notices[0]?.acknowledgedBy;
+  const held = session(h)?.outcome.notices[0]?.acknowledgedBy;
   return show(held) === show(consumers) || `the notice is acknowledged by ${show(held)}`;
 };
 
@@ -27,9 +26,9 @@ const acknowledgedBy = (h: Harness, consumers: readonly string[]): Outcome => {
  * `/api/v2`, as the dashboard's page loads from the gateway, and the dashboard's chip comes from its row helper
  * over the record's shared session view alone (Hub #1865). Sessions appear as the hook observes them, and an approval prompt is raised and cleared.
  */
-const browserSessions = async (h: Harness): Promise<SessionRecord[] | string> => {
+const browserSessions = async (h: Harness): Promise<Session30Record[] | string> => {
   const answer = await h.gateway({as: 'browser', method: 'GET', path: '/api/v2/families/session'});
-  const read = bodyOf<{records?: SessionRecord[]}>(answer);
+  const read = bodyOf<{records?: Session30Record[]}>(answer);
   return answer.status === 200 && read?.records !== undefined ? read.records : `the session read answered ${answer.status}`;
 };
 /** What the dashboard shows of a session: its state by the row helper, `idle` when nothing is outstanding. */
@@ -37,7 +36,7 @@ const dashboardShows = (expected: string, id = SESSION_ID) => async (h: Harness)
   const records = await browserSessions(h);
   if (typeof records === 'string') return records;
   const record = records.find(item => item.id === id);
-  const shown = record === undefined ? 'absent' : chipOf(sessionView(record));
+  const shown = record === undefined ? 'absent' : chipOf(record);
   return shown === expected || `the dashboard shows ${shown}`;
 };
 const dashboardSessions: Scenario = {
@@ -66,7 +65,7 @@ const dashboardSessions: Scenario = {
     expect('the dashboard shows it waiting for the approval', dashboardShows('approval')),
     act('the hook observes the approval resolved', h => publish(h, approvalResolved('approval-1'))),
     expect('the dashboard shows it working again', dashboardShows('working')),
-    expect('the reader\'s synced copy agrees', h => (session(h) !== undefined && chipOf(sessionView(session(h) as SessionRecord)) === 'working') || 'the copy disagrees'),
+    expect('the reader\'s synced copy agrees', h => (session(h) !== undefined && chipOf(session(h) as Session30Record) === 'working') || 'the copy disagrees'),
   ],
 };
 
@@ -103,7 +102,7 @@ const dashboardFinishedTurn: Scenario = {
       key: `bunny.cmd.notice-acknowledge.${SESSION_ID}`,
       draft: {
         type: 'org.bunny.notice.acknowledge.requested', subject: SESSION_ID, dataschema: 'https://bunny.invalid/events/notice-acknowledge/2.0',
-        data: {consumerId: 'panel', noticeId: session(h)?.notices.find(notice => notice.acknowledgedBy.length === 0)?.id ?? ''},
+        data: {consumerId: 'panel', noticeId: session(h)?.outcome.notices.find(notice => notice.acknowledgedBy.length === 0)?.id ?? ''},
       },
     }, 'req-dashboard-acknowledge')),
     expect('an acknowledgment in the record clears it', dashboardShows('idle')),
@@ -196,7 +195,7 @@ const dashboardControls: Scenario = {
 const pixooShowsNoticeRecord = (h: Harness): Outcome => {
   const record = session(h);
   if (record === undefined) return 'no session record';
-  const layout = new DashboardPager().layout(monitorView({state: 'current', revision: record.revision, sessions: [sessionView(record)]}), 0);
+  const layout = new DashboardPager().layout(monitorView({state: 'current', revision: record.revision, sessions: [record]}), 0);
   const expected = renderDashboard(layout).map(frame => frameDigest(frame));
   const shown = deviceState<SimulatedPixooState>(h, 'pixoo').shown?.digests;
   const display = h.reader.states<DisplayRecord>(PIXOO.display, 'bunny/modules/pixoo')[0]?.data;
@@ -219,13 +218,13 @@ const dashboardNoticeClear: Scenario = {
     expect('a reader cannot use the override', async h => {
       const record = session(h); if (record === undefined) return 'no session';
       const answer = await h.gateway({as: 'reader', method: 'POST', path: '/api/v2/commands/notice-clear', body: {target: record.id,
-        requestId: 'req-notice-reader', data: {noticeId: record.notices.at(-1)?.id, expectedRevision: record.revision}}});
+        requestId: 'req-notice-reader', data: {noticeId: record.outcome.notices.at(-1)?.id, expectedRevision: record.revision}}});
       return answer.status === 403 && bodyOf<{error?: {code?: string}}>(answer)?.error?.code === 'forbidden' || `reader answered ${answer.status}`;
     }),
     act('the operator clears the selected current notice once', async h => {
       const record = session(h); if (record === undefined) throw new StepFailure('no session');
       const answer = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/notice-clear', body: {target: record.id,
-        requestId: 'req-notice-clear', data: {noticeId: record.notices.at(-1)?.id, expectedRevision: record.revision}}});
+        requestId: 'req-notice-clear', data: {noticeId: record.outcome.notices.at(-1)?.id, expectedRevision: record.revision}}});
       if (answer.status !== 200 || bodyOf<{status?: string}>(answer)?.status !== 'accepted') throw new StepFailure(`override answered ${answer.status}`);
     }),
     expect('the owner records every configured consumer', h => acknowledgedBy(h, FIXTURE_CONSUMERS.map(consumer => consumer.id))),

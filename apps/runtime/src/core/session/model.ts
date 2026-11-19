@@ -52,7 +52,7 @@ export type StoredSession = {
   attention: Attention[]; notices: Notice[];
   /** Read evidence from the session's own observations. A kept read receipt shows the record as read. */
   read: 'unknown' | 'read' | 'unread';
-  /** Explicit read provenance (`session/2.1`), kept only while its generation, turn and notice still hold. */
+  /** Explicit read provenance, published in the outcome claim and kept only while its generation, turn and notice still hold. */
   readReceipt?: ReadProvenance;
   unavailable: Unavailable[]; ordering: Ordering;
   observedAtMs: number;

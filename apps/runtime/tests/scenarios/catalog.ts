@@ -6,7 +6,7 @@
 import {readdirSync} from 'node:fs';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {sessionEntityId, type Identity, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type Identity, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {CommandDraft} from '@jimmie-potts/sdk';
 import {DEADLINES, type LogRecord} from '../../src/index.js';
 import {dashboardScenarios} from './dashboard.js';
@@ -230,11 +230,11 @@ const acknowledgment = (h: Harness, consumerId: string): {key: string; draft: Co
   key: `bunny.cmd.notice-acknowledge.${SESSION_ID}`,
   draft: {
     type: 'org.bunny.notice.acknowledge.requested', subject: SESSION_ID, dataschema: 'https://bunny.invalid/events/notice-acknowledge/2.0',
-    data: {consumerId, noticeId: session(h)?.notices[0]?.id ?? ''},
+    data: {consumerId, noticeId: session(h)?.outcome.notices[0]?.id ?? ''},
   },
 });
 const acknowledgedBy = (h: Harness, consumers: readonly string[]): Outcome => {
-  const held = session(h)?.notices[0]?.acknowledgedBy;
+  const held = session(h)?.outcome.notices[0]?.acknowledgedBy;
   return show(held) === show(consumers) || `the notice is acknowledged by ${show(held)}`;
 };
 
@@ -260,7 +260,7 @@ const agentSessions: Scenario = {
       await publish(h, turnStarted);
     }),
     expect('the reader holds both sessions, the first active', h =>
-      (session(h)?.activity === 'active' && session(h, OTHER_ID) !== undefined) || `sessions ${show(h.reader.states('session').length)}, first ${String(session(h)?.activity)}`),
+      (session(h)?.work.state === 'active' && session(h, OTHER_ID) !== undefined) || `sessions ${show(h.reader.states('session').length)}, first ${String(session(h)?.work.state)}`),
     act('the hook observes an approval prompt in the first', h => publish(h, approvalPrompt('approval-1'))),
     expect('the session waits for approval-1, and the reader heard it raised', h =>
       waiting(h, ['approval-1']) === true ? occurrences(h, 'org.bunny.attention.raised').length === 1 || 'no attention.raised' : waiting(h, ['approval-1'])),
@@ -273,8 +273,8 @@ const agentSessions: Scenario = {
     expect('the finished turn stays on the session record as one unread notice, and the reader heard turn.ended name it', h => {
       const record = session(h);
       const ended = occurrences(h, 'org.bunny.turn.ended').map(message => (message.data as {noticeId?: string}).noticeId);
-      return (record?.activity === 'idle' && record.notices.length === 1 && record.notices[0]?.acknowledgedBy.length === 0 && show(ended) === show([record.notices[0]?.id])) ||
-        `activity ${String(record?.activity)}, notices ${show(record?.notices)}, turn.ended ${show(ended)}`;
+      return (record?.work.state === 'idle' && record.outcome.notices.length === 1 && record.outcome.notices[0]?.acknowledgedBy.length === 0 && show(ended) === show([record.outcome.notices[0]?.id])) ||
+        `activity ${String(record?.work.state)}, notices ${show(record?.outcome.notices)}, turn.ended ${show(ended)}`;
     }),
     holds('it is no inbox item', h => (h.reader.states('inbox-item').length === 0 && !h.reader.heard().some(message => message.dataschema.includes('/inbox-item/'))) ||
       `inbox ${show(h.reader.states('inbox-item').map(state => state.data))}`, 300),
@@ -284,15 +284,15 @@ const agentSessions: Scenario = {
     expect('that is forbidden', h => answered(h, 'impersonate', 'forbidden')),
     act('the hook observes the second session\'s runtime end', h => publish(h, runtimeEnded, {identity: OTHER})),
     expect('the reader no longer holds it, and heard it end', h =>
-      (session(h, OTHER_ID) === undefined && occurrences(h, 'org.bunny.session.ended').length === 1) || `second session ${show(session(h, OTHER_ID)?.activity)}`),
+      (session(h, OTHER_ID) === undefined && occurrences(h, 'org.bunny.session.ended').length === 1) || `second session ${show(session(h, OTHER_ID)?.work.state)}`),
     act('the runtime restarts cleanly', h => h.restart()),
     expect('the reader synced again: the finished session keeps its status, notice and acknowledgment, with no work to mark unconfirmed', h => {
       const record = session(h);
-      return (record?.restartUncertain === false && record.activity === 'idle' && acknowledgedBy(h, ['panel']) === true) ||
-        `restartUncertain ${String(record?.restartUncertain)}, activity ${String(record?.activity)}`;
+      return (record?.work.confidence === 'confirmed' && record.work.state === 'idle' && acknowledgedBy(h, ['panel']) === true) ||
+        `work ${show(record?.work)}`;
     }),
     act('the hook observes a new turn', h => publish(h, turnStarted, {turn: 'turn-2'})),
-    expect('fresh evidence makes it current again', h => (session(h)?.restartUncertain === false && session(h)?.freshness === 'current') || show(session(h)?.freshness)),
+    expect('fresh evidence confirms its work', h => (session(h)?.work.state === 'active' && session(h)?.work.confidence === 'confirmed') || show(session(h)?.work)),
   ],
 };
 
@@ -651,13 +651,13 @@ const grantsAndDuplicates: Scenario = {
       await publish(h, turnStarted);
       await publish(h, turnEnded);
     }),
-    expect('the reader holds the finished turn\'s notice', h => session(h)?.notices.length === 1 || 'no notice'),
+    expect('the reader holds the finished turn\'s notice', h => session(h)?.outcome.notices.length === 1 || 'no notice'),
     act('the panel sends a raw command acknowledging the notice for itself', async h => {
       const answer = keep(h, await h.gateway(rawRequest('panel', acknowledgment(h, 'panel').key, rawCommand(h, 'bunny/parts/panel', acknowledgment(h, 'panel'), 'req-raw', 'msg-raw-1'))));
       const result = bodyOf<{result?: {status?: string}}>(answer)?.result;
       if (answer.status !== 200 || result?.status !== 'accepted') throw new StepFailure(`${answer.status} ${answer.text.slice(0, 200)}`);
     }),
-    expect('the notice is acknowledged by the panel', h => session(h)?.notices[0]?.acknowledgedBy.includes('panel') === true || show(session(h)?.notices)),
+    expect('the notice is acknowledged by the panel', h => session(h)?.outcome.notices[0]?.acknowledgedBy.includes('panel') === true || show(session(h)?.outcome.notices)),
     expect('the same message sent again is refused as duplicate-conflict', async h => refusedWith(keep(h, await h.gateway(rawRequest('panel', acknowledgment(h, 'panel').key,
       rawCommand(h, 'bunny/parts/panel', acknowledgment(h, 'panel'), 'req-raw', 'msg-raw-1')))), 409, 'duplicate-conflict')),
     holds('the core ran it once', h => {
@@ -675,7 +675,7 @@ const recoverIn = (subject: string): {key: string; draft: CommandDraft<object>} 
 });
 
 /** The approval-recover command's draft for the session in the reader's copy. */
-const recovery = (record: SessionRecord): object => ({session: record.id, turnId: 'turn-1', expectedRevision: record.revision});
+const recovery = (record: Session30Record): object => ({session: record.id, turnId: 'turn-1', expectedRevision: record.revision});
 
 /**
  * The operator's approval recovery (Hub #835, carried from the old Hub's `recover-approval`): an approval without an
@@ -691,9 +691,9 @@ const approvalRecovery: Scenario = {
       await publish(h, turnStarted);
       await publish(h, unknownApproval);
     }),
-    expect('the reader holds the session waiting for the approval', h => session(h)?.attention.length === 1 || `attention ${show(session(h)?.attention)}`),
+    expect('the reader holds the session waiting for the approval', h => session(h)?.attention.items.length === 1 || `attention ${show(session(h)?.attention.items)}`),
     act('the runtime restarts', h => h.restart()),
-    expect('the session is uncertain since the restart', h => session(h)?.restartUncertain === true || `record ${show(session(h)).slice(0, 200)}`),
+    expect('the session\'s running work is unconfirmed since the restart', h => session(h)?.work.reasons.includes('restart') === true || `record ${show(session(h)).slice(0, 200)}`),
     expect('the hook may not recover it', async h => {
       const record = session(h);
       if (record === undefined) return 'no session';
@@ -711,7 +711,7 @@ const approvalRecovery: Scenario = {
       const answer = keep(h, await h.gateway({as: 'operator', method: 'POST', path: '/api/v2/commands/approval-recover', body: {...recovery(record), requestId: 'req-recover'}}));
       if (answer.status !== 200 || bodyOf<{status?: string}>(answer)?.status !== 'accepted') throw new StepFailure(`${answer.status} ${answer.text.slice(0, 200)}`);
     }),
-    expect('the reader\'s session waits for nothing', h => session(h)?.attention.length === 0 || `attention ${show(session(h)?.attention)}`),
+    expect('the reader\'s session waits for nothing', h => session(h)?.attention.items.length === 0 || `attention ${show(session(h)?.attention.items)}`),
     expect('the reader heard the approval cleared as recovered', h => h.reader.heard().some(message =>
       message.type === 'org.bunny.attention.cleared' && (message.data as {cause?: string}).cause === 'recovered') || 'no recovered clearing'),
     holds('no log record, message, health entry or answer carries a token', h => noPartToken(h, collected.get(h)), 100),
@@ -785,7 +785,7 @@ const hooked = (name: string, payload: HookPayload, options: {runtime?: 'running
   const problem = hookProblem(await h.hook(payload, options));
   if (problem !== undefined) throw new StepFailure(problem);
 });
-const hookedSession = (h: Harness): SessionRecord | undefined => session(h, HOOKED_ID);
+const hookedSession = (h: Harness): Session30Record | undefined => session(h, HOOKED_ID);
 const hookRestartSyncs = new WeakMap<Harness, number>();
 
 /**
@@ -803,24 +803,24 @@ const agentHooks: Scenario = {
     // #397: a start without a prompt claims no work.
     expect('the reader holds the session quiet, with its project', h => {
       const record = hookedSession(h);
-      return (record?.activity === 'idle' && record.turn.status === 'unknown' && record.project === 'demo') ||
-        `session ${show(record === undefined ? undefined : {activity: record.activity, project: record.project})}`;
+      return (record?.work.state === 'idle' && record.turn.status === 'unknown' && record.project === 'demo') ||
+        `session ${show(record === undefined ? undefined : {work: record.work.state, project: record.project})}`;
     }),
     hooked('a prompt starts a turn', claudeHook('UserPromptSubmit', {prompt_id: 'prompt-1', prompt: DROPPED})),
     expect('the session holds the turn', h => (hookedSession(h)?.turn.status === 'known' && show(hookedSession(h)?.turn) === show({status: 'known', id: 'prompt-1'})) || show(hookedSession(h)?.turn)),
     hooked('a permission dialog opens', claudeHook('PermissionRequest', {prompt_id: 'prompt-1', tool_name: 'Bash', tool_input: {command: DROPPED}})),
     expect('the approval prompt is raised on the turn, and the reader heard it', h => {
-      const attention = hookedSession(h)?.attention ?? [];
+      const attention = hookedSession(h)?.attention.items ?? [];
       const raised = occurrences(h, 'org.bunny.attention.raised').filter(message => message.subject === HOOKED_ID).length;
       return (show(attention) === show([{id: {status: 'unknown'}, kind: 'approval', turn: {status: 'known', id: 'prompt-1'}}]) && raised === 1) || `attention ${show(attention)}, raised ${raised}`;
     }),
     hooked('the tool finishes', claudeHook('PostToolUse', {prompt_id: 'prompt-1', tool_use_id: 'tool-1', tool_response: {output: DROPPED}})),
     expect('the approval prompt is cleared as resolved', h => {
       const cleared = occurrences(h, 'org.bunny.attention.cleared').filter(message => message.subject === HOOKED_ID).map(message => (message.data as {cause: string}).cause);
-      return (hookedSession(h)?.attention.length === 0 && show(cleared) === show(['resolved'])) || `attention ${show(hookedSession(h)?.attention)}, cleared ${show(cleared)}`;
+      return (hookedSession(h)?.attention.items.length === 0 && show(cleared) === show(['resolved'])) || `attention ${show(hookedSession(h)?.attention.items)}, cleared ${show(cleared)}`;
     }),
     hooked('the turn ends', claudeHook('Stop', {prompt_id: 'prompt-1'})),
-    expect('the session is idle with its finished turn', h => (hookedSession(h)?.activity === 'idle' && hookedSession(h)?.notices.length === 1) || show(hookedSession(h)?.activity)),
+    expect('the session is idle with its finished turn', h => (hookedSession(h)?.work.state === 'idle' && hookedSession(h)?.outcome.notices.length === 1) || show(hookedSession(h)?.work.state)),
     expect('the producer\'s credential may not send a command', answers({as: 'producer', method: 'POST', path: '/api/sdk/v1/request', body: {
       schema: 'sdk-remote/1.0', key: `bunny.cmd.approval-recover.${HOOKED_ID}`, command: {},
     }}, answer => refusedWith(answer, 403, 'forbidden'))),
@@ -837,15 +837,15 @@ const agentHooks: Scenario = {
     expect('the runtime is back, the observation sent while it was stopped was lost, and the session keeps its finished status', h => {
       const record = hookedSession(h);
       // Hooks fail open. The finished session had no running work, so the restart left nothing unconfirmed (#1865 step 8).
-      return (h.generation() === 2 && show(record?.turn) === show({status: 'known', id: 'prompt-1'}) && record?.activity === 'idle' &&
-        record.notices.length === 1 && record.restartUncertain === false) ||
-        `generation ${h.generation()}, turn ${show(record?.turn)}, activity ${String(record?.activity)}, restartUncertain ${String(record?.restartUncertain)}`;
+      return (h.generation() === 2 && show(record?.turn) === show({status: 'known', id: 'prompt-1'}) && record?.work.state === 'idle' &&
+        record.outcome.notices.length === 1 && record.work.confidence === 'confirmed') ||
+        `generation ${h.generation()}, turn ${show(record?.turn)}, work ${show(record?.work)}`;
     }),
     hooked('the next hook reaches the restarted runtime', claudeHook('UserPromptSubmit', {prompt_id: 'prompt-2'})),
     expect('the next prompt starts a new turn, with its work confirmed', h => {
       const record = hookedSession(h);
-      return (show(record?.turn) === show({status: 'known', id: 'prompt-2'}) && record?.activity === 'active' && record.restartUncertain === false) ||
-        `turn ${show(record?.turn)}, activity ${String(record?.activity)}, restartUncertain ${String(record?.restartUncertain)}`;
+      return (show(record?.turn) === show({status: 'known', id: 'prompt-2'}) && record?.work.state === 'active' && record.work.confidence === 'confirmed') ||
+        `turn ${show(record?.turn)}, work ${show(record?.work)}`;
     }),
     holds('nothing the allowlist drops reached the runtime', h =>
       ![h.logs(), h.published(), h.reader.heard()].some(value => JSON.stringify(value).includes(DROPPED)) || 'dropped content reached the runtime', 100),

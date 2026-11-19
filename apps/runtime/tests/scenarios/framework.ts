@@ -7,7 +7,7 @@
 // a run; only the harness differs.
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {CaptureContext} from '@jimmie-potts/app-verify';
-import type {InboxItem, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {InboxItem, Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {SdkError, errorType, type CommandDraft, type DeviceAction, type Participant} from '@jimmie-potts/sdk';
 import type {LogRecord, ModuleHealth} from '../../src/index.js';
 import {SESSION_ID, observation, type ObservationOptions} from '../fixtures/agents.js';
@@ -358,12 +358,12 @@ export const publish = async (h: Harness, event: Parameters<typeof observation>[
   await h.sdk('hook').publish(key, draft);
 };
 
-export const session = (h: Harness, id = SESSION_ID): SessionRecord | undefined =>
-  h.reader.states<SessionRecord>('session').find(state => state.data.id === id)?.data;
+export const session = (h: Harness, id = SESSION_ID): Session30Record | undefined =>
+  h.reader.states<Session30Record>('session').find(state => state.data.id === id)?.data;
 export const waiting = (h: Harness, approvals: readonly string[]): Outcome => {
   const record = session(h);
   if (record === undefined) return 'the reader holds no session';
-  const held = record.attention.flatMap(item => item.kind === 'approval' && item.id.status === 'known' ? [item.id.id] : []);
+  const held = record.attention.items.flatMap(item => item.kind === 'approval' && item.id.status === 'known' ? [item.id.id] : []);
   return show(held) === show(approvals) || `the session waits for ${show(held)}`;
 };
 /**

@@ -1,7 +1,7 @@
 // The Tidbyt module's scenarios (Hub #930, #999): agent status and now playing as two tiles in the Tidbyt's rotation, on
 // a simulated cloud. The catalog collects this file.
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {OperationRecord, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {OperationRecord, PlaybackState, Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import type {ArtState} from '@jimmie-potts/event-contracts/v2/art-state';
 import {readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {
@@ -31,7 +31,7 @@ const tile = (h: Harness, installation: string): {picture: string[]; pushes: num
   cloudState(h).installations[installation];
 /** The status tile the reader's copy of the sessions calls for: the picture of the frame the module draws from them. */
 const expectedStatus = (h: Harness): string[] =>
-  picture(statusFrame(statusView({synced: true, sessions: h.reader.states<SessionRecord>('session').map(state => readSession(state))
+  picture(statusFrame(statusView({synced: true, sessions: h.reader.states<Session30Record>('session').map(state => readSession(state))
     .filter(view => view !== undefined)})).rgb);
 /** Whether the status tile shows what the reader's sessions call for, after `pushes` pushes. */
 function statusShown(h: Harness, pushes: number): Outcome {
