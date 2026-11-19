@@ -15,6 +15,7 @@ import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
 import {createCoreModule} from '../src/core/core.js';
 import {producerSource, runHook} from '../src/hook/index.js';
 import {runReadHelper, type ReadHelperResult} from '../src/read-receipts/helper.js';
+import {coreSession} from '../src/read-receipts/session.js';
 import {CLAUDE_RECEIPT_FEED, CLAUDE_TERMINAL_VERSION, receiptSource} from '../src/read-receipts/qualification.js';
 import {asSession30, current, servedSessions} from './fixtures/session-owner.js';
 import {edgeConfig, it, run, waitFor} from './support.js';
@@ -137,12 +138,17 @@ it('a publication without a matching owner commit remains unconfirmed and is not
   assert.equal((await runReadHelper(world.producer, readInput(target))).status, 'unavailable', 'another generation cannot inherit a confirmed receipt');
 });
 
-it('the helper binds only a record readSession accepts; another version gives no receipt and its ordinary refusal (Hub #1865)', async context => {
-  // A finished Claude root from the shared cases, served as session/2.0 and as session/3.0 by a stand-in core.
+/** A finished Claude root from the shared cases, at now: the record the stand-in core serves. */
+function finishedClaude() {
   const found = loadSessionCases().cases.find(item => item.id === 'restart')?.checks[0]?.messages
     .find(message => message.data.identity.client === 'code' && message.data.parent.status !== 'known');
   assert.ok(found);
-  const state = current(found);
+  return current(found);
+}
+
+it('the helper binds only a record readSession accepts; another version gives no receipt and its ordinary refusal (Hub #1865)', async context => {
+  // A finished Claude root from the shared cases, served as session/2.0 and as session/3.0 by a stand-in core.
+  const state = finishedClaude();
   const {identity, turn} = state.data;
   assert.ok(turn.status === 'known');
   const feed = {provider: identity.provider, client: identity.client, hostId: identity.hostId, sourceId: identity.sourceId};
@@ -168,6 +174,32 @@ it('the helper binds only a record readSession accepts; another version gives no
     assert.equal(read.error.code, 'revision-conflict', 'a pane bound earlier publishes nothing');
     assert.deepEqual(world.received, [], 'no receipt reaches the core');
   }
+});
+
+it('the helper binds no target while the session\'s work still runs, though its turn and notice match (Hub #1865)', async context => {
+  const finished = finishedClaude();
+  const {identity, turn} = finished.data;
+  assert.ok(turn.status === 'known');
+  const running = {...finished, data: {...finished.data, activity: 'active' as const}};
+  // The version readSession reads now: the record, or its session/3.0 form once the core switches.
+  const state = [running, asSession30(running)].find(message => readSession(message) !== undefined);
+  assert.ok(state);
+  assert.equal(readSession(state)?.work.state, 'active');
+  const feed = {provider: identity.provider, client: identity.client, hostId: identity.hostId, sourceId: identity.sourceId};
+  const world = await servedSessions(context, receiptSource(feed), {...feed, feed: CLAUDE_RECEIPT_FEED}, [state]);
+  const bound = await runReadHelper(world.producer, {...BIND, sessionId: identity.sessionId, promptId: turn.id});
+  assert.equal(bound.status, 'unavailable');
+  assert.ok(bound.status === 'unavailable');
+  assert.equal(bound.error.code, 'invalid-state', 'an unfinished turn offers no action');
+  assert.deepEqual(world.received, []);
+});
+
+it('the helpers take a session record only from the core (Hub #1865)', () => {
+  const state = finishedClaude();
+  assert.ok(coreSession(state), 'the core\'s record is read');
+  const other = {...state, source: 'bunny/modules/synthetic-other'};
+  assert.ok(readSession(other), 'the record is valid from another source');
+  assert.equal(coreSession(other), undefined, 'another source\'s record is refused');
 });
 
 it('the executable bounds open stdin and rejects oversized input without stderr or a permission decision', async () => {

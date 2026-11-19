@@ -135,3 +135,29 @@ it('the Codex publisher binds only a record readSession accepts, and sends nothi
     assert.equal(gaps(), 0, 'nothing failed, so native observation keeps going');
   }
 });
+
+it('the Codex publisher binds no target while the session\'s work still runs, though its turn and notice match (Hub #1865)', async context => {
+  const found = loadSessionCases().cases.find(item => item.id === 'out-of-order')?.checks[0]?.messages
+    .find(message => message.data.identity.client === 'local' && message.data.parent.status !== 'known');
+  assert.ok(found);
+  const finished = current(found);
+  const {identity, turn, generation, notices} = finished.data;
+  assert.ok(turn.status === 'known');
+  const running = {...finished, data: {...finished.data, activity: 'active' as const}};
+  // The version readSession reads now: the record, or its session/3.0 form once the core switches.
+  const state = [running, asSession30(running)].find(message => readSession(message) !== undefined);
+  assert.ok(state);
+  assert.equal(readSession(state)?.work.state, 'active');
+  const feed = {provider: identity.provider, client: identity.client, hostId: identity.hostId, sourceId: identity.sourceId};
+  const world = await servedSessions(context, codexReceiptSource(feed), {...feed, feed: CODEX_RECEIPT_FEED}, [state]);
+  let gaps = 0;
+  const publisher = await openCodexReadPublisher(world.producer, () => {gaps += 1;});
+  assert.ok(publisher); context.after(() => publisher.close());
+  assert.equal(publisher.bind(identity.sessionId, turn.id), undefined, 'an unfinished turn binds nothing');
+  const noticeId = notices[0]?.id;
+  assert.ok(noticeId !== undefined);
+  publisher.accept({target: {identity, turnId: turn.id, generation, noticeId}, seenRevision: 'native-before', acceptedRevision: 'native-after', observedAtMs: Date.now()});
+  await flush();
+  assert.deepEqual(world.received, [], 'no receipt reaches the core');
+  assert.equal(gaps, 0);
+});
