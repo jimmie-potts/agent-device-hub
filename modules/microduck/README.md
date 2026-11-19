@@ -64,9 +64,13 @@ clock and makes each commit by the gesture itself, while only its first input is
 out, cost 150 ms. The return must still leave 800 to 900 ms after the first
 input, and the hold must be published as outbound. That clock's timers count
 from a loop time read once per turn, as Node's do, so the slow commit also makes
-the hold's timer end early. Actual pinned vendor acceptance is separate and must
-run in a disposable Linux ARM64 container with the runtime and vendor pair in
-the same time namespace. No physical target is selected or contacted.
+the hold's timer end early. The dashboard browser journey runs each world on a
+world clock that the runtime and the simulator share, so that a stalled host
+cannot age the sensor evidence past 500 ms either. On the real clock a stalled
+runner aged that evidence while the acknowledged neutral input confirmed its zero
+input, and that input was held again (#1946). Actual pinned vendor acceptance is
+separate and must run in a disposable Linux ARM64 container with the runtime and
+vendor pair in the same time namespace. No physical target is selected or contacted.
 
 For a complete diff confined to modifications of
 `apps/runtime/dashboard/tests/microduck.browser.ts` and ordinary Markdown, the

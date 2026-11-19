@@ -263,7 +263,10 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const presence=new SimulatedPresence();
   let roborockModule:RoborockModule|undefined;
   const refreshRoborock=async():Promise<void>=>{assert.equal(options.roborock,true);const refresh=roborockModule?.refreshForTest;assert.ok(refresh!==undefined);await refresh();};
-  const microduck=new SimulatedMicroDuck();
+  // On a world clock the simulator observes on it too, so the module's freshness and hold timers measure virtual time
+  // and a stall of the process in real time cannot age an observation (#1946).
+  const worldTime=options.clock;
+  const microduck=new SimulatedMicroDuck(worldTime===undefined?undefined:{now:()=>worldTime.clock.now(),scheduler:worldTime.scheduler});
   const reachy = new SimulatedReachy();let loseReachyReply=false;
   const reachyTransport:ReachyTransport=options.reachyTransport??{connect:(...a)=>reachy.connect(...a),cancel:(...a)=>reachy.cancel(...a),move:async(...a)=>{const id=await reachy.move(...a);if(loseReachyReply){loseReachyReply=false;throw new Error('synthetic missing UUID');}return id;}};
   const wemo=new SimulatedWemo();let loseWemoReply=false;
