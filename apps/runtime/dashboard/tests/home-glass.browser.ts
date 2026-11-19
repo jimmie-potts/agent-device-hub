@@ -39,11 +39,13 @@ const samples = new Map<string, Sample>();let nextSample: Sample = 'dark';
 /** Serves the art module's real content route with the samples' pixels in place of the synthetic provider's. */
 async function substitute(context: BrowserContext): Promise<void> {
   await context.route('**/modules/art/content/**', async route => {
-    const answer = await route.fetch();
-    if (!(answer.headers()['content-type'] ?? '').startsWith('image/')) {await route.fulfill({response: answer});return;}
-    const path = new URL(route.request().url()).pathname, original = await answer.body(), {width = 1, height = 1} = await sharp(original).metadata();
+    // A page closed while its request was in flight has nothing left to answer.
+    const answer = await route.fetch().catch(() => undefined);if (answer === undefined) return;
+    if (!(answer.headers()['content-type'] ?? '').startsWith('image/')) {await route.fulfill({response: answer}).catch(() => undefined);return;}
+    const path = new URL(route.request().url()).pathname, original = await answer.body().catch(() => undefined);if (original === undefined) return;
+    const {width = 1, height = 1} = await sharp(original).metadata();
     const kind = samples.get(path) ?? nextSample;samples.set(path, kind);
-    await route.fulfill({response: answer, body: await sampleBytes(kind, width, height, original.length)});
+    await route.fulfill({response: answer, body: await sampleBytes(kind, width, height, original.length)}).catch(() => undefined);
   });
 }
 /** Creates one artwork through the Gallery, as the art backdrop journey does, and returns its backdrop still. */
@@ -58,8 +60,13 @@ async function generate(creator: Page, kind: Sample): Promise<{artworkId: string
   await expect(creator.locator('[data-art-job]').first()).toContainText('succeeded');
   if (previous !== null) await expect(tiles.first()).not.toHaveAttribute('data-gallery-art', previous);
   const id = await tiles.first().getAttribute('data-gallery-art');assert.ok(id !== null);
-  const read = await fetch(`${world.url}/modules/art/content/artwork.${id}`, {headers: {authorization: `Bearer ${world.readerToken}`}});
-  assert.equal(read.status, 200);const artwork = artworkOf(await read.json());assert.ok(artwork !== undefined);
+  // The record can trail the job's success by a moment; read it until it is complete.
+  let body: unknown;
+  await expect.poll(async () => {
+    const read = await fetch(`${world.url}/modules/art/content/artwork.${id}`, {headers: {authorization: `Bearer ${world.readerToken}`}});
+    body = read.status === 200 ? await read.json() : read.status;return artworkOf(body) !== undefined;
+  }, {timeout: 15_000}).toBe(true);
+  const artwork = artworkOf(body);assert.ok(artwork !== undefined, JSON.stringify(body));
   const still = browserArt(artwork, false);assert.ok(still !== undefined);
   for (const composition of artwork.compositions) for (const rendition of composition.renditions) samples.set(`/modules/art/content/${rendition.ref}`, kind);
   return {artworkId: artwork.artworkId, compositionId: still.compositionId, renditionId: still.rendition.renditionId};
@@ -272,6 +279,11 @@ try {
       assert.ok(measured.runs > 20, `${scheme}/${sample}: text runs were measured`);
       contrasts[`${scheme}/${sample}`] = Math.round(measured.min * 100) / 100;
       assert.ok(measured.min >= 4.5, `${scheme}/${sample}: panel text keeps 4.5:1 (lowest ${measured.min.toFixed(2)}: ${measured.worst})`);
+      // Phone widths for the private visual review only.
+      if (receipts !== undefined) {
+        for (const width of [390, 320]) {await opened.page.setViewportSize({width, height: 844});await rest(opened.page);await shot(opened.page, `${String(width)}-${scheme}-${sample}`);}
+        await opened.page.setViewportSize({width: 1440, height: 900});
+      }
     }
     assert.deepEqual(opened.errors, []);await themed.close();
   }
