@@ -114,8 +114,13 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   doc.addEventListener('visibilitychange', () => {if (!doc.hidden) {force = true;skin();}}, {signal});
   doc.fonts.addEventListener('loadingdone', boxes, {signal});
   view.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', skin, {signal});
-  const sizes = new ResizeObserver(boxes);
-  const observePanels = (): void => {sizes.disconnect();sizes.observe(root);for (const element of root.querySelectorAll('[data-glass-panel]')) sizes.observe(element);};
+  // Each panel's size is observed; the set is renewed only when the marked elements change.
+  const sizes = new ResizeObserver(boxes);let observed: readonly Element[] = [];
+  const observePanels = (): void => {
+    const next = [root, ...root.querySelectorAll('[data-glass-panel]')];
+    if (next.length === observed.length && next.every((element, index) => element === observed[index])) return;
+    sizes.disconnect();for (const element of next) sizes.observe(element);observed = next;
+  };
   observePanels();
   // Cards added, removed, reordered or reshaped (Edit Home, paging, a new record), and marks that change.
   const page = new MutationObserver(records => {if (records.some(record => record.type === 'childList')) observePanels();boxes();});
