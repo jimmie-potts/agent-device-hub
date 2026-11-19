@@ -223,7 +223,7 @@ it('before the first session/3.0 publication the store serves each legacy sessio
   const db = new DatabaseSync(w.file);
   context.after(() => { if (db.isOpen) db.close(); });
   let seeded: readonly Session30Record[] = [];
-  const store = new CoreStore({database: db, clock: {now: w.clock.now}, sdk: {source: 'bunny/core', publishMessage: async (_key, message) => message},
+  const store = new CoreStore({database: db, clock: {now: w.clock.now}, sdk: {source: 'bunny/core', publishMessage: (_key, message) => Promise.resolve(message)},
     opened: records => { seeded = records; }});
   context.after(() => store.close());
   await store.open(AbortSignal.abort());
