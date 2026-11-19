@@ -438,7 +438,8 @@ it('a restart keeps the window and expires old sessions at startup', async conte
   s.advance(DAY - 1);
   await s.world.crashAndRestart();
   assert.deepEqual(s.ids(), ['kept']);
-  assert.equal(s.record('kept').restartUncertain, true);
+  // #1865 step 8: a quiet root has no running work for the restart to leave unconfirmed.
+  assert.equal(s.record('kept').restartUncertain, false);
   s.advance(1);
   await s.world.crashAndRestart();
   assert.deepEqual(s.ids(), []);
@@ -906,7 +907,8 @@ for (const [kind, repeated] of [['turn-started', 'turn-started'], ['turn-ended',
     assert.deepEqual([session.activity, session.turn, session.notices, session.lastEvidenceAtMs, session.observedAtMs],
       [before.activity, before.turn, before.notices, before.lastEvidenceAtMs, before.observedAtMs]);
     assert.equal(session.freshness, 'uncertain');
-    assert.equal(session.restartUncertain, true);
+    // #1865 step 8: only running work is left unconfirmed by the restart, and a repeat does not confirm it.
+    assert.equal(session.restartUncertain, before.activity === 'active');
     const revision = s.world.store.revision;
     s.advance(1);
     assert.equal(await s.observe('session', {kind: repeated}, {turn: 'a', parent: parent('parent-b')}), kind === 'turn-ended' && repeated === 'turn-started' ? 'stale' : 'duplicate');
@@ -1001,7 +1003,8 @@ it('read evidence changes only the read dimension', async context => {
   await s.take(read('unread'));
   session = s.record(ID);
   assert.equal(session.read, 'unread');
-  assert.equal(session.restartUncertain, true, 'read evidence is no lifecycle evidence');
+  // #1865 step 8: the finished session had no running work for the restart to leave unconfirmed.
+  assert.equal(session.restartUncertain, false);
 });
 
 it('read evidence leaves turn, ordering and metadata evidence unchanged', async context => {
@@ -1138,8 +1141,9 @@ it('restart restores committed labels and notices and requires fresh evidence', 
   const after = s.record(ID);
   assert.equal(after.label?.value, 'Build monitor');
   assert.deepEqual(after.notices, before.notices);
-  assert.equal(after.freshness, 'uncertain');
-  assert.equal(after.restartUncertain, true);
+  // #1865 step 8: a finished session keeps its status across the restart; only running work turns unconfirmed.
+  assert.equal(after.freshness, 'current');
+  assert.equal(after.restartUncertain, false);
 });
 
 it('activity, correlated attention, notices and consumer acknowledgment stay independent', async context => {

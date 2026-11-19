@@ -3,6 +3,7 @@
 // are unchanged: semantic duplicates and collisions, ordering watermarks and epochs, turn selection and retirement,
 // approvals without a request ID, notices and the consumers a new turn acknowledges for. Semantic keys hash the
 // observation's canonical content; no 1.x key form is kept, since the step that moved here dropped the old session data.
+// One rule changed on purpose (#1865 step 8, design decision 6, #397): a root start claims no work.
 import {createHash} from 'node:crypto';
 import type {Attention, KnownId, LifecycleObservation, Unavailable} from '@jimmie-potts/event-contracts/v2/families';
 import {SESSION_LIMITS, entityOf, sameId, sameTurn, type Consumer, type StoredSession} from './model.js';
@@ -156,7 +157,12 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
     session.seen = session.seen.slice(-SESSION_LIMITS.seen);
     return {session, outcome: 'ambiguous', fresh: false};
   }
+  // A root start (#397): a SessionStart is not work, so it selects no turn and leaves a known root's work as it was.
+  // Only a start under a known parent, a child start, keeps the meaning of evidenced child work.
+  const rootStart = observation.event.kind === 'session-started' && observation.parent.status !== 'known';
   const session: StoredSession = previous === undefined ? created(observation, now, generation) : structuredClone(previous);
+  // A new root starts with no work turn, whatever turn its start carries, such as a /resume command's prompt ID.
+  if (rootStart && previous === undefined) session.turn = {status: 'unknown'};
   const remember = (): void => {
     session.seen.push({key, content});
     session.seen = session.seen.slice(-SESSION_LIMITS.seen);
@@ -191,7 +197,7 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
   const selectedStart = bestEffort && event.kind === 'turn-started' && turn.status === 'known';
   const matchingStop = bestEffort && event.kind === 'turn-ended' && sameTurn(session.turn, turn) &&
     !session.unavailable.some(item => item.dimension === 'activity' && item.reason === 'ambiguous');
-  const canSelect = lifecycle && !retired && (eventDimension === 'activity' || order.status === 'known');
+  const canSelect = lifecycle && !retired && !rootStart && (eventDimension === 'activity' || order.status === 'known');
   let ambiguous = false;
   if (selectedStart) selectTurn(session, turn, consumers, true);
   else if (canSelect && previous !== undefined && turn.status === 'known' && session.turn.status === 'known' && !sameTurn(turn, session.turn)) {
@@ -212,7 +218,7 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
     if (session.unavailable.some(item => item.dimension === 'turn' && item.reason === 'ambiguous')) ambiguous = true;
     else session.turn = structuredClone(turn);
   }
-  if (lifecycle && turn.status === 'unknown') unavailable(session, 'turn', 'missing');
+  if (lifecycle && (turn.status === 'unknown' || rootStart && previous === undefined)) unavailable(session, 'turn', 'missing');
   if (order.status === 'unknown') {
     if (lifecycle) {
       if (!retired) session.ordering = {status: 'unknown'};
@@ -232,6 +238,10 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
   if (lifecycle && mergeMetadata(session, observation).ambiguous) ambiguous = true;
   switch (event.kind) {
     case 'session-started':
+      // A new root is idle; a known root keeps its work. A child start is evidenced child work.
+      if (!rootStart) session.activity = 'active';
+      else if (previous === undefined) session.activity = 'idle';
+      break;
     case 'turn-started':
     case 'activity-observed':
       session.activity = 'active';
@@ -281,7 +291,7 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
       break;
   }
   forgetRetiredApprovals(session);
-  if (eventDimension === 'activity') {
+  if (eventDimension === 'activity' && !rootStart) {
     const conflict = previous !== undefined && previous.activity !== 'unknown' && previous.activity !== session.activity && !orderedActivity && !selectedStart && !matchingStop;
     const missingStart = event.kind === 'turn-started' && turn.status === 'unknown';
     const unresolvedActivity = session.unavailable.some(item => (item.dimension === 'turn' || item.dimension === 'activity') && item.reason === 'ambiguous');

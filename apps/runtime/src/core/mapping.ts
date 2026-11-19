@@ -22,9 +22,12 @@ export type Projected = Omit<SessionRecord, 'revision'>;
 export const freshnessAt = (lastEvidenceAtMs: number, restartUncertain: boolean, atMs: number): SessionRecord['freshness'] =>
   restartUncertain || atMs - lastEvidenceAtMs >= STALE_AFTER_MS ? 'uncertain' : 'current';
 
-/** One stored session as a 2.0 record at `atMs`, its children not yet counted. */
-function projectOne(session: StoredSession, restarted: ReadonlySet<string>, atMs: number): Projected {
-  const restartUncertain = restarted.has(session.id);
+/**
+ * One stored session as a 2.0 record at `atMs`, its children not yet counted. From #1865 step 8, `restartUncertain` is
+ * true only while the session's running work is unconfirmed since a core start (design decision 4).
+ */
+function projectOne(session: StoredSession, atMs: number): Projected {
+  const restartUncertain = session.restartUnconfirmed === true;
   const {label, title, project, projectId, readReceipt} = session;
   const hostSessionId = session.parent.status === 'known' ? undefined : session.hostSessionId;
   return {
@@ -49,8 +52,8 @@ function projectOne(session: StoredSession, restarted: ReadonlySet<string>, atMs
 }
 
 /** Every stored session as a 2.0 record at `atMs`, by entity ID and in the sessions' order, with the children each parent has. */
-export function project(sessions: Iterable<StoredSession>, restarted: ReadonlySet<string>, atMs: number): Map<string, Projected> {
-  const records = [...sessions].map(session => projectOne(session, restarted, atMs));
+export function project(sessions: Iterable<StoredSession>, atMs: number): Map<string, Projected> {
+  const records = [...sessions].map(session => projectOne(session, atMs));
   countChildren(records);
   return new Map(records.map(record => [record.id, record]));
 }

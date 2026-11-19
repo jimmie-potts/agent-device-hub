@@ -210,7 +210,8 @@ it('four qualified HTTPS host/provider hooks stay independent, deduplicate and r
   await waitFor(async () => (await read()).some(record => record.identity.hostId === 'pc-sim' && record.identity.provider === 'codex' && record.notices.length === 1));
   records = await read();
   assert.equal(records.find(record => record.identity.hostId === 'pc-sim' && record.identity.provider === 'claude')?.attention.length, 1);
-  assert.ok(records.filter(record => record.identity.hostId === 'mac-sim').every(record => record.activity === 'active' && record.attention.length === 0 && record.notices.length === 0));
+  // The Mac's sessions only started, which claims no work (#397).
+  assert.ok(records.filter(record => record.identity.hostId === 'mac-sim').every(record => record.activity === 'idle' && record.attention.length === 0 && record.notices.length === 0));
   const staleBefore = logs.filter(record => record.event_name === 'message.received' && record.attributes['bunny.outcome'] === 'stale').length;
   assert.deepEqual(await publishObservation(0, 'Stop', 7), {status: 'published'});
   await waitFor(() => logs.filter(record => record.event_name === 'message.received' && record.attributes['bunny.outcome'] === 'stale').length > staleBefore);

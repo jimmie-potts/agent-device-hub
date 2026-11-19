@@ -101,8 +101,8 @@ test('container core refuses a second owner and retains authenticated state acro
   await rm(marker); // Only the fixture simulates verified operator completion; startup never clears it.
   const second = start(), again = await ready(second);
   const after = (await sessions(again)).find(record => record.id === SESSION_ID);
-  // Stored evidence survives; startup deliberately marks it uncertain until fresh lifecycle evidence.
-  assert.deepEqual(after, {...before, revision: before.revision + 1, freshness: 'uncertain', restartUncertain: true});
+  // Stored evidence survives. The session's work is not running, so the start leaves its record as it was (#1865 step 8).
+  assert.deepEqual(after, before);
   await stop(second);
   const released = await holdRuntimeLease(state); released.release();
   for (const kind of ['linked-modules', 'nonempty-owner', 'owner-sidecar', 'missing-owner', 'pending-link']) {

@@ -2,6 +2,12 @@
 // fed the 1.2 envelope of each 2.0 observation, with the core store's projection and occurrence derivation of main
 // 6adad7e7 copied here. It is the reference the core's own session logic is compared with, and lives only in the tests:
 // the core no longer turns observations into envelopes or runs agent-state's owner.
+//
+// #1865 step 8 changed the core's restart rule on purpose, and this fixture carries that rule as its reference beside
+// agent-state: a restart leaves only running work unconfirmed, and only fresh qualifying evidence on the current turn,
+// produced at or after the start, confirms it (design decision 4). agent-state's own restart flag, which every session
+// had until fresh evidence, is mirrored apart, so the test can tell an approval recovery whose outcome the new rule
+// changed. Root starts (design decision 6) are not modelled; the differential test sends none.
 import {createAgentState, MemoryStorage, type Commit, type DurableState, type Envelope, type Outcome, type Session, type Storage} from '@jimmie-potts/agent-state';
 import {
   STALE_AFTER_MS, sessionEntityId, type AgentOccurrence, type Attention, type AttentionCleared, type Identity, type KnownId, type LifecycleEvent,
@@ -122,6 +128,10 @@ function noticeOf(before: Session['notices'], after: Session['notices'], turn: K
   return after.find(notice => sameTurn(notice.turn, turn))?.id;
 }
 
+/** Work evidence that confirms running work after a restart (design decision 4), in 1.x kinds. */
+const QUALIFYING = new Set(['turn.started', 'activity.observed', 'attention.resolved']);
+const STALE_MS = 300_000;
+
 /** One message the retained path published: its type and data. */
 export type Sent = {type: string; subject: string; data: unknown};
 type Cause = {kind: string; entity: string; observation?: LifecycleObservation};
@@ -139,7 +149,11 @@ export class RetainedCore {
   readonly #archived: (identity: Identity, ancestors: readonly Identity[]) => boolean;
   #durable: DurableState | undefined;
   #records = new Map<string, SessionRecord>();
+  /** Step 8's restart marking: the sessions whose running work a restart left unconfirmed. */
   #restarted = new Set<string>();
+  /** agent-state's own restart flag: every session loaded at the start, until fresh lifecycle evidence. */
+  #ownerRestarted = new Set<string>();
+  #startedAtMs = 0;
   #hostSessions = new Map<string, string>();
   #revision = 0;
   #cause: Cause | undefined;
@@ -159,7 +173,12 @@ export class RetainedCore {
         load: async abort => {
           const loaded = await lease.load(abort) as DurableState | null;
           this.#durable = loaded ?? undefined;
-          if (!this.#started) this.#restarted = new Set((loaded?.sessions ?? []).map(entityOf));
+          if (!this.#started) {
+            const sessions = loaded?.sessions ?? [];
+            this.#restarted = new Set(sessions.filter(session => session.activity === 'active').map(entityOf));
+            this.#ownerRestarted = new Set(sessions.map(entityOf));
+            this.#startedAtMs = this.#clock();
+          }
           this.#started = true;
           return loaded;
         },
@@ -223,8 +242,24 @@ export class RetainedCore {
     return this.#during({kind: 'notice.acknowledged', entity: sessionEntityId(identity)}, () => this.#owned().acknowledgeAll(identity, noticeId));
   }
 
+  /**
+   * Whether step 8 changed this recovery's outcome the one way the reference cannot follow: the work is still left
+   * unconfirmed by the restart, while agent-state took later, non-qualifying evidence as ending its restart flag.
+   */
+  recoveryDiffers(identity: Identity): boolean {
+    const id = sessionEntityId(identity);
+    const session = this.#durable?.sessions.find(item => entityOf(item) === id);
+    return session !== undefined && this.#restarted.has(id) && !this.#ownerRestarted.has(id) && this.#clock() - session.lastEvidenceAtMs < STALE_MS;
+  }
+
   recoverApproval(identity: Identity, turnId: string): Promise<Outcome> {
     const owner = this.#owned();
+    const id = sessionEntityId(identity);
+    const session = this.#durable?.sessions.find(item => entityOf(item) === id);
+    // Step 8: recovery needs work the restart left unconfirmed, or five minutes without evidence.
+    if (session !== undefined && !this.#restarted.has(id) && this.#clock() - session.lastEvidenceAtMs < STALE_MS) {
+      return Promise.resolve({ok: false, code: 'invalid-operation'});
+    }
     return this.#during({kind: 'attention.resolved', entity: sessionEntityId(identity)}, () => owner.recoverApproval(identity, turnId, owner.snapshot().revision));
   }
 
@@ -276,13 +311,22 @@ export class RetainedCore {
       if (session !== undefined) {
         const fresh = intake.kind !== 'read.observed' &&
           (old === undefined || session.lastEvidenceAtMs !== old.lastEvidenceAtMs || session.observedAtMs !== old.observedAtMs);
-        if (fresh) restarted.delete(intake.entity);
+        if (fresh) this.#ownerRestarted.delete(intake.entity);
+        const observation = intake.observation;
+        const before = Math.min(observation.observedAtMs, observation.occurredAtMs ?? observation.observedAtMs) < this.#startedAtMs;
+        if (session.activity !== 'active' || fresh && !before && QUALIFYING.has(intake.kind) && sameTurn(observation.turn, session.turn)) {
+          restarted.delete(intake.entity);
+        } else if (old?.activity !== 'active') {
+          if (before) restarted.add(intake.entity);
+          else restarted.delete(intake.entity);
+        }
         const host = intake.observation.hostSessionId;
         if (session.parent.status === 'known' || host === undefined) hostSessions.delete(intake.entity);
         else hostSessions.set(intake.entity, host);
       }
     }
     for (const id of [...restarted]) if (!after.has(id)) restarted.delete(id);
+    for (const id of [...this.#ownerRestarted]) if (!after.has(id)) this.#ownerRestarted.delete(id);
     for (const id of [...hostSessions.keys()]) if (!after.has(id)) hostSessions.delete(id);
     const projected = project([...after.values()], restarted, hostSessions, atMs);
     const updated = [...projected.values()].filter(record => changed(this.#records.get(record.id), record));

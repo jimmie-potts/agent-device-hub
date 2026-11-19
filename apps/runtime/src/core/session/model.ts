@@ -60,6 +60,12 @@ export type StoredSession = {
   hostSessionId?: string;
   /** The producer instant of the last display metadata the session took, so older metadata cannot replace newer. */
   metadataObservedAtMs?: number;
+  /**
+   * Set while the session's work is active and a core start left it unconfirmed (design decision 4): by the start
+   * transaction, or by evidence from before the start that made work active. Only qualifying evidence on the current turn
+   * observed after the start confirms it again. Published as `restartUncertain` until `session/3.0`.
+   */
+  restartUnconfirmed?: true;
   /** Turns a newer turn retired: their late activity is stale. */
   retiredTurns: string[];
   /** Semantic duplicate keys: the observation's key and its content's, and collision markers. */

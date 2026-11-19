@@ -189,6 +189,18 @@ and exits 1, and the service manager restarts it whole.
   later of the commit and the observation's own `observedAtMs`, as long as
   the session logic still admits it, so a duplicate after a restart, or from a hook
   whose clock runs ahead, is still dropped. A duplicate is logged at DEBUG.
+- **Root starts and capacity.** A root start (a `session-started` observation
+  without a known parent, such as a hook's SessionStart) claims no work (#397):
+  a new root starts idle with no work turn, whatever turn the start carries,
+  and a known root keeps its work and turn, so launch, `/clear`, `/resume` and
+  mid-turn compaction never read as working. A child start, under a known
+  parent, stays evidenced child work. The rule is the core's, so it applies to
+  observations from older hook releases too. The core holds at most 128
+  sessions, roots and children from any source together. At the limit a new
+  child is refused, and a new root displaces one finished child subtree with no
+  attention, or is refused; roots are never displaced. A refusal changes
+  nothing, is logged as `message.received` `rejected` with `capacity`, and
+  returns nothing to the hook.
 - **Publication.** Each change derives its `session` state, removal and
   occurrence messages. One SQLite transaction commits the change with those
   messages (through the SDK's outbox), the published records, a history row for
@@ -212,7 +224,7 @@ and exits 1, and the service manager restarts it whole.
     1 s to 60 s, and a due expiry or freshness change it cannot commit is tried
     again on the same backoff;
   - at the start, a full disk leaves the core running in that state, and a
-    failed refresh of the restart's uncertainty makes syncs answer `unavailable`
+    failed start transaction (see Freshness) makes syncs answer `unavailable`
     until a later attempt, on the same backoff, succeeds. This holds on a real
     full disk at a first start, where the store cannot create its tables, and
     at a restart after a clean stop, since opening a module's database needs no
@@ -243,8 +255,18 @@ and exits 1, and the service manager restarts it whole.
   that carries it. A timer publishes a record again, at a new revision, when it
   turns uncertain five minutes after its last evidence, and a sync brings
   freshness up to date first. The same timer, on the core's scheduler, expires a
-  session after a day without lifecycle evidence. After a restart every stored session is
-  `restartUncertain` until fresh lifecycle evidence. One limit: a sync provider
+  session after a day without lifecycle evidence. At each start, one
+  transaction marks the work of every session whose work runs unconfirmed
+  (`restartUncertain`) and publishes those records, with no occurrence, before
+  any other session change (#1865). Questions, outcomes and read evidence stay
+  as stored, and the marking is stored with each session. Only fresh evidence
+  of `turn-started`, `activity-observed` or `attention-resolved` on the
+  session's current turn, produced at or after the start, confirms the work
+  again; the producer's instant is the earlier of the observation's
+  `observedAtMs` and `occurredAtMs`, and the start instant is held in memory
+  only. A delayed event from before the start therefore never confirms work,
+  except from a host whose clock runs ahead of the hub's, a limit the design
+  accepts. One limit: a sync provider
   cannot name the time the SDK stamps on its answer, a microtask after the core
   computed the records, so a record that turns uncertain within that
   millisecond can disagree with its envelope by one millisecond. The core's
@@ -254,8 +276,8 @@ and exits 1, and the service manager restarts it whole.
   subject is the session's `id`, and its `expectedRevision` is the session
   record's `revision` that the operator read. The core retires the one approval
   marker without an attention ID that the session holds on `turnId`, only while
-  the session's evidence is uncertain: five minutes without evidence, or since a
-  restart. It commits before the reply and publishes `attention-cleared` with
+  the session's evidence is uncertain: five minutes without evidence, or running
+  work a restart left unconfirmed. It commits before the reply and publishes `attention-cleared` with
   cause `recovered` and the session at its new revision, in the command's
   trace; no outcome follows. It refuses an unknown session with `not-found`, a
   record that changed since it was read with `revision-conflict`, a session

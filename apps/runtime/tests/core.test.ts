@@ -277,6 +277,29 @@ it('a full disk refuses an observation before anything reports it accepted, chan
   assert.deepEqual(storage(core.logs).map(record => [record.event_name, record.severity_text]), [['operation.failed', 'WARN'], ['operation.completed', 'INFO']], 'and its recovery');
 });
 
+it('at the session limit a root of either source with nothing to displace is refused with capacity, silently to its hook (#1865)', async context => {
+  const clock = manualClock();
+  const core = await coreRun(context, {clock: {now: clock.now}, scheduler: clock.scheduler});
+  const codex = (sessionId: string): typeof IDENTITY => ({provider: 'codex', client: 'local', hostId: 'host-sim', sourceId: 'codex-hooks', sessionId});
+  for (let index = 0; index < 128; index++) {
+    clock.advance(1);
+    await publish(core.hook, sessionStarted, clock.now(), {identity: index % 2 === 0 ? {...IDENTITY, sessionId: `filler-${index}`} : codex(`filler-${index}`)});
+  }
+  await waitFor(() => core.sessions().length === 128, 5000, 'the full core');
+  const seen = core.seen.length;
+  for (const identity of [{...IDENTITY, sessionId: 'refused'}, codex('refused')]) {
+    clock.advance(1);
+    // The hook's publication is accepted at the edge, as every hook's is: nothing comes back to it.
+    const sent = await publish(core.hook, sessionStarted, clock.now(), {identity});
+    assert.equal(sent.source, 'bunny/modules/hook');
+  }
+  await waitFor(() => received(core.logs, 'rejected').length === 2, 5000, 'both refusals');
+  assert.deepEqual(received(core.logs, 'rejected').map(record => [record.attributes['bunny.code'], record.severity_text]), [['capacity', 'WARN'], ['capacity', 'WARN']]);
+  assert.deepEqual(core.seen.slice(seen).filter(message => message.source === 'bunny/core'), [], 'nothing published');
+  assert.equal(core.sessions().length, 128);
+  assert.deepEqual(storage(core.logs), [], 'a full core is no storage condition');
+});
+
 it('the core starts first: a module that syncs and republishes in its own start finds it listening', async context => {
   const dir = await stateDir(context);
   // The first runtime has no core: the bridge's outcome is published to nobody and stays in its outbox, unacknowledged.
@@ -396,11 +419,12 @@ it('a malformed message is refused, and its record is written with only its well
   // `run` also checks that the writer dropped no record.
 });
 
-it('a restart with stored sessions on a full disk keeps the core running: syncs wait for room, intake is refused, and both recover', async context => {
+it('a restart with a stored working session on a full disk keeps the core running: syncs wait for room, intake is refused, and both recover', async context => {
   const dir = await stateDir(context);
   const first = fixture('hook');
   const {runtime: before, logs: earlier} = await run(context, {modules: [createCoreModule(), first], stateDir: dir});
-  await publish(contextOf(first).sdk, sessionStarted, Date.now());
+  // Running work, which the restart's start transaction marks unconfirmed (#1865 step 8).
+  await publish(contextOf(first).sdk, turnStarted, Date.now());
   await waitFor(() => received(earlier, 'accepted').length === 1, 5000, 'the stored session');
   await before.stop();
 
@@ -410,7 +434,7 @@ it('a restart with stored sessions on a full disk keeps the core running: syncs 
   assert.equal(entry((await health(runtime.url)).body, 'core').state, 'running', 'the core runs');
   const sync = (): ReturnType<Sdk['sync']> => contextOf(reader).sdk.sync(['session'], () => {}, {timeoutMs: 5000});
   const refused = await sync();
-  assert.equal(refused.status === 'rejected' && refused.error.error.code, 'unavailable', 'no sync until the restart\'s uncertainty is published');
+  assert.equal(refused.status === 'rejected' && refused.error.error.code, 'unavailable', 'no sync until the start transaction has marked the work');
   await publish(contextOf(hook).sdk, sessionStarted, Date.now(), {identity: OTHER});
   await waitFor(() => received(logs, 'rejected').length === 1, 5000, 'the refused observation');
   assert.equal(received(logs, 'rejected')[0]?.attributes['bunny.code'], 'capacity');
@@ -487,6 +511,29 @@ it('a restart whose start-up maintenance falls on a full disk starts the core an
   clock.advance(1000);
   await publish(contextOf(hook).sdk, sessionStarted, clock.now(), {identity: OTHER});
   await waitFor(() => received(logs, 'accepted').length === 1, 5000, 'the observation once there is room');
+});
+
+it('the sessions tool commits a pending start transaction before it reads, so it never serves records from before the start (#1865)', async context => {
+  let full = false;
+  const disk: CorePart = {derive: () => { if (full) throw Object.assign(new Error('database or disk is full'), {errcode: 13}); }};
+  const dir = await stateDir(context);
+  const clock = manualClock();
+  const first = fixture('hook');
+  const {runtime: before, logs: earlier} = await run(context, {modules: [createCoreModule(), first], stateDir: dir, clock: {now: clock.now}, scheduler: clock.scheduler});
+  await publish(contextOf(first).sdk, turnStarted, START);
+  await waitFor(() => received(earlier, 'accepted').length === 1, 5000, 'the running session');
+  await before.stop();
+  clock.advance(1000);
+  full = true;
+  const module = createCoreModule({parts: [disk]});
+  await run(context, {modules: [module], stateDir: dir, clock: {now: clock.now}, scheduler: clock.scheduler});
+  const tool = module.manifest.tools?.find(entry => entry.name === 'sessions');
+  assert.ok(tool);
+  assert.equal((await tool.read({}) as {error?: {code: string}}).error?.code, 'unavailable', 'nothing is served while the start cannot commit');
+  // Room again, before the core's own retry: the read commits the start first and serves the marked record.
+  full = false;
+  const read = await tool.read({}) as {sessions: SessionRecord[]};
+  assert.deepEqual(read.sessions.map(record => record.restartUncertain), [true]);
 });
 
 it('a second core never gets the store while the first opens its owner again after a failed commit', async context => {

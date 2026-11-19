@@ -100,6 +100,11 @@ export type StoreOptions = {
   /** Without a logger, hears that a publish was refused after its commit: committed, and awaiting publication. */
   onError?: OutboxOptions['onError'];
   statePublication?: OutboxOptions['statePublication'];
+  /**
+   * Hears the published session records once each open has loaded them, before the start transaction, so parts that keep
+   * a copy of the sessions from committed changes start from every stored session, not only those a start republishes.
+   */
+  opened?: (records: readonly SessionRecord[]) => void;
   /** Parts' derivers, run in each core change's transaction. */
   derivers?: readonly Deriver[];
   /** Parts' tables, created once the lease is held. */
@@ -182,8 +187,10 @@ export class CoreStore {
   #revision = 0;
   /** How many transactions the store has committed: a transaction that did not commit leaves it unchanged. */
   #commits = 0;
-  /** Sessions loaded at the core's start that have had no fresh lifecycle evidence since: restart uncertainty. */
-  #restarted = new Set<string>();
+  /** The instant of the store's open, the core's start (design decision 4): held in memory only, never stored. */
+  #startedAtMs = 0;
+  /** Whether the start transaction, which marks running work unconfirmed, has yet to commit since the open. */
+  #starting = false;
   /** The latest instant a session change took: a change's instant never goes back before it. */
   #floorMs = 0;
   /** The instant every message of the transaction under way is stamped with. */
@@ -249,9 +256,9 @@ export class CoreStore {
   /**
    * Opens the store, once: borrows the runtime's ownership of the lease, or takes the lease, waiting for another holder
    * until `signal` aborts; then creates every core part's tables, runs the one-time session reset when it applies, and
-   * loads the revision, commit count, sessions, guards and records. Every stored session starts restart-uncertain. A
-   * store that cannot open, as on a full disk at a first start or at the reset, rejects with its failure named and can
-   * be opened again. Until an open succeeds whole, the store exposes nothing: its intake, transactions, history and
+   * loads the revision, commit count, sessions, guards and records. The start transaction, which marks running work
+   * unconfirmed, commits before any other session change (see `refresh`). A store that cannot open, as on a full disk at
+   * a first start or at the reset, rejects with its failure named and can be opened again. Until an open succeeds whole, the store exposes nothing: its intake, transactions, history and
    * republication refuse with `unavailable`, so nothing it holds goes out and nothing commits before the reset.
    */
   async open(signal: AbortSignal = AbortSignal.timeout(LEASE_WAIT_MS)): Promise<void> {
@@ -263,7 +270,10 @@ export class CoreStore {
       const tables = this.#tables ??= this.#openTables();
       this.#reset();
       this.#loadCaches(tables.statements);
+      this.#startedAtMs = this.#options.clock.now();
+      this.#starting = true;
       this.#opened = tables;
+      this.#options.opened?.(this.records());
     } catch (error) {
       // A store that cannot create its tables or run its reset on a full disk, as at a first start, is full, not broken (Hub #972).
       if (fullDisk(error)) this.#failure = 'full';
@@ -280,20 +290,41 @@ export class CoreStore {
   }
 
   /**
-   * Commits what has fallen due by now, each in its own core transaction: the sessions a day without lifecycle evidence
-   * expire with the guards a day old, then each record whose freshness or children changed is published at a new
-   * revision. Owners compute freshness at each message's envelope time and raise the revision first when it changed
-   * (MAPPING.md). True when it published. Rejects, changing nothing more, when the store refuses a commit.
+   * Commits what has fallen due by now, each in its own core transaction: after an open, the start transaction that
+   * marks running work unconfirmed; the sessions a day without lifecycle evidence expire with the guards a day old; then
+   * each record whose freshness or children changed is published at a new revision. Owners compute freshness at each
+   * message's envelope time and raise the revision first when it changed (MAPPING.md). True when it published. Rejects,
+   * changing nothing more, when the store refuses a commit.
    */
   async refresh(): Promise<boolean> {
     if (this.#opened === undefined) return false;
-    const expired = await this.#expire();
-    if (expired === 'failed') throw new Error('the core store refused the expiry');
+    const before = this.#revision;
+    if (!await this.#start()) throw new Error('the core store refused the start transaction');
+    if (await this.#expire() === 'failed') throw new Error('the core store refused the expiry');
     const atMs = this.#options.clock.now();
     const plan = this.#plan(undefined, atMs, undefined);
-    if (plan.revision === undefined) return expired === 'published';
-    await this.#commit(plan, atMs, () => {});
-    return true;
+    if (plan.revision !== undefined) await this.#commit(plan, atMs, () => {});
+    return this.#revision > before;
+  }
+
+  /**
+   * Commits the start transaction if it is still pending, so a caller reads the records as they stand. False while it
+   * cannot commit, as on a full disk; `takeFailure` then names why.
+   */
+  settle(): Promise<boolean> {
+    return this.#opened === undefined ? Promise.resolve(false) : this.#start();
+  }
+
+  /**
+   * The start transaction (design decision 4), once after each open and before any other session change: every stored
+   * session whose work runs becomes unconfirmed, and the changed records are published, with no occurrence and no cause.
+   * False while it cannot commit, as on a full disk, so the change that asked for it is refused with nothing changed.
+   */
+  async #start(): Promise<boolean> {
+    if (!this.#starting) return true;
+    const outcome = await this.#change({kind: 'start'}, undefined);
+    if (outcome.ok) this.#starting = false;
+    return outcome.ok;
   }
 
   /** Expires what is due, in its own transaction, as the core does before every observation. */
@@ -341,8 +372,13 @@ export class CoreStore {
     return this.#change({kind: 'recover-approval', id, turnId}, {message: command});
   }
 
-  /** The core calls this on its serialized intake. No await separates target checking from the SQLite commit. */
+  /**
+   * The core calls this on its serialized intake. A pending start transaction commits first, so eligibility is judged
+   * against the record as it then stands. Only that settling awaits before the target is read; the target is checked
+   * again inside the receipt's own transaction, where a change between the two rolls the receipt back.
+   */
   async readReceipt(message: Message<ReadReceiptObservation>, qualification: ReadReceiptQualification): Promise<boolean> {
+    if (!await this.#start()) throw new Error('the core store refused the start transaction');
     const before = this.#records.get(message.subject), observation = message.data, atMs = this.#options.clock.now();
     if (before === undefined || decideReadReceipt(message, before, qualification).status !== 'eligible' ||
       observation.observedAtMs <= atMs - TAKEN_LIFECYCLE_MS || before.lastEvidenceAtMs <= atMs - TAKEN_LIFECYCLE_MS) return false;
@@ -375,11 +411,13 @@ export class CoreStore {
    * commits nothing. A commit that fails changes nothing, here or in memory, and is reported as `storage-failed`.
    */
   async #change(input: SessionInput, cause: Cause | undefined, completing?: Completion, extra: (tx: CoreTransaction) => void = () => {}): Promise<SessionOutcome> {
+    if (input.kind !== 'start' && !await this.#start()) return {ok: false, code: 'storage-failed'};
     const began = this.#timer();
     const atMs = this.#options.clock.now();
     const nowMs = Math.max(atMs, this.#floorMs);
-    const result = transition({sessions: this.#sessions, guards: this.#guards, revision: this.#revision, restarted: this.#restarted}, input, {
-      nowMs, wallMs: atMs, consumers: this.#consumers, ...(this.#options.archived === undefined ? {} : {archived: this.#options.archived}),
+    const result = transition({sessions: this.#sessions, guards: this.#guards, revision: this.#revision}, input, {
+      nowMs, wallMs: atMs, startedAtMs: this.#startedAtMs, consumers: this.#consumers,
+      ...(this.#options.archived === undefined ? {} : {archived: this.#options.archived}),
     });
     if (result.outcome === 'refused') return {ok: false, code: result.refusal ?? 'capacity'};
     if (result.changed.length === 0 && result.removed.length === 0 && result.guards === undefined) {
@@ -407,16 +445,13 @@ export class CoreStore {
    */
   #plan(result: TransitionResult | undefined, atMs: number, cause: Cause | undefined, completing?: Completion): Plan {
     const sessions = new Map(this.#sessions);
-    const restarted = new Set(this.#restarted);
     const reasons = new Map<string, 'expired' | 'retired'>();
     for (const {id, reason} of result?.removed ?? []) {
       sessions.delete(id);
-      restarted.delete(id);
       reasons.set(id, reason);
     }
     for (const session of result?.changed ?? []) sessions.set(session.id, session);
-    for (const id of result?.fresh ?? []) restarted.delete(id);
-    const projected = project(sessions.values(), restarted, atMs);
+    const projected = project(sessions.values(), atMs);
     const updated = [...projected.values()].filter(record => changed(this.#records.get(record.id), record));
     const removed = [...this.#records.keys()].filter(id => !projected.has(id));
     const revision = this.#revision + 1;
@@ -453,7 +488,6 @@ export class CoreStore {
         install: (): void => {
           this.#sessions = sessions;
           if (guards !== undefined) this.#guards = [...guards];
-          this.#restarted = restarted;
         },
       }),
     };
@@ -584,8 +618,6 @@ export class CoreStore {
     this.#records = records;
     this.#sessions = sessions;
     this.#guards = guards;
-    // The open is the core's start: every stored session is uncertain until fresh evidence.
-    this.#restarted = new Set(sessions.keys());
     this.#floorMs = Math.max(0, ...[...sessions.values()].map(session => session.lastEvidenceAtMs), ...guards.map(guard => guard.atMs));
   }
 

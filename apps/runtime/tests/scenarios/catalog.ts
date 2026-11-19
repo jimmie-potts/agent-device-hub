@@ -241,8 +241,8 @@ const acknowledgedBy = (h: Harness, consumers: readonly string[]): Outcome => {
 /**
  * The agent-session core with zero device modules (Hub #831): hook observations become sessions, an approval prompt is
  * raised and cleared, a finished turn stays on its session record and never becomes an inbox item, a consumer
- * acknowledges a notice for itself only, a runtime end removes its session, and a restart leaves the sessions uncertain
- * until fresh evidence.
+ * acknowledges a notice for itself only, a runtime end removes its session, and a restart keeps the finished session's
+ * status, since only running work turns unconfirmed (#1865 step 8).
  */
 const agentSessions: Scenario = {
   id: 'agent-sessions',
@@ -286,10 +286,10 @@ const agentSessions: Scenario = {
     expect('the reader no longer holds it, and heard it end', h =>
       (session(h, OTHER_ID) === undefined && occurrences(h, 'org.bunny.session.ended').length === 1) || `second session ${show(session(h, OTHER_ID)?.activity)}`),
     act('the runtime restarts cleanly', h => h.restart()),
-    expect('the reader synced again: the session is uncertain after the restart, its notice and acknowledgment kept', h => {
+    expect('the reader synced again: the finished session keeps its status, notice and acknowledgment, with no work to mark unconfirmed', h => {
       const record = session(h);
-      return (record?.restartUncertain === true && record.freshness === 'uncertain' && acknowledgedBy(h, ['panel']) === true) ||
-        `restartUncertain ${String(record?.restartUncertain)}, freshness ${String(record?.freshness)}`;
+      return (record?.restartUncertain === false && record.activity === 'idle' && acknowledgedBy(h, ['panel']) === true) ||
+        `restartUncertain ${String(record?.restartUncertain)}, activity ${String(record?.activity)}`;
     }),
     act('the hook observes a new turn', h => publish(h, turnStarted, {turn: 'turn-2'})),
     expect('fresh evidence makes it current again', h => (session(h)?.restartUncertain === false && session(h)?.freshness === 'current') || show(session(h)?.freshness)),
@@ -800,9 +800,11 @@ const agentHooks: Scenario = {
   seed: {modules: ['core'], follows: [CORE_FAMILIES]},
   steps: [
     hooked('the hook script reports a new Claude Code session', claudeHook('SessionStart')),
-    expect('the reader holds the session, with its project', h => {
+    // #397: a start without a prompt claims no work.
+    expect('the reader holds the session quiet, with its project', h => {
       const record = hookedSession(h);
-      return (record?.activity === 'active' && record.project === 'demo') || `session ${show(record === undefined ? undefined : {activity: record.activity, project: record.project})}`;
+      return (record?.activity === 'idle' && record.turn.status === 'unknown' && record.project === 'demo') ||
+        `session ${show(record === undefined ? undefined : {activity: record.activity, project: record.project})}`;
     }),
     hooked('a prompt starts a turn', claudeHook('UserPromptSubmit', {prompt_id: 'prompt-1', prompt: DROPPED})),
     expect('the session holds the turn', h => (hookedSession(h)?.turn.status === 'known' && show(hookedSession(h)?.turn) === show({status: 'known', id: 'prompt-1'})) || show(hookedSession(h)?.turn)),
@@ -832,15 +834,18 @@ const agentHooks: Scenario = {
       const before = hookRestartSyncs.get(h), current = h.reader.syncs('session');
       return (before !== undefined && current > before) || `session syncs ${current}, before restart ${String(before)}`;
     }, 10_000),
-    expect('the runtime is back, and the observation sent while it was stopped was lost: hooks fail open', h => {
+    expect('the runtime is back, the observation sent while it was stopped was lost, and the session keeps its finished status', h => {
       const record = hookedSession(h);
-      return (h.generation() === 2 && show(record?.turn) === show({status: 'known', id: 'prompt-1'}) && record?.restartUncertain === true) ||
-        `generation ${h.generation()}, turn ${show(record?.turn)}, restartUncertain ${String(record?.restartUncertain)}`;
+      // Hooks fail open. The finished session had no running work, so the restart left nothing unconfirmed (#1865 step 8).
+      return (h.generation() === 2 && show(record?.turn) === show({status: 'known', id: 'prompt-1'}) && record?.activity === 'idle' &&
+        record.notices.length === 1 && record.restartUncertain === false) ||
+        `generation ${h.generation()}, turn ${show(record?.turn)}, activity ${String(record?.activity)}, restartUncertain ${String(record?.restartUncertain)}`;
     }),
     hooked('the next hook reaches the restarted runtime', claudeHook('UserPromptSubmit', {prompt_id: 'prompt-2'})),
-    expect('fresh evidence makes the session current again on the new turn', h => {
+    expect('the next prompt starts a new turn, with its work confirmed', h => {
       const record = hookedSession(h);
-      return (show(record?.turn) === show({status: 'known', id: 'prompt-2'}) && record?.restartUncertain === false) || `turn ${show(record?.turn)}, restartUncertain ${String(record?.restartUncertain)}`;
+      return (show(record?.turn) === show({status: 'known', id: 'prompt-2'}) && record?.activity === 'active' && record.restartUncertain === false) ||
+        `turn ${show(record?.turn)}, activity ${String(record?.activity)}, restartUncertain ${String(record?.restartUncertain)}`;
     }),
     holds('nothing the allowlist drops reached the runtime', h =>
       ![h.logs(), h.published(), h.reader.heard()].some(value => JSON.stringify(value).includes(DROPPED)) || 'dropped content reached the runtime', 100),

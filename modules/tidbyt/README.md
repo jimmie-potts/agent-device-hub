@@ -701,10 +701,12 @@ next comes round.
 - **A lost copy of the sessions:** the status rows dim with `?`, or the tile
   reads `FEED ?`; the tile stays in the rotation.
 - **A restart of the runtime:** the now-playing tile stays as it was, neither
-  removed nor pushed again while the same song plays. The core marks every
-  stored session `uncertain` at a restart, so the status tile's rows are pushed
-  again dimmed with `?` as soon as its 15 s gate allows, and each row turns
-  bright again once its session reports again.
+  removed nor pushed again while the same song plays. At a restart the core
+  marks only sessions whose work is running unconfirmed (#1865), so their
+  rows are pushed again dimmed with `?` as soon as the tile's 15 s gate
+  allows, and each such row turns bright again once its session reports
+  qualifying work evidence on its current turn, such as a new prompt or tool
+  progress. A finished session's row stays as it was.
 
 Source tests, a running module and cloud receipts do not establish what the
 display shows; the owner's visual check does.

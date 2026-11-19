@@ -161,15 +161,15 @@ const MAX_QUERY = 120;
  * `hub_sessions` read them, optionally only one provider's and those whose label, title, project or session ID holds
  * `q`, ignoring case. Reading changes nothing, acknowledges nothing and proves no readership.
  */
-function sessionsTool(records: () => {revision: number; sessions: readonly SessionRecord[]} | undefined): ModuleTool {
+function sessionsTool(records: () => Promise<{revision: number; sessions: readonly SessionRecord[]} | undefined> | undefined): ModuleTool {
   return {
     name: 'sessions',
     description: 'Read the agent sessions the core holds, optionally only one provider\'s and those whose label, title, project or session ID contains q, ignoring case. '
       + 'Each record carries its revision, which approval recovery takes as expectedRevision. Reading changes nothing, and freshness, attention and unread state stay as observed.',
     input: {type: 'object', additionalProperties: false, properties: {q: {type: 'string', maxLength: MAX_QUERY}, provider: {enum: [...PROVIDERS]}}},
     output: {type: 'object', additionalProperties: false, required: ['revision', 'sessions'], properties: {revision: {type: 'integer', minimum: 0}, sessions: {type: 'array'}}},
-    read: ({q, provider}) => {
-      const held = records();
+    read: async ({q, provider}) => {
+      const held = await records();
       if (held === undefined) return errorBody('unavailable', {detail: 'the core is not serving its sessions now'});
       const query = typeof q === 'string' ? q.toLowerCase() : '';
       const sessions = held.sessions.filter(record => (provider === undefined || record.identity.provider === provider) &&
@@ -447,6 +447,7 @@ class Core {
         discarded: trace => recordLog(context.log, 'operation.failed',
           {'bunny.operation': 'automation', 'bunny.outcome': OutcomeWord.rejected, 'bunny.code': 'forbidden'}, trace),
       },
+      opened: records => { this.#automation.seed(records); this.#companions.seed(records); },
       committed: change => {
         this.#automation.committed(change);
         this.#companions.committed(change);
@@ -510,7 +511,7 @@ class Core {
           this.#opened();
           return;
         }
-        // A restart leaves every stored session uncertain until fresh evidence, and the records say so at once. If the
+        // The start transaction marks running work unconfirmed (#1865 step 8), and the records say so at once. If the
         // store refuses, syncs answer `unavailable` until a later refresh succeeds.
         await this.#refresh();
         // What a crash kept from going out goes out now, with its stored `id` and `time`.
@@ -568,7 +569,13 @@ class Core {
    * the core stays up and tries again after a capped backoff.
    */
   async #ensureStore(): Promise<Refusal | undefined> {
-    if (this.#store.isOpen) return undefined;
+    // An open store first commits its pending start transaction (#1865 step 8), so callers read records as they stand.
+    if (this.#store.isOpen) {
+      if (await this.#store.settle()) return undefined;
+      const code = this.#store.takeFailure() === 'full' ? 'capacity' : 'unavailable';
+      this.#degraded(code);
+      return {code, detail: code === 'capacity' ? 'the core store is full' : 'the core is not taking changes now'};
+    }
     const refusal = (): Refusal => ({code: this.#storeDown, detail: this.#storeDown === 'capacity' ? 'the core store is full' : 'the core is not taking changes now'});
     if (!this.#reopen.ready(this.#clock.now())) return refusal();
     try {
@@ -920,10 +927,16 @@ class Core {
     } finally { this.#tracker.endOperator(command); }
   }
 
-  /** The sessions the core holds at its revision, once its store is open and while it runs; undefined otherwise. */
-  sessions(): {revision: number; sessions: readonly SessionRecord[]} | undefined {
+  /**
+   * The sessions the core holds at its revision, once its store is open and while it runs; undefined otherwise. A pending
+   * start transaction commits first (#1865 step 8), so the records read are the ones the core serves.
+   */
+  async sessions(): Promise<{revision: number; sessions: readonly SessionRecord[]} | undefined> {
     if (!this.#store.isOpen || this.#stopped) return undefined;
-    return {revision: this.#store.revision, sessions: this.#store.records()};
+    return this.#run(async () => {
+      if (this.#stopped || await this.#ensureStore() !== undefined) return undefined;
+      return {revision: this.#store.revision, sessions: this.#store.records()};
+    });
   }
 
   /**
@@ -946,6 +959,8 @@ class Core {
       };
       const checked = this.#validator.validate(command);
       if (!checked.ok) return refuse(checked.error.code, 'the recovery is not a valid approval-recover command');
+      const down = await this.#ensureStore();
+      if (down !== undefined) return refuse(down.code, down.detail);
       const record: SessionRecord | undefined = this.#store.records().find(item => item.id === command.subject);
       if (record === undefined) return refuse('not-found', 'no such session');
       if (record.revision !== expectedRevision) return refuse('revision-conflict', 'the session changed since it was read; read it again');

@@ -167,7 +167,9 @@ it('the store keeps each session in a row of its own, with no state table in the
   assert.equal(before.length, 2);
   assert.deepEqual(world.rows('SELECT id FROM core_session_guards'), [{id: OTHER_ID}], 'the retired session leaves its guard');
   await world.crashAndRestart();
-  assert.deepEqual(world.store.sessions(), before, 'every committed session, with its generation, notices, acknowledgments and bookkeeping');
+  // The start transaction stores the restart's marking on the running child (#1865 step 8), and nothing else changes.
+  const marked = before.map(session => session.id === CHILD_ID ? {...session, restartUnconfirmed: true as const} : session);
+  assert.deepEqual(world.store.sessions(), marked, 'every committed session, with its generation, notices, acknowledgments and bookkeeping');
   assert.equal(world.store.records().find(record => record.id === SESSION_ID)?.title?.value, 'Port the core');
   assert.deepEqual(world.store.records().find(record => record.id === SESSION_ID)?.notices[0]?.acknowledgedBy, ['nanoleaf']);
   assert.deepEqual((await world.observe(turnStarted, {identity: OTHER, turn: 'turn-old', sequence: 3})), {ok: true, revision: world.store.revision, outcome: 'stale'},
@@ -280,9 +282,9 @@ it('freshness turns uncertain at five minutes at a new revision, computed at eac
   assert.equal(world.store.nextDue(), START + 86_400_000, 'nothing else turns on its own before the session expires');
 });
 
-it('after a restart every stored session is uncertain until fresh evidence, at revisions above every earlier one', async context => {
+it('after a restart running work is unconfirmed until qualifying evidence, at revisions above every earlier one', async context => {
   const world = await World.open(context);
-  await world.observe(sessionStarted, {hostSessionId: 'local_0f8e2c4a'});
+  await world.observe(turnStarted, {hostSessionId: 'local_0f8e2c4a'});
   const before = world.store.revision;
   const from = world.published.length;
   await world.crashAndRestart();
@@ -293,7 +295,7 @@ it('after a restart every stored session is uncertain until fresh evidence, at r
   assert.equal(restarted?.hostSessionId, 'local_0f8e2c4a', 'the host session ID persists in the private store');
   world.clock.advance(1);
   await world.observe(turnStarted, {turn: 'turn-2'});
-  assert.equal(world.store.records()[0]?.restartUncertain, false, 'fresh evidence ends it');
+  assert.equal(world.store.records()[0]?.restartUncertain, false, 'a new turn after the start ends it');
   assert.equal(world.store.records()[0]?.hostSessionId, undefined, 'a 1.2 observation without one clears it');
 });
 
@@ -739,7 +741,9 @@ it('a same-title metadata confirmation durably advances its watermark without re
   await world.observe({kind: 'read-observed', state: 'unread'}, {identity, atMs: 100, hostSessionId: 'synthetic-host-session'});
   await world.crashAndRestart();
   const before = structuredClone(world.store.records()[0]);assert.ok(before);
-  assert.equal(before.hostSessionId, 'synthetic-host-session');assert.equal(before.restartUncertain, true);
+  assert.equal(before.hostSessionId, 'synthetic-host-session');
+  // #1865 step 8: a finished session has no running work for the restart to leave unconfirmed.
+  assert.equal(before.restartUncertain, false);
   const confirm = async (value: string, atMs: number) => {
     const result = await world.title(identity, {value, source: 'provider'}, atMs);
     assert.ok(result.ok);

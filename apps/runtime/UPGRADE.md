@@ -216,6 +216,14 @@ release finds that table and runs the reset again, emptying the new session
 tables too. This follows from the code and focused tests, not from a qualified
 recovery. Prefer fixing forward.
 
+The #1865 restart release (its group 8) stores a restart marking,
+`restartUnconfirmed`, in the JSON of a session whose work was running at a
+start. It changes no table. Rolling back from it to the group 7 release keeps
+the session rows and the marking, which group 7 neither reads nor clears.
+After a forward upgrade again, the first start's transaction clears the
+marking on every session whose work is no longer running, and marks the
+sessions whose work runs, so a stale marking does not outlast that start.
+
 ## Retired settings replication metadata
 
 The runtime leaves existing history rows and the former settings metadata

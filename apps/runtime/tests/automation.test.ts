@@ -127,6 +127,7 @@ import {deviceRecord,deviceState} from './fixtures/device.js';
 import {IDENTITY,SESSION_ID,observation,sessionStarted,turnStarted,turnEnded,approvalPrompt,approvalResolved} from './fixtures/agents.js';
 import {manualClock,stateDir,flush} from './support.js';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {sessionEntityId} from '@jimmie-potts/event-contracts/v2/families';
 import {join} from 'node:path';
 
 void test('owner-qualified device copies sync initially and recover a dropped available state without replay',async context=>{
@@ -380,6 +381,85 @@ void test('the one-time session reset at the cutover publishes no occurrence, ev
   }
   await core.automation.settled();await flush();
   assert.equal(moments.length,1);
+});
+
+void test('the restart\'s work marking publishes no occurrence, evaluates no rule and dispatches no moment (#1865 step 8)',async context=>{
+  const clock=manualClock(),directory=await stateDir(context),bus=new InProcessBus({now:clock.now});
+  const nano=bus.connect('bunny/modules/nanoleaf'),hook=bus.connect('bunny/parts/hook'),watch=bus.connect('bunny/test/watch');
+  const moments:Message[]=[];const occurrences:Message[]=[];
+  await nano.respond('bunny.cmd.moment-play.wall',command=>{moments.push(command);return {status:'accepted'};});
+  for(const family of ['attention-raised','attention-cleared','turn-ended','session-ended']) await watch.subscribe(`bunny.event.${family}.*`,message=>{occurrences.push(message);});
+  const device=deviceRecord('wall',1,'nanoleaf','available');
+  device.desired.mode={status:'known',value:'work'};
+  device.capabilities.moments={supported:true,moods:['celebrate','setback','reminder'],maxDurationMs:10000,coversStatus:true};
+  await nano.serveSync(['device'],()=>({revision:device.revision,states:[deviceState(device)]}));
+  const first=createCoreModule();
+  let harness=new CoreHarness(first,{bus,stateDir:directory,clock:{now:clock.now}});
+  context.after(async()=>{await harness.stop();await hook.close();await nano.close();await watch.close();});
+  await harness.start();first.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);
+  await nano.publish('bunny.state.device.wall',{kind:'state',...deviceState(device)});await flush();
+  for(const kind of ['turn-ended','attention-raised','attention-cleared','session-ended'] as const)
+    await first.automation.create({...rule,name:kind,trigger:{source:'core',kind},action:{...rule.action,priorityClass:'event',targets:['wall']}},true);
+  // A running session with a question, a finished session and a running one.
+  const other={...IDENTITY,sessionId:'session-sim-2'},third={...IDENTITY,sessionId:'session-sim-3'};
+  const steps:[typeof turnStarted,Parameters<typeof observation>[2]][]=[[turnStarted,{}],[{kind:'question-continuing',attention:{status:'known',id:'q1'}},{}],
+    [turnStarted,{identity:other}],[turnEnded,{identity:other}],[turnStarted,{identity:third}]];
+  for(const [event,options] of steps) {clock.advance(10);const {key,draft}=observation(event,clock.now(),options);await hook.publish(key,draft);await flush();}
+  await first.automation.settled();await flush();
+  const before={moments:moments.length,occurrences:occurrences.length,logged:first.automation.log(50).length};
+  assert.ok(before.occurrences>0);
+  await harness.stop();
+  clock.advance(10_000);
+  const states:Message[]=[];
+  await watch.subscribe('bunny.state.session.*',message=>{states.push(message);});
+  const core=createCoreModule();
+  harness=new CoreHarness(core,{bus,stateDir:directory,clock:{now:clock.now}});
+  await harness.start();core.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);await flush();
+  await core.automation.settled();await flush();
+  assert.deepEqual(states.map(message=>[message.subject,(message.data as {restartUncertain:boolean}).restartUncertain]),
+    [[SESSION_ID,true],[sessionEntityId(third),true]],'only the running sessions are published again, unconfirmed');
+  assert.equal(occurrences.length,before.occurrences,'the marking published no occurrence');
+  assert.equal(moments.length,before.moments,'no moment was dispatched');
+  assert.equal(core.automation.log(50).length,before.logged,'no rule was evaluated');
+});
+
+void test('after a restart a finished session that still holds an approval keeps the Work alert, so a live turn end plays no moment (#1865 step 8)',async context=>{
+  const clock=manualClock(),directory=await stateDir(context),bus=new InProcessBus({now:clock.now});
+  const nano=bus.connect('bunny/modules/nanoleaf'),hook=bus.connect('bunny/parts/hook');
+  const moments:Message[]=[];
+  await nano.respond('bunny.cmd.moment-play.wall',command=>{moments.push(command);return {status:'accepted'};});
+  const device=deviceRecord('wall',1,'nanoleaf','available');
+  device.desired.mode={status:'known',value:'work'};
+  device.capabilities.moments={supported:true,moods:['celebrate','setback','reminder'],maxDurationMs:10000,coversStatus:true};
+  await nano.serveSync(['device'],()=>({revision:device.revision,states:[deviceState(device)]}));
+  const first=createCoreModule();
+  let harness=new CoreHarness(first,{bus,stateDir:directory,clock:{now:clock.now}});
+  context.after(async()=>{await harness.stop();await hook.close();await nano.close();});
+  await harness.start();first.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);
+  await nano.publish('bunny.state.device.wall',{kind:'state',...deviceState(device)});await flush();
+  await first.automation.replaceInterruptSet({kinds:['turn-ended']});
+  await first.automation.replaceSettings({...DEFAULT_SETTINGS,budgets:{...DEFAULT_SETTINGS.budgets,deviceSpacingMs:0}});
+  await first.automation.create({...rule,action:{...rule.action,priorityClass:'event',targets:['wall']}},true);
+  // A turn that ends with its approval still open: the session is finished, not running, and still needs the owner.
+  for(const event of [turnStarted,approvalPrompt('approval-1865'),turnEnded]) {
+    clock.advance(10);const {key,draft}=observation(event,clock.now());await hook.publish(key,draft);await flush();
+  }
+  await first.automation.settled();await flush();
+  const before=moments.length;
+  await harness.stop();
+  clock.advance(10_000);
+  const core=createCoreModule();
+  harness=new CoreHarness(core,{bus,stateDir:directory,clock:{now:clock.now}});
+  await harness.start();core.setModeParticipants([{id:'wall',kind:'nanoleaf'}]);
+  await nano.publish('bunny.state.device.wall',{kind:'state',...deviceState(device)});await flush();
+  // Another session's live turn end matches the rule; the open approval must still hold the Work alert.
+  const other={...IDENTITY,sessionId:'session-sim-2'};
+  for(const event of [turnStarted,turnEnded]) {
+    clock.advance(10);const {key,draft}=observation(event,clock.now(),{identity:other,turn:'turn-9'});await hook.publish(key,draft);await flush();
+  }
+  await core.automation.settled();await flush();
+  assert.equal(moments.length,before,'no moment plays while the approval is open');
+  assert.equal(core.automation.log(1)[0]?.reason,'alert');
 });
 
 void test('uncertain dispatch keeps its operation link and is never retried',async()=>{

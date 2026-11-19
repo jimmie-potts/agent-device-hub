@@ -6,6 +6,13 @@
 // well, since a notice on an unknown turn is named by the observation's semantic key, which no longer has the 1.x form.
 // The inputs are the shared session case set and a seeded random corpus of observations, commands, clock moves and
 // restarts over a small synthetic domain. Everything runs on a manual clock.
+//
+// Step 8 (#1865 group 8) changed three rules on purpose. Root starts claim no work (design decision 6): the corpus sends
+// only child starts, and the case set's step-8 cases run on the core alone (core-session-cases.test.ts). A restart leaves
+// only running work unconfirmed until fresh qualifying evidence from after the start (design decision 4): the retained
+// path carries that rule as its reference, the corpus stamps evidence after each start, and a recovery whose outcome
+// only the new rule decides, because agent-state took non-qualifying evidence as ending its restart flag, is skipped on
+// both paths and counted. The session limit is unchanged.
 import assert from 'node:assert/strict';
 import type {TestContext} from 'node:test';
 import {MessageValidator, type Message} from '@jimmie-potts/event-contracts/v2';
@@ -100,12 +107,17 @@ class Pair {
   #messages = 0;
   /** How many approval recoveries the core accepted, so the corpus shows it compares owner-started clearings. */
   recoveries = 0;
+  /** How many recoveries were skipped because only step 8's restart rule decides them. */
+  skipped = 0;
+  /** How many records the core published with work a restart left unconfirmed, so the corpus shows it compares them. */
+  unconfirmed = 0;
 
   constructor() {
     this.retained = new RetainedCore(this.clock.now, identity => this.archived && identity.client === 'desktop');
   }
 
-  async start(context: TestContext): Promise<void> {
+  /** Starts both paths; `settleMs` then passes, so evidence the corpus stamps up to that much early is after the start. */
+  async start(context: TestContext, settleMs = 0): Promise<void> {
     await this.retained.start();
     // The port's store needs no sync to disk for this comparison.
     this.world = await World.open(context, {clock: this.clock, wrap: db => { db.exec('PRAGMA synchronous = OFF'); return db; }});
@@ -113,6 +125,7 @@ class Pair {
     context.after(() => this.retained.stop());
     await this.world.store.drain();
     this.#compare('the start');
+    await this.advance(settleMs);
   }
 
   #message(observation: LifecycleObservation): Message<LifecycleObservation> {
@@ -157,6 +170,10 @@ class Pair {
         port = await this.world.acknowledgeAll(step.identity, this.#notice(this.world.store.records(), step.identity, step.notice));
         break;
       case 'recover':
+        if (this.retained.recoveryDiffers(step.identity)) {
+          this.skipped += 1;
+          break;
+        }
         retained = await this.retained.recoverApproval(step.identity, step.turnId);
         port = await this.world.recoverApproval(step.identity, step.turnId);
         if (port.ok) this.recoveries += 1;
@@ -188,7 +205,9 @@ class Pair {
 
   #compare(where: string): void {
     const retained = this.retained.sent.splice(0).map(item => this.#retainedNames.sent(item));
-    const port = this.world.since(0).map(message => this.#portNames.sent({type: message.type, subject: message.subject, data: message.data}));
+    const sent = this.world.since(0);
+    this.unconfirmed += sent.filter(message => (message.data as {restartUncertain?: boolean}).restartUncertain === true).length;
+    const port = sent.map(message => this.#portNames.sent({type: message.type, subject: message.subject, data: message.data}));
     this.world.published.splice(0);
     assert.deepEqual(port, retained, `${where}: the messages published`);
   }
@@ -245,7 +264,12 @@ function sequence(seed: number, length: number, admissible: (observation: Lifecy
       clock += ms;
       continue;
     }
-    if (roll < 0.08) { steps.push({kind: 'restart'}); continue; }
+    if (roll < 0.08) {
+      // Evidence after a restart is stamped after the start: earlier evidence is step 8's own rule.
+      steps.push({kind: 'restart'}, {kind: 'advance', ms: SETTLE_MS});
+      clock += SETTLE_MS;
+      continue;
+    }
     if (roll < 0.09) { steps.push({kind: 'archive', archived: r.chance(0.5)}); continue; }
     if (roll < 0.12) {
       // An approval without a request ID on a turn, left uncertain by five minutes of silence or by a restart, then recovered.
@@ -262,7 +286,10 @@ function sequence(seed: number, length: number, admissible: (observation: Lifecy
       if (r.chance(0.5)) {
         steps.push({kind: 'advance', ms: 300_000});
         clock += 300_000;
-      } else steps.push({kind: 'restart'});
+      } else {
+        steps.push({kind: 'restart'}, {kind: 'advance', ms: SETTLE_MS});
+        clock += SETTLE_MS;
+      }
       steps.push({kind: 'recover', identity: session.identity, turnId: turn});
       continue;
     }
@@ -300,8 +327,11 @@ function sequence(seed: number, length: number, admissible: (observation: Lifecy
       ordering = {status: 'known', authority: identity.sourceId, epoch: r.chance(0.85) ? 'e1' : 'e2', sequence: sequenceNumber};
     }
     const root = session?.parents.every(parent => parent.status !== 'known') ?? true;
+    const parent = r.pick(session?.parents ?? [{status: 'unknown'}]);
+    // Only child starts: a root start claims no work since step 8, a rule the retained path does not have.
+    if (kind === 'session-started' && parent.status !== 'known') continue;
     const observation: LifecycleObservation = {
-      identity, turn: r.chance(0.15) ? {status: 'unknown'} : {status: 'known', id: r.pick(TURNS)}, parent: r.pick(session?.parents ?? [{status: 'unknown'}]),
+      identity, turn: r.chance(0.15) ? {status: 'unknown'} : {status: 'known', id: r.pick(TURNS)}, parent,
       event, observedAtMs: r.chance(0.03) ? clock - 90_000_000 : clock - r.int(0, 3000), ordering,
       ...(r.chance(0.2) ? {nativeEventId: r.pick(['n1', 'n2', 'n3'])} : {}),
       ...(r.chance(0.1) ? {occurredAtMs: clock - r.int(0, 5000)} : {}),
@@ -320,22 +350,27 @@ function sequence(seed: number, length: number, admissible: (observation: Lifecy
 
 /** How many random sequences run, and how long each is. */
 const SEQUENCES = 250, LENGTH = 60;
+/** How long after each start the corpus stamps its evidence: past its earliest stamps, 3 s and 5 s back. */
+const SETTLE_MS = 6000;
 
 it('the seeded random corpus publishes the same records and occurrences through both paths', async context => {
-  let recoveries = 0;
+  let recoveries = 0, skipped = 0, unconfirmed = 0;
   for (let seed = 1; seed <= SEQUENCES; seed++) {
     await context.test(`sequence ${seed}`, async t => {
       const pair = new Pair();
-      await pair.start(t);
+      await pair.start(t, SETTLE_MS);
       const steps = sequence(seed, LENGTH, observation => pair.admissible(observation), pair.clock.now);
       for (const [index, step] of steps.entries()) await pair.step(step, `seed ${seed} step ${index}`);
       await pair.advance(86_400_001);
       pair.same(`seed ${seed} after a day`);
       recoveries += pair.recoveries;
+      skipped += pair.skipped;
+      unconfirmed += pair.unconfirmed;
       pair.world.close();
     });
   }
-  context.diagnostic(`approval recoveries accepted on both paths: ${recoveries}`);
+  context.diagnostic(`approval recoveries accepted on both paths: ${recoveries}; skipped as step 8's own: ${skipped}; records with work a restart left unconfirmed: ${unconfirmed}`);
+  assert.ok(unconfirmed > 0, 'the corpus compares the restart\'s marking');
   assert.ok(recoveries > 0, 'the corpus compares owner-started recovered clearings');
 }, 600_000);
 
@@ -357,7 +392,8 @@ it('the root sessions of two sources at the session limit displace finished chil
   await step(at(DESKTOP_CHILD, {kind: 'attention-approval', attention: {status: 'known', id: 'a1'}}, 'k1', {status: 'known', identity: DESKTOP}));
   for (let filler = 0; pair.world.store.sessions().length < 128; filler++) {
     const identity = filler % 2 === 0 ? claude(`filler-${filler}`) : {...CLI, sessionId: `filler-${filler}`};
-    await step(at(identity, {kind: 'session-started'}, `f${filler}`));
+    // Running roots: a root start claims no work since step 8, a rule the retained path does not have.
+    await step(at(identity, {kind: 'turn-started'}, `f${filler}`));
   }
   await step(at(GRANDCHILD, {kind: 'turn-ended'}, 'g1', {status: 'known', identity: ROOT}));
   await pair.advance(1000);
@@ -372,8 +408,11 @@ it('the root sessions of two sources at the session limit displace finished chil
 it('every case of the shared session case set publishes the same records and occurrences through both paths', async context => {
   const cases = loadSessionCases();
   for (const item of cases.cases) {
-    // The reset is this step's own; the retained path has no reset to compare it with.
-    if (item.steps.some(step => step.kind === 'reset')) continue;
+    // The reset is step 7's own, and step 8's cases and every case with a root start follow step 8's rules: the retained
+    // path has neither to compare with. The core's own run of the case set checks them (core-session-cases.test.ts).
+    const rootStart = item.steps.some(step => (step.kind === 'observe' || step.kind === 'deliver') && step.message.data.event.kind === 'session-started' &&
+      step.message.data.parent.status !== 'known');
+    if (item.steps.some(step => step.kind === 'reset') || item.since === 'step 8' || rootStart) continue;
     await context.test(item.id, async t => {
       const pair = new Pair();
       await pair.start(t);
