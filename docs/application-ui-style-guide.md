@@ -207,13 +207,15 @@ semantics, keyboard order, text cues, or which control is primary.
    the application skin file that #182 introduces for the dashboard) to a new
    name and change values only. Every role in 4.1 needs a dark and a light
    value; the fixed set in 4.2 is not copied.
-2. Scope decorative rules under the new `data-skin` value. Decoration is CSS
-   only, sits on borders, artwork or a background layer behind all content,
-   is never drawn over text or meaning-carrying edges,
-   plays once and ends within 5 seconds of load (the shared habitat exception is in section 9), and prints as
-   nothing.
+2. Scope decorative rules under the new `data-skin` value. Decoration sits on
+   borders, artwork or a background layer behind all content, is never drawn
+   over text or meaning-carrying edges, and prints as nothing. The dashboard
+   may draw it with CSS, a canvas or WebGL, and may animate it (owner decision
+   2026-11-18, Hub #1927). The documentation skin keeps its own limit: its
+   motion plays once and ends within 5 seconds of load.
 3. Run the owning checks: the token check rejects color literals outside the
-   token files, and the browser checks verify one-shot motion and layout.
+   token files, the documentation skin check verifies that skin's one-shot
+   motion, and the browser checks verify layout.
 4. The current runtime supports bounded art decoration and its browser-local
    follow/lock/default preference under #683, while following browser light/dark
    appearance. Additional skin selection remains deferred. Retained legacy v1
@@ -426,13 +428,16 @@ a white outline in both.
   reading order; a modal returns focus to its opener.
 - Selection (cyan), pending (magenta) and device or task status (physical
   hues) stay visually and textually distinct in every skin.
-- Decorative motion plays once and ends within 5 seconds of load; skins may
-  not encode a state in motion alone.
-- The owner-selected shared habitat (#1145) may animate continuously inside its artwork. It provides Pause motion, stops ambient updates while hidden, and tears down on navigation. Session meaning remains available as text. This exception does not enable continuous skin decoration elsewhere.
+- Skins may not encode a state in motion alone.
+- The dashboard's decoration is not limited to CSS or to one short play
+  (owner decision 2026-11-18, Hub #1927): it may use a canvas or WebGL layer
+  and motion that continues. The placement and print rules of section 4.4,
+  step 2, still apply.
+- The documentation skin's decorative motion plays once and ends within
+  5 seconds of load; `docs/skins/check_skin.cjs` enforces that.
+- The owner-selected shared habitat (#1145) animates continuously inside its artwork. It provides Pause motion, stops ambient updates while hidden, and tears down on navigation. Session meaning remains available as text.
 - Check wide desktop, the widths near each layout change and a 390 px phone:
   no horizontal overflow, no clipped controls, long labels wrap.
-- Small, short transitions only where they clarify state; the dashboard stays
-  still by default.
 
 ## 10. Brand and imagery
 
@@ -520,7 +525,8 @@ Acceptance checklist for each new or restyled page:
 - [ ] Every page has a hash address and the back button walks the history.
 - [ ] Shows keyboard focus and states selected, pending, unavailable, stale,
       uncertain, error and empty in text as well as color.
-- [ ] Ends decorative motion within 5 seconds, or follows the shared habitat exception with Pause motion.
+- [ ] Keeps decoration behind content and off text and meaning-carrying
+      edges, and shows no state in motion alone.
 - [ ] Keeps inspection separate from commands and preserves capability and
       permission gating.
 - [ ] Includes current-candidate screenshots or browser evidence and completes
