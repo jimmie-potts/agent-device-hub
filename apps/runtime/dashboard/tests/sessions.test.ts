@@ -102,7 +102,7 @@ void test('only an unknown status or unconfirmed working is uncertain: silence n
   assert.equal(uncertainOf(view({activity: 'active', unavailable: [{dimension: 'activity', reason: 'lost'}]})), 'Its work is unconfirmed.', 'lost evidence on running work');
   assert.equal(uncertainOf(view({activity: 'unknown'})), 'The hub does not know what this session is doing.');
   const working = sessionRow(view({activity: 'active', freshness: 'uncertain'}));
-  assert.deepEqual([faceText(working, true), faceText(working, false), faceText(sessionRow(view()), false)], ['Working · unconfirmed', 'Stale', 'Stale'],
+  assert.deepEqual([faceText(working, true), faceText(working, false), faceText(sessionRow(view()), false)], ['Unconfirmed', 'Stale', 'Stale'],
     'unconfirmed work is named, and a copy that is not synced shows its last records as stale');
   assert.equal(working.facts.work, 'active, unconfirmed (deadline)');
   const child = sessionRow(view({parent: {status: 'known', identity: {...record().identity, sessionId: 'parent-1'}}, children: {active: 2, uncertain: 1}, read: 'unread'}));

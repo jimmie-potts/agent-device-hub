@@ -113,7 +113,7 @@ export function uncertainOf(view: SessionView): string | undefined {
 
 /** The chip's words: the last copy's state while the copy is not synced, and unconfirmed work named as such. */
 export const faceText = (row: SessionRow, synced: boolean): string =>
-  !synced ? 'Stale' : row.uncertain && row.chip === 'working' ? 'Working · unconfirmed' : row.chipText;
+  !synced ? 'Stale' : row.uncertain && row.chip === 'working' ? 'Unconfirmed' : row.chipText;
 
 const parentText = (view: SessionView): string => {
   switch (view.parent.status) {

@@ -100,7 +100,7 @@ try {
     await card('Arrive later').waitFor();
     assert.deepEqual(await Promise.all(['Ask a question', 'Port the wall', 'Keep working'].map(name => card(name).getAttribute('data-stale'))), ['false', 'false', 'true'],
       'silence marks only the working row');
-    await card('Keep working').locator('.chip', {hasText: 'Working · unconfirmed'}).waitFor();
+    await card('Keep working').locator('.chip', {hasText: 'Unconfirmed'}).waitFor();
     await card('Port the wall').locator('.chip', {hasText: 'Finished · unread'}).waitFor();
     await openConnections(page);
     await page.getByLabel('Session', {exact: true}).selectOption({label: 'Port the wall'});
