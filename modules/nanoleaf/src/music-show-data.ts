@@ -27,14 +27,16 @@ export type ShowMeasurement = Readonly<{
 const object = (input: unknown): input is Record<string, unknown> => typeof input === 'object' && input !== null && !Array.isArray(input);
 
 export type ShowProvenance = Readonly<{
-  model: typeof MUSIC_AUTHORING_MODEL; costUsd: number; confidence: 'measured-excerpt' | 'generic';
+  model: typeof MUSIC_AUTHORING_MODEL; costUsd: number; confidence: 'measured-excerpt' | 'generic'; costBasis?: 'conservative-region';
 }>;
 
 export function showProvenance(input: unknown): ShowProvenance | undefined {
-  if (!object(input) || Object.keys(input).length !== 3 || input.model !== MUSIC_AUTHORING_MODEL
+  if (!object(input) || Object.keys(input).length !== (Object.hasOwn(input, 'costBasis') ? 4 : 3) || input.model !== MUSIC_AUTHORING_MODEL
       || typeof input.costUsd !== 'number' || !Number.isFinite(input.costUsd) || input.costUsd < 0
-      || (input.confidence !== 'measured-excerpt' && input.confidence !== 'generic')) return undefined;
-  return {model: input.model, costUsd: input.costUsd, confidence: input.confidence};
+      || (input.confidence !== 'measured-excerpt' && input.confidence !== 'generic')
+      || (Object.hasOwn(input, 'costBasis') && input.costBasis !== 'conservative-region')) return undefined;
+  return {model: input.model, costUsd: input.costUsd, confidence: input.confidence,
+    ...(input.costBasis === 'conservative-region' ? {costBasis: input.costBasis} : {})};
 }
 
 export function showMeasurement(input: unknown): ShowMeasurement | undefined {

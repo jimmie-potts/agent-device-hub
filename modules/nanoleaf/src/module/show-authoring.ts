@@ -1,5 +1,5 @@
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
-import {fullDisk, Outcome, recordLog, SdkError, type AddMessage, type Command, type ModuleContent, type ModuleContentRequest,
+import {fullDisk, Outcome, recordLog, SdkError, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type Outbox, type TraceContext} from '@jimmie-potts/sdk';
 import {MAX_STYLE_LENGTH, prepareAuthoredTimeline} from '../music-show-authoring.js';
 import type {MusicShowAuthoringInput, MusicShowAuthoringProvider} from '../music-show-authoring-provider.js';
@@ -16,6 +16,8 @@ type GeneratedDraft = Readonly<{timeline: MusicTimeline; provenance: ShowProvena
 type Reply = {status: 'accepted'} | ErrorBody;
 
 const GENERATION_MS = 60_000;
+const MAX_SETTLEMENT_RETRIES = 4;
+const SETTLEMENT_RETRY_MS = 250;
 const showGeneration = NANOLEAF_FAMILIES.showGenerate;
 const cancelGeneration = NANOLEAF_FAMILIES.showGenerateCancel;
 
@@ -29,10 +31,13 @@ function completion(add: AddMessage, family: typeof showGeneration | typeof canc
   }, {parent});
 }
 
+type Settlement = Readonly<{command: Command<GenerateShow>; draft?: GeneratedDraft; error?: ErrorBody; signal: AbortSignal}>;
 type ActiveGeneration = {requestId: string; controller: AbortController; work: Promise<void>};
 
 export class ShowAuthoring {
   #active: ActiveGeneration | undefined;
+  #settlement: Settlement | undefined;
+  #settlementRetry: Cancel | undefined;
 
   constructor(private readonly context: Pick<ModuleContext, 'clock' | 'scheduler' | 'signal' | 'log'>,
     private readonly db: Db, private readonly outbox: Outbox,
@@ -60,6 +65,7 @@ export class ShowAuthoring {
     const {requestId, style} = command.data;
     if (provider === undefined || this.context.signal.aborted) return errorBody('unavailable', {detail: 'Claude is unavailable for Music show generation.'});
     if (style.trim() === '' || style.length > MAX_STYLE_LENGTH) return errorBody('invalid-request', {detail: 'Enter a short style request.'});
+    if (this.#settlement !== undefined) await this.#settle(this.#settlement, MAX_SETTLEMENT_RETRIES);
     const generation = input();
     if ('error' in generation) return generation;
     const controller = new AbortController();
@@ -104,11 +110,17 @@ export class ShowAuthoring {
     return {status: 'accepted'};
   }
 
-  content(request: ModuleContentRequest | undefined): ModuleContent | ErrorBody {
-    if (request === undefined || Object.keys(request.query).length !== 1
-        || request.query.requestId === undefined || request.query.requestId.length > 128) return errorBody('invalid-request');
+  content(request: ModuleContentRequest | undefined, latest: boolean): ModuleContent | ErrorBody {
+    if (request === undefined) return errorBody('invalid-request');
+    const {requestId} = request.query;
+    if (latest ? Object.keys(request.query).length !== 0
+      : Object.keys(request.query).length !== 1 || requestId === undefined || !/^[A-Za-z0-9_.-]{1,128}$/.test(requestId)) {
+      return errorBody('invalid-request');
+    }
     if (request.signal.aborted) return errorBody('cancelled');
-    const row = first(this.db, "SELECT draft FROM nanoleaf_show_generation WHERE request_id=? AND draft IS NOT NULL", request.query.requestId);
+    const row = latest
+      ? first(this.db, "SELECT draft FROM nanoleaf_show_generation WHERE status='drafted' ORDER BY rowid DESC LIMIT 1")
+      : first(this.db, "SELECT draft FROM nanoleaf_show_generation WHERE request_id=? AND status='drafted'", requestId ?? '');
     if (row === undefined) return errorBody('not-found');
     try {
       const stored: unknown = JSON.parse(text(row, 0));
@@ -126,6 +138,9 @@ export class ShowAuthoring {
   async stop(): Promise<void> {
     this.#active?.controller.abort();
     await this.#active?.work;
+    this.#settlementRetry?.();
+    this.#settlementRetry = undefined;
+    if (this.#settlement !== undefined) await this.#settle(this.#settlement, MAX_SETTLEMENT_RETRIES);
   }
 
   async #generate(command: Command<GenerateShow>, input: GenerationInput, provider: MusicShowAuthoringProvider,
@@ -141,6 +156,7 @@ export class ShowAuthoring {
       try {
         draft = {timeline: prepareAuthoredTimeline(result.draft, input.disclosure.analysis?.spans ?? null), provenance: {
           model: MUSIC_AUTHORING_MODEL, costUsd: result.costUsd, confidence: input.measurement === undefined ? 'generic' : 'measured-excerpt',
+          ...(result.costBasis === undefined ? {} : {costBasis: result.costBasis}),
         }, ...(input.measurement === undefined ? {} : {measurement: input.measurement})};
       } catch {
         error = errorBody('invalid-message', {detail: 'Claude returned cues outside the supported effects or measured timing.'});
@@ -149,18 +165,41 @@ export class ShowAuthoring {
       error = cause instanceof SdkError ? cause.body : errorBody('uncertain-result', {detail: 'The generation attempt could not be confirmed.'});
     } finally {stop();}
 
+    const settlement = {command, signal, ...(draft === undefined ? {} : {draft}), ...(error === undefined ? {} : {error})};
+    this.#settlement = settlement;
+    await this.#settle(settlement, 0);
+  }
+
+  /** Repeat only the local outcome transaction. The provider has already finished. */
+  async #settle(settlement: Settlement, attempt: number): Promise<void> {
+    const {command, signal, draft, error} = settlement;
+    const {requestId} = command.data;
     try {
       await this.outbox.transaction(add => {
-        const isCancelling = first(this.db, "SELECT 1 FROM nanoleaf_show_generation WHERE request_id=? AND status='cancelling'", requestId) !== undefined;
-        if ((signal.aborted || isCancelling) && error === undefined) {draft = undefined; error = errorBody('cancelled');}
-        execute(this.db, "UPDATE nanoleaf_show_generation SET status='finished',draft=? WHERE request_id=?",
-          draft === undefined ? null : JSON.stringify(draft), requestId);
-        completion(add, showGeneration, requestId, command, error);
+        const row = first(this.db, 'SELECT status FROM nanoleaf_show_generation WHERE request_id=?', requestId);
+        if (row === undefined || (row[0] !== 'pending' && row[0] !== 'cancelling')) return;
+        const failure = error ?? (signal.aborted || row[0] === 'cancelling' ? errorBody('cancelled') : undefined);
+        const ready = failure === undefined && draft !== undefined;
+        execute(this.db, 'UPDATE nanoleaf_show_generation SET status=?,draft=? WHERE request_id=?',
+          ready ? 'drafted' : 'finished', ready ? JSON.stringify(draft) : null, requestId);
+        completion(add, showGeneration, requestId, command, failure);
       });
+      if (this.#settlement === settlement) {
+        this.#settlement = undefined;
+        this.#settlementRetry?.();
+        this.#settlementRetry = undefined;
+      }
     } catch (cause) {
-      const code: ErrorCode = fullDisk(cause) ? 'capacity' : 'internal';
-      recordLog(this.context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.failed,
-        'bunny.code': code, 'bunny.request.id': requestId}, command);
+      if (attempt === 0) {
+        const code: ErrorCode = fullDisk(cause) ? 'capacity' : 'internal';
+        recordLog(this.context.log, 'operation.failed', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.failed,
+          'bunny.code': code, 'bunny.request.id': requestId}, command);
+      }
+      if (attempt >= MAX_SETTLEMENT_RETRIES || this.context.signal.aborted || this.#settlement !== settlement || this.#settlementRetry !== undefined) return;
+      this.#settlementRetry = this.context.scheduler.after(SETTLEMENT_RETRY_MS * 2 ** attempt, () => {
+        this.#settlementRetry = undefined;
+        void this.#settle(settlement, attempt + 1);
+      });
     }
   }
 }

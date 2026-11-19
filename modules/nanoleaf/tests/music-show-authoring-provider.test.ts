@@ -6,9 +6,9 @@ import {createMusicShowAuthoringProvider, type MusicShowAuthoringInput} from '..
 
 const input: MusicShowAuthoringInput = {title: 'Fixture title', artist: 'Fixture artist', style: 'Fixture style',
   analysis: {method: 'energy-onset-v1', sampleCount: 10, spans: [{offsetMs: 1000, durationMs: 1000, intensity: 0.5}]}};
-const usage = {input_tokens: 250, output_tokens: 100, output_tokens_details: {thinking_tokens: 70}};
-const message = (text: string) => new Response(JSON.stringify({model: 'claude-fable-5-2', stop_reason: 'end_turn',
-  content: [{type: 'thinking', thinking: 'hidden'}, {type: 'text', text}], usage}));
+const usage = {input_tokens: 250, output_tokens: 100, output_tokens_details: {thinking_tokens: 70}, inference_geo: 'global'};
+const message = (text: string, reportedUsage = usage) => new Response(JSON.stringify({model: 'claude-fable-5-2', stop_reason: 'end_turn',
+  content: [{type: 'thinking', thinking: 'hidden'}, {type: 'text', text}], usage: reportedUsage}));
 const code = (expected: string) => (error: unknown) => error instanceof SdkError && error.body.error.code === expected;
 
 void test('sends exactly one bounded Claude request through the approved route', async (t) => {
@@ -23,7 +23,7 @@ void test('sends exactly one bounded Claude request through the approved route',
     const body: unknown = JSON.parse(request.body);
     assert.ok(typeof body === 'object' && body !== null);
     assert.ok('model' in body && body.model === 'claude-fable-5-2');
-    assert.ok(!('stream' in body) && !('tools' in body));
+    assert.ok(!('stream' in body) && !('tools' in body) && !('inference_geo' in body));
     assert.ok('messages' in body && Array.isArray(body.messages));
     const first: unknown = body.messages[0];
     assert.ok(typeof first === 'object' && first !== null && 'content' in first && typeof first.content === 'string');
@@ -97,4 +97,44 @@ void test('startup retains dispatched reservations that never recorded a provide
   assert.deepEqual({...db.prepare('SELECT status, reserved_micros FROM music_show_authoring_spend').get()},
     {status: 'uncertain', reserved_micros: 200000});
   await assert.rejects(afterRestart(input, new AbortController().signal, 'crash'), code('duplicate-conflict'));
+});
+
+void test('reserves at the US-only tariff without changing workspace inference geography', async (t) => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  const {signal} = new AbortController();
+  let expectedReservation = 0;
+  let geography = 'us';
+  const generate = createMusicShowAuthoringProvider({key: 'fixture-key', db, transport: (_url, request) => {
+    expectedReservation = Math.ceil(((Buffer.byteLength(request.body) + 4096) * 8 + 4096 * 40) * 11 / 10);
+    assert.ok(!request.body.includes('"inference_geo"'));
+    return Promise.resolve(message('{"cues":[]}', {...usage, input_tokens: 251, inference_geo: geography}));
+  }});
+  assert.deepEqual(await generate(input, signal, 'us-workspace'), {draft: {cues: []}, costUsd: 0.006609});
+  assert.deepEqual({...db.prepare('SELECT reserved_micros, cost_micros FROM music_show_authoring_spend').get()},
+    {reserved_micros: expectedReservation, cost_micros: 6609});
+  geography = 'unreported';
+  assert.deepEqual(await generate(input, signal, 'unreported-workspace'),
+    {draft: {cues: []}, costUsd: 0.006609, costBasis: 'conservative-region'});
+});
+
+void test('a transient settlement write fault holds the attempt without resending or blocking the next request', async (t) => {
+  const db = new DatabaseSync(':memory:');
+  t.after(() => db.close());
+  const {signal} = new AbortController();
+  let calls = 0;
+  const generate = createMusicShowAuthoringProvider({key: 'fixture-key', db, transport: () => {
+    calls++;
+    return Promise.resolve(message('{"cues":[]}'));
+  }});
+  db.exec(`CREATE TRIGGER refuse_settlement BEFORE UPDATE ON music_show_authoring_spend
+    BEGIN SELECT RAISE(FAIL,'Synthetic settlement write fault'); END`);
+  await assert.rejects(generate(input, signal, 'failed-settlement'), code('uncertain-result'));
+  db.exec('DROP TRIGGER refuse_settlement');
+  assert.deepEqual({...db.prepare('SELECT status, cost_micros FROM music_show_authoring_spend').get()},
+    {status: 'dispatched', cost_micros: null});
+  await assert.rejects(generate(input, signal, 'failed-settlement'), code('duplicate-conflict'));
+  const next = await generate(input, signal, 'next-request');
+  assert.equal(next.costUsd, 0.006);
+  assert.equal(calls, 2);
 });

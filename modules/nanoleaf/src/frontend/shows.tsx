@@ -76,7 +76,7 @@ function CueEditor({cue, index, measured, disabled, update, remove}: {
 
 function ShowAuthoring({context, generate, cancel, reading, canOpen, open, dirty}: {
   context: FrontendContext; generate: FrontendCommand; cancel: FrontendCommand; reading: boolean; canOpen: boolean;
-  open: (requestId: string) => void; dirty: boolean;
+  open: (requestId?: string) => void; dirty: boolean;
 }): React.JSX.Element {
   const [style, setStyle] = useState('');
   const [source, setSource] = useState<'measured' | 'generic'>('measured');
@@ -84,16 +84,19 @@ function ShowAuthoring({context, generate, cancel, reading, canOpen, open, dirty
   const operation = context.operations.find(value => value.requestId === requestId && value.family === 'nanoleaf-show-generate' && value.target === SHOW_TARGET);
   const ready = operation?.status === 'completed' && operation.result === 'succeeded' && operation.evidence === 'observed';
   const active = operation?.status === 'accepted';
+  const settledUncertain = operation?.status === 'completed' && operation.result === 'uncertain';
   const online = context.connected && context.control && context.operationsLive;
-  const disabled = !online || generate.locked || cancel.locked || reading;
+  const disabled = !online || (generate.locked && !settledUncertain) || reading;
   return <section aria-label="Claude show generation">
     <h2>Draft a show with Claude</h2>
     <p>Each request makes one paid Anthropic API attempt with {MUSIC_AUTHORING_MODEL}. Music has its own
       spending limits of $3 USD per day and $20 USD per month.</p>
     <p>Claude receives your style request and the current Music track’s title and artist. Measured mode also sends
-      derived energy and onset measurements. Anthropic retains the sent data for 30 days. Audio stays on your Mac.</p>
+      derived energy and onset measurements. Audio stays on your Mac.</p>
+    <p>Anthropic keeps prompts and completions for at least 30 days. Safety investigations and legal obligations
+      can extend retention. <a href="https://support.claude.com/en/articles/15425695-covered-models" target="_blank" rel="noreferrer">Anthropic retention policy</a></p>
     <div className="show-fields">
-      <label>Timing source<select value={source} disabled={disabled} onChange={event => {setSource(event.target.value === 'generic' ? 'generic' : 'measured');}}>
+      <label>Timing source<select aria-label="Timing source" value={source} disabled={disabled} onChange={event => {setSource(event.target.value === 'generic' ? 'generic' : 'measured');}}>
         <option value="measured">Measured excerpt</option>
         <option value="generic">Generic sequence</option>
       </select></label>
@@ -110,16 +113,17 @@ function ShowAuthoring({context, generate, cancel, reading, canOpen, open, dirty
     <div className="show-actions">
       <button type="button" disabled={disabled || style.trim() === ''} onClick={() => {
         void generate.run({family: 'nanoleaf-show-generate', target: SHOW_TARGET, requestId: crypto.randomUUID(), data: {style: style.trim(), source}});
-      }}>Generate paid draft</button>
+      }}>{settledUncertain ? 'Generate new paid draft' : 'Generate paid draft'}</button>
       {active && requestId !== undefined && <button type="button" className="secondary" disabled={!online || cancel.locked} onClick={() => {
         void cancel.run({family: 'nanoleaf-show-generate-cancel', target: SHOW_TARGET, requestId: crypto.randomUUID(), data: {generationRequestId: requestId}});
       }}>Cancel generation</button>}
-      {ready && requestId !== undefined && <button type="button" className="secondary" disabled={!canOpen || reading} onClick={() => {open(requestId);}}>
-        {reading ? 'Opening draft…' : 'Open generated draft'}</button>}
+      <button type="button" className="secondary" disabled={!canOpen || reading} onClick={() => {open(ready ? requestId : undefined);}}>
+        {reading ? 'Opening draft…' : ready ? 'Open generated draft' : 'Open latest generated draft'}</button>
     </div>
-    {ready && dirty && <p className="hint">Opening the generated draft replaces the current unsaved draft.</p>}
+    {dirty && <p className="hint">Opening a generated draft replaces the current unsaved draft.</p>}
     {ready && !dirty && <p className="hint">Open the result to preview and edit it before saving.</p>}
     {requestId !== undefined && <p role="status">{ready ? 'Generated draft ready to open.' : generate.text}</p>}
+    {settledUncertain && <p>A charge may apply to the previous request. A new request makes a separate paid attempt.</p>}
     {active && cancel.requestId !== undefined && <p role="status">{cancel.text}</p>}
     {!ready && operation?.error !== undefined && <p role="alert">{operation.error.detail ?? 'Generation did not produce a draft.'} Your current draft is retained.</p>}
   </section>;
@@ -135,7 +139,8 @@ function ShowEditor({context, catalog, command, generate, cancel}: {
   const [reading, setReading] = useState(false), [readFailed, setReadFailed] = useState(false);
   const [preparing, setPreparing] = useState(false), [prepareFailed, setPrepareFailed] = useState(false);
   const [pendingRead, setPendingRead] = useState(false), [readCancelled, setReadCancelled] = useState(false);
-  const [openingGenerated, setOpeningGenerated] = useState(false), [generatedFailed, setGeneratedFailed] = useState(false);
+  const [openingGenerated, setOpeningGenerated] = useState(false);
+  const [generatedProblem, setGeneratedProblem] = useState<string>();
   const [sending, setSending] = useState(false);
   const [submitted, setSubmitted] = useState<{requestId: string; draft: ShowSave}>();
   const readSequence = useRef(0), readActive = useRef(false), sendingRef = useRef(false), mounted = useRef(true);
@@ -183,15 +188,19 @@ function ShowEditor({context, catalog, command, generate, cancel}: {
     }).catch(() => {if (mounted.current && sequence === readSequence.current) setPrepareFailed(true);})
       .finally(() => {readActive.current = false; if (mounted.current) setPreparing(false);});
   };
-  const openGenerated = (requestId: string): void => {
+  const openGenerated = (requestId?: string): void => {
     if (!context.connected || !editable || readActive.current) return;
     const sequence = ++readSequence.current;
-    readActive.current = true; setOpeningGenerated(true); setGeneratedFailed(false);
-    void context.api.read(`/modules/nanoleaf/content/generated-show-draft?requestId=${encodeURIComponent(requestId)}`).then(value => {
+    readActive.current = true; setOpeningGenerated(true); setGeneratedProblem(undefined);
+    const ref = requestId === undefined ? 'latest-generated-show-draft' : `generated-show-draft?requestId=${encodeURIComponent(requestId)}`;
+    void context.api.read(`/modules/nanoleaf/content/${ref}`).then(value => {
       if (!mounted.current || sequence !== readSequence.current) return;
       change(generatedDraft(value, `show-${crypto.randomUUID()}`));
       setReadFailed(false); setReadCancelled(false); setPrepareFailed(false);
-    }).catch(() => {if (mounted.current && sequence === readSequence.current) setGeneratedFailed(true);})
+    }).catch(() => {
+      if (mounted.current && sequence === readSequence.current) setGeneratedProblem(requestId === undefined
+        ? 'No generated draft is available to open right now.' : 'The generated cues could not be opened.');
+    })
       .finally(() => {readActive.current = false; if (mounted.current) setOpeningGenerated(false);});
   };
   const save = (): void => {
@@ -228,7 +237,7 @@ function ShowEditor({context, catalog, command, generate, cancel}: {
     </section>}
     {context.control && <ShowAuthoring context={context} generate={generate} cancel={cancel} reading={openingGenerated}
       canOpen={context.connected && editable && !pendingRead} open={openGenerated} dirty={dirty}/>}
-    {generatedFailed && <p role="alert">The generated cues could not be opened. Your current draft is retained.</p>}
+    {generatedProblem !== undefined && <p role="alert">{generatedProblem} Your current draft is retained.</p>}
     {!context.control && <p>Read-only access. You can inspect saved versions; editing requires control access.</p>}
     {!live && <p role="status">{catalog.failed ? 'The show library is unavailable.' : 'The show library is stale or still loading.'} Saving is disabled.</p>}
     <p role="status" aria-live="polite">{command.text.replace('The module observed the result.', 'The library save was observed.')}</p>
@@ -236,7 +245,8 @@ function ShowEditor({context, catalog, command, generate, cancel}: {
       {draft.measurement !== undefined && <p>Captured excerpt for a scoped Mac Music library item. Replay uses the matching item and its current playback position.</p>}
       {draft.provenance !== undefined && <p>Generated with {draft.provenance.model} via the Anthropic API.
         {' '}{draft.provenance.confidence === 'measured-excerpt' ? 'Claude drafted from a measured excerpt. Edits can change cue timing.' : 'Claude drafted a generic sequence with decorative timing.'}
-        {' '}Recorded generation cost is {draft.provenance.costUsd.toLocaleString('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 6})} USD.</p>}
+        {' '}Recorded generation cost estimate is {draft.provenance.costUsd.toLocaleString('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 6})} USD.
+        {draft.provenance.costBasis === 'conservative-region' ? ' The estimate uses the highest published regional rate because the billing region was unconfirmed.' : ''}</p>}
       <div className="show-fields"><label>Show name<input value={draft.name} maxLength={160} disabled={!editable} onChange={event => {change({...draft, name: event.target.value});}}/></label>
       <label>Version name<input value={draft.versionName} maxLength={160} disabled={!editable} onChange={event => {change({...draft, versionName: event.target.value});}}/></label>
       <label>Show duration (ms)<input type="number" min={MIN_MUSIC_CUE_MS} max={MAX_MUSIC_DURATION_MS} step={draft.measurement === undefined ? 100 : 1} value={draft.timeline.durationMs} disabled={!editable}

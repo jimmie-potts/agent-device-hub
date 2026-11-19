@@ -13,12 +13,17 @@ import {musicPlaybackProducer} from './music-playback-producer.ts';
 export async function showEditorJourney(browser: Browser): Promise<void> {
   type AuthoringProvider = NonNullable<WorldOptions['musicShowAuthoring']>;
   const calls: Parameters<AuthoringProvider>[0][] = [];
-  const world = await startWorld({nanoleaf: true, musicCapture: true, musicPlayback: true, musicShowAuthoring: input => {
+  const world = await startWorld({nanoleaf: true, musicCapture: true, musicPlayback: true, musicShowAuthoring: (input, signal) => {
     calls.push(input);
+    if (calls.length === 2) return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => {reject(new Error('Synthetic unknown charges after cancel'));}, {once: true});
+    });
+    if (calls.length === 3) return Promise.resolve({draft: {cues: [{startMs: 0, endMs: 700, effect: 'pulse',
+      palette: ['#4f85ff'], intensity: 0.45}]}, costUsd: 0.0123});
     const span = input.analysis?.spans[0];
     assert.ok(span !== undefined, 'the browser chose a measured excerpt');
     assert.equal(calls.length, 1, 'only the explicitly generated draft calls the fake provider');
-    return Promise.resolve({draft: {cues: [{startMs: span.offsetMs, endMs: span.offsetMs + span.durationMs, effect: 'pulse', palette: ['#4f85ff'], intensity: 0.45}]}, costUsd: 0.0123});
+    return Promise.resolve({draft: {cues: [{startMs: span.offsetMs, endMs: span.offsetMs + span.durationMs, effect: 'pulse', palette: ['#4f85ff'], intensity: 0.45}]}, costUsd: 0.0123, costBasis: 'conservative-region'});
   }});
   let capture: Awaited<ReturnType<typeof musicCaptureProducer>> | undefined;
   let playback: Awaited<ReturnType<typeof musicPlaybackProducer>> | undefined;
@@ -27,6 +32,13 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     const page = await context.newPage(); page.setDefaultTimeout(12_000);
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().message);});
     const sent = changes(page);
+    const generationIds: string[] = [];
+    page.on('request', request => {
+      if (request.method() !== 'POST' || new URL(request.url()).pathname !== '/api/v2/commands/nanoleaf-show-generate') return;
+      const body: unknown = request.postDataJSON();
+      assert.ok(typeof body === 'object' && body !== null && 'requestId' in body && typeof body.requestId === 'string');
+      generationIds.push(body.requestId);
+    });
     const saves: {requestId: string; target: string; data: {showId: string; expectedVersion: number; name: string; versionName: string; timeline: object}}[] = [];
     page.on('request', request => {
       if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/v2/commands/nanoleaf-show-save') {
@@ -207,9 +219,15 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     const generate = authoring.getByRole('button', {name: 'Generate paid draft', exact: true});
     await authoring.getByText(/one paid Anthropic API attempt.*\$3 USD per day and \$20 USD per month/).waitFor();
     await authoring.getByText(/current Music track’s title and artist.*Audio stays on your Mac/).waitFor();
+    await authoring.getByText(/Anthropic keeps prompts and completions for at least 30 days/).waitFor();
     assert.equal(await generate.isDisabled(), true, 'generation requires a style');
     await editor.getByRole('button', {name: 'Use Ocean drift', exact: true}).click();
     await editor.getByLabel('Show name', {exact: true}).fill('Existing edits');
+    const openLatest = authoring.getByRole('button', {name: 'Open latest generated draft', exact: true});
+    await openLatest.click();
+    await editor.getByRole('alert').filter({hasText: 'No generated draft is available to open right now.'}).waitFor();
+    assert.equal(await editor.getByLabel('Show name', {exact: true}).inputValue(), 'Existing edits');
+    assert.equal(calls.length, 0, 'opening latest before a generation calls no provider');
     await authoring.getByRole('button', {name: 'Use warm rise style', exact: true}).click();
     await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic amber surge');
     const commandsBeforeDraft = sent.length;
@@ -226,8 +244,10 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     await openGenerated.click();
     await editor.getByRole('alert').filter({hasText: 'The generated cues could not be opened.'}).waitFor();
     assert.equal(await editor.getByLabel('Show name', {exact: true}).inputValue(), 'Existing edits');
-    await openGenerated.click();
-    await editor.getByText(/Claude drafted from a measured excerpt.*Recorded generation cost is \$0.0123 USD/).waitFor();
+    await page.reload(); await feed(page, 'connected');
+    await openLatest.click();
+    assert.equal(calls.length, 1, 'reopening a generated draft after reload calls no provider');
+    await editor.getByText(/Claude drafted from a measured excerpt.*Recorded generation cost estimate is \$0.0123 USD.*highest published regional rate/).waitFor();
     await editor.getByRole('heading', {name: 'Unsaved draft', exact: true}).waitFor();
     await editor.getByRole('heading', {name: 'Measured cue storyboard', exact: true}).waitFor();
     await editor.getByLabel('Show name', {exact: true}).fill('Synthetic captured excerpt');
@@ -250,7 +270,7 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.equal('measurementProof' in savedExcerpt, false);
     assert.equal('authoringProof' in savedExcerpt, false);
     assert.ok('provenance' in savedExcerpt);
-    assert.deepEqual(savedExcerpt.provenance, {model: 'claude-fable-5-2', costUsd: 0.0123, confidence: 'measured-excerpt'});
+    assert.deepEqual(savedExcerpt.provenance, {model: 'claude-fable-5-2', costUsd: 0.0123, confidence: 'measured-excerpt', costBasis: 'conservative-region'});
     await editor.getByLabel('Show', {exact: true}).selectOption(first.data.showId);
     await editor.getByRole('button', {name: 'Open saved version', exact: true}).click();
     await editor.getByRole('heading', {name: 'Saved version 3', exact: true}).waitFor();
@@ -330,9 +350,32 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.equal(saves.length, 5, 'uncertainty is not retried on reload');
     assert.deepEqual(errors, []);
     assert.equal(calls.length, 1, 'saved playback, stop, edit and reload do not call the provider');
+
+    // Another client cancels this request while the browser reloads. Its completed outcome cannot confirm charges.
+    await playback.observe({itemId: playback.item.itemId, positionMs: 1000});
+    await authoring.getByLabel('Timing source', {exact: true}).selectOption('generic');
+    await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic cancellation exercise');
+    await generate.click();
+    await authoring.getByRole('button', {name: 'Cancel generation', exact: true}).waitFor();
+    const cancelledGeneration = generationIds[1];
+    assert.ok(cancelledGeneration !== undefined && cancelledGeneration !== '');
+    await page.reload(); await feed(page, 'connected');
+    await authoring.getByRole('button', {name: 'Cancel generation', exact: true}).waitFor();
+    assert.equal(await generate.isDisabled(), true, 'pending generation remains locked after reload');
+    assert.equal((await world.credentialAction('nanoleaf-show-generate-cancel', 'shows', {generationRequestId: cancelledGeneration})).status, 200);
+    const nextGeneration = authoring.getByRole('button', {name: 'Generate new paid draft', exact: true});
+    await authoring.getByText(/A charge may apply to the previous request/).waitFor();
+    assert.equal(generationIds.length, 2, 'cancel, reload and the uncertain result send no generation');
+    await playback.observe();
+    await authoring.getByLabel('Timing source', {exact: true}).selectOption('generic');
+    await authoring.getByLabel('Mood or style', {exact: true}).fill('Synthetic generic follow-up');
+    await nextGeneration.click();
+    await openGenerated.waitFor();
+    assert.equal(calls.length, 3, 'a new explicit request can run after a completed uncertain result');
+    assert.equal(new Set(generationIds).size, 3, 'each paid request uses its own identity');
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'offline-decorative-shows', browserSaveRequests: saves.length,
       immutableVersions: true, staleSave: 409, readonly: 403, crossOrigin: 403, malformed: 400, authoringDeviceChanges: 0,
-      preview: 'cue storyboard only', measuredExcerpt: 'generated, edited, saved and reopened using synthetic producers and fake Claude', generationCalls: calls.length, malformedGenerationReadPreservedEdits: true, forgedProvenanceRefused: true, measuredAudio: 'wrong item refused, matching item started and stopped, v1 pinned while v2 saved', noResend: true})}\n`);
+      preview: 'cue storyboard only', measuredExcerpt: 'generated, edited, saved and reopened using synthetic producers and fake Claude', recoveryProviderCalls: 1, freshAttemptAfterCompletedUncertainty: true, malformedGenerationReadPreservedEdits: true, draftRecoveredAfterReload: true, forgedProvenanceRefused: true, measuredAudio: 'wrong item refused, matching item started and stopped, v1 pinned while v2 saved', noResend: true})}\n`);
   } catch (error) {
     const receipts = process.env.DASHBOARD_RECEIPTS, page = context.pages()[0];
     if (receipts !== undefined && page !== undefined) {

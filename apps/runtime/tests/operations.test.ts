@@ -34,6 +34,13 @@ it('each kind has its own deadlines, and a family names its kind', () => {
   assert.deepEqual(['power-set', 'playback-control', 'lifx-color-set', 'moment-play', 'mode-set'].map(kindOf), ['device', 'device', 'device', 'moment', 'mode']);
 });
 
+it('show generation remains accepted through its provider deadline', () => {
+  const kind = kindOf('nanoleaf-show-generate');
+  const action = accepted(sent({kind, deadlineAtMs: SENT_AT + DEADLINES[kind].outcomeMs}));
+  assert.equal(advance(action, {type: 'deadline', atMs: SENT_AT + 65_000}), undefined);
+  assert.equal(kindOf('nanoleaf-show-generate-cancel'), 'device');
+});
+
 it('sent, accepted, then completed by its outcome', () => {
   const replied = accepted();
   assert.deepEqual([replied.status, replied.result, replied.reply, replied.responder], ['accepted', undefined, 'accepted', 'bunny/modules/lamp']);

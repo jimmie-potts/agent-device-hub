@@ -1025,6 +1025,24 @@ for (const manual of [{brightness: {value: 20}}, {on: {value: false}}]) {
 }
 
 
+test('a separate secret name with the same value as a device token leaves generation disabled', async context => {
+  const world = await ModuleWorld.open(context, {
+    section: {...SECTION, musicAuthoringSecret: 'claude', secrets: {...SECTION.secrets, claude: SECTION.secrets.token}},
+    secrets: {token: SYNTHETIC_TOKEN, claude: SYNTHETIC_TOKEN},
+  });
+  await world.start();
+  const request = await world.request('bunny.cmd.nanoleaf-show-generate.shows', {
+    type: 'org.bunny.nanoleaf-show.generate.requested', subject: 'shows',
+    dataschema: 'https://bunny.invalid/events/nanoleaf-show-generate/2.0',
+    data: {requestId: 'aliased-key', source: 'generic', style: 'Cool dusk'},
+  });
+  assert.equal(request.status, 'rejected');
+  if (request.status !== 'rejected') assert.fail('generation must be refused');
+  assert.equal(request.error.error.detail, 'Claude is unavailable for Music show generation.');
+  assert.ok(world.logs().some(record => record.event === 'operation.failed' && record.fields['bunny.code'] === 'invalid-state'));
+  assert.doesNotMatch(JSON.stringify(world.logs()), new RegExp(SYNTHETIC_TOKEN));
+});
+
 test('measured authoring uses admitted Music features and saved replay follows the scoped item on both lights', async context => {
   const dispatches: string[] = [];
   const world = await ModuleWorld.open(context, {...WITH_PANELS, playbackSyncBuffer: 2, authoringProvider: async (input, signal, requestId) => {
@@ -1032,6 +1050,10 @@ test('measured authoring uses admitted Music features and saved replay follows t
     if (requestId === 'authored-cancel') return await new Promise((_resolve, reject) => {
       signal.addEventListener('abort', () => {reject(new Error('synthetic cancelled dispatch'));}, {once: true});
     });
+    if (requestId === 'authored-generic') {
+      assert.deepEqual(input, {title: 'Synthetic song', artist: 'Synthetic artist', style: 'Warm rise', analysis: null});
+      return {costUsd: 0.005, draft: {cues: [{startMs: 0, endMs: 2000, effect: 'breathe', palette: ['#c39b29'], intensity: 0.5}]}};
+    }
     assert.equal(requestId, 'authored-excerpt', 'saved playback must not ask the model again');
     assert.equal(input.title, 'Synthetic song');
     assert.equal(input.artist, 'Synthetic artist');
@@ -1061,7 +1083,7 @@ test('measured authoring uses admitted Music features and saved replay follows t
   await mode(world, 'free', 'nl22');
   const session: Session = {world, core, producer: world.bus.connect('bunny/parts/music-producer'), sequence: 0};
   let revision = 0;
-  const publishPosition = async (itemId: string, value: number, state: 'playing' | 'paused' = 'playing', discontinuity = true, airPlayEnabled = false, advance = true): Promise<void> => {
+  const publishPosition = async (itemId: string, value: number | null, state: 'playing' | 'paused' = 'playing', discontinuity = true, airPlayEnabled = false, advance = true): Promise<void> => {
     const now = world.clock.now();
     const interval = {earliestAtMs: now - 100, latestAtMs: now};
     const field = <T>(value: T): MusicPlaybackField<T> => ({status: 'observed', value, interval});
@@ -1069,7 +1091,8 @@ test('measured authoring uses admitted Music features and saved replay follows t
       presentationGeneration: generation(10), source: 'music', availability: 'available', recordingAssociation: 'unqualified',
       evidence: {status: 'observed', endpointId: 'music-playback', observation: {
         status: 'sample', sequence: revision, interval, clockUncertaintyMs: 100, discontinuity, processEpoch: generation(11),
-        libraryScopeId: 'library-one', state: field(state), position: field(value), item: field(itemId),
+        libraryScopeId: 'library-one', state: field(state), item: field(itemId),
+        position: value === null ? {status: 'unavailable', interval, error: {code: 'unavailable', retryable: true}} : field(value),
         itemAssociation: {status: 'bounded-match', interval},
         metadata: {title: field('Synthetic song'), artist: field('Synthetic artist'), album: field('Synthetic album'), durationSeconds: field(20)},
         outputSelection: {status: 'observed', provenance: 'music-declared-selection', interval, selectionInterval: interval, airPlayEnabled: field(airPlayEnabled), devices: []},
@@ -1084,6 +1107,19 @@ test('measured authoring uses admitted Music features and saved replay follows t
   const noDraft = world.content('measured-show-draft', reads);
   assert.ok(noDraft !== undefined && 'error' in noDraft && noDraft.error.code === 'unavailable');
   const writes = world.writes().length;
+  const generate = (requestId: string, source: 'measured' | 'generic' = 'measured') => world.request('bunny.cmd.nanoleaf-show-generate.shows', {
+    type: 'org.bunny.nanoleaf-show.generate.requested', subject: 'shows',
+    dataschema: 'https://bunny.invalid/events/nanoleaf-show-generate/2.0',
+    data: {requestId, source, style: source === 'generic' ? 'Warm rise' : 'A cool blue gradient with a soft pulse'},
+  });
+  await publishPosition('abc1', null);
+  assert.equal((await generate('measured-no-position')).status, 'rejected');
+  assert.equal((await generate('authored-generic', 'generic')).status, 'accepted');
+  await world.until(() => world.outcomes('authored-generic').some(message => message.data.result === 'succeeded'), 1000, 'generic sequence with metadata only');
+  const generic = world.content('latest-generated-show-draft', reads);
+  assert.ok(generic !== undefined && 'bytes' in generic);
+  assert.match(Buffer.from(generic.bytes).toString(), /"confidence":"generic"/);
+  assert.doesNotMatch(Buffer.from(generic.bytes).toString(), /measurementProof/);
   await publishPosition('abc1', 2);
   await play(session, 400, 100, {generation: OTHER_CAPTURE});
   const wrongCapture = world.content('measured-show-draft', reads);
@@ -1102,13 +1138,18 @@ test('measured authoring uses admitted Music features and saved replay follows t
   assert.equal(prepared.measurement?.analysis.method, 'energy-onset-v1');
   assert.ok((prepared.timeline.cues[0]?.offsetMs ?? 0) > 0);
   assert.equal(world.writes().length, writes, 'measurements and preparation do not take control');
-  const generate = (requestId: string) => world.request('bunny.cmd.nanoleaf-show-generate.shows', {
-    type: 'org.bunny.nanoleaf-show.generate.requested', subject: 'shows',
-    dataschema: 'https://bunny.invalid/events/nanoleaf-show-generate/2.0',
-    data: {requestId, source: 'measured', style: 'A cool blue gradient with a soft pulse'},
-  });
+  const database = world.harness.moduleDatabase();
+  assert.ok(database);
+  database.exec(`CREATE TEMP TRIGGER stop_draft_commit BEFORE UPDATE OF status ON nanoleaf_show_generation
+    WHEN NEW.request_id='authored-excerpt' AND NEW.status='drafted'
+    BEGIN SELECT RAISE(ABORT, 'synthetic settlement failure'); END`);
   assert.equal((await generate('authored-excerpt')).status, 'accepted');
-  await world.until(() => world.outcomes('authored-excerpt').some(message => message.data.result === 'succeeded'), 1000, 'generated cue outcome');
+  await world.until(() => world.logs().some(record => record.event === 'operation.failed'
+      && record.fields['bunny.request.id'] === 'authored-excerpt'), 1000, 'outcome transaction refusal');
+  assert.equal(world.outcomes('authored-excerpt').length, 0);
+  database.exec('DROP TRIGGER stop_draft_commit');
+  await world.until(() => world.outcomes('authored-excerpt').some(message => message.data.result === 'succeeded'), 1000, 'generated cue outcome after recovery');
+  assert.equal(dispatches.filter(id => id === 'authored-excerpt').length, 1, 'local recovery does not resend the provider request');
   const authored = world.content('generated-show-draft', {...reads, query: {requestId: 'authored-excerpt'}});
   assert.ok(authored !== undefined && 'bytes' in authored);
   const generated = JSON.parse(Buffer.from(authored.bytes).toString()) as Record<string, unknown>;
@@ -1125,7 +1166,8 @@ test('measured authoring uses admitted Music features and saved replay follows t
     data: {requestId: 'cancel-authoring', generationRequestId: 'authored-cancel'},
   })).status, 'accepted');
   await world.until(() => world.outcomes('authored-cancel').some(message => message.data.result === 'uncertain'), 1000, 'cancelled dispatch outcome');
-  assert.deepEqual(dispatches, ['authored-excerpt', 'authored-cancel']);
+  assert.deepEqual(dispatches, ['authored-generic', 'authored-excerpt', 'authored-cancel']);
+  assert.deepEqual(world.content('latest-generated-show-draft', reads), authored, 'a cancelled request does not hide the latest completed draft');
   const cancelledDraft = world.content('generated-show-draft', {...reads, query: {requestId: 'authored-cancel'}});
   assert.ok(cancelledDraft !== undefined && 'error' in cancelledDraft && cancelledDraft.error.code === 'not-found');
   const save = await world.request('bunny.cmd.nanoleaf-show-save.shows', {
@@ -1216,6 +1258,11 @@ test('measured authoring uses admitted Music features and saved replay follows t
   await world.restart();
   assert.deepEqual(readVersion(1), original, 'the original scoped item, provenance and cues survive restart');
   assert.deepEqual(readVersion(2), savedEdit, 'the measured edit survives separately');
+  const recovered = world.content('latest-generated-show-draft', reads);
+  assert.ok(recovered !== undefined && 'bytes' in recovered, 'the draft can be reopened after restart with a fresh proof');
+  const draftAfterRestart = JSON.parse(Buffer.from(recovered.bytes).toString()) as Record<string, unknown>;
+  assert.deepEqual(draftAfterRestart.timeline, generated.timeline);
+  assert.notEqual(draftAfterRestart.authoringProof, generated.authoringProof);
   assert.notEqual(deviceState(world)?.session?.status, 'playing', 'restart does not replay measured work');
   world.verifyMessages();
 });

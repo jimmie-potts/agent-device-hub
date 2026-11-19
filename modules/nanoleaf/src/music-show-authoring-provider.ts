@@ -23,7 +23,7 @@ export type MusicShowAuthoringInput = Readonly<{
 
 export type MusicShowAuthoringProvider = (
   input: MusicShowAuthoringInput, signal: AbortSignal, requestId: string,
-) => Promise<{draft: unknown; costUsd: number}>;
+) => Promise<{draft: unknown; costUsd: number; costBasis?: 'conservative-region'}>;
 
 type Transport = (url: string, init: {
   method: 'POST'; headers: Record<string, string>; body: string; signal: AbortSignal; redirect: 'error';
@@ -35,10 +35,13 @@ const object = (value: unknown): value is Record<string, unknown> =>
 const boundedCount = (value: unknown, limit: number): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= limit;
 
-function usageCost(body: unknown): number | null {
+function usageCost(body: unknown): {micros: number; costBasis?: 'conservative-region'} | null {
   if (!object(body) || !object(body.usage)) return null;
-  const {input_tokens: input, output_tokens: output} = body.usage;
-  return boundedCount(input, 1_000_000) && boundedCount(output, 128_000) ? authoringCostMicros(input, output) : null;
+  const {input_tokens: input, output_tokens: output, inference_geo: geography} = body.usage;
+  if (!boundedCount(input, 1_000_000) || !boundedCount(output, 128_000)) return null;
+  if (geography === 'global') return {micros: authoringCostMicros(input, output, 'global')};
+  const micros = authoringCostMicros(input, output, 'maximum');
+  return geography === 'us' ? {micros} : {micros, costBasis: 'conservative-region'};
 }
 
 async function readResponse(response: Response): Promise<unknown> {
@@ -99,7 +102,9 @@ export function createMusicShowAuthoringProvider(options: {
     if (bytes > MAX_REQUEST_BYTES) throw fail('too-large', 'The music analysis or style is too large for a draft.');
 
     // Budget one token per serialized byte, plus framing headroom, and all requested output tokens, including thinking.
-    const admission = ledger.dispatch(requestId, authoringCostMicros(bytes + 4096, AUTHORING_MAX_OUTPUT_TOKENS), now());
+    // The workspace chooses inference geography. Reserve at the US-only tariff even if global pricing later applies.
+    const reservedMicros = authoringCostMicros(bytes + 4096, AUTHORING_MAX_OUTPUT_TOKENS, 'maximum');
+    const admission = ledger.dispatch(requestId, reservedMicros, now());
     if (admission === 'duplicate') throw fail('duplicate-conflict', 'This generation request already reached the spending ledger.');
     if (admission === 'monthly-ceiling') throw fail('capacity', 'The monthly Music show generation ceiling would be exceeded.');
     if (admission === 'daily-pace') throw fail('capacity', 'The daily Music show generation pace would be exceeded.');
@@ -117,11 +122,12 @@ export function createMusicShowAuthoringProvider(options: {
     }
 
     const refused = response.status >= 400 && response.status < 500 && response.status !== 408;
-    const costMicros = usageCost(parsed) ?? (refused ? 0 : null);
-    finish(requestId, costMicros);
-    if (costMicros === null) throw uncertain();
+    const cost = usageCost(parsed) ?? (refused ? {micros: 0} : null);
+    finish(requestId, cost?.micros ?? null);
+    if (cost === null) throw uncertain();
     if (signal.aborted) throw fail('cancelled', 'Generation was cancelled after Claude reported usage.');
     if (!response.ok) throw fail(response.status === 429 ? 'capacity' : 'unavailable', 'Claude did not accept the generation request.');
-    return {draft: resultOf(parsed), costUsd: costMicros / 1_000_000};
+    return {draft: resultOf(parsed), costUsd: cost.micros / 1_000_000,
+      ...(cost.costBasis === undefined ? {} : {costBasis: cost.costBasis})};
   };
 }

@@ -73,3 +73,10 @@ it('Send again judges the handler: an owner art request is the dashboard\'s alon
   assert.equal(resendRefusal(request, 'bunny/parts/operator')?.error.code, 'forbidden');
   assert.equal(resendRefusal(refused('power-set', 'unavailable'), 'bunny/parts/operator'), undefined);
 });
+
+it('send again cannot start a new paid draft or cancel a different generation', () => {
+  const generation = uncertain('nanoleaf-show-generate');
+  assert.equal(resendRefusal(generation, DASHBOARD)?.error.code, 'forbidden');
+  assert.equal(historyOnly(generation), false, 'an uncertain paid attempt still appears in the inbox');
+  assert.equal(resendRefusal(uncertain('nanoleaf-show-generate-cancel'), DASHBOARD)?.error.code, 'forbidden');
+});

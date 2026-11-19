@@ -14,7 +14,7 @@ The show library SHALL let an authenticated controller explicitly request one Cl
 
 - **WHEN** the selected measured excerpt cannot be qualified
 - **THEN** the request is refused without dispatch
-- **AND** the controller can explicitly request a generic sequence against available title and artist metadata
+- **AND** the controller can explicitly request a generic sequence against fresh title and artist metadata even without a position reading
 - **AND** a generic result is labeled as having no measured alignment
 
 #### Scenario: Invalid or interrupted result
@@ -27,7 +27,20 @@ The show library SHALL let an authenticated controller explicitly request one Cl
 
 - **WHEN** a request would exceed the Music ledger's available USD 3 daily or USD 20 monthly allowance
 - **THEN** it is refused before dispatch
+- **AND** admission reserves against the higher supported regional rate
 - **AND** an uncertain sent attempt keeps its exposure charged against the Music allowance
+
+#### Scenario: Reopen a paid draft
+
+- **WHEN** the browser reloads after a successful generation
+- **THEN** the operator can explicitly reopen the latest successful draft
+- **AND** the read sends no provider request
+
+#### Scenario: Recover a transient settlement failure
+
+- **WHEN** the owner has a result and its local settlement write temporarily fails
+- **THEN** it retries only the local transaction, keeping the original spending record and attempt identity
+- **AND** a recovered settlement unblocks new explicit requests
 
 #### Scenario: Preview, save and play
 

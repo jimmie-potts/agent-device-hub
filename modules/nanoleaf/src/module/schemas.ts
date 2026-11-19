@@ -119,7 +119,7 @@ export const nanoleafSchemas: Readonly<Record<string, object>> = {
         analysis: closed({method: {const: 'energy-onset-v1'}, sampleCount: {type: 'integer', minimum: 1, maximum: 18000}})}),
       measurementProof: {type: 'string', pattern: '^[a-f0-9]{64}$'},
       provenance: closed({model: {const: MUSIC_AUTHORING_MODEL}, costUsd: {type: 'number', minimum: 0},
-        confidence: {enum: ['measured-excerpt', 'generic']}}),
+        confidence: {enum: ['measured-excerpt', 'generic']}, costBasis: {const: 'conservative-region'}}, ['costBasis']),
       authoringProof: {type: 'string', pattern: '^[a-f0-9]{64}$'},
     }, ['measurement', 'measurementProof', 'provenance', 'authoringProof']),
   },

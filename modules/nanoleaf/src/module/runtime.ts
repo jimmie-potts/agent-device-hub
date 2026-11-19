@@ -232,7 +232,14 @@ export class NanoleafRuntime {
     for (const device of config.devices) if (!tokens.has(device.secret)) tokens.set(device.secret, await context.secrets.read(device.secret));
     if (authoringProvider === undefined && config.musicAuthoringSecret !== undefined) {
       const key = await context.secrets.read(config.musicAuthoringSecret).catch(() => '');
-      if (key.trim() !== '') authoringProvider = createMusicShowAuthoringProvider({key: key.trim(), db, now: () => context.clock.now()});
+      const candidate = key.trim();
+      if (candidate !== '') {
+        if ([...tokens.values()].some(token => token.trim() === candidate)) {
+          recordLog(context.log, 'operation.failed', {'bunny.operation': 'startup', 'bunny.outcome': OutcomeWord.failed, 'bunny.code': 'invalid-state'});
+        } else {
+          authoringProvider = createMusicShowAuthoringProvider({key: candidate, db, now: () => context.clock.now()});
+        }
+      }
     }
     const runtime = new NanoleafRuntime(context, config, directory, db, authoringProvider);
     for (const device of config.devices) {
@@ -320,7 +327,9 @@ export class NanoleafRuntime {
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (ref === 'music-preview') return musicPreviewContent(request);
     if (ref === 'show-version') return showContent(this.#db, request);
-    if (ref === 'generated-show-draft') return this.#showAuthoring.content(request);
+    if (ref === 'generated-show-draft' || ref === 'latest-generated-show-draft') {
+      return this.#showAuthoring.content(request, ref === 'latest-generated-show-draft');
+    }
     if (ref === 'measured-show-draft') {
       if (request === undefined || Object.keys(request.query).length !== 0) return errorBody('invalid-request');
       if (request.signal.aborted) return errorBody('cancelled');
@@ -663,18 +672,18 @@ export class NanoleafRuntime {
 
   #authoringInput({source, style}: GenerateShow) {
     const now = this.#context.clock.now();
-    const position = this.#currentPosition(now), evidence = this.#playback?.evidence;
-    if (position === undefined || evidence?.status !== 'observed') {
+    const playback = this.#positionLive ? this.#playback : undefined;
+    if (playback?.source !== 'music' || playback.availability !== 'available' || playback.evidence.status !== 'observed') {
       return errorBody('unavailable', {detail: 'Open a Music library item before generating a draft.'});
     }
-    const {title, artist} = evidence.observation.metadata;
+    const {title, artist} = playback.evidence.observation.metadata;
     if (title.status !== 'observed' || artist.status !== 'observed' || title.value.trim() === '' || artist.value.trim() === ''
         || title.interval.earliestAtMs > now || now - title.interval.earliestAtMs >= 5000
         || artist.interval.earliestAtMs > now || now - artist.interval.earliestAtMs >= 5000) {
       return errorBody('unavailable', {detail: 'Current Music track title and artist are required.'});
     }
     if (source === 'generic') return {disclosure: {title: title.value, artist: artist.value, style, analysis: null}};
-    const measured = this.#currentAnalysis(position);
+    const measured = this.#currentAnalysis(this.#currentPosition(now));
     if (measured === undefined) return errorBody('unavailable', {detail: 'Play the Music item with measurement active, or choose a generic sequence.'});
     const {analysis, item, timeline} = measured;
     const spans = timeline.cues.map(({offsetMs, durationMs, intensity}) => ({offsetMs, durationMs, intensity}));

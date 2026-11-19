@@ -1,11 +1,14 @@
 import {MUSIC_AUTHORING_MODEL} from './music-show-data.js';
 import {execute, first, number, transaction, type Db} from './sqlite.js';
+
 export const AUTHORING_MAX_OUTPUT_TOKENS = 4096;
 const MONTHLY_CEILING_MICROS = 20_000_000;
 const DAILY_PACE_MICROS = 3_000_000;
 
-export const authoringCostMicros = (inputTokens: number, outputTokens: number): number =>
-  inputTokens * 8 + outputTokens * 40;
+export function authoringCostMicros(inputTokens: number, outputTokens: number, rate: 'global' | 'maximum'): number {
+  const globalCost = inputTokens * 8 + outputTokens * 40;
+  return rate === 'global' ? globalCost : Math.ceil(globalCost * 11 / 10);
+}
 
 type Admission = 'admitted' | 'duplicate' | 'monthly-ceiling' | 'daily-pace';
 
