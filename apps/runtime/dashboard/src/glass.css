@@ -3,7 +3,9 @@
    WebGL 2 or after a lost context the page keeps its ordinary Quiet glass panels. */
 .glass-layer{position:fixed;inset:0;z-index:-1;display:block;inline-size:100%;block-size:100%;pointer-events:none}
 [data-glass=quiet] .glass-layer{visibility:hidden}
-/* The outermost card surface inside each panel is the glass drawn under it; nested surfaces keep their own fill. */
+/* The outermost card surface inside each panel is the glass drawn under it, with the glass's corners; nested surfaces
+   keep their own fill. A surface with a fixed state meaning, such as an Inbox that needs attention, keeps its fill. */
+[data-glass=webgl] [data-glass-panel]{--light-radius:var(--glass-radius);--card-radius:var(--glass-radius)}
 [data-glass=webgl] [data-glass-panel] :is(.card,.widget,.light-card,.wemo-card,.music-card,.roborock-card,.volcano-card,.wispr-card):not(:is(.card,.widget,.light-card,.wemo-card,.music-card,.roborock-card,.volcano-card,.wispr-card) *){
   background:transparent;border-color:transparent;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none
 }

@@ -32,7 +32,7 @@ export type GlassRenderer = {
 };
 
 /** WCAG's target is 4.5:1; the veil aims a little higher so the grain and rounding never take it below. */
-const CONTRAST = 4.9;
+const CONTRAST = 5;
 
 /** Builds the program on a WebGL 2 context. Throws when the context cannot compile it; the caller falls back. */
 export function createGlassRenderer(gl: WebGL2RenderingContext): GlassRenderer {

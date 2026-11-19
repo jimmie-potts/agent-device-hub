@@ -2012,6 +2012,9 @@ Home card shapes (#1672) extend the same checks: `home-layout/2.2` in
 conversion in dashboard unit discovery, and
 `node apps/runtime/dashboard/tests/home-shapes.browser.ts` in the Home editor
 chain of hosted smoke; see the owning runtime dashboard checks.
+Home's glass layer (#1929) adds `node apps/runtime/dashboard/tests/home-glass.browser.ts`
+at the end of that chain; `node --test apps/runtime/dashboard/tests/style.test.ts`
+checks its tokens.
 
 The Wemo card (#1175) adds observed-state/guard projection checks to existing
 dashboard unit discovery and extends the existing `test:wemo:browser` journey

@@ -951,6 +951,53 @@ Wemo fill their selected Home slot while keeping their feature-page width limits
 Music omits the neutral initial command placeholder; its existing live feedback
 region still shows command progress, errors and results.
 
+### Glass layer
+
+Home draws on a glass layer (#1929, the Clear reference in
+`docs/design-references/home-clear/`): one WebGL 2 canvas fixed under the page
+draws the presented artwork unblurred, continuing behind the frosted rail, and
+flat, transparent glass under every Home card, with a thin bevel, a soft shadow,
+a rim and a lip of light past the far edge. Neighboring panels lean together.
+Card contents are unchanged.
+
+`GlassLayer` (`src/glass-layer.tsx`) is reusable. A page sets `data-glass` on its
+root to the state the layer reports through `onState` and renders the layer inside
+that root. Its options:
+
+- `backdrop`: the picture behind the page (`bitmap`, `width`, `height`, `id`), or
+  null for the Quiet glass wash. The caller keeps the bitmap open while it is the
+  current value; `onBackdrop` reports the id actually drawn, or null.
+- `fuse`: join neighboring panels with a smooth minimum (Home); without it they
+  stay apart.
+
+The scene (`src/glass-scene.ts`) is read from the page once per frame:
+`data-glass-panel="<id>"` marks an element whose box is a panel, with its corner
+radius from `--glass-radius`, and `data-glass-veil` marks text on the backdrop
+(the heading, status lines, the rail, the phone bar and the footer). Later stories
+add optional panel fields parsed from more attributes, one texel each in the
+renderer's panel table (`src/glass-renderer.ts`) and a term in the shader
+(`src/glass-shader.ts`). The layer draws only while something changes or settles:
+a box moved or resized, a scroll, a window resize, a mark or skin change, a new
+backdrop, or the 700 ms first appearance. At rest it draws nothing. It caps the
+pixel ratio at 2, takes no pointer input, sends nothing, and loses its context
+when the page is left.
+
+`glass.css` keys everything on `data-glass="webgl"`: the outermost card surface
+in each panel turns transparent (a surface with a state meaning, such as an
+Inbox that needs attention, keeps its fill), the shell's background steps aside
+and the rail and phone bar are frosted. In the initial `quiet` state, without
+WebGL 2 or after a lost context, the page keeps its Quiet glass panels; the
+canvas's `data-glass-fallback` says why (`no-webgl2`, `program` or `lost`).
+
+Colors come from the skin: `--glass-veil` and `--glass-veil-deep` (over the
+artwork, deeper as the page scrolls in dark appearance), `--glass-tone`,
+`--glass-rim`, `--glass-shadow`, `--glass-edge`, `--glass-rail`, and the wash's
+`--bg`, `--shell-wash-start` and `--shell-wash-end`. A color's alpha is the amount
+the shader uses. An automatic veil inside panels and under veil marks mixes in
+just enough of the veil color to keep `--glass-ink` (the faintest text,
+`--muted-dense`) at 5:1. Until the art backdrop export (#1928) merges,
+`src/art-backdrop.ts` supplies no artwork outside the disposable glass journey.
+
 ## Build and checks
 
 `npm run build` builds the page with `apps/runtime/dashboard/build.mjs` into

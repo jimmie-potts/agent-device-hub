@@ -758,6 +758,20 @@ apps/runtime/dashboard/tests/home-catalog.test.ts` cover packing, columns,
 trailing art cells, the conversion table and offered shapes. The core's shape
 rule and restart are in `apps/runtime/tests/home-layout.test.ts`; the
 `home-layout/2.2` schema is in `packages/event-contracts/tests/home-layout.test.mjs`.
+
+Home's glass layer (#1929) ends the same Home editor chain, so hosted smoke and
+the full browser suite run it. After the root build,
+`node apps/runtime/dashboard/tests/home-glass.browser.ts` launches Chromium with
+SwiftShader for WebGL 2 and checks that the Quiet glass wash and then a synthetic
+artwork are drawn behind see-through card surfaces and a frosted rail; that the
+boxes the layer last drew match every card's box after loading, scrolling,
+resizing, moving and reshaping a card in Edit Home, Cancel and paging the Inbox
+in one column; that the frame count holds for two seconds at rest; that a light
+switches off and on through the layer, after a forced context loss (Quiet glass
+panels) and without WebGL 2; that a restored context draws again; that leaving
+Home loses the context; and that panel and heading text measure at least 4.5:1
+against the pixels drawn behind them for a dark and a bright artwork in light and
+dark appearance. With `DASHBOARD_RECEIPTS` set it saves private screenshots.
 Synthetic records only; with `DASHBOARD_RECEIPTS` set it saves private 2x
 screenshots. Journeys that inspect a module card's full content on Home
 (companions, speech, mode overrides, Music artwork, Roborock, Volcano, Wemo,
