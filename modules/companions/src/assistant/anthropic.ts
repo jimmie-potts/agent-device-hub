@@ -1,11 +1,11 @@
 // The Anthropic Messages API behind the turn contract (Hub #46), through the module's own fetch with a transport seam,
 // as the Tidbyt module reaches its cloud. Request shape per the Claude API reference of 2026-10-21: versioned header,
-// `strict` tools, `output_config.effort`, thinking left to the model's default, one tool call per turn. The model's own
+// bounded `strict` tools, `output_config.effort`, thinking left to the model's default, one tool call per turn. The model's own
 // content blocks, thinking blocks included, are kept with the assistant turn and replayed exactly as received, which the
 // API requires for the turn whose tool call awaits its result. The key is held in memory, sent only as the request header
 // and never logged, stored or published. No retry and no fallback model: ADR 0012 forbids automatic resends, and the owner
 // declined a second model.
-import {ProviderFault, textBytes, type ModelProvider, type ToolCall, type TranscriptItem, type TurnInput, type TurnReply, type TurnStop} from './provider.js';
+import {ProviderFault, textBytes, type ModelProvider, type ToolCall, type ToolDefinition, type ToolInputSchema, type TranscriptItem, type TurnInput, type TurnReply, type TurnStop} from './provider.js';
 
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_VERSION = '2026-10-21';
@@ -19,6 +19,7 @@ export type Effort = typeof EFFORTS[number];
 export const MAX_TOKENS = 16_000;
 /** The largest response body kept, in bytes; a larger `content-length` is refused before the body is read. */
 const MAX_RESPONSE_BYTES = 262_144;
+const STRICT_TOOL_LIMIT = 20;
 export type Transport = (url: string, init: {method: 'POST'; headers: Record<string, string>; body: string; signal: AbortSignal; redirect: 'error'}) => Promise<Response>;
 export type AnthropicOptions = {readonly key: string; readonly model?: string; readonly effort?: Effort; readonly transport?: Transport; readonly url?: string};
 type Block = Record<string, unknown>;
@@ -27,6 +28,20 @@ type ApiMessage = {role: 'user' | 'assistant'; content: Block[]};
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const integer = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const TOOL_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+function conformsToSchema(schema: ToolInputSchema, input: ToolCall['input']): boolean {
+  if (!schema.required.every(key => Object.hasOwn(input, key))) return false;
+  return Object.entries(input).every(([key, value]) => {
+    if (!Object.hasOwn(schema.properties, key)) return false;
+    const property = schema.properties[key];
+    if (property === undefined) return false;
+    switch (property.type) {
+      case 'string': return typeof value === 'string' && (property.enum === undefined || property.enum.includes(value));
+      case 'integer': return typeof value === 'number' && Number.isSafeInteger(value);
+      case 'boolean': return typeof value === 'boolean';
+    }
+  });
+}
 
 /**
  * The transcript as Messages API turns. An assistant item that kept the provider's blocks replays them unchanged; one
@@ -73,7 +88,8 @@ export class AnthropicProvider implements ModelProvider {
   }
   async turn(input: TurnInput, signal: AbortSignal): Promise<TurnReply> {
     const body = JSON.stringify({model: this.model, max_tokens: MAX_TOKENS, system: this.#system(input),
-      tools: input.tools.map(tool => ({name: tool.name, description: tool.description, input_schema: tool.input, strict: true})),
+      tools: input.tools.map((tool, index) => ({name: tool.name, description: tool.description, input_schema: tool.input,
+        ...(index < STRICT_TOOL_LIMIT ? {strict: true} : {})})),
       tool_choice: {type: 'auto', disable_parallel_tool_use: true}, messages: toMessages(input.transcript), output_config: {effort: this.#effort}});
     let response: Response;
     try {
@@ -92,7 +108,7 @@ export class AnthropicProvider implements ModelProvider {
     if (textBytes(text) > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large');
     let parsed: unknown;
     try {parsed = JSON.parse(text);} catch {throw new ProviderFault('invalid-message');}
-    return this.#reply(parsed);
+    return this.#reply(parsed, input.tools.slice(STRICT_TOOL_LIMIT));
   }
   #system(input: TurnInput): string {
     // The mode line is the mode now: in a turn after an approved command it already shows the applied value, and a model that
@@ -111,7 +127,7 @@ export class AnthropicProvider implements ModelProvider {
       'If a request needs a detail you do not have, ask the owner with ask_owner. Do not invent device or session facts.',
       preferenceBlock, mode].join('\n\n');
   }
-  #reply(value: unknown): TurnReply {
+  #reply(value: unknown, locallyValidatedTools: readonly ToolDefinition[]): TurnReply {
     if (!object(value) || !Array.isArray(value.content) || !object(value.usage)) throw new ProviderFault('invalid-message');
     const texts: string[] = [], calls: ToolCall[] = [], blocks: Block[] = [];
     for (const block of value.content) {
@@ -128,6 +144,11 @@ export class AnthropicProvider implements ModelProvider {
     const counted = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'].map(key => usage[key]).filter(count => count !== undefined && count !== null);
     const units = counted.length === 0 || !counted.every(integer) ? null : counted.reduce((sum, count) => sum + count, 0);
     const stop = stopOf(value.stop_reason, calls.length);
+    const call = calls[0];
+    if (stop === 'tool' && call !== undefined) {
+      const definition = locallyValidatedTools.find(tool => tool.name === call.name);
+      if (definition !== undefined && !conformsToSchema(definition.input, call.input)) throw new ProviderFault('invalid-message');
+    }
     const text = texts.join('\n').trim();
     return {text: text === '' ? null : text, calls: stop === 'tool' ? calls : [], stop, units, blocks};
   }
