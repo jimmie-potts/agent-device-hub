@@ -38,7 +38,7 @@ A task's identity is `{provider: 'bunny', client: 'assistant', hostId: 'core', s
 | `lifecycle` | `2.2` | `2.0` with the widened identity, the inputs `turn-waiting` and `turn-uncertain`, and an optional `result` on `turn-ended` |
 | `attention-raised`, `attention-cleared`, `turn-ended` | `2.1` | `2.0` with the widened identity |
 
-`session/3.1` defines its own identity, so its schema follows the source definition, and the 2.1 occurrences and `lifecycle/2.2` refer to it. `tests/sources.test.mjs` adds the new identities to its list. `session-ended`, `companion-opportunity`, `desktop-metadata`, `volcano-observation`, `lifecycle/2.0` and `lifecycle/2.1` do not change: no native session ends by a runtime end (decision 3), and the companion part raises no opportunity for the native source (open question 4).
+`session/3.1` defines its own identity, so its schema follows the source definition, and the 2.1 occurrences and `lifecycle/2.2` refer to it. `tests/sources.test.mjs` adds the new identities to its list. `session-ended`, `companion-opportunity`, `desktop-metadata`, `volcano-observation`, `lifecycle/2.0` and `lifecycle/2.1` do not change: no native session ends by a runtime end (decision 3), and the companion part raises no opportunity for the native source (owner decision 4). Decision 14 keeps a later `companion-opportunity` minor for native sources open.
 
 The core publishes each record and occurrence in the lowest version that expresses it, as it published `session/2.0` and `2.1` before #1865 step 9 (`packages/event-contracts/README.md`, "Explicit client read receipts"). A Codex or Claude record therefore stays `session/3.0`, and its occurrences stay 2.0. A native record is `session/3.1`, and its occurrences are 2.1. The hook adapter keeps publishing `lifecycle/2.0`, byte for byte. The core accepts `lifecycle/2.0`, `2.1` and `2.2`.
 
@@ -54,11 +54,12 @@ The engine's task changes map to observations. Each row lists the observations t
 | An owner answer admitted (question Q of run R, new run R2) | `attention-resolved` Q on R, then `turn-started` on R2 | Q cleared, turn R2, work `active` |
 | A clarification saved in run R | `attention-input` Q on R | attention item `input` Q |
 | An approval proposal saved in run R | `attention-approval` Q on R | attention item `approval` Q |
-| A delegation hand-off accepted | none (see open question 2) | unchanged |
+| A delegation hand-off accepted | none (owner decision 2) | unchanged |
 | The run stops at a question or delegation (`waiting`) | `turn-waiting` on R | work `idle`, no notice |
 | The run is cut off and the task is resumable (`paused`) | `turn-interrupted` on R | work `interrupted` |
 | A call's fate is unknown (`uncertain`) | `turn-uncertain` on R | work `unknown`, activity `lost` |
-| The task succeeds, fails or is cancelled | `turn-ended` on R with `result` | work `idle`, one notice with the result, no attention |
+| The task succeeds or fails | `turn-ended` on R with `result` | work `idle`, one unread notice with the result, no attention |
+| The owner cancels the task | `turn-ended` on R with `result: cancelled` | work `idle`, one notice with the result, already acknowledged for every configured consumer, no attention |
 
 Notes:
 
@@ -74,15 +75,17 @@ Notes:
 | --- | --- | --- | --- | --- |
 | `running` | `active`, confirmed | none | none | `working`/`confirmed` |
 | `waiting` on a clarification or approval | `idle` | one item | none | `needs-owner`/`input` or `approval` |
-| `waiting` on a delegation | `idle` | none | none | `quiet`/`idle` (open question 2) |
+| `waiting` on a delegation | `idle` | none | none | `quiet`/`idle` (owner decision 2) |
 | `paused`, question still open | `interrupted` | one item | none | `needs-owner`/`input` or `approval` |
 | `paused` | `interrupted` | none | none | `quiet`/`interrupted` |
 | `uncertain` | `unknown` | none | none | `unknown`/`lost` |
 | `succeeded` | `idle` | none | notice, `result: succeeded` | `finished`/`succeeded` |
 | `failed` | `idle` | none | notice, `result: failed` | `finished`/`failed` |
-| `cancelled` | `idle` | none | notice, `result: cancelled` | `finished`/`cancelled` (open question 1) |
+| `cancelled` | `idle` | none | notice, `result: cancelled`, acknowledged for every configured consumer | `finished`/`cancelled`; every reader's policy retires it to `quiet`/`acknowledged` (owner decision 1) |
 
-Status rule 3 becomes: a notice that still counts gives `finished`, detailed by the result of the last such notice that has one, or `turn-ended` when none does. Codex and Claude notices carry no result, so their status is unchanged. `STATUS_DETAILS.finished` adds `succeeded`, `failed` and `cancelled`. A reader that does not know a detail falls back to `finished`, which never means success. The agent-status helper maps `finished` to `done` as today; open question 1 asks whether that stays so for `failed` and `cancelled`.
+Status rule 3 becomes: a notice that still counts gives `finished`, detailed by the result of the last such notice that has one, or `turn-ended` when none does. Codex and Claude notices carry no result, so their status is unchanged. `STATUS_DETAILS.finished` adds `succeeded`, `failed` and `cancelled`. A reader that does not know a detail falls back to `finished`, which never means success. The agent-status helper maps `finished` to `done` as today, so an unacknowledged failure shows as done on class-only devices, as any finished Codex or Claude turn does (owner decision 1). Detail-aware surfaces, the dashboard, Habitat and Conversation, name the result.
+
+An owner cancel leaves no unread notice (owner decision 1). The task is still finished, with detail `cancelled`, but the core adds its notice already acknowledged by every configured consumer, as `notice-clear` acknowledges them (`transition.ts`, `acknowledge-all`). Every reader's policy then retires it: the default and dashboard policies count any consumer's acknowledgment, and Nanoleaf and Pixoo find their own. The owner's cancel is the acknowledgment: it is an explicit act in Conversation, not inferred from silence. A failure keeps an unread notice until a consumer acknowledges it. The rule keys on the observation's `result: cancelled`, not on the provider, so a later source that reports owner cancels gets the same behavior.
 
 A `turn-ended` with a result clears every attention item of its turn, with cause `turn-ended`, because an ended task waits for no one. A question cancelled before its answer is therefore cleared as ended, not as resolved. Today's reducer clears only approvals without an ID at a turn end (`reducer.ts:249-256`); `turn-ended` without a result keeps that rule. An `uncertain` task is not terminal: it can be cancelled, and once late evidence settles its call it can be resumed (`engine.ts:166`, `:663-682`).
 
@@ -137,11 +140,11 @@ Every reader uses `readSession`, so the version change reaches them together. Th
 | Reader | Change |
 | --- | --- |
 | Shared read function and case set (`session.ts`, `session-view.ts`, `fixtures/v2/session-cases.json`) | Read `3.1`; rule 3 detail; native cases for every row of decisions 3 and 4, duplicates, delay, restart, expiry, reappearance and capacity |
-| Dashboard and Habitat (`apps/runtime/dashboard/src/sessions.ts`) | Client name `B.U.N.N.Y. assistant`; the provider group from `PROVIDERS`; chip text for the finished details (open question 1) |
+| Dashboard and Habitat (`apps/runtime/dashboard/src/sessions.ts`) | Client name `B.U.N.N.Y. assistant`; the provider group from `PROVIDERS`; chip text naming the finished result (`Succeeded`, `Failed` or `Cancelled`) wherever the chip shows a finished or retired native task (owner decision 1) |
 | Tronbyt tile (`modules/tidbyt/src/status.ts:55`) | Fallback prefix `B` for the native provider |
 | Nanoleaf (`modules/nanoleaf/src/shared-input.ts:161-168`) | Accept the native source in `qualifiedSources`. Lines show native tasks only once the owner adds the source to the private configuration (#1869) |
-| Companion part (`apps/runtime/src/core/companion-part.ts:103`) | Raise no opportunity for the native source (open question 4) |
-| Companions `read_sessions` and coding suggestions (`modules/companions/src/assistant/tools.ts`, `frontend/suggestions.tsx`) | Leave out native sessions (open question 5) |
+| Companion part (`apps/runtime/src/core/companion-part.ts:103`) | Raise no opportunity for the native source (owner decision 4, decision 14) |
+| Companions `read_sessions` and coding suggestions (`modules/companions/src/assistant/tools.ts`, `frontend/suggestions.tsx`) | Leave out native sessions (owner decision 5) |
 | `core_sessions` provider filter, Pixoo rows, LIFX and automations | No code change: they read the definition or the shared status. Pixoo's command filter enum stays Codex and Claude, so it cannot select native rows alone |
 
 Automations take the native occurrences as they take every agent's: a rule on `attention-raised` fires for an assistant question.
@@ -150,7 +153,7 @@ Automations take the native occurrences as they take every agent's: a rule on `a
 
 The helpers run from each host's installed release and accept only what its `readSession` accepts (`apps/runtime/src/read-receipts/session.ts`). The SDK client stores synced messages without validating them. A previous-release helper therefore skips a native `session/3.1` record and serves the Codex and Claude `session/3.0` records exactly as before. A native record never matches a helper's own entity in any case. The disposable acceptance exercise runs the previous release's Claude read helper against this change's runtime with a native task present and checks that bind and read still confirm.
 
-If every record moved to `3.1` instead, every previous-release helper would stop sending receipts until its host is updated, as #1865 step 9 did. The coordinator chose the per-record versions (open question 6).
+If every record moved to `3.1` instead, every previous-release helper would stop sending receipts until its host is updated, as #1865 step 9 did. The coordinator chose the per-record versions (decision 6 below).
 
 ### 12. Component boundaries (ADR 0012)
 
@@ -163,16 +166,27 @@ If every record moved to `3.1` instead, every previous-release helper would stop
 
 The relationship claim, child counting and `relationships.children` stay as they are. When worker reporting is selected, it must establish parent and run attribution, keep the worker's hooks and its owner from both reporting the same work, keep a child's completion from implying the task's success, and keep a delegation wait from counting as attention. This change adds no worker adapter, dispatch or child session.
 
-## Open questions
+### 14. Later companion opportunities for native sources
 
-Questions 1 to 5 are product questions for the owner, each with a recommendation; the accepted decisions on #505 and #1855 do not answer them. Question 6 is decided.
+This slice raises no Reachy or MicroDuck opportunity for a native task (owner decision 4), and the owner wants that left open. Nothing here precludes it:
 
-1. **Terminal outcomes on devices.** A failed or cancelled task is `finished` with its result as detail. Devices that show only the class show it as done (green) until acknowledged, as they show any finished Codex or Claude turn. Options: (a) all three results are `finished`; detail-aware surfaces (dashboard, Habitat, Conversation) name the result; (b) as (a), but a task the owner cancelled leaves no unread notice (`quiet`, as a Codex interrupt does); (c) as (b), and a failed task also leaves none. Recommendation: (b). A failure is something the owner should look at; the owner's own cancel is not.
-2. **Delegation wait.** While the coding worker runs a delegated task, the task's own run has ended and the worker reports through its own path. Options: (a) `quiet`/`idle`; (b) keep the run's work `active`, so devices show working until the worker's word resumes the task; after a restart it reads as unconfirmed. Recommendation: (a) for this slice: the task itself makes no running-work claim, and worker reporting, which would show the worker's work truthfully, is deferred.
-3. **Demo profiles.** Options: report tasks of all three profiles, or only the `bunny` profile. Recommendation: all three, titled by persona: their questions need the owner too, and the Conversation rail already marks them.
-4. **Companion opportunities.** The companion part turns every `attention-raised` and `turn-ended` into a Reachy coding opportunity with a 30-second priority window. Options: (a) none for the native source; (b) include it, which also needs `companion-opportunity/2.1` and Reachy and MicroDuck adoption. Recommendation: (a). Conversation already speaks its own question and result, so a Reachy card would repeat it.
-5. **The assistant's own reads.** Options: `read_sessions` and coding suggestions list native sessions, or leave them out. Recommendation: leave them out. Both are about coding agent sessions, and listing the task that is asking would describe itself.
-6. **Version per record** (engineering). Decided by the coordinator on 2026-11-19: native records are `session/3.1` and Codex and Claude records stay `session/3.0` (decision 2). Previous-release read helpers keep working, and no installed host update is needed for receipts.
+- The exclusion is one predicate in the core's companion part (`companion-part.ts`), not a contract rule. No schema, status rule or validator refuses a native identity in an opportunity.
+- `companion-opportunity/2.0` stays unchanged. A later `companion-opportunity` minor can widen its identity to the `session/3.1` identity, exactly as this change widens the occurrences, and a new category for assistant attention can be added there if `coding-attention` does not fit.
+- `opportunityMatches` already compares identity, generation, turn and the attention item or notice by value, with no provider term, so it matches native views once an opportunity can name one.
+- Native attention items carry known question IDs on known run turns, and native notices carry known turns, so an opportunity can bind to them exactly.
+
+That later change needs only the minor version, the companion part's predicate, and Reachy and MicroDuck adoption of the version.
+
+## Decisions on the open questions
+
+The owner answered questions 1 to 5 on #505 (2026-11-19). The coordinator decided question 6.
+
+1. **Terminal outcomes on devices: (b).** Succeeded, failed and cancelled are all `finished`, and detail-aware surfaces name the result. An owner cancel leaves no unread notice; a failure does (decision 4).
+2. **Delegation wait: (a).** A task waiting on the coding worker is `quiet`/`idle` and makes no running-work claim.
+3. **Demo profiles.** Tasks of all three profiles report, titled by persona (decision 1).
+4. **Companion opportunities: (a).** None for the native source in this slice, with a later companion-opportunity minor left open (decision 14).
+5. **The assistant's own reads.** `read_sessions` and coding suggestions leave native sessions out (decision 10).
+6. **Version per record.** Native records are `session/3.1` and Codex and Claude records stay `session/3.0` (decision 2). Previous-release read helpers keep working, and no installed host update is needed for receipts.
 
 ## Integration with #1947
 

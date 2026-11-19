@@ -1,8 +1,8 @@
 ## 1. Design checkpoint
 
 - [x] 1.1 Write the input/state mapping, versions, binding, expiry, capacity and previous-release helper design (design.md). Evidence: this change at the checkpoint commit.
-- [ ] 1.2 Record the owner's answers to open questions 1 to 5 in design.md (question 6 and the order with #1947 are recorded). Evidence: design.md has no open question left.
-- [ ] 1.3 Start from the main the coordinator names; rebase the `bunny-message-profile` and `bunny-runtime` deltas onto #1947's text if it merged. Evidence: `npm run check:workflow` passes.
+- [x] 1.2 Record the owner's answers to questions 1 to 5, the coordinator's question 6 and the order with #1947 in design.md. Evidence: design.md "Decisions on the open questions".
+- [ ] 1.3 After #1947 merges, start from the main that contains it; rebase the `bunny-message-profile` and `bunny-runtime` deltas onto #1947's text. Evidence: `npm run check:workflow` passes.
 
 ## 2. Contracts
 
@@ -12,17 +12,17 @@
 
 ## 3. Core
 
-- [ ] 3.1 Red: core tests for binding, the new inputs, the terminal attention rule, the ordered start recovery, per-record versions and capacity with native roots fail. Evidence: the runtime unit suite fails on them.
-- [ ] 3.2 Implement the reducer, transition, record and store changes, the core and gateway binding and the companion part's native exclusion. Evidence: the runtime unit and scenario suites pass under `node scripts/native-test.mjs <script> --workers 4`.
+- [ ] 3.1 Red: core tests for binding, the new inputs, the terminal attention rule, the pre-acknowledged cancel notice, the ordered start recovery, per-record versions and capacity with native roots fail. Evidence: the runtime unit suite fails on them.
+- [ ] 3.2 Implement the reducer, transition, record and store changes, the core and gateway binding and the companion part's native exclusion as its own predicate (decision 14). Evidence: the runtime unit and scenario suites pass under `node scripts/native-test.mjs <script> --workers 4`.
 
 ## 4. Producer
 
-- [ ] 4.1 Red: engine tests with fake tasks and the injected clock for each task change, restart recovery, outbox republication, the baseline of saved tasks and the same-transaction commit fail. Evidence: `test:companions:built` fails on them.
+- [ ] 4.1 Red: engine tests with fake tasks and the injected clock for each task change in all three profiles, the delegation wait, restart recovery, outbox republication, the baseline of saved tasks and the same-transaction commit fail. Evidence: `test:companions:built` fails on them.
 - [ ] 4.2 Implement the projection, `assistant_reports` and the observations in `#publish`. Evidence: `test:companions:built` passes.
 
 ## 5. Readers
 
-- [ ] 5.1 Dashboard and Habitat names and finished-detail text, Tronbyt fallback, Nanoleaf source acceptance, `read_sessions` and suggestions exclusion. Evidence: the dashboard, Tidbyt, Nanoleaf and companions suites pass; LIFX and Pixoo suites pass unchanged.
+- [ ] 5.1 Dashboard and Habitat names and the finished result in chip text, Tronbyt fallback, Nanoleaf source acceptance, `read_sessions` and suggestions exclusion. Evidence: the dashboard, Tidbyt, Nanoleaf and companions suites pass; LIFX and Pixoo suites pass unchanged.
 
 ## 6. Documentation, acceptance and archive
 
