@@ -454,106 +454,6 @@ canvas.gl{position:fixed;inset:0;inline-size:100vw;block-size:100vh;z-index:-1;p
   [data-playing] .s3-bars i,.s3-alive .px rect,.s3-alive .l-person::after,.s3-alive .l-dial[data-on] .l-arc{animation:none}
   [data-playing] .s3-bars i{transform:scaleY(.7)}
 }
-
-/* ───────── Picker: copied verbatim from the prototype skill's PICKER.md ───────── */
-.proto-picker {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2147483647;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 999px;
-  background: rgba(10, 10, 10, 0.82);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
-  backdrop-filter: blur(12px) saturate(1.4);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
-    0 8px 24px rgba(0, 0, 0, 0.24),
-    0 2px 6px rgba(0, 0, 0, 0.12);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 13px;
-  line-height: 1;
-  -webkit-font-smoothing: antialiased;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.proto-picker-highlight {
-  position: absolute;
-  top: 4px;
-  left: 0;
-  height: 28px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-}
-
-/* The slide is enabled only after first paint (data-ready), so load doesn't animate. */
-.proto-picker[data-ready] .proto-picker-highlight {
-  transition:
-    transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
-    width 250ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .proto-picker[data-ready] .proto-picker-highlight { transition: none; }
-}
-
-.proto-picker-item {
-  position: relative; /* sits above the highlight */
-  display: flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.55);
-  font: inherit;
-  cursor: pointer;
-  transition:
-    color 150ms ease-out,
-    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .proto-picker-item:hover {
-    color: rgba(255, 255, 255, 0.85);
-  }
-}
-
-.proto-picker-item:active {
-  transform: scale(0.97);
-}
-
-.proto-picker-item:focus-visible {
-  outline: 2px solid rgba(255, 255, 255, 0.4);
-  outline-offset: 2px;
-}
-
-.proto-picker-item[data-active] {
-  color: #fff;
-}
-
-.proto-picker-divider {
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.proto-picker-replay {
-  padding: 0 10px;
-  font-size: 14px;
-}
-
-.proto-picker[data-position="top"] {
-  bottom: auto;
-  top: 24px;
-}
 </style>
 </head>
 <body>
@@ -585,14 +485,6 @@ canvas.gl{position:fixed;inset:0;inline-size:100vw;block-size:100vh;z-index:-1;p
   </div>
 </div>
 <div id="note" role="status"></div>
-
-<nav class="proto-picker" aria-label="Prototype variants">
-  <span class="proto-picker-highlight" aria-hidden="true"></span>
-  <button class="proto-picker-item" data-active aria-current="true">Clear</button>
-  <span class="proto-picker-divider" aria-hidden="true"></span>
-  <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
-</nav>
-
 <script>
 /* ───────── Icons and sample pictures ───────── */
 const I = {
@@ -655,7 +547,7 @@ const S = {
     {id: 'wall', name: 'Wall', kind: 'Lines', on: true, level: 100, follow: true, color: '#8fb4ff'},
     {id: 'panels', name: 'Panels', kind: 'Panels', on: true, level: 100, follow: true, color: '#9d8cff'},
   ],
-  plugs: [{id: 'sword', name: 'Desk lamp', on: false}, {id: 'lava', name: 'Shelf lamp', on: true}],
+  plugs: [{id: 'desk', name: 'Desk lamp', on: false}, {id: 'shelf', name: 'Shelf lamp', on: true}],
 };
 const light = id => S.lights.find(l => l.id === id);
 const thing = id => light(id) ?? S.plugs.find(p => p.id === id);
@@ -722,7 +614,7 @@ function scene(kind, finish = '', fx = '') {
 }
 /* ───────── Round 6: liquid panels that fuse, unfold, hold or spill their light, and wear the weather ───────── */
 const EASE = 'cubic-bezier(.23,1,.32,1)';
-const UNITS = ['pendant', 'wall', 'panels', 'sword', 'lava'];
+const UNITS = ['pendant', 'wall', 'panels', 'desk', 'shelf'];
 const SKY = {clear: ['#070b1c', '#16224e', '#3a3f78'], cloudy: ['#1a2030', '#39425a', '#5a5f70'], rain: ['#121826', '#2a3550', '#454a62'], storm: ['#0e1424', '#27335a', '#4a4a6a'], snow: ['#2a3350', '#56628a', '#8a93b0'], fog: ['#2a3040', '#4a5266', '#6a7080']};
 // The sample picture in the given weather. A real Home would show artwork made for the weather record.
 const art = (id, weather = 'storm') => {
@@ -747,7 +639,7 @@ function join(unit, onto) {
   S.groups = S.groups.filter(group => group.members.length > 1);
 }
 // Round 7. Every variant has Fuse, Unfold and the lit-room lighting. Where a drop sits in the Droplets variant.
-const SPOTS = {'pendant': [1, 24, 150, 150], wall: [15, 128, 170, 170], panels: [30.5, 6, 170, 170], sword: [45.5, 168, 146, 146], lava: [57, 24, 146, 146], robo: [69.5, 176, 146, 146], sound: [78, 28, 260, 118], shows: [3, 330, 372, 150], pair: [37, 330, 320, 162]};
+const SPOTS = {'pendant': [1, 24, 150, 150], wall: [15, 128, 170, 170], panels: [30.5, 6, 170, 170], desk: [45.5, 168, 146, 146], shelf: [57, 24, 146, 146], robo: [69.5, 176, 146, 146], sound: [78, 28, 260, 118], shows: [3, 330, 372, 150], pair: [37, 330, 320, 162]};
 function stage7(opt) {
   const mode = MODES[S.mode], drops = opt.drops === true;
   const spot = (slot, key, wide = false) => { if (!drops) return ''; const [x, y, w, h] = SPOTS[slot], moved = S.pos[key] ?? [0, 0];
@@ -1134,7 +1026,7 @@ function glFrame() {
   const {gl, at, canvas} = state, dpr = Math.min(devicePixelRatio || 1, 2), w = Math.round(innerWidth * dpr), h = Math.round(innerHeight * dpr);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   const cells = [...stage.querySelectorAll('.s4-shader .l-w')].slice(0, 12), rects = new Float32Array(48), tints = new Float32Array(36), origins = new Float32Array(24); let moving = live;
-  const ease = (list, i, target, rate) => { const next = list[i] + (target - list[i]) * rate; list[i] = Math.abs(target - next) < 0.004 ? target : next; if (list[i] !== target) moving = true; };
+  const ease = (list, i, target, rate) => { const goal = Math.fround(target), next = list[i] + (goal - list[i]) * rate; list[i] = Math.abs(goal - next) < 0.004 ? goal : next; if (list[i] !== goal) moving = true; };
   const seen = new Map(state.was), step = Math.min(0.1, (now - (state.tick ?? now)) / 1000); state.was.clear(); state.tick = now;
   cells.forEach((el, i) => {
     const box = el.getBoundingClientRect(), lamp = (el.querySelector('.l-ring, .l-ic') ?? el).getBoundingClientRect();
@@ -1153,7 +1045,7 @@ function glFrame() {
   if (thumb === null) { state.lead = state.lag = null; } else {
     const box = thumb.getBoundingClientRect(), target = [box.left, box.top, box.width, box.height];
     state.lead ??= Float32Array.from(target); state.lag ??= Float32Array.from(target);
-    target.forEach((value, i) => { for (const [list, rate] of [[state.lead, i === 0 ? 0.3 : 1], [state.lag, i === 0 ? 0.12 : 1]]) { const next = list[i] + (value - list[i]) * rate; list[i] = Math.abs(value - next) < 0.3 ? value : next; if (list[i] !== value) moving = true; } });
+    target.forEach((value, i) => { for (const [list, rate] of [[state.lead, i === 0 ? 0.3 : 1], [state.lag, i === 0 ? 0.12 : 1]]) { const goal = Math.fround(value), next = list[i] + (goal - list[i]) * rate; list[i] = Math.abs(goal - next) < 0.3 ? goal : next; if (list[i] !== goal) moving = true; } });
   }
   const appear = Math.min(1, (now - state.born) / 700); if (appear < 1) moving = true;
   // Lightning: two soft pulses about every eleven seconds, only in a moving storm.
@@ -1190,59 +1082,10 @@ addEventListener('scroll', () => {
   requestAnimationFrame(() => { depthQueued = false; document.documentElement.style.setProperty('--depth', Math.min(1, scrollY / (innerHeight * 0.4)).toFixed(3)); });
 }, {passive: true});
 
-/* ───────── Picker wiring: verbatim from PICKER.md ───────── */
+/* ───────── Start: build the one page this reference shows ───────── */
 const stage = document.getElementById('stage');
-const picker = document.querySelector('.proto-picker');
-const highlight = picker.querySelector('.proto-picker-highlight');
-const items = [...picker.querySelectorAll('.proto-picker-item:not(.proto-picker-replay)')];
-const replay = picker.querySelector('.proto-picker-replay');
-let current = 0;
-
-function moveHighlight() {
-  const el = items[current];
-  highlight.style.width = el.offsetWidth + 'px';
-  highlight.style.transform = `translateX(${el.offsetLeft}px)`;
-}
-
-function mount(i) {
-  stage.innerHTML = '';
-  // Clear first, render next frame, so entrance animations re-run.
-  requestAnimationFrame(() => { stage.innerHTML = variants[i](); });
-}
-
-function setActive(i) {
-  if (i < 0 || i >= variants.length) return;
-  current = i;
-  items.forEach((el, j) => {
-    el.toggleAttribute('data-active', j === i);
-    if (j === i) el.setAttribute('aria-current', 'true');
-    else el.removeAttribute('aria-current');
-  });
-  moveHighlight();
-  const url = new URL(location);
-  url.searchParams.set('v', i + 1);
-  history.replaceState(null, '', url);
-  mount(i);
-}
-
-items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
-replay?.addEventListener('click', () => mount(current));
-window.addEventListener('resize', moveHighlight);
-
-document.addEventListener('keydown', (e) => {
-  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-  const num = parseInt(e.key, 10);
-  if (num >= 1 && num <= variants.length) setActive(num - 1);
-  else if (e.key === 'ArrowRight') setActive((current + 1) % variants.length);
-  else if (e.key === 'ArrowLeft') setActive((current - 1 + variants.length) % variants.length);
-  else if (e.key === 'r' || e.key === 'R') mount(current);
-});
-
-const requested = parseInt(new URLSearchParams(location.search).get('v'), 10);
-setActive(requested >= 1 && requested <= variants.length ? requested - 1 : 0);
-// Enable the slide only after first paint, so load doesn't animate.
-requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
+const current = 0;
+requestAnimationFrame(() => { stage.innerHTML = variants[current](); });
 </script>
 </body>
 </html>
