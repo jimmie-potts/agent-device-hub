@@ -574,7 +574,8 @@ hook step) and the job limits leave room for two stalled attempts. Because it
 changes apt's configuration and stops every `apt-get`, the script refuses to run
 unless `GITHUB_ACTIONS` is `true`.
 Active workflow files are `checks.yml`, `workflow.yml`, `integration.yml`,
-`release-qualification.yml` and `codeql.yml`. The Work Guide
+`release-qualification.yml`, `codeql.yml`, `music-native.yml` and
+`runtime-dashboard-browser.yml`. The Work Guide
 workflow and its path exceptions are removed. The existing Workflow workflow
 owns both Workflow checks and Retained documentation checks.
 
@@ -645,7 +646,10 @@ changes must add their own issue-appropriate checks.
 
 Ready pull requests run deterministic admission checks. Draft checkpoints skip
 expensive jobs. Main pushes run the cheap Integration workflow and independently
-enqueue full pinned release qualification. Manual Checks dispatch still runs
+enqueue full pinned release qualification. A main push that selects the runtime
+group also runs the full runtime dashboard browser suite, as
+[Runtime dashboard checks](#runtime-dashboard-checks) describes; it gates no pull
+request. Manual Checks dispatch still runs
 every check. The `Select affected checks` job reads the PR's exact
 comparison (`compare/<base>...<head>` from the event, with both paths of a
 rename) and maps it to check groups with the small explicit table in
@@ -1917,6 +1921,32 @@ Its fixture tests, `npm run test:tracker-audit`, run in core CI without
 network access.
 
 ## Runtime dashboard checks
+
+Pull request App verification runs the runtime dashboard's smoke check and some
+of its browser journeys. The full suite, `npm run test:runtime-dashboard:browser`,
+runs locally and, since
+[#1942](https://github.com/jimmie-potts/agent-device-hub/issues/1942), in the
+Runtime dashboard browser suite workflow (`runtime-dashboard-browser.yml`) on a
+GitHub-hosted runner after each push to main. Its select step reads the push's
+comparison (`compare/<before>...<after>`) and runs the suite only when the
+affected-check selector maps it to the runtime group. A first push, a force push
+or an unreadable or 300-file comparison also runs it. The suite job's limit is
+60 minutes, including a Chromium install limited to 20. The journeys run in the
+package script's order and stop at the first failure.
+A failed run on main comments on the open issue titled "Runtime dashboard browser
+suite fails on main", or opens it. The comment or issue names only the commit,
+the run link and the failing journey. Only the report job has `issues: write`.
+The workflow is not a required check and adds nothing to the Selected checks
+gate, so it blocks no pull request. Both its jobs run for every push to main,
+so the delivery preflight reads them with main's other jobs before closure. A
+push that selects no runtime path passes after the select step. Track each
+journey that fails there in its own issue, and fix the journey rather than
+weaken the suite.
+Manual runs (`workflow_dispatch`) always run the suite and file nothing. Pull
+requests that change the workflow or `scripts/ci-selection/runtime-browser.mjs`
+run it as proof and file nothing. `tests/runtime_browser_ci.test.mjs`, in
+`npm run test:workflow`, covers the selection, runner, report and workflow shape
+with a fake GitHub API.
 
 The furnished apartment reuses the Runtime unit tests and existing App
 verification room-model journey. See [Furnished apartment checks](../apps/runtime/DEVELOPMENT.md#furnished-apartment-checks)
