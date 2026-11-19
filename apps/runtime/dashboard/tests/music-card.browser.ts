@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {chromium, type Route} from 'playwright';
 import {expect} from 'playwright/test';
 import {SimulatedSpeakers} from '@jimmie-potts/playback';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
 
 const speakers = new SimulatedSpeakers({sony: {input: 'airplay', status: 'playing', title: 'Synthetic song', artist: 'Synthetic artist', album: 'Synthetic album'}});
 const world = await startWorld({lighting: true, playbackArtwork: {speakers, fetch: () => Promise.resolve({ok: false, code: 'unavailable', transient: false})}});
@@ -67,10 +67,10 @@ try {
   await openAudio(page); await page.getByText('Show in rooms', {exact: true}).click();
   await studio.waitFor(); assert.equal(await studio.isChecked(), true);
   await page.route('**/api/sdk/v1/sync', route => route.abort());
-  await page.route('**/api/sdk/v1/stream', route => route.abort()); world.dropDashboardStreams();
+  const releaseStream = await holdDashboardStream(page); world.dropDashboardStreams();
   await card.getByText('Stale', {exact: true}).waitFor(); assert.equal(await card.getByRole('button', {name: 'Next', exact: true}).isDisabled(), true);
   assert.equal(await page.getByRole('button', {name: 'Save room placement', exact: true}).isDisabled(), true);
-  await page.unroute('**/api/sdk/v1/sync'); await page.unroute('**/api/sdk/v1/stream'); await feed(page, 'connected');
+  await page.unroute('**/api/sdk/v1/sync'); releaseStream(); await feed(page, 'connected');
   await page.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
   await page.getByRole('checkbox', {name: 'Show living-room in Kitchen', exact: true}).check();
   let releaseSave = (): void => {};
@@ -136,7 +136,7 @@ try {
     await fault.goto(world.url + '/#/audio'); await feed(fault, 'connected'); await fault.getByText('Show in rooms', {exact: true}).click();
     await fault.getByRole('button', {name: 'Refresh placement records', exact: true}).click();
     await fault.getByRole('checkbox', {name: 'Show living-room in Kitchen', exact: true}).check();
-    await fault.route('**/api/sdk/v1/stream', route => route.abort());
+    const releaseFaultStream = await holdDashboardStream(fault);
     await fault.route('**/api/sdk/v1/sync', route => route.abort());
     await fault.route('**/api/v2/commands/playback-layout-set', async route => {
       world.dropDashboardStreams(); const reply = await route.fetch(); assert.equal(reply.status(), 200); forwarded++; await reply.dispose(); await route.abort();
@@ -145,7 +145,7 @@ try {
     await fault.getByRole('button', {name: 'Refresh placement records', exact: true}).waitFor();
     assert.equal(await fault.getByRole('button', {name: 'Save room placement', exact: true}).isDisabled(), true);
     assert.equal(faultSends.length, 1, 'an uncertain save is never retried');
-    await fault.unroute('**/api/sdk/v1/sync'); await fault.unroute('**/api/sdk/v1/stream'); await feed(fault, 'connected');
+    await fault.unroute('**/api/sdk/v1/sync'); releaseFaultStream(); await feed(fault, 'connected');
     await fault.getByRole('status').filter({hasText: 'Room placement saved.'}).waitFor();
     const kitchen = fault.getByRole('checkbox', {name: 'Show living-room in Kitchen', exact: true});
     assert.equal(await kitchen.isDisabled(), true, 'automatic stream recovery still requires explicit review after an uncertain save');

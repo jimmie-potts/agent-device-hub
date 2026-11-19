@@ -559,6 +559,32 @@ desktop/phone layout. Optional `DASHBOARD_RECEIPTS` keeps synthetic
 screenshots outside the checkout. Source checks do not establish installed
 or physical acceptance.
 
+
+### Prepare a measured excerpt
+
+Start Music measurement on Audio and play the item in the configured Mac Music
+library. In **Saved shows**, choose **Prepare measured show** after the capture
+has played through at least two fresh position observations. The draft uses
+bounded energy and onset measurements from windows bracketed by the same
+playing item and capture generation. It keeps gaps where no cue was measured.
+Edit the cues and save a named version as you would for a decorative show.
+Preparation and editing issue no capture or light commands.
+
+The private show version contains cue offsets, the scoped Music library item,
+and the analysis method and sample count. The owner issues a per-run proof
+for new drafts and checks it on save. If the runtime restarts before you save a
+new measured draft, prepare it again. Saved versions keep their original
+measurement metadata when you edit and save another version. Raw audio is
+never stored with the show.
+
+To play an excerpt, play its Music item, seek to the measured part of the song,
+and choose the version on the light's Audio card. Use **Start saved show**.
+The light follows the currently observed Music position, including pause and
+seek. An item or playback source change, an observed output-selection change,
+or expired position evidence ends the show. The start uses the configured
+library scope and item identifier. It gives no assurance of audio-version
+identity or speaker-clock timing.
+
 ## Families
 
 The module answers each device's own keys, `bunny.cmd.<family>.<device id>`, and serves

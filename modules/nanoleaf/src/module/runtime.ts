@@ -1,3 +1,8 @@
+import {createHmac, randomBytes, timingSafeEqual} from 'node:crypto';
+import {CAPTURE_MAX_CLOCK_SKEW_MS, MUSIC_PRODUCER_SOURCE, type CaptureFeatures, type CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {MUSIC_PLAYBACK_OWNER, type PlaybackPositionState} from '@jimmie-potts/event-contracts/v2/music-playback';
+import {MusicShowAnalysis} from '../music-show-analysis.js';
+import {matchesPlaybackProgress, measuredPosition, sameMeasuredItem, type MeasuredPosition} from '../music-show-position.js';
 // The Nanoleaf module's running state (Hub #844): one instance per start. It follows the core's sessions through the
 // SDK's sync, answers the wall's commands, runs one supervised worker per controller on the runtime's clock, scheduler
 // and stop signal, observes each controller's power, and publishes each controller's state.
@@ -16,7 +21,6 @@
 // - Editor ownership: machine edits guard on the device's configuration revision (`edits.ts`).
 // - Policy A: a scheduler callback never throws. A store or device failure is logged once per run of failures and tried
 //   again on the scheduler: a publication, a projection, a worker that ended on a store failure.
-import {randomBytes} from 'node:crypto';
 import {join} from 'node:path';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type DeviceCommand} from '@jimmie-potts/event-contracts/v2/devices';
@@ -29,8 +33,8 @@ import {admitCommand, Refused as PortRefused} from '../controls.js';
 import {initialize} from '../database.js';
 import {readReactiveCatalog, saveReactivePreset, ReactiveFailure, REACTIVE_ERRORS} from '../music-presets.js';
 import {REACTIVE_TARGET} from '../music-preset-data.js';
-import {saveShow, showCatalog, ShowFailure, SHOW_ERRORS} from '../music-shows.js';
-import {SHOW_TARGET} from '../music-show-data.js';
+import {readShowVersion, saveShow, showCatalog, ShowFailure, SHOW_ERRORS} from '../music-shows.js';
+import {SHOW_TARGET, showMeasurement, type ShowMeasurement} from '../music-show-data.js';
 import {favoriteEdit, Failure, validFavoriteEdit} from '../favorites.js';
 import {writeJson} from '../jsonfile.js';
 import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, type Report, type Transact, initJournalAdmissionMarks, journalAdmissionMark} from '../journal.js';
@@ -40,7 +44,7 @@ import {admitMoment, initMoments, momentRevision, readFreeBase, type FreeBase} f
 import {colorStateOf, readMusicBase} from '../music-base.js';
 import {saveSelection} from '../music-store.js';
 import type {LightingWork} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
-import {admitMusicStart, admitMusicStop, admitMusicTransport, checkMusicStart, endMusicAtStart, MusicFeeds, musicDeviceState, MUSIC_STOP, MUSIC_TRANSPORT} from '../music-session.js';
+import {admitMusicStart, admitMusicStop, admitMusicTransport, checkMusicStart, endMusicAtStart, MeasuredShowRefused, MusicFeeds, musicDeviceState, MUSIC_STOP, MUSIC_TRANSPORT} from '../music-session.js';
 import {presented} from '../shared-input.js';
 import {execute, first, rows, text, type Db, type Synchronous} from '../sqlite.js';
 import {controlState} from '../store.js';
@@ -167,6 +171,16 @@ export class NanoleafRuntime {
   /** Each device's status read while it waits out a backoff: when it is due, and how to cancel it. */
   readonly #backoffs = new Map<string, {atMs: number; cancel: Cancel}>();
   /** The current Music features of each light's admitted session, in memory only (#1272). */
+  #playback: PlaybackPositionState | undefined;
+  #captureState: CaptureState | undefined;
+  #captureLive = false;
+  readonly #measurementKey = randomBytes(32);
+  #positionLive = false;
+  #positionEpoch = 0;
+  #seekRevision = 0;
+  #positionSince = 0;
+  #pendingFeatures: {endpointId: string; feature: CaptureFeatures}[] = [];
+  #analysis: {context: string; item: MeasuredPosition['item']; endpointId: string; generation: string; planner: MusicShowAnalysis} | undefined;
   readonly #feeds: MusicFeeds;
   readonly #readTiming: ReadTimingProbe;
 
@@ -188,7 +202,7 @@ export class NanoleafRuntime {
       : new Metadata({metadata_path: config.codexMetadata.path, ...(config.codexMetadata.titleIndexPath === undefined ? {} : {title_index_path: config.codexMetadata.titleIndexPath})});
     this.#feed = new SessionFeed({database: () => db, now: () => clock.now() / 1000, targets: this.#ids, metadata});
     // The module has one clock, the runtime's: it is both of an input's readings, so a step back in it retires the input.
-    this.#feeds = new MusicFeeds(() => ({wallMs: clock.now(), monotonicMs: clock.now()}));
+    this.#feeds = new MusicFeeds(() => ({wallMs: clock.now(), monotonicMs: clock.now()}), () => this.#currentPosition());
   }
 
   /**
@@ -272,8 +286,12 @@ export class NanoleafRuntime {
     await sdk.respond<{requestId: string} & Record<string, unknown>>(`bunny.cmd.${NANOLEAF_FAMILIES.reactivePresetSave.family}.${REACTIVE_TARGET}`,
       command => this.#reactiveSave(command));
     // Music features reach a live session by subscription only; a gap in them is source loss for every session (#1272).
-    await sdk.subscribe('bunny.event.music-capture-features.*', message => { this.#feeds.accept(message); },
-      {onOverflow: () => { this.#feeds.retireAll(); }});
+    await sdk.subscribe<CaptureFeatures>('bunny.event.music-capture-features.*', message => {
+      this.#feeds.accept(message);
+      if (message.source === MUSIC_PRODUCER_SOURCE) this.#queueMeasurement(message.subject, message.data);
+    }, {onOverflow: () => {this.#feeds.retireAll();this.#retireMeasurement();}});
+    this.#followMusicState<PlaybackPositionState>('playback-position', MUSIC_PLAYBACK_OWNER, change => this.#heardPlayback(change));
+    this.#followMusicState<CaptureState>('music-capture-state', CORE_SOURCE, change => this.#heardCapture(change));
     for (const id of this.#ids) await this.#respond(id);
     await this.#follow();
     for (const id of this.#ids) {
@@ -286,6 +304,16 @@ export class NanoleafRuntime {
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (ref === 'music-preview') return musicPreviewContent(request);
     if (ref === 'show-version') return showContent(this.#db, request);
+    if (ref === 'measured-show-draft') {
+      if (request === undefined || Object.keys(request.query).length !== 0) return errorBody('invalid-request');
+      if (request.signal.aborted) return errorBody('cancelled');
+      const position = this.#currentPosition(), analysis = this.#analysis;
+      const result = position !== undefined && analysis?.context === position.context && sameMeasuredItem(position.item, analysis.item)
+        ? analysis.planner.result() : undefined;
+      return result === undefined
+        ? errorBody('unavailable', {detail: 'Play a Music item with measurement active before preparing a measured show.'})
+        : {type: 'application/json', bytes: Buffer.from(JSON.stringify({...result, measurementProof: this.#measurementProof(result)}))};
+    }
     return editorContent(this.#directory, this.#ids, ref, request);
   }
 
@@ -503,6 +531,159 @@ export class NanoleafRuntime {
       }
     }
     return {revision: this.#revision, states};
+  }
+
+  #currentPosition(wallMs = this.#context.clock.now()): MeasuredPosition | undefined {
+    const position = this.#positionLive ? measuredPosition(this.#playback, wallMs) : undefined;
+    return position === undefined ? undefined : {...position, context: `${this.#positionEpoch}/${position.context}`, seekRevision: Math.max(position.seekRevision, this.#seekRevision)};
+  }
+
+  #followMusicState<T extends object>(family: string, owner: string, heard: (change: SyncChange<T> | 'sync-gap' | undefined) => void): void {
+    const {sdk, scheduler, signal} = this.#context;
+    let delay = 1000;
+    const retry = (): void => {
+      heard(undefined);
+      if (signal.aborted) return;
+      scheduler.after(delay, sync);
+      delay = Math.min(delay * 2, SYNC_RETRY_MAX_MS);
+    };
+    const sync = (): void => {
+      if (signal.aborted) return;
+      void sdk.sync<T>([family], change => {
+        if (signal.aborted) return;
+        if (change.type === 'failed') {retry();return;}
+        if (change.type === 'synced') delay = 1000;
+        heard(change);
+      }, {owner, timeoutMs: SYNC_TIMEOUT_MS,
+        onRestarted: () => {if (!signal.aborted) heard('sync-gap');}}).then(result => {
+        if (result.status === 'rejected' && result.error.error.code !== 'unsupported-capability') retry();
+      }, retry);
+    };
+    sync();
+  }
+
+  #heardPlayback(change: SyncChange<PlaybackPositionState> | 'sync-gap' | undefined): void {
+    if (change === 'sync-gap') {
+      this.#positionLive = false;
+      this.#positionEpoch++;
+      this.#retireMeasurement();
+      return;
+    }
+    if (change?.type === 'synced') {
+      if (this.#positionLive) {
+        this.#positionEpoch++;
+        this.#retireMeasurement();
+      }
+      this.#positionLive = true;
+      return;
+    }
+    if (change?.type !== 'updated') {
+      this.#playback = undefined;
+      this.#retireMeasurement();
+      this.#positionEpoch++;
+      if (change === undefined) this.#positionLive = false;
+      return;
+    }
+    const previous = this.#currentPosition();
+    const previousState = this.#playback;
+    this.#playback = change.message.data;
+    const current = this.#currentPosition();
+    const evidence = this.#playback.evidence;
+    this.#positionSince = evidence.status === 'observed'
+      ? evidence.observation.position.interval.latestAtMs + CAPTURE_MAX_CLOCK_SKEW_MS : this.#context.clock.now();
+    const replaced = current === undefined || previous === undefined || previous.context !== current.context
+      || !sameMeasuredItem(previous.item, current.item);
+    if (replaced && previousState !== undefined) this.#positionEpoch++;
+    const interrupted = current !== undefined && previous !== undefined && !current.paused && !previous.paused
+      && !matchesPlaybackProgress(previousState, this.#playback);
+    if (replaced || current?.discontinuity === true || interrupted) {
+      this.#seekRevision = this.#playback.revision;
+      this.#retireMeasurement();
+      return;
+    }
+    if (current === undefined || previous === undefined || current.paused || previous.paused) {
+      this.#pendingFeatures = [];
+      return;
+    }
+    if (this.#playback.evidence.status !== 'observed') return;
+    const boundary = this.#playback.evidence.observation.position.interval.earliestAtMs - CAPTURE_MAX_CLOCK_SKEW_MS;
+    const features = this.#pendingFeatures;
+    this.#pendingFeatures = [];
+    for (const {endpointId, feature} of features) {
+      if (feature.observedAtMs > boundary) continue;
+      const position = measuredPosition(previousState, feature.observedAtMs);
+      if (position !== undefined && sameMeasuredItem(position.item, current.item)) this.#analyze(endpointId, feature, current, position.positionMs);
+    }
+  }
+
+  #heardCapture(change: SyncChange<CaptureState> | 'sync-gap' | undefined): void {
+    if (change === 'sync-gap') {
+      this.#captureLive = false;
+      this.#retireMeasurement();
+      return;
+    }
+    if (change?.type === 'synced') {
+      if (this.#captureLive) this.#retireMeasurement();
+      this.#captureLive = true;
+    } else if (change?.type === 'updated') {
+      this.#captureState = change.message.data;
+      const {session, endpointId} = this.#captureState;
+      const binding = this.#pendingFeatures[0] ?? this.#analysis;
+      const generation = binding !== undefined && 'feature' in binding ? binding.feature.generation : binding?.generation;
+      if (this.#captureState.availability !== 'available' || session.status !== 'active' || session.input !== 'music' || binding !== undefined &&
+          (binding.endpointId !== endpointId || generation !== session.generation)) this.#retireMeasurement();
+    } else {
+      this.#captureState = undefined;
+      this.#retireMeasurement();
+      if (change === undefined) this.#captureLive = false;
+    }
+  }
+
+  #measurementProof({item, analysis}: ShowMeasurement): string {
+    return createHmac('sha256', this.#measurementKey).update(JSON.stringify([item.libraryScopeId, item.itemId, analysis.method, analysis.sampleCount])).digest('hex');
+  }
+
+  #confirmMeasurement(input: Record<string, unknown>, proof: unknown): void {
+    if (input.measurement === undefined && proof === undefined) return;
+    const measurement = showMeasurement(input.measurement);
+    if (measurement === undefined) throw new ShowFailure('invalid-request');
+    if (typeof proof === 'string' && /^[a-f0-9]{64}$/.test(proof)
+        && timingSafeEqual(Buffer.from(proof, 'hex'), Buffer.from(this.#measurementProof(measurement), 'hex'))) return;
+    if (typeof input.showId === 'string' && typeof input.expectedVersion === 'number' && input.expectedVersion > 0) {
+      const prior = readShowVersion(this.#db, input.showId, input.expectedVersion);
+      if (prior.kind === 'measured' && this.#measurementProof(prior.measurement) === this.#measurementProof(measurement)) return;
+    }
+    throw new CommandRefused('invalid-state', 'Prepare a new measured excerpt before saving this draft.');
+  }
+
+  #retireMeasurement(): void {
+    this.#pendingFeatures = [];
+    this.#analysis = undefined;
+  }
+
+  #queueMeasurement(endpointId: string, feature: CaptureFeatures): void {
+    const captureState = this.#captureState;
+    if (!this.#captureLive || captureState?.availability !== 'available' || captureState.session.status !== 'active'
+        || captureState.session.input !== 'music' || endpointId !== captureState.endpointId || feature.generation !== captureState.session.generation
+        || feature.input !== 'music' || feature.validUntilMs <= this.#context.clock.now()) return;
+    if (feature.discontinuity) {
+      this.#retireMeasurement();
+      return;
+    }
+    const position = this.#currentPosition();
+    if (position === undefined || position.paused
+        || feature.observedAtMs - (feature.endMonotonicMs - feature.startMonotonicMs) < this.#positionSince) return;
+    if (this.#pendingFeatures.length >= 50) return;
+    this.#pendingFeatures.push({endpointId, feature});
+  }
+
+  #analyze(endpointId: string, feature: CaptureFeatures, position: MeasuredPosition, positionMs: number): void {
+    const capture = {endpointId, generation: feature.generation};
+    if (this.#analysis?.context !== position.context || this.#analysis.endpointId !== endpointId
+        || this.#analysis.generation !== feature.generation || !sameMeasuredItem(this.#analysis.item, position.item)) {
+      this.#analysis = {context: position.context, item: position.item, ...capture, planner: new MusicShowAnalysis(position.item, capture)};
+    }
+    this.#analysis.planner.add({endpointId, feature, elapsedMs: 0}, positionMs);
   }
 
   // The core's sessions
@@ -816,7 +997,8 @@ export class NanoleafRuntime {
     return this.#admit(command, (_report, add) => {
       if (command.subject !== SHOW_TARGET) throw new CommandRefused('invalid-request', 'Select the show library.');
       if (expiresMs(command, this.#context.clock.now()) <= this.#context.clock.now()) throw new CommandRefused('expired', 'The show save expired.');
-      const {requestId, ...input} = command.data;
+      const {requestId, measurementProof, ...input} = command.data;
+      this.#confirmMeasurement(input, measurementProof);
       this.#revision = Math.max(this.#revision + 1, Math.floor(this.#context.clock.now()));
       saveShow(this.#db, input, this.#revision);
       add(`bunny.state.${NANOLEAF_FAMILIES.shows.family}.${SHOW_TARGET}`, {
@@ -961,8 +1143,9 @@ export class NanoleafRuntime {
     const control = controlState(this.#db, device), revision = momentRevision(this.#db, device), journaled = journalAdmissionMark(this.#db, device);
     try {
       checkOwnershipFeed();
-      checkMusicStart(this.#db, device, start, savedLayout(this.#directory, device), clock.now(), expiresMs(command, clock.now()), ownershipEpoch);
+      checkMusicStart(this.#db, device, start, savedLayout(this.#directory, device), clock.now(), expiresMs(command, clock.now()), ownershipEpoch, this.#currentPosition());
     } catch (error) {
+      if (error instanceof MeasuredShowRefused) return errorBody(error.code, {requestId, detail: error.message});
       if (error instanceof PortRefused) return errorBody(error.code, {requestId, detail: MUSIC_REFUSALS[error.code] ?? OTHER_REFUSAL});
       throw error;
     }
@@ -1008,7 +1191,12 @@ export class NanoleafRuntime {
       checkOwnershipFeed();
       this.#record(command, device, MUSIC_WORK);
       const at = clock.now();
-      admitMusicStart(this.#db, device, start, savedLayout(this.#directory, device), base, revision, at, expiresMs(command, at), report, ownershipEpoch);
+      try {
+        admitMusicStart(this.#db, device, start, savedLayout(this.#directory, device), base, revision, at, expiresMs(command, at), report, ownershipEpoch, this.#currentPosition(at));
+      } catch (error) {
+        if (error instanceof MeasuredShowRefused) throw new CommandRefused(error.code, error.message);
+        throw error;
+      }
     }, () => {
       if (start.action === 'start') this.#feeds.open(device, start.generation, start.capture);
       this.#accepted(device, command);

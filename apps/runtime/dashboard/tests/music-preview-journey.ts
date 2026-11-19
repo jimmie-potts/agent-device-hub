@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {expect} from 'playwright/test';
 import type {Browser} from 'playwright';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
 import {destinationLink} from './navigation-helpers.ts';
 
 /** Actual disposable host and module, fixed generated input and simulated controllers only. */
@@ -96,10 +96,10 @@ export async function musicPreviewJourney(browser: Browser): Promise<void> {
     await prepare();
 
     const beforeReconnect = reads.length;
-    await page.route('**/api/sdk/v1/stream', route => route.abort()); world.dropDashboardStreams();
+    const releaseStream = await holdDashboardStream(page); world.dropDashboardStreams();
     await preview.getByText('Connect to request an example.', {exact: true}).waitFor();
     await expect(preview.locator('figure')).toHaveCount(0);
-    await page.unroute('**/api/sdk/v1/stream'); await feed(page, 'connected');
+    releaseStream(); await feed(page, 'connected');
     await expect(preview.getByRole('button', {name: 'Preview', exact: true})).toBeEnabled();
     assert.equal(reads.length, beforeReconnect, 'reconnect requires another explicit read');
     await prepare();

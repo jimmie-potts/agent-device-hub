@@ -8,7 +8,8 @@ import {REACTIVE_LIMITS, REACTIVE_TARGET} from '../src/music-preset-data.js';
 import {prepareReactiveSave, readReactiveCatalog, saveReactivePreset, ReactiveFailure} from '../src/music-presets.js';
 import {freezeMusicRecipe, MUSIC_DIRECTIONS} from '../src/music-recipe-data.js';
 import {DIRECTIONS} from '../src/effects.js';
-import {readShowVersion, saveShow} from '../src/music-shows.js';
+import {prepareShowSave, readShowVersion} from '../src/music-shows.js';
+import {SHOW_VERSION_SCHEMA} from '../src/music-show-data.js';
 import {execute, first, rows, transaction} from '../src/sqlite.js';
 import {FIXTURES, suite, temporary, test} from './support.js';
 
@@ -70,14 +71,21 @@ suite('private frozen reactive recipes', () => {
     context.after(() => db.close());
     db.exec(readFileSync(join(FIXTURES, 'reactive-presets/prior-d7-schema.sql'), 'utf8'));
     db.exec("INSERT INTO meta VALUES ('model_version','4'); INSERT INTO animation_favorites VALUES ('synthetic','{}')");
-    transaction(db, () => saveShow(db, {showId: 'show-before', expectedVersion: 0, name: 'Before', versionName: 'First',
-      timeline: {version: 1, durationMs: 1000, cues: [{id: 'cue', offsetMs: 0, durationMs: 1000, recipe: {preset: 'ocean'}}]}}, 5));
+    const draft = prepareShowSave({showId: 'show-before', expectedVersion: 0, name: 'Before', versionName: 'First',
+      timeline: {version: 1, durationMs: 1000, cues: [{id: 'cue', offsetMs: 0, durationMs: 1000, recipe: {preset: 'ocean'}}]}});
+    const oldVersion = {schema: SHOW_VERSION_SCHEMA, showId: draft.showId, version: 1,
+      name: draft.name, versionName: draft.versionName, kind: 'decorative', timeline: draft.timeline};
+    execute(db, 'INSERT INTO nanoleaf_show_versions VALUES (?,?,?,?)', oldVersion.showId, 1, oldVersion.versionName, JSON.stringify(oldVersion));
+    execute(db, 'INSERT INTO nanoleaf_shows VALUES (?,?,?)', oldVersion.showId, 1, oldVersion.name);
+    execute(db, 'INSERT INTO nanoleaf_show_catalog VALUES (?,?)', 'shows', 5);
     const before = {favorites: rows(db, 'SELECT * FROM animation_favorites'), shows: rows(db, 'SELECT * FROM nanoleaf_show_versions'),
-      show: readShowVersion(db, 'show-before', 1)};
+      show: oldVersion};
+    assert.equal(first(db, "SELECT 1 FROM sqlite_master WHERE name='nanoleaf_measured_shows'"), undefined);
     assert.equal(first(db, "SELECT 1 FROM sqlite_master WHERE name='nanoleaf_reactive_presets'"), undefined);
     initialize(db); initialize(db);
     assert.deepEqual({favorites: rows(db, 'SELECT * FROM animation_favorites'), shows: rows(db, 'SELECT * FROM nanoleaf_show_versions'),
       show: readShowVersion(db, 'show-before', 1)}, before);
+    assert.deepEqual(rows(db, 'SELECT * FROM nanoleaf_measured_shows'), []);
     assert.deepEqual(readReactiveCatalog(db), {id: REACTIVE_TARGET, revision: 0, presets: []});
   });
 

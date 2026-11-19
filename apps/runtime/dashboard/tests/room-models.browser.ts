@@ -2,13 +2,16 @@ import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium} from 'playwright';
-import {changes,feed,startWorld} from './harness.ts';
+import {changes,feed,holdDashboardStream,startWorld} from './harness.ts';
 import {apartmentJourney} from './apartment-journey.ts';
 import {apartmentPresenceJourney} from './apartment-presence-journey.ts';
 import {roomModelFixture} from '../../dist/tests/fixtures/room-model.js';
 
 const world=await startWorld({lighting:true});
-const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+// WebGL runs on SwiftShader on every host. Page compositing stays on Chromium's software compositor (#1893): with
+// SwiftShader as the compositing GPU, a reload or navigation soon after a 3D view rendered waited seconds for queued
+// software-GPU work while the old WebGL context was destroyed, and timed out on a busy CPU.
+const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--disable-gpu-compositing']});
 try{
   const folder=join(world.stateDir,'modules/core/room-models');await mkdir(folder,{recursive:true,mode:0o700});
   await writeFile(join(folder,'catalog.json'),JSON.stringify({schema:'room-model-catalog/1.0',models:[{id:'studio',roomId:'studio'}]}),{mode:0o600});
@@ -45,10 +48,10 @@ try{
   await page.waitForFunction(before=>Number(document.querySelector('[aria-label="Studio 3D model"] canvas')?.getAttribute('data-distance'))<before,distance);
   await page.setViewportSize({width:390,height:844});await page.waitForFunction(()=>document.documentElement.scrollWidth<=innerWidth);
   if(process.env.DASHBOARD_RECEIPTS!==undefined)await page.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/room-model-phone.png',fullPage:true});
-  await page.route('**/api/sdk/v1/stream',route=>route.abort());world.dropDashboardStreams();
+  const releaseStream=await holdDashboardStream(page);world.dropDashboardStreams();
   await view.locator('.room-selected').getByText('Room assignments are stale.',{exact:true}).waitFor();
   assert.equal(sent.filter(url=>url.endsWith('/power-set')).length,1,'stream loss never replays a command');
-  await page.unroute('**/api/sdk/v1/stream');await feed(page,'connected');await card.waitFor();
+  releaseStream();await feed(page,'connected');await card.waitFor();
   const snapshot=await page.request.get(world.url+'/api/v2/snapshot?families=lighting-layout&owner=bunny%2Fcore');
   const current=await snapshot.json() as {records:{'lighting-layout':{revision:number}[]}};const revision=current.records['lighting-layout'][0]?.revision;assert.ok(revision!==undefined);
   const moved=await page.request.post(world.url+'/api/v2/commands/lighting-layout-set',{headers:{origin:world.url,'bunny-request':'1'},data:{target:'lighting',requestId:'remove-synthetic-assignment',data:{expectedRevision:revision,layout:{...layout,assignments:layout.assignments.filter(a=>a.device!=='lamp-a')}}}});assert.equal(moved.status(),200);

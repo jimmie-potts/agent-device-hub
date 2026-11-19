@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {setTimeout as pause} from 'node:timers/promises';
 import {chromium} from 'playwright';
-import {feed,startWorld} from './harness.ts';
+import {feed,startWorld,holdDashboardStream} from './harness.ts';
 const world=await startWorld({wemo:true}),browser=await chromium.launch({headless:true});
 try{
   const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
@@ -99,10 +99,10 @@ try{
   assert.equal(await shelfLimit.getByLabel('Enable maximum on time').isChecked(),false);
   assert.equal(world.wemo.state()['shelf-lamp']?.writes,2,'metadata save, tab navigation and refresh send no power');
   await shelf.getByRole('tab',{name:'Power',exact:true}).click();
-  await reopened.route('**/api/sdk/v1/sync',route=>route.abort());await reopened.route('**/api/sdk/v1/stream',route=>route.abort());world.dropDashboardStreams();
+  await reopened.route('**/api/sdk/v1/sync',route=>route.abort());const releaseStream=await holdDashboardStream(reopened);world.dropDashboardStreams();
   await shelf.getByRole('status').filter({hasText:/^! Stale$/}).waitFor();
   assert.equal(await shelf.getByRole('button',{name:'Turn on',exact:true}).isDisabled(),true);
-  await reopened.unroute('**/api/sdk/v1/sync');await reopened.unroute('**/api/sdk/v1/stream');await feed(reopened,'connected');
+  await reopened.unroute('**/api/sdk/v1/sync');releaseStream();await feed(reopened,'connected');
   await reopened.route('**/api/v2/authority?scope=control',route=>route.fulfill({status:403,contentType:'application/json',body:'{"error":{"code":"forbidden","retryable":false}}'}));
   await reopened.reload();await feed(reopened,'connected');
   assert.equal(await shelf.getByRole('button',{name:'Turn on',exact:true}).isDisabled(),true);

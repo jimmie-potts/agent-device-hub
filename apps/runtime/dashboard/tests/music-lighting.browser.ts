@@ -10,7 +10,7 @@ import {LINES_ADDRESS, PANELS_ADDRESS} from '@jimmie-potts/nanoleaf';
 import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {connectRemote} from '@jimmie-potts/sdk/remote';
 import {CAPTURE_VALIDITY_MS, CAPTURE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/music-capture-data';
-import {startWorld, changes, feed} from './harness.ts';
+import {startWorld, changes, feed, holdDashboardStream} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {worldClock} from './world-clock.ts';
@@ -133,9 +133,9 @@ try {
 
   await page.reload(); await feed(page, 'connected');
   await light.getByText(ACTIVE, {exact: true}).waitFor();
-  await page.route('**/api/sdk/v1/stream', route => route.abort()); world.dropDashboardStreams();
+  const releaseStream = await holdDashboardStream(page); world.dropDashboardStreams();
   await expect(stop).toBeDisabled();
-  await page.unroute('**/api/sdk/v1/stream'); await reconnect(page); await expect(stop).toBeEnabled();
+  releaseStream(); await reconnect(page); await expect(stop).toBeEnabled();
   assert.equal(controls.length, 1, 'reload and reconnect send no lighting command');
 
   await stop.click();
@@ -196,7 +196,7 @@ try {
 
   // A lost Start reply stays locked and uncertain across reload; Stop remains available and nothing is resent.
   let lost = 0;
-  await page.route('**/api/sdk/v1/stream', route => route.abort());
+  const releaseLostReplyStream = await holdDashboardStream(page);
   await page.route('**/api/sdk/v1/sync', route => route.abort());
   await page.route('**/api/v2/commands/music-lighting-control', async route => {
     world.dropDashboardStreams(); const reply = await route.fetch(); assert.equal(reply.status(), 200); lost += 1; await reply.dispose(); await route.abort();
@@ -204,7 +204,7 @@ try {
   const lostReplyFrames = datagrams(LINES_ADDRESS);
   await start.click(); await light.getByText(/Start request: Uncertain result/).waitFor();
   await expect(start).toBeDisabled(); await expect(stop).toBeDisabled();
-  await page.unroute('**/api/sdk/v1/sync'); await page.unroute('**/api/sdk/v1/stream'); await reconnect(page);
+  await page.unroute('**/api/sdk/v1/sync'); releaseLostReplyStream(); await reconnect(page);
   await playing(light, LINES_ADDRESS, lostReplyFrames);
   await expect(stop).toBeEnabled(); await page.reload(); await feed(page, 'connected');
   await light.getByText(ACTIVE, {exact: true}).waitFor();
