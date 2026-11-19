@@ -13,3 +13,9 @@ Playback SHALL make the original observation bounds and associated item, process
 
 - **WHEN** an older observation arrives after a newer seek observation
 - **THEN** the current playback position remains tied to the newer evidence
+
+#### Scenario: Playback copy needs replacement
+
+- **WHEN** the consumer learns of an SDK delivery gap while its cached position would otherwise still be current
+- **THEN** measured alignment becomes unavailable immediately
+- **AND** the replacement snapshot can enable a later explicit Start

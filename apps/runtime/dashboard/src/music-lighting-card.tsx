@@ -123,7 +123,7 @@ function LightingTarget({record, device, base, baseLive, live, control, operatio
     </div>
     {session.status !== 'idle' && stopReason !== undefined && <p className="music-note">Stop unavailable: {stopReason}</p>}
     {start.requestId !== undefined && <p role="status">Start request: {controlText(start.text)}</p>}
-    {startWork !== undefined && <p role="status">Start light work: {workText(operationView(startWork).text)}</p>}
+    {startWork !== undefined && <p role="status">Start light work: {workText(operationView(startWork).text, startWork.status === 'rejected' ? startWork.error?.detail : undefined)}</p>}
     {stop.requestId !== undefined && <p role="status">Stop request: {controlText(stop.text)}</p>}
     {stopWork !== undefined && <p role="status">Stop light work: {workText(operationView(stopWork).text)}</p>}
   </section>;

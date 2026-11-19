@@ -3,6 +3,7 @@ import type {LayoutEntry} from '../src/devices.js';
 import {MAX_BYTES, MAX_FRAMES, Rejected, display, render, size} from '../src/effects.js';
 import {MAX_MUSIC_CUES, MAX_MUSIC_DURATION_MS, MIN_MUSIC_CUE_MS, MusicTimelineCursor, prepareMusicTimeline,
   locateMusicCuePhase, prepareMusicCueFrames, renderMusicCue, selectMusicCue, type PreparedMusicCue, type TimelineSample} from '../src/music-timeline.js';
+import {PreparedMusic} from '../src/prepared-music.js';
 import {decode, test} from './support.js';
 
 const cue = (id: string, offsetMs: number, durationMs = 500) =>
@@ -333,4 +334,35 @@ test('pause, resume and seek locate the selected current elapsed phase without s
   assert.deepEqual(locate(sought), locateMusicCuePhase(prepared, 2800));
   const back = cursor.seek({generation: sought.generation, monotonicMs: 6200, positionMs: 50});
   assert.deepEqual(locate(back), locateMusicCuePhase(prepared, 50));
+});
+
+
+const observedShowPosition = (revision: number, positionMs: number, seekRevision: number, discontinuity = false) => ({
+  item: {libraryScopeId: 'library', itemId: 'abc1'}, revision, context: 'synthetic', discontinuity, seekRevision, paused: false, positionMs,
+});
+
+function measuredPlayback() {
+  const first = {id: 'one', offsetMs: 0, durationMs: 500, intensity: 1, recipe: {pattern: 'pulse', colors: ['#ff0000']}};
+  const second = {id: 'two', offsetMs: 500, durationMs: 500, intensity: 1, recipe: {pattern: 'pulse', colors: ['#0000ff']}};
+  return new PreparedMusic({showId: 'show-test', version: 1, positionMs: 0, missedCues: 0},
+    prepareMusicTimeline({version: 1, durationMs: 1000, cues: [first, second]}), layout('panels'), 0, 0);
+}
+
+test('a measured backward seek reanchors before the previous cursor reaches the end', () => {
+  const playback = measuredPlayback();
+  assert.equal(playback.follow(observedShowPosition(1, 970, 1), 0), 'playing');
+  const oldFrame = playback.frame();
+  assert.equal(playback.follow(observedShowPosition(2, 300, 2, true), 30), 'playing');
+  assert.equal(playback.evidence.positionMs, 300);
+  assert.notDeepEqual(playback.frame(), oldFrame);
+});
+
+test('an overwritten seek marker still fences a small correction across a cue boundary', () => {
+  const playback = measuredPlayback();
+  playback.follow(observedShowPosition(1, 505, 1), 0);
+  const laterCue = playback.frame();
+  // A normal observation has replaced the seek-marked observation by this worker tick.
+  assert.equal(playback.follow(observedShowPosition(3, 480, 2), 25), 'playing');
+  assert.equal(playback.evidence.positionMs, 480);
+  assert.notDeepEqual(playback.frame(), laterCue);
 });

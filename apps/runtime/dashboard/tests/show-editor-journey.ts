@@ -3,6 +3,7 @@ import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
+import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
 import type {Browser} from 'playwright';
 import {changes, feed, startWorld} from './harness.ts';
 import {musicCaptureProducer} from './music-capture-producer.ts';
@@ -141,7 +142,7 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.equal(await editor.getByLabel('Show name', {exact: true}).inputValue(), priorName);
 
     const measurement = {item: {libraryScopeId: 'fixture-library', itemId: 'F17E'}, analysis: {method: 'energy-onset-v1', sampleCount: 3}};
-    const measuredTimeline = {version: 1, durationMs: 1300, cues: [{id: 'fixture-pulse', offsetMs: 1000, durationMs: 300, intensity: 0.45,
+    const measuredTimeline = {version: 1, durationMs: 1307, cues: [{id: 'fixture-pulse', offsetMs: 1007, durationMs: 300, intensity: 0.453,
       recipe: {pattern: 'pulse', colors: ['#4f85ff'], speed: 'medium', loop: true}}]};
     let draftReads = 0;
     // This browser fixture replaces only the measured draft response. The authenticated save/read use the real runtime.
@@ -154,6 +155,10 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     await editor.getByRole('heading', {name: 'Unsaved draft', exact: true}).waitFor();
     await editor.getByText('Captured excerpt for a scoped Mac Music library item.', {exact: false}).waitFor();
     await editor.getByRole('heading', {name: 'Measured cue storyboard', exact: true}).waitFor();
+    for (const label of ['Show duration (ms)', 'Start (ms)', 'Duration (ms)', 'Intensity (%)']) {
+      const input = editor.getByLabel(label, {exact: true});
+      assert.equal(await input.evaluate((node: HTMLInputElement) => node.validity.valid), true, `captured ${label} is a valid number input`);
+    }
     await editor.getByLabel('Show name', {exact: true}).fill('Synthetic measured excerpt');
     await cues.nth(0).getByLabel('Intensity (%)', {exact: true}).fill('50');
     assert.equal(sent.length, beforePrepareCommands, 'preparing and inspecting an excerpt send no command');
@@ -183,7 +188,7 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     const draftUrl = `${world.url}/modules/nanoleaf/content/measured-show-draft`;
     let draftStatus = 503;
     for (let attempt = 0; attempt < 12 && draftStatus !== 200; attempt++) {
-      if (attempt !== 0) await delay(300);
+      if (attempt !== 0) await delay(550);
       await playback.observe();
       const result = await context.request.get(draftUrl);
       draftStatus = result.status();
@@ -196,6 +201,10 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     await editor.getByRole('heading', {name: 'Measured cue storyboard', exact: true}).waitFor();
     await editor.getByLabel('Show name', {exact: true}).fill('Synthetic captured excerpt');
     await cues.nth(0).getByLabel('Intensity (%)', {exact: true}).fill('50');
+    const finalCueOffset = Number(await cues.last().getByLabel('Start (ms)', {exact: true}).inputValue());
+    const finalCueDuration = 8000;
+    await cues.last().getByLabel('Duration (ms)', {exact: true}).fill(String(finalCueDuration));
+    await editor.getByLabel('Show duration (ms)', {exact: true}).fill(String(finalCueOffset + finalCueDuration));
     assert.equal(sent.length, commandsBeforeDraft, 'preparing and editing a measured excerpt send no command');
     await editor.getByRole('button', {name: 'Save new version', exact: true}).click();
     await editor.getByRole('heading', {name: 'Saved version 1', exact: true}).waitFor();
@@ -218,6 +227,58 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.deepEqual(outputState(), deviceBefore, 'successful measured authoring and reopening leave the controller unchanged');
     assert.deepEqual(await world.nanoleafWall(), wallBefore);
     if (receipts !== undefined) await page.screenshot({path: join(receipts, 'shows-measured-excerpt.png'), fullPage: true});
+
+    await page.setViewportSize({width: 1440, height: 1000});
+    await editor.getByRole('region', {name: 'Measured shows', exact: true}).getByRole('link', {name: 'Audio page', exact: true}).click();
+    const light = page.getByRole('region', {name: 'wall Music lighting', exact: true});
+    const savedSelector = light.getByRole('combobox', {name: 'Saved show and version', exact: true});
+    const startShow = light.getByRole('button', {name: 'Start saved show', exact: true});
+    const stopShow = light.getByRole('button', {name: 'Stop Music lighting', exact: true});
+    assert.equal((await world.credentialAction('device-mode-set', 'wall', {mode: 'free'})).status, 200);
+    let free = false;
+    for (let attempt = 0; attempt < 40 && !free; attempt++) {
+      const wall = await world.nanoleafWall();
+      free = 'mode' in wall && wall.mode === 'free' && 'modePending' in wall && wall.modePending === false;
+      if (!free) await delay(50);
+    }
+    assert.ok(free, 'the simulated Lines applied Free mode');
+    await savedSelector.selectOption({label: 'Synthetic captured excerpt · v1 · First draft · Measured excerpt'});
+    const baseline = world.nanoleafState().devices[LINES_ADDRESS];
+    assert.ok(baseline?.select !== undefined, 'the simulated Lines have an existing selection');
+    await playback.observe({itemId: 'BEEF', positionMs: finalCueOffset});
+    await page.getByText('Synthetic different Music item', {exact: true}).last().waitFor();
+    await startShow.click();
+    await light.getByText(/Music is playing a different library item\./).waitFor();
+    const refused = world.nanoleafState().devices[LINES_ADDRESS];
+    assert.ok(refused);
+    assert.deepEqual({writes: refused.writes, streamed: refused.streamed, select: refused.select},
+      {writes: baseline.writes, streamed: baseline.streamed, select: baseline.select}, 'wrong-item refusal writes no fake stream or scene');
+    if (receipts !== undefined) await light.screenshot({path: join(receipts, 'shows-measured-refused.png')});
+
+    await playback.observe({itemId: playback.item.itemId, positionMs: finalCueOffset + 200});
+    await page.getByText('Synthetic Music', {exact: true}).last().waitFor();
+    await startShow.click();
+    await light.getByText('Active. The light module reports that the show is running.', {exact: true}).waitFor();
+    let streamed = baseline.streamed;
+    for (let attempt = 0; attempt < 40 && streamed <= baseline.streamed; attempt++) {
+      streamed = world.nanoleafState().devices[LINES_ADDRESS]?.streamed ?? 0;
+      if (streamed <= baseline.streamed) await delay(50);
+    }
+    assert.ok(streamed > baseline.streamed, 'the aligned saved show produced fake stream frames');
+    assert.equal((await world.credentialAction('nanoleaf-show-save', 'shows', {
+      ...accepted.data, expectedVersion: 1, versionName: 'Edit while playing', measurement: savedExcerpt.measurement,
+    })).status, 200);
+    await light.getByText(`Saved show ${accepted.data.showId}, version 1.`, {exact: false}).waitFor();
+    if (receipts !== undefined) await light.screenshot({path: join(receipts, 'shows-measured-playing.png')});
+    await playback.observe();
+    await stopShow.click();
+    await light.getByText(/Last session ended: stopped on request\. The current base scene and brightness were restored\./).waitFor();
+    const stopped = world.nanoleafState().devices[LINES_ADDRESS];
+    assert.ok(stopped);
+    assert.deepEqual({on: stopped.on, selection: stopped.select, brightness: stopped.brightness},
+      {on: baseline.on, selection: baseline.select, brightness: baseline.brightness}, 'Stop restored the simulated scene and brightness');
+    if (receipts !== undefined) await light.screenshot({path: join(receipts, 'shows-measured-stopped.png')});
+    await page.getByRole('link', {name: 'Saved shows', exact: true}).click();
     await editor.getByLabel('Show', {exact: true}).selectOption(first.data.showId);
     await editor.getByRole('button', {name: 'Open saved version', exact: true}).click();
     await editor.getByRole('heading', {name: 'Saved version 3', exact: true}).waitFor();
@@ -235,8 +296,8 @@ export async function showEditorJourney(browser: Browser): Promise<void> {
     assert.equal(saves.length, 5, 'uncertainty is not retried on reload');
     assert.deepEqual(errors, []);
     process.stdout.write(`${JSON.stringify({passed: true, journey: 'offline-decorative-shows', browserSaveRequests: saves.length,
-      immutableVersions: true, staleSave: 409, readonly: 403, crossOrigin: 403, malformed: 400, deviceChanges: 0,
-      preview: 'cue storyboard only', measuredExcerpt: 'prepared, edited, saved and reopened using synthetic producers', forgedProvenanceRefused: true, noResend: true})}\n`);
+      immutableVersions: true, staleSave: 409, readonly: 403, crossOrigin: 403, malformed: 400, authoringDeviceChanges: 0,
+      preview: 'cue storyboard only', measuredExcerpt: 'prepared, edited, saved and reopened using synthetic producers', forgedProvenanceRefused: true, measuredAudio: 'wrong item refused, matching item started and stopped, v1 pinned while v2 saved', noResend: true})}\n`);
   } catch (error) {
     const receipts = process.env.DASHBOARD_RECEIPTS, page = context.pages()[0];
     if (receipts !== undefined && page !== undefined) {

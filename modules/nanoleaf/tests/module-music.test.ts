@@ -7,7 +7,7 @@ import type {TestContext} from 'node:test';
 import type {LightingDeviceState, LightingWork} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import {MUSIC_PLAYBACK_OWNER, type MusicPlaybackField, type PlaybackPositionState} from '@jimmie-potts/event-contracts/v2/music-playback';
 import type {CaptureFeatures, CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture';
-import type {Participant, RequestResult} from '@jimmie-potts/sdk';
+import type {Participant, RequestResult, Snapshot, StateDraft} from '@jimmie-potts/sdk';
 import {LINES_ADDRESS, PANELS_ADDRESS, SYNTHETIC_TOKEN} from '../src/index.js';
 import {saveLayout} from '../src/devices.js';
 import {measuredDraft} from '../src/frontend/show-model.js';
@@ -1025,7 +1025,7 @@ for (const manual of [{brightness: {value: 20}}, {on: {value: false}}]) {
 
 
 test('measured drafts consume Music features without writes and measured replay follows the scoped item on both lights', async context => {
-  const world = await ModuleWorld.open(context, WITH_PANELS);
+  const world = await ModuleWorld.open(context, {...WITH_PANELS, playbackSyncBuffer: 2});
   const playback = world.bus.connect(MUSIC_PLAYBACK_OWNER);
   const core = world.bus.connect('bunny/core');
   const capture: CaptureState = {id: 'music', revision: 1, endpointId: CAPTURE.endpointId, availability: 'available',
@@ -1033,13 +1033,18 @@ test('measured drafts consume Music features without writes and measured replay 
   await core.serveSync(['music-capture-state'], () => ({revision: 1,
     states: [{type: 'org.bunny.music-capture.updated', subject: 'music', dataschema: 'https://bunny.invalid/events/music-capture-state/2.2', data: capture}]}));
   await world.start();
-  await playback.serveSync(['playback-position'], () => ({revision: 0, states: []}));
+  let positionSnapshot: Snapshot = {revision: 0, states: []};
+  let holdReplacement = false;
+  let releaseReplacement: (() => void) | undefined;
+  await playback.serveSync(['playback-position'], () => holdReplacement
+    ? new Promise(resolve => {releaseReplacement = () => {resolve(positionSnapshot);};})
+    : positionSnapshot);
   await world.until(() => world.wall()?.layout === 'saved' && world.state<{layout?: string}>('nanoleaf-wall', 'nl22')?.layout === 'saved', 10000, 'both saved layouts');
   await mode(world, 'free', 'wall');
   await mode(world, 'free', 'nl22');
   const session: Session = {world, core, producer: world.bus.connect('bunny/parts/music-producer'), sequence: 0};
   let revision = 0;
-  const publishPosition = async (itemId: string, value: number, state: 'playing' | 'paused' = 'playing', discontinuity = true, airPlayEnabled = false): Promise<void> => {
+  const publishPosition = async (itemId: string, value: number, state: 'playing' | 'paused' = 'playing', discontinuity = true, airPlayEnabled = false, advance = true): Promise<void> => {
     const now = world.clock.now();
     const interval = {earliestAtMs: now - 100, latestAtMs: now};
     const field = <T>(value: T): MusicPlaybackField<T> => ({status: 'observed', value, interval});
@@ -1052,9 +1057,11 @@ test('measured drafts consume Music features without writes and measured replay 
         metadata: {title: field('Synthetic song'), artist: field('Synthetic artist'), album: field('Synthetic album'), durationSeconds: field(20)},
         outputSelection: {status: 'observed', provenance: 'music-declared-selection', interval, selectionInterval: interval, airPlayEnabled: field(airPlayEnabled), devices: []},
       }}};
-    await playback.publish('bunny.state.playback-position.playback', {kind: 'state', type: 'org.bunny.playback.position.updated',
-      subject: 'playback', dataschema: 'https://bunny.invalid/events/playback-position/2.0', data});
-    await world.advance(0);
+    const stateDraft: StateDraft<PlaybackPositionState> = {type: 'org.bunny.playback.position.updated', subject: 'playback',
+      dataschema: 'https://bunny.invalid/events/playback-position/2.0', data};
+    positionSnapshot = {revision, states: [stateDraft]};
+    await playback.publish('bunny.state.playback-position.playback', {kind: 'state', ...stateDraft});
+    if (advance) await world.advance(0);
   };
   const reads = {query: {}, signal: new AbortController().signal};
   const noDraft = world.content('measured-show-draft', reads);
@@ -1067,7 +1074,11 @@ test('measured drafts consume Music features without writes and measured replay 
   await play(session, 1400);
   const beforeConfirmation = world.content('measured-show-draft', reads);
   assert.ok(beforeConfirmation !== undefined && 'error' in beforeConfirmation);
-  await publishPosition('abc1', 3.8, 'playing', false);
+  await publishPosition('abc1', 3.3, 'playing', false);
+  const unconfirmed = world.content('measured-show-draft', reads);
+  assert.ok(unconfirmed !== undefined && 'error' in unconfirmed, 'a 500 ms backseek without a marker drops intervening capture');
+  await play(session, 1600);
+  await publishPosition('abc1', 4.9, 'playing', false);
   const draft = world.content('measured-show-draft', reads);
   assert.ok(draft !== undefined && 'bytes' in draft, 'the existing measurement feed yields a measured draft');
   const prepared = measuredDraft(JSON.parse(Buffer.from(draft.bytes).toString()), 'show-color');
@@ -1090,8 +1101,22 @@ test('measured drafts consume Music features without writes and measured replay 
   await publishPosition('abc1', 2);
   assert.deepEqual(await startColorShow(session, 'measured-lines'), {status: 'accepted'});
   assert.deepEqual(await startColorShow(session, 'measured-panels', 'nl22'), {status: 'accepted'});
-  await world.until(() => (lines(world)?.streamed ?? 0) > 0 && (panelsOf(world)?.streamed ?? 0) > 0, 2000, 'aligned frames on both controllers');
+  await world.until(() => (lines(world)?.streamed ?? 0) > 0 && (panelsOf(world)?.streamed ?? 0) > 0, 3000, 'aligned frames on both controllers');
   assert.ok((showState(world)?.positionMs ?? 0) >= 2000);
+  const readVersion = (version: number) => world.content('show-version', {query: {showId: 'show-color', version: String(version)}, signal: new AbortController().signal});
+  const original = readVersion(1);
+  assert.ok(original !== undefined && 'bytes' in original);
+  const edited = await world.request('bunny.cmd.nanoleaf-show-save.shows', {
+    type: 'org.bunny.nanoleaf-show.save.requested', subject: 'shows',
+    dataschema: 'https://bunny.invalid/events/nanoleaf-show-save/2.0',
+    data: {requestId: 'measured-edit', showId: 'show-color', expectedVersion: 1, name: 'Measured', versionName: 'Edited excerpt',
+      measurement: prepared.measurement, timeline: {...prepared.timeline, cues: prepared.timeline.cues.map(cue => ({...cue, intensity: 0.1}))}},
+  });
+  assert.equal(edited.status, 'accepted');
+  const savedEdit = readVersion(2);
+  assert.ok(savedEdit !== undefined && 'bytes' in savedEdit);
+  assert.equal(showState(world)?.version, 1, 'saving a measured edit does not change the running version');
+  assert.equal(showState(world, 'nl22')?.version, 1);
   await publishPosition('abc1', 12, 'paused');
   await world.advance(150);
   const paused = deviceState(world)?.session;
@@ -1121,5 +1146,31 @@ test('measured drafts consume Music features without writes and measured replay 
   await publishPosition('abc1', 12, 'playing', false, true);
   await world.until(() => ended(world)?.generation === generation(4), 2000, 'declared output change ends the same item');
   assert.equal(ended(world)?.reason, 'source-lost');
+  await publishPosition('abc1', 12, 'playing', false, true);
+  const measuredStart = (requestId: string, currentGeneration: string): Promise<Answer> => work(session, {
+    requestId, generation: currentGeneration, action: 'start-show', showId: 'show-color', version: 1, positionMs: 0, startDelayMs: 0,
+  });
+  assert.deepEqual(await measuredStart('measured-gap-start', generation(5)), {status: 'accepted'});
+  await world.until(() => deviceState(world)?.session?.status === 'playing', 2000, 'the sync-gap test starts');
+  holdReplacement = true;
+  const releaseDelivery = world.holdPlaybackDelivery();
+  try {
+    await Promise.all(Array.from({length: 12}, () => publishPosition('abc1', 12, 'playing', false, true, false)));
+  } finally {
+    releaseDelivery();
+  }
+  await world.until(() => releaseReplacement !== undefined, 500, 'playback replacement sync is held');
+  await world.until(() => ended(world)?.generation === generation(5), 500, 'copy gap retires measured playback before the cached position expires');
+  assert.equal(ended(world)?.reason, 'source-lost');
+  assert.deepEqual(await measuredStart('measured-gap-refused', generation(6)), {status: 'rejected', code: 'unavailable'});
+  holdReplacement = false;
+  releaseReplacement?.();
+  await world.advance(100);
+  assert.equal(deviceState(world)?.session?.status, 'ended', 'replacement sync does not start a show');
+  assert.deepEqual(await measuredStart('measured-gap-recovered', generation(7)), {status: 'accepted'});
+  await world.restart();
+  assert.deepEqual(readVersion(1), original, 'the original scoped item, provenance and cues survive restart');
+  assert.deepEqual(readVersion(2), savedEdit, 'the measured edit survives separately');
+  assert.notEqual(deviceState(world)?.session?.status, 'playing', 'restart does not replay measured work');
   world.verifyMessages();
 });

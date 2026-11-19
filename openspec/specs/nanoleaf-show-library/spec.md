@@ -73,3 +73,8 @@ The show library SHALL let the operator prepare a bounded cue plan from the exis
 
 - **WHEN** a save claims measured analysis that the module did not prepare and that differs from the prior saved version's analysis
 - **THEN** the save is refused while the draft remains available to the operator
+
+#### Scenario: Unmarked playback jump during measurement
+
+- **WHEN** consecutive observations for the same item disagree about playback progress beyond the supported clock uncertainty
+- **THEN** the library discards the unconfirmed measurement windows

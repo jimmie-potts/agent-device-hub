@@ -37,20 +37,20 @@ function Storyboard({timeline, measured}: {timeline: MusicTimeline; measured: bo
   return <section className="show-storyboard" aria-label={title}><h3>{title}</h3>
     <p>Timing, palette and effect names only. This does not show rendered frames, play music or control lights.</p>
     <ol>{parts}</ol>
-    <label>Inspect position: {seconds(current)}<input type="range" min="0" max={timeline.durationMs} step="100" value={current}
+    <label>Inspect position: {seconds(current)}<input type="range" min="0" max={timeline.durationMs} step={measured ? 1 : 100} value={current}
       onChange={event => {setPosition(Number(event.target.value));}}/></label>
     <p role="status">{selected.kind === 'cue' ? `${selected.cue.recipe.pattern} cue · ${seconds(selected.elapsedMs)} into this cue`
       : selected.kind === 'gap' ? 'Gap: no cue. No blackout or return behavior is implied.' : 'End of show. No output behavior is implied.'}</p>
   </section>;
 }
 
-function CueEditor({cue, index, disabled, update, remove}: {
-  cue: MusicCue; index: number; disabled: boolean; update: (cue: MusicCue) => void; remove: () => void;
+function CueEditor({cue, index, measured, disabled, update, remove}: {
+  cue: MusicCue; index: number; measured: boolean; disabled: boolean; update: (cue: MusicCue) => void; remove: () => void;
 }): React.JSX.Element {
   return <fieldset className="show-cue-edit" disabled={disabled}><legend>Cue {index + 1}</legend>
-    <div className="show-fields"><label>Start (ms)<input type="number" min="0" max={MAX_MUSIC_DURATION_MS} step="100" value={cue.offsetMs}
+    <div className="show-fields"><label>Start (ms)<input type="number" min="0" max={MAX_MUSIC_DURATION_MS} step={measured ? 1 : 100} value={cue.offsetMs}
       onChange={event => {update({...cue, offsetMs: Number(event.target.value)});}}/></label>
-    <label>Duration (ms)<input type="number" min={MIN_MUSIC_CUE_MS} max={MAX_MUSIC_DURATION_MS} step="100" value={cue.durationMs}
+    <label>Duration (ms)<input type="number" min={MIN_MUSIC_CUE_MS} max={MAX_MUSIC_DURATION_MS} step={measured ? 1 : 100} value={cue.durationMs}
       onChange={event => {update({...cue, durationMs: Number(event.target.value)});}}/></label>
     <label>Effect<select aria-label="Effect" value={cue.recipe.pattern} onChange={event => {
       const pattern = PATTERN_CHOICES.find(value => value === event.target.value); if (pattern === undefined) return;
@@ -63,7 +63,7 @@ function CueEditor({cue, index, disabled, update, remove}: {
     {spatial(cue.recipe.pattern) && <label>Direction<select aria-label="Direction" value={cue.recipe.direction} onChange={event => {
       const direction = DIRECTION_CHOICES.find(value => value === event.target.value); if (direction !== undefined) update({...cue, recipe: {...cue.recipe, direction}});
     }}>{DIRECTION_CHOICES.map(value => <option key={value}>{value}</option>)}</select></label>}
-    <label>Intensity (%)<input type="number" min="0" max="100" step="1" value={cue.intensity * 100}
+    <label>Intensity (%)<input type="number" min="0" max="100" step={measured ? 'any' : 1} value={measured ? Math.round(cue.intensity * 10000) / 100 : cue.intensity * 100}
       onChange={event => {update({...cue, intensity: Number(event.target.value) / 100});}}/></label>
     <label className="show-check"><input type="checkbox" checked={cue.recipe.loop} onChange={event => {update({...cue, recipe: {...cue.recipe, loop: event.target.checked}});}}/>Repeat effect within cue</label></div>
     <div className="show-colors">{cue.recipe.colors.map((color, colorIndex) => <label key={colorIndex}>Color {colorIndex + 1}<input type="color" value={color}
@@ -167,9 +167,9 @@ function ShowEditor({context, catalog, command}: {context: FrontendContext; cata
       {draft.measurement !== undefined && <p>Captured excerpt for a scoped Mac Music library item. Replay uses the matching item and its current playback position.</p>}
       <div className="show-fields"><label>Show name<input value={draft.name} maxLength={160} disabled={!editable} onChange={event => {change({...draft, name: event.target.value});}}/></label>
       <label>Version name<input value={draft.versionName} maxLength={160} disabled={!editable} onChange={event => {change({...draft, versionName: event.target.value});}}/></label>
-      <label>Show duration (ms)<input type="number" min={MIN_MUSIC_CUE_MS} max={MAX_MUSIC_DURATION_MS} step="100" value={draft.timeline.durationMs} disabled={!editable}
+      <label>Show duration (ms)<input type="number" min={MIN_MUSIC_CUE_MS} max={MAX_MUSIC_DURATION_MS} step={draft.measurement === undefined ? 100 : 1} value={draft.timeline.durationMs} disabled={!editable}
         onChange={event => {change({...draft, timeline: {...draft.timeline, durationMs: Number(event.target.value)}});}}/></label></div>
-      {draft.timeline.cues.map((cue, index) => <CueEditor key={cue.id} cue={cue} index={index} disabled={!editable}
+      {draft.timeline.cues.map((cue, index) => <CueEditor key={cue.id} cue={cue} index={index} measured={draft.measurement !== undefined} disabled={!editable}
         update={next => {change({...draft, timeline: {...draft.timeline, cues: draft.timeline.cues.map(value => value.id === cue.id ? next : value)}});}}
         remove={() => {change({...draft, timeline: {...draft.timeline, cues: draft.timeline.cues.filter(value => value.id !== cue.id)}});}}/>)}
       <button type="button" className="secondary" disabled={!editable || draft.timeline.cues.length >= MAX_MUSIC_CUES} onClick={() => {

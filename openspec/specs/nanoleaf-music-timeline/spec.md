@@ -157,3 +157,13 @@ For a measured show, the worker SHALL evaluate the pinned timeline against quali
 
 - **WHEN** the worker can no longer bound the position of the scoped Music item
 - **THEN** the worker stops advancing cues and applies the existing source-loss restoration policy
+
+#### Scenario: Seek near the projected end
+
+- **WHEN** a fresh seek lands within the cue timeline at the same worker turn as the previous projection would reach its end
+- **THEN** the worker evaluates the new position without completing the show at the old position
+
+#### Scenario: A later observation follows a seek before the worker runs
+
+- **WHEN** the worker receives a seek and a normal observation between two worker turns
+- **THEN** the normal observation retains the seek boundary and the worker discards work from the old position

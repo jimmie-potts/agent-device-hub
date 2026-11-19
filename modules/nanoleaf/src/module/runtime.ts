@@ -1,8 +1,8 @@
 import {createHmac, randomBytes, timingSafeEqual} from 'node:crypto';
-import {MUSIC_PRODUCER_SOURCE, type CaptureFeatures, type CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture';
+import {CAPTURE_MAX_CLOCK_SKEW_MS, MUSIC_PRODUCER_SOURCE, type CaptureFeatures, type CaptureState} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {MUSIC_PLAYBACK_OWNER, type PlaybackPositionState} from '@jimmie-potts/event-contracts/v2/music-playback';
 import {MusicShowAnalysis} from '../music-show-analysis.js';
-import {measuredPosition, sameMeasuredItem, type MeasuredPosition} from '../music-show-position.js';
+import {matchesPlaybackProgress, measuredPosition, sameMeasuredItem, type MeasuredPosition} from '../music-show-position.js';
 // The Nanoleaf module's running state (Hub #844): one instance per start. It follows the core's sessions through the
 // SDK's sync, answers the wall's commands, runs one supervised worker per controller on the runtime's clock, scheduler
 // and stop signal, observes each controller's power, and publishes each controller's state.
@@ -177,6 +177,7 @@ export class NanoleafRuntime {
   readonly #measurementKey = randomBytes(32);
   #positionLive = false;
   #positionEpoch = 0;
+  #seekRevision = 0;
   #positionSince = 0;
   #pendingFeatures: {endpointId: string; feature: CaptureFeatures}[] = [];
   #analysis: {context: string; item: MeasuredPosition['item']; endpointId: string; generation: string; planner: MusicShowAnalysis} | undefined;
@@ -534,10 +535,10 @@ export class NanoleafRuntime {
 
   #currentPosition(wallMs = this.#context.clock.now()): MeasuredPosition | undefined {
     const position = this.#positionLive ? measuredPosition(this.#playback, wallMs) : undefined;
-    return position === undefined ? undefined : {...position, context: `${this.#positionEpoch}/${position.context}`};
+    return position === undefined ? undefined : {...position, context: `${this.#positionEpoch}/${position.context}`, seekRevision: Math.max(position.seekRevision, this.#seekRevision)};
   }
 
-  #followMusicState<T extends object>(family: string, owner: string, heard: (change: SyncChange<T> | undefined) => void): void {
+  #followMusicState<T extends object>(family: string, owner: string, heard: (change: SyncChange<T> | 'sync-gap' | undefined) => void): void {
     const {sdk, scheduler, signal} = this.#context;
     let delay = 1000;
     const retry = (): void => {
@@ -553,14 +554,21 @@ export class NanoleafRuntime {
         if (change.type === 'failed') {retry();return;}
         if (change.type === 'synced') delay = 1000;
         heard(change);
-      }, {owner, timeoutMs: SYNC_TIMEOUT_MS}).then(result => {
+      }, {owner, timeoutMs: SYNC_TIMEOUT_MS,
+        onRestarted: () => {if (!signal.aborted) heard('sync-gap');}}).then(result => {
         if (result.status === 'rejected' && result.error.error.code !== 'unsupported-capability') retry();
       }, retry);
     };
     sync();
   }
 
-  #heardPlayback(change: SyncChange<PlaybackPositionState> | undefined): void {
+  #heardPlayback(change: SyncChange<PlaybackPositionState> | 'sync-gap' | undefined): void {
+    if (change === 'sync-gap') {
+      this.#positionLive = false;
+      this.#positionEpoch++;
+      this.#retireMeasurement();
+      return;
+    }
     if (change?.type === 'synced') {
       if (this.#positionLive) {
         this.#positionEpoch++;
@@ -582,11 +590,14 @@ export class NanoleafRuntime {
     const current = this.#currentPosition();
     const evidence = this.#playback.evidence;
     this.#positionSince = evidence.status === 'observed'
-      ? evidence.observation.position.interval.latestAtMs : this.#context.clock.now();
+      ? evidence.observation.position.interval.latestAtMs + CAPTURE_MAX_CLOCK_SKEW_MS : this.#context.clock.now();
     const replaced = current === undefined || previous === undefined || previous.context !== current.context
       || !sameMeasuredItem(previous.item, current.item);
     if (replaced && previousState !== undefined) this.#positionEpoch++;
-    if (replaced || current?.discontinuity === true) {
+    const interrupted = current !== undefined && previous !== undefined && !current.paused && !previous.paused
+      && !matchesPlaybackProgress(previousState, this.#playback);
+    if (replaced || current?.discontinuity === true || interrupted) {
+      this.#seekRevision = this.#playback.revision;
       this.#retireMeasurement();
       return;
     }
@@ -595,7 +606,7 @@ export class NanoleafRuntime {
       return;
     }
     if (this.#playback.evidence.status !== 'observed') return;
-    const boundary = this.#playback.evidence.observation.position.interval.earliestAtMs;
+    const boundary = this.#playback.evidence.observation.position.interval.earliestAtMs - CAPTURE_MAX_CLOCK_SKEW_MS;
     const features = this.#pendingFeatures;
     this.#pendingFeatures = [];
     for (const {endpointId, feature} of features) {
@@ -605,7 +616,12 @@ export class NanoleafRuntime {
     }
   }
 
-  #heardCapture(change: SyncChange<CaptureState> | undefined): void {
+  #heardCapture(change: SyncChange<CaptureState> | 'sync-gap' | undefined): void {
+    if (change === 'sync-gap') {
+      this.#captureLive = false;
+      this.#retireMeasurement();
+      return;
+    }
     if (change?.type === 'synced') {
       if (this.#captureLive) this.#retireMeasurement();
       this.#captureLive = true;
