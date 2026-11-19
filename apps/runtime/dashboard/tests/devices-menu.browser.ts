@@ -2,7 +2,8 @@
 // change this browser's own list; nothing here sends a command, sync, upload or provider request.
 import assert from 'node:assert/strict';
 import {chromium, type Page, type Request} from 'playwright';
-import {changes, feed, startWorld} from './harness.ts';
+import {expect} from 'playwright/test';
+import {changes, copiesSynced, feed, startWorld} from './harness.ts';
 import {destinationLink, openDeviceMenu, openDirectory} from './navigation-helpers.ts';
 import {PINS_KEY} from '../src/pins.ts';
 
@@ -39,8 +40,13 @@ const focused = (): Promise<string> => page.evaluate(() => {
   return active === null ? '' : active.id === 'main' ? 'main' : active.getAttribute('aria-label') ?? active.textContent ?? '';
 });
 const rowNames = (): Promise<string[]> => rows.locator('a').evaluateAll(links => links.map(link => link.getAttribute('aria-label') ?? ''));
-/** The menu slides in; its box is measured once that has finished. */
-const settled = async (): Promise<void> => {await page.locator('.device-menu').evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));};
+/**
+ * Waits for the rail to show these rows. A module page's row is named after the module alone while the module offers
+ * that one page, and with the module once its devices' records add their own pages, which arrive after the catalog.
+ */
+const railShows = (names: string[], message: string): Promise<void> => expect.poll(rowNames, {message}).toEqual(names);
+/** The menu slides in; its box is measured once that has finished. The wait has the page's timeout, as every wait here does. */
+const settled = async (): Promise<void> => {await page.waitForFunction(() => document.querySelector('.device-menu')?.getAnimations().every(animation => animation.playState === 'finished') === true);};
 const choose = async (name: string): Promise<void> => {await (await openDeviceMenu(page)).getByRole('menuitem', {name, exact: true}).click(); await menu.waitFor({state: 'detached'});};
 const checks: string[] = [];
 try {
@@ -54,7 +60,8 @@ try {
   assert.equal(await devices.getAttribute('data-ancestor'), null);
 
   // The menu: every page the directory lists, beside the rail. The directory mounts no module page, so any write
-  // from here to the end of this part would be the menu's own.
+  // from here to the end of this part would be the menu's own, once the page's own load syncs are behind it.
+  await copiesSynced(page);
   const menuWrites = recordWrites(page);
   await devices.click();
   await menu.waitFor();
@@ -317,8 +324,7 @@ try {
   // named with its state in the menu and offers no page there.
   await page.evaluate(key => {localStorage.setItem(key, JSON.stringify(['#/module/sign/preview', '#/module/pixoo/retired', '#/lights/lifx']));}, PINS_KEY);
   await page.reload(); await feed(page, 'connected');
-  await rows.nth(1).waitFor();
-  assert.deepEqual(await rowNames(), ['sign · Sign preview', 'LIFX'], 'a pin with no declared page is left out of the rail');
+  await railShows(['sign · Sign preview', 'LIFX'], 'a pin with no declared page is left out of the rail');
   await rows.nth(1).getByRole('button').focus();
   await page.keyboard.press('Enter');
   assert.deepEqual(await saved(), ['#/module/sign/preview', '#/module/pixoo/retired'], 'the hidden pin is kept when another is unpinned');
@@ -334,6 +340,7 @@ try {
   assert.deepEqual([await menu.locator('.device-menu-module').filter({hasText: /^sign · stopped$/}).count(), await menu.getByRole('menuitem', {name: /Sign preview|sign-1/}).count()], [1, 0],
     'a stopped module is named with its state in the menu and offers no page');
   await page.keyboard.press('Escape');
+  await railShows(['sign · Sign preview · stopped'], 'a pinned page of a stopped module keeps its row, with the module\'s state in its name');
   assert.deepEqual([await rowNames(), await rows.first().locator('.rail-pin-state').textContent(), await rows.first().getByRole('link').getAttribute('title')],
     [['sign · Sign preview · stopped'], 'stopped', 'sign · Sign preview · stopped'], 'a pinned page of a stopped module keeps its row, which shows the module\'s state in its text, its name and its title');
   assert.deepEqual(await rows.first().evaluate(row => {
@@ -356,8 +363,7 @@ try {
     'when the catalog no longer declares the page its pin is hidden and kept');
   await page.unroute('**/api/v2/modules');
   await page.reload(); await feed(page, 'connected');
-  await rows.first().waitFor();
-  assert.deepEqual(await rowNames(), ['sign · Sign preview'], 'the pin is listed again once its page is declared');
+  await railShows(['sign · Sign preview'], 'the pin is listed again once its page is declared');
   checks.push('a pin with no declared page is hidden and kept, and a stopped module offers no page in the menu');
 
   // The pinned list scrolls inside the rail when it is longer than the room above the foot.
@@ -449,11 +455,22 @@ try {
     await page.keyboard.press('Escape');
     await drawer.waitFor({state: 'hidden'});
     // A link opened in a new tab from the menu closes the drawer, as any link in the drawer does; the menu goes with it.
+    // The page leaves a modified click to the browser. The check records that the click reached the document with its
+    // default intact, then stops that default, so it does not depend on whether headless Chromium opens the tab: on
+    // hosted runners it sometimes never did (#1919), as shell.browser.ts notes for the rail's links.
     await drawerButton.click(); await drawer.waitFor();
     await devices.click(); await menu.waitFor();
-    const opened = context.waitForEvent('page');
+    await page.evaluate(() => {
+      document.addEventListener('click', event => {
+        const link = event.target instanceof Element ? event.target.closest('a') : null;
+        Object.assign(window, {modifiedClick: {modified: event.ctrlKey || event.metaKey, prevented: event.defaultPrevented, href: link?.getAttribute('href') ?? null}});
+        event.preventDefault();
+      }, {once: true});
+    });
     await menu.getByRole('menuitem', {name: 'All devices', exact: true}).click({modifiers: ['ControlOrMeta']});
-    await (await opened).close();
+    assert.deepEqual(await page.evaluate(() => Reflect.get(window, 'modifiedClick') as unknown), {modified: true, prevented: false, href: '#/devices'},
+      'the modified click on the menu\'s link is left to the browser');
+    assert.equal(hash(), '#/lights/lifx', 'and this page does not follow it');
     await drawer.waitFor({state: 'hidden'});
     await drawerButton.click(); await drawer.waitFor();
     assert.equal(await menu.count(), 0, 'the menu does not come back with the drawer');

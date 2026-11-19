@@ -39,7 +39,7 @@ type ArtworkFetch = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['f
 import {createWisprModule} from '@jimmie-potts/wispr';
 import {prepareWisprFixture} from '../../dist/tests/fixtures/wispr.js';
 import {editorFixture} from './editor-fixture.ts';
-import {INSTALLED_PORTS, PortAllocationError, startWorldRuntime} from './world-runtime.ts';
+import {INSTALLED_PORTS, PortAllocationError, startWorldRuntime, worldDeadline} from './world-runtime.ts';
 export {INSTALLED_PORTS} from './world-runtime.ts';
 
 /** The synthetic marker of the hook's token: no record, answer or page may carry it (Hub #835). */
@@ -212,6 +212,8 @@ async function writePrivate(file: string, text: string): Promise<void> {
 /** The runtime, the core, its gateway and the hook, in a private directory. */
 export async function startWorld(options: WorldOptions = {}): Promise<World> {
   assert.equal(options.nanoleaf === true && options.modeDevices === true, false, 'one Nanoleaf writer per world');
+  // The journey is the file that asked for this world, as its stack names it.
+  const deadline = worldDeadline(/([^/\\\s(]+\.ts):(\d+)/.exec(new Error().stack?.split('\n')[2] ?? '')?.slice(1, 3).join(':') ?? 'a journey');
   const withDevices = options.devices === true || options.lighting === true;
   const now = (): number => options.clock?.clock.now() ?? Date.now();
   const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-dash-')));
@@ -338,6 +340,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     runtime = await startWorldRuntime(() => start(0));
   } catch (error) {
     if (error instanceof PortAllocationError) await rm(root, {recursive: true, force: true});
+    deadline.clear();
     throw error;
   }
   const port = Number(new URL(runtime.url).port);
@@ -351,6 +354,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   }
   let hook: RemoteParticipant | undefined;
   const connected = async (): Promise<RemoteParticipant> => hook ??= await connectRemote({url: runtime.url, source: HOOK_SOURCE, token, reconnectDelayMs: 50});
+  deadline.phase('running');
   return {
     presence,
     art,
@@ -529,9 +533,11 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       runtime = await start(port);
     },
     close: async () => {
+      deadline.phase('closing');
       releaseWrite?.();
       await hook?.close();
       await runtime.stop();
+      deadline.clear();
       await rm(root, {recursive: true, force: true});
       assert.equal(JSON.stringify(logs).includes(TOKEN_MARKER), false, 'no record holds the hook\'s token');
     },
@@ -551,4 +557,12 @@ export function changes(page: Page, sent: string[] = []): string[] {
 /** Waits for the dashboard's main region to show `feed`. */
 export async function feed(page: Page, value: string): Promise<void> {
   await page.locator(`main#main[data-feed="${value}"]`).waitFor();
+}
+
+/**
+ * Waits until the page holds a current copy of every owner's records it follows. A page that has just loaded sends
+ * those syncs after its feed connects, so a check that no sync is sent starts after this (#1919).
+ */
+export async function copiesSynced(page: Page): Promise<void> {
+  await page.locator('main#main[data-copies="synced"]').waitFor();
 }

@@ -7,9 +7,31 @@ import type {LifxLight} from '@jimmie-potts/lifx';
 import type {WallRecord} from '@jimmie-potts/nanoleaf/frontend';
 import type {Diagnostic, RemoteParticipant, Scheduler, SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
 import {mayControl, moduleOwner, readModules, type ModuleEntry} from './modules.ts';
+import type {Route} from './routes.ts';
 export type RuntimeRecord = ArtScheduleRecord | HomeLayoutRecord | DeviceRecord | OperationRecord | PlaybackState | ModeState | InboxItem | PowerLimitRecord | LightingLayoutRecord | PlaybackLayoutRecord | LifxLight | WallRecord | PresenceObservation;
 export type RuntimeCopy = {owner: string; family: 'art-schedule' | 'device' | 'operation' | 'playback' | 'mode' | 'inbox-item' | 'power-limit' | 'lighting-layout' | 'home-layout' | 'playback-layout' | 'lifx-light' | 'nanoleaf-wall' | typeof PRESENCE_FAMILY; synced: boolean; records: readonly RuntimeRecord[]; refused?: string};
 export type RuntimeData = {modules: readonly ModuleEntry[] | undefined; control: boolean; copies: readonly RuntimeCopy[]; catalogFailed: boolean};
+
+/**
+ * Whether the page holds a current copy of every owner's records it follows: `loading` until the catalog is read,
+ * `syncing` while any copy waits for its sync, `synced` once every copy has one, and `unavailable` when the catalog
+ * could not be read. The shell shows it on the page's main region, beside the feed.
+ */
+export type CopiesState = 'loading' | 'syncing' | 'synced' | 'unavailable';
+export const copiesState = (runtime: RuntimeData): CopiesState =>
+  runtime.catalogFailed ? 'unavailable' : runtime.modules === undefined ? 'loading' : runtime.copies.every(copy => copy.synced) ? 'synced' : 'syncing';
+
+/**
+ * Whether the page at a route cannot yet be told apart from a missing one: a module or brand page waits for the
+ * catalog, and a device or playback page also for the device and playback copies. Until then the shell says it is
+ * loading, not that nothing is at the address (#1919). A copy its owner refused decides nothing more by waiting.
+ */
+export function awaitsRecords(route: Route, runtime: RuntimeData): boolean {
+  if (runtime.catalogFailed) return false;
+  if (route.kind === 'module' || route.kind === 'lighting-brand') return runtime.modules === undefined;
+  if (route.kind !== 'component' && route.kind !== 'playback') return false;
+  return runtime.modules === undefined || runtime.copies.some(copy => (copy.family === 'device' || copy.family === 'playback') && !copy.synced && copy.refused === undefined);
+}
 type Follow = {state: RuntimeCopy; copy?: SyncedCopy<RuntimeRecord> | undefined; epoch: number; retryMs: number; cancel: () => void};
 
 export class RuntimeFeeds {

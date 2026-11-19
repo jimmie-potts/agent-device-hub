@@ -44,6 +44,7 @@ import {WisprWidget} from '@jimmie-potts/wispr/frontend';
 import {ConversationRail, DuckWidget, ReachyWidget, useConversationWaiting} from '@jimmie-potts/companions/frontend';
 import placesManifest from '../../../../docs/skins/places.json';
 import {DashboardConnection, type DashboardState} from './connection.ts';
+import {awaitsRecords, copiesState} from './runtime-feeds.ts';
 import {navigationDestination, routeHash, type Route} from './routes.ts';
 import {age, sessionRows} from './sessions.ts';
 import {AgentSessions} from './agent-sessions.tsx';
@@ -438,7 +439,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     </aside>
     <div className="rail-scrim" onClick={() => { setDrawer(false); menuButton.current?.focus(); }}/>
     {jump && <JumpPalette entries={jumpPlaces} onOpen={jumpTo} onClose={closeJump}/>}
-    <main id="main" tabIndex={-1} inert={drawer || jump} data-feed={state.feed} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
+    <main id="main" tabIndex={-1} inert={drawer || jump} data-feed={state.feed} data-copies={copiesState(runtime)} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
       {!workspace && navigationDestination(route) === 'devices' && route.kind !== 'devices' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'devices'}}>All devices</NavLink></nav>}
       {!workspace && featureNavigation}
       {route.kind === 'connections' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'settings'}}>Back to Settings</NavLink></nav>}
@@ -477,7 +478,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       {route.kind === 'timeline' && <Timeline connected={state.feed === 'connected'}/>}
       {route.kind === 'automation' && <AutomationPage connection={connection} live={state.feed === 'connected'} control={runtime.control}/>}
       {route.kind === 'connections' && <ConnectionsPage state={state} now={now} links={links}/>}
-      {!known && <section aria-label="Not found"><div className="empty">
+      {!known && awaitsRecords(route, runtime) && <section aria-label="Loading page"><div className="empty"><h2>Loading this page…</h2></div></section>}
+      {!known && !awaitsRecords(route, runtime) && <section aria-label="Not found"><div className="empty">
         <h2>{route.kind === 'component' ? `No component named ${route.id}` : 'Nothing at this address'}</h2>
         <p>This address is not declared by the current runtime. <NavLink route={{kind: 'home'}}>Go to the home</NavLink>.</p>
       </div></section>}

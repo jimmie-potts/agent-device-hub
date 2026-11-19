@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import type {RemoteParticipant, SyncChange, SyncedCopy} from '@jimmie-potts/sdk/remote';
-import {RuntimeFeeds, type RuntimeData, type RuntimeRecord} from '../src/runtime-feeds.ts';
+import {RuntimeFeeds, awaitsRecords, copiesState, type RuntimeData, type RuntimeRecord} from '../src/runtime-feeds.ts';
 
 void test('lighting, geometry and presence follow only their declared owner on the existing participant', async context => {
   context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
@@ -134,4 +134,42 @@ void test('an overtaken replacement whose close returns last cannot detach the c
   assert.equal(copies.filter(entry => entry.closed === 0).length, 1, 'exactly one copy stays open');
   feeds.close();
   assert.equal(copies.filter(entry => entry.closed === 0).length, 0, 'closing the feeds reaches the current copy');
+});
+void test('the copies state says when every followed copy has its sync, so a load\'s syncs can be waited out (#1919)', async context => {
+  context.mock.method(globalThis, 'fetch', (path: string) => Promise.resolve(Response.json(path.includes('/modules') ? {
+    schema: 'module-list/2.0', modules: [{name: 'lifx', state: 'running', serves: ['device', 'lifx-light'], pages: []}],
+  } : {schema: 'authority/2.0', scope: 'control'})));
+  const answers: (() => void)[] = [];
+  const participant = {sync: () => new Promise(resolve => {
+    answers.push(() => {resolve({status: 'synced', copy: {states: () => [], close: () => Promise.resolve()}});});
+  })} as unknown as RemoteParticipant;
+  const seen: string[] = [];
+  const feeds = new RuntimeFeeds({after: () => () => {}}, state => {seen.push(copiesState(state));}, () => {});
+  assert.equal(copiesState({modules: undefined, control: false, copies: [], catalogFailed: false}), 'loading', 'before the catalog is read');
+  const started = feeds.start(participant);
+  while (answers.length < 2) await new Promise(resolve => {setImmediate(resolve);});
+  assert.equal(seen.at(-1), 'syncing', 'both copies have asked and neither has its sync');
+  answers[0]?.();
+  await new Promise(resolve => {setImmediate(resolve);});
+  assert.equal(seen.at(-1), 'syncing', 'one copy still waits');
+  answers[1]?.();
+  await started;
+  assert.equal(seen.at(-1), 'synced');
+  assert.equal(copiesState({modules: undefined, control: false, copies: [], catalogFailed: true}), 'unavailable', 'the catalog could not be read');
+  feeds.close();
+});
+void test('a page is not called missing before the catalog and the device and playback copies it depends on arrive (#1919)', () => {
+  const loading: RuntimeData = {modules: undefined, control: false, copies: [], catalogFailed: false};
+  const catalog: RuntimeData = {...loading, modules: [], copies: [{owner: 'bunny/modules/lifx', family: 'device', synced: false, records: []}, {owner: 'bunny/core', family: 'mode', synced: false, records: []}]};
+  const synced: RuntimeData = {...catalog, copies: catalog.copies.map(copy => copy.family === 'device' ? {...copy, synced: true} : copy)};
+  for (const route of [{kind: 'module', module: 'sign', page: 'preview'}, {kind: 'lighting-brand', brand: 'lifx'}] as const) {
+    assert.deepEqual([awaitsRecords(route, loading), awaitsRecords(route, catalog)], [true, false], `${route.kind} waits for the catalog only`);
+  }
+  for (const route of [{kind: 'component', id: 'pendant-1'}, {kind: 'playback', sourceId: 'sonos'}] as const) {
+    assert.deepEqual([awaitsRecords(route, loading), awaitsRecords(route, catalog), awaitsRecords(route, synced)], [true, true, false], `${route.kind} also waits for the device copies, not for others`);
+  }
+  const refused: RuntimeData = {...catalog, copies: catalog.copies.map(copy => copy.family === 'device' ? {...copy, refused: 'unavailable'} : copy)};
+  assert.equal(awaitsRecords({kind: 'component', id: 'pendant-1'}, refused), false, 'a copy its owner refused, such as a stopped module\'s, is not waited for');
+  assert.equal(awaitsRecords({kind: 'missing', hash: '#/missing-page'}, loading), false, 'an address no catalog could declare is missing at once');
+  assert.equal(awaitsRecords({kind: 'component', id: 'pendant-1'}, {...loading, catalogFailed: true}), false, 'a catalog that could not be read decides nothing more');
 });
