@@ -107,19 +107,19 @@ const runtime: RuntimeData = {control: true, catalogFailed: false, modules: [
   {owner: 'bunny/modules/roborock', family: 'device', synced: true, records: [{id: 'vacuum', kind: 'roborock', label: 'Downstairs vacuum'}]},
 ] as unknown as RuntimeData['copies']};
 
-void test('every page the directory lists can be pinned, and so can a light\'s own page', () => {
+void test('every declared page can be pinned, the hardware with each light\'s own page and the pages outside it', () => {
   const before = JSON.stringify(runtime);
   const targets = pinTargets(runtime);
   assert.deepEqual([...targets.values()].map(target => `${target.hash} = ${pinName(target)} [${target.mono}]`), [
     '#/lights/lifx = LIFX [LI]',
-    '#/component/pixoo-1 = Pixoo · pixoo-1 [PP]',
+    '#/component/pendant-1 = LIFX · Pendant [LP]',
+    '#/component/pixoo-1 = Pixoo [Pi]',
     '#/module/pixoo/library = Pixoo · Library [PL]',
     '#/component/vacuum = Roborock [Ro]',
-    '#/audio = Music [Mu]',
     '#/module/companions/preferences = Companions · Preferences [CP]',
     '#/module/wispr/analytics = Wispr · failed [Wi]',
-    '#/component/pendant-1 = LIFX · Pendant [LP]',
-  ]);
+    '#/audio = Audio [Au]',
+  ], 'a module\'s one device is named for the module, and Audio is a hub page that is always there (Hub #1950)');
   assert.equal(targets.has('#/module/companions/assistant'), false, 'the Conversation page has no pin');
   assert.equal(targets.has('#/module/pixoo/player'), false, 'a page the catalog does not declare cannot be shown as a pin');
   assert.deepEqual(targets.get('#/module/pixoo/library'), {hash: '#/module/pixoo/library', route: library, name: 'Library', group: 'Pixoo', mono: 'PL', note: ''});

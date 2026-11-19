@@ -42,10 +42,12 @@ void test('a hash that is not a route is reported as missing rather than guessed
 });
 
 void test('nested routes select their containing destination, without treating alias text as a built-in route', () => {
-  for (const hash of ['#/devices', '#/lights/lifx', '#/component/home', '#/component/settings', '#/audio', '#/music/player', '#/module/example/settings']) {
+  for (const hash of ['#/devices', '#/lights/lifx', '#/component/home', '#/component/settings', '#/component/companions', '#/module/example/settings', '#/module/pixoo/monitor']) {
     assert.equal(navigationDestination(parseRoute(hash)), 'devices', hash);
   }
-  assert.equal(navigationDestination(parseRoute('#/timeline')), 'home');
+  // Audio and the music pages are under Home, and the companions module's pages under Companions (Hub #1950).
+  for (const hash of ['#/timeline', '#/audio', '#/audio/visualizer', '#/music/player']) assert.equal(navigationDestination(parseRoute(hash)), 'home', hash);
+  for (const hash of ['#/companions', '#/habitat', '#/module/companions/preferences', '#/module/companions/assistant']) assert.equal(navigationDestination(parseRoute(hash)), 'companions', hash);
   assert.equal(navigationDestination(parseRoute('#/rooms')), 'rooms');
   assert.equal(navigationDestination(parseRoute('#/automation')), 'automation');
   assert.equal(navigationDestination(parseRoute('#/connections')), 'settings');
@@ -53,4 +55,10 @@ void test('nested routes select their containing destination, without treating a
   assert.equal(navigationDestination(parseRoute('#/unknown')), undefined);
 });
 
-void test('the shared Habitat has its own shell destination',()=>{assert.deepEqual(parseRoute('#/habitat'),{kind:'habitat'});assert.equal(navigationDestination(parseRoute('#/habitat')),'habitat');});
+void test('Companions has its own address, and the shared Habitat keeps its address under it', () => {
+  assert.deepEqual(parseRoute('#/companions'), {kind: 'companions'});
+  assert.equal(routeHash({kind: 'companions'}), '#/companions');
+  assert.deepEqual(parseRoute('#/habitat'), {kind: 'habitat'});
+  assert.equal(routeHash({kind: 'habitat'}), '#/habitat');
+  assert.deepEqual(parseRoute('#/component/companions'), {kind: 'component', id: 'companions'}, 'a component named like the page stays a component');
+});

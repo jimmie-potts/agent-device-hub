@@ -6,6 +6,8 @@
  */
 export type Route =
   | {kind: 'home'}
+  /** The companions overview (#1950): Habitat and the companion features. */
+  | {kind: 'companions'}
   | {kind: 'habitat'}
   | {kind: 'devices'}
   | {kind: 'settings'}
@@ -42,6 +44,7 @@ export function parseRoute(hash: string): Route {
   if (!path.startsWith('/')) return {kind: 'missing', hash};
   const parts = path.slice(1).split('/').map(decode);
   const [first, second, third] = parts;
+  if (parts.length === 1 && first === 'companions') return {kind: 'companions'};
   if (parts.length === 1 && first === 'habitat') return {kind: 'habitat'};
   if (parts.length === 1 && first === 'devices') return {kind: 'devices'};
   if (parts.length === 1 && first === 'settings') return {kind: 'settings'};
@@ -63,6 +66,7 @@ export function routeHash(route: Route): string {
   switch (route.kind) {
     case 'home':
       return '#/';
+    case 'companions': return '#/companions';
     case 'habitat': return '#/habitat';
     case 'devices': return '#/devices';
     case 'settings': return '#/settings';
@@ -87,13 +91,20 @@ export function routeHash(route: Route): string {
 
 export const sameRoute = (a: Route, b: Route): boolean => routeHash(a) === routeHash(b);
 
-/** The containing shell destination, independent of a component's alias or a module's page names. */
-export function navigationDestination(route: Route): 'home' | 'habitat' | 'rooms' | 'devices' | 'automation' | 'settings' | undefined {
+export type Destination = 'home' | 'companions' | 'rooms' | 'devices' | 'automation' | 'settings';
+
+/**
+ * The containing shell destination, independent of a component's alias or a module's page names. Audio and the music
+ * pages are under Home, and Habitat and the companions module's pages under Companions (#1950); every other module
+ * page is under Devices.
+ */
+export function navigationDestination(route: Route): Destination | undefined {
   switch (route.kind) {
-    case 'home': case 'timeline': return 'home';
-    case 'habitat': return 'habitat';
+    case 'home': case 'timeline': case 'audio': case 'visualizer': case 'playback': return 'home';
+    case 'companions': case 'habitat': return 'companions';
+    case 'module': return route.module === 'companions' ? 'companions' : 'devices';
     case 'rooms': return 'rooms';
-    case 'devices': case 'lighting-brand': case 'component': case 'playback': case 'audio': case 'visualizer': case 'module': return 'devices';
+    case 'devices': case 'lighting-brand': case 'component': return 'devices';
     case 'automation': return 'automation';
     case 'connections': case 'settings': return 'settings';
     case 'missing': return undefined;

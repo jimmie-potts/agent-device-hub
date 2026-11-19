@@ -81,6 +81,7 @@ export function useRailShort(rail: React.RefObject<Element | null>, phone: boole
 
 const PATHS = {
   home: <><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/></>,
+  companions: <><circle cx="9" cy="8.5" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9.5" r="2.5"/><path d="M15.5 14.3a4.5 4.5 0 0 1 5.5 4.7"/></>,
   habitat: <><path d="M3 19h18"/><path d="M5 19a7 7 0 0 1 14 0"/><path d="M10 19v-2.5a2 2 0 0 1 4 0V19"/></>,
   rooms: <><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M12 4.5V11"/><path d="M3.5 13.5H9"/><path d="M13 13.5h7.5"/></>,
   devices: <><rect x="3" y="5" width="12" height="9" rx="1.5"/><path d="M6.5 18h5"/><path d="M9 14v4"/><rect x="17" y="9" width="4.5" height="9.5" rx="1.2"/></>,
