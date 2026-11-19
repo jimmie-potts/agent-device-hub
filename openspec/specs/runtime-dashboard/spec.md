@@ -278,11 +278,11 @@ The operator SHALL explicitly place logical playback cards in zero or more exist
 
 ### Requirement: Five primary destinations with retained page addresses
 
-The main navigation SHALL contain exactly Home, Habitat, Rooms, Devices and Automation, in that order. Home, Habitat, Rooms and Automation SHALL be links. Devices SHALL be a button that opens the Devices menu, and the menu's "All devices" entry SHALL be the link to the Devices directory at its existing address. Settings SHALL be a separate utility link reachable from every page, placed below the destinations at the bottom of the rail. Home SHALL link Timeline. Nested brand, component, playback and declared module pages SHALL select Devices as their containing destination; Timeline SHALL select Home; Settings and Connections SHALL select the Settings utility. Existing Home aliases and brand, component, playback, module, Connections and Timeline addresses SHALL remain valid, including component aliases that match a built-in page name. Navigation links SHALL preserve ordinary anchors, modified clicks and browser history.
+The main navigation SHALL contain exactly Home, Companions, Rooms, Devices and Automation, in that order. Home, Companions, Rooms and Automation SHALL be links. Devices SHALL be a button that opens the Devices menu, and the menu's "All devices" entry SHALL be the link to the Devices directory at its existing address. Settings SHALL be a separate utility link reachable from every page, placed below the destinations at the bottom of the rail. Home SHALL link Timeline and Audio. Nested brand and component pages and the declared pages of every module other than companions SHALL select Devices as their containing destination; Timeline, Audio, the full-window visualizer and the Music source pages SHALL select Home; Habitat and the companions module's declared pages SHALL select Companions; Settings and Connections SHALL select the Settings utility. Existing Home aliases and Habitat, brand, component, playback, module, Audio, Connections and Timeline addresses SHALL remain valid, including component aliases that match a built-in page name. Navigation links SHALL preserve ordinary anchors, modified clicks and browser history.
 
 #### Scenario: Open an existing bookmark
-- **WHEN** the operator opens a brand, module, component or Music bookmark and uses back/forward navigation
-- **THEN** the existing page and guarded controls remain usable with Devices selected, and history restores the preceding address without replaying a command
+- **WHEN** the operator opens a brand, module, component, Audio, Music or Habitat bookmark and uses back/forward navigation
+- **THEN** the existing page and guarded controls remain usable with its containing destination selected, and history restores the preceding address without replaying a command
 
 #### Scenario: A component is named Devices
 - **WHEN** the operator opens `#/component/devices`, `#/component/settings` or an undeclared address
@@ -298,10 +298,10 @@ The main navigation SHALL contain exactly Home, Habitat, Rooms, Devices and Auto
 
 ### Requirement: Devices directory derives from the current catalog
 
-Devices SHALL group available brand, display, Audio, component and declared module destinations within Lighting, Displays, Audio and Other sections. It SHALL derive destinations from existing catalog and record evidence, retain unrecognized modules in the generic group, and expose catalog failure, missing observations or refused modules honestly. It SHALL NOT create capabilities or device observations, independently acquire state or mutate any device during browsing. Existing Home widgets, saved room/Home placements and card adapters SHALL retain their behavior.
+Devices SHALL list the configured hardware only, in Displays, Lighting and Appliances sections: each module that serves or holds device records, or is a known hardware module, as one card. A lighting brand's card SHALL lead to the brand's overview page and list each of its lights directly under it, each opening that light's existing device page. Any other hardware module SHALL be one card that opens its device's page, or list its devices when it has several, or open its first declared page when it holds no device records. Task pages, such as a display's media or a wall's saved shows, SHALL be reached from the device's own page and SHALL NOT be listed. Companion features, Audio and other pages that are not hardware SHALL NOT be listed. It SHALL derive destinations from existing catalog and record evidence and expose catalog failure, missing or stale observations, unavailable devices or refused modules honestly. It SHALL NOT create capabilities or device observations, independently acquire state or mutate any device during browsing. Existing Home widgets, saved room/Home placements and card adapters SHALL retain their behavior.
 
 #### Scenario: Browse existing devices and feature pages
-- **WHEN** the operator opens Devices and selects a category and destination
+- **WHEN** the operator opens Devices and selects a destination in a category's section
 - **THEN** the corresponding existing card or declared module page opens in the shared shell with its current observations and capability guards, without adding another main-navigation link
 
 #### Scenario: Catalog or control authority is unavailable
@@ -337,7 +337,7 @@ The card SHALL retain existing control/freshness/capability guards, per-target r
 
 ### Requirement: Shared agent habitat
 
-The dashboard SHALL offer a Habitat destination at `#/habitat`, showing one connected four-room habitat with ten resident slots over its existing session copy. Eligible observed sessions SHALL retain their resident while present; newest sessions SHALL fill free slots with deterministic ID ties; known children SHALL NOT occupy slots and unknown parentage SHALL NOT be guessed. Overflow SHALL be visible and SHALL NOT evict occupants. Confirmed membership removal SHALL free slots, while disconnected or resyncing evidence SHALL freeze residents without inferred departures. Empty residents SHALL be labelled unassigned and resting. The page SHALL preserve manual swaps, explicit demo mode, per-resident aprons, forty positions, furniture routing and hopping, and the shared dashboard state precedence.
+The dashboard SHALL offer Habitat at `#/habitat`, under the Companions destination, showing one connected four-room habitat with ten resident slots over its existing session copy. Eligible observed sessions SHALL retain their resident while present; newest sessions SHALL fill free slots with deterministic ID ties; known children SHALL NOT occupy slots and unknown parentage SHALL NOT be guessed. Overflow SHALL be visible and SHALL NOT evict occupants. Confirmed membership removal SHALL free slots, while disconnected or resyncing evidence SHALL freeze residents without inferred departures. Empty residents SHALL be labelled unassigned and resting. The page SHALL preserve manual swaps, explicit demo mode, per-resident aprons, forty positions, furniture routing and hopping, and the shared dashboard state precedence.
 
 #### Scenario: Ten residents, overflow and arrival
 - **WHEN** twelve eligible sessions are observed, reordered and updated, then one assigned session is removed
@@ -727,7 +727,7 @@ The shell SHALL present the destinations, the Settings utility, the feed indicat
 
 ### Requirement: Jump palette that opens any page
 
-The shell SHALL offer a jump palette that lists, in this order, up to three pages visited most recently in the open page session, the hub's destinations with Timeline, Settings and Connections, and every page the device directory lists for a module the current catalog reports as running. The current page SHALL NOT be listed as recent, each address SHALL be listed once outside the recent group, and a module that is not running or an address the catalog does not declare SHALL NOT be offered. Recent pages SHALL be held in memory only.
+The shell SHALL offer a jump palette that lists, in this order, up to three pages visited most recently in the open page session, the hub's destinations with Timeline, Audio, Habitat, Settings and Connections, every hardware page a module the current catalog reports as running declares, including each device's own page, and then every other page such a module declares, so that pages outside the hardware inventory stay reachable. The current page SHALL NOT be listed as recent, each address SHALL be listed once outside the recent group, and a module that is not running or an address the catalog does not declare SHALL NOT be offered. Recent pages SHALL be held in memory only.
 
 Command and K, or Control and K, SHALL open the palette from anywhere on the page and close it when it is open, except that on a Mac Control and K pressed in a text field SHALL keep its text-editing meaning. A slash SHALL open the palette only when it is pressed outside a text field and outside an open menu, list or dialog; a control that takes no typed text, such as a slider or a checkbox, SHALL NOT count as a text field. The rail SHALL hold a field that opens the palette, shown as an icon in the icon rail, and the phone bar SHALL hold a button that opens it. While a modal dialog is open or an element is shown full screen, the palette's keys SHALL do nothing.
 
@@ -790,17 +790,17 @@ The palette SHALL only navigate. Opening it, typing, moving the choice and closi
 
 ### Requirement: Devices menu that opens every device page
 
-The Devices row SHALL open a menu that lists every page the Devices directory lists for a module the current catalog reports as running, grouped under Lighting, Displays, Audio and Other with each address once, and an "All devices" entry that opens the directory. A module with several pages SHALL be a heading over its pages, and a module with one page SHALL be that page under the module's name. A module that is not running SHALL be named with its state and SHALL offer no page, and a running module whose observations are stale SHALL be marked stale. The menu SHALL mark the pinned pages and the page that is open.
+The Devices row SHALL open a menu that lists the hardware the Devices directory lists for a module the current catalog reports as running, grouped under Displays, Lighting and Appliances with each address once, and an "All devices" entry that opens the directory. Pixoo and Tidbyt SHALL each be one entry. Each lighting brand SHALL be a disclosure, collapsed when the menu opens, that expands to an entry for each of its lights and an entry for the brand's overview; the brand that holds the open page SHALL start expanded. A module with several devices SHALL be a heading over them, and a module with one destination SHALL be that destination under the module's name. A module that is not running SHALL be named with its state and SHALL offer no page, and a running module whose observations are stale SHALL be marked stale. The menu SHALL mark the pinned pages and the page that is open.
 
-The menu SHALL open beside the rail and inside the window, in the full rail and in the icon rail, and SHALL scroll when the window is shorter than its content. It SHALL open with focus on the open page's entry, or on its first entry when the open page is not in it. The arrow keys SHALL move through the entries and wrap at the ends, Home and End SHALL move to the first and the last entry, and the focused entry SHALL have a visible indicator. With focus on no entry, the down arrow SHALL start at the first entry and the up arrow at the last. Escape SHALL close the menu with focus on the Devices row, and so SHALL a press on the row. A press outside the menu, a chosen page, the jump palette's opening key and focus moving out of the menu SHALL each close it, and a press or a focus move inside a framed module page SHALL count as outside. A page change or a change of layout that removes the menu while it holds focus SHALL move focus to the Devices row, or at phone width to the menu button. A chosen page SHALL open at its top with focus on the page. In the icon rail the Devices row SHALL keep its accessible name while the menu is open.
+The menu SHALL have a head with its own close button, SHALL open beside the rail level with the Devices row and inside the window, in the full rail and in the icon rail, and its lists SHALL scroll when the window is shorter than its content while "All devices" stays in view at its foot, with every brand expanded. It SHALL open with focus on the open page's entry, or on its first entry when the open page is not in it. The arrow keys SHALL move through the entries that are shown, skipping a collapsed brand's lights, and wrap at the ends; Enter, Space and the right arrow SHALL expand a brand, and the left arrow SHALL collapse the brand from its disclosure or one of its lights; Home and End SHALL move to the first and the last entry, and the focused entry SHALL have a visible indicator. With focus on no entry, the down arrow SHALL start at the first entry and the up arrow at the last. Escape SHALL close the menu with focus on the Devices row, and so SHALL a press on the row. A press outside the menu, a chosen page, the jump palette's opening key and focus moving out of the menu SHALL each close it, and a press or a focus move inside a framed module page SHALL count as outside. A page change or a change of layout that removes the menu while it holds focus SHALL move focus to the Devices row, or at phone width to the menu button. A chosen page SHALL open at its top with focus on the page. In the icon rail the Devices row SHALL keep its accessible name while the menu is open.
 
 At phone width the menu SHALL cover the drawer as one scrolling column with its own close button, which SHALL leave the drawer open. Escape SHALL close the menu before the drawer. A chosen page SHALL close the menu and the drawer and return focus to the menu button.
 
-The menu SHALL only navigate. Opening it, moving through it and closing it SHALL send no command, sync, upload or provider request.
+The menu SHALL only navigate. Opening it, expanding and collapsing its brands, moving through it and closing it SHALL send no command, sync, upload or provider request.
 
 #### Scenario: Open and move with the keyboard
 - **WHEN** the operator presses Enter on the Devices row and then the arrow keys, Home and End
-- **THEN** the menu opens beside the rail with focus on an entry, and focus moves through the entries and wraps at the ends
+- **THEN** the menu opens beside the rail with focus on an entry, and focus moves through the shown entries, skipping collapsed lights, and wraps at the ends
 - **AND** Escape closes the menu with focus on the Devices row
 
 #### Scenario: Choose a page
@@ -822,6 +822,10 @@ The menu SHALL only navigate. Opening it, moving through it and closing it SHALL
 #### Scenario: Phone drawer
 - **WHEN** the operator opens the menu from the drawer at phone width and uses the menu's close button
 - **THEN** the menu had covered the drawer as one scrolling column, and closing it leaves the drawer open with focus on the Devices row
+
+#### Scenario: Expand a lighting brand
+- **WHEN** the operator expands Nanoleaf and LIFX in the menu and chooses a light
+- **THEN** Nanoleaf lists its Lines and Panels and LIFX its distinct fixtures, each with the brand's overview, the light's existing device page opens, and the menu opens again with that light's brand expanded and the other brand collapsed
 
 ### Requirement: Pinned pages in the rail
 
@@ -870,7 +874,7 @@ The pinned list SHALL scroll inside the rail when it is longer than the room abo
 
 ### Requirement: Conversations in the rail
 
-While the current catalog declares the Conversation page of a running companions module, the rail SHALL list the chat profiles in its bottom group, above Settings, on every page: B.U.N.N.Y., Reachy and MicroDuck, with Reachy and MicroDuck labelled Demo. Each SHALL be a link that opens the Conversation page showing that profile with that profile's own history. The open conversation's row SHALL be marked as the current page, and on the Conversation page the Devices row SHALL be marked without a box, so that the rail boxes one row. Without that declaration the rail SHALL show no conversation group.
+While the current catalog declares the Conversation page of a running companions module, the rail SHALL list the chat profiles in its bottom group, above Settings, on every page: B.U.N.N.Y., Reachy and MicroDuck, with Reachy and MicroDuck labelled Demo. Each SHALL be a link that opens the Conversation page showing that profile with that profile's own history. The open conversation's row SHALL be marked as the current page, and on the Conversation page the Companions row SHALL be marked without a box, so that the rail boxes one row. Without that declaration the rail SHALL show no conversation group.
 
 The group SHALL be the companions frontend's own component, which the shell mounts in its own module scope through the module's public frontend entry; the shell SHALL read no other part of that module's conversation. Choosing a profile SHALL send no command and SHALL register no speech endpoint. Choosing one while the Conversation page is open SHALL keep that page mounted, with each profile's draft.
 
@@ -953,3 +957,51 @@ Home SHALL show a fixed hero above its cards (owner decision 5 of epic #1927): a
 #### Scenario: Without WebGL 2
 - **WHEN** the browser has no WebGL 2
 - **THEN** the selected segment has its own plain fill and choosing another mode sends one command and shows it
+
+### Requirement: Companions destination with an overview
+
+The Companions destination SHALL open an overview at `#/companions` that links Habitat and, while the current catalog reports a running companions module, each companion profile page, Preferences and Companion knowledge that the module declares. The Conversation page SHALL NOT be listed there; its conversations stay in the rail. Without a running companions module the overview SHALL offer Habitat alone and say why. Habitat and the companions module's pages SHALL show Companions as their parent above the page. The overview SHALL only navigate and SHALL send no command, sync, upload or provider request.
+
+#### Scenario: Open companion features
+- **WHEN** the operator chooses Companions in the rail and then one of its links
+- **THEN** the overview lists Habitat, the companion profiles, Preferences and Companion knowledge, and the chosen page opens at its existing address with Companions selected
+
+#### Scenario: An old Habitat bookmark
+- **WHEN** the operator opens `#/habitat`
+- **THEN** Habitat opens with Companions selected in the rail and named as its parent
+
+#### Scenario: Companions is not running
+- **WHEN** the catalog reports the companions module as stopped, or the catalog cannot be read
+- **THEN** the overview offers Habitat and says why the companion features are unavailable
+
+### Requirement: Display pages as one device with views
+
+Tidbyt SHALL open its existing Status and Content card as one view with no page tabs. Pixoo SHALL open its device page as Display, for current playback and screen controls, with tabs for Display, Media and Agent status: Media SHALL hold Library and Playlists, and Agent status SHALL be the Monitor. Display SHALL link Advanced playback, which is the Player page, and Device settings, which is the Settings page; a linked page that is open SHALL be shown as a tab of its own. The Pixoo pages SHALL be titled with the display's name. Every existing Pixoo and Tidbyt address SHALL remain valid and open its view. A page a display declares that no view names SHALL stay reachable as a tab of its own. The views SHALL change navigation only: each module keeps its data, its reads and its guarded commands.
+
+#### Scenario: Reach Monitor features and Device settings
+- **WHEN** the operator opens Pixoo from the Devices menu and chooses Device settings, then Agent status, then Media and Playlists
+- **THEN** the Settings, Monitor and Playlists pages open at their existing addresses with their view marked, and nothing is sent until the operator uses a control
+
+#### Scenario: Old display bookmarks
+- **WHEN** the operator opens `#/module/pixoo/player`, `#/module/pixoo/monitor` or `#/module/tidbyt/display`
+- **THEN** the page opens with Advanced playback, Agent status or the Tidbyt card shown
+
+### Requirement: Readable device names in navigation
+
+The Devices menu, the directory, the jump palette, the pins and a device page's heading SHALL name a device by the label its device record publishes. Without one, a Nanoleaf controller SHALL be named Lines or Panels from the kind its module observes, and any other device SHALL be named by its stable ID read as words. Two devices of one module that would share a name SHALL be told apart by their IDs. A module with one device, other than a light, SHALL be named by the module in the menu, the palette and the pins. Names SHALL change presentation only: routes, pins and commands SHALL keep the stable IDs.
+
+#### Scenario: Lights without published names
+- **WHEN** the Nanoleaf records publish no labels and the LIFX records publish none
+- **THEN** the Nanoleaf lights are named Lines and Panels and each LIFX fixture by its ID read as words, and each opens its existing device page
+
+### Requirement: Devices, Companions and display pages on the shared glass layer
+
+The Devices directory, the Companions overview and the Pixoo and Tidbyt pages SHALL draw on the shared glass layer over the Quiet glass wash, with no artwork backdrop and no fusing of neighboring panels. Each directory card, each overview card, a display's device card and a display's module page SHALL be one glass panel, and text that sits on the wash outside a panel SHALL carry a veil. Text over the layer SHALL keep at least 4.5:1 contrast in light and dark appearance at desktop width. The layer SHALL draw nothing at rest. Without WebGL 2 or after a lost context the pages SHALL show their Quiet glass panels with every control working. The Devices popout SHALL keep its own fill over the layer. Leaving these pages SHALL release the layer.
+
+#### Scenario: Glass at rest
+- **WHEN** the operator opens the Devices directory, the Companions overview or a Pixoo or Tidbyt page in light or dark appearance
+- **THEN** each card has a glass panel that follows its box, the page's text keeps 4.5:1, and the layer draws no frame while nothing changes
+
+#### Scenario: No WebGL 2 or a lost context
+- **WHEN** the browser has no WebGL 2, or the layer's context is lost
+- **THEN** the pages show their Quiet glass panels, and the Devices menu, the directory's cards, the display tabs and the Companions links still work and send no command

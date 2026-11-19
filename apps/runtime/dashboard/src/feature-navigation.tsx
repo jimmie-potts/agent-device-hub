@@ -17,7 +17,7 @@ export function FeatureNavigation({route, runtime}: {route: Route; runtime: Runt
   return <>
     <nav className="feature-navigation" aria-label={`${navigation.module} pages`}>{navigation.views.map(view =>
       <NavLink key={view.label} route={view.route} selected={view.current}>{view.label}</NavLink>)}</nav>
-    {open !== undefined && open.pages.length > 0 && <nav className="feature-navigation feature-pages" aria-label={`${open.label} pages`}>{open.pages.map(page =>
+    {open !== undefined && open.pages.length > 0 && <nav className="feature-navigation feature-pages" aria-label={`${open.label} pages`} data-glass-veil>{open.pages.map(page =>
       <NavLink key={page.label} route={page.route} selected={page.current}>{page.label}</NavLink>)}</nav>}
     {open !== undefined && open.links.length > 0 && <nav className="feature-links" aria-label={`${open.label} links`}>{open.links.map(page =>
       <NavLink key={page.label} route={page.route}>{page.label}<RailIcon name="chevron" size={14}/></NavLink>)}</nav>}
@@ -37,5 +37,5 @@ export function ShellBreadcrumb({route, runtime}: {route: Route; runtime: Runtim
       : destination === 'devices' && route.kind !== 'devices' ? ['All devices', {kind: 'devices'}]
         : destination === 'companions' && route.kind !== 'companions' ? ['Companions', {kind: 'companions'}] : undefined;
   if (parent === undefined) return null;
-  return <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={parent[1]}><span className="shell-back" aria-hidden="true"><RailIcon name="chevron" size={14}/></span>{parent[0]}</NavLink></nav>;
+  return <nav className="shell-breadcrumb" aria-label="Breadcrumb" data-glass-veil><NavLink route={parent[1]}><span className="shell-back" aria-hidden="true"><RailIcon name="chevron" size={14}/></span>{parent[0]}</NavLink></nav>;
 }

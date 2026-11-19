@@ -9,7 +9,8 @@ import {LightingWorkspace} from './lighting-workspace.tsx';
 import {DeviceDirectory} from './device-directory.tsx';
 import {NavLink, ShellNavigation, navigate, useRoute} from './navigation.tsx';
 import {FeatureNavigation, ShellBreadcrumb} from './feature-navigation.tsx';
-import {displayTitle} from './feature-navigation.ts';
+import {displayTitle, isDisplayPage} from './feature-navigation.ts';
+import {useGlassPage} from './glass-page.tsx';
 import {CompanionsPage} from './companions-page.tsx';
 import {nameOf} from './device-names.ts';
 import {JumpPalette} from './jump-palette.tsx';
@@ -326,6 +327,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const selectedModule = route.kind === 'module' ? runtime.modules?.find(module => module.name === route.module) : undefined;
   const selectedPage = route.kind === 'module' ? selectedModule?.pages.find(page => page.id === route.page) : undefined;
   const workspace = selectedModule?.name === 'companions' && selectedPage?.id === 'assistant' && selectedPage.presentation === 'react';
+  // The Devices directory, the Companions overview and the display pages draw on the shared glass layer (#1950).
+  const displayPage = isDisplayPage(route, runtime);
+  const {glass, layer: glassLayer} = useGlassPage(route.kind === 'devices' || route.kind === 'companions' || displayPage);
   // The rail's conversation group (#1890) is the companions frontend's own component in its own module scope. It is
   // shown while the catalog declares the Conversation page of a running companions module. The shell imports the
   // group and the hook below and nothing else of that module's conversation.
@@ -442,7 +446,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     </aside>
     <div className="rail-scrim" onClick={() => { setDrawer(false); menuButton.current?.focus(); }}/>
     {jump && <JumpPalette entries={jumpPlaces} onOpen={jumpTo} onClose={closeJump}/>}
-    <main id="main" tabIndex={-1} inert={drawer || jump} data-feed={state.feed} data-copies={copiesState(runtime)} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs}>
+    <main id="main" tabIndex={-1} inert={drawer || jump} data-feed={state.feed} data-copies={copiesState(runtime)} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs} data-glass={glass}>
+      {glassLayer}
       {!workspace && <ShellBreadcrumb route={route} runtime={runtime}/>}
       {/* A device or module page has its tabs under its heading (#1950); a lighting brand's heading is the workspace's own. */}
       {route.kind === 'lighting-brand' && <FeatureNavigation route={route} runtime={runtime}/>}
@@ -461,25 +466,26 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </section>}
       {route.kind !== 'home' && <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
       {route.kind === 'component' && <section aria-label="Devices">
-        {selectedDevice && route.kind === 'component' && <><header className="page"><h1>{pinnable.get(address)?.name ?? nameOf(runtime, route.id)}</h1><PinToggle route={route}/></header>
+        {selectedDevice && route.kind === 'component' && <><header className="page"><h1 data-glass-veil>{pinnable.get(address)?.name ?? nameOf(runtime, route.id)}</h1><PinToggle route={route}/></header>
           <FeatureNavigation route={route} runtime={runtime}/></>}
         {runtime.catalogFailed && <p role="alert">The module catalog is unavailable. Retrying the read; controls stay unavailable.</p>}
         {runtime.modules?.filter(module => module.state === 'failed' || module.state === 'refused').map(module => <p className="warning" key={module.name}>{module.name}: {module.state}. Its devices are unavailable.</p>)}
         {runtime.copies.filter(copy => copy.family === 'device' && !copy.synced).map(copy => <p className="warning" key={copy.owner}>{copy.owner}: device records unavailable or stale{copy.refused === undefined ? '' : ` (${copy.refused})`}.</p>)}
         {runtime.modules !== undefined && devices.length === 0 && <p className="hint">No device records are available.</p>}
-        <div className="cards">{devices.map(({record, copy}) => <div key={`${copy.owner}:${record.id}`} hidden={route.kind === 'component' && record.id !== route.id}>
+        <div className="cards">{devices.map(({record, copy}) => <div key={`${copy.owner}:${record.id}`} hidden={route.kind === 'component' && record.id !== route.id} data-glass-panel={displayPage ? record.id : undefined}>
           {deviceCard({record, copy})}
         </div>)}</div>
       </section>}
       {route.kind !== 'home' && <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
       {selectedPage !== undefined && selectedModule !== undefined && <section aria-label={selectedPage.title} className={workspace ? 'workspace-page' : undefined}>
         {/* The Conversation page names the open conversation in its own header row (#1890); the page's title stays as its heading and is not drawn. */}
-        <header className={workspace ? 'vh' : 'page'}><h1>{displayTitle(route, runtime) ?? selectedPage.title}</h1>
+        <header className={workspace ? 'vh' : 'page'}><h1 data-glass-veil={displayPage ? '' : undefined}>{displayTitle(route, runtime) ?? selectedPage.title}</h1>
           {!workspace && <PinToggle route={route}/>}
         </header>
         {!workspace && <FeatureNavigation route={route} runtime={runtime}/>}
-        <ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule} page={selectedPage} frontends={FRONTENDS} connection={connection}
-          connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>
+        {/* A display's page is one glass panel (#1950); other module pages keep their layout as it was. */}
+        {(view => displayPage ? <div data-glass-panel={selectedPage.id}>{view}</div> : view)(<ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule}
+          page={selectedPage} frontends={FRONTENDS} connection={connection} connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>)}
       </section>}
       {route.kind === 'companions' && <CompanionsPage runtime={runtime}/>}
       {route.kind === 'habitat' && <HabitatPage views={state.sessions.views} live={live}/>}

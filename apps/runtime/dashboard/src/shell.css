@@ -234,7 +234,7 @@
 .shell input,.shell select{min-height:44px}
 .shell .home-columns{gap:var(--space-l)}
 .shell .home-wide,.shell .home-narrow{gap:var(--space-l)}
-.shell-breadcrumb{display:flex;flex-wrap:wrap;gap:var(--space-s);font-size:var(--type-small);margin-bottom:var(--space-s)}
+.shell-breadcrumb{display:flex;flex-wrap:wrap;gap:var(--space-s);inline-size:fit-content;font-size:var(--type-small);margin-bottom:var(--space-s)}
 .shell-breadcrumb a{padding:var(--space-s) 0;min-height:44px}
 /* The parent link reads as a way back, as the prototype's does (#1950). */
 .shell-breadcrumb a{justify-content:flex-start;gap:6px;color:var(--link)}
@@ -274,6 +274,9 @@
 .shell .inventory-group .inventory-card{padding:12px 3px}
 .shell .inventory-group .warning{margin:0 3px var(--space-s)}
 .inventory-links{display:grid;gap:var(--space-xs)}
+/* A card's panel on the glass layer (#1950) holds the card, which fills it, with the prototype's card corners. */
+.inventory-panel{display:grid;--glass-radius:18px}
+.companions-panel{display:grid}
 .inventory-links a{min-block-size:40px;padding-block:5px;background:var(--inset);color:var(--text)}
 .settings-grid .places-group{border:0;padding:0}
 .settings-grid .nav-label{margin:0 0 var(--space-m);color:var(--text);font-size:var(--type-heading);letter-spacing:0;font-family:var(--font)}

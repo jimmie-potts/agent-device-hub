@@ -16,11 +16,11 @@
 
 ## 4. Clear material
 
-- [ ] 4.1 Adopt the shared Clear glass layer of #1929 on the Devices menu, the directory, the Companions overview and the display pages, over the Quiet glass wash, with no fusion and no backdrop.
-- [ ] 4.2 Check the Quiet glass fallback with WebGL 2 disabled and after a lost context.
+- [x] 4.1 Adopt the shared glass layer of #1929 on the directory, the Companions overview and the display pages, over the Quiet glass wash, with no fusion and no backdrop; keep the popout's own fill.
+- [x] 4.2 Check the Quiet glass fallback with WebGL 2 disabled and after a lost context, contrast in light and dark, and that nothing draws at rest.
 
 ## 5. Evidence
 
 - [x] 5.1 Extend the Devices menu, lighting, jump, pins and display journeys, and update the journeys that used the old categories or Habitat's rail link.
-- [ ] 5.2 Run the dashboard unit tests, every dashboard browser journey, lint and the shared build, type and workflow checks, and compare with the prototype at desktop and phone widths in light and dark.
-- [ ] 5.3 Update the dashboard README, the Pixoo guide and the runtime checks guide, and synchronize and archive the change.
+- [x] 5.2 Run the dashboard unit tests, every dashboard browser journey, lint and the shared build, type and workflow checks, and compare with the prototype at desktop and phone widths in light and dark.
+- [x] 5.3 Update the dashboard README, the Pixoo guide and the runtime checks guide, and synchronize and archive the change.

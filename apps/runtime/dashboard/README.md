@@ -1051,6 +1051,15 @@ the browser scales them up, because the page's main thread waits for every
 software frame. It takes no pointer input, sends nothing, and loses its context when
 the page is left.
 
+The Devices directory, the Companions overview and the Pixoo and Tidbyt pages
+(#1950) draw on the same layer through `useGlassPage` (`src/glass-page.tsx`),
+which mounts it on the page's `main` while one of them is open: the Quiet glass
+wash with no `backdrop` and no `fuse`. Each directory or overview card is
+wrapped in a `data-glass-panel` element, a display's device card and a
+display's module page are one panel each, and the heading, section headings,
+notices, the breadcrumb and the view pages under the tabs carry veils. The
+Devices popout keeps its own fill over the layer.
+
 `glass.css` keys everything on `data-glass="webgl"`: the outermost card surface
 in each panel turns transparent (a surface with a state meaning, such as an
 Inbox that needs attention, keeps its fill), the shell's background steps aside

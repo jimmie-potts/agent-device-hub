@@ -21,16 +21,18 @@ function Name({entry, under}: {entry: DirectoryEntry; under: string}): React.JSX
  */
 export function DeviceDirectory({runtime, connected, active}: {runtime: RuntimeData; connected: boolean; active: boolean}): React.JSX.Element {
   const entries = directoryEntries(runtime);
-  const card = (entry: DirectoryEntry): React.JSX.Element => {
+  // Each card is one panel on the glass layer (#1950), and the text on the wash between them has a veil.
+  const card = (entry: DirectoryEntry): React.JSX.Element => <div key={entry.id} className="inventory-panel" data-glass-panel={entry.id}>{surface(entry)}</div>;
+  const surface = (entry: DirectoryEntry): React.JSX.Element => {
     const first = entry.links[0];
     const warning = entry.state !== 'running' ? <p className="warning">{entry.state}. Device observations are unavailable.</p>
       : entry.stale ? <p className="warning">Device observations are stale or unavailable.</p> : null;
     if (entry.overview === undefined && entry.links.length === 1 && first !== undefined && warning === null) {
       // The card is named for its module; the device's own name and its availability are shown beside it.
-      return <NavLink key={entry.id} route={first.route} className="card inventory-card" label={entry.label}><Name entry={entry} under={first.label === entry.label ? '' : first.label}/>
+      return <NavLink route={first.route} className="card inventory-card" label={entry.label}><Name entry={entry} under={first.label === entry.label ? '' : first.label}/>
         <span className="inventory-state"><span className="inventory-dot" data-off={entry.available ? undefined : ''}/>{entry.status}</span></NavLink>;
     }
-    return <article key={entry.id} className="card inventory-group" aria-label={entry.label}>
+    return <article className="card inventory-group" aria-label={entry.label}>
       {entry.overview === undefined ? <div className="inventory-card"><Name entry={entry} under={entry.status}/></div>
         : <NavLink route={entry.overview.route} className="inventory-card" label={entry.overview.label}><Name entry={entry} under={entry.status}/><RailIcon name="chevron" size={14}/></NavLink>}
       {warning}
@@ -40,15 +42,15 @@ export function DeviceDirectory({runtime, connected, active}: {runtime: RuntimeD
     </article>;
   };
   return <section aria-label="Devices" hidden={!active}>
-    <header className="page"><h1>Devices</h1></header>
-    {runtime.catalogFailed && <p role="alert" className="warning">The module catalog is unavailable. Retrying the read; no new capabilities are assumed.</p>}
-    {!connected && <p className="warning">Connection unavailable. These are the last declarations the page had.</p>}
-    {runtime.modules === undefined && !runtime.catalogFailed && <p className="hint">Loading device pages.</p>}
-    {runtime.modules !== undefined && !runtime.catalogFailed && entries.length === 0 && <p className="hint">No devices are currently declared.</p>}
+    <header className="page"><h1 data-glass-veil>Devices</h1></header>
+    {runtime.catalogFailed && <p role="alert" className="warning" data-glass-veil>The module catalog is unavailable. Retrying the read; no new capabilities are assumed.</p>}
+    {!connected && <p className="warning" data-glass-veil>Connection unavailable. These are the last declarations the page had.</p>}
+    {runtime.modules === undefined && !runtime.catalogFailed && <p className="hint" data-glass-veil>Loading device pages.</p>}
+    {runtime.modules !== undefined && !runtime.catalogFailed && entries.length === 0 && <p className="hint" data-glass-veil>No devices are currently declared.</p>}
     <div className="inventory">{DEVICE_CATEGORIES.map(category => {
       const shown = entries.filter(entry => entry.category === category);
       return shown.length === 0 ? null : <section key={category} className="inventory-section" aria-labelledby={`inventory-${category}`}>
-        <h2 id={`inventory-${category}`}>{category}</h2><div className="inventory-grid">{shown.map(card)}</div></section>;
+        <h2 id={`inventory-${category}`} data-glass-veil>{category}</h2><div className="inventory-grid">{shown.map(card)}</div></section>;
     })}</div>
   </section>;
 }

@@ -237,3 +237,15 @@ The Devices menu, the directory, the jump palette, the pins and a device page's 
 #### Scenario: Lights without published names
 - **WHEN** the Nanoleaf records publish no labels and the LIFX records publish none
 - **THEN** the Nanoleaf lights are named Lines and Panels and each LIFX fixture by its ID read as words, and each opens its existing device page
+
+### Requirement: Devices, Companions and display pages on the shared glass layer
+
+The Devices directory, the Companions overview and the Pixoo and Tidbyt pages SHALL draw on the shared glass layer over the Quiet glass wash, with no artwork backdrop and no fusing of neighboring panels. Each directory card, each overview card, a display's device card and a display's module page SHALL be one glass panel, and text that sits on the wash outside a panel SHALL carry a veil. Text over the layer SHALL keep at least 4.5:1 contrast in light and dark appearance at desktop width. The layer SHALL draw nothing at rest. Without WebGL 2 or after a lost context the pages SHALL show their Quiet glass panels with every control working. The Devices popout SHALL keep its own fill over the layer. Leaving these pages SHALL release the layer.
+
+#### Scenario: Glass at rest
+- **WHEN** the operator opens the Devices directory, the Companions overview or a Pixoo or Tidbyt page in light or dark appearance
+- **THEN** each card has a glass panel that follows its box, the page's text keeps 4.5:1, and the layer draws no frame while nothing changes
+
+#### Scenario: No WebGL 2 or a lost context
+- **WHEN** the browser has no WebGL 2, or the layer's context is lost
+- **THEN** the pages show their Quiet glass panels, and the Devices menu, the directory's cards, the display tabs and the Companions links still work and send no command

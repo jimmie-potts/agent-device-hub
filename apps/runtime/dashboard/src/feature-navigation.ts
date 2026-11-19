@@ -78,3 +78,10 @@ export function displayTitle(route: Route, runtime: RuntimeData): string | undef
   const module = route.kind === 'module' ? contextModule(route, runtime) : undefined;
   return module !== undefined && VIEWS[module.name] !== undefined ? moduleLabel(module.name) : undefined;
 }
+
+/** Whether the open page is a display's (Pixoo's or Tidbyt's), which draws on the glass layer (#1950). */
+export function isDisplayPage(route: Route, runtime: RuntimeData): boolean {
+  if (route.kind !== 'module' && route.kind !== 'component') return false;
+  const module = contextModule(route, runtime);
+  return module !== undefined && VIEWS[module.name] !== undefined;
+}
