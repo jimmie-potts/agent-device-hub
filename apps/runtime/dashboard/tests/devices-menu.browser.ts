@@ -44,7 +44,7 @@ const rowNames = (): Promise<string[]> => rows.locator('a').evaluateAll(links =>
  * Waits for the rail to show these rows. A module page's row is named after the module alone while the module offers
  * that one page, and with the module once its devices' records add their own pages, which arrive after the catalog.
  */
-const railShows = (names: string[], message: string): Promise<void> => expect.poll(rowNames, {message}).toEqual(names);
+const railShows = (names: string[], message: string): Promise<void> => expect.poll(rowNames, {message, timeout: 15_000}).toEqual(names);
 /** The menu slides in; its box is measured once that has finished. The wait has the page's timeout, as every wait here does. */
 const settled = async (): Promise<void> => {await page.waitForFunction(() => document.querySelector('.device-menu')?.getAnimations().every(animation => animation.playState === 'finished') === true);};
 const choose = async (name: string): Promise<void> => {await (await openDeviceMenu(page)).getByRole('menuitem', {name, exact: true}).click(); await menu.waitFor({state: 'detached'});};

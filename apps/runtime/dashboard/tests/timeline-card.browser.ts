@@ -66,6 +66,9 @@ try {
   // Synthetic reply shapes cover presentation, empty/fault paths and long evidence. The rows are stamped back from noon
   // of a fixed day in the page's own time zone, and the page's clock is held at that noon, so "today" holds all 35 at
   // any wall-clock time; rows stamped from the real clock fell partly into yesterday just after midnight (#1918).
+  // The held clock is days behind the runtime's, so the runtime refuses every SDK sync the page sends from here on as
+  // expired and the page holds no current copies. The checks below read only the routed history and the command
+  // recorder; a check that needs synced copies does not belong after this point.
   const now = await page.evaluate(() => new Date(2026, 10, 12, 12).getTime());
   await page.clock.setFixedTime(now);
   const rows: HistoryRow[] = Array.from({length: 35}, (_, index) => ({seq: index + 1, atMs: now - index * 1000,

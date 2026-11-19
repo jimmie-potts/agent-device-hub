@@ -1926,10 +1926,12 @@ in its installed-service denylist, the harness stops that candidate before
 trying another, for at most ten allocations. Exhaustion removes the private
 world directory and fails explicitly. Startup or stop errors propagate without
 retrying. The final port refusal, restart port and browser assertions remain.
-A world that is not closed within ten minutes ends the run with exit status 1.
+A world that is not closed within 25 minutes ends the run with exit status 1.
 Its message names the journey and whether the world was starting, running or
-closing. A wait with no deadline of its own then fails fast; before this, such a
-wait held the job until the job's own limit (#1919).
+closing. The longest journey, `home-idle.browser.ts`, keeps its world open for
+about nine and a half minutes, and the limit stays under a hosted job's 40-minute
+limit. A wait with no deadline of its own then fails within that limit; before
+this, such a wait held the job until the job's own limit (#1919).
 After the build, run `node --test apps/runtime/dashboard/tests/world-runtime.test.ts`
 for deterministic disallowed-port, cleanup, exhaustion, deadline and error cases. Existing
 dashboard test discovery includes these checks. Run

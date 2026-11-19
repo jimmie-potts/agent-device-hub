@@ -21,8 +21,13 @@ export async function startWorldRuntime<T extends Pick<Runtime, 'url' | 'stop'>>
 
 /** What a world is doing: starting its runtime, serving its journey, or stopping. */
 export type WorldPhase = 'starting' | 'running' | 'closing';
-/** How long one world may live. The longest hosted journey takes about two minutes. */
-export const WORLD_LIMIT_MS = 10 * 60_000;
+/**
+ * How long one world may live. Every startWorld caller has this limit. The longest journey, home-idle.browser.ts in
+ * the full browser suite, keeps its world open for about nine and a half minutes, mostly in real-time idle windows that
+ * more CPU does not shorten. 25 minutes leaves a wide margin above it and still ends the run before a hosted job's
+ * 40-minute limit.
+ */
+export const WORLD_LIMIT_MS = 25 * 60_000;
 type DeadlineTimer = {after: (run: () => void, ms: number) => unknown; cancel: (timer: unknown) => void};
 const realTimer: DeadlineTimer = {
   // The timer never keeps the process alive: a run with nothing else left to do ends as it would without it.

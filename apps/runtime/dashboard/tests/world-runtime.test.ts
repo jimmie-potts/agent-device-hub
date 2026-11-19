@@ -71,7 +71,7 @@ void test('a world not closed within its limit ends the run, naming the journey 
   assert.equal(timers[0]?.ms, WORLD_LIMIT_MS);
   stuck.phase('running'); stuck.phase('closing');
   timers[0]?.run();
-  assert.deepEqual(failures, ['The world for devices-menu.browser.ts:9 was not closed within 10 minutes; it was closing.']);
+  assert.deepEqual(failures, ['The world for devices-menu.browser.ts:9 was not closed within 25 minutes; it was closing.']);
   const closed = worldDeadline('shell.browser.ts:11', {timer, limitMs: 60_000, fail: message => {failures.push(message);}});
   closed.clear();
   assert.deepEqual([timers[1]?.ms, timers[1]?.cancelled], [60_000, true], 'a closed world cancels its deadline');
