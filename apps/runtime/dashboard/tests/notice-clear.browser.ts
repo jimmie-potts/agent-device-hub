@@ -95,15 +95,15 @@ try {
     await card('Ask a question').locator('.chip', {hasText: 'Question'}).waitFor();
     await card('Port the wall').locator('.chip', {hasText: 'Finished · unread'}).waitFor();
     await card('Keep working').locator('.chip', {hasText: 'Working'}).waitFor();
-    await card('Keep working').locator('.agent-heard', {hasText: 'Heard <1m ago'}).waitFor();
+    await card('Keep working').locator('.agent-heard', {hasText: '<1m ago'}).waitFor();
     await clock.advance(10 * 60_000);
     // A later session orders the copy: once it shows, anything the silence published before it shows too.
     await silent.observe(sessionStarted, {identity: LATER, title: {value: 'Arrive later', source: 'provider'}});
     await card('Arrive later').waitFor();
     const SILENT = ['Ask a question', 'Port the wall', 'Keep working'];
     assert.deepEqual(await Promise.all(SILENT.map(name => card(name).getAttribute('data-stale'))), ['false', 'false', 'false'], 'silence marks no row');
-    for (const name of SILENT) await card(name).locator('.agent-heard', {hasText: 'Heard 10m ago'}).waitFor();
-    await card('Arrive later').locator('.agent-heard', {hasText: 'Heard <1m ago'}).waitFor();
+    for (const name of SILENT) await card(name).locator('.agent-heard', {hasText: '10m ago'}).waitFor();
+    await card('Arrive later').locator('.agent-heard', {hasText: '<1m ago'}).waitFor();
     await card('Keep working').locator('.chip', {hasText: 'Working'}).waitFor();
     await card('Port the wall').locator('.chip', {hasText: 'Finished · unread'}).waitFor();
     await openConnections(page);

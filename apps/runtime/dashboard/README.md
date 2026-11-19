@@ -806,7 +806,8 @@ Home supplies its widget frame; other containers can reuse the components withou
 starting another feed.
 
 Card faces show the label (then title or native ID), project/client, state and
-how long ago the hub last heard from the session (**Heard 3m ago**, Hub #1947).
+how long ago the hub last heard from the session (**Heard 3m ago**, or **3m ago**
+on a closed Home tile, Hub #1947).
 The page computes that age against its own clock from the record's
 `lastEvidenceAtMs`, which the core publishes to the minute, so a stuck
 "working" session can be told apart from real work without another read or any

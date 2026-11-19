@@ -59,11 +59,11 @@ Before this change the same busy session published one revision for the hour. Se
 - Bindings that compare a session's exact revision see it change at most once a minute while that session works: the companions' coding suggestion (`suggestion-model.ts`), an opportunity without a known turn or attention ID (`presentation-policy.ts`), and the dashboard's notice override and label editor (`expectedRevision`), which already refuse a stale revision with `revision-conflict`.
 - The Tronbyt tile and Habitat order by `lastEvidenceAtMs`, which is now closer to real evidence.
 
-The resolution is the owner's to change: it is the one constant, and the measurement test derives its expectations from it. Alternatives the owner may choose instead: a coarser resolution (five minutes gives at most 12 revisions an hour, with an age up to five minutes stale), or a separate history rule that keeps evidence-only changes as span confirmations, which would revisit #1768 decision 6.
+The owner chose one-minute steps after this measurement (2026-11-19T19:08:28Z, recorded on #1947). The resolution stays one constant, and the measurement test derives its expectations from it, so a later change is one edit. The alternatives considered were a coarser resolution (five minutes gives at most 12 revisions an hour, with an age up to five minutes stale) and a separate history rule that keeps evidence-only changes as span confirmations, which would revisit #1768 decision 6.
 
 ### 5. The dashboard's evidence age
 
-The row already carries `lastEvidenceAtMs`. The card face shows "Heard {age} ago" and the disclosure "Last heard: {age} ago, to the minute.", both from `heardAge(now - lastEvidenceAtMs)` on the shell's existing one-second clock: `<1m`, then whole minutes, then hours and minutes. Whole minutes match the published resolution: the shown age overstates the real one by less than a minute. The page sends nothing and reads nothing new. The Home idle check treats the face's age like the disclosure's, as the shell clock's own text.
+The row already carries `lastEvidenceAtMs`. The card face shows "Heard {age} ago" on its first line, beside the client (a closed Home tile drops the word "Heard" so the client keeps room), and the disclosure "Last heard: {age} ago, to the minute.", both from `heardAge(now - lastEvidenceAtMs)` on the shell's existing one-second clock: `<1m`, then whole minutes, then hours and minutes. Whole minutes match the published resolution: the shown age overstates the real one by less than a minute. The page sends nothing and reads nothing new. The Home idle check treats the face's age like the disclosure's, as the shell clock's own text.
 
 ## Boundaries and outcomes (ADR 0012)
 

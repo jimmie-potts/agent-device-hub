@@ -30,7 +30,7 @@ Cards with approval, input or question attention SHALL have amber highlighting a
 
 #### Scenario: Silence on a waiting or finished session
 - **WHEN** a session waiting on a question, a session holding an unread finished turn and a working session stay silent for ten minutes on a synced copy
-- **THEN** their faces keep Question, Finished · unread and Working, none is marked uncertain, and each says Heard 10m ago
+- **THEN** their faces keep Question, Finished · unread and Working, none is marked uncertain, and each shows its evidence age, 10m ago
 
 ### Requirement: Existing authority is preserved
 The collection SHALL use the existing guarded label editor only for authorized callers, preserving refused and uncertain reply handling and no replay. Label controls SHALL be disabled only while the session copy is not synced; the session's status does not disable them, because the label is the owner's own data, and the expected-revision guard still refuses an attempt on a changed record.

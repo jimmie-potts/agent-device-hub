@@ -13,4 +13,4 @@ Cards with approval, input or question attention SHALL have amber highlighting a
 
 #### Scenario: Silence on a waiting or finished session
 - **WHEN** a session waiting on a question, a session holding an unread finished turn and a working session stay silent for ten minutes on a synced copy
-- **THEN** their faces keep Question, Finished · unread and Working, none is marked uncertain, and each says Heard 10m ago
+- **THEN** their faces keep Question, Finished · unread and Working, none is marked uncertain, and each shows its evidence age, 10m ago

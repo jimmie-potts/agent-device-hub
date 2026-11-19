@@ -248,6 +248,8 @@
    full name is its title, and an opened tile shows it in full. */
 .home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid :is(.session-id h3,.agent-client){display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
 .home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid .session-id{min-width:0;overflow:hidden}
+/* A closed tile shows the evidence age without its leading word, so the client keeps room; the title names it in full. */
+.home-layout-card[data-home-shape] .paged-list:not([data-held=true])>.agent-grid .agent-heard-word{display:none}
 /* Chrome keeps its fixed height in every state. While a row is open it takes the page, and the list becomes the card's
    only scroll area, so a long detail is never clipped; its controls scroll into view as focus reaches them. */
 .home-layout-card[data-home-shape] :is(.inbox-card>header,.inbox-card>.hub-control-status,.timeline-heading,.timeline-card>.timeline-open,.timeline-filters,.timeline-card>.timeline-status,.widget[data-widget=sessions]>.widget-head,.agent-summary,.agent-sessions .filters,.paged-list-pager){flex-shrink:0}

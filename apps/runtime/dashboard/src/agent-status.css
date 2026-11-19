@@ -16,8 +16,10 @@
 .agent-state{display:flex;align-items:center;gap:var(--space-xs);flex-wrap:wrap;margin-top:auto}
 .agent-state .session-dot{margin:0}
 .agent-last-attention{font-size:var(--type-small)}
-.agent-heard{margin-left:auto;color:var(--muted-dense);font-size:var(--type-small);font-variant-numeric:tabular-nums;white-space:nowrap}
-.agent-heard+.agent-caret{margin-left:0}
+/* The client and the evidence age share the face's first line: the age stays whole at the right, the client takes the rest. */
+.agent-meta{display:flex;align-items:baseline;gap:var(--space-s);min-width:0}
+.agent-meta .agent-client{flex:1 1 auto;min-width:0}
+.agent-heard{flex:none;color:var(--muted-dense);font-size:var(--type-small);font-variant-numeric:tabular-nums;white-space:nowrap}
 .agent-caret{margin-left:auto;font-size:1.5rem;line-height:1;transition:transform .15s ease}
 .agent-disclosure[open] .agent-caret{transform:rotate(90deg)}
 .agent-evidence{padding:var(--space-m);border-top:1px solid var(--edge-dense);overflow-wrap:anywhere;animation:agent-reveal .15s ease-out}

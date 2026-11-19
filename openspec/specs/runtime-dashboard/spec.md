@@ -75,7 +75,7 @@ The dashboard SHALL keep one copy of the core's `session` family through SDK syn
 
 #### Scenario: Evidence age from the page's clock
 - **WHEN** the page shows a session whose record's evidence time is 59 seconds, one minute, and one hour and seven minutes before the page's clock
-- **THEN** its face reads Heard <1m ago, Heard 1m ago and Heard 1h 7m ago, counting up with the page's clock without another read
+- **THEN** its face reads Heard <1m ago, Heard 1m ago and Heard 1h 7m ago (a closed Home tile drops the leading word), counting up with the page's clock without another read
 
 ### Requirement: A finished turn from the session record
 

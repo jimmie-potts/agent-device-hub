@@ -21,12 +21,12 @@ export function AgentStatusCard({row, live, now, actions}: {
     data-attention={needsAttention(row)} data-stale={stale}>
     <details className="agent-disclosure">
       <summary className="agent-face">
-        <span className="agent-client" title={row.where}>{row.where}</span>
+        <span className="agent-meta"><span className="agent-client" title={row.where}>{row.where}</span>
+          <span className="agent-heard" title={`Heard ${heard} ago: when the hub last heard from this session, to the minute`}><span className="agent-heard-word">Heard </span>{heard} ago</span></span>
         <div className="session-id"><h3 title={row.name}>{row.name}</h3></div>
         <span className="agent-state"><span className="session-dot" data-chip={row.chip} aria-hidden="true"/>
           <span className="chip" data-chip={row.chip}>{faceText(row, live)}</span>
           {!live && needsAttention(row) && <span className="agent-last-attention">{row.chipText}</span>}
-          <span className="agent-heard" title="When the hub last heard from this session, to the minute">Heard {heard} ago</span>
           <span className="agent-caret" aria-hidden="true">›</span>
         </span>
       </summary>
