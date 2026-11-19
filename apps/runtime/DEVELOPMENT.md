@@ -936,8 +936,9 @@ test container when the rail's text or sizes change, because the container's
 fonts are wider than a Mac's.
 `conversation-workspace.browser.ts` now also checks the one header row, the
 920px measure with the composer's width at 1024px, 1280px and 1440px, a
-profile chosen in the rail with its own history and draft, and the companion
-pages in the Devices menu. Journeys choose a profile with `chooseConversation`
+profile chosen in the rail with its own history and draft, that the Devices
+menu lists no companion page, and a companion profile opened from the
+Companions overview. Journeys choose a profile with `chooseConversation`
 in `apps/runtime/dashboard/tests/navigation-helpers.ts`.
 
 The Devices menu and the pinned pages (#1889) add two unit files and one
@@ -968,6 +969,25 @@ while the menu and the pins are used. The hosted smoke and full browser entries
 include it. The menu slides in, so the journey measures its box after its
 animation has finished. Devices is not a link, so journeys open the directory
 through `openDirectory` in `apps/runtime/dashboard/tests/navigation-helpers.ts`.
+
+The hardware-only Devices, the Companions destination and the display views
+(#1950) add four unit files: `directory.test.ts` (hardware only, categories,
+brands with their lights, a module that is down), `device-names.test.ts`
+(published label, Nanoleaf kind, readable ID, telling names apart),
+`companions-overview.test.ts` and `feature-navigation.test.ts` (Pixoo's views,
+Tidbyt's one view, existing addresses). `devices-menu.browser.ts` also checks
+that the menu lists hardware only with one entry each for Pixoo and Tidbyt,
+that Nanoleaf and LIFX start collapsed, expand to their lights and overview by
+pointer and keys, skip their collapsed lights with the arrow keys, open again
+for the current light and send nothing; that each light opens its own page and
+leads back to its brand; that the directory shows the same lights; Tidbyt's
+Status and Content, Pixoo's Display, Device settings, Agent status, Media and
+Playlists, an old Player bookmark and the palette's Monitor entry; the
+Companions overview, an old Habitat bookmark and the conversations; and at
+phone width that "All devices" stays in view with both brands open and that
+Escape closes the menu before the drawer with focus handed back each time.
+Journeys reach a task page with `deviceTab`, Habitat with `openHabitat`, Audio
+with `openAudio` and a page outside the hardware inventory with `jumpTo`.
 
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`

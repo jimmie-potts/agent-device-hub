@@ -54,7 +54,7 @@ export type DevicesRow = {open: boolean; menuId: string; button: React.RefObject
  */
 export function ShellNavigation({route, ownRow, devices}: {route: Route; ownRow: boolean; devices: DevicesRow}): React.JSX.Element {
   const destination = navigationDestination(route);
-  const ancestor = (kind: string): '' | undefined => destination === kind && ownRow && routeHash(route) !== routeHash({kind} as Route) ? '' : undefined;
+  const ancestor = (kind: string): '' | undefined => destination === kind && ownRow && routeHash(route) !== routeHash({kind}) ? '' : undefined;
   return <nav className="primary-navigation" aria-label="Main navigation">
     {([['home', 'Home'], ['companions', 'Companions'], ['rooms', 'Rooms'], ['devices', 'Devices'], ['automation', 'Automation']] as const).map(([kind, label]) => kind === 'devices'
       ? <button key={kind} ref={devices.button} type="button" className="rail-devices" aria-haspopup="menu" aria-expanded={devices.open} aria-controls={devices.open ? devices.menuId : undefined}

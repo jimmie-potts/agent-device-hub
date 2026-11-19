@@ -95,7 +95,7 @@
 /* The Devices menu (#1889) follows the owner's selected device-only prototype (#1950): a head with its close button,
    the lists in two columns that scroll, and "All devices" kept at the foot, so the directory is in reach with every
    brand open. Beside the rail it opens level with the Devices row, no lower than two fifths of the window. */
-.device-menu{--device-menu-at:clamp(8px,var(--device-menu-top,8px),40vh);position:fixed;inset-block-start:var(--device-menu-at);inset-inline-start:192px;z-index:30;display:flex;flex-direction:column;inline-size:min(404px,calc(100vw - 200px));max-block-size:calc(100dvh - var(--device-menu-at) - 8px);padding:6px;border:1px solid var(--edge-dense);border-radius:16px;background:var(--panel);box-shadow:var(--shell-drawer-shadow);overflow:hidden;transform-origin:left 24px;animation:device-menu-in 160ms cubic-bezier(.23,1,.32,1)}
+.device-menu{position:fixed;inset-block-start:8px;inset-inline-start:192px;z-index:30;display:flex;flex-direction:column;inline-size:min(404px,calc(100vw - 200px));max-block-size:calc(100dvh - 16px);padding:6px;border:1px solid var(--edge-dense);border-radius:16px;background:var(--panel);box-shadow:var(--shell-drawer-shadow);overflow:hidden;transform-origin:left 24px;animation:device-menu-in 160ms cubic-bezier(.23,1,.32,1)}
 @keyframes device-menu-in{from{opacity:0;transform:translateX(-6px) scale(.98)}}
 @keyframes device-menu-over{from{opacity:0;transform:translateX(12px)}}
 .device-menu-head{display:flex;flex:none;align-items:center;justify-content:space-between;padding:2px 2px 2px 10px}
@@ -259,7 +259,7 @@
 .inventory{display:grid;gap:var(--space-l);max-inline-size:880px}
 .inventory-section{padding:0}
 .inventory-section h2{margin:0 0 var(--space-s);font-size:var(--type-heading);font-weight:500}
-.inventory-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:start}
+.inventory-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .shell .inventory-card{display:flex;align-items:center;justify-content:flex-start;gap:12px;padding:15px;border:1px solid transparent;border-radius:18px;color:var(--text);text-decoration:none}
 .shell a.inventory-card:hover{background:var(--raised)}
 .shell a.inventory-card>.rail-icon:last-child{margin-inline-start:auto;color:var(--muted-dense)}

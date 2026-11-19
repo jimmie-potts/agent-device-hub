@@ -8,6 +8,9 @@ import {routeHash, type Route} from './routes.ts';
 /** Where focus goes when the menu closes: back to the Devices row, to the page that was chosen, or nowhere new. */
 export type DeviceMenuClose = 'row' | 'page' | 'stay';
 
+/** The phone layout, where the menu covers the drawer (the stylesheet's 680px rule). */
+const PHONE = matchMedia('(max-width: 680px)');
+
 /**
  * The Devices menu (Hub #1889): the configured hardware, grouped as the directory groups it, with "All devices"
  * leading to the directory. Each lighting brand is a disclosure over its overview and its lights (Hub #1950); the
@@ -83,10 +86,14 @@ export function DeviceMenu({id, runtime, pins, route, row, onClose, onDropped}: 
       document.removeEventListener('focusin', moved);
     };
   }, [row]);
-  // Beside the rail the menu opens level with the Devices row, as the prototype's does; the stylesheet keeps it in the window.
+  // Beside the rail the menu opens level with the Devices row, as the prototype's does, no lower than two fifths of the
+  // window, and no taller than the room under it. Over the phone drawer the stylesheet places it.
   useLayoutEffect(() => {
-    const top = row.current?.getBoundingClientRect().top;
-    if (top !== undefined) root.current?.style.setProperty('--device-menu-top', `${String(Math.round(top))}px`);
+    const menu = root.current, top = row.current?.getBoundingClientRect().top;
+    if (menu === null || top === undefined || PHONE.matches) return;
+    const at = Math.round(Math.min(Math.max(8, top), innerHeight * .4));
+    menu.style.insetBlockStart = `${String(at)}px`;
+    menu.style.maxBlockSize = `calc(100dvh - ${String(at + 8)}px)`;
   }, [row]);
   const here = routeHash(route);
   const link = (label: string, to: Route, className: string): React.JSX.Element => {

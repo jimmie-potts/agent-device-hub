@@ -37,7 +37,9 @@ export async function capturePixooCommandLimits(t: CaptureContext): Promise<void
   });
   await click(page.getByRole('button', {name: 'Animate preview'}), 'Animate the library preview');
   await page.getByRole('button', {name: 'Pause preview'}).waitFor();
-  await click(page.getByRole('navigation', {name: 'pixoo pages'}).getByRole('link', {name: 'Settings', exact: true}), 'Read the configured playback route');
+  // Device settings is linked from the Pixoo's Display view (Hub #1950).
+  await click(page.getByRole('navigation', {name: 'pixoo pages'}).getByRole('link', {name: 'Display', exact: true}), 'Open the Pixoo display');
+  await click(page.getByRole('navigation', {name: 'Display links'}).getByRole('link', {name: 'Device settings', exact: true}), 'Read the configured playback route');
   const settings = page.getByRole('region', {name: 'Pixoo settings'});
   await t.expect('Settings names the direct command and its documented frame limit', async () => {
     await settings.getByText('Direct raw frames', {exact: true}).waitFor();

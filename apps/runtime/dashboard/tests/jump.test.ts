@@ -6,7 +6,7 @@ import {JUMP_RECENTS, filterJump, jumpEntries, jumpShortcut, rememberRoute, text
 import type {RuntimeData} from '../src/runtime-feeds.ts';
 import {routeHash, type Route} from '../src/routes.ts';
 
-const runtime: RuntimeData = {control: true, catalogFailed: false, copies: [], modules: [
+const runtime: RuntimeData = {control: true, catalogFailed: false, modules: [
   {name: 'lifx', state: 'running', serves: ['device'], pages: []},
   {name: 'art', state: 'running', serves: ['art'], pages: [{id: 'gallery', title: 'Art Gallery', path: '/modules/art/gallery', presentation: 'react'}]},
   {name: 'playback', state: 'running', serves: ['playback'], pages: []},

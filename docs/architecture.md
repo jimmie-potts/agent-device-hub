@@ -59,9 +59,10 @@ original transaction; no device writer or transport changes. Hidden module
 cards unmount their scoped acquisitions while shared alert evidence stays synced.
 Source delivery does not establish installed or physical acceptance.
 
-The runtime shell groups navigation into Home, Habitat, Rooms, Devices and Automation,
-with Settings as a separate utility. Its Devices directory projects existing
-catalog declarations and copies; module links remain local to their workspace.
+The runtime shell groups navigation into Home, Companions, Rooms, Devices and Automation,
+with Settings as a separate utility. Its Devices directory projects the configured
+hardware from existing catalog declarations and copies; task pages remain local to
+their device's page, and Companions links Habitat and the companion features.
 Connections and Places are reachable through Settings. The glass skin changes
 presentation through the existing token seam, with no state, transport or writer
 ownership change.

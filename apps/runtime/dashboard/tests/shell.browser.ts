@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
-import {chromium, type Request} from 'playwright';
+import {chromium, type Locator, type Request} from 'playwright';
 import {changes, copiesSynced, feed, startWorld} from './harness.ts';
 import {destinationLink, destinationNames, openDirectory, openSettings} from './navigation-helpers.ts';
 import {PINS_KEY} from '../src/pins.ts';
@@ -24,7 +24,7 @@ const settings = async (): Promise<void> => {await openSettings(page);};
 const railWidth = (): Promise<number> => page.locator('.shell>aside').evaluate(element => Math.round(element.getBoundingClientRect().width));
 // The stylesheet decides the rail's state from the window width, so it is read from the layout with no wait after a resize.
 const railState = async (): Promise<string> => {const width = await railWidth(); return width === 184 ? 'expanded' : width === 64 ? 'collapsed' : `unexpected ${String(width)}px`;};
-const FIVE = ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation'];
+const FIVE = ['Home', 'Companions', 'Rooms', 'Devices', 'Automation'];
 /** Records the POSTs that would be a command, sync, upload or provider request; the rail and the drawer must send none. */
 const recordWrites = (): {stop: () => string[]} => {
   const seen: string[] = [];
@@ -81,12 +81,13 @@ const resized = async (width: number, height: number): Promise<void> => {
   await page.setViewportSize({width, height});
   await page.evaluate(() => new Promise<void>(resolve => {requestAnimationFrame(() => {requestAnimationFrame(() => {resolve();});});}));
 };
-const category = async (name: string): Promise<void> => {await page.getByRole('group', {name: 'Device categories'}).getByRole('button', {name, exact: true}).click();};
+/** One category's section of the Devices directory (#1950). */
+const section = (name: string): Locator => page.getByRole('region', {name, exact: true});
 const checks: string[] = [];
 try {
   await page.goto(world.url); await feed(page, 'connected');
-  assert.deepEqual(await destinationNames(page), ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation']);
-  assert.deepEqual(await primary.getByRole('link').allTextContents(), ['Home', 'Habitat', 'Rooms', 'Automation'], 'four destinations are links; Devices is the button that opens its menu');
+  assert.deepEqual(await destinationNames(page), FIVE, 'Companions takes Habitat\'s place in the rail (#1950)');
+  assert.deepEqual(await primary.getByRole('link').allTextContents(), ['Home', 'Companions', 'Rooms', 'Automation'], 'four destinations are links; Devices is the button that opens its menu');
   assert.equal(await primary.getByRole('link', {name: 'Settings'}).count(), 0);
   // A Tall light card on the Home grid keeps its artwork mounted but hidden (#1672); its colors are still checked.
   await page.locator('.light-bulb-glow').first().waitFor({state: 'attached'});
@@ -142,7 +143,7 @@ try {
   assert.equal(await allDevices.evaluate(element => element === document.activeElement), true, 'End moves to the menu\'s last item');
   await page.keyboard.press('Enter');
   await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
-  await page.getByRole('link', {name: 'LIFX', exact: true}).click();
+  await section('Lighting').getByRole('link', {name: 'LIFX overview', exact: true}).click();
   assert.equal(new URL(page.url()).hash, '#/lights/lifx');
   assert.equal(await devices.getAttribute('aria-current'), 'page');
   await page.goBack();
@@ -150,18 +151,22 @@ try {
   await page.goForward();
   assert.equal(new URL(page.url()).hash, '#/lights/lifx');
   await page.goBack();
-  await category('Other');
-  const sign = page.getByRole('link', {name: 'Sign preview', exact: true});
+  // A device's task page is a tab over the device's own page (#1950).
+  await section('Appliances').getByRole('link', {name: 'sign', exact: true}).click();
+  const sign = page.locator('nav.feature-navigation').getByRole('link', {name: 'Sign preview', exact: true});
   const signAddress = await sign.getAttribute('href');
   await sign.click();
   await page.frameLocator('iframe.module-page').getByRole('heading', {name: 'hello'}).waitFor();
   assert.equal(await devices.getAttribute('aria-current'), 'page');
-  await page.goBack();
-  assert.equal(await page.getByRole('button', {name: 'Other', exact: true}).getAttribute('aria-pressed'), 'true', 'directory category survives navigation');
-  await category('Audio'); await page.getByRole('link', {name: 'Audio', exact: true}).click();
+  await page.goBack(); await page.goBack();
+  await page.getByRole('heading', {name: 'Devices', level: 1, exact: true}).waitFor();
+  assert.equal(await section('Audio').count(), 0, 'Audio is not a hardware category');
+  // Audio is under Home (#1950): Home's heading links it, and Home is its containing destination.
+  await open('Home'); await page.locator('.home-layout-heading').getByRole('link', {name: 'Audio', exact: true}).click();
   await page.getByRole('heading', {name: 'Audio', level: 1, exact: true}).waitFor();
   await page.getByRole('article', {name: /^Music /}).first().waitFor();
-  checks.push('five destinations, keyboard activation, brands, module pages, Audio and back history');
+  assert.equal(await primary.getByRole('link', {name: 'Home', exact: true}).getAttribute('aria-current'), 'page');
+  checks.push('five destinations, keyboard activation, brands, task pages, Audio under Home and back history');
 
   await settings();
   await page.locator('nav[aria-label=Places][data-links=loaded]').waitFor();
@@ -291,7 +296,7 @@ try {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   assert.deepEqual(await railFit(), {position: 'sticky', footInWindow: true, pinsWhole: true, width: 184}, 'a page that shows a temporary row finds its room there: the rail stays in view with the row whole');
   await page.setViewportSize({width: 1440, height: 1000});
-  await open('Devices'); await category('Displays');
+  await open('Devices');
 
   // From here to the reload nothing opens a page, so any command, sync, upload or provider request would be the rail's own.
   // The page opened above sends its own syncs after its feed connects; the check starts once they are answered.
@@ -478,10 +483,13 @@ try {
   await palette.waitFor();
   assert.equal(await jumpField.evaluate(element => element === document.activeElement), true, 'the palette opens with focus in its field');
   assert.deepEqual([await inert('#main'), await inert('.shell>aside')], [true, true], 'the page and the rail behind the palette are inert');
-  assert.deepEqual(await palette.locator('.jump-group').allTextContents(), ['Recent', 'Hub', 'Device pages']);
+  assert.deepEqual(await palette.locator('.jump-group').allTextContents(), ['Recent', 'Hub', 'Device pages', 'Pages'], 'pages outside the hardware inventory keep a group of their own (#1950)');
   const offered = await jumpOptions.allTextContents();
   assert.equal(offered[0], 'Home', 'the page just left is the first recent entry');
   assert.equal(offered.includes('LIFXLighting'), true, 'a declared device page is offered with its category');
+  assert.equal(offered.includes('LIFX · Pendant 1Lighting') && offered.includes('AudioHome') && offered.includes('HabitatCompanions'), true,
+    'each light\'s own page, Audio under Home and Habitat under Companions are offered (#1950)');
+  assert.equal(offered.some(text => text.startsWith('editor-fixture · Trusted editor fixture')), true, 'a page outside the hardware inventory is still offered');
   assert.equal(offered.filter(text => text === 'Settings').length, 1, 'a hub destination is offered once');
   assert.equal(await jumpOptions.first().getAttribute('aria-selected'), 'true');
   await page.keyboard.press('ArrowDown');
@@ -727,7 +735,6 @@ try {
       await page.emulateMedia({colorScheme, reducedMotion: 'reduce'});
       for (const destination of ['Home', 'Rooms', 'Devices', 'Automation', 'Settings']) {
         if (destination === 'Settings') await settings(); else await open(destination);
-        if (destination === 'Devices') await category('Displays');
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${destination} fits ${width}px ${colorScheme}`);
         if (receipts !== undefined && (width === 390 || width === 1440)) await page.screenshot({path: join(receipts, `shell-${destination.toLowerCase()}-${width}-${colorScheme}.png`), fullPage: true});
       }
@@ -740,8 +747,8 @@ try {
   const card = page.locator('[data-device=pendant-1]');
   await card.getByText('Your session is read-only.').waitFor();
   assert.equal(await card.getByRole('button').count(), 0);
-  await open('Devices'); await category('Other');
-  await page.getByRole('link', {name: 'Sign preview', exact: true}).waitFor();
+  await open('Devices');
+  await section('Appliances').getByRole('link', {name: 'sign', exact: true}).waitFor();
   await page.route('**/api/v2/modules', route => route.fulfill({status: 503, contentType: 'application/json', body: '{"error":{"code":"unavailable","retryable":true}}'}));
   await page.reload(); await feed(page, 'connected');
   await page.getByRole('alert').filter({hasText: 'The module catalog is unavailable.'}).waitFor();
