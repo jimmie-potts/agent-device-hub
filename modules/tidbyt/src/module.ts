@@ -18,7 +18,8 @@ import {createHash, randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {SCHEMA_BASE, errorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {Capabilities, DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {MomentPlayRequest, PlaybackState, SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {MomentPlayRequest, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
+import {readSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {artCommandRefusal} from '@jimmie-potts/event-contracts/v2/art';
 import {recordLog, DeviceAvailability, fullDisk, Outbox, SdkError, errorType, type AddMessage, type BunnyModule, type Cancel, type LogFields, type ModuleContext,
   type ModuleContent, type StateDraft, type SyncChange, type SyncedCopy, type TraceContext, Outcome} from '@jimmie-potts/sdk';
@@ -173,6 +174,8 @@ class TidbytRun {
   readonly #work = new Set<Promise<void>>();
   readonly #tiles: Tile[] = [];
   readonly #sessions: Copy;
+  /** Each session message's view, or null for one the shared read function does not accept, read once per message. */
+  readonly #views = new WeakMap<object, SessionView | null>();
   readonly #playback: Copy;
   /** The device's generation epoch for this start. No command replaces the writer, so its generation never moves. */
   readonly #epoch = randomUUID();
@@ -616,7 +619,7 @@ class TidbytRun {
     if (tile.name === 'status') {
       const copy = this.#sessions;
       if (!copy.everSynced && starting) return {kind: 'hold'};
-      const view = statusView({synced: copy.following, sessions: (copy.copy?.states() ?? []).map(message => message.data as SessionRecord)});
+      const view = statusView({synced: copy.following, sessions: this.#sessionViews()});
       return view.idle ? {kind: 'remove'} : {kind: 'show', key: JSON.stringify(view), request: {tile: 'status', view}};
     }
     const copy = this.#playback;
@@ -738,9 +741,26 @@ class TidbytRun {
   #presentation(): 'attention' | 'status' | 'idle' | 'unknown' {
     const copy = this.#sessions;
     if (!copy.following) return 'unknown';
-    const sessions = (copy.copy?.states() ?? []).map(message => message.data as SessionRecord);
-    if (sessions.some(session => session.attention.length > 0)) return 'attention';
+    const sessions = this.#sessionViews();
+    if (sessions.some(session => session.attention.items.length > 0)) return 'attention';
     return statusView({synced: true, sessions}).idle ? 'idle' : 'status';
+  }
+
+  /**
+   * The views of the sessions' copy, each message read once through the shared session read function; a message it does
+   * not accept is not a session the tile shows.
+   */
+  #sessionViews(): SessionView[] {
+    const views: SessionView[] = [];
+    for (const message of this.#sessions.copy?.states() ?? []) {
+      let view = this.#views.get(message);
+      if (view === undefined) {
+        view = readSession(message) ?? null;
+        this.#views.set(message, view);
+      }
+      if (view !== null) views.push(view);
+    }
+    return views;
   }
 
   /** Draws and encodes a moment's mood card in a worker thread, which the module's stop ends. */

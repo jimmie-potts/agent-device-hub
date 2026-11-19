@@ -1,8 +1,9 @@
 // What a bulb paints for automatic agent status (Hub #928). Copied from controllers/lifx/src/status-publisher.ts at main
-// 483d3a93 and converted to the module: the status now comes from the module's synced copy of the core's sessions through
-// `highestStatus` in @jimmie-potts/event-contracts/v2/status (#918), with no acknowledging-consumer filter, so any
-// consumer's acknowledgment retires `done`, as before. The colors, the caps and the transition rules are unchanged.
-import {STATUS_COLORS, type AgentState, type HighestStatus} from '@jimmie-potts/event-contracts/v2/status';
+// 483d3a93 and converted to the module: the status now comes from the module's synced copy of the core's sessions, read
+// through the shared session read function, and `highestStatus` over their views (Hub #1865), with no acknowledging-
+// consumer filter, so any consumer's acknowledgment retires `done`, as before. The colors, the caps and the transition
+// rules are unchanged.
+import {STATUS_COLORS, type AgentState, type HighestStatus} from '@jimmie-potts/event-contracts/v2/session-view';
 import type {NativeMode, StatusCaps} from './configuration.js';
 import type {Hsbk} from './protocol.js';
 

@@ -21,6 +21,7 @@ import {join} from 'node:path';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {commandSupported, type DeviceCommand} from '@jimmie-potts/event-contracts/v2/devices';
 import {sessionEntityId, type MomentPlayRequest, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {recordLog, DeviceAvailability, errorType, fullDisk, Outbox, Outcome as OutcomeWord, SdkError, type AddMessage, type Cancel, type Command, type ModuleContext, type Snapshot, type StateDraft,
   type SyncChange, type ModuleContent, type ModuleContentRequest,
 } from '@jimmie-potts/sdk';
@@ -530,9 +531,13 @@ export class NanoleafRuntime {
     const {scheduler, signal} = this.#context;
     if (signal.aborted) return;
     switch (change.type) {
-      case 'updated':
-        this.#feed.records.set(change.entity.id, change.message.data);
+      case 'updated': {
+        // The shared read function is the only reader of a record; one it does not accept is not a session the wall shows.
+        const view = readSession(change.message);
+        if (view === undefined) this.#feed.records.delete(change.entity.id);
+        else this.#feed.records.set(change.entity.id, view);
         break;
+      }
       case 'removed':
         this.#feed.records.delete(change.entity.id);
         break;
@@ -1129,7 +1134,7 @@ export class NanoleafRuntime {
       if (root === undefined || !root.notices.some(notice => notice.id === noticeId)) {
         throw new CommandRefused('not-found', 'the wall shows no such finished turn');
       }
-      // The copy holds `session/2.0` records only, so the identity is one of theirs.
+      // The copy holds views of the core's session records only, so the identity is one of theirs.
       session = sessionEntityId(root.identity as SessionRecord['identity']);
       this.#record(command, device, family);
     }, () => {

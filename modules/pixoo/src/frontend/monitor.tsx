@@ -1,15 +1,17 @@
 // Adapted from divoom-app-upgrade apps/web/src/monitor.tsx (0777479c): cached previews, view filters and consumer-only dismissal.
 import React, {useEffect, useRef, useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {DisplayRecord, Filter} from '../module/schemas.js';
 import {PreviewFrame} from './preview.js';
 
 type Props = {context: FrontendContext; device: DeviceRecord | undefined; display: DisplayRecord | undefined; live: boolean};
 // Browser projections contain data only; importing the Node helper's class-derived types would traverse implementations.
-type MonitorSessionRow = Pick<SessionRecord, 'id' | 'identity' | 'title' | 'project' | 'projectId' | 'activity' | 'freshness'
-  | 'observedAtMs' | 'lastEvidenceAtMs' | 'children' | 'attention' | 'unavailable' | 'notices'> & {label?: string};
+// A row is a session's view as the Monitor reads it (`monitorSession`): the hub's status, its work state and child counts.
+type MonitorSessionRow = Pick<SessionView, 'id' | 'identity' | 'title' | 'project' | 'projectId' | 'status' | 'observedAtMs' | 'lastEvidenceAtMs'
+  | 'unavailable'> & {activity: string; children: SessionView['relationships']['children']; attention: SessionView['attention']['items'];
+  notices: SessionView['outcome']['notices']; label?: string};
 type MonitorSessionPage = {items: MonitorSessionRow[]; total: number; offset: number; limit: number};
 type MonitorReading = {status: {lastOutcome: {status: string} | null}; rendition: {frames: string[]; frameDelayMs: number | null};
   playback: {source: 'current' | 'stale' | 'unavailable'; frame: string | null;
@@ -129,8 +131,8 @@ function Controls({context, device, display, live, reading, sessions, current, c
       const name = row.label ?? row.title?.value ?? row.identity.sessionId;
       return <article className="widget" key={row.id}>
         <h3>{name}</h3>
-        <p>{row.identity.provider} · {row.activity} · {row.freshness} · {row.identity.sessionId}</p>
-        <p>Project: {row.project ?? 'Unknown'}. Children: {row.children.active} active, {row.children.uncertain} uncertain.</p>
+        <p>{row.identity.provider} · {row.status.class} ({row.status.detail}) · {row.activity} · {row.identity.sessionId}</p>
+        <p>Project: {row.project ?? 'Unknown'}. Children: {row.children.working} working, {row.children.unconfirmed} unconfirmed.</p>
         <p>Observed: {new Date(row.observedAtMs).toISOString()}. Last evidence: {new Date(row.lastEvidenceAtMs).toISOString()}.</p>
         {row.attention.length > 0 && <p>Attention: {row.attention.map(item => item.kind).join(', ')}.</p>}
         {row.unavailable.map((item, index) => <p key={index}>Unavailable {item.dimension}: {item.reason}.</p>)}

@@ -6,6 +6,7 @@ import test from 'node:test';
 import {FRAME_BYTES, renderFrame} from '../src/render.js';
 import {renderTile, tileFrame} from '../src/tiles.js';
 import {statusView} from '../src/status.js';
+import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {HEIGHT, WIDTH, goldenFrames, titleSessions} from './frames.js';
 
 const fixtures = new URL('../../fixtures/', import.meta.url);
@@ -69,7 +70,7 @@ void test('invalid frames produce no image', () => {
 });
 
 void test('the render worker\'s function draws and encodes a tile\'s view, and refuses anything else', () => {
-  const view = statusView({synced: true, sessions: titleSessions()});
+  const view = statusView({synced: true, sessions: titleSessions().map(sessionView)});
   const reply = renderTile({tile: 'status', view});
   const expected = renderFrame(tileFrame({tile: 'status', view}));
   assert.ok(reply.ok && expected.ok);

@@ -2,6 +2,7 @@
 // controllers/tidbyt/tests/frames.mjs at main 627e3fe3. The status and now-playing frames are drawn here from the 2.0
 // records that hold what the 1.x fixtures held, so the same golden bytes show the module draws what the runner drew.
 import {sessionEntityId, type Identity, type PlaybackState, type SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {nowPlayingFrame, nowPlayingView} from '../src/nowplaying.js';
 import {statusFrame, statusView} from '../src/status.js';
 
@@ -51,7 +52,7 @@ export const goldenPlayback: PlaybackState = {
 };
 
 export const goldenFrames: Readonly<Record<string, () => Uint8Array>> = {
-  'status-titles': () => statusFrame(statusView({synced: true, sessions: titleSessions()})).rgb,
+  'status-titles': () => statusFrame(statusView({synced: true, sessions: titleSessions().map(sessionView)})).rgb,
   black: () => frame(() => [0, 0, 0]),
   'two-tone': () => frame((x, y) => ((x + y) % 2 === 1 ? [255, 0, 12] : [0, 0, 200])),
   'red-gradient': () => frame((x, y) => [(x * 4 + y) & 255, 7, 7]),

@@ -7,7 +7,7 @@ export type DashboardRow = {
  identity:Identity; label:string; shortLabel:string; title?:MonitorSession['title']; project?:string; activity:MonitorSession['activity'];
  attention:'approval'|'input'|'question'|'none'; uncertain:boolean;
  activeChildren:number; childrenUncertain:boolean; noticeIds:string[];
- observedAtMs:number; lastEvidenceAtMs:number; freshness:MonitorSession['freshness']; unavailable:MonitorSession['unavailable'];
+ observedAtMs:number; lastEvidenceAtMs:number; status:MonitorSession['status']; unavailable:MonitorSession['unavailable'];
 };
 export type DashboardLayout = {
  version:1; revision:number|null;
@@ -41,6 +41,17 @@ function notices(session:MonitorSession,consumer:string):string[]{return session
 function rank(session:MonitorSession,consumer:string):number {
  const kind=attention(session);return kind==='approval'||kind==='input'?0:kind==='question'?1:notices(session,consumer).length>0?2:3;
 }
+/** A parent the owner marks ambiguous, which leaves the session top-level and its children uncertain. */
+const ambiguousParent=(session:MonitorSession)=>session.unavailable.some(item=>item.dimension==='parent'&&item.reason==='ambiguous');
+/**
+ * The uncertain marker follows the hub's status (Hub #1865, design decision 10): a copy that is not current, an `unknown`
+ * status, working whose work is unconfirmed, an unavailable warning or an ambiguous parent. Silence, a root's unknown
+ * parent and an unknown turn do not mark a row.
+ */
+function uncertain(session:MonitorSession,connection:MonitorView['connection']):boolean {
+ return connection!=='current'||session.status.class==='unknown'||(session.status.class==='working'&&session.workConfidence==='unconfirmed')
+  ||session.unavailable.some(warnsForUnavailable)||ambiguousParent(session);
+}
 /** Routine ordering/read limits stay in metadata without dimming an otherwise known session. */
 function warnsForUnavailable(evidence:MonitorSession['unavailable'][number]):boolean {
  return !((evidence.dimension==='ordering'||evidence.dimension==='read')&&
@@ -71,17 +82,17 @@ export class DashboardPager {
   if(!Number.isFinite(nowMs)||nowMs<0)throw new Error('invalid-dashboard-clock');
   const now=Math.max(this.lastNow,nowMs);this.lastNow=now;
   const all=view.snapshot?.sessions??[];
-  const top=all.filter(s=>s.parent.status!=='known'||s.unavailable.some(u=>u.dimension==='parent'&&u.reason==='ambiguous'));
+  const top=all.filter(s=>s.parent.status!=='known'||ambiguousParent(s));
   const ordered=top.filter(s=>matches(s,filter)).sort((a,b)=>{const ranked=rank(a,this.consumer)-rank(b,this.consumer);return ranked!==0?ranked:compare(key(a.identity),key(b.identity));});
   const pages=Math.max(1,Math.ceil(ordered.length/PAGE_SIZE));
   const membership=JSON.stringify([filter,ordered.map(s=>key(s.identity))]);
   if(membership!==this.membership){this.membership=membership;this.page=Math.min(this.page,pages-1);this.deadline=now+10000;}
   else if(now>=this.deadline){const steps=Math.floor((now-this.deadline)/10000)+1;this.page=(this.page+steps)%pages;this.deadline+=steps*10000;}
-  const unknownChildren=all.some(s=>s.parent.status==='unknown'||s.unavailable.some(u=>u.dimension==='parent'));
+  const unknownChildren=all.some(ambiguousParent);
   return {version:1,revision:view.snapshot?.revision??null,connection:view.connection,collector:view.snapshot?.collector??'unknown',
    total:top.length,matched:ordered.length,attentionTotal:top.filter(s=>attention(s)!=='none').length,page:this.page,pages,
    rows:ordered.slice(this.page*PAGE_SIZE,this.page*PAGE_SIZE+PAGE_SIZE).map(s=>({identity:{...s.identity},...labels(s),...(s.title===undefined?{}:{title:{...s.title}}),...(s.project===undefined||s.project===''?{}:{project:s.project}),activity:s.activity,attention:attention(s),
-    uncertain:view.connection!=='current'||s.freshness==='uncertain'||s.unavailable.some(warnsForUnavailable)||s.activity==='unknown'||s.parent.status==='unknown'||s.turn.status==='unknown',
-    activeChildren:s.children.active,childrenUncertain:unknownChildren||s.children.uncertain>0||view.connection!=='current',noticeIds:notices(s,this.consumer),observedAtMs:s.observedAtMs,lastEvidenceAtMs:s.lastEvidenceAtMs,freshness:s.freshness,unavailable:structuredClone(s.unavailable)}))};
+    uncertain:uncertain(s,view.connection),
+    activeChildren:s.children.working,childrenUncertain:unknownChildren||s.children.unconfirmed>0||view.connection!=='current',noticeIds:notices(s,this.consumer),observedAtMs:s.observedAtMs,lastEvidenceAtMs:s.lastEvidenceAtMs,status:{...s.status},unavailable:structuredClone(s.unavailable)}))};
  }
 }

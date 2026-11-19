@@ -659,14 +659,14 @@ someone lists it.
 `@jimmie-potts/event-contracts/v2/status` holds `sessionState`, `highestStatus`
 and `STATUS_COLORS`, copied from `@jimmie-potts/agent-status` and rewritten for
 `session/2.0` records (Hub #918). The 1.x package stays for the old controllers
-until #839. Hub #1865 leaves this helper unchanged until each reader's step moves
-the reader onto the view's helper below.
+until #839. Hub #1865 leaves this helper unchanged; since its group 3 no live
+reader calls it, and the readers use the view's helper below.
 
 - `sessionState(record, consumers?)` ranks a root session: `attention` when it
   has attention, `working` when it is active or has an active child, `done`
   when a turn-ended notice lacks an acknowledgment, otherwise undefined. Read
   evidence never retires `done`. By default any consumer's acknowledgment
-  retires it, as LIFX and Tidbyt use it today; `consumers` restricts that to
+  retires it, as LIFX and Tidbyt use the view's helper; `consumers` restricts that to
   the named ones. Acknowledgments are recorded per consumer, and each caller's
   policy decides which ones clear what it shows.
 - `highestStatus(copy, {acknowledgingConsumers?})` takes a consumer's copy of the
@@ -698,15 +698,17 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
   not `statusOf` of the record's claims and keeps the 2.x record rules.
 - `src/v2/session-view.ts` (`./v2/session-view`) imports only the import-free
   `status.ts`, so a browser part can bundle it. It holds `statusOf`,
-  `noticeCounts` (which notices make a session finished: pending the owner's
-  decision, every notice no known later turn superseded), `sessionView(record)`
+  `noticeCounts` (which notices make a session finished: every notice no known
+  later turn superseded, the owner's decision of 2026-11-18), `sessionView(record)`
   for a `session/2.x` record its copy already validated,
   `forConsumer(view, policy)`, which retires `finished` to `quiet` under a
   reader's acknowledgment and read policy,
   `opportunityMatches(view, opportunity, consumer)`, `knownDetail`, and
   `sessionState` and `highestStatus` over views with `status.ts`'s colors and
-  ranking. Nothing live calls them yet. A detail a reader does not know falls
-  back to its class and never makes an opportunity match.
+  ranking. The device readers (LIFX, the Tidbyt tile, the Pixoo Monitor and
+  Nanoleaf) read through them; `status.ts` keeps its helper over 2.x records,
+  which no live reader calls. A detail a reader does not know falls back to its
+  class and never makes an opportunity match.
 - `src/v2/session.ts` (`./v2/session`) re-exports the view and adds
   `readSession(message)`, which validates a session state message and returns
   its view, or undefined. It reads `session/2.0` and `2.1` until the core
@@ -717,7 +719,7 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
   `loadSessionCases()` in `./v2/session-cases` expands it into messages for the
   core's and each reader's tests. `tests/session-cases.test.mjs` runs every
   case's reader expectations through the shared functions and checks that the
-  live helper in `status.ts` still gives main's results, and
+  helper over records in `status.ts` still gives main's results, and
   `tests/session.test.mjs` covers the status function, the 2.x mapping, the
   policies and opportunity matching.
 

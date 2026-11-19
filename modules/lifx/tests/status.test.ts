@@ -5,9 +5,13 @@
 // collector's state has no 2.0 home (MAPPING.md, "Agent status"); an owner that cannot serve is a sync that fails.
 import assert from 'node:assert/strict';
 import {afterEach} from 'node:test';
+import {readSession} from '@jimmie-potts/event-contracts/v2/session';
+import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
+import {highestStatus, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {STATUS_COLORS} from '@jimmie-potts/event-contracts/v2/status';
 import {SdkError} from '@jimmie-potts/sdk';
 import {PACKET, SimulatedLifx} from '../src/index.js';
+import {shownKey} from '../src/status.js';
 import {flush, it, PENDANT, shownColor, World} from './support.js';
 
 const worlds: World[] = [];
@@ -57,6 +61,36 @@ it('idle paints warm white 2700 K at zero saturation, at the brightness cap', as
   // A paint the module makes itself serves no request, yet it is a transmission the record shows (#918).
   const sent = world.device(PENDANT.id)?.lastTransmission;
   assert.deepEqual(sent?.status === 'known' && {requestId: sent.requestId, operationIds: sent.operationIds}, {requestId: undefined, operationIds: ['status']});
+});
+
+// Hub #1865: the bulb follows the shared view's finished rule (owner decision, 2026-11-18, option 1). A notice counts
+// until a known later turn supersedes it, so such a notice, still unread, no longer paints done.
+it('a notice a known later turn superseded paints idle, not done', async () => {
+  const world = await open({section: ONE});
+  await world.session('s', 'done', record => ({...record, turn: {status: 'known', id: 'turn-2'}}));
+  await world.mode(PENDANT.id, 'work');
+  assert.equal(paints(world), 1);
+  assert.deepEqual(shownColor(world.network, PENDANT.address), {hue: 0, saturation: 0, brightness: 50, kelvin: 2700, power: true}, 'warm white idle');
+  await world.session('s', 'done');
+  await world.clock.advance(1);
+  assert.equal(paints(world), 2);
+  assert.ok(Math.abs((shownColor(world.network, PENDANT.address)?.hue ?? -10) - hueOf(STATUS_COLORS.done)) <= 1, 'the current turn\'s notice paints done');
+});
+
+it('the shared session cases: Work shows highestStatus over the whole copy, and nothing while it is unknown', () => {
+  let checked = 0;
+  for (const item of loadSessionCases().cases) {
+    for (const [index, check] of item.checks.entries()) {
+      const overrides = new Map(Object.values(check.views).map(view => [view.id, view]));
+      const views = check.messages.map(message => readSession(message)).filter((view): view is SessionView => view !== undefined)
+        .map(view => overrides.get(view.id) ?? view);
+      assert.equal(views.length, check.messages.length, `${item.id} check ${index}: every record is read`);
+      const expected = check.readers.lifx === 'unknown' ? undefined : check.readers.lifx;
+      assert.equal(shownKey('work', highestStatus({synced: check.synced, sessions: views})), expected, `${item.id} check ${index}`);
+      checked++;
+    }
+  }
+  assert.ok(checked >= 25, `${checked} checks`);
 });
 
 it('Quiet paints attention at the quiet cap and nothing else; leaving attention writes nothing', async () => {

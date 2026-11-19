@@ -6,7 +6,9 @@ import {LIFX_SIMULATED_SECTION} from '@jimmie-potts/lifx';
 import {deviceAction, operationView} from '../../dashboard/src/devices.js';
 import {SIGN_SECTION} from '../fixtures/sign.js';
 import {FIXTURE_CONSUMERS} from '../fixtures/core.js';
-import {DashboardPager, FAMILIES as PIXOO, SIMULATED_SECTION as PIXOO_SECTION, frameDigest, renderDashboard, type DisplayRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
+import {sessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import {DashboardPager, FAMILIES as PIXOO, SIMULATED_SECTION as PIXOO_SECTION, frameDigest, monitorView, renderDashboard, type DisplayRecord,
+  type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {NANOLEAF_FAMILIES, SIMULATED_SECTION as NANOLEAF_SECTION} from '@jimmie-potts/nanoleaf';
 import {PLAYBACK_SECTION} from './modules/playback.js';
 import {chipOf} from '../../dashboard/src/sessions.js';
@@ -195,9 +197,7 @@ const dashboardControls: Scenario = {
 const pixooShowsNoticeRecord = (h: Harness): Outcome => {
   const record = session(h);
   if (record === undefined) return 'no session record';
-  const {label, ...visible} = record;
-  const layout = new DashboardPager().layout({connection: 'current', snapshot: {revision: record.revision, collector: 'running',
-    sessions: [{...visible, ...(label === undefined ? {} : {label: label.value})}]}}, 0);
+  const layout = new DashboardPager().layout(monitorView({state: 'current', revision: record.revision, sessions: [sessionView(record)]}), 0);
   const expected = renderDashboard(layout).map(frame => frameDigest(frame));
   const shown = deviceState<SimulatedPixooState>(h, 'pixoo').shown?.digests;
   const display = h.reader.states<DisplayRecord>(PIXOO.display, 'bunny/modules/pixoo')[0]?.data;

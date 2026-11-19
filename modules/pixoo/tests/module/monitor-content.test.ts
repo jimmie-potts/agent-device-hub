@@ -6,12 +6,12 @@ import type {ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {Player} from '../../src/playback/index.js';
 import {FakeDeviceAdapter} from '../../src/device/index.js';
 import {MonitorPresentation} from '../../src/presentation/monitor-presentation.js';
-import {syntheticDashboardViews} from '../../src/presentation/dashboard-examples.js';
 import {monitorView, type PlaybackSourceStatus} from '../../src/presentation/sources.js';
 import {readMonitorContent} from '../../src/module/monitor-content.js';
 import {ManualClock} from '../helpers/manual-clock.js';
 import {MemoryPlaybackStore} from '../helpers/playback-store.js';
-import type {SessionRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionView, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import {sessionRecord} from './support.js';
 
 const request = (query: Readonly<Record<string, string>> = {}) => ({query, signal: new AbortController().signal});
 function json<T>(value: ModuleContent | ErrorBody): T {
@@ -26,10 +26,9 @@ void it('reads pending Monitor without rendering, pages projected entity IDs and
   const monitor = new MonitorPresentation(player, {save: async () => {}, clock: () => clock.now(), passive: true,
     renderDashboard: () => { renders++; return [new Uint8Array(12288).fill(23)]; },
     renderCard: () => { renders++; return new Uint8Array(12288).fill(42); }});
-  const synthetic = syntheticDashboardViews()[0]?.view.snapshot?.sessions[0]; assert.ok(synthetic);
-  const sessions: SessionRecord[] = Array.from({length: 140}, (_, index) => ({...structuredClone(synthetic), activity: 'active',
-    id: index.toString(16).padStart(64, '0'), generation: 1,
-    label: {value: `界${index}`, origin: 'user'}, revision: 1}));
+  const synthetic = sessionView(sessionRecord(1000, 1));
+  const sessions: SessionView[] = Array.from({length: 140}, (_, index) => ({...structuredClone(synthetic),
+    id: index.toString(16).padStart(64, '0'), label: {value: `界${index}`, origin: 'user'}}));
   const playback: PlaybackSourceStatus = {source: 'current', view: {card: true, status: 'playing', title: 'SYNTHETIC', artist: 'FIXTURE', stale: false}};
   const input = {monitor, sessions, playback};
   try {
