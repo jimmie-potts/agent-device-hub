@@ -189,6 +189,11 @@ export class CoreStore {
   #guards: RetirementGuard[] = [];
   /** The published session records, by entity ID. */
   #records = new Map<string, Session30Record>();
+  /**
+   * The sessions whose stored record a release before the switch to `session/3.0` published (#1865 step 9). The store
+   * serves each as its `session/3.0` record from the start, and the next change publishes it, or its removal.
+   */
+  #legacy = new Set<string>();
   #revision = 0;
   /** How many transactions the store has committed: a transaction that did not commit leaves it unchanged. */
   #commits = 0;
@@ -463,8 +468,8 @@ export class CoreStore {
     for (const session of result?.changed ?? []) sessions.set(session.id, session);
     const revision = this.#revision + 1;
     const projected = publicRecords(sessions.values(), revision);
-    const records = [...projected.values()].filter(record => meaningChanged(this.#records.get(record.id), record));
-    const removed = [...this.#records.keys()].filter(id => !projected.has(id));
+    const records = [...projected.values()].filter(record => this.#legacy.has(record.id) || meaningChanged(this.#records.get(record.id), record));
+    const removed = [...new Set([...this.#records.keys(), ...this.#legacy])].filter(id => !projected.has(id));
     const draft = ({family, data}: Occurrence): Draft<object> & {subject: string} => occurrence(family, {...data, revision});
     const ended = (result?.ended ?? []).map(draft);
     const occurrences = (result?.occurrences ?? []).map(draft);
@@ -611,17 +616,26 @@ export class CoreStore {
     const stored = statements.revision.get() as {value: number; commits: number} | undefined;
     const revision = stored?.value ?? 0, commits = stored?.commits ?? 0;
     const records = new Map<string, Session30Record>();
+    const legacy: {id: string; revision: number}[] = [];
     for (const row of statements.records.all() as {record: string}[]) {
-      const record = JSON.parse(row.record) as Session30Record;
-      // A record a release before the switch to `session/3.0` published is not served: the first refresh publishes the
-      // session again as `session/3.0`, and history keeps that change against its last `session/2.x` row.
+      const record = JSON.parse(row.record) as Session30Record | {id: string; revision: number};
       if ('status' in record) records.set(record.id, record);
+      else legacy.push({id: record.id, revision: record.revision});
     }
     const sessions = new Map<string, StoredSession>();
     for (const row of statements.sessions.all() as {session: string}[]) {
       const session = JSON.parse(row.session) as StoredSession;
       sessions.set(session.id, session);
     }
+    // A record a release before the switch to `session/3.0` published (#1865 step 9) is served as the session's
+    // `session/3.0` record at the revision it was published at, so parts, commands, expiry and removals all find it. The
+    // next change publishes it as `session/3.0`, or its removal, and history keeps that against its last `session/2.x` row.
+    const built = publicRecords(sessions.values(), 0);
+    for (const {id, revision: published} of legacy) {
+      const record = built.get(id);
+      if (record !== undefined) records.set(id, {...record, revision: published});
+    }
+    this.#legacy = new Set(legacy.map(({id}) => id));
     const guards = (statements.guards.all() as {guard: string}[]).map(row => JSON.parse(row.guard) as RetirementGuard);
     this.#revision = revision;
     this.#commits = commits;
@@ -751,8 +765,14 @@ export class CoreStore {
     }
     this.#commits = commits;
     if (revision !== undefined) this.#revision = revision;
-    for (const record of plan.records) this.#records.set(record.id, record);
-    for (const id of plan.removed) this.#records.delete(id);
+    for (const record of plan.records) {
+      this.#records.set(record.id, record);
+      this.#legacy.delete(record.id);
+    }
+    for (const id of plan.removed) {
+      this.#records.delete(id);
+      this.#legacy.delete(id);
+    }
     plan.install?.();
     for (const apply of afterCommit) {
       try { apply(); }

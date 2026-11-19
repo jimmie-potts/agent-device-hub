@@ -5,10 +5,11 @@
 // evidence on the core's clock, and the core's timer publishes that. Attention, outcomes and idle work never change
 // through silence. Everything runs on the runtime's manual clock, with no real wait.
 import assert from 'node:assert/strict';
-import type {DatabaseSync} from 'node:sqlite';
+import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
 import {sessionEntityId, type Identity, type LifecycleEvent, type LifecycleObservation, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
-import {World, lifecycleMessage} from './fixtures/store-world.js';
+import {CoreStore} from '../src/core/store.js';
+import {World, commandMessage, lifecycleMessage} from './fixtures/store-world.js';
 import {START, it, manualClock} from './support.js';
 
 const identity = (sessionId: string, parent?: Identity): {identity: Identity; parent: LifecycleObservation['parent']} => ({
@@ -156,13 +157,8 @@ it('a root with one confirmed and one unconfirmed child is working through its s
   assert.deepEqual([status(record(w, first)), status(record(w, second))], ['working/confirmed', 'working/unconfirmed']);
 });
 
-it('records a release before the switch published are published again as session/3.0 at the first start, against their last history row', async context => {
-  const w = await open(context);
-  assert.equal(await take(w, ROOT, started), 'applied');
-  assert.equal(await take(w, WAITING, started), 'applied');
-  assert.equal(await take(w, WAITING, ended), 'applied');
-  await w.store.drain();
-  // What a step-8 release left: each session's published record in the session/2.0 shape.
+/** Rewrites each published record and its latest history row in the session/2.0 shape, as a step-8 release left them. */
+function asReleasedBefore(w: World): void {
   for (const item of w.store.records()) {
     const {status: _status, work, attention, outcome, relationships, ...rest} = item;
     const old = {...rest, activity: work.state, attention: attention.items, notices: outcome.notices, read: outcome.read, freshness: 'current',
@@ -170,6 +166,15 @@ it('records a release before the switch published are published again as session
     w.db.prepare('UPDATE core_records SET record = ? WHERE family = \'session\' AND id = ?').run(JSON.stringify(old), item.id);
     w.db.prepare('UPDATE core_history_latest SET record = ? WHERE family = \'session\' AND id = ?').run(JSON.stringify(old), item.id);
   }
+}
+
+it('records a release before the switch published are published again as session/3.0 at the first start, against their last history row', async context => {
+  const w = await open(context);
+  assert.equal(await take(w, ROOT, started), 'applied');
+  assert.equal(await take(w, WAITING, started), 'applied');
+  assert.equal(await take(w, WAITING, ended), 'applied');
+  await w.store.drain();
+  asReleasedBefore(w);
   const from = w.published.length, revision = w.store.revision, rows = historyRows(w);
   w.clock.advance(1000);
   await w.crashAndRestart();
@@ -181,4 +186,56 @@ it('records a release before the switch published are published again as session
   assert.deepEqual(w.store.records().map(status).sort(), ['finished/turn-ended', 'working/unconfirmed']);
   assert.equal(historyRows(w), rows + 2, 'history keeps each as a change against its last row');
   assert.deepEqual(w.since(from).filter(message => message.kind === 'occurrence'), [], 'and no occurrence');
+});
+
+it('a session that expires before the first session/3.0 publication is removed, with its record and a removal in history', async context => {
+  const w = await open(context);
+  assert.equal(await take(w, WAITING, started), 'applied');
+  assert.equal(await take(w, WAITING, ended), 'applied');
+  await w.store.drain();
+  asReleasedBefore(w);
+  const id = sessionEntityId(WAITING.identity), from = w.published.length;
+  const removals = (): number => (w.rows('SELECT seq FROM core_history WHERE type = \'org.bunny.session.removed\'') as unknown[]).length;
+  const before = removals();
+  // The runtime stays down past the session's day without evidence; its start transaction has no running work to mark.
+  w.clock.advance(86_400_000 + 1000);
+  await w.crashAndRestart();
+  await w.store.drain();
+  const removed = w.since(from).filter(message => message.type === 'org.bunny.session.removed');
+  assert.deepEqual(removed.map(message => [message.subject, (message.data as {reason: string}).reason]), [[id, 'expired']]);
+  assert.deepEqual(w.rows(`SELECT id FROM core_records WHERE family = 'session' AND id = '${id}'`), [], 'no session/2.x row stays behind');
+  assert.equal(removals(), before + 1, 'history keeps the removal, which closes the session\'s span');
+  assert.deepEqual(w.store.records(), []);
+});
+
+it('before the first session/3.0 publication the store serves each legacy session as its session/3.0 record', async context => {
+  const w = await open(context);
+  assert.equal(await take(w, ROOT, started), 'applied');
+  assert.equal(await take(w, WAITING, started), 'applied');
+  assert.equal(await take(w, WAITING, ended), 'applied');
+  await w.store.drain();
+  asReleasedBefore(w);
+  const revisions = new Map(w.store.records().map(item => [item.id, item.revision]));
+  const noticeId = record(w, WAITING).outcome.notices[0]?.id ?? '';
+  w.store.close();
+  w.db.close();
+  // A store opened as the core opens it, before its first refresh commits anything, as when that refresh fails.
+  const db = new DatabaseSync(w.file);
+  context.after(() => { if (db.isOpen) db.close(); });
+  let seeded: readonly Session30Record[] = [];
+  const store = new CoreStore({database: db, clock: {now: w.clock.now}, sdk: {source: 'bunny/core', publishMessage: async (_key, message) => message},
+    opened: records => { seeded = records; }});
+  context.after(() => store.close());
+  await store.open(AbortSignal.abort());
+  const held = store.records();
+  assert.deepEqual(held.map(item => item.id).sort(), [...revisions.keys()].sort(), 'the parts and the core\'s commands find every stored session');
+  assert.deepEqual(seeded.map(item => item.id).sort(), [...revisions.keys()].sort(), 'the parts start from every stored session');
+  for (const item of held) {
+    assert.ok('status' in item && 'work' in item, 'as a session/3.0 record');
+    assert.equal(item.revision, revisions.get(item.id), 'at the revision it was last published at');
+  }
+  // A command against a stored legacy session is taken.
+  const target = sessionEntityId(WAITING.identity);
+  const outcome = await store.acknowledge(commandMessage(target, w.clock.now()), target, noticeId, 'pixoo');
+  assert.equal(outcome.ok, true);
 });

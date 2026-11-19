@@ -374,7 +374,7 @@ unread-file reader cases in [Shared input only](#shared-input-only).
 
 The projection still reads an owner snapshot in the 1.x envelope's shape, with revisions,
 `lossCount` and `admissionRejected`, and its translated tests feed it such envelopes. The runtime
-module (#844) feeds it the core's `session/2.0` records from the SDK's sync instead
+module (#844) feeds it the core's `session/3.0` records, read through the shared `readSession`, from the SDK's sync instead
 (`src/module/feed.ts`): a completed sync, the first or one after an overflow, is projected as a
 resync, and each live change as the next local revision, with `lossCount` and
 `admissionRejected` 0, so the projection's own gap rules never fire. The previous envelope lives

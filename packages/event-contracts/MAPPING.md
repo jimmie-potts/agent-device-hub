@@ -465,14 +465,16 @@ API 1.1's `moment` command maps to `moment-play` as
 ## Agent status
 
 The source is `@jimmie-potts/agent-status`'s status helper, which LIFX and Tidbyt
-use today. The 2.0 home is `@jimmie-potts/event-contracts/v2/status`, a copy
-rewritten for `session/2.0` records. The 1.x package stays for the old
-controllers until #839.
+used. The 2.0 home is the shared session view, `@jimmie-potts/event-contracts/v2/session-view`
+(re-exported by `./v2/session`), whose helper reads each session's `session/3.0`
+record as its view (#1865). `@jimmie-potts/event-contracts/v2/status` keeps the
+state names and `STATUS_COLORS`. The 1.x package stays for the old controllers
+until #839.
 
 | 1.x name | 2.0 home | Notes |
 | --- | --- | --- |
-| `sessionState` | `sessionState(record, consumers?)` | The same ranking on a `session/2.0` record: attention, then working, then done. Read evidence never retires done. |
-| `highestStatus` | `highestStatus(copy, options)` | Reads a consumer's copy of the session family, `{synced, sessions}`, instead of a snapshot. |
+| `sessionState` | `sessionState(view, consumers?)` | The same ranking on a session's view, from its status: attention, then working, then done. Read evidence never retires done. A notice a known later turn superseded is not done. |
+| `highestStatus` | `highestStatus(copy, options)` | Reads a consumer's copy of the session family as views, `{synced, sessions}` (`ViewCopy`), instead of a snapshot. |
 | `HighestStatusOptions.feedAvailable` | `copy.synced` | A copy that has not synced, or whose later sync failed, reads as `unknown`. |
 | `HighestStatusOptions.acknowledgingConsumers` | `HighestStatusOptions.acknowledgingConsumers` | Unchanged: without it, any consumer's acknowledgment retires done. |
 | `Snapshot.collector` | **no 2.0 home** | Owner health is the runtime's module health (#830, #831), as decided for the snapshot's `collector`. A consumer sees an owner that cannot serve it as a sync that fails. |

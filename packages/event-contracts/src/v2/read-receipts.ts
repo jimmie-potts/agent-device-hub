@@ -56,6 +56,13 @@ export function readReceiptValidator(): Pick<MessageValidator, 'validate'> {
   return receiptValidator;
 }
 
+/** Whether the caller's session has the `session/3.0` claims a receipt is decided on. */
+function isView(session: unknown): boolean {
+  if (typeof session !== 'object' || session === null) return false;
+  const {work, outcome} = session as {work?: unknown; outcome?: {notices?: unknown}};
+  return typeof work === 'object' && work !== null && typeof outcome === 'object' && outcome !== null && Array.isArray(outcome.notices);
+}
+
 /**
  * Pure eligibility reference, not a state transition. A later owner must recheck inside its serialized operation.
  * Source qualification is independent of payload validity. Work confirmation and attention are not read evidence.
@@ -75,7 +82,8 @@ export function decideReadReceipt(input: unknown, session: ReceiptSession | unde
     qualification.feed.hostId !== identity.hostId || qualification.feed.sourceId !== identity.sourceId) {
     return {status: 'ineligible', reason: 'unqualified-source'};
   }
-  if (session === undefined) return {status: 'ineligible', reason: 'unknown-session'};
+  // A session the caller holds in another shape, such as a `session/2.x` record, is no session this function reads.
+  if (session === undefined || !isView(session)) return {status: 'ineligible', reason: 'unknown-session'};
   if (sessionEntityId(session.identity) !== sessionEntityId(identity) || session.generation !== event.generation ||
     turn.status !== 'known' || session.turn.status !== 'known' || session.turn.id !== turn.id ||
     !session.outcome.notices.some(notice => notice.id === event.noticeId && notice.kind === 'turn-ended' &&

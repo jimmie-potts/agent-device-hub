@@ -219,6 +219,13 @@ test('delayed receipts cannot apply after a replacement session, turn or finishe
   }
 });
 
+test('a session in another shape, such as a session/2.x record, is no session the receipt can target, and nothing throws', () => {
+  const {message, record, qualification} = example();
+  for (const session of [record, {...record, outcome: {}}, {identity: record.identity}, null, 'session', 7]) {
+    assert.deepEqual(decideReadReceipt(message, session, qualification), ineligible('unknown-session'), JSON.stringify(session).slice(0, 60));
+  }
+});
+
 test('known children and unfinished sessions remain ineligible', () => {
   const {message, session, qualification} = example();
   for (const state of ['active', 'unknown']) {

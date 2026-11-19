@@ -51,10 +51,9 @@ function meaning(record: Session30Record): string {
 }
 
 /**
- * Whether `next` changes the public meaning of the record last published, which publishes it at a new revision. A
- * record a release before the switch published (`session/2.x`, with no status) always differs.
+ * Whether `next` changes the public meaning of the record last published, which publishes it at a new revision. The
+ * store publishes a session whose stored record a release before the switch published (`session/2.x`) whatever this says.
  */
 export function meaningChanged(published: Session30Record | undefined, next: Session30Record): boolean {
-  if (published === undefined || !('status' in published)) return true;
-  return meaning(published) !== meaning(next);
+  return published === undefined || meaning(published) !== meaning(next);
 }
