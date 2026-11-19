@@ -38,29 +38,30 @@ void test('the scene is capped at Home\'s placement limit', () => {
 });
 
 void test('a read that moves nothing compares equal, so it draws no frame', () => {
-  const scene = (x: number, radius = 34): GlassScene => ({panels: [{id: 'a', rect: {x, y: 0, width: 220, height: 220}, radius}], veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: false}], thumb: {x: 0, y: 300, width: 90, height: 40}});
+  const scene = (x: number, radius = 34): GlassScene => ({panels: [{id: 'a', rect: {x, y: 0, width: 220, height: 220}, radius}], veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: false}], thumb: {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'work'}});
   assert.equal(sameScene(scene(10), scene(10.1)), true, 'subpixel noise is not a change');
   assert.equal(sameScene(scene(10), scene(11)), false, 'a moved box is');
   assert.equal(sameScene(scene(10), scene(10, 20)), false, 'a new radius is');
   assert.equal(sameScene(scene(10), {...scene(10), veils: []}), false, 'a removed veil is');
   assert.equal(sameScene(scene(10), {...scene(10), veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: true}]}), false, 'a veil that changes its edge is');
-  assert.equal(sameScene(scene(10), {...scene(10), thumb: {x: 90, y: 300, width: 90, height: 40}}), false, 'a thumb that moves to the next segment is');
+  assert.equal(sameScene(scene(10), {...scene(10), thumb: {rect: {x: 90, y: 300, width: 90, height: 40}, key: 'free'}}), false, 'a thumb that moves to the next segment is');
+  assert.equal(sameScene(scene(10), {...scene(10), thumb: {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'free'}}), false, 'another segment in the same place is');
   assert.equal(sameScene(scene(10), {...scene(10), thumb: null}), false, 'a thumb that goes is');
 });
 
 // #1930: the hub mode switch's thumb.
-void test('the scene holds the first marked thumb in view, or none', () => {
-  const thumb = (left: number, top = 300): Fake => ({dataset: {glassThumb: ''}, radius: '', box: {left, top, width: 90, height: 40}});
-  assert.deepEqual(readScene(page([], [], [thumb(0, 2000), thumb(100)]), page([]), viewport).thumb, {x: 100, y: 300, width: 90, height: 40});
+void test('the scene holds the first marked thumb in view with its segment, or none', () => {
+  const thumb = (left: number, key: string, top = 300): Fake => ({dataset: {glassThumb: key}, radius: '', box: {left, top, width: 90, height: 40}});
+  assert.deepEqual(readScene(page([], [], [thumb(0, 'work', 2000), thumb(100, 'free')]), page([]), viewport).thumb, {rect: {x: 100, y: 300, width: 90, height: 40}, key: 'free'});
   assert.equal(readScene(page([]), page([]), viewport).thumb, null);
 });
 
-void test('the thumb travels on a time base, stretching as its fast capsule leads, and then rests', () => {
-  const from = {x: 0, y: 300, width: 90, height: 40}, to = {x: 180, y: 300, width: 90, height: 40};
+void test('the thumb travels on a time base when another segment is selected, stretching as its fast capsule leads, and then rests', () => {
+  const from = {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'work'}, to = {rect: {x: 180, y: 300, width: 90, height: 40}, key: 'quiet'};
   // The reference's 30% and 12% per frame at 60 frames a second.
   assert.equal(Math.round((1 - Math.exp(-LEAD_RATE / 60)) * 1000), 300);assert.equal(Math.round((1 - Math.exp(-LAG_RATE / 60)) * 1000), 120);
   const start = stepThumb(null, from, 1 / 60, false);
-  assert.deepEqual(start, {lead: [0, 300, 90, 40], lag: [0, 300, 90, 40]}, 'a new thumb sits on its segment');
+  assert.deepEqual(start, {lead: [0, 300, 90, 40], lag: [0, 300, 90, 40], key: 'work', target: [0, 300, 90, 40]}, 'a new thumb sits on its segment');
   assert.equal(thumbSettled(start, from), true);
   const first = stepThumb(start, to, 1 / 60, false);
   assert.ok(first !== null && Math.abs(first.lead[0] - 54) < 0.01 && Math.abs(first.lag[0] - 21.6) < 0.01, `one frame moves the capsules 30% and 12%: ${JSON.stringify(first)}`);
@@ -69,9 +70,15 @@ void test('the thumb travels on a time base, stretching as its fast capsule lead
   assert.ok(halves !== null && Math.abs(halves.lead[0] - 54) < 0.01 && Math.abs(halves.lag[0] - 21.6) < 0.01);
   let thumb: GlassThumb | null = first, seconds = 1 / 60;
   while (!thumbSettled(thumb, to)) {thumb = stepThumb(thumb, to, 1 / 60, false);seconds += 1 / 60;assert.ok(seconds < 2, 'the thumb comes to rest');}
-  assert.deepEqual(thumb, {lead: [180, 300, 90, 40], lag: [180, 300, 90, 40]});
+  assert.deepEqual(thumb, {lead: [180, 300, 90, 40], lag: [180, 300, 90, 40], key: 'quiet', target: [180, 300, 90, 40]});
   assert.ok(seconds > 0.3 && seconds < 1.2, `it settles in under a second and a quarter: ${String(seconds)}`);
-  assert.deepEqual(stepThumb(start, to, 1 / 60, true), {lead: [180, 300, 90, 40], lag: [180, 300, 90, 40]}, 'reduced motion jumps');
+  // A resize or a repack that moves the resting segment moves the thumb with it in one step, so it draws one frame.
+  const moved = {rect: {x: 400, y: 320, width: 100, height: 40}, key: 'quiet'};
+  assert.deepEqual(stepThumb(thumb, moved, 1 / 60, false), {lead: [400, 320, 100, 40], lag: [400, 320, 100, 40], key: 'quiet', target: [400, 320, 100, 40]});
+  // While it travels, a moved goal keeps the travel going toward its new box.
+  const travelling = stepThumb(first, {...to, rect: {...to.rect, x: 300}}, 1 / 60, false);
+  assert.ok(travelling !== null && travelling.lead[0] > (first?.lead[0] ?? 0) && travelling.lead[0] < 300, 'the travel continues to the moved segment');
+  assert.deepEqual(stepThumb(start, to, 1 / 60, true), {lead: [180, 300, 90, 40], lag: [180, 300, 90, 40], key: 'quiet', target: [180, 300, 90, 40]}, 'reduced motion jumps');
   assert.equal(stepThumb(start, null, 1 / 60, false), null, 'no segment, no thumb');
   assert.equal(thumbSettled(null, null), true);
 });

@@ -995,7 +995,10 @@ A switch's selected segment marked `data-glass-thumb` (Home's hero, #1930) is dr
 as a glass capsule. It is not a panel: two capsules follow the segment along the
 switch at the reference's 30% and 12% per frame, converted to per-second rates in
 `src/glass-thumb.ts`, and the shader joins them with a smooth minimum (`k = 16`),
-so the thumb stretches while it travels. Reduced motion moves it at once. The
+so the thumb stretches while it travels. It travels only when another segment is
+marked (the attribute's value names the segment); a resting thumb whose segment
+moves, by a scroll, a resize or a repack, moves with it in the same frame. Reduced
+motion moves it at once. The
 canvas's `data-glass-capsules` holds the capsules last drawn.
 
 The scene (`src/glass-scene.ts`) is read from the page once per frame:

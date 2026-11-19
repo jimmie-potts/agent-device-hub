@@ -57,7 +57,7 @@ export function HubModeHero({mode, disabled, status, feedback, issue, onCheckInb
         if (!event.currentTarget.contains(event.relatedTarget)) setStop(undefined);
       }}>{CHOICES.map((choice, index) =>
         <button key={choice} ref={button => {buttons.current[index] = button;}} type="button" aria-pressed={mode === choice} disabled={disabled}
-          tabIndex={index === (stop ?? selected) ? 0 : -1} data-glass-thumb={mode === choice ? '' : undefined}
+          tabIndex={index === (stop ?? selected) ? 0 : -1} data-glass-thumb={mode === choice ? choice : undefined}
           onClick={() => {setStop(index);onSelect(choice);}}><ModeIcon mode={choice}/><span>{modeName(choice)}</span></button>)}</div>
       {(status !== '' || issue !== undefined) && <div className="home-hero-meta" data-glass-veil>
         {status !== '' && <span className="hub-control-status">{status}</span>}
