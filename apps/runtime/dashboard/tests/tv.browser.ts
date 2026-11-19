@@ -90,8 +90,10 @@ try {
   await page.getByRole('heading', {name: 'Settings', level: 1, exact: true}).waitFor();
   await page.goBack();
   await page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
+  // The hero's switch (#1930) is one Tab stop on the selected mode; the remote's left and right move along it.
   const quiet = page.locator('[data-hub-mode]').getByRole('button', {name: 'Quiet', exact: true});
-  await tabTo(page, quiet);
+  await tabTo(page, page.locator('[data-hub-mode]').getByRole('button', {name: 'Free', exact: true}));
+  await page.keyboard.press('ArrowRight');assert.equal(await focused(page, quiet), true, 'the right key reaches Quiet');
   assert.equal(await focusVisible(page), true, 'focus is visible on a mode button');
   const face = card('Port the wall').locator('summary');
   await tabTo(page, face);
