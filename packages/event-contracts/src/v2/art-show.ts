@@ -31,6 +31,11 @@ export type ArtShowSurface =
 const hex = async (text: string): Promise<string> => Array.from(new Uint8Array(
   await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))), value => value.toString(16).padStart(2, '0')).join('');
 
+export const localGifReference = async (requestId: string, sha256: string): Promise<string> =>
+  `localgif-${await hex(JSON.stringify(['art-upload-stage', requestId, sha256]))}`;
+export const localGifComposition = (reference: string): string | undefined =>
+  /^localgif-[a-f0-9]{64}$/.test(reference) ? reference.slice('localgif-'.length) : undefined;
+
 /** The art plan identity of one show, derived from its request ID alone. */
 export const artShowPlanId = async (requestId: string): Promise<string> => `art-show-${await hex(JSON.stringify(['art-show', requestId]))}`;
 /** The core's art plan request identity for one phase of one target, as `apps/runtime/src/core/art-plans.ts` derives it. */

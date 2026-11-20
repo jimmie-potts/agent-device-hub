@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-upload-stage/2.0",
+  "description": "Stage an owner-uploaded local animation on the configured Tidbyt. Art binds the digest to the pending binary request. A confirmed stage has no display effect.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "sha256"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

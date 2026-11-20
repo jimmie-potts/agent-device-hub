@@ -19,6 +19,7 @@ function fakeDispatch(answer: 'succeeded' | 'wait' | 'refuse' = 'succeeded') {
   const stages: ArtStageRequest[] = [], ambients: ArtAmbientRequest[] = [];
   let report: (requestId: string, result: StageResult) => void = () => {};
   const seam: ArtDispatchSeam = {
+    tidbytTarget: () => 'shelf',
     stage: request => {
       stages.push(request);
       if (answer === 'refuse') return Promise.resolve({error: {code: 'unavailable', retryable: true}});

@@ -47,6 +47,8 @@ See [the module guide](../modules/reachy-mini/README.md).
 
 ## Art checks
 
+For local Tidbyt GIF staging, build and typecheck at the root. Run the Art, event, runtime and Tidbyt module suites and the disposable Art show exercise. Use synthetic animations for publication.
+
 Scheduled art (#684) extends the existing runtime automation owner. After the root
 build, run `npm run typecheck`, `npm run lint:js`, `npm run test:events:built`,
 `npm run test:art:built`, `npm run test:weather:built`,

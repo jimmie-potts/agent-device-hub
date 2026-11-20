@@ -17,6 +17,7 @@ function dispatch() {
   const stages: ArtStageRequest[] = [], ambients: ArtAmbientRequest[] = [];
   let report: (id: string, result: StageResult, error?: ErrorDetail) => void = () => {};
   const seam: ArtDispatchSeam = {
+    tidbytTarget: () => 'shelf',
     stage: request => {stages.push(request); return Promise.resolve({status: 'accepted'});},
     ambient: request => {ambients.push(request); return Promise.resolve({status: 'accepted'});},
     watch: callback => {report = callback; return Promise.resolve([]);},

@@ -25,7 +25,7 @@ const check = value => validator.validate(value, {nowMs: Date.parse(value.time)}
 
 test('the art family carries spend per provider and recent work by reference', () => {
   assert.equal(ART_STATE_SCHEMA, `${SCHEMA_BASE}art/2.0`);
-  assert.deepEqual(Object.keys(artSchemas), [ART_STATE_SCHEMA, ART_STATE_21_SCHEMA, ART_CATALOG_EDIT_SCHEMA]);
+  assert.deepEqual(Object.keys(artSchemas), [ART_STATE_SCHEMA, ART_STATE_21_SCHEMA, ART_CATALOG_EDIT_SCHEMA, 'https://bunny.invalid/events/art-upload-stage/2.0']);
   const answer = check(message(data()));
   assert.equal(answer.ok, true, JSON.stringify(answer));
 });
