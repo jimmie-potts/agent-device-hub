@@ -5,7 +5,7 @@ import test from 'node:test';
 import {MAX_PANELS, readScene, sameScene, type GlassScene} from '../src/glass-scene.ts';
 import {luminance, parseColor} from '../src/glass-renderer.ts';
 import {FRAGMENT} from '../src/glass-shader.ts';
-import {LAG_RATE, LEAD_RATE, stepThumb, thumbSettled, type GlassThumb} from '../src/glass-thumb.ts';
+import {LAG_RATE, LEAD_RATE, advanceThumb, stepThumb, thumbSettled, type GlassThumb} from '../src/glass-thumb.ts';
 
 type Fake = {dataset: Record<string, string>; radius: string; box: {left: number; top: number; width: number; height: number}; shown?: boolean};
 const element = (id: string, left: number, top: number, width = 220, height = 220, radius = '34px'): Fake => ({dataset: {glassPanel: id}, radius, box: {left, top, width, height}});
@@ -99,4 +99,23 @@ void test('the veil loop only finds the strongest mask; the costly need is worke
   assert.ok(loop !== undefined, 'the veil loop is found');
   assert.doesNotMatch(loop, /needed|backdrop|art\(/, 'nothing per veil samples the artwork or works out a need');
   assert.match(FRAGMENT, /if \(mask > 0\.\) col = veiled\(col, mask \* max\(needed\(col\)/);
+});
+
+void test('a frame at the same time as the last moves the thumb nothing but keeps it travelling, so it never stalls', () => {
+  const from = {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'work'}, to = {rect: {x: 180, y: 300, width: 90, height: 40}, key: 'quiet'};
+  const start = advanceThumb(null, -1, from, 1000, false);
+  assert.deepEqual({moved: start.moved, travelling: start.travelling, at: start.at}, {moved: true, travelling: false, at: -1}, 'a new thumb lands at once');
+  const first = advanceThumb(start.thumb, start.at, to, 2000, false);
+  assert.equal(first.moved, true);assert.equal(first.travelling, true);assert.equal(first.at, 2000);
+  const zero = advanceThumb(first.thumb, first.at, to, 2000, false);
+  assert.deepEqual({moved: zero.moved, travelling: zero.travelling, at: zero.at}, {moved: false, travelling: true, at: 2000}, 'a zero-length step asks for another frame');
+  assert.deepEqual(zero.thumb, first.thumb);
+  // Frames keep coming until the thumb lands; then it rests and asks for none.
+  let frame = zero, now = 2000;
+  while (frame.travelling) {now += 16;frame = advanceThumb(frame.thumb, frame.at, to, now, false);assert.ok(now < 4000, 'the thumb lands');}
+  assert.equal(thumbSettled(frame.thumb, to), true);assert.equal(frame.at, -1);
+  assert.deepEqual(advanceThumb(frame.thumb, frame.at, to, now + 16, false), {thumb: frame.thumb, at: -1, moved: false, travelling: false});
+  // A clock that runs backwards never steps backwards.
+  const back = advanceThumb(first.thumb, first.at, to, 1990, false);
+  assert.equal(back.moved, false);assert.equal(back.travelling, true);
 });

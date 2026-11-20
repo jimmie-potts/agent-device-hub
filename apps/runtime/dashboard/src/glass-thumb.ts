@@ -43,3 +43,18 @@ export function thumbSettled(thumb: GlassThumb | null, goal: ThumbGoal | null): 
   const target = boxOf(goal.rect);
   return thumb.key === goal.key && same(thumb.lead, target) && same(thumb.lag, target);
 }
+
+const sameThumb = (a: GlassThumb | null, b: GlassThumb | null): boolean => a === null || b === null ? a === b
+  : a.key === b.key && same(a.lead, b.lead) && same(a.lag, b.lag) && same(a.target, b.target);
+/** One frame's thumb: the new thumb, when it last moved (-1 at rest), whether it changed and whether it still travels. */
+export type ThumbFrame = {thumb: GlassThumb | null; at: number; moved: boolean; travelling: boolean};
+/**
+ * The thumb for a frame at `now` (milliseconds), stepped by the time since it last moved: one frame's worth after a
+ * rest, at most a tenth of a second after a stall. A frame at the same time as the last one moves nothing but still
+ * reports the thumb travelling, so the layer asks for another frame instead of stopping short of the goal.
+ */
+export function advanceThumb(thumb: GlassThumb | null, at: number, goal: ThumbGoal | null, now: number, still: boolean): ThumbFrame {
+  if (thumbSettled(thumb, goal)) return {thumb, at: -1, moved: false, travelling: false};
+  const next = stepThumb(thumb, goal, at < 0 ? 1 / 60 : Math.min(Math.max(now - at, 0) / 1000, 0.1), still), travelling = !thumbSettled(next, goal);
+  return {thumb: next, at: travelling ? now : -1, moved: !sameThumb(thumb, next), travelling};
+}

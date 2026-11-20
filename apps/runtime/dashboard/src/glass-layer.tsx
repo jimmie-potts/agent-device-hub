@@ -1,7 +1,7 @@
 import React, {useLayoutEffect, useRef} from 'react';
 import {readScene, sameScene, type GlassScene} from './glass-scene.ts';
 import {createGlassRenderer, luminance, parseColor, type GlassColor, type GlassPicture, type GlassRenderer, type GlassTokens} from './glass-renderer.ts';
-import {stepThumb, thumbSettled, type GlassThumb} from './glass-thumb.ts';
+import {advanceThumb, type GlassThumb} from './glass-thumb.ts';
 import './glass.css';
 
 /**
@@ -106,14 +106,11 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
     if (readSkin) {readSkin = false;const next = readTokens(probe);if (tokens === undefined || !sameTokens(tokens, next)) {tokens = next;changed = true;}}
     if (readBoxes) {readBoxes = false;const next = readScene(root, doc, {width, height});if (scene === undefined || !sameScene(scene, next)) {scene = next;changed = true;}}
     if (born < 0) born = still.matches ? -APPEAR_MS : now;
-    const appearing = now - born < APPEAR_MS, goal = scene?.thumb ?? null;
-    let travelling = false;
-    if (!thumbSettled(thumb, goal)) {
-      thumb = stepThumb(thumb, goal, thumbAt < 0 ? 1 / 60 : Math.min((now - thumbAt) / 1000, 0.1), still.matches);
-      changed = true;travelling = !thumbSettled(thumb, goal);
-    }
-    thumbAt = travelling ? now : -1;
-    if (!changed && !appearing) return;
+    const appearing = now - born < APPEAR_MS, step = advanceThumb(thumb, thumbAt, scene?.thumb ?? null, now, still.matches);
+    thumb = step.thumb;thumbAt = step.at;if (step.moved) changed = true;
+    const travelling = step.travelling;
+    // A frame that moves nothing draws nothing, but a thumb still on its way asks for the next frame.
+    if (!changed && !appearing) {if (travelling) schedule();return;}
     if (tokens === undefined || scene === undefined) return;
     const t = Math.min(1, Math.max(0, (now - born) / APPEAR_MS)), scroll = doc.scrollingElement ?? doc.documentElement;
     renderer.draw({scene, tokens, width, height, dpr, appear: 1 - (1 - t) ** 3, depth: Math.min(1, scroll.scrollTop / (height * 0.4)), merge, thumb,
