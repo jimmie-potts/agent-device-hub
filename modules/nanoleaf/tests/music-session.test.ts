@@ -1279,6 +1279,34 @@ for (const label of ['missing power', 'nonboolean power', 'missing selection'] a
   });
 }
 
+for (const [label, state] of [
+  ['power off without brightness', {on: {value: false}}],
+  ['changed brightness without power', {brightness: {value: 30}}],
+] as const) {
+  test(`an NL22 status recovery with ${label} confirms manual takeover`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      let missedAt: number | undefined;
+      world.onRead = endpoint => {
+        if (frameWrites(world).length === 0) return;
+        if (endpoint === '/effects' && missedAt === undefined) {
+          missedAt = world.now;
+          throw new DeviceReadDeadline();
+        }
+        if (endpoint === '/state' && missedAt !== undefined) world.stateAnswer = {value: state};
+      };
+      await run(world, () => {});
+      assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+      const miss = missedAt;
+      assert.ok(miss !== undefined);
+      assert.ok(frameWrites(world).every(frame => frame.atMs < miss));
+      assert.deepEqual(sequence(world), ['stream']);
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
 test('Stop during an NL22 status timeout skips restoration when the fresh state read omits power', async () => {
   const world = open(PANELS_TARGET);
   try {

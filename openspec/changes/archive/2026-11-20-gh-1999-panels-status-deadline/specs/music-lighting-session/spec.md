@@ -11,7 +11,7 @@ During live Music or saved-show playback on NL22 Light Panels, the module SHALL 
 
 #### Scenario: Consecutive misses or confirmed takeover
 
-- **WHEN** the next check also misses its deadline while the session still owns playback, or a check confirms a manual change
+- **WHEN** the next check also misses its deadline while the session still owns playback, or a check confirms a manual change, including a report of power off or changed brightness in an otherwise incomplete reply
 - **THEN** the affected session ends as `device` with `unavailable` for consecutive misses or `manual` for takeover, both without restoration
 
 #### Scenario: An ending becomes due while frames are held
@@ -22,5 +22,5 @@ During live Music or saved-show playback on NL22 Light Panels, the module SHALL 
 
 #### Scenario: A failure outside the allowance
 
-- **WHEN** Lines misses a playback status check, or a check during the hold returns incomplete ownership evidence, or an NL22 ownership read fails for a reason other than a deadline
+- **WHEN** Lines misses a playback status check, a check during the hold gives incomplete evidence without confirming a change, or an NL22 ownership read fails for a reason other than a deadline
 - **THEN** the existing immediate device failure applies

@@ -361,7 +361,8 @@ light's ending never writes, holds or ends the other.
   a failed datagram send or read (`device`, code `unavailable`, no restoration).
   For live Music and saved shows on NL22, one deadline during the playing status check
   holds datagrams until the next regular check confirms the stream, power on and unchanged
-  brightness. A reply missing this evidence ends playback as `device`. Restoration
+  brightness. A reply missing that evidence ends playback as `device` unless it confirms
+  a manual change such as power off. Restoration
   reached during the hold also needs fresh confirmation before writing. The show timeline,
   source freshness and pending endings continue to be checked. A confirmed takeover ends
   the session `manual`. A second consecutive missed check ends it `device` if no other

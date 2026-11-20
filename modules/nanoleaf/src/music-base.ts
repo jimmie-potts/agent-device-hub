@@ -46,11 +46,11 @@ const integerIn = (field: unknown, low: number, high: number): number | undefine
   const min = typeof field.min === 'number' ? Math.max(low, field.min) : low, max = typeof field.max === 'number' ? Math.min(high, field.max) : high;
   return field.value >= min && field.value <= max ? field.value : undefined;
 };
-/** Power and brightness both need explicit values when a missed playback check left ownership unknown. */
-export function confirmedMusicState(state: unknown): {on: boolean; brightness: number} | undefined {
-  if (!isObject(state) || !isObject(state.on) || typeof state.on.value !== 'boolean') return undefined;
-  const brightness = integerIn(state.brightness, 0, 100);
-  return brightness === undefined ? undefined : {on: state.on.value, brightness};
+/** Reads power and brightness independently. Either can confirm a manual change, but writes require both. */
+export function musicPowerState(state: unknown): {on: boolean | undefined; brightness: number | undefined} {
+  if (!isObject(state)) return {on: undefined, brightness: undefined};
+  const on = isObject(state.on) && typeof state.on.value === 'boolean' ? state.on.value : undefined;
+  return {on, brightness: integerIn(state.brightness, 0, 100)};
 }
 
 /** The plain colour `/state` reports, from its colour mode: hue and saturation (`hs`) or a colour temperature (`ct`). */
@@ -124,15 +124,15 @@ export async function readMusicBase(read: DeviceRead): Promise<{observed: Select
  * between the writes throws.
  */
 export async function restoreMusicBase(read: DeviceRead, base: Exclude<MusicBase, {kind: 'unnamed'}>, shown: string, stale: () => boolean,
-  write: (endpoint: string, payload: unknown) => Promise<unknown>, requireConfirmedPower = false): Promise<boolean> {
+  write: (endpoint: string, payload: unknown) => Promise<unknown>, requireConfirmedState = false): Promise<boolean> {
   const listing = await read('/effects') as {select?: unknown; effectsList?: unknown};
-  if (requireConfirmedPower && selectionRead(listing)?.selection !== shown) return false;
-  if (listing.select !== shown || (base.kind === 'scene' && !savedScene(base.name, listing))) return false;
+  const selected = requireConfirmedState ? selectionRead(listing)?.selection : listing.select;
+  if (selected !== shown || (base.kind === 'scene' && !savedScene(base.name, listing))) return false;
   // A light switched off by hand is a newer choice: restoring brightness and the base would override it.
   const state = await read('/state') as {on?: {value?: unknown}; brightness?: {value?: unknown}};
-  if (requireConfirmedPower) {
-    const confirmed = confirmedMusicState(state);
-    if (confirmed?.on !== true || confirmed.brightness !== base.brightness) return false;
+  if (requireConfirmedState) {
+    const {on, brightness} = musicPowerState(state);
+    if (on !== true || brightness !== base.brightness) return false;
   } else if (state.on?.value === false || state.brightness?.value !== base.brightness) return false;
   if (stale()) return false;
   await write('/state', {brightness: {value: base.brightness, duration: 0}});

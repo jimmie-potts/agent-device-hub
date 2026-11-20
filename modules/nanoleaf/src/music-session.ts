@@ -18,7 +18,7 @@ import {DeviceReadDeadline, ValueError} from './errors.js';
 import {finish, finishMusicControls, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
 import type {Indication} from './line-projection.js';
 import {alerting, newerChoice, NEWER_CHOICES, type Admitted, type DeviceRead} from './moments.js';
-import {colorStateOf, confirmedMusicState, restoreMusicBase, sameColorOf, selectionOf, selectionRead, type MusicBase} from './music-base.js';
+import {colorStateOf, musicPowerState, restoreMusicBase, sameColorOf, selectionOf, selectionRead, type MusicBase} from './music-base.js';
 import {MusicRenderer, type MusicRecipeV1} from './music-effects.js';
 import {musicBinding, MusicInput, type MusicInputLoss, type MusicBinding, type MusicClock, type MusicSample} from './music-input.js';
 import {readReactiveCatalog} from './music-presets.js';
@@ -574,9 +574,10 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       }
       let showing = state?.brightness?.value === freeBase.brightness && state.on?.value !== false;
       if (statusCheck === 'missed' && found?.selection === shown) {
-        const confirmed = confirmedMusicState(state);
-        if (confirmed === undefined) return end('device', 'none', undefined, undefined, 'unavailable');
-        showing = confirmed.on && confirmed.brightness === freeBase.brightness;
+        const {on, brightness} = musicPowerState(state);
+        const takeover = on === false || (brightness !== undefined && brightness !== freeBase.brightness);
+        if (!takeover && (on === undefined || brightness === undefined)) return end('device', 'none', undefined, undefined, 'unavailable');
+        showing = !takeover;
       }
       statusCheck = 'clear';
       // The light's record keeps the selection this read found (#1614), with no request of its own, and what the `/state`
