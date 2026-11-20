@@ -43,7 +43,7 @@ export function resendRefusal(operation: Operation, handler: string): ErrorBody 
   if (MODE_FAMILIES.includes(operation.family) && operation.error?.code === 'revision-conflict' && operation.data.expectedRevision !== undefined) {
     return errorBody('revision-conflict', {detail: 'the saved mode revision is out of date, so sending it again would be refused; read the mode and choose again'});
   }
-  return requesterRefusal(operation.family, handler);
+  return requesterRefusal(operation.family, handler, operation.dataschema);
 }
 
 /**

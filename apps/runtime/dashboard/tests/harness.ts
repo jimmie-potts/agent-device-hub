@@ -77,6 +77,7 @@ export type WorldOptions = {
   assistantLights?: boolean;
   assistantWemo?: boolean;
   assistantCatalog?: readonly string[];
+  artRecentLimit?: number;
   /** A coding-worker credential and the delegation tool, so a journey can connect a fake worker through the real gateway (Hub #502). */
   coding?: boolean;
   /** Synthetic browser qualification only; never a real voice or installed receipt. */
@@ -293,7 +294,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true,
   });
   const moduleConfig = {
-    ...(options.art === true ? {art: {}} : {}),
+    ...(options.art === true ? {art: options.artRecentLimit === undefined ? {} : {recentLimit: options.artRecentLimit}} : {}),
     ...(options.artSchedule === undefined ? {} : {weather: WEATHER_SECTION}),
     ...(options.tidbyt === true ? {tidbyt: {...TIDBYT_SECTION, secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
     ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),

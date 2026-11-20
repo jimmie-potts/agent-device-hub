@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-request/2.1",
+  "description": "An approved Conversation artwork. The core admits it only from Companions. The target selects an existing still or GIF processor without any device staging or presentation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "action", "purpose", "origin", "targets", "text"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "action": {"const": "start"},
+    "purpose": {"const": "request"},
+    "origin": {"type": "object", "required": ["kind"], "additionalProperties": false, "properties": {"kind": {"const": "owner"}}},
+    "targets": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"enum": ["ui", "pixoo"]}},
+    "text": {"type": "string", "minLength": 1, "maxLength": 300}
+  }
+}

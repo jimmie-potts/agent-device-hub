@@ -16,6 +16,7 @@ export type Job = {
   requestId: string; artworkId: string; purpose: ArtPurpose; origin: {kind: 'owner' | 'schedule' | 'weather'; reference?: string};
   /** From the command family that admitted the job, never from its payload. */
   admittedBy: ArtAdmission;
+  conversation?: true;
   weatherUse?: 'current' | 'omit';
   text: string | null; context: PromptContext; targets: JobTarget[]; variationOf: string | null;
   status: 'queued' | 'running' | 'finished'; cancelRequested: boolean; outcome: ArtOutcome | null; idea: string | null; traceparent: string; createdAtMs: number; finishedAtMs: number | null;

@@ -559,7 +559,7 @@ Lifecycle/2.1 SHALL remain an explicit intake selection. `session/2.0`, `session
 
 The profile SHALL define the command families `art-request` (`org.bunny.art.request.requested`), `art-auto` (`org.bunny.art.auto.requested`), `art-dispatch` (`org.bunny.art.dispatch.requested`), `art-stage` (`org.bunny.art.stage.requested`) and `art-ambient-set` (`org.bunny.art-ambient.set.requested`), each at version 2.0 and registered with the core families. Payloads SHALL be closed, and none SHALL have a member for a location, path or credential.
 
-`art-request` and `art-auto` SHALL have the subject `art`. `art-request` SHALL start a job or cancel any job, automatic or not, by `jobRequestId`, and `art-auto` SHALL only start one. A start SHALL carry `purpose`, `origin` and `targets`, and may carry `context` as bounded condition words and `variationOf`, exactly when the purpose is `variation`. Only `art-request` SHALL carry typed `text`, at most 2,000 characters, not blank and in Unicode scalar values. An owner label in `art-auto`'s `origin` or `purpose` SHALL validate, because the command family decides whose job it is.
+`art-request` and `art-auto` SHALL have the subject `art`. `art-request/2.0` SHALL start a job or cancel any job, automatic or not, by `jobRequestId`, and `art-auto` SHALL only start one. A start SHALL carry `purpose`, `origin` and `targets`, and may carry `context` as bounded condition words and `variationOf`, exactly when the purpose is `variation`. Only `art-request` SHALL carry typed `text`, at most 2,000 characters, not blank and in Unicode scalar values. An owner label in `art-auto`'s `origin` or `purpose` SHALL validate, because the command family decides whose job it is.
 
 `art-stage` SHALL have a device as its subject and carry `requestId`, `compositionId`, `format` (`png` or `gif`), `width`, `height`, `frames`, `durationMs`, `sha256`, `base64` of at most 160 KiB decoded, and `lifetimeMs`. The validator SHALL refuse bytes that are not canonical base64, are over that size, or disagree with `sha256`, `format`, `width` or `height`, reading only their headers. A PNG SHALL have one frame and duration 0, and several frames SHALL have a non-zero duration. `art-ambient-set` SHALL have a device as its subject and name a `compositionId` or null to clear it.
 
@@ -681,3 +681,12 @@ The package SHALL ship a synthetic session case set. Each case SHALL hold an inp
 #### Scenario: Every reader runs the cases
 - **WHEN** a reader's test suite runs
 - **THEN** it loads the shared cases through the package's loader and checks its own expected output for each
+
+### Requirement: Conversation generation uses a separate Art request version
+
+`art-request/2.1` SHALL admit only a `start` of purpose `request` for the owner. Its subject SHALL be `art`. The payload SHALL contain exactly one format target, the existing `ui` still or the existing `pixoo` GIF processor, and nonblank Unicode scalar text of at most 300 characters. Version 2.0 SHALL retain its existing validation.
+
+#### Scenario: A Conversation request cannot select display behavior
+
+- **WHEN** a request has multiple targets, an ambient purpose, a cancellation, a variation, or undeclared fields
+- **THEN** the validator refuses it under version 2.1

@@ -76,6 +76,31 @@ it('only companions can dispatch an allowlisted mode-set, tracked as its own ope
   }
 });
 
+it('approved Conversation art sends private text to Art once and omits it from the core operation', async context => {
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
+  const companions = fixture('companions'), art = fixture('art');
+  await run(context, {modules: [core, companions, art]});
+  const descriptions: unknown[] = [];
+  await contextOf(art).sdk.respond<{text: string}>('bunny.cmd.art-request.art', command => {
+    descriptions.push(command.data.text);
+    return {status: 'accepted'};
+  });
+  const requestId = 'private-art-fixture';
+  const data: AssistantDispatch = {requestId, family: 'catalog-action', command: 'art-request', target: 'art',
+    binding: {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'}, data: {format: 'still', description: 'Private synthetic blue flowers'}};
+  const send = (payload: AssistantDispatch) => contextOf(companions).sdk.request('bunny.cmd.assistant-dispatch.assistant',
+    {...draft(payload), dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.3'}, {requestId, timeoutMs: 2000});
+  assert.equal((await send(data)).status, 'accepted');
+  assert.deepEqual(descriptions, ['Private synthetic blue flowers']);
+  const operation = handle?.operation(requestId);
+  assert.ok(operation !== undefined);
+  assert.deepEqual(operation.data, {});
+  assert.equal(operation.payload?.status, 'omitted');
+  assert.equal((await send(data)).status, 'accepted');
+  assert.equal(descriptions.length, 1);
+});
+
 it('every catalog route delivers its exact input and guards to the existing owner contract', async () => {
   const timestamp = Date.parse('2026-11-05T00:00:00.000Z');
   const hash = 'a'.repeat(64);
@@ -108,6 +133,7 @@ it('every catalog route delivers its exact input and guards to the existing owne
     'wemo-hold-release': {heldRequestId: 'held-operation'},
     'playback-control': {action: 'pause'},
     'volcano-session-gap': {gapMinutes: 30},
+    'art-request': {format: 'gif', description: 'Blue fixture'},
     'art-show': {artworkId: 'synthetic-artwork', targets: ['browser', 'device']},
     'nanoleaf-show-save': starter('ocean', 'show-synthetic'),
     'music-lighting-control': {action: 'start-show', showId: 'show-synthetic', version: 1, positionMs: 0, startDelayMs: 250},
@@ -138,7 +164,10 @@ it('every catalog route delivers its exact input and guards to the existing owne
         const guard = binding.kind === 'device' ? {expectedConfigurationRevision: binding.configurationRevision, expectedGeneration: binding.generation}
           : binding.kind === 'record' ? (family === 'volcano-session-gap' ? {expectedConfigurationRevision: 7} : {expectedRevision: 7}) : {};
         const save = family === 'nanoleaf-show-save' ? {admitByMs: timestamp + 1000} : {};
-        assert.deepEqual(outgoing.data, {...data, ...guard, ...save});
+        if (family === 'art-request') {
+          assert.equal(outgoing.dataschema, 'https://bunny.invalid/events/art-request/2.1');
+          assert.deepEqual(outgoing.data, {action: 'start', purpose: 'request', origin: {kind: 'owner'}, targets: ['pixoo'], text: data.description});
+        } else assert.deepEqual(outgoing.data, {...data, ...guard, ...save});
         const result = validator.validate({...common, ...outgoing, id: 'forwarded-fixture', source: 'bunny/core', data: {...outgoing.data, requestId}});
         assert.ok(result.ok, `${family} for ${owner}: ${!result.ok ? result.error.detail : ''}`);
         return Promise.resolve({status: 'accepted', requestId});

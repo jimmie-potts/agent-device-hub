@@ -39,6 +39,7 @@ export const assistantRoutes = {
   'wemo-hold-release': {binding: 'device', owners: [wemo], fields: 'heldRequestId'},
   'playback-control': {binding: 'record', owner: 'bunny/modules/playback', record: 'playback', fields: 'action'},
   'volcano-session-gap': {binding: 'record', owner: volcano, record: 'volcano-status', fields: 'gapMinutes'},
+  'art-request': {binding: 'fixed', owner: 'bunny/modules/art', target: 'art', fields: 'format description'},
   'art-show': {binding: 'fixed', owner: 'bunny/core', target: 'hub', fields: 'artworkId targets coversStatus'},
   'nanoleaf-show-save': {binding: 'fixed', owner: nanoleaf, target: 'shows', fields: 'showId expectedVersion name versionName timeline'},
   'music-lighting-control': {binding: 'record', owner: 'bunny/core', record: 'music-lighting-state', fields: 'action showId version positionMs startDelayMs generation'},
@@ -81,6 +82,10 @@ export function catalogProposal(value: unknown): CatalogProposal | undefined {
     checked = {...identity, kind: 'fixed'};
   }
   return {family: 'catalog-action', target, command, binding: checked, data};
+}
+
+export function artDescription(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 300 && value.trim() !== '' && !/[\uD800-\uDFFF]/u.test(value);
 }
 
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);

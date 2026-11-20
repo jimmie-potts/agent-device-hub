@@ -514,3 +514,6 @@
   color: var(--muted-dense);
   font-size: var(--type-small, 0.875em);
 }
+
+.conversation-artwork{margin:0;display:grid;justify-items:start;gap:.5rem}
+.conversation-artwork :is(canvas,img){max-inline-size:100%;max-block-size:26rem;object-fit:contain;border-radius:.5rem}

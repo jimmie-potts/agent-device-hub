@@ -12,6 +12,7 @@ export const READ_ART_EFFECTS = 'read_art_show_effects';
 export const CREATE_SHOW = 'create_light_show_draft';
 export const EDIT_SHOW = 'edit_light_show_cue';
 export const PREVIEW_SHOW = 'preview_light_show_draft';
+export const CREATE_ART = 'create_artwork';
 export const SAVE_SHOW = 'save_light_show';
 export const MAX_CATALOG_ARGUMENTS = 4096;
 
@@ -21,10 +22,12 @@ const define = (name: string, effect: ToolDefinition['effect'], description: str
   ({name, effect, description, input: {type: 'object', properties, required: Object.keys(properties), additionalProperties: false}});
 
 export function catalogTool(family: CatalogFamily): string {
+  if (family === 'art-request') return CREATE_ART;
   return family === 'nanoleaf-show-save' ? SAVE_SHOW : `control_${family.replaceAll('-', '_')}`;
 }
 
 export function catalogCommand(name: string): CatalogFamily | undefined {
+  if (name === CREATE_ART) return 'art-request';
   if (name === SAVE_SHOW) return 'nanoleaf-show-save';
   if (!name.startsWith('control_')) return undefined;
   const family = name.slice(8).replaceAll('_', '-');
@@ -33,7 +36,7 @@ export function catalogCommand(name: string): CatalogFamily | undefined {
 
 const draft = text('The exact draft ID from the authoring or preview tool.');
 const draftRevision = integer('The exact revision from the latest draft preview.');
-const actions = Object.keys(assistantRoutes).filter(catalogFamily).filter(family => family !== 'nanoleaf-show-save');
+const actions = Object.keys(assistantRoutes).filter(catalogFamily).filter(family => family !== 'nanoleaf-show-save' && family !== 'art-request');
 export const catalogTools = [
   define(READ_DEVICES, 'read', 'Find configured devices and observe their status and permitted commands. Use empty target to list. Return the exact owner and target to use for a proposal.', {
     target: text('Device name or ID, or empty to list.'), owner: text('Exact owner such as bunny/modules/pixoo, or auto to search installed owners.'),
@@ -41,6 +44,10 @@ export const catalogTools = [
   define(READ_PLAYBACK, 'read', 'Read presented playback, current controls and observation time.', {}),
   define(READ_VACUUM, 'read', 'Read Roborock vacuum status. The integration offers no cleaning controls.', {}),
   define(READ_VOLCANO, 'read', 'Read Volcano observations and the app’s session-gap setting. Equipment controls are unavailable.', {}),
+  define(CREATE_ART, 'command', 'Propose creating one artwork to include in this reply. Requires owner approval before paid generation. Use only when asked for new artwork. It sends nothing to displays.', {
+    format: {type: 'string', enum: ['still', 'gif'], description: 'A still image or animated GIF.'},
+    description: text('A short visual description of the requested artwork, used for generation and to describe the image. Include only details the owner wants illustrated.'),
+  }),
   define(READ_ART, 'read', 'List recent saved artwork IDs and their compositions.', {}),
   define(READ_SHOWS, 'read', 'List saved shows, drafts, or lighting sessions in pages. A draft cannot play.', {
     view: {type: 'string', enum: ['saved', 'drafts', 'lighting'], description: 'Which records to read.'},

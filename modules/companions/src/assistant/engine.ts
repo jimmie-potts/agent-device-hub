@@ -426,7 +426,8 @@ export class AssistantEngine {
     let question: Question | undefined;
     const command = call === undefined ? undefined : catalogCommand(call.name);
     if (next === 'approve' && command !== undefined && call !== undefined) {
-      const selected = await this.#catalog().propose(command, call, active.span.context);
+      const selected = command === 'art-request' && this.store.hasArtReply(task.id)
+        ? {code: 'invalid-state'} : await this.#catalog().propose(command, call, active.span.context);
       const id = `${state.taskId}-q${String(this.#task(state.taskId).questions + 1)}`;
       if ('code' in selected) result = `refused: ${selected.code}`;
       else if ('question' in selected) question = {id, kind: 'clarification', text: selected.question, answer: null, call: call.id, proposal: null};
@@ -579,9 +580,13 @@ export class AssistantEngine {
       const data: AssistantDispatch = proposal.family === 'mode-set'
         ? {requestId: id, family: proposal.family, target: proposal.target, data: {mode: proposal.data.mode, expectedRevision: proposal.expectedRevision}}
         : {requestId: id, ...proposal};
+      const artDescription = proposal.family === 'catalog-action' && proposal.command === 'art-request' &&
+        typeof proposal.data.description === 'string' ? proposal.data.description : undefined;
       const receipt = proposal.family === 'mode-set'
         ? `accepted: the core accepted mode-set ${proposal.data.mode} as operation ${id}; its outcome is tracked separately`
-        : `accepted: ${proposal.family === 'catalog-action' ? proposal.command : proposal.family} on ${proposal.target} as operation ${id}; its outcome is tracked separately`;
+        : proposal.family === 'catalog-action' && proposal.command === 'art-request'
+          ? 'accepted: the art service queued this request. The Conversation attachment will show the actual result.'
+          : `accepted: ${proposal.family === 'catalog-action' ? proposal.command : proposal.family} on ${proposal.target} as operation ${id}; its outcome is tracked separately`;
       result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
         const admitByMs = this.context.clock.now() + SHOW_SAVE_WINDOW_MS;
         if (proposal.family === 'catalog-action') {
@@ -594,6 +599,8 @@ export class AssistantEngine {
           this.#catalog().rejected(proposal, id);
         }
         return settle(answer, receipt);
+      }, artDescription === undefined ? undefined : current => {
+        this.store.artReply(current, id, artDescription, this.context.clock.now());
       });
     } else {
       const delegate = this.options.delegate;
@@ -650,7 +657,8 @@ export class AssistantEngine {
     });
     if (launch && !this.#closed && !this.context.signal.aborted) this.#launch(taskId);
   }
-  async #call(taskId: string, ordinal: number, kind: 'model' | 'tool', operation: (signal: AbortSignal, parent: TraceContext) => Promise<{text: string; units: number | null}>): Promise<string> {
+  async #call(taskId: string, ordinal: number, kind: 'model' | 'tool', operation: (signal: AbortSignal, parent: TraceContext) => Promise<{text: string; units: number | null}>,
+    reserve?: (task: Task) => void): Promise<string> {
     const active = this.#activeFor(taskId);
     const id = `${taskId}-step-${String(ordinal)}`, saved = this.store.call(id);
     if (saved !== undefined) {
@@ -674,6 +682,7 @@ export class AssistantEngine {
           (kind === 'model' ? task.modelCalls >= LIMITS.modelCalls : task.toolCalls >= LIMITS.toolCalls)) fail('capacity');
         if (kind === 'model') task.modelCalls += 1; else task.toolCalls += 1;
         task.activeMs += timeout; task.reservedUnits += units; this.store.saveCall(call);
+        reserve?.(task);
       }, span.context);
       this.#fence(active);
       const reply = await this.#wait(active, timeout, bound, () => Promise.resolve().then(() => operation(active.controller.signal, span.context)), call);

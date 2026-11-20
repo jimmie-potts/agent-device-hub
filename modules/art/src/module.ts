@@ -6,7 +6,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
 import {localGifComposition, localGifReference} from '@jimmie-potts/event-contracts/v2/art-show';
 import {LocalGifUpload, LOCAL_GIF_LIFETIME_MS} from './local-gif.js';
-import type {ArtAmbientSelect, ArtAuto22, ArtAutoStart, ArtCancel, ArtPrepare, ArtPresent, ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
+import {CONVERSATION_ART_SCHEMA, type ArtAmbientSelect, type ArtAuto22, type ArtAutoStart, type ArtCancel, type ArtPrepare, type ArtPresent, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {ART_ID, ART_STATE_KEY, ART_STATE_21_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtUploadStage, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState21, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {Outbox, Outcome, childOf, fullDisk, recordLog, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type Reply, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {AnthropicIdeas} from './anthropic.js';
@@ -265,6 +265,7 @@ class ArtOwner {
     // The browser still comes first, so a display's free fallback can reuse its look.
     const targets = [...data.targets].sort((a, b) => Number(b === 'ui') - Number(a === 'ui'));
     this.#store.saveJob({requestId, artworkId: `art-${randomUUID()}`, purpose: data.purpose, origin: data.origin, admittedBy, text,
+      ...(command.dataschema === CONVERSATION_ART_SCHEMA ? {conversation: true as const} : {}),
       ...(data.weatherUse === undefined ? {} : {weatherUse: data.weatherUse}),
       context: contextFor(requestId, now, data.weatherUse === 'omit' ? null : this.#weather.read(), data.weatherUse === undefined ? data.context
         : {...(data.context?.time === undefined ? {} : {time: data.context.time}), ...(data.context?.season === undefined ? {} : {season: data.context.season})}),
@@ -467,7 +468,7 @@ class ArtOwner {
       const {fault} = answer;
       // A definite failure on a display falls back to free local motion, and nothing is resent. A moderation refusal stands,
       // and an unknown outcome stays unknown.
-      if (isDisplay(target) && !fault.uncertain && fault.reason !== 'moderation') return this.#fallBack(requestId, target, fault.reason);
+      if (isDisplay(target) && job.conversation !== true && !fault.uncertain && fault.reason !== 'moderation') return this.#fallBack(requestId, target, fault.reason);
       return this.#settleTarget(requestId, target, {outcome: fault.uncertain ? Outcome.uncertain : Outcome.failed, code: fault.code, reason: fault.reason});
     }
     const promptHash = sha256(Buffer.from(prompt));
@@ -478,6 +479,7 @@ class ArtOwner {
         composed = await this.#gifComposition(target, answer.value.bytes, decoded);
       } catch {
         // A wrong or undecodable result still counted as spent.
+        if (job.conversation === true) return this.#settleTarget(requestId, target, {outcome: Outcome.failed, code: 'invalid-message', reason: 'invalid-output'}, () => {this.#store.countGif(false);});
         return this.#fallBack(requestId, target, 'invalid-output', true);
       }
       return this.#storeComposed(requestId, target, composed, promptHash, 'openai');
@@ -528,7 +530,9 @@ class ArtOwner {
     const stored: StoredComposition = {...composition, promptHash};
     let artworkId = '', ambient = false, parent: TraceContext | undefined;
     await this.#settleTarget(requestId, target, {outcome: Outcome.succeeded, code: null, reason}, job => {
-      artworkId = job.artworkId; ambient = job.purpose === 'ambient' && target === 'tidbyt'; parent = {traceparent: job.traceparent};
+      artworkId = job.artworkId;
+      ambient = job.purpose === 'ambient' && target === 'tidbyt';
+      if (job.conversation !== true) parent = {traceparent: job.traceparent};
       for (const blob of blobs) this.#store.saveBlob(blob.id, blob.type, blob.bytes);
       this.#store.saveComposition(job.artworkId, stored);
       const artwork = this.#store.artwork(job.artworkId) ?? {artworkId: job.artworkId, requestId, createdAtMs: this.#context.clock.now(), favorite: false, feedback: null, variationOf: job.variationOf, palette: [], generatedBy, deletedAtMs: null};
@@ -803,7 +807,10 @@ class ArtOwner {
   #prune(): void {
     const now = this.#context.clock.now(), unfinished = new Set(this.#store.unfinished().map(job => job.artworkId));
     const free = (artwork: Artwork): boolean => this.#store.selection()?.artworkId !== artwork.artworkId && !unfinished.has(artwork.artworkId) && !this.#store.referenced(artwork.artworkId, now);
-    for (const artwork of [...this.#store.pruneCandidates(this.#config.recentLimit), ...this.#store.deletedArtworks()]) if (free(artwork)) this.#store.purge(artwork.artworkId);
+    for (const artwork of this.#store.pruneCandidates(this.#config.recentLimit)) {
+      if (free(artwork) && this.#store.job(artwork.requestId)?.conversation !== true) this.#store.purge(artwork.artworkId);
+    }
+    for (const artwork of this.#store.deletedArtworks()) if (free(artwork)) this.#store.purge(artwork.artworkId);
     this.#store.trim(KEEP_FINISHED_JOBS, now - KEEP_RECEIPTS_MS);
   }
 
@@ -867,6 +874,22 @@ class ArtOwner {
       if (ref.startsWith('artwork.')) {
         const result = this.#result(ref.slice('artwork.'.length));
         return result === undefined ? undefined : jsonBody(result);
+      }
+      if (ref.startsWith('conversation.')) {
+        const job = this.#store.job(ref.slice('conversation.'.length));
+        if (job?.conversation !== true) return undefined;
+        if (job.status !== 'finished') return jsonBody({status: 'pending'});
+        const target = job.targets[0];
+        if (target?.outcome !== Outcome.succeeded) return jsonBody({status: 'finished', outcome: job.outcome, code: target?.code ?? null});
+        const artwork = this.#store.artwork(job.artworkId);
+        const composition = this.#store.compositions(job.artworkId).find(entry => entry.compositionId === target.compositionId);
+        const rendition = composition?.renditions[0];
+        if (artwork === undefined || artwork.deletedAtMs !== null || rendition === undefined || this.#store.blob(rendition.renditionId) === undefined) {
+          recordLog(this.#context.log, 'operation.failed', {'bunny.operation': 'media', 'bunny.outcome': Outcome.failed,
+            'bunny.code': 'not-found', 'bunny.request.id': job.requestId}, job);
+          return undefined;
+        }
+        return jsonBody({status: 'ready', artworkId: artwork.artworkId, rendition});
       }
       if (ref.startsWith('rendition.')) {
         const blob = this.#store.blob(ref.slice('rendition.'.length));

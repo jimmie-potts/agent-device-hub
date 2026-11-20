@@ -52,6 +52,7 @@ test('each art family keeps one kind and the type the gateway derives from its n
   assert.deepEqual(artFamilies.map(({family: name, kind, type, dataschema}) => [name, kind, type, dataschema.replace('https://bunny.invalid/events/', '')]), [
     ['art-request', 'command', 'org.bunny.art.request.requested', 'art-request/2.0'],
     ['art-auto', 'command', 'org.bunny.art.auto.requested', 'art-auto/2.0'],
+    ['art-request', 'command', 'org.bunny.art.request.requested', 'art-request/2.1'],
     ['art-stage', 'command', 'org.bunny.art.stage.requested', 'art-stage/2.0'],
     ['art-ambient-set', 'command', 'org.bunny.art-ambient.set.requested', 'art-ambient-set/2.0'],
     ['art-dispatch', 'command', 'org.bunny.art.dispatch.requested', 'art-dispatch/2.0'],
@@ -149,6 +150,17 @@ test('art-request starts a bounded job or cancels one, and a cancel carries noth
   invalid(withData('art-request', {requestId: 'cancel-1', action: 'cancel'}));
   invalid(withData('art-request', {requestId: 'cancel-1', action: 'cancel', jobRequestId: 'req-art-1', text: 'more work'}));
   invalid({...family('art-request'), subject: 'tidbyt'}, /subject/);
+});
+
+test('Conversation art permits one still or GIF and refuses display-oriented fields', () => {
+  const message = (changes = {}) => ({...withData('art-request', {
+    requestId: 'conversation-art', action: 'start', purpose: 'request', origin: {kind: 'owner'},
+    targets: ['ui'], text: 'Blue flowers', ...changes,
+  }), dataschema: 'https://bunny.invalid/events/art-request/2.1'});
+  valid(message());
+  valid(message({targets: ['pixoo']}));
+  for (const changes of [{targets: ['ui', 'pixoo']}, {targets: ['tidbyt']}, {purpose: 'ambient'}, {action: 'cancel'},
+    {variationOf: 'original'}, {context: {}}, {text: ' '.repeat(10)}, {text: 'x'.repeat(301)}]) invalid(message(changes));
 });
 
 test('art-auto only starts an automatic job; an owner label still validates, because the family decides, and it has no typed text', () => {
