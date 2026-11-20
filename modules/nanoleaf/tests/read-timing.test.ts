@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {DeviceAvailability, type LogFields, type Logger, type ModuleScheduler, type Tracing} from '@jimmie-potts/sdk';
+import {DeviceReadDeadline} from '../src/errors.js';
 import {DeviceLink, DeviceUnreachable, LinkStopped, REQUEST_MS} from '../src/module/link.js';
 import {ReadTimingProbe} from '../src/module/read-timing.js';
 import {HttpError, nodeTransport, type classifiedRead, type LightRequest} from '../src/transport.js';
@@ -91,7 +92,8 @@ test('overlapping reads keep the winning branch and attribute overdue probe time
 
 test('a transport ETIMEDOUT is a rejection and an overdue callback without a sample remains pending', async () => {
   const {time, link, replies, records} = fixture();
-  const reading = assert.rejects(link.read('music-admission', '/effects'), DeviceUnreachable);
+  const reading = assert.rejects(link.read('music-admission', '/effects'),
+    (error: unknown) => error instanceof DeviceUnreachable && !(error instanceof DeviceReadDeadline));
   time.now = 135;
   replies[0]?.reject(Object.assign(new Error('synthetic private address or token'), {code: 'ETIMEDOUT'}));
   await reading;
@@ -166,7 +168,7 @@ test('only the first link or transport deadline provides evidence', async contex
   assert.ok(address !== null && typeof address === 'object');
   const url = `http://127.0.0.1:${address.port}/`;
   const {link, records, time} = fixture(false, () => nodeTransport({url, method: 'GET', headers: {}, body: null, timeoutSeconds: 0.01}));
-  await assert.rejects(link.read('sampler', '/state'), DeviceUnreachable);
+  await assert.rejects(link.read('sampler', '/state'), DeviceReadDeadline);
   assert.equal(records[0]?.fields['bunny.nanoleaf.read.end'], 'transport-deadline');
   assert.equal(records[0]?.fields['bunny.nanoleaf.rejection.stage'], undefined);
   assert.equal(time.queued.size, 0);
@@ -177,7 +179,7 @@ test('only the first link or transport deadline provides evidence', async contex
     void sent.then(later.resolve, later.resolve);
     return sent;
   });
-  const first = assert.rejects(second.link.read('sampler', '/state'), DeviceUnreachable);
+  const first = assert.rejects(second.link.read('sampler', '/state'), DeviceReadDeadline);
   second.time.now = REQUEST_MS;
   second.time.run(REQUEST_MS);
   await first;

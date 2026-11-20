@@ -14,7 +14,7 @@ import {isObject} from './compat.js';
 import {Cancelled, Execution, Refused} from './controls.js';
 import {projection, type Element, type Kind, type LayoutEntry} from './devices.js';
 import {Rejected, type Zone} from './effects.js';
-import {ValueError} from './errors.js';
+import {DeviceReadDeadline, ValueError} from './errors.js';
 import {finish, finishMusicControls, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
 import type {Indication} from './line-projection.js';
 import {alerting, newerChoice, NEWER_CHOICES, type Admitted, type DeviceRead} from './moments.js';
@@ -513,6 +513,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   let reportedMisses = prepared?.evidence.missedCues;
   let reportedPause = false;
   let lastCheck = now();
+  let statusCheck: 'clear' | 'missed' | 'failed' = 'clear';
   for (;;) {
     // Check before sleeping as well as after. A backwards clock step during I/O must not be hidden by the next wait.
     if (stopping()) throw new Cancelled();
@@ -549,6 +550,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     const position = advance();
     if (position === 'source-lost') return end('source-lost', await restore(undefined));
     if (position === 'completed') return end('completed', await restore(undefined));
+    if (statusCheck === 'failed') return end('device', 'none', undefined, undefined, 'unavailable');
     if (now() - lastCheck >= EXTERNAL_CHECK_MS) {
       lastCheck = now();
       let showing: boolean;
@@ -562,8 +564,15 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
         showing = state?.brightness?.value === freeBase.brightness && state.on?.value !== false;
       } catch (error) {
         deviceFailure(error);
-        return end('device', 'none', undefined, undefined, 'unavailable');
+        if (command.layout.kind !== 'panels' || !(error instanceof DeviceReadDeadline)) {
+          return end('device', 'none', undefined, undefined, 'unavailable');
+        }
+        // A deadline leaves ownership unknown. Check pending endings before the next scheduled read or a device ending.
+        statusCheck = statusCheck === 'clear' ? 'missed' : 'failed';
+        unsent = undefined;
+        continue;
       }
+      statusCheck = 'clear';
       // The light's record keeps the selection this read found (#1614), with no request of its own, and what the `/state`
       // read beside it showed of the light's colour (#1777). That colour state is a diagnostic only: nothing here uses it.
       const found = selectionRead(listing);
@@ -598,7 +607,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
         await transact(report => {setShowProgress(db, device, generation, evidence, reportedPause, report);});
         continue;
       }
-      if (position !== 'playing' || now() - lastWrite < FRAME_MS) continue;
+      if (statusCheck === 'missed' || position !== 'playing' || now() - lastWrite < FRAME_MS) continue;
       const frame = prepared.frame();
       if (frame !== null) {
         if (!await stream(frame)) return;
@@ -606,7 +615,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
       }
       continue;
     }
-    if (renderer === undefined || next === null) continue;
+    if (statusCheck === 'missed' || renderer === undefined || next === null) continue;
     if (unsent !== undefined && next.feature.sequence === lastSequence) {
       // The sample the first frame rendered is still the newest fresh one.
       const zones = unsent;
