@@ -49,6 +49,10 @@ alone, and the record's rules derive the artwork's outcome.
 | Pixoo | `gpt-image-2.6-flare`, 512×512, low, 8-frame GIF | One 64×64 GIF with at most 32 colors |
 | Browser | `gpt-image-2`, 1536×1024, medium | Two WebP renditions |
 
+For the Tidbyt, ask for a close-up of one subject performing one action. The subject
+fills about two-thirds to three-quarters of the panel height against a quiet background.
+Keep the camera still and give the scene one small looping movement.
+
 A returned GIF is decoded under bounded limits and checked for its size, its frame count
 and timing inside Pixoo's observed envelope, then reduced frame by frame with Lanczos and
 rebuilt with one palette and uniform timing. A wrong or undecodable GIF still costs its

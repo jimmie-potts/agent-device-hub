@@ -449,6 +449,10 @@ void test('renditions: a composition is the SHA-256 of its defining bytes, each 
   await art.finished('req');
   assert.deepEqual(images.requests.map(request => [request.model, request.size, request.quality, request.gif?.frameCount, request.gif?.frameDurationMs]), [
     ['gpt-image-2', '1536x1024', 'medium', undefined, undefined], ['gpt-image-2.6-flare', '512x256', 'low', 8, 200], ['gpt-image-2.6-flare', '512x512', 'low', 8, 200]]);
+  const tidbytPrompt = images.requests.find(request => request.size === '512x256')?.prompt ?? assert.fail('no Tidbyt request');
+  assert.match(tidbytPrompt, /close-up/i);
+  assert.match(tidbytPrompt, /two-thirds to three-quarters of the panel height/i);
+  for (const request of images.requests.filter(request => request.size !== '512x256')) assert.doesNotMatch(request.prompt, /close-up/i);
   const artwork = art.state.artworks[0] ?? assert.fail('no artwork');
   assert.equal(artwork.provenance.generatedBy, 'openai');
   assert.equal(artwork.provenance.factual, false);
