@@ -116,6 +116,55 @@
 .apartment-fixture-list small {display: block;margin-top: 2px;font-size: var(--type-small);font-weight: normal;color: var(--muted-dense);}
 .apartment-selection {flex: 1 1 270px;min-width: 0;}
 .apartment-note {margin-block: var(--space-m);display: flex;align-items: center;flex-wrap: wrap;gap: var(--space-s);}
+.apartment-sensor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-block-end: 1px solid var(--light-edge);
+}
+.apartment-zone-list {display: flex;flex-wrap: wrap;gap: 6px 14px;list-style: none;padding: 0;margin: 0;}
+.apartment-zone-list li,.apartment-zone-editor {display: flex;flex-wrap: wrap;align-items: center;gap: 6px;font-size: var(--type-small);}
+.apartment-zone-list small,.apartment-zone-error {color: var(--apartment-quiet);}
+.apartment-stage .apartment-zone-list button,.apartment-stage .apartment-zone-editor button {
+  border: 1px solid var(--apartment-rule);
+  border-radius: 8px;
+  background: var(--apartment-control);
+  color: var(--apartment-ink);
+  font-size: var(--type-small);
+  padding: 4px 8px;
+}
+.apartment-zone-editor {flex-basis: 100%;}
+.apartment-zone-error {flex-basis: 100%;margin: 0;font-size: var(--type-small);}
+.apartment-sensor-details>summary {cursor: pointer;padding: 9px 14px;font-size: var(--type-small);}
+.apartment-floor-zones,.apartment-floor-zone-item,[data-floor-zone] {position: absolute;inset: 0;pointer-events: none;}
+[data-floor-zone] {background: color-mix(in srgb,var(--apartment-presence-occupied) 26%,transparent);}
+[data-floor-zone=kitchen] {background: color-mix(in srgb,var(--apartment-presence-vacant) 28%,transparent);}
+[data-floor-zone][data-tracking=tracked] {background: color-mix(in srgb,var(--apartment-presence-occupied) 57%,transparent);}
+[data-floor-zone-label] {
+  position: absolute;
+  transform: translate(-50%,calc(-100% - 13px));
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--light-inset);
+  white-space: nowrap;
+  font-size: 11px;
+}
+.apartment-viewport .apartment-floor-pick,.apartment-viewport .apartment-floor-pick:hover {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: crosshair;
+  touch-action: manipulation;
+}
 .apartment-presence-markers {position: absolute;inset: 0;pointer-events: none;}
 .apartment-presence-markers [data-presence-marker] {
   position: absolute;
