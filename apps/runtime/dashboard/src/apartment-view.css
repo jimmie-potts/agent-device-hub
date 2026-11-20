@@ -182,6 +182,12 @@
 }
 .apartment-presence-markers [data-held=true] {border-style: dashed;}
 .apartment-presence-markers [data-held=unknown] {border-style: dotted;}
+.apartment-presence-markers [data-presence-marker][data-presence-combined] {
+  width: 14px;
+  height: 14px;
+  min-width: 0;
+  padding: 0;
+}
 .apartment-presence {padding: clamp(12px, 2vw, 22px);border-bottom: 1px solid var(--light-edge);font-size: var(--type-small);line-height: 1.5;overflow-wrap: anywhere;}
 .apartment-presence h4, .apartment-presence p {margin: 0 0 6px;}
 .apartment-presence-note {color: var(--muted-dense);max-width: 85ch;}

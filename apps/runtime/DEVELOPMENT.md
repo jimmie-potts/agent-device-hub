@@ -1168,7 +1168,9 @@ and `node apps/runtime/dashboard/tests/room-models.browser.ts`. Existing dashboa
 unit discovery and App verification's room-model journey include these checks.
 The synthetic real-owner journey covers room-only reports, separate sensors,
 held/unknown points, receipt-time limitations, loss/reconnect, desktop/phone and
-zero commands. Use a private outside-checkout `TMPDIR`; it contacts no hardware.
+zero commands. The same checks cover the combined dot's eligibility and expiry
+and switching to the separate Sensors dots. Use a private outside-checkout
+`TMPDIR`; it contacts no hardware.
 Run the normal shared build/type/lint/contract/workflow and dashboard suites.
 Physical enrollment, manual placement checks and usefulness belong to #1842.
 

@@ -106,8 +106,11 @@ at a time within the model's total image budget. The
 The existing room-model/1.0 files continue to work alongside the apartment.
 
 The [Presence Pro pilot definition](../../docs/presence-pro-interface.md) describes
-the saved sensor transform and approximate device-reported positions. It adds no
-sensor feed or physical-location qualification.
+the saved sensor transform and approximate device-reported positions. The default
+map draws one anonymous dot at the midpoint of two nearby, recent points from
+different Pros with one usable point each in the same room. Open Sensors and
+select Pro 1, Pro 2, or Both to inspect the individual dots and their source
+details. The midpoint is a display estimate of overlap.
 
 ## Publish when the runtime is stopped
 

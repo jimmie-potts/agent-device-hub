@@ -3,11 +3,17 @@ import {apartmentContains, type ApartmentModel, type ApartmentVector} from '../.
 import type {RuntimeCopy} from './runtime-feeds.ts';
 
 export type PresencePoint = {id:string;label:string;sensorId:string;slot:number;roomId:string;position:ApartmentVector;held:boolean|undefined};
+export type ApartmentMapPoint = Pick<PresencePoint,'id'|'roomId'|'position'>;
+type CombinedPresencePoint = ApartmentMapPoint & {expiresAtMs:number};
 export type PresenceContributor = {sensorId:string;channel:string;value:Occupancy;reported:Occupancy;receivedAtMs:Tagged<number>};
 export type RoomPresence = {value:Occupancy;disagreement:boolean;contributors:PresenceContributor[]};
 export type PresenceSlot = {target:Target;point?:PresencePoint;reason:string};
 export type PresenceSensor = {record:PresenceObservation;current:boolean;slots:PresenceSlot[]};
 export type ApartmentPresence = {synced:boolean;sensors:PresenceSensor[];rooms:Map<string,RoomPresence>;points:PresencePoint[]};
+
+const maximumSeparationMeters=.65;
+const receiptWindowMs=2500;
+const maximumReceiptSpreadMs=1200;
 
 /** Geometry locates a floor marker only. It never creates an occupancy or identity observation. */
 export function apartmentPresence(model:ApartmentModel,copies:readonly RuntimeCopy[],connected:boolean):ApartmentPresence {
@@ -45,6 +51,26 @@ export function apartmentPresence(model:ApartmentModel,copies:readonly RuntimeCo
     room.disagreement=values.includes('occupied')&&values.includes('vacant');
   }
   return {synced,sensors,rooms,points};
+}
+
+/** Combine one compatible pair for display. A receipt bounds the estimate, not the sensor's measurement time. */
+export function combinedApartmentPoint(model:ApartmentModel,presence:ApartmentPresence,nowMs:number):CombinedPresencePoint|undefined {
+  const slots=presence.sensors.flatMap(sensor=>sensor.slots.filter(slot=>slot.point!==undefined));
+  const [first,second]=slots;
+  const a=first?.point,b=second?.point;
+  if(slots.length!==2||a===undefined||b===undefined||a.sensorId===b.sensorId||a.roomId!==b.roomId
+    ||a.held===true||b.held===true)return undefined;
+  const [ax,y,az]=a.position,[bx,,bz]=b.position;
+  if(Math.hypot(ax-bx,az-bz)>maximumSeparationMeters)return undefined;
+  const receipts=slots.flatMap(({target:{rawMm}})=>[rawMm.xReceivedAtMs,rawMm.yReceivedAtMs])
+    .flatMap(receipt=>receipt.status==='known'?[receipt.value]:[]);
+  if(receipts.length!==4||!receipts.every(Number.isFinite))return undefined;
+  const oldest=Math.min(...receipts),latest=Math.max(...receipts),expiresAtMs=oldest+receiptWindowMs;
+  if(latest>nowMs||nowMs>=expiresAtMs||latest-oldest>maximumReceiptSpreadMs)return undefined;
+  const x=(ax+bx)/2,z=(az+bz)/2;
+  const rooms=model.rooms.filter(room=>apartmentContains(room.footprint,[x,z]));
+  if(rooms.length!==1||rooms[0]?.id!==a.roomId)return undefined;
+  return {id:'combined-presence',roomId:a.roomId,position:[x,y,z],expiresAtMs};
 }
 
 export function presenceReceipt(value:Tagged<number>):string {
