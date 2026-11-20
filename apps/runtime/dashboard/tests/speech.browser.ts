@@ -109,7 +109,7 @@ export async function speechJourney(browser: Browser): Promise<void> {
     await tab(page, 'Voice');
     await question('speech-category-muted'); assert.equal(await count(), 3);
     await tab(page, 'Controls'); await page.getByRole('button', {name: 'Unmute Coding attention', exact: true}).click(); await tab(page, 'Voice');
-    await other.goto(`${world.url}/#/`); const hub = other.locator('[data-widget="hub-mode"]');
+    await other.goto(`${world.url}/#/`); const hub = other.locator('[data-hub-mode]');
     await hub.getByRole('button', {name: 'Quiet', exact: true}).click(); await controls(page).getByText('Quiet mode suppresses new spoken alerts.', {exact: true}).waitFor();
     await question('speech-quiet'); assert.equal(await count(), 3);
     await hub.getByRole('button', {name: 'Work', exact: true}).click(); await controls(page).getByText('Quiet mode suppresses new spoken alerts.', {exact: true}).waitFor({state: 'detached'});
@@ -421,7 +421,7 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await assistant.getByText('Needs your answer', {exact: true}).waitFor();
     assert.equal(await page.evaluate(() => window.speechFixture.cancelled), 1);
     // Quiet keeps the result written only; Work lets the next reply speak again.
-    await other.goto(`${world.url}/#/`); await feed(other, 'connected'); const hub = other.locator('[data-widget="hub-mode"]');
+    await other.goto(`${world.url}/#/`); await feed(other, 'connected'); const hub = other.locator('[data-hub-mode]');
     await hub.getByRole('button', {name: 'Quiet', exact: true}).click(); await controls.getByText('Quiet mode suppresses spoken replies.', {exact: true}).waitFor();
     await assistant.getByRole('textbox', {name: 'Answer', exact: true}).fill('Synthetic answer in Quiet');
     await answer.click(); await assistant.getByText('Task completed', {exact: true}).waitFor();

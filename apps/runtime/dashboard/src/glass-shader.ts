@@ -20,6 +20,8 @@ uniform int uCount, uVeilCount;
 uniform vec4 uVeils[${String(MAX_VEILS)}];
 uniform float uVeilEdges[${String(MAX_VEILS)}];
 uniform vec4 uVeil, uVeilDeep, uTone, uRim, uShadow, uWashStart, uWashEnd, uWashBox;
+// A switch's thumb (#1930): a fast capsule and a slow one, x, y, width and height; a zero width draws none.
+uniform vec4 uThumbA, uThumbB;
 uniform vec3 uEdge, uBg;
 out vec4 color;
 const vec2 LIGHT = vec2(-.5547, -.8321);
@@ -72,6 +74,9 @@ float panel(vec2 p, int i){ vec4 r = panelBox(i); vec2 h = r.zw * .5; return sdR
 float field(vec2 p){ float d = 1e5;
   for (int i = 0; i < ${String(MAX_PANELS)}; i++){ if (i >= uCount) break; float e = panel(p, i); d = uMerge > 0. ? smin(d, e, uMerge) : min(d, e); }
   return d; }
+// The thumb is the two capsules joined with a smooth minimum (the reference's k = 16), so it stretches as it travels.
+float thumb(vec2 p){ vec2 a = uThumbA.zw * .5, b = uThumbB.zw * .5;
+  return smin(sdRound(p - uThumbA.xy - a, a, a.y), sdRound(p - uThumbB.xy - b, b, b.y), 16.); }
 
 // A slab of flat glass: a thin bevel that bends and splits the view, a slightly tinted edge with a faint dark band,
 // a soft reflection, a rim of light facing the upper left. Inside, the automatic veil keeps the panel's text readable.
@@ -104,14 +109,18 @@ void main(){
   // The lip of light a slab focuses just past its far edge.
   if (D > 0. && D < 20.) col += col * exp(-D / 5.) * max(dot(g, -LIGHT), 0.) * .55 * appear;
   if (D < 1.) col = glass(p, D, g, col);
+  // The thumb is glass over everything else, with a narrower bevel and a little more light, like a pressed panel.
+  if (uThumbA.z > 0.){ float d = thumb(p);
+    if (d < 1.){ vec2 gt = normalize(vec2(thumb(p + vec2(1., 0.)) - thumb(p - vec2(1., 0.)), thumb(p + vec2(0., 1.)) - thumb(p - vec2(0., 1.))) + 1e-5);
+      col = glass(p, d * 1.6, gt, col); col += (1. - col) * .06 * (1. - smoothstep(-1., .5, d * 1.6)); } }
   // Veils behind text drawn over the layer, last, so they also hold over a panel's bevel and rim: as strong as the
   // brighter of the local backdrop (outside panels) and the pixel itself needs. A veil fades out within 16 px past its
-  // box, or, marked edge, stops at it.
-  float t = 0.;
+  // box, or, marked edge, stops at it. What the pixel needs is the same for every veil, so the loop only finds the
+  // strongest mask and the need is worked out once: in software WebGL a per-veil need cost every pixel per veil.
+  float mask = 0.;
   for (int i = 0; i < ${String(MAX_VEILS)}; i++){ if (i >= uVeilCount) break;
     float edge = uVeilEdges[i], d = sdRound(p - uVeils[i].xy - uVeils[i].zw * .5, uVeils[i].zw * .5 + 4. * (1. - edge), 12. * (1. - edge));
-    float mask = edge > .5 ? step(d, 0.) : 1. - smoothstep(0., 12., d);
-    if (mask > 0.) t = max(t, mask * max(needed(col), D > 0. ? needed(backdrop(p, 40.)) : 0.)); }
-  col = veiled(col, t);
+    mask = max(mask, edge > .5 ? step(d, 0.) : 1. - smoothstep(0., 12., d)); }
+  if (mask > 0.) col = veiled(col, mask * max(needed(col), D > 0. ? needed(backdrop(p, 40.)) : 0.));
   color = vec4(col + (h21(gl_FragCoord.xy) - .5) * .018, 1.);
 }`;

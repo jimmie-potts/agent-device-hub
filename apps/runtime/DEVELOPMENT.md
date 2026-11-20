@@ -670,9 +670,11 @@ Adaptive art and Gallery (#682) use `npm run test:art:browser` after
 `npm run build`. App verification runs this focused journey in its runtime group;
 the full local browser suite includes it. It uses the real authenticated core/art
 owners with synthetic providers and an outside-checkout private `TMPDIR`.
-The journey checks saved pin/dismiss/restore, independent desktop/phone layout,
-revision conflicts and restart; banner/square/tall fit and full-screen omission;
-pointer/focus/attention preservation; rich rendition decode, stale/unavailable
+The journey checks the hero's Pin or Unpin, Dismiss and Restore art chips (#1930)
+saved per arrangement with independent desktop/phone layouts and restart, card
+geometry and focus kept when art arrives, the forecast chip in the hero bound to
+the drawn backdrop and cleared when the art is dismissed and at expiry, the backdrop following the selection
+with no Art card on Home; rich rendition decode, stale/unavailable
 content and late-load cancellation; and request/favorite/feedback/variation with
 truthful allowance and job outcomes. Layout-only operations and gallery reads
 must send no device command or provider request. Check 1440, 390 and 320px in
@@ -755,7 +757,7 @@ asserts no change inside a list card for two idle seconds (about ten minutes;
 `HOME_IDLE_WIDTHS` or `HOME_IDLE_STEP` narrows a local run).
 `node --test apps/runtime/dashboard/tests/home-shapes.test.ts
 apps/runtime/dashboard/tests/home-catalog.test.ts` cover packing, columns,
-trailing art cells, the conversion table and offered shapes. The core's shape
+the conversion table, offered shapes and the hero's kept placements. The core's shape
 rule and restart are in `apps/runtime/tests/home-layout.test.ts`; the
 `home-layout/2.2` schema is in `packages/event-contracts/tests/home-layout.test.mjs`.
 Synthetic records only; with `DASHBOARD_RECEIPTS` set it saves private 2x
@@ -783,7 +785,27 @@ restored context draws again; that leaving Home loses the context; and that all
 text drawn over the layer (panels, heading, notices, status lines, empty cells
 and the footer) measures at least 4.5:1 against the pixels behind it for a dark
 and a bright artwork in light and dark appearance, at rest, while reconnecting
-and in Edit Home. With `DASHBOARD_RECEIPTS` set it saves private screenshots.
+and in Edit Home. The hero's switch and chips (#1930) are measured too, against
+their translucent fills as drawn over the layer. With `DASHBOARD_RECEIPTS` set it
+saves private screenshots.
+
+Home's hero (#1930) follows the glass journey in the same chain. After the root
+build, `node apps/runtime/dashboard/tests/home-hero.browser.ts` launches Chromium
+with SwiftShader and checks the label, the mode word and the switch above the
+grid; the light and plug chips against the observed device records, after a light
+is switched off and as unknown while the stream is held; the switch from the
+keyboard (arrows move without sending, Enter sends one `mode-set` with the current
+revision); that the glass thumb's two capsules part while it travels, rest on the
+selected segment and that no frame is drawn for two seconds after; Tab reaching
+every chip with a visible ring; refused and uncertain results without a second
+send; the hero kept with its focused chip across the one-column threshold;
+dismissed art drawing the Quiet glass wash and Restore drawing it again; a saved
+layout listing the Hub mode and Art cards loading without error, absent from the
+grid and the picker, and kept by a save and by Reset; no horizontal scroll at 1440, 390 and
+320 px in light and dark; and, without WebGL 2, a plain thumb and a working
+switch. `node --test apps/runtime/dashboard/tests/home-hero.test.ts
+apps/runtime/dashboard/tests/glass.test.ts` cover the chips' wording and the
+thumb's time base. With `DASHBOARD_RECEIPTS` set it saves private screenshots.
 
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the
@@ -1098,13 +1120,14 @@ Run the full suite when a change touches `apps/runtime/dashboard`, the gateway's
 page or sign-in routes, or the SDK's remote client. Set `DASHBOARD_RECEIPTS` to
 a directory to keep their screenshots.
 
-The focused `hub-mode.browser.ts` journey uses synthetic participants to check
-keyboard selection, matching artwork, same-mode reapply, correlated Inbox
+The focused `hub-mode.browser.ts` journey drives Home's hero (#1930) with
+synthetic participants to check keyboard selection, the selected segment's icon,
+same-mode reapply, correlated Inbox
 navigation/handling, pending versus definitive results, late conflicts, lost
 replies, read-only controls and reconnect/reload/restart without replay. Its
 controlled adapter checks verify stale evidence and accepted/uncertain handling
 locks without another command. It checks light/dark desktop/phone layout on
-both cards and writes screenshots to its optional private evidence directory.
+the hero and the Inbox and writes screenshots to its optional private evidence directory.
 It contacts no physical device.
 
 The focused `pixoo-pages.browser.ts` journey uses the real Pixoo module with a

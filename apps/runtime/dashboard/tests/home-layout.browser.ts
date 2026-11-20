@@ -25,7 +25,8 @@ try {
   sent.length = 0;
   assert.equal(await page.getByText('YOUR SPACE', {exact: true}).count(), 0);assert.equal(await page.getByText('Desktop layout', {exact: true}).count(), 0);
   const original = await order();
-  const dragTarget = original[1];assert.ok(dragTarget !== undefined);
+  // The Hub mode is the hero above the grid (#1930); the last card is dragged to the second place instead.
+  const dragTarget = original[1], dragged = original.at(-1);assert.ok(dragTarget !== undefined && dragged !== undefined && original.length > 2);
   await edit();
   const picker = () => page.getByRole('region', {name: 'Add a card', exact: true});
   const search = () => picker().getByRole('searchbox', {name: 'Search cards', exact: true});
@@ -67,8 +68,8 @@ try {
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeFocused();
   assert.deepEqual(await order(), original);assert.equal(sent.length, 0, 'search and Add affect only the canceled draft');
   await edit();
-  await page.locator('[data-home-move="hub-mode"]').dragTo(page.locator(`[data-home-card="${dragTarget}"]`), {targetPosition: {x: 20, y: 20}});
-  await expect(grid.locator('[data-home-card]').nth(1)).toHaveAttribute('data-home-card', 'hub-mode');
+  await page.locator(`[data-home-move="${dragged}"]`).dragTo(page.locator(`[data-home-card="${dragTarget}"]`), {targetPosition: {x: 20, y: 20}});
+  await expect(grid.locator('[data-home-card]').nth(1)).toHaveAttribute('data-home-card', dragged);
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();assert.deepEqual(await order(), original);assert.equal(sent.length, 0);
   await edit();await page.getByRole('button', {name: 'Add card', exact: true}).click();await page.getByRole('button', {name: 'Rooms', exact: true}).click();
   await page.getByRole('button', {name: 'Add Studio', exact: true}).click();await page.getByRole('button', {name: 'Close', exact: true}).click();
@@ -90,9 +91,9 @@ try {
     assert.equal(await second.locator('[data-home-card]').last().getAttribute('data-home-card'), roomId);
   } finally {await secondContext.close();}
   await world.restart();await page.reload();await feed(page, 'connected');await room.waitFor();assert.deepEqual(await order(), before);
-  await edit();await cardOptions(page, 'Hub mode');await page.getByRole('button', {name: 'Remove Hub mode', exact: true}).press('Enter');assert(!(await order()).includes('hub-mode'));
+  await edit();await cardOptions(page, 'Inbox');await page.getByRole('button', {name: 'Remove Inbox', exact: true}).press('Enter');assert(!(await order()).includes('inbox'));
   assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-home-move], [data-home-add]')), true);
-  await page.getByRole('button', {name: 'Cancel', exact: true}).click();await expect(page.locator('[data-home-card="hub-mode"]')).toBeVisible();
+  await page.getByRole('button', {name: 'Cancel', exact: true}).click();await expect(page.locator('[data-home-card="inbox"]')).toBeVisible();
   assert.equal(sent.length, 1, 'Cancel sends nothing');
   await edit();await cardOptions(page, 'Agent status');await page.getByRole('button', {name: 'Hide Agent status', exact: true}).press('Enter');
   assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-home-move], [data-home-add]')), true);await done();
@@ -118,10 +119,10 @@ try {
   try {
     const other = await otherContext.newPage();await other.goto(world.url);await feed(other, 'connected');
     await edit();await other.getByRole('button', {name: 'Edit Home', exact: true}).click();
-    await cardOptions(other, 'Hub mode');await other.getByRole('button', {name: 'Remove Hub mode', exact: true}).click();await other.getByRole('button', {name: 'Done', exact: true}).click();
+    await cardOptions(other, 'Inbox');await other.getByRole('button', {name: 'Remove Inbox', exact: true}).click();await other.getByRole('button', {name: 'Done', exact: true}).click();
     await expect(other.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
     await page.getByText('Home changed in another browser.', {exact: false}).waitFor();assert.equal(await page.getByRole('button', {name: 'Done', exact: true}).isDisabled(), true);
-    await page.getByRole('button', {name: 'Load saved layout', exact: true}).click();assert(!(await order()).includes('hub-mode'));
+    await page.getByRole('button', {name: 'Load saved layout', exact: true}).click();assert(!(await order()).includes('inbox'));
     await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   } finally {await otherContext.close();}
   // Retired definitions are omitted; a missing instance remains an unavailable card.
@@ -171,14 +172,14 @@ try {
     const response = await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core');
     const data = await response.json() as {records: {'home-layout': {revision: number}[]}};
     const record = data.records['home-layout'][0];if (record === undefined) throw new Error('home-focus-snapshot');
-    const placements = [{widget: 'hub-mode', size: 'medium', hidden: false}];
+    const placements = [{widget: 'timeline', size: 'medium', hidden: false}];
     const answer = await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'}, body: JSON.stringify({target: 'home', requestId: 'protected-neighbor-fixture', data: {expectedRevision: record.revision, layouts: {desktop: placements, phone: placements}}})});
     return answer.status;
   }), 200);
-  await expect(page.locator('[data-home-card="hub-mode"]')).toBeVisible();
+  await expect(page.locator('[data-home-card="timeline"]')).toBeVisible();
   await world.observe(approvalPrompt('layout-forced-focus'));await page.locator('[data-home-card="sessions"]').waitFor();
   await edit();await expect(page.locator('[data-home-move="sessions"]')).toBeDisabled();
-  await cardOptions(page, 'Hub mode');await page.getByRole('button', {name: 'Remove Hub mode', exact: true}).press('Enter');
+  await cardOptions(page, 'Timeline');await page.getByRole('button', {name: 'Remove Timeline', exact: true}).press('Enter');
   await expect(page.getByRole('button', {name: 'Add card', exact: true})).toBeFocused();
   await page.getByRole('button', {name: 'Cancel', exact: true}).click();
   await world.observe(approvalResolved('layout-forced-focus'));
@@ -192,3 +193,5 @@ await import('./home-shapes.browser.ts');
 await import('./home-paging.browser.ts');
 // The glass layer under Home (#1929): backdrop, boxes, rest, fallbacks and contrast.
 await import('./home-glass.browser.ts');
+// The hero above the cards (#1930): the hub mode switch and its glass thumb, the status and art chips.
+await import('./home-hero.browser.ts');

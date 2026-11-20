@@ -46,27 +46,20 @@ export async function artBackdropJourney(): Promise<void> {
     world.art.act('warm-colors');const first = await generate();
     world.art.act('cool-colors');const second = await generate();
     assert.notEqual(still(first).rendition.renditionId, still(second).rendition.renditionId);
-    await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
-    await page.getByRole('button', {name: 'Add card', exact: true}).click();await page.getByRole('button', {name: 'Add Art', exact: true}).click();
-    await page.getByRole('button', {name: 'Close', exact: true}).click();await page.getByRole('button', {name: 'Done', exact: true}).click();
-    const widget = page.locator('[data-home-card="art"] .art-image');
     const expectShown = async (artwork: ArtworkSummary, status = 'ready'): Promise<void> => {
       await expect(backdrop).toHaveAttribute('data-art-backdrop', status);
       await expect(backdrop).toHaveAttribute('data-artwork', artwork.artworkId);
       await expect(backdrop).toHaveAttribute('data-composition', still(artwork).compositionId);
       await expect(backdrop).toHaveAttribute('data-rendition', still(artwork).rendition.renditionId);
     };
-    // With no selection both follow the latest art.
-    await expect(widget).toHaveAttribute('data-art-image-state', 'ready');await expect(widget).toHaveAttribute('data-artwork', second.artworkId);
-    await expectShown(second);
-    assert.equal(await backdrop.getAttribute('data-composition'), await widget.getAttribute('data-composition'), 'the same composition as the widget');
+    // With no selection the backdrop follows the latest art, as the Art widget does; Home has no Art card (#1930).
+    await expectShown(second);await expect(page.locator('[data-home-card="art"]')).toHaveCount(0);
     const fetched = (artwork: ArtworkSummary): number => requests.filter(url => new URL(url).pathname === `/modules/art/content/${still(artwork).rendition.ref}`).length;
     assert.equal(fetched(second), 1, 'one content request for the backdrop rendition');
     // A slow newer image keeps the previous ready image until it decodes.
     const held = new Promise<void>(resolve => {release = resolve;});
     await page.route(`**/modules/art/content/${still(first).rendition.ref}`, async route => {await held;await route.continue();});
     const earlier = fetched(first);await select(first);
-    await expect(widget).toHaveAttribute('data-artwork', first.artworkId);
     await expectShown(second, 'loading');
     release?.();await page.unrouteAll({behavior: 'wait'});
     await expectShown(first);assert.equal(fetched(first) - earlier, 1, 'one content request for the newly selected backdrop');

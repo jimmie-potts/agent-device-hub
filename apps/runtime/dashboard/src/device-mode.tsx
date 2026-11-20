@@ -3,7 +3,7 @@ import type {Mode, ModeState, OperationRecord} from '@jimmie-potts/event-contrac
 import type {ModeDeviceView} from './mode-exceptions.ts';
 import {effectiveMode} from '@jimmie-potts/event-contracts/v2/mode';
 import {useAttempt} from './command-control.tsx';
-import {ModeIcon} from './hub-mode-card.tsx';
+import {ModeIcon} from './hub-mode-hero.tsx';
 import {modeName} from './hub-mode.ts';
 
 type ModeContext = {record: ModeState | undefined; live: boolean; control: boolean; operations: readonly OperationRecord[];

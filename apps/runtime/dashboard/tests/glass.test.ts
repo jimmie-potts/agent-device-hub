@@ -4,14 +4,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {MAX_PANELS, readScene, sameScene, type GlassScene} from '../src/glass-scene.ts';
 import {luminance, parseColor} from '../src/glass-renderer.ts';
+import {FRAGMENT} from '../src/glass-shader.ts';
+import {LAG_RATE, LEAD_RATE, advanceThumb, stepThumb, thumbSettled, type GlassThumb} from '../src/glass-thumb.ts';
 
 type Fake = {dataset: Record<string, string>; radius: string; box: {left: number; top: number; width: number; height: number}; shown?: boolean};
 const element = (id: string, left: number, top: number, width = 220, height = 220, radius = '34px'): Fake => ({dataset: {glassPanel: id}, radius, box: {left, top, width, height}});
 /** A root whose querySelectorAll returns fake marked elements; getComputedStyle reads their radius. */
-function page(panels: Fake[], veils: Fake[] = []): ParentNode {
+function page(panels: Fake[], veils: Fake[] = [], thumbs: Fake[] = []): ParentNode {
   const wrap = (fake: Fake): unknown => ({dataset: fake.dataset, radius: fake.radius, getBoundingClientRect: () => fake.box, checkVisibility: () => fake.shown !== false});
   (globalThis as {getComputedStyle?: unknown}).getComputedStyle = (node: {radius: string}) => ({getPropertyValue: () => node.radius});
-  return {querySelectorAll: (selector: string) => (selector === '[data-glass-panel]' ? panels : veils).map(wrap)} as unknown as ParentNode;
+  return {querySelectorAll: (selector: string) => (selector === '[data-glass-panel]' ? panels : selector === '[data-glass-thumb]' ? thumbs : veils).map(wrap)} as unknown as ParentNode;
 }
 const viewport = {width: 1440, height: 900};
 const veil = (left: number, top: number, width: number, height: number, extra: Partial<Fake> = {}, mark = ''): Fake => ({dataset: {glassVeil: mark}, radius: '', box: {left, top, width, height}, ...extra});
@@ -37,12 +39,49 @@ void test('the scene is capped at Home\'s placement limit', () => {
 });
 
 void test('a read that moves nothing compares equal, so it draws no frame', () => {
-  const scene = (x: number, radius = 34): GlassScene => ({panels: [{id: 'a', rect: {x, y: 0, width: 220, height: 220}, radius}], veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: false}]});
+  const scene = (x: number, radius = 34): GlassScene => ({panels: [{id: 'a', rect: {x, y: 0, width: 220, height: 220}, radius}], veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: false}], thumb: {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'work'}});
   assert.equal(sameScene(scene(10), scene(10.1)), true, 'subpixel noise is not a change');
   assert.equal(sameScene(scene(10), scene(11)), false, 'a moved box is');
   assert.equal(sameScene(scene(10), scene(10, 20)), false, 'a new radius is');
   assert.equal(sameScene(scene(10), {...scene(10), veils: []}), false, 'a removed veil is');
   assert.equal(sameScene(scene(10), {...scene(10), veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: true}]}), false, 'a veil that changes its edge is');
+  assert.equal(sameScene(scene(10), {...scene(10), thumb: {rect: {x: 90, y: 300, width: 90, height: 40}, key: 'free'}}), false, 'a thumb that moves to the next segment is');
+  assert.equal(sameScene(scene(10), {...scene(10), thumb: {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'free'}}), false, 'another segment in the same place is');
+  assert.equal(sameScene(scene(10), {...scene(10), thumb: null}), false, 'a thumb that goes is');
+});
+
+// #1930: the hub mode switch's thumb.
+void test('the scene holds the first marked thumb in view with its segment, or none', () => {
+  const thumb = (left: number, key: string, top = 300): Fake => ({dataset: {glassThumb: key}, radius: '', box: {left, top, width: 90, height: 40}});
+  assert.deepEqual(readScene(page([], [], [thumb(0, 'work', 2000), thumb(100, 'free')]), page([]), viewport).thumb, {rect: {x: 100, y: 300, width: 90, height: 40}, key: 'free'});
+  assert.equal(readScene(page([]), page([]), viewport).thumb, null);
+});
+
+void test('the thumb travels on a time base when another segment is selected, stretching as its fast capsule leads, and then rests', () => {
+  const from = {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'work'}, to = {rect: {x: 180, y: 300, width: 90, height: 40}, key: 'quiet'};
+  // The reference's 30% and 12% per frame at 60 frames a second.
+  assert.equal(Math.round((1 - Math.exp(-LEAD_RATE / 60)) * 1000), 300);assert.equal(Math.round((1 - Math.exp(-LAG_RATE / 60)) * 1000), 120);
+  const start = stepThumb(null, from, 1 / 60, false);
+  assert.deepEqual(start, {lead: [0, 300, 90, 40], lag: [0, 300, 90, 40], key: 'work', target: [0, 300, 90, 40]}, 'a new thumb sits on its segment');
+  assert.equal(thumbSettled(start, from), true);
+  const first = stepThumb(start, to, 1 / 60, false);
+  assert.ok(first !== null && Math.abs(first.lead[0] - 54) < 0.01 && Math.abs(first.lag[0] - 21.6) < 0.01, `one frame moves the capsules 30% and 12%: ${JSON.stringify(first)}`);
+  // Two half frames cover the same distance as one whole frame: the speed does not depend on the refresh rate.
+  const halves = stepThumb(stepThumb(start, to, 1 / 120, false), to, 1 / 120, false);
+  assert.ok(halves !== null && Math.abs(halves.lead[0] - 54) < 0.01 && Math.abs(halves.lag[0] - 21.6) < 0.01);
+  let thumb: GlassThumb | null = first, seconds = 1 / 60;
+  while (!thumbSettled(thumb, to)) {thumb = stepThumb(thumb, to, 1 / 60, false);seconds += 1 / 60;assert.ok(seconds < 2, 'the thumb comes to rest');}
+  assert.deepEqual(thumb, {lead: [180, 300, 90, 40], lag: [180, 300, 90, 40], key: 'quiet', target: [180, 300, 90, 40]});
+  assert.ok(seconds > 0.3 && seconds < 1.2, `it settles in under a second and a quarter: ${String(seconds)}`);
+  // A resize or a repack that moves the resting segment moves the thumb with it in one step, so it draws one frame.
+  const moved = {rect: {x: 400, y: 320, width: 100, height: 40}, key: 'quiet'};
+  assert.deepEqual(stepThumb(thumb, moved, 1 / 60, false), {lead: [400, 320, 100, 40], lag: [400, 320, 100, 40], key: 'quiet', target: [400, 320, 100, 40]});
+  // While it travels, a moved goal keeps the travel going toward its new box.
+  const travelling = stepThumb(first, {...to, rect: {...to.rect, x: 300}}, 1 / 60, false);
+  assert.ok(travelling !== null && travelling.lead[0] > (first?.lead[0] ?? 0) && travelling.lead[0] < 300, 'the travel continues to the moved segment');
+  assert.deepEqual(stepThumb(start, to, 1 / 60, true), {lead: [180, 300, 90, 40], lag: [180, 300, 90, 40], key: 'quiet', target: [180, 300, 90, 40]}, 'reduced motion jumps');
+  assert.equal(stepThumb(start, null, 1 / 60, false), null, 'no segment, no thumb');
+  assert.equal(thumbSettled(null, null), true);
 });
 
 void test('computed colors parse into channels and an amount', () => {
@@ -51,4 +90,32 @@ void test('computed colors parse into channels and an amount', () => {
   assert.deepEqual(parseColor(''), [0, 0, 0, 1], 'a missing token reads as black');
   assert.equal(Math.round(luminance(parseColor('rgb(255, 255, 255)')) * 1000), 1000);
   assert.equal(Math.round(luminance(parseColor('rgb(83, 97, 122)')) * 1000), 118, 'the light skin\'s faintest text');
+});
+
+// #1930: in software WebGL the page's main thread waits for every frame, and the veil loop runs for every pixel. The
+// need for a veil is the same for every veil at a pixel, so it is worked out once, after the loop, not once per veil.
+void test('the veil loop only finds the strongest mask; the costly need is worked out once per pixel', () => {
+  const loop = /for \(int i = 0; i < \d+; i\+\+\)\{ if \(i >= uVeilCount\) break;([\s\S]*?)\}\n/.exec(FRAGMENT)?.[1];
+  assert.ok(loop !== undefined, 'the veil loop is found');
+  assert.doesNotMatch(loop, /needed|backdrop|art\(/, 'nothing per veil samples the artwork or works out a need');
+  assert.match(FRAGMENT, /if \(mask > 0\.\) col = veiled\(col, mask \* max\(needed\(col\)/);
+});
+
+void test('a frame at the same time as the last moves the thumb nothing but keeps it travelling, so it never stalls', () => {
+  const from = {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'work'}, to = {rect: {x: 180, y: 300, width: 90, height: 40}, key: 'quiet'};
+  const start = advanceThumb(null, -1, from, 1000, false);
+  assert.deepEqual({moved: start.moved, travelling: start.travelling, at: start.at}, {moved: true, travelling: false, at: -1}, 'a new thumb lands at once');
+  const first = advanceThumb(start.thumb, start.at, to, 2000, false);
+  assert.equal(first.moved, true);assert.equal(first.travelling, true);assert.equal(first.at, 2000);
+  const zero = advanceThumb(first.thumb, first.at, to, 2000, false);
+  assert.deepEqual({moved: zero.moved, travelling: zero.travelling, at: zero.at}, {moved: false, travelling: true, at: 2000}, 'a zero-length step asks for another frame');
+  assert.deepEqual(zero.thumb, first.thumb);
+  // Frames keep coming until the thumb lands; then it rests and asks for none.
+  let frame = zero, now = 2000;
+  while (frame.travelling) {now += 16;frame = advanceThumb(frame.thumb, frame.at, to, now, false);assert.ok(now < 4000, 'the thumb lands');}
+  assert.equal(thumbSettled(frame.thumb, to), true);assert.equal(frame.at, -1);
+  assert.deepEqual(advanceThumb(frame.thumb, frame.at, to, now + 16, false), {thumb: frame.thumb, at: -1, moved: false, travelling: false});
+  // A clock that runs backwards never steps backwards.
+  const back = advanceThumb(first.thumb, first.at, to, 1990, false);
+  assert.equal(back.moved, false);assert.equal(back.travelling, true);
 });

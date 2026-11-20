@@ -95,7 +95,7 @@ try {
     await expect(draftName).toBeHidden();
     assert.equal(writes.length, explicit, 'draft typing, tabs, cancel and reconnect do not mutate or replay');
     await (await destinationLink(page, /Home/)).click();
-    const mode = page.locator('[data-widget="hub-mode"]');
+    const mode = page.locator('[data-hub-mode]');
     await mode.getByRole('button', {name: 'Work', exact: true}).click();
     await mode.getByText('Selection completed. Device results are separate.', {exact: true}).waitFor();
     await world.observe(sessionStarted, {title: {value: 'Automation fixture', source: 'provider'}}); await world.observe(turnStarted);

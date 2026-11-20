@@ -11,7 +11,7 @@ const world = await startWorld({lighting: true, pixooPages: true, tidbyt: true, 
 const browser = await chromium.launch({headless: true});
 const receipts = process.env.DASHBOARD_RECEIPTS;
 const frames = [
-  ['Hub mode', '.widget[data-widget="hub-mode"]'], ['Inbox', '.widget[data-widget="inbox"]'],
+  ['Inbox', '.widget[data-widget="inbox"]'],
   ['Agent status', '.widget[data-widget="sessions"]'], ['Timeline', '.widget[data-widget="timeline"]'],
   ['MicroDuck', '.widget[data-widget="duck-latest"]'], ['Lights', '.light-card:not(.pixoo-card):not(.tidbyt-card)'],
   ['Room', '[data-home-card="light:room:studio"] .light-card'], ['Pixoo', '.pixoo-card'], ['Tidbyt', '.tidbyt-card'],

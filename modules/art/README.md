@@ -203,7 +203,10 @@ or a fresh weather observation, the art says nothing about weather.
 
 ## Browser gallery and Home art
 
-The module's `./frontend` entry supplies the Art Gallery page and Home widget.
+The module's `./frontend` entry supplies the Art Gallery page, the Art widget,
+Home's backdrop source and Home's forecast chip. The runtime shell's Clear Home
+(Hub #1930) shows no Art widget: the presented art is its backdrop and the
+widget's controls are chips in its hero.
 They share the shell's authenticated module scope and SDK connection. The gallery
 reads the paginated private catalog, requests owner art or variations, saves
 favorites and records explicit feedback through `art-catalog-edit`. Opening a
@@ -231,8 +234,8 @@ The Home widget follows the owner's exact browser selection, including selected
 art outside the recent state window. With no selection, it keeps the latest-art
 fallback. Authenticated artwork metadata and image bytes must both match the
 selected identity; obsolete or failed reads cannot select a newer image instead.
-Gallery browsing retains its own local manual choice. Home pinning reserves
-layout space and is not a pin on an artwork.
+Gallery browsing retains its own local manual choice. Home pinning is a flag on
+the Home arrangement, not a pin on an artwork.
 
 Browser compositions use the rich still rendition. Bytes must match its declared
 size and media type and decode to its declared dimensions before replacing the
@@ -269,12 +272,20 @@ The shell reports the rendition it has drawn with `useShowArtBackdrop`, or
 `null` when it draws none. `useArtPresentation` combines that evidence with
 the visible widget's, so one surface going idle does not erase the other's.
 
-The existing core Home owner stores optional art shape and pin metadata. A pinned
-art row reserves space independently of image arrival. Unpinned art uses only
-unused viewport space after functional cards, and disappears when no complete
-bounded shape fits. Pointer/focus interaction freezes automatic placement.
-Dismiss/restore concern that widget placement; they do not submit dislike
-feedback. Gallery favorites are distinct from Home pinning.
+`PresentedArtNotice` is the forecast notice as a compact chip for the shell
+(Hub #1930). It reads the combined presentation evidence, so it binds to the
+artwork the page presents, the visible widget's or the backdrop rendition the
+shell reports drawn, under the same rules as the widget's notice: only after the
+opportunity's browser selection succeeded, only from its start, and only until it
+expires. It states the notice in the widget's words; its kind and its separation
+from the artwork are in its accessible text and title. Given `href`, it is a link,
+so it takes keyboard focus.
+
+The existing core Home owner stores optional art shape, pin and dismissal
+metadata. The shell's hero chips change the pin and the dismissal; a dismissed
+art placement leaves Home without its backdrop. Dismiss and restore concern that
+placement; they do not submit dislike feedback. Gallery favorites are distinct
+from Home pinning.
 
 ## Checks
 

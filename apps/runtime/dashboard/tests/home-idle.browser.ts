@@ -17,8 +17,9 @@ const storedSize = {square: 'small', tall: 'small', wide: 'medium', 'large-squar
 const placement = (widget: string, shape: HomeShape): HomePlacement => ({widget, size: storedSize[shape], hidden: false, shape});
 const layouts: readonly {name: string; desktop?: HomePlacement[]}[] = [
   {name: 'built-in'},
-  {name: 'mixed-a', desktop: [placement('hub-mode', 'wide'), placement('inbox', 'tall'), placement('sessions', 'large-square'), placement('timeline', 'tall')]},
-  {name: 'mixed-b', desktop: [placement('inbox', 'large-square'), placement('timeline', 'large-square'), placement('sessions', 'tall'), placement('hub-mode', 'square')]},
+  // The Hub mode is Home's hero (#1930), not a card; the music visualizer takes its shapes in the mixed layouts.
+  {name: 'mixed-a', desktop: [placement('music-visualizer', 'wide'), placement('inbox', 'tall'), placement('sessions', 'large-square'), placement('timeline', 'tall')]},
+  {name: 'mixed-b', desktop: [placement('inbox', 'large-square'), placement('timeline', 'large-square'), placement('sessions', 'tall'), placement('music-visualizer', 'square')]},
 ];
 
 async function settle(page: Page): Promise<void> {
@@ -33,7 +34,7 @@ async function save(page: Page, desktop: HomePlacement[]): Promise<void> {
     return (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
       body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record.revision, layouts: {desktop, phone: desktop}}})})).status;
   }, desktop), 200);
-  await expect.poll(() => page.locator('.home-layout-grid > [data-home-card]:not([data-art-placement=automatic])').evaluateAll(nodes => nodes.map(node => `${(node as HTMLElement).dataset.homeCard ?? ''}=${(node as HTMLElement).dataset.homeShape ?? ''}`)))
+  await expect.poll(() => page.locator('.home-layout-grid > [data-home-card]').evaluateAll(nodes => nodes.map(node => `${(node as HTMLElement).dataset.homeCard ?? ''}=${(node as HTMLElement).dataset.homeShape ?? ''}`)))
     .toEqual(desktop.map(entry => `${entry.widget}=${entry.shape ?? ''}`));
 }
 const browser = await chromium.launch({headless: true});
