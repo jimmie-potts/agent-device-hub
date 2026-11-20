@@ -137,7 +137,8 @@ the shell, so there the field and the button are the way in.
 The Devices row (#1889) opens a menu of the hardware the directory lists
 (#1950): Displays in one column, Lighting and Appliances in the second, under a
 head with its own close button, with **All devices** kept at its foot while the
-lists scroll. Beside the rail it opens level with the Devices row. Pixoo and
+lists scroll. Beside the rail it opens level with the Devices row and moves up,
+no closer than 8px to the window's top, when it would not fit under it. Pixoo and
 Tidbyt have one entry each. Nanoleaf and LIFX are disclosures over their lights
 and their overview; they start collapsed, and the one that holds the open page
 starts expanded. A module with several devices is a heading over them, and one

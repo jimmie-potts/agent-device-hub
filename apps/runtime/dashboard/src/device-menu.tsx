@@ -93,10 +93,14 @@ export function DeviceMenu({id, runtime, pins, route, row, onClose, onDropped}: 
     const menu = root.current, top = row.current?.getBoundingClientRect().top;
     if (menu === null || top === undefined || PHONE.matches) return;
     menu.style.maxBlockSize = 'none';
+    // Where the menu's top is measured from: the window, or the rail when the rail is frosted over the glass layer,
+    // since a backdrop filter makes it the containing block, and a short window scrolls it with the page.
+    menu.style.insetBlockStart = '0px';
+    const origin = Math.round(menu.getBoundingClientRect().top);
     // The box's own height, not its drawn one: the menu slides in at a slightly smaller scale.
     const natural = menu.offsetHeight;
     const at = Math.round(Math.max(8, Math.min(top, innerHeight - natural - 8)));
-    menu.style.insetBlockStart = `${String(at)}px`;
+    menu.style.insetBlockStart = `${String(at - origin)}px`;
     menu.style.maxBlockSize = `calc(100dvh - ${String(at + 8)}px)`;
   }, [row, expanded]);
   const here = routeHash(route);
