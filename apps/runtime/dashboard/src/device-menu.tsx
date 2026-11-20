@@ -86,15 +86,19 @@ export function DeviceMenu({id, runtime, pins, route, row, onClose, onDropped}: 
       document.removeEventListener('focusin', moved);
     };
   }, [row]);
-  // Beside the rail the menu opens level with the Devices row, as the prototype's does, no lower than two fifths of the
-  // window, and no taller than the room under it. Over the phone drawer the stylesheet places it.
+  // Beside the rail the menu opens level with the Devices row, as the prototype's does. When its whole height does not
+  // fit under the row it moves up until it does, and no higher than 8px from the window's top; only then do its lists
+  // scroll. It is placed again when a brand opens or closes. Over the phone drawer the stylesheet places it.
   useLayoutEffect(() => {
     const menu = root.current, top = row.current?.getBoundingClientRect().top;
     if (menu === null || top === undefined || PHONE.matches) return;
-    const at = Math.round(Math.min(Math.max(8, top), innerHeight * .4));
+    menu.style.maxBlockSize = 'none';
+    // The box's own height, not its drawn one: the menu slides in at a slightly smaller scale.
+    const natural = menu.offsetHeight;
+    const at = Math.round(Math.max(8, Math.min(top, innerHeight - natural - 8)));
     menu.style.insetBlockStart = `${String(at)}px`;
     menu.style.maxBlockSize = `calc(100dvh - ${String(at + 8)}px)`;
-  }, [row]);
+  }, [row, expanded]);
   const here = routeHash(route);
   const link = (label: string, to: Route, className: string): React.JSX.Element => {
     const hash = routeHash(to);

@@ -992,12 +992,18 @@ with `openAudio` and a page outside the hardware inventory with `jumpTo`.
 on the glass layer with SwiftShader, as `home-glass.browser.ts` does for Home:
 every card's glass follows its box at 1440, 390 and 320px and after scrolling,
 the card surfaces are clear, nothing draws at rest, a window resize draws one
-frame and software rendering stays under about a million pixels, the visible veils stay few,
-text over the layer keeps 4.5:1 at 1440px in light and dark (the phone widths'
-lowest values are recorded), the popout keeps its fill, leaving releases the
-layer, and with WebGL 2 missing or a lost context the Quiet glass panels stay
-and the menu, directory, display tabs and Companions links work, sending no
-command. With `DASHBOARD_RECEIPTS` set it writes private screenshots.
+frame and software rendering stays under about a million pixels, the visible
+veils stay few, text over the layer keeps 4.5:1 at 1440, 390 and 320px in light
+and dark, the popout keeps its fill, the directory, Companions (also after a
+reload) and Home opened from the phone drawer look the same after a redraw from
+scratch at rest, leaving releases the layer, and with WebGL 2 missing or a lost
+context the Quiet glass panels stay and the menu, directory, display tabs and
+Companions links work, sending no command. Its contrast samples only glyph
+pixels: the page is captured with its text and again with the text transparent,
+and a pixel counts where the two differ, measured against the capture without
+text, so an empty line-box row over something else, such as an artwork's
+shadow, is not taken for text. With `DASHBOARD_RECEIPTS` set it writes private
+screenshots.
 
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`

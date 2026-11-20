@@ -170,8 +170,20 @@ try {
   await page.locator('.shell>aside').waitFor({state: 'hidden'});
   await page.setViewportSize({width: 1440, height: 1000});
   // In a window too short for the menu, it stays inside the window and scrolls.
+  // A menu that does not fit under the Devices row moves up until it does (#1950): at 900 by 560 beside the icon rail
+  // the whole menu fits, so its lists do not scroll.
+  await page.setViewportSize({width: 900, height: 560});
+  await devices.click(); await menu.waitFor();
+  await settled();
+  assert.deepEqual(await page.locator('.device-menu').evaluate(element => {
+    const box = element.getBoundingClientRect(), lists = element.querySelector('.device-menu-scroll'), row = document.querySelector('.rail-devices')?.getBoundingClientRect();
+    return {inWindow: box.top >= 8 && box.bottom <= innerHeight - 7, scrolls: lists !== null && lists.scrollHeight > lists.clientHeight + 1, movedUp: row !== undefined && box.top < row.top};
+  }), {inWindow: true, scrolls: false, movedUp: true}, 'the menu moves up to fit the window instead of scrolling its lists');
+  await page.keyboard.press('Escape'); await menu.waitFor({state: 'detached'});
+  // In a window too short for the whole menu with both brands open, it starts 8px from the top and its lists scroll.
   await page.setViewportSize({width: 1024, height: 420});
   await devices.click(); await menu.waitFor();
+  for (const brand of ['LIFX', 'Nanoleaf']) if (await brandToggle(brand).getAttribute('aria-expanded') !== 'true') await brandToggle(brand).click();
   await settled();
   assert.deepEqual(await page.locator('.device-menu').evaluate(element => {
     const box = element.getBoundingClientRect(), rail = document.querySelector('.shell>aside')?.getBoundingClientRect();
@@ -179,6 +191,7 @@ try {
     return {beside: rail !== undefined && Math.round(rail.width) === 64 && box.left >= rail.right, inWindow: box.top >= 0 && box.bottom <= innerHeight && box.right <= innerWidth,
       scrolls: lists !== null && lists.scrollHeight > lists.clientHeight};
   }), {beside: true, inWindow: true, scrolls: true}, 'beside the icon rail in a short window the menu stays in the window and its lists scroll');
+  assert.equal(await page.locator('.device-menu').evaluate(element => Math.round(element.getBoundingClientRect().top)), 8, 'it starts 8px from the window\'s top');
   await page.keyboard.press('End');
   assert.equal(await menu.getByRole('menuitem', {name: 'All devices', exact: true}).evaluate(element => element.getBoundingClientRect().bottom <= innerHeight), true, 'the keys bring the last item into view');
   await devices.hover();
@@ -325,7 +338,12 @@ try {
     await chooseConversation(page, profile);
     assert.equal(await (await conversationLink(page, profile)).getAttribute('aria-current'), 'page', `the ${profile} conversation opens from the rail`);
   }
-  checks.push('Companions opens from the rail and links Habitat and the companion features; old Habitat bookmarks select it; the conversations stay in the rail');
+  // A page of a module that is not hardware is under Home, not Devices, and names Home as its parent.
+  await jumpTo(page, 'passive fixture', 'editor-fixture · Passive fixture');
+  await page.frameLocator('iframe.module-page').getByRole('heading', {name: 'Passive preview', exact: true}).waitFor();
+  assert.deepEqual([await primary.getByRole('link', {name: 'Home', exact: true}).getAttribute('aria-current'), await devices.getAttribute('aria-current'),
+    await page.getByRole('navigation', {name: 'Breadcrumb', exact: true}).getByRole('link').textContent()], ['page', null, 'Home'], 'a page outside the hardware inventory selects Home');
+  checks.push('Companions opens from the rail and links Habitat and the companion features; old Habitat bookmarks select it; the conversations stay in the rail; pages outside the hardware inventory select Home');
 
   // A page under Devices: the row is marked lightly, and the open page is a temporary row with a pin button.
   await choose('LIFX overview', 'LIFX');

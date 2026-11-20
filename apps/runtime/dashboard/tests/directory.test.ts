@@ -1,7 +1,7 @@
 // The hardware inventory (Hub #1950): configured hardware only, by category, with each brand's lights under it.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {directoryEntries, type DirectoryEntry} from '../src/directory.ts';
+import {directoryEntries, hardwareModule, type DirectoryEntry} from '../src/directory.ts';
 import type {RuntimeData} from '../src/runtime-feeds.ts';
 import {routeHash} from '../src/routes.ts';
 import {hardwareRuntime} from './hardware-fixture.ts';
@@ -38,4 +38,10 @@ void test('a lighting brand keeps its overview while its lights have no records'
   const runtime: RuntimeData = {control: true, catalogFailed: false, copies: [], modules: [{name: 'nanoleaf', state: 'running', serves: ['device'],
     pages: [{id: 'wall', title: 'Wall', path: '/modules/nanoleaf/wall', presentation: 'react'}]}]};
   assert.deepEqual(lines(directoryEntries(runtime)), ['Lighting Nanoleaf <0 lights>: Nanoleaf overview #/lights/nanoleaf'], 'the overview stands in for the lights, and the task page stays inside it');
+});
+
+void test('the shell asks which modules are hardware to place their pages', () => {
+  const hardware = hardwareModule(hardwareRuntime);
+  assert.deepEqual(['pixoo', 'nanoleaf', 'microduck', 'art', 'wispr', 'companions', 'not-listed'].map(hardware), [true, true, true, false, false, false, true],
+    'a module the catalog does not list stays under Devices until it is known');
 });

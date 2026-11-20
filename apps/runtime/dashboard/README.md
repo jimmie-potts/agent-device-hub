@@ -97,7 +97,8 @@ a card that opens its overview with its lights directly under it. A module is
 hardware when it serves or holds device records or is a known hardware module,
 so a module that is down keeps its card and its state. Companion features,
 Audio, art, Wispr and test fixtures are not listed; the jump palette and the
-pins still reach them. Task pages stay inside the device pages as tabs. Devices
+pins still reach them, and the page of a module that is not hardware selects
+Home, whose cards reach it, and names Home as its parent. Task pages stay inside the device pages as tabs. Devices
 are named by the label their record publishes, then by the Nanoleaf kind (Lines
 or Panels) the module observes, then by their ID read as words
 (`device-names.ts`). Unavailable catalog or observation evidence stays explicit.

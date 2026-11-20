@@ -48,6 +48,11 @@ void test('nested routes select their containing destination, without treating a
   // Audio and the music pages are under Home, and the companions module's pages under Companions (Hub #1950).
   for (const hash of ['#/timeline', '#/audio', '#/audio/visualizer', '#/music/player']) assert.equal(navigationDestination(parseRoute(hash)), 'home', hash);
   for (const hash of ['#/companions', '#/habitat', '#/module/companions/preferences', '#/module/companions/assistant']) assert.equal(navigationDestination(parseRoute(hash)), 'companions', hash);
+  // A module that is not hardware has its pages under Home, whose cards reach them; a hardware module's stay under Devices.
+  const hardware = (module: string): boolean => module !== 'art' && module !== 'wispr';
+  for (const hash of ['#/module/art/gallery', '#/module/wispr/analytics']) assert.equal(navigationDestination(parseRoute(hash), hardware), 'home', hash);
+  assert.equal(navigationDestination(parseRoute('#/module/pixoo/monitor'), hardware), 'devices');
+  assert.equal(navigationDestination(parseRoute('#/module/companions/knowledge'), hardware), 'companions');
   assert.equal(navigationDestination(parseRoute('#/rooms')), 'rooms');
   assert.equal(navigationDestination(parseRoute('#/automation')), 'automation');
   assert.equal(navigationDestination(parseRoute('#/connections')), 'settings');

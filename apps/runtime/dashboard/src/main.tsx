@@ -12,6 +12,7 @@ import {FeatureNavigation, ShellBreadcrumb} from './feature-navigation.tsx';
 import {displayTitle, isDisplayPage} from './feature-navigation.ts';
 import {useGlassPage} from './glass-page.tsx';
 import {CompanionsPage} from './companions-page.tsx';
+import {hardwareModule} from './directory.ts';
 import {nameOf} from './device-names.ts';
 import {JumpPalette} from './jump-palette.tsx';
 import {DeviceMenu, type DeviceMenuClose} from './device-menu.tsx';
@@ -429,7 +430,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       </div>
       <button type="button" className="secondary rail-jump" aria-label="Jump to a page" aria-haspopup="dialog" title="Jump to a page" onClick={openJump}>
         <RailIcon name="search"/><span className="rail-text">Jump to…</span><kbd>{jumpKey}</kbd></button>
-      <ShellNavigation route={route} ownRow={pinnable.has(address) || (workspace && conversations)} devices={{open: menu, menuId: 'devices-menu', button: devicesRow,
+      <ShellNavigation route={route} hardware={hardwareModule(runtime)} ownRow={pinnable.has(address) || (workspace && conversations)} devices={{open: menu, menuId: 'devices-menu', button: devicesRow,
         toggle: () => { if (menu) closeMenu('row'); else setMenu(true); }, show: () => { setMenu(true); }}}/>
       <PinnedPages route={route} fallback={devicesRow}/>
       {conversations && <div className="rail-conversations"><ModuleFrontend module="companions" connection={connection} connected={state.feed === 'connected' && !runtime.catalogFailed}

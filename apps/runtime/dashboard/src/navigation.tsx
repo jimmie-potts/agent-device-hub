@@ -52,8 +52,8 @@ export type DevicesRow = {open: boolean; menuId: string; button: React.RefObject
  * the open page has its own row in the rail (`ownRow`), among the pinned pages or the conversations, the mark is drawn
  * lightly, so the rail boxes one row; a page with no row of its own leaves the box on its destination.
  */
-export function ShellNavigation({route, ownRow, devices}: {route: Route; ownRow: boolean; devices: DevicesRow}): React.JSX.Element {
-  const destination = navigationDestination(route);
+export function ShellNavigation({route, ownRow, devices, hardware}: {route: Route; ownRow: boolean; devices: DevicesRow; hardware: (module: string) => boolean}): React.JSX.Element {
+  const destination = navigationDestination(route, hardware);
   const ancestor = (kind: string): '' | undefined => destination === kind && ownRow && routeHash(route) !== routeHash({kind}) ? '' : undefined;
   return <nav className="primary-navigation" aria-label="Main navigation">
     {([['home', 'Home'], ['companions', 'Companions'], ['rooms', 'Rooms'], ['devices', 'Devices'], ['automation', 'Automation']] as const).map(([kind, label]) => kind === 'devices'

@@ -1,7 +1,8 @@
 // The shared glass layer (#1929) on the Devices directory, the Companions overview and the display pages (Hub #1950),
 // on a disposable synthetic runtime: no installed service or device. Headless Chromium draws WebGL 2 with SwiftShader.
 // The pages draw the Quiet glass wash with no artwork and no fusing. The journey checks that every card's glass follows
-// its box, that nothing draws at rest, that text on the wash and on the glass keeps 4.5:1 in light and dark, that
+// its box, that nothing draws at rest, that text on the wash and on the glass keeps 4.5:1 in light and dark at 1440,
+// 390 and 320px, that a page opened from the phone drawer is drawn as it rests, that
 // the veils stay few, and that WebGL 2 missing or a lost context leaves the Quiet glass panels with every control
 // working. Nothing here sends a command. With DASHBOARD_RECEIPTS set it writes private screenshots.
 import assert from 'node:assert/strict';
@@ -79,9 +80,12 @@ async function shot(page: Page, name: string): Promise<void> {
 }
 
 /**
- * The lowest contrast between any text drawn over the layer and the pixels behind it, as Home's glass journey measures
- * it: every visible text node in the page whose ancestors up to the page are all see-through. Text on a fill of its
- * own is skipped. The text is made transparent for the screenshot, which changes no box.
+ * The lowest contrast between any text drawn over the layer and the pixels behind its glyphs. The text runs are found
+ * as Home's glass journey finds them: every visible text node in the page whose ancestors up to the page are all
+ * see-through; text on a fill of its own is skipped. The page is captured with the text and again with the text made
+ * transparent, which changes no box. A pixel of a run is a glyph pixel when the two captures differ there, and only
+ * those pixels are measured, against the capture without the text: the empty rows of a line box can sit on something
+ * else, such as an artwork's drop shadow, that no letter is drawn over.
  */
 async function contrast(page: Page): Promise<{min: number; runs: number; worst: string}> {
   const runs = await page.evaluate(() => {
@@ -101,9 +105,10 @@ async function contrast(page: Page): Promise<{min: number; runs: number; worst: 
       }
       parent.dataset['glassMeasured'] = '';
     }
-    for (const element of main.querySelectorAll<HTMLElement>('[data-glass-measured]')) element.style.setProperty('color', 'transparent', 'important');
     return found;
   });
+  const inked = await sharp(await page.screenshot()).raw().toBuffer({resolveWithObject: true});
+  await page.evaluate(() => {for (const element of document.querySelectorAll<HTMLElement>('[data-glass-measured]')) element.style.setProperty('color', 'transparent', 'important');});
   const image = await sharp(await page.screenshot()).raw().toBuffer({resolveWithObject: true});
   await page.evaluate(() => {for (const element of document.querySelectorAll<HTMLElement>('[data-glass-measured]')) {element.style.removeProperty('color');delete element.dataset['glassMeasured'];}});
   const linear = (value: number): number => {const channel = value / 255;return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;};
@@ -113,6 +118,8 @@ async function contrast(page: Page): Promise<{min: number; runs: number; worst: 
     const [r = 0, g = 0, b = 0, a = 1] = [...run.color.matchAll(/\d+(\.\d+)?/g)].map(match => Number(match[0]));
     for (let y = Math.ceil(run.y); y < Math.floor(run.y + run.height); y += 1) for (let x = Math.ceil(run.x); x < Math.floor(run.x + run.width); x += 1) {
       const at = (y * info.width + x) * info.channels, [br = 0, bg = 0, bb = 0] = [data[at], data[at + 1], data[at + 2]];
+      const glyph = Math.abs((inked.data[at] ?? 0) - br) + Math.abs((inked.data[at + 1] ?? 0) - bg) + Math.abs((inked.data[at + 2] ?? 0) - bb) > 30;
+      if (!glyph) continue;
       const ink = luminance(br + (r - br) * a, bg + (g - bg) * a, bb + (b - bb) * a), ground = luminance(br, bg, bb);
       const ratio = (Math.max(ink, ground) + 0.05) / (Math.min(ink, ground) + 0.05);
       if (ratio < min) {min = ratio;worst = `"${run.text}" at ${String(x)},${String(y)} in ${run.color}`;}
@@ -149,7 +156,7 @@ async function controlsWork(page: Page, label: string): Promise<void> {
 const report: Record<string, unknown> = {journey: 'devices-glass', physical: false};
 try {
   // Every page draws the wash and its panels, follows them and rests; text keeps 4.5:1 in light and dark.
-  const contrasts: Record<string, number> = {}, phone: Record<string, string> = {};
+  const contrasts: Record<string, number> = {};
   for (const scheme of ['light', 'dark'] as const) {
     const context = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: scheme});
     const {page, sent, errors} = await open(context, PAGES[0].hash, PAGES[0].ready);
@@ -171,9 +178,9 @@ try {
       await shot(page, `1440-${scheme}-${target.name}`);
       for (const width of [390, 320]) {
         await page.setViewportSize({width, height: 844});await followsBoxes(page, `${label} at ${String(width)}px`);
-        // As on Home, the phone widths are recorded for the visual review; 4.5:1 is asserted at 1440px.
         const narrow = await contrast(page);
-        phone[`${label}/${String(width)}`] = `${narrow.min.toFixed(2)} ${narrow.worst}`;
+        contrasts[`${label}/${String(width)}`] = Math.round(narrow.min * 100) / 100;
+        assert.ok(narrow.min >= 4.5, `${label} at ${String(width)}px: text over the glass layer keeps 4.5:1 (lowest ${narrow.min.toFixed(2)}: ${narrow.worst})`);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${label} fits ${String(width)}px`);
         await shot(page, `${String(width)}-${scheme}-${target.name}`);
       }
@@ -204,7 +211,53 @@ try {
     assert.deepEqual(errors, []);
     await context.close();
   }
-  report['contrast'] = contrasts;report['phoneContrast'] = phone;
+  report['contrast'] = contrasts;
+
+  // A page opened from the phone drawer is drawn as it rests (#1950 review): the drawer, a veil, slides shut after the
+  // page has been read, so the layer must read it again once it has. A redraw from scratch at rest, through a lost and
+  // restored context, must change nothing. Home is checked the same way.
+  const drawer = await browser.newContext({viewport: {width: 390, height: 760}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'light'});
+  const phone = await open(drawer, '#/rooms', ready => ready.getByRole('region', {name: 'Rooms', exact: true}), 390, 760);
+  const redrawn = async (selector: string, root: string, label: string): Promise<void> => {
+    const canvas = phone.page.locator(selector);
+    await expect(phone.page.locator(root)).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
+    const count = (): Promise<number> => canvas.evaluate(node => Number((node as HTMLElement).dataset['glassFrames'] ?? 0));
+    let before = await count();
+    for (let attempt = 0; attempt < 120; attempt += 1) {await phone.page.waitForTimeout(500);const after = await count();if (after === before) break;before = after;}
+    const resting = await sharp(await phone.page.screenshot()).raw().toBuffer();
+    const lose = await canvas.evaluateHandle(node => (node as HTMLCanvasElement).getContext('webgl2')?.getExtension('WEBGL_lose_context') ?? null);
+    await lose.evaluate(extension => {extension?.loseContext();});
+    await expect(phone.page.locator(root)).toHaveAttribute('data-glass', 'quiet');
+    await lose.evaluate(extension => {extension?.restoreContext();});
+    await expect(phone.page.locator(root)).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
+    before = await count();
+    for (let attempt = 0; attempt < 120; attempt += 1) {await phone.page.waitForTimeout(500);const after = await count();if (after === before) break;before = after;}
+    const again = await sharp(await phone.page.screenshot()).raw().toBuffer();
+    let differing = 0;
+    for (let index = 0; index < resting.length; index += 3) if (Math.abs((resting[index] ?? 0) - (again[index] ?? 0)) + Math.abs((resting[index + 1] ?? 0) - (again[index + 1] ?? 0)) + Math.abs((resting[index + 2] ?? 0) - (again[index + 2] ?? 0)) > 20) differing += 1;
+    report[`fromDrawer/${label}`] = differing;
+    assert.ok(differing <= 20, `${label}: a redraw at rest changes nothing (${String(differing)} pixels changed)`);
+    await shot(phone.page, `390-light-${label}`);
+  };
+  const viaDrawer = async (choose: () => Promise<void>): Promise<void> => {
+    await phone.page.goto(`${world.url}/#/rooms`);await feed(phone.page, 'connected');await phone.page.getByRole('region', {name: 'Rooms', exact: true}).waitFor();
+    await phone.page.getByRole('button', {name: 'Open navigation', exact: true}).click();await phone.page.locator('.shell>aside').waitFor();
+    await choose();
+  };
+  const primary = phone.page.getByRole('navigation', {name: 'Main navigation', exact: true});
+  await viaDrawer(async () => {
+    await primary.getByRole('button', {name: 'Devices', exact: true}).click();
+    await phone.page.getByRole('menuitem', {name: 'All devices', exact: true}).click();await PAGES[0].ready(phone.page).waitFor();
+  });
+  await redrawn('#main > .glass-layer', '#main', 'directory-from-drawer');
+  await viaDrawer(async () => {await primary.getByRole('link', {name: 'Companions', exact: true}).click();await PAGES[1].ready(phone.page).waitFor();});
+  await redrawn('#main > .glass-layer', '#main', 'companions-from-drawer');
+  await phone.page.reload();await feed(phone.page, 'connected');await PAGES[1].ready(phone.page).waitFor();
+  await redrawn('#main > .glass-layer', '#main', 'companions-reloaded');
+  await viaDrawer(async () => {await primary.getByRole('link', {name: 'Home', exact: true}).click();await phone.page.getByRole('region', {name: 'Home', exact: true}).waitFor();});
+  await redrawn('.home-layout .glass-layer', '.home-layout', 'home-from-drawer');
+  assert.deepEqual(phone.sent, [], 'opening pages from the drawer and redrawing send no command');
+  assert.deepEqual(phone.errors, []);await drawer.close();
 
   // A forced context loss leaves Quiet glass panels that work, and a restored context draws again.
   const lost = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});

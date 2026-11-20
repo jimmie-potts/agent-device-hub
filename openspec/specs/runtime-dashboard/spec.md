@@ -278,11 +278,15 @@ The operator SHALL explicitly place logical playback cards in zero or more exist
 
 ### Requirement: Five primary destinations with retained page addresses
 
-The main navigation SHALL contain exactly Home, Companions, Rooms, Devices and Automation, in that order. Home, Companions, Rooms and Automation SHALL be links. Devices SHALL be a button that opens the Devices menu, and the menu's "All devices" entry SHALL be the link to the Devices directory at its existing address. Settings SHALL be a separate utility link reachable from every page, placed below the destinations at the bottom of the rail. Home SHALL link Timeline and Audio. Nested brand and component pages and the declared pages of every module other than companions SHALL select Devices as their containing destination; Timeline, Audio, the full-window visualizer and the Music source pages SHALL select Home; Habitat and the companions module's declared pages SHALL select Companions; Settings and Connections SHALL select the Settings utility. Existing Home aliases and Habitat, brand, component, playback, module, Audio, Connections and Timeline addresses SHALL remain valid, including component aliases that match a built-in page name. Navigation links SHALL preserve ordinary anchors, modified clicks and browser history.
+The main navigation SHALL contain exactly Home, Companions, Rooms, Devices and Automation, in that order. Home, Companions, Rooms and Automation SHALL be links. Devices SHALL be a button that opens the Devices menu, and the menu's "All devices" entry SHALL be the link to the Devices directory at its existing address. Settings SHALL be a separate utility link reachable from every page, placed below the destinations at the bottom of the rail. Home SHALL link Timeline and Audio. Nested brand and component pages and the declared pages of hardware modules SHALL select Devices as their containing destination; Timeline, Audio, the full-window visualizer, the Music source pages and the declared pages of a module that is neither hardware nor companions SHALL select Home, and such a module page SHALL name Home as its parent; Habitat and the companions module's declared pages SHALL select Companions; Settings and Connections SHALL select the Settings utility. Existing Home aliases and Habitat, brand, component, playback, module, Audio, Connections and Timeline addresses SHALL remain valid, including component aliases that match a built-in page name. Navigation links SHALL preserve ordinary anchors, modified clicks and browser history.
 
 #### Scenario: Open an existing bookmark
 - **WHEN** the operator opens a brand, module, component, Audio, Music or Habitat bookmark and uses back/forward navigation
 - **THEN** the existing page and guarded controls remain usable with its containing destination selected, and history restores the preceding address without replaying a command
+
+#### Scenario: A page outside the hardware inventory
+- **WHEN** the operator opens the Art Gallery or another page of a module that is not hardware, from Home, the jump palette, a pin or a bookmark
+- **THEN** Home is selected in the rail and named as the page's parent, and Devices is not
 
 #### Scenario: A component is named Devices
 - **WHEN** the operator opens `#/component/devices`, `#/component/settings` or an undeclared address
@@ -996,7 +1000,7 @@ The Devices menu, the directory, the jump palette, the pins and a device page's 
 
 ### Requirement: Devices, Companions and display pages on the shared glass layer
 
-The Devices directory, the Companions overview and the Pixoo and Tidbyt pages SHALL draw on the shared glass layer over the Quiet glass wash, with no artwork backdrop and no fusing of neighboring panels. Each directory card, each overview card, a display's device card and a display's module page SHALL be one glass panel, and text that sits on the wash outside a panel SHALL carry a veil. Text over the layer SHALL keep at least 4.5:1 contrast in light and dark appearance at desktop width. The layer SHALL draw nothing at rest. Without WebGL 2 or after a lost context the pages SHALL show their Quiet glass panels with every control working. The Devices popout SHALL keep its own fill over the layer. Leaving these pages SHALL release the layer.
+The Devices directory, the Companions overview and the Pixoo and Tidbyt pages SHALL draw on the shared glass layer over the Quiet glass wash, with no artwork backdrop and no fusing of neighboring panels. Each directory card, each overview card, a display's device card and a display's module page SHALL be one glass panel, and text that sits on the wash outside a panel SHALL carry a veil. Text over the layer SHALL keep at least 4.5:1 contrast in light and dark appearance. The layer SHALL draw nothing at rest. Without WebGL 2 or after a lost context the pages SHALL show their Quiet glass panels with every control working. The Devices popout SHALL keep its own fill over the layer. Leaving these pages SHALL release the layer.
 
 #### Scenario: Glass at rest
 - **WHEN** the operator opens the Devices directory, the Companions overview or a Pixoo or Tidbyt page in light or dark appearance

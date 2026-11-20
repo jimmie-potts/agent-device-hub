@@ -95,14 +95,16 @@ export type Destination = 'home' | 'companions' | 'rooms' | 'devices' | 'automat
 
 /**
  * The containing shell destination, independent of a component's alias or a module's page names. Audio and the music
- * pages are under Home, and Habitat and the companions module's pages under Companions (#1950); every other module
- * page is under Devices.
+ * pages are under Home, and Habitat and the companions module's pages under Companions (#1950). A hardware module's
+ * pages are under Devices; the pages of a module that is not hardware, such as the Art Gallery, are under Home, whose
+ * cards reach them. `hardware` says which a module is; without it, or for a module the shell does not know, its pages
+ * are under Devices.
  */
-export function navigationDestination(route: Route): Destination | undefined {
+export function navigationDestination(route: Route, hardware: (module: string) => boolean = () => true): Destination | undefined {
   switch (route.kind) {
     case 'home': case 'timeline': case 'audio': case 'visualizer': case 'playback': return 'home';
     case 'companions': case 'habitat': return 'companions';
-    case 'module': return route.module === 'companions' ? 'companions' : 'devices';
+    case 'module': return route.module === 'companions' ? 'companions' : hardware(route.module) ? 'devices' : 'home';
     case 'rooms': return 'rooms';
     case 'devices': case 'lighting-brand': case 'component': return 'devices';
     case 'automation': return 'automation';

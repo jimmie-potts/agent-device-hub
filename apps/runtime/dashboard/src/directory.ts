@@ -71,3 +71,9 @@ export function directoryEntries(runtime: RuntimeData): DirectoryEntry[] {
     return {id: module.name, label: moduleLabel(module.name), category, state: module.state, stale, ...(overview === undefined ? {} : {overview}), links, status, available};
   }).filter(entry => entry.overview !== undefined || entry.links.length > 0 || entry.state !== 'running' || entry.stale);
 }
+
+/** Whether the module of this name is hardware, for the shell's destinations; a module the catalog does not list counts as hardware. */
+export const hardwareModule = (runtime: RuntimeData) => (name: string): boolean => {
+  const module = runtime.modules?.find(entry => entry.name === name);
+  return module === undefined || isHardware(module, runtime);
+};
