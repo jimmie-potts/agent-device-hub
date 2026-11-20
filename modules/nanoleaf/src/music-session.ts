@@ -18,7 +18,7 @@ import {DeviceReadDeadline, ValueError} from './errors.js';
 import {finish, finishMusicControls, held, journal, journalRow, type End, type JournalRow, type Report, type Transact} from './journal.js';
 import type {Indication} from './line-projection.js';
 import {alerting, newerChoice, NEWER_CHOICES, type Admitted, type DeviceRead} from './moments.js';
-import {colorStateOf, restoreMusicBase, sameColorOf, selectionOf, selectionRead, type MusicBase} from './music-base.js';
+import {colorStateOf, confirmedMusicState, restoreMusicBase, sameColorOf, selectionOf, selectionRead, type MusicBase} from './music-base.js';
 import {MusicRenderer, type MusicRecipeV1} from './music-effects.js';
 import {musicBinding, MusicInput, type MusicInputLoss, type MusicBinding, type MusicClock, type MusicSample} from './music-input.js';
 import {readReactiveCatalog} from './music-presets.js';
@@ -448,6 +448,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     if (start !== undefined) finish(db, start, {kind: 'sent'}, report, now());
   });
   options.taken();
+  let statusCheck: 'clear' | 'missed' | 'failed' = 'clear';
 
   // An alert's or source loss's restoration writes are the module's own: no command waits on them, so a lost answer holds
   // nothing, as the worker's indicator paints.
@@ -483,7 +484,7 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
         }
         if (stopping() || stale()) throw new Cancelled();
         return result;
-      });
+      }, statusCheck !== 'clear');
       checkDeadline();
       return restored ? 'restored' : 'skipped';
     } catch (error) {
@@ -513,7 +514,6 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
   let reportedMisses = prepared?.evidence.missedCues;
   let reportedPause = false;
   let lastCheck = now();
-  let statusCheck: 'clear' | 'missed' | 'failed' = 'clear';
   for (;;) {
     // Check before sleeping as well as after. A backwards clock step during I/O must not be hidden by the next wait.
     if (stopping()) throw new Cancelled();
@@ -553,15 +553,15 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
     if (statusCheck === 'failed') return end('device', 'none', undefined, undefined, 'unavailable');
     if (now() - lastCheck >= EXTERNAL_CHECK_MS) {
       lastCheck = now();
-      let showing: boolean;
-      let listing: {select?: unknown};
+      let found: ReturnType<typeof selectionRead>;
       let state: {on?: {value?: unknown}; brightness?: {value?: unknown}} | undefined;
       try {
         // A scene chosen on the light leaves streaming, and the datagrams sent since cannot replace it: any selection other
         // than streaming, or an external brightness or power choice, is a manual takeover.
-        listing = await read('/effects') as {select?: unknown};
+        const listing = await read('/effects') as {select?: unknown};
+        found = selectionRead(listing);
+        if (statusCheck === 'missed' && found === undefined) return end('device', 'none', undefined, undefined, 'unavailable');
         state = listing.select === shown ? await read('/state') as {on?: {value?: unknown}; brightness?: {value?: unknown}} : undefined;
-        showing = state?.brightness?.value === freeBase.brightness && state.on?.value !== false;
       } catch (error) {
         deviceFailure(error);
         if (command.layout.kind !== 'panels' || !(error instanceof DeviceReadDeadline)) {
@@ -572,10 +572,15 @@ export async function playMusic(options: MusicPlayback): Promise<void> {
         unsent = undefined;
         continue;
       }
+      let showing = state?.brightness?.value === freeBase.brightness && state.on?.value !== false;
+      if (statusCheck === 'missed' && found?.selection === shown) {
+        const confirmed = confirmedMusicState(state);
+        if (confirmed === undefined) return end('device', 'none', undefined, undefined, 'unavailable');
+        showing = confirmed.on && confirmed.brightness === freeBase.brightness;
+      }
       statusCheck = 'clear';
       // The light's record keeps the selection this read found (#1614), with no request of its own, and what the `/state`
       // read beside it showed of the light's colour (#1777). That colour state is a diagnostic only: nothing here uses it.
-      const found = selectionRead(listing);
       const color = state === undefined ? undefined : colorStateOf(state);
       if (found !== undefined) await transact(report => { saveSelection(db, device, found, now(), report, color); });
       if (!showing) return end('manual', 'none');

@@ -1251,6 +1251,61 @@ for (const manual of [false, true]) {
   });
 }
 
+for (const label of ['missing power', 'nonboolean power', 'missing selection'] as const) {
+  test(`an NL22 status recovery with ${label} cannot restart frames`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      const checks: number[] = [];
+      world.onRead = endpoint => {
+        if (frameWrites(world).length === 0) return;
+        if (endpoint === '/effects') {
+          checks.push(world.now);
+          if (checks.length === 1) throw new DeviceReadDeadline();
+          if (checks.length === 2 && label === 'missing selection') world.selected = '';
+        }
+        if (endpoint === '/state' && checks.length === 2) {
+          world.stateAnswer = {value: {brightness: {value: 50}, ...(label === 'nonboolean power' ? {on: {value: 'on'}} : {})}};
+        }
+      };
+      await run(world, stopNl22After(30));
+      const [miss, recovery] = checks;
+      assert.ok(miss !== undefined && recovery !== undefined);
+      assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'unavailable'});
+      assert.ok(frameWrites(world).every(frame => frame.atMs < miss));
+      assert.deepEqual(sequence(world), ['stream']);
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+test('Stop during an NL22 status timeout skips restoration when the fresh state read omits power', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    let missedAt: number | undefined;
+    world.onRead = endpoint => {
+      if (endpoint !== '/state' || frameWrites(world).length === 0) return;
+      if (missedAt !== undefined) {
+        world.stateAnswer = {value: {brightness: {value: 50}}};
+        return;
+      }
+      missedAt = world.now;
+      transaction(world.db, () => admitMusicStop(world.db, world.target.device, {kind: 'music.stop', requestId: 'stop', generation: GENERATION},
+        world.now, world.now + 5000));
+      throw new DeviceReadDeadline();
+    };
+    await run(world, () => {});
+    const miss = missedAt;
+    assert.ok(miss !== undefined);
+    assert.deepEqual(ended(world), {reason: 'stopped', restoration: 'skipped'});
+    assert.equal(world.reads.filter(read => read.endpoint === '/state' && read.atMs >= miss).length, 2);
+    assert.ok(frameWrites(world).every(frame => frame.atMs < miss));
+    assert.deepEqual(sequence(world), ['stream']);
+  } finally {
+    world.db.close();
+  }
+});
+
 for (const [label, target, failure] of [
   ['a Lines status deadline', LINES_TARGET, new DeviceReadDeadline()],
   ['an answered Panels status read failure', PANELS_TARGET, new HttpError(503)],

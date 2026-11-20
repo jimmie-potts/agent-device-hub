@@ -2,7 +2,7 @@
 
 ### Requirement: A single missed NL22 playback status check holds frames
 
-During live Music or saved-show playback on NL22 Light Panels, the module SHALL withhold datagrams after a scheduled ownership read exceeds its deadline. It SHALL use the existing check cadence and require a complete check before sending a current frame. Show position, cue accounting and source expiry SHALL continue under their existing clocks and rules. This behavior applies to NL22 playback status deadlines only.
+During live Music or saved-show playback on NL22 Light Panels, the module SHALL withhold datagrams after a scheduled ownership read exceeds its deadline. It SHALL use the existing check cadence and require explicit confirmation of the stream selection, power on and unchanged brightness before sending a current frame. Show position, cue accounting and source expiry SHALL continue under their existing clocks and rules. This behavior applies to NL22 playback status deadlines only.
 
 #### Scenario: The next scheduled check confirms ownership
 
@@ -18,8 +18,9 @@ During live Music or saved-show playback on NL22 Light Panels, the module SHALL 
 
 - **WHEN** Stop, alert, source loss, show completion or a newer choice ends the session during the hold
 - **THEN** the pending ending retains its existing priority and restoration guard, and no playback frames resume
+- **AND** any restoration requires a fresh confirmation of selection, power on and unchanged brightness
 
 #### Scenario: A failure outside the allowance
 
-- **WHEN** Lines misses a playback status check, or an NL22 ownership read fails for a reason other than a deadline
+- **WHEN** Lines misses a playback status check, or a check during the hold returns incomplete ownership evidence, or an NL22 ownership read fails for a reason other than a deadline
 - **THEN** the existing immediate device failure applies
