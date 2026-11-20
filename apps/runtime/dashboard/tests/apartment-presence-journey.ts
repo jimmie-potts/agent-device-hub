@@ -81,6 +81,29 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     assert.equal(await layer.getAttribute('aria-pressed'),'false');
     assert.equal(await panel(page).count(),0);
     assert.equal(await marker(page).count(),0);
+    const combined=apartment.locator('[data-presence-combined]');
+    const refreshOverlap=():void=>{
+      report('presence-a',2,1000);report('presence-a',3,2000);
+      report('presence-b',2,1000);report('presence-b',3,200);
+    };
+    refreshOverlap();
+    await combined.waitFor({state:'visible'});
+    assert.equal(await marker(page).count(),1);
+    await capture(page,'presence-combined.png');
+    await layer.click();
+    assert.equal(await combined.count(),0);
+    await page.waitForFunction(()=>document.querySelectorAll('[data-presence-marker]:not([hidden])').length===2);
+    await apartment.getByRole('button',{name:'Overhead',exact:true}).click();
+    refreshOverlap();
+    await layer.click();
+    await combined.waitFor({state:'visible'});
+    report('presence-b',5,true);
+    await combined.waitFor({state:'hidden'});
+    report('presence-b',5,false);
+    refreshOverlap();
+    await combined.waitFor({state:'visible'});
+    await combined.waitFor({state:'hidden'});
+    report('presence-b',3,2000);
     await openSensorLayer(page);
     const view=panel(page),studio=view.locator('[data-presence-room=studio]'),reading=view.locator('[data-presence-room=reading]');
     await studio.locator('strong').getByText('Studio · occupied',{exact:true}).waitFor();
@@ -209,5 +232,5 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     await capture(phone,'presence-phone.png');
     assert.equal(sent.length,0);
   }finally{await phoneContext.close();}
-  console.log(JSON.stringify({journey:'anonymous-apartment-presence',sources:2,roomOnly:true,approximate:true,held:true,invalidCalibration:true,boundaryAmbiguous:true,sdkStale:true,reconnect:true,phone:true,zeroCommands:true,physical:false}));
+  console.log(JSON.stringify({journey:'anonymous-apartment-presence',sources:2,combined:true,expiry:true,roomOnly:true,approximate:true,held:true,invalidCalibration:true,boundaryAmbiguous:true,sdkStale:true,reconnect:true,phone:true,zeroCommands:true,physical:false}));
 }

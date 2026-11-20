@@ -8,7 +8,7 @@ import type {DashboardConnection} from './connection.ts';
 import type {LightingDevice} from './lighting.ts';
 import {roomBinding,roomObservation} from './room-bindings.ts';
 import type {RuntimeCopy} from './runtime-feeds.ts';
-import {apartmentPresence} from './apartment-presence.ts';
+import {apartmentPresence,combinedApartmentPoint} from './apartment-presence.ts';
 import {ApartmentPresenceView} from './apartment-presence-view.tsx';
 import {ApartmentSensorTools,ApartmentZoneOverlays,applyZoneProjection,useApartmentSensorLayer} from './apartment-sensor-layer.tsx';
 import './apartment-view.css';
@@ -55,9 +55,25 @@ function ApartmentInspection({connection,connected,model,layout,layoutLive,devic
   const canvas=useRef<HTMLCanvasElement>(null),marks=useRef<HTMLDivElement>(null),presenceMarks=useRef<HTMLDivElement>(null),renderer=useRef<ApartmentRenderer|undefined>(undefined);
   const zoneMarks=useRef<HTMLDivElement>(null);
   const presence=useMemo(()=>apartmentPresence(model,copies,connected),[model,copies,connected]);
+  const [expiredAtMs,expirePresence]=useState(0);
   const sensorLayer=useApartmentSensorLayer(model,presence,room,id=>{
     setRoom(id);setSelected(null);setView('overhead');
   });
+  const combined=useMemo(()=>sensorLayer.enabled?undefined:combinedApartmentPoint(model,presence,Math.max(Date.now(),expiredAtMs)),
+    [model,presence,sensorLayer.enabled,expiredAtMs]);
+  const combinedExpiry=combined?.expiresAtMs;
+  useEffect(()=>{
+    if(combinedExpiry===undefined)return;
+    const deadline=combinedExpiry;
+    let timer:number;
+    function expire():void{
+      const remaining=deadline-Date.now();
+      if(remaining>0){timer=window.setTimeout(expire,remaining);return;}
+      expirePresence(deadline);
+    }
+    timer=window.setTimeout(expire,Math.max(0,deadline-Date.now()));
+    return ()=>{window.clearTimeout(timer);};
+  },[combinedExpiry]);
   const roomNames=new Map(layout.rooms.map(r=>[r.id,r.name]));
   const roomName=(id:string):string=>roomNames.get(id)??(model.rooms.some(r=>r.id===id)?'Unlisted room '+String(model.rooms.findIndex(r=>r.id===id)+1):'Unlisted room');
   const fixtures:FixtureView[]=model.objects.filter(item=>item.kind==='fixture').map((fixture,i)=>({fixture,number:i+1,roomName:roomName(fixture.roomId),
@@ -96,8 +112,8 @@ function ApartmentInspection({connection,connected,model,layout,layoutLive,devic
   },[model]);
   useEffect(()=>{renderer.current?.frame(room,view,cutaway);},[model,room,view,cutaway]);
   useEffect(()=>{renderer.current?.lights(selected,powers);},[model,selected,powers]);
-  useEffect(()=>{renderer.current?.presence(sensorLayer.enabled?presence.rooms:new Map(),sensorLayer.points);},
-    [model,presence.rooms,sensorLayer.enabled,sensorLayer.points]);
+  useEffect(()=>{renderer.current?.presence(sensorLayer.enabled?presence.rooms:new Map(),combined===undefined?sensorLayer.points:[combined]);},
+    [model,presence.rooms,sensorLayer.enabled,sensorLayer.points,combined]);
   useEffect(()=>{renderer.current?.zones(sensorLayer.overlays);},[model,sensorLayer.overlays]);
   useEffect(()=>{
     const current=renderer.current;if(failed||current===undefined||model.artwork.length===0)return;
@@ -159,6 +175,7 @@ function ApartmentInspection({connection,connected,model,layout,layoutLive,devic
         </div>
         <div className="apartment-presence-markers" ref={presenceMarks} aria-hidden="true">
           {sensorLayer.points.filter(point=>room===null||point.roomId===room).map(point=><span key={point.id} data-presence-marker={point.id} data-held={point.held===undefined?'unknown':String(point.held)} hidden>{point.label}</span>)}
+          {combined!==undefined&&(room===null||combined.roomId===room)&&<span data-presence-marker={combined.id} data-presence-combined hidden/>}
         </div>
         {sensorLayer.draft!==null&&<button type="button" className="apartment-floor-pick" aria-label="Pick floor corners"
           onClick={event=>{sensorLayer.pick(renderer.current,event);}}/>}

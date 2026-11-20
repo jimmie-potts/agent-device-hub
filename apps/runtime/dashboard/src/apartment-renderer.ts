@@ -1,5 +1,5 @@
 import {APARTMENT_STRIDE,type ApartmentScene,type SceneBounds,type SceneMesh,type SceneWall,type Vec} from './apartment-scene.ts';
-import type {PresencePoint,RoomPresence} from './apartment-presence.ts';
+import type {ApartmentMapPoint,RoomPresence} from './apartment-presence.ts';
 import {zoneCorners,type FloorZone,type ZoneId} from './apartment-zones.ts';
 import type {ApartmentPoint} from '../../src/apartment-model.ts';
 
@@ -11,7 +11,7 @@ export type ApartmentRenderer = {
   frame:(room:string|null,view:CameraView,cutaway:boolean)=>void;
   zoom:(factor:number)=>void;
   lights:(selected:string|null,power:ReadonlyMap<string,boolean|undefined>)=>void;
-  presence:(rooms:ReadonlyMap<string,RoomPresence>,points:readonly PresencePoint[])=>void;
+  presence:(rooms:ReadonlyMap<string,RoomPresence>,points:readonly ApartmentMapPoint[])=>void;
   zones:(zones:readonly ApartmentZoneOverlay[])=>void;
   floorPoint:(clientX:number,clientY:number,floorY:number)=>ApartmentPoint|undefined;
   artwork:(id:string,image:ImageBitmap)=>void;
@@ -111,7 +111,7 @@ export function createApartmentRenderer({canvas,scene,unavailable,project,projec
   const matrix=uniform('uMatrix'),print=uniform('uPrint'),image=uniform('uImage'),power=uniform('uPower'),highlight=uniform('uSelected'),occupancy=uniform('uOccupancy');
   let room:string|null=null,view:CameraView='dollhouse',target:SceneBounds=scene.bounds,cutaway=true,
     yaw=.66,pitch=.79,magnification=1,selected:string|null=null,powers:ReadonlyMap<string,boolean|undefined>=new Map();
-  let presenceRooms:ReadonlyMap<string,RoomPresence>=new Map(),presencePoints:readonly PresencePoint[]=[];
+  let presenceRooms:ReadonlyMap<string,RoomPresence>=new Map(),presencePoints:readonly ApartmentMapPoint[]=[];
   let floorZones:readonly ApartmentZoneOverlay[]=[];
   function draw(mesh:SceneMesh,texture?:WebGLTexture,lit?:boolean,selected=false,roomOccupancy=0):void {
     const data=buffers.get(mesh);if(data===undefined)return;
