@@ -139,6 +139,7 @@ try {
       admitted?.(); await heldReply; await route.fulfill({response});
     }, {times: 1});
     try {
+      await expect(wall.locator('#project')).toBeEnabled({timeout: 12_000});
       await wall.locator('#project').focus(); await wall.locator('#project').press('Enter');
       await Promise.race([admission, delay(12_000).then(() => { throw new Error('the explicit Project edit was not admitted'); })]);
       assert.equal(await wall.locator('#project').isDisabled(), true, 'the tracked command locks repeated mutation');
@@ -148,8 +149,11 @@ try {
       await page.keyboard.press('Escape');
       await line.focus(); await line.press('Enter');
       assert.equal(await swap.isDisabled(), true, 'a streamed completion keeps wall edits locked until the command answer');
+      // Focus and a key press do not wait for an enabled control: pressed while locked, Enter stays on the Line (Hub #1892).
+      await swap.focus(); await swap.press('Enter');
+      assert.equal(await line.evaluate(element => element === document.activeElement), true, 'a locked Swap halves cannot take focus');
+      assert.equal(sent.length, 1, 'Enter on the locked Swap halves sends nothing');
     } finally { releaseReply?.(); }
-    // Focus and a key press do not wait for an enabled control: pressed early, Enter stays on the Line (Hub #1892).
     await expect(swap).toBeEnabled({timeout: 12_000});
     await swap.focus(); await swap.press('Enter');
     await waitWall(value => value.elements.find(element => element.id === first.id)?.signature === 1 - first.signature,
