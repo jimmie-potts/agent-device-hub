@@ -5,7 +5,7 @@
 // owner permit passes quiet hours and budgets; attention, device holds, pins and each display's own admission still decide.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {ART_SHOW_BROWSER, ART_SHOW_KEY, ART_SHOW_LEAD_MS, ART_SHOW_SUBJECT, ART_SHOW_EFFECTS_FAMILY,
+import {ART_SHOW_BROWSER, localGifComposition, ART_SHOW_KEY, ART_SHOW_LEAD_MS, ART_SHOW_SUBJECT, ART_SHOW_EFFECTS_FAMILY,
   ART_SHOW_EFFECTS_SCHEMA, ART_SHOW_EFFECTS_TYPE, artShowPlanId, type ArtShowEffects, type ArtShowRequest, type ArtShowSkip} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {coreValidator, operationEntityId} from '@jimmie-potts/event-contracts/v2/families';
@@ -115,26 +115,32 @@ export function createArtShow(options: ArtShowOptions) {
         const catalog = await options.art();
         if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
         if (catalog === undefined) return errorBody('unavailable', {detail: 'saved art records are unavailable now'});
+        const local = localGifComposition(request.artworkId);
         let artwork: ArtworkSummary | ErrorBody | undefined = catalog.artworks.find(value => value.artworkId === request.artworkId);
-        if (artwork === undefined && options.retained !== undefined) {
+        if (local === undefined && artwork === undefined && options.retained !== undefined) {
           // The read ends before the command's reply deadline, so a slow catalog is refused, never left uncertain.
           const leftMs = Math.min(ART_CATALOG_LONGEST_MS, replyByMs - options.clock() - ART_CATALOG_REPLY_MARGIN_MS);
           if (leftMs <= 0) return errorBody('unavailable', {detail: 'no time is left to read the art owner\'s saved art catalog'});
           artwork = await options.retained(request.artworkId, leftMs);
           if (!options.active()) return errorBody('unavailable', {detail: 'the core is not taking art shows now'});
         }
-        if (artwork === undefined) return errorBody('not-found', {detail: 'the art owner retains no such saved artwork'});
-        if ('error' in artwork) return artwork;
+        if (local === undefined && artwork === undefined) return errorBody('not-found', {detail: 'the art owner retains no such saved artwork'});
+        if (artwork !== undefined && 'error' in artwork) return artwork;
+        // The art owner verifies a temporary copy's confirmed receipt, target and expiry during tracked preparation.
+        const compositionFor = (kind: 'ui' | 'pixoo' | 'tidbyt'): string | undefined => {
+          if (artwork !== undefined) return usable(artwork, kind);
+          return kind === 'tidbyt' ? local : undefined;
+        };
         const configured = options.plans.targets(), refused: Refusal[] = [], displays: ArtPlan['displays'][number][] = [];
         let browser: string | undefined;
         for (const target of request.targets) {
           if (target === ART_SHOW_BROWSER) {
-            browser = usable(artwork, 'ui');
+            browser = compositionFor('ui');
             if (browser === undefined) refused.push({target, error: errorBody('unsupported-capability', {detail: 'the artwork has no browser composition'})});
             continue;
           }
           const display = configured.find(value => value.target === target);
-          const compositionId = display === undefined ? undefined : usable(artwork, display.kind);
+          const compositionId = display === undefined ? undefined : compositionFor(display.kind);
           if (display === undefined) refused.push({target, error: errorBody('not-found', {detail: 'the target is not a configured art display'})});
           else if (compositionId === undefined) refused.push({target, error: errorBody('unsupported-capability', {detail: 'the artwork has no composition for this display'})});
           else displays.push({target, compositionId, durationMs: DURATION_MS[display.kind]});
@@ -143,7 +149,7 @@ export function createArtShow(options: ArtShowOptions) {
         const first = refused[0];
         if (displays.length === 0 && browser === undefined) return first === undefined ? errorBody('invalid-request') : {...first.error, refused};
         const startAtMs = options.clock() + ART_SHOW_LEAD_MS;
-        const plan: ArtPlan = {id: await artShowPlanId(request.requestId), artworkId: artwork.artworkId, startAtMs, prepareUntilMs: startAtMs - 1000,
+        const plan: ArtPlan = {id: await artShowPlanId(request.requestId), artworkId: request.artworkId, startAtMs, prepareUntilMs: startAtMs - 1000,
           toleranceMs: START_TOLERANCE_MS, mood: 'celebrate', priorityClass: 'event', coversStatus: request.coversStatus ?? true,
           displays, ...(browser === undefined ? {} : {browser: {compositionId: browser}})};
         held = true;

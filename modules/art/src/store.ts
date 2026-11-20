@@ -26,7 +26,7 @@ export type StageStatus = 'pending' | 'succeeded' | 'failed' | 'uncertain';
 export type StageRow = {requestId: string; artworkId: string; compositionId: string; target: ArtDisplayTarget; targetId?: string; status: StageStatus; expiresAtMs: number | null; ambient: boolean};
 export type AmbientIntent = {issued: IssuedAmbient | null; stageRequestId: string | null};
 export type Preparation = {requestId: string; stageRequestId: string; status: StageStatus | 'conflict'; traceparent: string; createdAtMs: number} & (
-  | {kind?: 'prepare'}
+  | {kind?: 'prepare' | 'upload'}
   | {kind: 'ambient'; ambientRequestId?: string; previous?: AmbientIntent}
 );
 export type IssuedAmbient = {requestId: string; targetId?: string} & ({stageRequestId: string; artworkId: string} | {stageRequestId: null; artworkId: null});
@@ -156,6 +156,14 @@ export class ArtStore {
   }
   addFeedback(artworkId: string, signal: ArtFeedback, atMs: number): void {this.db.prepare('INSERT INTO art_feedback(artwork_id,signal,at_ms) VALUES(?,?,?)').run(artworkId, signal, atMs);}
 
+  /** Temporary upload rows have no catalog owner to prune them. Bound the receipts kept beside live copies. */
+  reserveLocalStage(nowMs: number): boolean {
+    const expired = "SELECT request_id FROM art_stages WHERE request_id GLOB 'localgif-*' AND expires_at_ms<=?";
+    this.db.prepare('DELETE FROM art_stage_targets WHERE request_id IN (' + expired + ')').run(nowMs);
+    this.db.prepare('DELETE FROM art_stages WHERE request_id IN (' + expired + ')').run(nowMs);
+    const row = this.db.prepare("SELECT count(*) AS count FROM art_stages WHERE request_id GLOB 'localgif-*'").get();
+    return Number(row?.count) < 64;
+  }
   stage(requestId: string): StageRow | undefined {
     const row = this.db.prepare('SELECT * FROM art_stages WHERE request_id=?').get(requestId) as RawStage | undefined;
     return row === undefined ? undefined : this.#stage(row);

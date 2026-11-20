@@ -4,8 +4,10 @@
 // Results appear in `art` state. Restart never re-runs generation or preparation.
 import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
+import {localGifComposition, localGifReference} from '@jimmie-potts/event-contracts/v2/art-show';
+import {LocalGifUpload, LOCAL_GIF_LIFETIME_MS} from './local-gif.js';
 import type {ArtAmbientSelect, ArtAuto22, ArtAutoStart, ArtCancel, ArtPrepare, ArtPresent, ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
-import {ART_ID, ART_STATE_KEY, ART_STATE_21_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState21, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import {ART_ID, ART_STATE_KEY, ART_STATE_21_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtUploadStage, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState21, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {Outbox, Outcome, childOf, fullDisk, recordLog, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type Reply, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {AnthropicIdeas} from './anthropic.js';
 import {ANTHROPIC_KEY, OPENAI_KEY, configureArt, type ArtConfig} from './configuration.js';
@@ -65,6 +67,7 @@ export function createArtModule(options: ArtModuleOptions = {}): BunnyModule<Art
   let owner: ArtOwner | undefined;
   return {
     manifest: {name: 'art', apiVersion: '1.3', configure: configureArt, content: (ref, request) => owner?.content(ref, request),
+      upload: {family: 'art-upload-stage', maxBytes: MAX_DISPLAY_BYTES, stage: input => owner?.upload(input) ?? errorBody('unavailable')},
       pages: [{id: 'gallery', title: 'Art Gallery', presentation: 'react'}]},
     start: async context => {owner = new ArtOwner(context, options); await owner.start();},
     stop: async () => {await owner?.stop();},
@@ -82,6 +85,7 @@ class ArtOwner {
   readonly #config: ArtConfig;
   readonly #store: ArtStore;
   readonly #ledger: Ledger;
+  readonly #localUpload: LocalGifUpload;
   readonly #validator: MessageValidator = artValidator();
   readonly #outbox: Outbox;
   readonly #dispatch: ArtDispatchSeam;
@@ -99,6 +103,7 @@ class ArtOwner {
 
   constructor(context: ModuleContext<ArtConfig>, options: ArtModuleOptions) {
     if (context.config === undefined) throw new Error('art needs its section');
+    this.#localUpload = new LocalGifUpload(context.scheduler);
     this.#context = context; this.#options = options; this.#config = context.config;
     this.#store = new ArtStore(context.database());
     this.#ledger = new Ledger(this.#store, this.#config.limits);
@@ -121,11 +126,36 @@ class ArtOwner {
     this.#subscriptions.push(...await serveCommands(sdk, {
       owner: command => this.#owner(command),
       automatic: command => this.#automatic(command),
+      upload: command => this.#stageUpload(command),
       catalog: command => this.#admit(command, 'art-catalog-edit', 'owner', () => this.#catalog(command)),
     }));
     this.#scheduleMidnight();
     this.#renewAmbient();
   }
+  upload(input: Parameters<LocalGifUpload['stage']>[0]): ReturnType<LocalGifUpload['stage']> {
+    return this.#closed ? Promise.resolve(errorBody('unavailable')) : this.#localUpload.stage(input);
+  }
+
+  async #stageUpload(command: Command<ArtUploadStage>): Promise<Reply> {
+    const {requestId, sha256} = command.data;
+    const reference = await localGifReference(requestId, sha256);
+    return this.#admit(command, 'art-upload-stage', 'owner', () => {
+      const input = this.#localUpload.input, gif = input?.gif;
+      if (input?.requestId !== requestId || gif === undefined || gif.sha256 !== sha256) return refuse('not-found', 'the matching upload is unavailable');
+      const target = this.#dispatch.tidbytTarget();
+      if (typeof target !== 'string') return refuse(target.error.code);
+      const now = this.#context.clock.now(), compositionId = localGifComposition(reference) ?? refuse('internal');
+      if (this.#store.pendingPreparations().length >= MAX_PENDING || !this.#store.reserveLocalStage(now)) return refuse('capacity');
+      this.#store.saveStage({requestId: reference, artworkId: reference, compositionId, target: 'tidbyt', targetId: target, status: 'pending', expiresAtMs: now + LOCAL_GIF_LIFETIME_MS, ambient: false});
+      this.#store.savePreparation({kind: 'upload', requestId, stageRequestId: reference, status: 'pending', createdAtMs: now, traceparent: command.traceparent});
+      return () => {
+        this.#localUpload.admitted(requestId, sha256);
+        void this.#dispatchPreparation({requestId: reference, compositionId, target: 'tidbyt', expectedTargetId: target, format: 'gif',
+          width: 64, height: 32, frames: gif.frames, durationMs: gif.durationMs, sha256, bytes: gif.bytes, lifetimeMs: LOCAL_GIF_LIFETIME_MS}, command);
+      };
+    }, true);
+  }
+
   async stop(): Promise<void> {
     this.#closed = true;
     this.#ambientGrants.clear();
@@ -172,14 +202,21 @@ class ArtOwner {
     return this.#admit(command, 'art-request', 'owner', () => command.data.action === 'cancel' ? this.#cancel(command.data) : this.#start(command as Command<ArtAutoStart & {text?: string}>, 'owner'));
   }
   #automatic(command: Command<ArtAuto22>): Promise<Reply> {
+    const staged = command.data.action === 'prepare' && localGifComposition(command.data.artworkId) !== undefined;
     return this.#admit(command, 'art-auto', 'automatic', () => {
       switch (command.data.action) {
         case 'start': return this.#start(command as Command<ArtAutoStart & {weatherUse?: 'current' | 'omit'}>, 'automatic');
-        case 'prepare': return this.#prepare(command.data, command);
+        case 'prepare': {
+          if (!staged) return this.#prepare(command.data, command);
+          const {artworkId, compositionId, target} = command.data, copy = this.#store.stage(artworkId);
+          if (copy === undefined || copy.targetId !== target || copy.compositionId !== compositionId || (copy.expiresAtMs ?? 0) <= this.#context.clock.now()) return refuse('not-found');
+          if (copy.status !== Outcome.succeeded) return refuse('invalid-state', 'the temporary copy has no confirmed stage');
+          return undefined;
+        }
         case 'ambient': return this.#prepare(command.data, command);
         case 'present': this.#present(command.data); return undefined;
       }
-    }, command.data.action === 'prepare' || command.data.action === 'ambient');
+    }, (command.data.action === 'prepare' && !staged) || command.data.action === 'ambient');
   }
   #catalog(command: Command<ArtCatalogEdit>): (() => void) | undefined {
     const {data} = command;
@@ -191,7 +228,7 @@ class ArtOwner {
     }
   }
   /** Admission is atomic. Preparation and ambient selection wait for their tracked children before completing. */
-  async #admit<T extends object>(command: Command<T>, family: 'art-request' | 'art-auto' | 'art-catalog-edit', admittedBy: 'owner' | 'automatic', apply: () => (() => void) | undefined, pending = false): Promise<Reply> {
+  async #admit<T extends object>(command: Command<T>, family: 'art-request' | 'art-auto' | 'art-catalog-edit' | 'art-upload-stage', admittedBy: 'owner' | 'automatic', apply: () => (() => void) | undefined, pending = false): Promise<Reply> {
     if (this.#closed || this.#context.signal.aborted) return errorBody('unavailable');
     const checked = this.#validator.validate(command, {nowMs: this.#context.clock.now()});
     if (!checked.ok) return {error: checked.error};
@@ -309,7 +346,9 @@ class ArtOwner {
       const failure = error ?? errorBody(outcome === Outcome.uncertain || status === 'conflict' ? 'uncertain-result' : 'unavailable', {
         detail: status === 'conflict' ? 'the art operation has conflicting definitive outcomes' : outcome === Outcome.uncertain ? 'the art operation has no definitive child result' : 'the display did not complete the art operation',
       }).error;
-      add('bunny.event.art-auto.art', {kind: 'outcome', type: 'org.bunny.art.auto.completed', subject: ART_ID, dataschema: 'https://bunny.invalid/events/outcome/2.0',
+      const family = preparation.kind === 'upload' ? 'art-upload-stage' : 'art-auto';
+      const type = preparation.kind === 'upload' ? 'org.bunny.art-upload.stage.completed' : 'org.bunny.art.auto.completed';
+      add(`bunny.event.${family}.art`, {kind: 'outcome', type, subject: ART_ID, dataschema: 'https://bunny.invalid/events/outcome/2.0',
         data: {requestId: preparation.requestId, result: outcome, evidence: outcome === Outcome.succeeded ? Outcome.observed : Outcome.none, ...(outcome === Outcome.succeeded ? {} : {error: failure})}}, {parent: {traceparent: preparation.traceparent}});
     }
     this.#store.trim(KEEP_FINISHED_JOBS, this.#context.clock.now() - KEEP_RECEIPTS_MS);

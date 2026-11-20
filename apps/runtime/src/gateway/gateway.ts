@@ -763,7 +763,7 @@ export class Gateway {
         if (Buffer.byteLength(encoded) > MAX_BODY_BYTES) throw refuse('too-large', 'the prepared command exceeds the JSON command limit');
         if (this.#options.redactions.holds(encoded)) throw refuse('internal', 'the prepared command holds a secret');
         dispatching = true;
-        answer = await this.#dispatch(principal, family, action, request);
+        answer = await this.#dispatch(principal, family, action, request, name);
       } catch (error) {
         answer = error instanceof Refused ? error.body : errorBody(dispatching ? 'uncertain-result' : 'internal', {
           requestId, detail: dispatching ? 'the upload command has no reliable reply; it was not sent again' : 'upload admission failed',
@@ -896,9 +896,10 @@ export class Gateway {
    * nothing is tracked. The answer is the dispatcher's: `accepted`, the owner's or the bus's refusal, or
    * `uncertain-result`, which is never retried.
    */
-  async #dispatch(principal: Principal, family: string, input: ActionInput, request?: IncomingMessage): Promise<ActionAnswer> {
+  async #dispatch(principal: Principal, family: string, input: ActionInput, request?: IncomingMessage, uploadOwner?: string): Promise<ActionAnswer> {
     if (!this.access.live(principal)) return errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'});
     if (!principal.scopes.has('control')) return errorBody('forbidden', {detail: 'control authority is required'});
+    if (family === 'art-upload-stage' && uploadOwner !== 'art') return errorBody('forbidden', {detail: 'a local GIF requires the Art binary upload'});
     if (family.startsWith('microduck-') && principal.kind !== 'browser') return errorBody('forbidden', {detail: 'MicroDuck controls require the operator dashboard session'});
     const command = this.#command(principal.source, family, input);
     if ('error' in command) return command;

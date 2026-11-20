@@ -82,8 +82,12 @@ export const ART_CATALOG_EDIT_KEY = 'bunny.cmd.art-catalog-edit.art';
 export const ART_CATALOG_EDIT_SCHEMA = `${SCHEMA_BASE}art-catalog-edit/2.0`;
 export const ART_CATALOG_EDIT_TYPE = 'org.bunny.art-catalog.edit.requested';
 
+export type ArtUploadStage = {requestId: string; sha256: string};
+export const ART_UPLOAD_STAGE_TYPE = 'org.bunny.art-upload.stage.requested';
+export const ART_UPLOAD_STAGE_SCHEMA = `${SCHEMA_BASE}art-upload-stage/2.0`;
+
 const onArt = (message: {subject: string}): string | undefined => message.subject === ART_ID ? undefined : 'envelope /subject must be art';
-const families = [defineFamily('art', 'state', ART_STATE_TYPE, onArt), defineFamily('art', 'state', ART_STATE_TYPE, onArt, '2.1'), defineFamily('art-catalog-edit', 'command', ART_CATALOG_EDIT_TYPE, onArt)];
+const families = [defineFamily('art', 'state', ART_STATE_TYPE, onArt), defineFamily('art', 'state', ART_STATE_TYPE, onArt, '2.1'), defineFamily('art-catalog-edit', 'command', ART_CATALOG_EDIT_TYPE, onArt), defineFamily('art-upload-stage', 'command', ART_UPLOAD_STAGE_TYPE, onArt)];
 /** The art state and catalog families, which the art module registers (Hub #680). */
 export const artStateFamilies: readonly PayloadFamily[] = families;
 export const artSchemas: Readonly<Record<string, object>> = Object.fromEntries(families.map(family => [family.dataschema, family.schema]));

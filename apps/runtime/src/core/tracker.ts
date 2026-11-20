@@ -45,7 +45,7 @@ import type {CoreStore, CoreTransaction} from './store.js';
  */
 export const DIRECT_COMMANDS: readonly string[] = Object.freeze(['approval-recover', 'notice-acknowledge', 'inbox-handle']);
 /** Tracked actions admitted only by the authenticated gateway's dedicated capability. */
-export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['session-label-set', 'notice-clear', 'lighting-layout-set', 'playback-layout-set', 'home-layout-set', 'music-capture-control', 'music-lighting-control']);
+export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['art-upload-stage', 'session-label-set', 'notice-clear', 'lighting-layout-set', 'playback-layout-set', 'home-layout-set', 'music-capture-control', 'music-lighting-control']);
 /** Routine background art (ADR 0012's 2026-11-03 amendment): a failure raises no inbox item, and the art state reports it. */
 export const BACKGROUND_ACTIONS: readonly string[] = Object.freeze(['art-auto', 'art-stage', 'art-ambient-set']);
 /** Each art family's only requester. The dashboard's source is a browser session's, which no client credential can take. */

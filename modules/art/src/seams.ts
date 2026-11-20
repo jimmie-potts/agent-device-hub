@@ -3,7 +3,7 @@
 // weather family is read here by its name and fields. Tests pass fakes for `dispatch` and `weather`.
 import {errorBody, type ErrorBody, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {ART_SUBJECT, EXTENDED_ART_DISPATCH_SCHEMA, LEGACY_ART_STAGE_MAX_FRAMES, artCommandRefusal, type ArtAuto22, type ArtDispatch21, type ArtFormat, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
-import {ART_CATALOG_EDIT_KEY, type ArtCatalogEdit, type ArtDisplayTarget} from '@jimmie-potts/event-contracts/v2/art-state';
+import {ART_CATALOG_EDIT_KEY, type ArtUploadStage, type ArtCatalogEdit, type ArtDisplayTarget} from '@jimmie-potts/event-contracts/v2/art-state';
 import {artStageSupported, extendedArtStageSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {CORE_SOURCE, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {Outcome, type Cancel, type Command, type ModuleContext, type Reply, type RequestResult, type Sdk, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
@@ -14,6 +14,7 @@ export type ArtCommandHandlers = {
   /** `bunny.cmd.art-auto.art`: automatic, under the pace and the guard, whatever its payload says. Only the core can send it. */
   readonly automatic: (command: Command<ArtAuto22>) => Promise<Reply>;
   /** `bunny.cmd.art-catalog-edit.art`: the owner's change to saved art. */
+  readonly upload: (command: Command<ArtUploadStage>) => Promise<Reply>;
   readonly catalog: (command: Command<ArtCatalogEdit>) => Promise<Reply>;
 };
 /** Every sender but the core is refused before its command is read. The gateway and tracker refuse them earlier too. */
@@ -23,6 +24,7 @@ export async function serveCommands(sdk: Sdk, handlers: ArtCommandHandlers): Pro
   return [
     await sdk.respond<ArtRequest>(`bunny.cmd.art-request.${ART_SUBJECT}`, fromCore(handlers.owner)),
     await sdk.respond<ArtAuto22>(`bunny.cmd.art-auto.${ART_SUBJECT}`, fromCore(handlers.automatic)),
+    await sdk.respond<ArtUploadStage>('bunny.cmd.art-upload-stage.art', fromCore(handlers.upload)),
     await sdk.respond<ArtCatalogEdit>(ART_CATALOG_EDIT_KEY, fromCore(handlers.catalog)),
   ];
 }
@@ -37,6 +39,7 @@ export type ArtAmbientRequest = {requestId: string; target: 'tidbyt'; expectedTa
 export type StageResult = 'succeeded' | 'failed' | 'uncertain' | 'conflict';
 /** `art-dispatch` to the core, which forwards tracked `art-stage` and `art-ambient-set`, and the core's operation records back. */
 export type ArtDispatchSeam = {
+  tidbytTarget(): string | ErrorBody;
   stage(request: ArtStageRequest, parent: TraceContext): Promise<Reply>;
   ambient(request: ArtAmbientRequest, parent: TraceContext): Promise<Reply>;
   /** Reports final stage and ambient operation results; admission alone is never completion. */
@@ -132,6 +135,10 @@ export function realDispatch(context: Pick<ModuleContext, 'sdk' | 'scheduler' | 
     asReply(await context.sdk.request<ArtDispatch21>(`bunny.cmd.art-dispatch.${ART_SUBJECT}`,
       {type: 'org.bunny.art.dispatch.requested', subject: ART_SUBJECT, dataschema, data}, {requestId: data.requestId, timeoutMs: DISPATCH_TIMEOUT_MS, parent}));
   return {
+    tidbytTarget: () => {
+      const device = resolve('tidbyt');
+      return 'error' in device ? device : device.data.id;
+    },
     stage: ({requestId, target, bytes, ...rest}, parent) => {
       const {compositionId, format, width, height, frames, durationMs, sha256, lifetimeMs, expectedTargetId} = rest;
       const device = resolve(target);

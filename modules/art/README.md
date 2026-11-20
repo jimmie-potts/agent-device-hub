@@ -63,6 +63,27 @@ Generic provider refusals do not identify a preview-access problem; the result r
 Sunburst is permitted for owner requests but is not selected by this implementation.
 Procedural art is available only as a failed display call's free fallback.
 
+## Stage a temporary Tidbyt GIF
+
+Send a control-authenticated binary request to
+`POST /api/v2/modules/art/upload?family=art-upload-stage&target=art&requestId=REQUEST_ID&name=preview.gif`
+with `Content-Type: application/octet-stream` and the original GIF bytes. Use a fresh request ID per upload.
+Art resolves the configured Tidbyt from its device record. The input must be 64×32, at most 160 KiB,
+with 2 to 20 frames and 100 to 800 ms per frame. Tidbyt checks the complete file and retains its exact frames.
+The label is required by the upload API and discarded. Staging uses no provider and creates no gallery item.
+
+Wait for the upload operation to complete with `succeeded` and `observed`. Its accepted reply alone
+only records admission. Derive the temporary artwork ID with `localGifReference(requestId, sha256)`
+from the browser-safe `@jimmie-potts/event-contracts/v2/art-show` entry. The digest is lowercase hex
+over the original bytes. The writer keeps the copy for ten minutes. The stage command's child request ID
+is the same temporary artwork ID.
+
+Explicitly show it with `POST /api/v2/commands/art-show`. Supply a fresh request ID, target `hub`,
+and data `{"artworkId":"<temporary artwork ID>","targets":["<configured Tidbyt routing ID>"]}`.
+The ordinary Show now checks and 30-second hold apply. Observe the moment operation for the selected target,
+including release before the next comparison. A transmitted receipt records the writer's result.
+Only someone watching the panel can confirm what it showed. An uncertain operation is never resent automatically.
+
 ## Spending
 
 The ledger follows the record's rules in integer micro-dollars. OpenAI and Claude each
