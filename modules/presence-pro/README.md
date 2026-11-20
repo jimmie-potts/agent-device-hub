@@ -57,14 +57,26 @@ separately authorized pilot target. Do not guess a key or endpoint. The module
 verifies the configured MAC before subscribing and refuses missing, ambiguous or
 wrongly typed bindings with `unsupported-capability`.
 
-Binding types are fixed: occupancy, held, zones and Active use `BinarySensor`;
-X/Y use `Sensor`; detail uses `Select`; angle and range use `Number`; upside-down
-uses `Switch`; both exclusions use `Text`. Detail must report stock
+Binding types are fixed: occupancy, held, zones and Active use `BinarySensor`.
+X/Y use `Sensor`, detail uses `Select`, angle and range use `Number`, and
+upside-down uses `Switch`. Detail must report stock
 `Above + Targets active`, `Above + Distance and Angle` or
 `Above + Speed and Resolution`. Range is the stock **centimeter** setting.
-Empty exclusion text means no polygon; otherwise use the stock semicolon-separated
-integer millimeter `x:y` vertices (3–20). Invalid or missing settings inhibit the
-point. Exclusions are tested in published coordinates, after firmware angle/flip.
+
+Use the exclusion settings discovered on the device:
+
+- Polygon firmware takes two `Text` bindings as shown above. Empty text means no
+  polygon. The stock format is 3 to 20 semicolon-separated integer millimeter
+  `x:y` vertices.
+- Rectangular firmware takes two objects in `exclusions`, each with four
+  `Number` bindings such as `{"xStart":{"key":11},"xEnd":{"key":12},"yStart":{"key":13},"yEnd":{"key":14}}`.
+  Use a distinct Native API key for each bound. The bounds are inclusive and
+  the firmware accepts either corner order. Equal start and end bounds can
+  exclude a line or a single point.
+
+Missing or invalid exclusion settings suppress the point. Both kinds of
+exclusion are tested in published millimeters after the firmware applies angle
+and flip.
 
 `calibration` saves translation and yaw in apartment XZ meters/radians and the
 manually checked angle/flip/range settings. The firmware already applies angle
