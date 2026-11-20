@@ -88,6 +88,13 @@ try {
   assert.ok(heroBox !== null && gridBox !== null && heroBox.y + heroBox.height <= gridBox.y + 1, 'the hero sits above the cards');
   assert.ok(Number.parseFloat(await word.evaluate(node => getComputedStyle(node).fontSize)) >= 54, 'the mode word is large');
   await shot(page, '1440-dark');
+  // Each veil costs every pixel of every glass frame, which in software WebGL holds the page's main thread (the hosted
+  // runner timed out in Home journeys with a veil per chip). The hero keeps to its text, its switch and, when shown,
+  // its status line; the chips' fills keep them readable on their own (the glass journey measures them).
+  const heroVeils = await page.locator('[data-hub-mode][data-glass-veil], [data-hub-mode] [data-glass-veil]').count();
+  assert.ok(heroVeils <= 3, `the hero marks at most three veils, not one per chip: ${String(heroVeils)}`);
+  assert.equal(await hero(page).locator('.home-hero-chips [data-glass-veil], .home-hero-chips[data-glass-veil]').count(), 0, 'no chip is a veil');
+  report['heroVeils'] = heroVeils;
 
   // The chips match the observed lights and plugs.
   await chipsMatch(page, 'chips at load');

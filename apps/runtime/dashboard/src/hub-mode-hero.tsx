@@ -33,8 +33,8 @@ const STEPS: Readonly<Record<string, number>> = {ArrowRight: 1, ArrowDown: 1, Ar
  * The switch is one Tab stop. Arrow keys, Home and End move between its segments without selecting; Enter or Space
  * selects, so moving through it never sends a command. The selected segment carries `data-glass-thumb`: on the glass
  * layer the thumb is drawn there and stretches as it travels, and without the layer the segment has a plain fill. The
- * text, the switch and each chip are veils, so the layer keeps the artwork behind them dim or light enough to read;
- * a chip's veil follows its own box under its translucent fill, so a wrapped row has no slab behind it.
+ * text and the switch are veils, so the layer keeps the artwork behind them dim or light enough to read. Chips are
+ * not: their fill alone keeps their text readable, and every veil adds to each software-rendered frame.
  */
 export function HubModeHero({mode, disabled, status, feedback, issue, onCheckInbox, onSelect, exceptions, children}: HubModeHeroProps): React.JSX.Element {
   const heading = useId(), buttons = useRef<(HTMLButtonElement | null)[]>([]);
@@ -62,14 +62,14 @@ export function HubModeHero({mode, disabled, status, feedback, issue, onCheckInb
       {(status !== '' || issue !== undefined) && <div className="home-hero-meta" data-glass-veil>
         {status !== '' && <span className="hub-control-status">{status}</span>}
         {issue !== undefined && (onCheckInbox !== undefined
-          ? <button type="button" className="home-hero-chip hub-mode-issue" data-glass-veil onClick={onCheckInbox} title={issue.detail}><span className="hub-control-mark" aria-hidden="true">!</span>Check Inbox</button>
+          ? <button type="button" className="home-hero-chip hub-mode-issue" onClick={onCheckInbox} title={issue.detail}><span className="hub-control-mark" aria-hidden="true">!</span>Check Inbox</button>
           : <InfoTip warning label={<><span className="hub-control-mark" aria-hidden="true">!</span> {issue.label}</>}>{issue.detail}</InfoTip>)}
       </div>}
     </div>
     <p className="hub-control-sr" role="status">{feedback}</p>
     {(exceptions !== undefined || children !== undefined) && <div className="home-hero-chips">
       {children}
-      {exceptions !== undefined && <details className="hub-mode-exceptions home-hero-exceptions"><summary className="home-hero-chip" data-glass-veil>{exceptions.label}</summary><div className="home-hero-exception-list">{exceptions.details}</div></details>}
+      {exceptions !== undefined && <details className="hub-mode-exceptions home-hero-exceptions"><summary className="home-hero-chip">{exceptions.label}</summary><div className="home-hero-exception-list">{exceptions.details}</div></details>}
     </div>}
   </section>;
 }

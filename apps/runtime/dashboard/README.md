@@ -300,8 +300,8 @@ End move between segments and Enter or Space selects, so moving sends nothing. T
 selected segment carries `data-glass-thumb`; the glass layer draws the thumb
 there. Without the layer the segment has its own fill. On the layer every
 segment's label takes the full text color, since the thumb marks the selection;
-the label, the word, the switch and each chip are veils, so the artwork behind them
-stays readable under the chips' translucent fills. The hero is inert while Home is
+the label and word, the switch and the status line are veils; the chips' own fills
+keep them readable, since every veil adds to each frame in software WebGL. The hero is inert while Home is
 edited.
 
 The chips, in order: lights on and plugs on from the observed device records the

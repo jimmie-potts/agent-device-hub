@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {MAX_PANELS, readScene, sameScene, type GlassScene} from '../src/glass-scene.ts';
 import {luminance, parseColor} from '../src/glass-renderer.ts';
+import {FRAGMENT} from '../src/glass-shader.ts';
 import {LAG_RATE, LEAD_RATE, stepThumb, thumbSettled, type GlassThumb} from '../src/glass-thumb.ts';
 
 type Fake = {dataset: Record<string, string>; radius: string; box: {left: number; top: number; width: number; height: number}; shown?: boolean};
@@ -89,4 +90,13 @@ void test('computed colors parse into channels and an amount', () => {
   assert.deepEqual(parseColor(''), [0, 0, 0, 1], 'a missing token reads as black');
   assert.equal(Math.round(luminance(parseColor('rgb(255, 255, 255)')) * 1000), 1000);
   assert.equal(Math.round(luminance(parseColor('rgb(83, 97, 122)')) * 1000), 118, 'the light skin\'s faintest text');
+});
+
+// #1930: in software WebGL the page's main thread waits for every frame, and the veil loop runs for every pixel. The
+// need for a veil is the same for every veil at a pixel, so it is worked out once, after the loop, not once per veil.
+void test('the veil loop only finds the strongest mask; the costly need is worked out once per pixel', () => {
+  const loop = /for \(int i = 0; i < \d+; i\+\+\)\{ if \(i >= uVeilCount\) break;([\s\S]*?)\}\n/.exec(FRAGMENT)?.[1];
+  assert.ok(loop !== undefined, 'the veil loop is found');
+  assert.doesNotMatch(loop, /needed|backdrop|art\(/, 'nothing per veil samples the artwork or works out a need');
+  assert.match(FRAGMENT, /if \(mask > 0\.\) col = veiled\(col, mask \* max\(needed\(col\)/);
 });

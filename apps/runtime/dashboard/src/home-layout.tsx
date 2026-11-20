@@ -139,13 +139,13 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   // revision-guarded save: Pin or Unpin keeps the saved format, Dismiss hides the art and Restore shows it again.
   const automaticArt = artEntry === undefined || artEntry.art?.pinned === false;
   const artChips = artDismissed
-    ? <button type="button" className="home-hero-chip" data-glass-veil disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: false}));}}>Restore art</button>
+    ? <button type="button" className="home-hero-chip" disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: false}));}}>Restore art</button>
     : artExposed(runtime, connected) ? <>
-      <a className="home-hero-chip" data-glass-veil href="#/module/art/gallery">Open Gallery</a>
-      <button type="button" className="home-hero-chip" data-glass-veil disabled={artDisabled} onClick={() => {
+      <a className="home-hero-chip" href="#/module/art/gallery">Open Gallery</a>
+      <button type="button" className="home-hero-chip" disabled={artDisabled} onClick={() => {
         updateArt(changeArtPlacement(layouts, breakpoint, {art: {format: artEntry?.art?.format ?? 'auto', pinned: automaticArt}}));
       }}>{automaticArt ? 'Pin art' : 'Unpin art'}</button>
-      <button type="button" className="home-hero-chip" data-glass-veil disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: true}));}}>Dismiss art</button>
+      <button type="button" className="home-hero-chip" disabled={artDisabled} onClick={() => {updateArt(changeArtPlacement(layouts, breakpoint, {hidden: true}));}}>Dismiss art</button>
     </> : null;
   const locked = !editable || conflict || pending !== undefined;
   // Wide layouts place every card on one unit grid in one of four shapes (#1672). Cards stay flat grid children in saved

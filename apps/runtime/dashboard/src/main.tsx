@@ -397,7 +397,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
     items={inboxItems} inboxSynced={inboxLive} onCheckInbox={id => {setInboxFocus(previous => ({id, serial: (previous?.serial ?? 0) + 1}));}}>
     <HeroStatusChips runtime={runtime} connected={state.feed === 'connected'} now={now}/>
-    <span className="home-hero-chip-slot" data-glass-veil><PresentedArtNotice className="home-hero-chip" href="#/automation"/></span>
+    <PresentedArtNotice className="home-hero-chip" href="#/automation"/>
     {artChips}
   </HubMode>;
   const schedule = artScheduleCopy(runtime);

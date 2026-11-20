@@ -115,12 +115,12 @@ void main(){
       col = glass(p, d * 1.6, gt, col); col += (1. - col) * .06 * (1. - smoothstep(-1., .5, d * 1.6)); } }
   // Veils behind text drawn over the layer, last, so they also hold over a panel's bevel and rim: as strong as the
   // brighter of the local backdrop (outside panels) and the pixel itself needs. A veil fades out within 16 px past its
-  // box, or, marked edge, stops at it.
-  float t = 0.;
+  // box, or, marked edge, stops at it. What the pixel needs is the same for every veil, so the loop only finds the
+  // strongest mask and the need is worked out once: in software WebGL a per-veil need cost every pixel per veil.
+  float mask = 0.;
   for (int i = 0; i < ${String(MAX_VEILS)}; i++){ if (i >= uVeilCount) break;
     float edge = uVeilEdges[i], d = sdRound(p - uVeils[i].xy - uVeils[i].zw * .5, uVeils[i].zw * .5 + 4. * (1. - edge), 12. * (1. - edge));
-    float mask = edge > .5 ? step(d, 0.) : 1. - smoothstep(0., 12., d);
-    if (mask > 0.) t = max(t, mask * max(needed(col), D > 0. ? needed(backdrop(p, 40.)) : 0.)); }
-  col = veiled(col, t);
+    mask = max(mask, edge > .5 ? step(d, 0.) : 1. - smoothstep(0., 12., d)); }
+  if (mask > 0.) col = veiled(col, mask * max(needed(col), D > 0. ? needed(backdrop(p, 40.)) : 0.));
   color = vec4(col + (h21(gl_FragCoord.xy) - .5) * .018, 1.);
 }`;
