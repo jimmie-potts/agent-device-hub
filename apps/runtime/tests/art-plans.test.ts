@@ -7,7 +7,7 @@ import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families'
 import type {BunnyModule, Command, ModuleContext} from '@jimmie-potts/sdk';
 import {childOf} from '@jimmie-potts/sdk';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
-import type {ArtPlan} from '../src/core/art-plans.js';
+import {createArtPlans, type ArtPlan} from '../src/core/art-plans.js';
 import {deviceRecord, deviceState} from './fixtures/device.js';
 import {edgeConfig, flush, it, manualClock, run, stateDir, waitFor} from './support.js';
 
@@ -339,4 +339,31 @@ it('rain notice skips a plain-art target without preparation or a substitute moo
   const result=await w.core.automation.art.present({...oneDisplay(at,'unsupported-rain'),notice:{kind:'rain-forecast',likelihood:'likely',forecastStartAtMs:at+3_600_000,
     forecastEndAtMs:at+7_200_000,forecastUpdatedAtMs:at,observedAtMs:at,staleAtMs:at+2_700_000,weatherRevision:7}},()=>undefined);
   assert.ok(!('error' in result));assert.equal(result.displays[0]?.prepare.status,'not-requested');assert.equal(w.preparations.length,0);assert.equal(w.moments.length,0);
+});
+
+it('a conflicting upload stage blocks a local moment even after its separate preparation succeeded', async t => {
+  const w = await world(t), target = 'shelf-display', artworkId = 'localgif-' + TIDBYT;
+  const record = w.displays.find(display => display.id === target)?.record;
+  assert.ok(record);
+  let conflicted = false;
+  const plans = createArtPlans({clock: w.clock.now, scheduler: w.clock.scheduler, active: () => true,
+    targets: () => [{target, kind: 'tidbyt'}], current: () => record, claim: () => undefined,
+    dispatch: action => w.core.actions.dispatch(action),
+    operation: id => {
+      if (id !== artworkId) return w.handle.operation(id);
+      const prepare = w.preparations[0], template = prepare && w.handle.operation(prepare.data.requestId);
+      if (template === undefined) return undefined;
+      return {...template, target, family: 'art-stage', requestedBy: 'bunny/modules/art', status: conflicted ? 'conflict' : 'completed',
+        result: conflicted ? 'conflict' : 'succeeded', evidence: 'observed'};
+    }});
+  try {
+    const result = plans.present({...oneDisplay(w.clock.now()), artworkId, displays: [{target, compositionId: TIDBYT, durationMs: 30_000}]},
+      () => {conflicted = true; return undefined;});
+    await waitFor(() => w.preparations.length === 1);
+    const prepare = w.preparations[0]; assert.ok(prepare);
+    await w.complete(prepare.data.requestId); plans.changed(prepare.data.requestId);
+    const answer = await result; assert.ok(!('error' in answer));
+    assert.equal(answer.displays[0]?.moment.status, 'not-requested');
+    assert.equal(w.moments.length, 0);
+  } finally {plans.close();}
 });

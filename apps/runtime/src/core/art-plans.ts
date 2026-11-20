@@ -1,5 +1,7 @@
 import {createHash} from 'node:crypto';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {ART_MODULE_SOURCE} from '@jimmie-potts/event-contracts/v2/art';
+import {localGifComposition} from '@jimmie-potts/event-contracts/v2/art-show';
 import {commandSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
 import {rainNoticeIssue, rainNoticeRefusal, type RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
@@ -158,6 +160,15 @@ export function createArtPlans(options: Options) {
     if (policy !== undefined) return result(notRequested(policy));
     if (!active()) return result(notRequested(stopped()));
     if (options.clock() >= plan.prepareUntilMs) return result(notRequested(cutoff()));
+    const local = localGifComposition(plan.artworkId);
+    if (local !== undefined) {
+      // Art's preparation checked the copy at admission. Its original stage may since have acquired conflicting evidence.
+      const stage = options.operation(plan.artworkId);
+      if (current.kind !== 'tidbyt' || local !== selected.compositionId || stage?.family !== 'art-stage'
+        || stage.target !== selected.target || stage.requestedBy !== ART_MODULE_SOURCE
+        || stage.status !== 'completed' || stage.result !== Outcome.succeeded || stage.evidence !== Outcome.observed)
+        return result(notRequested(errorBody('invalid-state', {detail: 'the local GIF stage lacks confirmed evidence for this target'})));
+    }
     return result(await attempt({requestId: moment.requestId, key: `bunny.cmd.moment-play.${selected.target}`, requestedBy: 'bunny/core', ...(parent===undefined?{}:{parent}),
       draft: {type: 'org.bunny.moment.play.requested', subject: selected.target, dataschema: `https://bunny.invalid/events/moment-play/${plan.notice===undefined?'2.1':'2.2'}`, data: moment}}));
   };
