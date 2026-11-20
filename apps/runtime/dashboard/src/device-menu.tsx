@@ -93,8 +93,8 @@ export function DeviceMenu({id, runtime, pins, route, row, onClose, onDropped}: 
     const menu = root.current, top = row.current?.getBoundingClientRect().top;
     if (menu === null || top === undefined || PHONE.matches) return;
     menu.style.maxBlockSize = 'none';
-    // Where the menu's top is measured from: the window, or the rail when the rail is frosted over the glass layer,
-    // since a backdrop filter makes it the containing block, and a short window scrolls it with the page.
+    // Where the menu's top is measured from: the window, unless an ancestor's transform or filter makes that ancestor
+    // the containing block. The shell draws the menu outside the frosted rail for that reason.
     menu.style.insetBlockStart = '0px';
     const origin = Math.round(menu.getBoundingClientRect().top);
     // The box's own height, not its drawn one: the menu slides in at a slightly smaller scale.

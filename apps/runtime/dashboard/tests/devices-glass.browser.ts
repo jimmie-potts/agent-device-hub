@@ -11,6 +11,7 @@ import {join} from 'node:path';
 import sharp from 'sharp';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
 import {changes, feed, startWorld} from './harness.ts';
+import {glyphContrast, type Capture} from './glyph-contrast.ts';
 import {openDeviceMenu} from './navigation-helpers.ts';
 
 const receipts = process.env.DASHBOARD_RECEIPTS;
@@ -80,18 +81,16 @@ async function shot(page: Page, name: string): Promise<void> {
 }
 
 /**
- * The lowest contrast between any text drawn over the layer and the pixels behind its glyphs. The text runs are found
- * as Home's glass journey finds them: every visible text node in the page whose ancestors up to the page are all
- * see-through; text on a fill of its own is skipped. The page is captured with the text and again with the text made
- * transparent, which changes no box. A pixel of a run is a glyph pixel when the two captures differ there, and only
- * those pixels are measured, against the capture without the text: the empty rows of a line box can sit on something
- * else, such as an artwork's drop shadow, that no letter is drawn over.
+ * The lowest contrast between any text drawn over the layer and the pixels behind its glyphs (glyph-contrast.ts). The
+ * text runs are found as Home's glass journey finds them: every visible text node in the page whose ancestors up to
+ * the page are all see-through; text on a fill of its own is skipped. The page is captured with the text and again
+ * with the text made transparent, which changes no box. A run wholly in the window with no glyph pixel is reported.
  */
-async function contrast(page: Page): Promise<{min: number; runs: number; worst: string}> {
+async function contrast(page: Page): Promise<{min: number; runs: number; glyphs: number; inkless: string[]; worst: string}> {
   const runs = await page.evaluate(() => {
     const main = document.getElementById('main');if (main === null) throw new Error('contrast: no main');
     const clear = (element: Element): boolean => {const style = getComputedStyle(element);return style.backgroundImage === 'none' && (style.backgroundColor === 'transparent' || /rgba\(.*, 0\)$/.test(style.backgroundColor));};
-    const found: {x: number; y: number; width: number; height: number; color: string; text: string}[] = [];
+    const found: {x: number; y: number; width: number; height: number; color: string; text: string; whole: boolean}[] = [];
     const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
       const parent = node.parentElement;if (parent === null || (node.textContent ?? '').trim() === '' || !parent.checkVisibility({visibilityProperty: true, opacityProperty: true})) continue;
@@ -101,31 +100,19 @@ async function contrast(page: Page): Promise<{min: number; runs: number; worst: 
       for (const rect of range.getClientRects()) {
         const x = Math.max(rect.left, limit.left, 0), y = Math.max(rect.top, limit.top, 0);
         const right = Math.min(rect.right, limit.right, innerWidth), bottom = Math.min(rect.bottom, limit.bottom, innerHeight);
-        if (right - x >= 2 && bottom - y >= 2) found.push({x, y, width: right - x, height: bottom - y, color, text: (node.textContent ?? '').trim().slice(0, 32)});
+        const whole = rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight && rect.width >= 4 && rect.height >= 6;
+        if (right - x >= 2 && bottom - y >= 2) found.push({x, y, width: right - x, height: bottom - y, color, text: (node.textContent ?? '').trim().slice(0, 32), whole});
       }
       parent.dataset['glassMeasured'] = '';
     }
     return found;
   });
-  const inked = await sharp(await page.screenshot()).raw().toBuffer({resolveWithObject: true});
+  const shot = async (): Promise<Capture> => {const {data, info} = await sharp(await page.screenshot()).raw().toBuffer({resolveWithObject: true});return {data, info};};
+  const inked = await shot();
   await page.evaluate(() => {for (const element of document.querySelectorAll<HTMLElement>('[data-glass-measured]')) element.style.setProperty('color', 'transparent', 'important');});
-  const image = await sharp(await page.screenshot()).raw().toBuffer({resolveWithObject: true});
+  const ground = await shot();
   await page.evaluate(() => {for (const element of document.querySelectorAll<HTMLElement>('[data-glass-measured]')) {element.style.removeProperty('color');delete element.dataset['glassMeasured'];}});
-  const linear = (value: number): number => {const channel = value / 255;return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;};
-  const luminance = (r: number, g: number, b: number): number => 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
-  const {data, info} = image;let min = Infinity, worst = '';
-  for (const run of runs) {
-    const [r = 0, g = 0, b = 0, a = 1] = [...run.color.matchAll(/\d+(\.\d+)?/g)].map(match => Number(match[0]));
-    for (let y = Math.ceil(run.y); y < Math.floor(run.y + run.height); y += 1) for (let x = Math.ceil(run.x); x < Math.floor(run.x + run.width); x += 1) {
-      const at = (y * info.width + x) * info.channels, [br = 0, bg = 0, bb = 0] = [data[at], data[at + 1], data[at + 2]];
-      const glyph = Math.abs((inked.data[at] ?? 0) - br) + Math.abs((inked.data[at + 1] ?? 0) - bg) + Math.abs((inked.data[at + 2] ?? 0) - bb) > 30;
-      if (!glyph) continue;
-      const ink = luminance(br + (r - br) * a, bg + (g - bg) * a, bb + (b - bb) * a), ground = luminance(br, bg, bb);
-      const ratio = (Math.max(ink, ground) + 0.05) / (Math.min(ink, ground) + 0.05);
-      if (ratio < min) {min = ratio;worst = `"${run.text}" at ${String(x)},${String(y)} in ${run.color}`;}
-    }
-  }
-  return {min, runs: runs.length, worst};
+  return {...glyphContrast(inked, ground, runs), runs: runs.length};
 }
 
 async function open(context: BrowserContext, hash: string, ready: (page: Page) => Locator, width = 1440, height = 900): Promise<{page: Page; sent: string[]; errors: string[]}> {
@@ -172,13 +159,15 @@ try {
       const visibleVeils = await veils(page);
       assert.ok(visibleVeils <= 12, `${label}: a few veils, well under the layer's 32 (${String(visibleVeils)})`);
       const measured = await contrast(page);
-      assert.ok(measured.runs > 3, `${label}: text runs were measured`);
+      assert.ok(measured.runs > 3 && measured.glyphs > 0, `${label}: text runs were measured`);
+      assert.deepEqual(measured.inkless, [], `${label}: every text run in the window has visible ink`);
       contrasts[label] = Math.round(measured.min * 100) / 100;
       assert.ok(measured.min >= 4.5, `${label}: text over the glass layer keeps 4.5:1 (lowest ${measured.min.toFixed(2)}: ${measured.worst})`);
       await shot(page, `1440-${scheme}-${target.name}`);
       for (const width of [390, 320]) {
         await page.setViewportSize({width, height: 844});await followsBoxes(page, `${label} at ${String(width)}px`);
         const narrow = await contrast(page);
+        assert.deepEqual(narrow.inkless, [], `${label} at ${String(width)}px: every text run in the window has visible ink`);
         contrasts[`${label}/${String(width)}`] = Math.round(narrow.min * 100) / 100;
         assert.ok(narrow.min >= 4.5, `${label} at ${String(width)}px: text over the glass layer keeps 4.5:1 (lowest ${narrow.min.toFixed(2)}: ${narrow.worst})`);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${label} fits ${String(width)}px`);

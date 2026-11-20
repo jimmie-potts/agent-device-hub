@@ -181,7 +181,10 @@ try {
   }), {inWindow: true, scrolls: false, movedUp: true}, 'the menu moves up to fit the window instead of scrolling its lists');
   await page.keyboard.press('Escape'); await menu.waitFor({state: 'detached'});
   // In a window too short for the whole menu with both brands open, it starts 8px from the top and its lists scroll.
+  // The directory draws on the glass layer, whose frosted rail scrolls with the page in this window.
   await page.setViewportSize({width: 1024, height: 420});
+  await openDirectory(page); await feed(page, 'connected');
+  await expect(page.locator('#main')).toHaveAttribute('data-glass', /^(webgl|quiet)$/);
   await devices.click(); await menu.waitFor();
   for (const brand of ['LIFX', 'Nanoleaf']) if (await brandToggle(brand).getAttribute('aria-expanded') !== 'true') await brandToggle(brand).click();
   await settled();
@@ -192,6 +195,15 @@ try {
       scrolls: lists !== null && lists.scrollHeight > lists.clientHeight};
   }), {beside: true, inWindow: true, scrolls: true}, 'beside the icon rail in a short window the menu stays in the window and its lists scroll');
   assert.equal(await page.locator('.device-menu').evaluate(element => Math.round(element.getBoundingClientRect().top)), 8, 'it starts 8px from the window\'s top');
+  // Scrolling the page under it leaves it where it is, whole and under the pointer (#1950 review): it is fixed to the
+  // window, not held by the frosted rail that scrolls away with the page.
+  await page.mouse.move(900, 300); await page.mouse.wheel(0, 300);
+  await page.waitForFunction(() => scrollY > 0);
+  assert.deepEqual(await page.locator('.device-menu').evaluate(element => {
+    const box = element.getBoundingClientRect(), hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return {top: Math.round(box.top), whole: box.bottom <= innerHeight, hit: hit !== null && element.contains(hit), scrolled: scrollY > 0};
+  }), {top: 8, whole: true, hit: true, scrolled: true}, 'a scrolled page leaves the menu whole and in reach');
+  await page.evaluate(() => {scrollTo(0, 0);});
   await page.keyboard.press('End');
   assert.equal(await menu.getByRole('menuitem', {name: 'All devices', exact: true}).evaluate(element => element.getBoundingClientRect().bottom <= innerHeight), true, 'the keys bring the last item into view');
   await devices.hover();
