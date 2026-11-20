@@ -1,3 +1,5 @@
+import {isErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
+import {artDescription} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {catalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
 import {HISTORY_ROWS, readHistoryCursor, type ConversationMessage, type CurrentTask, type Proposal, type RecentConversationPage, type SavedQuestion} from '../assistant/history-contract.js';
@@ -71,10 +73,19 @@ export function decodeConversationWindow(value: unknown, {profile, before}: Wind
   const messages: ConversationMessage[] = [];
   for (const message of value.messages) {
     if (!record(message)) return invalidPage();
-    const {seq, id, taskId, role, text, atMs} = message;
+    const {seq, id, taskId, role, text, atMs, attachment} = message;
     if (!integer(seq) || seq <= previous || (anchor !== undefined && seq >= anchor.seq) || typeof id !== 'string' || typeof taskId !== 'string' ||
       !(role === 'owner' || role === 'assistant' || role === 'tool') || typeof text !== 'string' || !integer(atMs)) return invalidPage();
-    messages.push({seq, id, taskId, role, text, atMs});
+    if (attachment === undefined) messages.push({seq, id, taskId, role, text, atMs});
+    else {
+      if (role !== 'assistant' || !record(attachment) || attachment.kind !== 'artwork' || typeof attachment.requestId !== 'string' ||
+        !/^[a-z0-9-]{1,100}$/.test(attachment.requestId) || !artDescription(attachment.description)) return invalidPage();
+      const {admission, code} = attachment;
+      if (admission !== 'accepted' && admission !== 'refused' && admission !== 'pending' && admission !== 'uncertain') return invalidPage();
+      if (code !== undefined && !isErrorCode(code)) return invalidPage();
+      messages.push({seq, id, taskId, role, text, atMs, attachment: {kind: 'artwork', requestId: attachment.requestId, description: attachment.description,
+        admission, ...(code === undefined ? {} : {code})}});
+    }
     previous = seq;
   }
   if (conversationId === null && (messages.length !== 0 || older !== null || currentTask !== null)) return invalidPage();

@@ -10,6 +10,7 @@ import {ConversationVoice, stopSpeakingButton} from './conversation-voice.js';
 import type {SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
 import {ConversationDetails, useDetailsOverlay} from './conversation-details.js';
+import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
 import {ConversationTranscript} from './conversation-transcript.js';
 import {conversationRail, profiles} from './conversation-rail.js';
 import './conversation.css';
@@ -282,6 +283,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const task = state?.tasks.find(value => value.profile === profile);
   const unfinished = state?.tasks.find(value => !finished(value.status));
   const visibleHistory = history?.profile === profile ? history : undefined;
+  const hasArt = visibleHistory?.windows.some(window => window.messages.some(message => message.attachment !== undefined)) ?? false;
+  const art = useConversationArt(context.api, connected && hasArt);
   const savedTask = visibleHistory?.currentTask;
   const currentQuestion = task !== undefined && savedTask?.taskId === task.taskId && savedTask.question?.id === task.questionId ? savedTask.question : undefined;
   const pendingQuestion = task !== undefined && task.questionId !== null && !task.hasAnswer && ['waiting', 'paused'].includes(task.status);
@@ -333,6 +336,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             renderMessage={message => <article aria-label={`${message.role} message`}>
               <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
               <p className="conversation-message-text" dir="auto">{message.text}</p>
+              {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} api={context.api}
+                connected={connected} attachment={message.attachment}
+                artRevision={art?.revision}/>}
               {message.role === 'assistant' && (message.text.length > LIMITS.spokenChars
                 ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>
                 : state !== undefined && <button type="button" aria-label={`Read aloud message ${message.seq}`}

@@ -122,6 +122,7 @@ same spending ledger, pace, loop guard and no-retry rules apply to both choices.
   | `catalog` | Saved artworks, newest first; query `after` and `limit` (at most 100) |
   | `ledger` | Every call, oldest first; query `after` and `limit` (at most 100) |
   | `artwork.<artworkId>` | One artwork's result, creation time and calls |
+  | `conversation.<requestId>` | One approved Conversation job’s pending status, final outcome or exact saved rendition |
   | `rendition.<renditionId>` | The bytes of one rendition |
 
 - **Span:** `bunny.art.call`, diagnostic profile 1.8.
@@ -158,7 +159,8 @@ decoded the image. The private `art_browser_selection` table holds this pointer.
 
 | Family | Sender | What it does |
 | --- | --- | --- |
-| `art-request` | The dashboard, through the tracked route | Starts a job, or cancels any job |
+| `art-request/2.0` | The dashboard, through the tracked route | Starts a job, or cancels any job |
+| `art-request/2.1` | Companions, through the tracked route after approval | Generates a single still or GIF for Conversation without staging or presenting it on any display |
 | `art-auto` | The core's automation only | Starts an automatic job; 2.1 prepares saved art or selects its browser composition; 2.2 also selects saved Tidbyt ambient art |
 | `art-catalog-edit` | The dashboard, through the tracked route | Favorite, feedback, delete, or reuse saved art |
 | `art-dispatch` | This module, to the core | Forwards `art-stage` and `art-ambient-set` |

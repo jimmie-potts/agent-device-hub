@@ -929,6 +929,53 @@ void test('a worker result that comes back before the hand-off is recorded still
   assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
 });
 
+void test('an approved art request keeps its reply reference when admission is uncertain', async context => {
+  const requests: AssistantDispatch[] = [];
+  const w = await world(context, {tools: ['create_artwork'], dispatch: data => {
+    const history = w.store().recentPage('bunny', undefined);
+    assert.equal(typeof history === 'object' && history.messages.at(-1)?.attachment?.requestId, data.requestId,
+      'the private reference commits before dispatch');
+    requests.push(data);
+    return Promise.resolve({status: 'uncertain', requestId: data.requestId, error: errorBody('uncertain-result')});
+  }});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'SYNTHETIC_CATALOG {"name":"create_artwork","input":{"format":"gif","description":"Blue flowers"}}');
+  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'uncertain');
+  await w.restart();
+  const history = w.store().recentPage('bunny', undefined);
+  if (typeof history === 'string') assert.fail(history);
+  assert.deepEqual(history.messages.flatMap(message => message.attachment === undefined ? [] : [message.attachment]), [
+    {kind: 'artwork', description: 'Blue flowers', requestId: requests[0]?.requestId, admission: 'uncertain'},
+  ]);
+  assert.equal(requests.length, 1);
+  const requestId = requests[0]?.requestId ?? assert.fail('no request');
+  const store = w.store(), receipt = store.call(requestId) ?? assert.fail('no receipt');
+  store.saveCall({...receipt, status: 'failed', code: 'internal'});
+  const failedReceipt = store.recentPage('bunny', undefined);
+  assert.equal(typeof failedReceipt === 'object' && failedReceipt.messages.at(-1)?.attachment?.admission, 'uncertain');
+});
+
+void test('a repeated art result keeps one attachment on the original companion message', async context => {
+  const w = await world(context);
+  const store = w.store();
+  const task = store.newTask('bunny', 'Synthetic art prompt');
+  store.save(task);
+  store.message(task, 'text-fixture', 'owner', 'An ordinary text message', 1);
+  store.artReply(task, 'art-job-original', 'Blue flowers', 2);
+  store.artReply(task, 'art-job-original', 'Duplicate result text', 3);
+  store.artReply(task, 'art-job-other', 'Other result for same turn', 4);
+  const page = store.recentPage('bunny', undefined);
+  assert.equal(typeof page, 'object');
+  if (typeof page === 'string') assert.fail(page);
+  assert.deepEqual(page.messages.map(message => message.attachment), [
+    undefined, {kind: 'artwork', requestId: 'art-job-original', description: 'Blue flowers', admission: 'uncertain'},
+  ]);
+  assert.equal(page.messages[1]?.taskId, task.id);
+  assert.deepEqual(store.page('reachy', 0).messages, []);
+});
+
 void test('recent conversation reads page backwards without changing saved state', async context => {
   const w = await world(context);
   const store = w.store();

@@ -13,6 +13,7 @@ import {defineFamily, registerFamilies, routedSubject} from './registry.js';
 export const ART_MODULE_SOURCE = 'bunny/modules/art';
 /** The subject and routing token of `art-request`, `art-auto` and `art-dispatch`. */
 export const ART_SUBJECT = 'art';
+export const CONVERSATION_ART_SCHEMA = 'https://bunny.invalid/events/art-request/2.1';
 /** The largest composition a stage carries, decoded: 160 KiB, which leaves a stage inside the 256 KiB message cap. */
 export const MAX_ART_BYTES = 163_840;
 export const LEGACY_ART_STAGE_MAX_FRAMES = 256;
@@ -137,6 +138,7 @@ const checkDispatch: PayloadCheck = message => {
 export const artFamilies = [
   defineFamily('art-request', 'command', 'org.bunny.art.request.requested', checkJob),
   defineFamily('art-auto', 'command', 'org.bunny.art.auto.requested', checkJob),
+  defineFamily('art-request', 'command', 'org.bunny.art.request.requested', checkJob, '2.1'),
   defineFamily('art-stage', 'command', 'org.bunny.art.stage.requested', checkStage),
   defineFamily('art-ambient-set', 'command', 'org.bunny.art-ambient.set.requested', routedSubject('device')),
   defineFamily('art-dispatch', 'command', 'org.bunny.art.dispatch.requested', checkDispatch),

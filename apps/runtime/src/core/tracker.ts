@@ -24,7 +24,7 @@
 import {createHash, randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {compareDelivery, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
-import {ART_MODULE_SOURCE, EXTENDED_ART_STAGE_SCHEMA} from '@jimmie-potts/event-contracts/v2/art';
+import {CONVERSATION_ART_SCHEMA, ART_MODULE_SOURCE, EXTENDED_ART_STAGE_SCHEMA} from '@jimmie-potts/event-contracts/v2/art';
 import {extendedArtStageSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {CORE_SOURCE, coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {LIGHTING_SHOW_LIMITS} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
@@ -56,7 +56,10 @@ const ART_REQUESTERS: Readonly<Record<string, string>> = Object.freeze({
  * Why the dispatcher refuses this family from this requester, if it does: work only its owner may ask for. Inbox Send
  * again asks as whoever handles the item, so the inbox reads the same rule (Hub #1657).
  */
-export function requesterRefusal(family: string, requestedBy: string): ErrorBody | undefined {
+export function requesterRefusal(family: string, requestedBy: string, dataschema?: string): ErrorBody | undefined {
+  if (family === 'art-request' && dataschema === CONVERSATION_ART_SCHEMA) {
+    return requestedBy === 'bunny/modules/companions' ? undefined : errorBody('forbidden', {detail: 'Conversation artwork requires the companions owner'});
+  }
   if (family.startsWith('music-capture-') && family !== 'music-capture-control') return errorBody('forbidden', {detail: 'capture endpoint work belongs to the capture owner'});
   if (family.startsWith('music-lighting-') && family !== 'music-lighting-control' && (family !== 'music-lighting-work' || requestedBy !== CORE_SOURCE)) {
     return errorBody('forbidden', {detail: 'music lighting work is dispatched only by the core\'s session owner'});
@@ -73,6 +76,7 @@ export function requesterRefusal(family: string, requestedBy: string): ErrorBody
  * payload, so it cannot be sent again. ONN text is private; a stage's bytes would grow the tracker. Each identity and
  * digest domain is fixed: a stored digest compares only under its own domain.
  */
+const CONVERSATION_ART_OMISSION = {family: 'art-request', type: 'org.bunny.art.request.requested', schemas: [CONVERSATION_ART_SCHEMA], domain: 'bunny/conversation-art-admission/1'};
 const OMITTED_PAYLOADS: readonly {family: string; type: string; schemas: readonly string[]; domain: string}[] = Object.freeze([
   {family: 'onn-text', type: 'org.bunny.onn.text.requested', schemas: ['https://bunny.invalid/events/onn-text/2.0'], domain: 'bunny/onn-text-admission/1'},
   {family: 'art-stage', type: 'org.bunny.art.stage.requested', schemas: ['https://bunny.invalid/events/art-stage/2.0', EXTENDED_ART_STAGE_SCHEMA], domain: 'bunny/art-stage-admission/1'},
@@ -388,7 +392,7 @@ export class Tracker {
     if (family === undefined || target === undefined) return refuse('invalid-request', 'an action is a command on a key bunny.cmd.<family>.<target>');
     if (DIRECT_COMMANDS.includes(family)) return refuse('invalid-request', 'the core\'s operator commands are not tracked actions; send them as they are');
     if (OPERATOR_ACTIONS.includes(family) !== operator) return refuse('forbidden', 'this action requires its dedicated operator admission');
-    const requester = requesterRefusal(family, action.requestedBy);
+    const requester = requesterRefusal(family, action.requestedBy, draft.dataschema);
     if (requester !== undefined) return refuse(requester.error.code, requester.error.detail ?? 'this requester may not ask for this action');
     if (!ID.test(requestId)) return refuse('invalid-request', 'a request ID is 1 to 128 letters, digits, underscores, dots or hyphens');
     if (draft.subject !== target) return refuse('invalid-message', 'a command\'s subject is its key\'s last token');
@@ -398,7 +402,7 @@ export class Tracker {
     if (family === 'moment-play' && Object.hasOwn(draft.data, 'art') && action.requestedBy !== CORE_SOURCE) {
       return refuse('forbidden', 'art moments are requested only by the core');
     }
-    const omitted = OMITTED_PAYLOADS.find(each => each.family === family || each.type === draft.type || each.schemas.includes(draft.dataschema));
+    const omitted = draft.dataschema === CONVERSATION_ART_SCHEMA ? CONVERSATION_ART_OMISSION : OMITTED_PAYLOADS.find(each => each.family === family || each.type === draft.type || each.schemas.includes(draft.dataschema));
     if (omitted !== undefined && (omitted.family !== family || omitted.type !== draft.type || !omitted.schemas.includes(draft.dataschema))) {
       return refuse('invalid-request', 'the identity of a command with an omitted payload is invalid');
     }

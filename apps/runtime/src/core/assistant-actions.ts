@@ -1,5 +1,6 @@
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {catalogProposal, catalogRoute, permitsDevice, SHOW_SAVE_WINDOW_MS, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {CONVERSATION_ART_SCHEMA} from '@jimmie-potts/event-contracts/v2/art';
+import {artDescription, catalogProposal, catalogRoute, permitsDevice, SHOW_SAVE_WINDOW_MS, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {CoreHandle} from './core.js';
 import type {Action, ActionAnswer} from './tracker.js';
@@ -10,6 +11,12 @@ export async function dispatchCatalogAction(core: Pick<CoreHandle, 'dispatch' | 
   if (approved === undefined) return errorBody('invalid-request');
   const {target, binding, data, command: family} = approved, {requestId} = command.data;
   const route = catalogRoute(family);
+  if (family === 'art-request') {
+    if (command.data.admitByMs !== undefined || !artDescription(data.description) || (data.format !== 'still' && data.format !== 'gif')) return errorBody('invalid-request');
+    return core.dispatch({key: 'bunny.cmd.art-request.art', requestedBy: command.source, requestId, parent: command,
+      draft: {type: 'org.bunny.art.request.requested', subject: 'art', dataschema: CONVERSATION_ART_SCHEMA,
+        data: {action: 'start', purpose: 'request', origin: {kind: 'owner'}, targets: [data.format === 'gif' ? 'pixoo' : 'ui'], text: data.description}}});
+  }
   let payload: object = data;
   if (route.binding === 'device' && binding.kind === 'device') {
     // A repeat retains its original guarded payload and lets the tracker return the prior receipt.

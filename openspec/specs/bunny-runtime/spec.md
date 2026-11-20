@@ -977,11 +977,11 @@ The operation's state machine SHALL be: `sent`, then `accepted` on the owner's `
 
 The exact ONN focused-text family SHALL omit plaintext from durable operations and retain an omitted-payload marker plus a domain-separated private HMAC over canonical caller, request ID, target/key, type, schema, guards and input. Transport time and trace SHALL be excluded. One independently stored private key SHALL have a pinned identity; a missing, replaced or unsafe key SHALL refuse sensitive effects without erasing prior fences. Private identity storage exhaustion SHALL refuse with `capacity` before sending. This exception SHALL preserve normal action tracking and outcome/history semantics for all other commands.
 
-The exact `art-stage` family SHALL omit its payload from durable operations in the same way, under its own digest domain, so a stage's bytes never grow the tracker or enter history. The bytes SHALL still reach the command's responder. Any stored omitted payload, of either family, SHALL forbid creating a replacement private key, and the core SHALL look for one only when no key is pinned. The dispatcher SHALL refuse, with `forbidden` and no operation, `art-request` unless `requestedBy` is `bunny/parts/dashboard`, `art-auto` unless it is `bunny/core`, and `art-stage` and `art-ambient-set` unless it is `bunny/modules/art`.
+The exact `art-stage` family SHALL omit its payload from durable operations in the same way, under its own digest domain, so a stage's bytes never grow the tracker or enter history. The bytes SHALL still reach the command's responder. Any stored omitted payload SHALL forbid creating a replacement private key, and the core SHALL look for one only when no key is pinned. The dispatcher SHALL refuse, with `forbidden` and no operation, `art-request/2.0` unless `requestedBy` is `bunny/parts/dashboard`, `art-auto` unless it is `bunny/core`, and `art-stage` and `art-ambient-set` unless it is `bunny/modules/art`.
 
 #### Scenario: Sent, accepted, completed
 - **WHEN** an operator's action reaches a module that accepts it and reports its outcome
-- **THEN** the operation is `completed` with the outcome's result and evidence, its owner and command kept, and its payload kept except an omitted ONN focused text or art stage; history holds the steps `sent`, `reply accepted` and `outcome completed` with the outcome itself; each change reached the parts; the module got the command once, from `bunny/core`; and the core logged `command.queued`, `command.admitted` and `command.completed` in one trace with the outcome
+- **THEN** the operation is `completed` with the outcome's result and evidence, its owner and command kept, and its payload kept except for the defined request versions with omitted payloads; history holds the steps `sent`, `reply accepted` and `outcome completed` with the outcome itself; each change reached the parts; the module got the command once, from `bunny/core`; and the core logged `command.queued`, `command.admitted` and `command.completed` in one trace with the outcome
 
 #### Scenario: A refusal, a stopped module and an expiry
 - **WHEN** a module refuses an action, an action's family has no running module, and an action waits behind one the module's handler holds past the reply deadline
@@ -2125,3 +2125,12 @@ When the core store opens and finds the old agent-state `state` table, it SHALL,
 #### Scenario: A crash during the reset
 - **WHEN** the process dies while the reset's transaction is open
 - **THEN** the next start finds the store unchanged and runs the reset again
+
+### Requirement: Private Conversation art dispatch
+
+The tracker SHALL admit `art-request/2.1` only from `bunny/modules/companions`. The approved description SHALL reach the Art module in the command and SHALL be omitted from stored core operations and history. The tracker SHALL use a distinct private digest domain for duplicate admission, and the omitted data SHALL NOT be available for resend.
+
+#### Scenario: A Conversation art request is repeated
+
+- **WHEN** the companions module repeats an identical approved request ID
+- **THEN** the tracker returns the known reply without forwarding it again, and retained core records omit the approved description

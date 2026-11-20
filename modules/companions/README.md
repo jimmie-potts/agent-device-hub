@@ -406,6 +406,16 @@ as for every configured module; an empty section keeps every default:
   again through the `speak` control, whose accepted receipt means the request
   was saved, while the playback report says whether the browser spoke.
 
+### Artwork in replies
+
+Allowlist `create_artwork` for B.U.N.N.Y. Conversation to offer a still image
+or animated GIF. The approval names the artwork and discloses generation use.
+Art queues the request under the existing allowance. The reply tracks that
+specific job and displays the exact saved rendition or the job's outcome.
+The animation stays on its first frame until played. Opening a conversation
+or playing a GIF does not generate art or send it to a device. If the art is
+removed from the library, the saved reply remains readable.
+
 ### Coding delegation
 
 `delegate_coding` (Hub #502) proposes handing one bounded coding task to the

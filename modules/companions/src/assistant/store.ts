@@ -2,7 +2,7 @@ import {Messages} from '../knowledge/messages.js';
 import {advanceRevision, initializeRevision} from '../revision.js';
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
-import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import {isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {AssistantProfile, AssistantStatus, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
 
 import type {TranscriptItem} from './provider.js';
@@ -28,6 +28,24 @@ export type ConversationPage = {version: 1; conversationId: string | null; messa
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = TranscriptItem & {effect: string};
 type RecordRow = {record: string};
+type MessageRow = Omit<ConversationMessage, 'attachment'> & {artRequestId: string | null; artDescription: string | null;
+  artStatus: Call['status'] | null; artResult: string | null};
+const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg.role,msg.text,msg.at_ms AS atMs,
+  art.request_id AS artRequestId,art.description AS artDescription,json_extract(call.record, '$.status') AS artStatus,
+  json_extract(call.record, '$.result') AS artResult
+  FROM assistant_messages msg LEFT JOIN assistant_art_attachments art ON art.message_id=msg.id
+  LEFT JOIN assistant_calls call ON call.id=art.request_id`;
+function messageOf({artRequestId, artDescription, artStatus, artResult, ...message}: MessageRow): ConversationMessage {
+  if (artRequestId === null || artDescription === null) return message;
+  const receipt = {kind: 'artwork' as const, requestId: artRequestId, description: artDescription};
+  // A local receipt write can fail after the Art owner admitted the job.
+  // Only an actual dispatch refusal proves that the job was not admitted.
+  const refusal = artStatus === 'succeeded' && artResult?.startsWith('refused: ') === true ? artResult.slice(9) : undefined;
+  if (isErrorCode(refusal)) return {...message, attachment: {...receipt, admission: 'refused', code: refusal}};
+  const admission = artStatus === 'succeeded' && artResult?.startsWith('accepted: ') === true ? 'accepted'
+    : artStatus === 'admitted' ? 'pending' : 'uncertain';
+  return {...message, attachment: {...receipt, admission}};
+}
 const parsed = <T>(row: RecordRow | undefined): T | undefined => row === undefined ? undefined : JSON.parse(row.record) as T;
 export const terminal = (status: AssistantStatus): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
 /** Whether a call's fate is unknown: admitted with no answer, or answered after its wait ended. A failed call is settled. */
@@ -46,6 +64,7 @@ export class AssistantStore {
       CREATE TABLE IF NOT EXISTS assistant_calls (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, record TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistant_inputs (ref TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, record TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistant_controls (request_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS assistant_art_attachments (message_id TEXT PRIMARY KEY REFERENCES assistant_messages(id) ON DELETE CASCADE, request_id TEXT NOT NULL UNIQUE, description TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_message_page ON assistant_messages(conversation_id,seq);
       CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);`);
     initializeRevision(database, this.meta().revision);
@@ -73,6 +92,15 @@ export class AssistantStore {
     if (this.messages.removal(id) !== undefined) return;
     this.database.prepare('INSERT OR IGNORE INTO assistant_messages(id,conversation_id,task_id,role,text,at_ms) VALUES (?,?,?,?,?,?)').run(id, task.conversationId, task.id, role, text, atMs);
     this.messages.capture(task, id, role, text, atMs);
+  }
+  artReply(task: Task, requestId: string, description: string, atMs: number): void {
+    const id = `${task.id}-artwork`;
+    this.message(task, id, 'assistant', 'Artwork for this conversation.', atMs);
+    this.database.prepare('INSERT OR IGNORE INTO assistant_art_attachments SELECT ?,?,? WHERE EXISTS (SELECT 1 FROM assistant_messages WHERE id=?)')
+      .run(id, requestId, description, id);
+  }
+  hasArtReply(taskId: string): boolean {
+    return this.database.prepare('SELECT 1 FROM assistant_art_attachments WHERE message_id=?').get(`${taskId}-artwork`) !== undefined;
   }
   /** One saved message of the task, by its id, for the owner to hear again (Hub #500). */
   savedMessage(taskId: string, id: string): Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined {
@@ -104,8 +132,9 @@ export class AssistantStore {
     if (id === undefined) return page;
     const task = this.latest().find(task => task.profile === profile);
     if (task !== undefined && after === 0) page.currentTask = {taskId: task.id, question: task.question};
-    const rows = this.database.prepare('SELECT seq,id,task_id AS taskId,role,text,at_ms AS atMs FROM assistant_messages WHERE conversation_id=? AND seq>? ORDER BY seq LIMIT 17').all(id, after) as ConversationMessage[];
-    for (const row of rows.slice(0, 16)) {
+    const rows = this.database.prepare(`${messagesWithAttachments} WHERE conversation_id=? AND seq>? ORDER BY seq LIMIT 17`).all(id, after) as MessageRow[];
+    for (const item of rows.slice(0, 16)) {
+      const row = messageOf(item);
       const candidate = {...page, messages: [...page.messages, row], next: row.seq};
       if (Buffer.byteLength(JSON.stringify(candidate)) > LIMITS.pageBytes) break;
       page.messages.push(row);
@@ -128,11 +157,12 @@ export class AssistantStore {
         }};
       }
     }
-    const columns = 'SELECT seq,id,task_id AS taskId,role,text,at_ms AS atMs FROM assistant_messages';
+    const columns = messagesWithAttachments;
     const rows = (cursor === undefined
       ? this.database.prepare(`${columns} WHERE conversation_id=? ORDER BY seq DESC LIMIT ?`).all(conversationId, HISTORY_ROWS + 1)
-      : this.database.prepare(`${columns} WHERE conversation_id=? AND seq<? ORDER BY seq DESC LIMIT ?`).all(conversationId, cursor.seq, HISTORY_ROWS + 1)) as ConversationMessage[];
-    for (const row of rows.slice(0, HISTORY_ROWS)) {
+      : this.database.prepare(`${columns} WHERE conversation_id=? AND seq<? ORDER BY seq DESC LIMIT ?`).all(conversationId, cursor.seq, HISTORY_ROWS + 1)) as MessageRow[];
+    for (const item of rows.slice(0, HISTORY_ROWS)) {
+      const row = messageOf(item);
       const older = page.messages.length + 1 < rows.length ? historyCursor({profile, conversationId, seq: row.seq}) : null;
       const messages = [row, ...page.messages];
       if (Buffer.byteLength(JSON.stringify({...page, messages, older})) > LIMITS.pageBytes) break;

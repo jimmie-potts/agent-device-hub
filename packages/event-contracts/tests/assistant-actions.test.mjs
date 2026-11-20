@@ -26,7 +26,7 @@ test('only the catalog routes can be approved, with distinct physical and core o
   const fixed = {family: 'catalog-action', target: 'hub', command: 'art-show',
     binding: {kind: 'fixed', owner: 'bunny/core', target: 'hub'}, data: {artworkId: 'saved', targets: ['browser']}};
   assert.deepEqual(catalogProposal(fixed), fixed);
-  assert.equal(catalogProposal({...fixed, command: 'art-request'}), undefined);
+  assert.equal(catalogProposal({...fixed, command: 'art-auto'}), undefined);
   assert.equal(catalogProposal({...fixed, command: 'music-lighting-work'}), undefined);
   assert.equal(catalogProposal({...fixed, binding: {...fixed.binding, owner: 'bunny/modules/art'}}), undefined);
   assert.ok(Object.values(assistantRoutes).every(route => route.fields.split(' ').every(field => field !== 'requestId')));

@@ -3112,6 +3112,12 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+Conversation artwork uses the existing companions browser suite in runtime CI.
+Run `node apps/runtime/dashboard/tests/conversation-art.browser.ts` after the root
+build to isolate approved still and GIF creation, playback and reopened history
+with the synthetic art provider. Run the companion, art, event contract and
+runtime suites for the tracked command, private history and media boundaries.
+
 Browser speech (#1097) uses the existing companion unit discovery and
 `test:companions:browser` journey. After the root build, run
 `node --test modules/companions/dist/tests/speech-driver.test.js` for bounded

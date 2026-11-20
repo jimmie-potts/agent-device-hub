@@ -1,4 +1,4 @@
-import {assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {ART_SHOW_EFFECTS_FAMILY, artShowSurfaces, type ArtShowEffects} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtRecord} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
@@ -105,6 +105,14 @@ export class ConversationActions {
 
   /** The input's effect fields never supply routing or revision guards. */
   async propose(family: CatalogFamily, call: ToolCall, parent: TraceContext): Promise<Proposed> {
+    if (family === 'art-request') {
+      const {format, description} = call.input;
+      if (!artDescription(description) || (format !== 'gif' && format !== 'still')) return {code: 'invalid-request'};
+      const data = {format, description: description.trim()};
+      const binding = {kind: 'fixed', owner: ART, target: 'art'} as const;
+      return {proposal: {family: 'catalog-action', command: family, target: 'art', binding, data},
+        text: `Create ${format === 'gif' ? 'an animated GIF' : 'a still image'} for this reply? This may use the art allowance. ${data.description}`};
+    }
     const route = catalogRoute(family);
     const owner = family === 'nanoleaf-show-save' ? NANOLEAF : call.input.owner;
     const name = family === 'nanoleaf-show-save' ? 'shows' : call.input.target;

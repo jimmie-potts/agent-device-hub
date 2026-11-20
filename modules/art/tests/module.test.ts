@@ -1,5 +1,6 @@
 // The record's case table, the catalog and the seams, on fake providers and synthetic images.
 import assert from 'node:assert/strict';
+import {CONVERSATION_ART_SCHEMA} from '@jimmie-potts/event-contracts/v2/art';
 import {createHash} from 'node:crypto';
 import {test} from 'node:test';
 import sharp from 'sharp';
@@ -31,6 +32,30 @@ function fakeDispatch(answer: 'succeeded' | 'wait' | 'refuse' = 'succeeded') {
   };
   return {seam, stages, ambients, report: (requestId: string, result: StageResult) => {report(requestId, result);}};
 }
+
+void test('a Conversation GIF survives restart and duplicate admission without staging or regeneration', async t => {
+  const images = fakeImages(distinctDrawing()), dispatch = fakeDispatch();
+  const art = await hosted(t, {providers: {openai: images}, dispatch: dispatch.seam});
+  const requestId = 'conversation-gif';
+  const request = () => art.operator.request('bunny.cmd.art-request.art', {
+    type: 'org.bunny.art.request.requested', subject: 'art', dataschema: CONVERSATION_ART_SCHEMA,
+    data: generate(['pixoo'], {text: 'A moving blue fixture'}),
+  }, {requestId, timeoutMs: 2000});
+  assert.equal((await request()).status, 'accepted');
+  await art.finished(requestId);
+  const ref = `conversation.${requestId}`;
+  const result = await art.readJson<{status: string; rendition: {ref: string; format: string; frames: number}}>(ref);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.rendition.format, 'gif');
+  assert.ok(result.rendition.frames > 1);
+  assert.ok(await art.read(result.rendition.ref));
+  assert.equal(dispatch.stages.length, 0);
+  await art.restart();
+  assert.equal((await request()).status, 'accepted');
+  assert.deepEqual(await art.readJson(ref), result);
+  assert.equal(images.requests.length, 1);
+  assert.equal(dispatch.stages.length, 0);
+});
 
 void test('late stages cannot select deleted or superseded ambient art', async t => {
   const dispatch = fakeDispatch('wait'), art = await hosted(t, {providers: {openai: fakeImages(distinctDrawing())}, dispatch: dispatch.seam});

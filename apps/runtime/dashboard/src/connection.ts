@@ -194,8 +194,11 @@ export class DashboardConnection {
       const origin = new URL(this.#options.url).origin;
       const url = new URL(path, origin);
       const contentRoute = url.pathname.startsWith(`/modules/${name}/content/`);
+      const conversationArt = name === 'companions' && url.search === '' && (image
+        ? /^\/modules\/art\/content\/rendition\.[a-f0-9]{64}$/.test(url.pathname)
+        : /^\/modules\/art\/content\/conversation\.[A-Za-z0-9_.-]+$/.test(url.pathname));
       if (!path.startsWith('/') || path.startsWith('//') || url.origin !== origin || url.hash !== ''
-        || !(contentRoute || (!image && url.pathname.startsWith('/api/v2/')))) {
+        || !(contentRoute || conversationArt || (!image && url.pathname.startsWith('/api/v2/')))) {
         throw new SdkError(errorBody('invalid-request', {detail: 'a module read names a permitted runtime route'}));
       }
       let response: Response;
@@ -296,12 +299,13 @@ export class DashboardConnection {
         sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>, options?: {onRestarted?: () => void}): Promise<SyncResult<T>> => {
           const participant = this.#participant;
           if (!active() || participant === undefined) return rejected<T>();
-          const module = this.#state.runtime.modules?.find(candidate => candidate.name === name);
+          const owner = name === 'companions' && families.length === 1 && families[0] === 'art' ? 'art' : name;
+          const module = this.#state.runtime.modules?.find(candidate => candidate.name === owner);
           if (module === undefined || families.some(family => !module.serves.includes(family))) {
             return {status: 'rejected', requestId: 'not-sent', error: errorBody('invalid-request', {detail: 'the module does not serve these families'})};
           }
           const result = await participant.sync<T>(families, change => { if (!closed) return changed(change); }, {
-            owner: moduleOwner(name), timeoutMs: SYNC_TIMEOUT_MS,
+            owner: moduleOwner(owner), timeoutMs: SYNC_TIMEOUT_MS,
             onRestarted: () => {if (!closed) options?.onRestarted?.();},
           });
           if (result.status === 'rejected') return result;
