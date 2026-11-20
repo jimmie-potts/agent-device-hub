@@ -10,6 +10,7 @@ import {DatabaseSync} from 'node:sqlite';
 import type {CaptureFeatures} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {admitCommand, discovered, Refused, sceneList} from '../src/controls.js';
 import {initialize} from '../src/database.js';
+import {DeviceReadDeadline} from '../src/errors.js';
 import {elementId, metaKey, type LayoutEntry} from '../src/devices.js';
 import type {MusicRecipeV1} from '../src/music-effects.js';
 import {expireQueued, held, initJournal, journalRow, type Outcome, type Transact} from '../src/journal.js';
@@ -1141,6 +1142,221 @@ for (const target of [LINES_TARGET, PANELS_TARGET]) {
   }
 }
 
+for (const missedEndpoint of ['/effects', '/state'] as const) {
+  test(`an NL22 timeout on ${missedEndpoint} pauses datagrams until the next scheduled status check succeeds`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      const checks: number[] = [];
+      world.onRead = endpoint => {
+        if (frameWrites(world).length === 0) return;
+        if (endpoint === '/effects') checks.push(world.now);
+        if (checks.length === 1 && endpoint === missedEndpoint) throw new DeviceReadDeadline();
+      };
+      await run(world, stopNl22After(30));
+      assert.deepEqual(ended(world), {reason: 'stopped', restoration: 'restored'});
+      const [miss, recovery] = checks;
+      assert.ok(miss !== undefined && recovery !== undefined);
+      assert.ok(recovery - miss >= 1000 && recovery - miss <= 1100, 'retry only on the next scheduled check');
+      const frames = frameWrites(world);
+      assert.ok(frames.some(frame => frame.atMs < miss));
+      assert.ok(frames.every(frame => frame.atMs < miss || frame.atMs > recovery), 'no datagram while the status is unchecked');
+      assert.ok(frames.some(frame => frame.atMs > recovery), 'a complete check resumes datagrams');
+      assert.ok(frames.slice(1).every((frame, index) => frame.atMs - (frames[index]?.atMs ?? frame.atMs) >= 100), 'no frame catch-up');
+      assert.deepEqual(sequence(world), ['stream', 'brightness 50', 'select Ocean']);
+      assert.equal(world.maxInFlight, 1);
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+test('a complete NL22 status check clears a miss, but two subsequent misses end the session without restoration', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    const checks: number[] = [];
+    world.onRead = endpoint => {
+      if (frameWrites(world).length === 0) return;
+      if (endpoint === '/effects') checks.push(world.now);
+      if ((endpoint === '/effects' && checks.length === 4) || (endpoint === '/state' && (checks.length === 1 || checks.length === 3))) {
+        throw new DeviceReadDeadline();
+      }
+    };
+    await run(world, () => {});
+    assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'unavailable'});
+    assert.equal(checks.length, 4);
+    const [miss, recovered, nextMiss] = checks;
+    assert.ok(miss !== undefined && recovered !== undefined && nextMiss !== undefined);
+    const frames = frameWrites(world);
+    assert.ok(frames.some(frame => frame.atMs > recovered && frame.atMs < nextMiss), 'a good check resumes frames after the first miss');
+    assert.ok(frames.every(frame => frame.atMs < miss || (frame.atMs > recovered && frame.atMs < nextMiss)),
+      'a successful selection read alone does not resume frames');
+    assert.deepEqual(sequence(world), ['stream']);
+  } finally {
+    world.db.close();
+  }
+});
+
+test('a confirmed app takeover on the check after an NL22 timeout ends the session as manual without painting or restoring', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    const checks: number[] = [];
+    world.onRead = endpoint => {
+      if (endpoint !== '/effects' || frameWrites(world).length === 0) return;
+      checks.push(world.now);
+      if (checks.length === 1) throw new DeviceReadDeadline();
+      world.selected = 'New scene';
+      world.streaming = false;
+    };
+    await run(world, () => {});
+    assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+    assert.equal(checks.length, 2);
+    const [miss] = checks;
+    assert.ok(miss !== undefined);
+    assert.ok(frameWrites(world).every(frame => frame.atMs < miss));
+    assert.equal(lastSelection(world.db, world.target.device)?.selection, 'New scene');
+    assert.deepEqual(sequence(world), ['stream']);
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const manual of [false, true]) {
+  test(`Stop during an NL22 status timeout ${manual ? 'leaves a newly selected app scene alone' : 'checks live state and restores the base'}`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      let missedAt: number | undefined;
+      world.onRead = endpoint => {
+        if (endpoint !== '/state' || frameWrites(world).length === 0 || missedAt !== undefined) return;
+        missedAt = world.now;
+        transaction(world.db, () => admitMusicStop(world.db, world.target.device, {kind: 'music.stop', requestId: 'stop', generation: GENERATION},
+          world.now, world.now + 5000));
+        if (manual) {
+          world.selected = 'New scene';
+          world.streaming = false;
+        }
+        throw new DeviceReadDeadline();
+      };
+      await run(world, () => {});
+      const miss = missedAt;
+      assert.ok(miss !== undefined);
+      assert.deepEqual(ended(world), {reason: 'stopped', restoration: manual ? 'skipped' : 'restored'});
+      assert.equal(world.reads.filter(read => read.endpoint === '/effects' && read.atMs >= miss).length, 2,
+        'the status check and restoration each read the selection');
+      assert.ok(frameWrites(world).every(frame => frame.atMs < miss));
+      assert.deepEqual(sequence(world), manual ? ['stream'] : ['stream', 'brightness 50', 'select Ocean']);
+      assert.equal(world.selected, manual ? 'New scene' : 'Ocean');
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+for (const label of ['missing power', 'nonboolean power', 'missing selection'] as const) {
+  test(`an NL22 status recovery with ${label} cannot restart frames`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      const checks: number[] = [];
+      world.onRead = endpoint => {
+        if (frameWrites(world).length === 0) return;
+        if (endpoint === '/effects') {
+          checks.push(world.now);
+          if (checks.length === 1) throw new DeviceReadDeadline();
+          if (checks.length === 2 && label === 'missing selection') world.selected = '';
+        }
+        if (endpoint === '/state' && checks.length === 2) {
+          world.stateAnswer = {value: {brightness: {value: 50}, ...(label === 'nonboolean power' ? {on: {value: 'on'}} : {})}};
+        }
+      };
+      await run(world, stopNl22After(30));
+      const [miss, recovery] = checks;
+      assert.ok(miss !== undefined && recovery !== undefined);
+      assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'unavailable'});
+      assert.ok(frameWrites(world).every(frame => frame.atMs < miss));
+      assert.deepEqual(sequence(world), ['stream']);
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+for (const [label, state] of [
+  ['power off without brightness', {on: {value: false}}],
+  ['changed brightness without power', {brightness: {value: 30}}],
+] as const) {
+  test(`an NL22 status recovery with ${label} confirms manual takeover`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      let missedAt: number | undefined;
+      world.onRead = endpoint => {
+        if (frameWrites(world).length === 0) return;
+        if (endpoint === '/effects' && missedAt === undefined) {
+          missedAt = world.now;
+          throw new DeviceReadDeadline();
+        }
+        if (endpoint === '/state' && missedAt !== undefined) world.stateAnswer = {value: state};
+      };
+      await run(world, () => {});
+      assert.deepEqual(ended(world), {reason: 'manual', restoration: 'none'});
+      const miss = missedAt;
+      assert.ok(miss !== undefined);
+      assert.ok(frameWrites(world).every(frame => frame.atMs < miss));
+      assert.deepEqual(sequence(world), ['stream']);
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
+test('Stop during an NL22 status timeout skips restoration when the fresh state read omits power', async () => {
+  const world = open(PANELS_TARGET);
+  try {
+    let missedAt: number | undefined;
+    world.onRead = endpoint => {
+      if (endpoint !== '/state' || frameWrites(world).length === 0) return;
+      if (missedAt !== undefined) {
+        world.stateAnswer = {value: {brightness: {value: 50}}};
+        return;
+      }
+      missedAt = world.now;
+      transaction(world.db, () => admitMusicStop(world.db, world.target.device, {kind: 'music.stop', requestId: 'stop', generation: GENERATION},
+        world.now, world.now + 5000));
+      throw new DeviceReadDeadline();
+    };
+    await run(world, () => {});
+    const miss = missedAt;
+    assert.ok(miss !== undefined);
+    assert.deepEqual(ended(world), {reason: 'stopped', restoration: 'skipped'});
+    assert.equal(world.reads.filter(read => read.endpoint === '/state' && read.atMs >= miss).length, 2);
+    assert.ok(frameWrites(world).every(frame => frame.atMs < miss));
+    assert.deepEqual(sequence(world), ['stream']);
+  } finally {
+    world.db.close();
+  }
+});
+
+for (const [label, target, failure] of [
+  ['a Lines status deadline', LINES_TARGET, new DeviceReadDeadline()],
+  ['an answered Panels status read failure', PANELS_TARGET, new HttpError(503)],
+] as const) {
+  test(`${label} still ends Music lighting on the first failed check`, async () => {
+    const world = open(target);
+    try {
+      let checks = 0;
+      world.onRead = endpoint => {
+        if (endpoint !== '/effects' || frameWrites(world).length === 0) return;
+        checks += 1;
+        throw failure;
+      };
+      await run(world, () => {});
+      assert.deepEqual(ended(world), {reason: 'device', restoration: 'none', code: 'unavailable'});
+      assert.equal(checks, 1);
+      assert.deepEqual(sequence(world), ['stream']);
+    } finally {
+      world.db.close();
+    }
+  });
+}
+
 // #1777: the installed NL22 reports `*Dynamic*` while it streams version 1, not `*ExtControl*` as the Lines do. A Panels
 // session keeps playing on that selection; a scene, colour or static selection picked in the app still ends it
 // `manual`. An unsaved dynamic effect picked in the app reads exactly as streaming does, so it is not seen.
@@ -1522,10 +1738,10 @@ test('playing loss reports the first local retirement while both paths restore t
   }
 });
 
-function savedTimeline(world: World, startDelayMs: number): Extract<StartRequest, {action: 'start-show'}> {
+function savedTimeline(world: World, startDelayMs: number, durationMs = 2500): Extract<StartRequest, {action: 'start-show'}> {
   initShows(world.db);
   transaction(world.db, () => saveShow(world.db, {showId: 'show-ocean', expectedVersion: 0, name: 'Synthetic show', versionName: 'First',
-    timeline: {version: 1, durationMs: 2500, cues: [{id: 'ocean', offsetMs: 0, durationMs: 2500, recipe: {preset: 'ocean'}, intensity: 0.5}]}}, 1));
+    timeline: {version: 1, durationMs, cues: [{id: 'ocean', offsetMs: 0, durationMs, recipe: {preset: 'ocean'}, intensity: 0.5}]}}, 1));
   world.feeding = false;
   return {requestId: 'start', generation: GENERATION, action: 'start-show', showId: 'show-ocean', version: 1, positionMs: 0, startDelayMs};
 }
@@ -1558,3 +1774,33 @@ test('a clock correction during a status read retires the show and restores the 
     assert.deepEqual(world.inputLoss, []);
   } finally {world.db.close();}
 });
+
+for (const durationMs of [1500, 2500]) {
+  test(`an NL22 saved show of ${durationMs} ms keeps its completion time through a status timeout`, async () => {
+    const world = open(PANELS_TARGET);
+    try {
+      const checks: number[] = [];
+      world.onRead = endpoint => {
+        if (endpoint !== '/effects' || entries(world).length === 0) return;
+        checks.push(world.now);
+        if (checks.length === 1) throw new DeviceReadDeadline();
+      };
+      await run(world, () => {}, OCEAN, 'unused', savedTimeline(world, 0, durationMs));
+      assert.deepEqual(ended(world), {reason: 'completed', restoration: 'restored'});
+      const [miss, nextCheck] = checks;
+      assert.ok(miss !== undefined && nextCheck !== undefined);
+      const [entry] = entries(world);
+      const session = musicDeviceState(world.db, world.target.device).session;
+      assert.ok(entry !== undefined && session?.status === 'ended');
+      assert.ok(Math.abs(session.ended.atMs - entry.atMs - durationMs) <= 25, 'the timeout does not extend playback');
+      const frames = frameWrites(world);
+      assert.ok(frames.some(frame => frame.atMs < miss));
+      assert.ok(frames.every(frame => frame.atMs < miss || frame.atMs > nextCheck), 'no saved show frames while status is unchecked');
+      assert.equal(frames.some(frame => frame.atMs > nextCheck), durationMs === 2500, 'only the longer show can resume');
+      assert.ok(frames.slice(1).every((frame, index) => frame.atMs - (frames[index]?.atMs ?? frame.atMs) >= 100), 'no frame catch-up');
+      assert.deepEqual(sequence(world), ['stream', 'brightness 50', 'select Ocean']);
+    } finally {
+      world.db.close();
+    }
+  });
+}

@@ -358,7 +358,15 @@ light's ending never writes, holds or ends the other.
   brightness or moment (`manual`, no restoration); an alert (`alert`, then restore); a
   retired or stale input (`source-lost`, then restore); a once-per-second read that finds
   another selection, a changed brightness or the power off (`manual`, no restoration);
-  a failed datagram send or read (`device`, code `unavailable`, no restoration, no retry).
+  a failed datagram send or read (`device`, code `unavailable`, no restoration).
+  For live Music and saved shows on NL22, one deadline during the playing status check
+  holds datagrams until the next regular check confirms the stream, power on and unchanged
+  brightness. A reply missing that evidence ends playback as `device` unless it confirms
+  a manual change such as power off. Restoration
+  reached during the hold also needs fresh confirmation before writing. The show timeline,
+  source freshness and pending endings continue to be checked. A confirmed takeover ends
+  the session `manual`. A second consecutive missed check ends it `device` if no other
+  ending is due. After confirmation, only current frames are sent.
   A lost answer to the streaming entry ends the Start `uncertain` and holds the light.
 - **Restoration** re-reads the light and writes brightness, then the base: a scene by
   name (`PUT /effects {select}`), or a colour in one `PUT /state` with its hue and

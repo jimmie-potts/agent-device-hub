@@ -10,6 +10,7 @@
 import type {Clock, DeviceAvailability, Logger, ModuleScheduler, TraceContext, Tracing} from '@jimmie-potts/sdk';
 import {recordLog} from '@jimmie-potts/sdk';
 import {isObject} from '../compat.js';
+import {DeviceReadDeadline, DeviceUnreachable} from '../errors.js';
 import {MIN_STREAM_PORT, type LightDatagram} from '../stream.js';
 import {HttpError, isTransportDeadline, LIGHT_TIMEOUT_SECONDS, type classifiedRead, type LightAddress, type LightRequest} from '../transport.js';
 import type {ReadRejection} from '../read-rejection.js';
@@ -18,16 +19,7 @@ import {ReadTimingRecords, type ReadEnd, type ReadSource, type ReadTimingProbe} 
 /** How long one request to a device may take: the Python client's light request timeout. */
 export const REQUEST_MS = Math.round(LIGHT_TIMEOUT_SECONDS * 1000);
 
-/**
- * The device did not answer within its deadline or could not be reached. The message is fixed, so it never quotes an
- * address or a reply; the transport's own error stays its cause, in memory (ADR 0012, "Safe errors").
- */
-export class DeviceUnreachable extends Error {
-  override name = 'DeviceUnreachable';
-  constructor(cause?: unknown) {
-    super('The device did not answer.', cause === undefined ? undefined : {cause});
-  }
-}
+export {DeviceUnreachable} from '../errors.js';
 
 /** The module stopped while a request was out; the request's result no longer matters. */
 export class LinkStopped extends Error {
@@ -152,7 +144,8 @@ export class DeviceLink {
             this.status = 'failing';
             availability.unreachable(this.device, 'unavailable');
           }
-          reject(new DeviceUnreachable(cause));
+          const deadline = end === 'link-deadline' || end === 'transport-deadline';
+          reject(method === 'GET' && deadline ? new DeviceReadDeadline(cause) : new DeviceUnreachable(cause));
         }, true, end);
       };
       const reached = (status: number | undefined): void => {
