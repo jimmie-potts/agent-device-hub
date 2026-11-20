@@ -276,6 +276,9 @@
 .inventory-links{display:grid;gap:var(--space-xs)}
 /* A card's panel on the glass layer (#1950) holds the card, which fills it, with the prototype's card corners. */
 .inventory-panel{display:grid;--glass-radius:18px}
+/* Off Home the glass keeps the cards' own frame (#1950): a panel's corners are the card radius the skin gives. The
+   value is resolved on the section, above the panel, where the card radius is still the skin's. */
+main[data-glass] section{--glass-radius:var(--light-radius)}
 .companions-panel{display:grid}
 .inventory-links a{min-block-size:40px;padding-block:5px;background:var(--inset);color:var(--text)}
 .settings-grid .places-group{border:0;padding:0}
