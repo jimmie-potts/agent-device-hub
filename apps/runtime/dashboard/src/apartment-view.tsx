@@ -59,19 +59,13 @@ function ApartmentInspection({connection,connected,model,layout,layoutLive,devic
   const sensorLayer=useApartmentSensorLayer(model,presence,room,id=>{
     setRoom(id);setSelected(null);setView('overhead');
   });
-  const combined=useMemo(()=>sensorLayer.enabled?undefined:combinedApartmentPoint(model,presence,Math.max(Date.now(),expiredAtMs)),
-    [model,presence,sensorLayer.enabled,expiredAtMs]);
+  const candidate=useMemo(()=>sensorLayer.enabled?undefined:combinedApartmentPoint(model,presence,Date.now()),
+    [model,presence,sensorLayer.enabled]);
+  const combined=candidate?.expiresAtMs===expiredAtMs?undefined:candidate;
   const combinedExpiry=combined?.expiresAtMs;
   useEffect(()=>{
     if(combinedExpiry===undefined)return;
-    const deadline=combinedExpiry;
-    let timer:number;
-    function expire():void{
-      const remaining=deadline-Date.now();
-      if(remaining>0){timer=window.setTimeout(expire,remaining);return;}
-      expirePresence(deadline);
-    }
-    timer=window.setTimeout(expire,Math.max(0,deadline-Date.now()));
+    const timer=window.setTimeout(()=>{expirePresence(combinedExpiry);},Math.max(0,combinedExpiry-Date.now()));
     return ()=>{window.clearTimeout(timer);};
   },[combinedExpiry]);
   const roomNames=new Map(layout.rooms.map(r=>[r.id,r.name]));

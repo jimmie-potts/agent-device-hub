@@ -20,9 +20,10 @@ commands, new telemetry, storage and history.
 - Require a separation of at most 0.65 m. All four axis receipts must have arrived
   within 2.5 seconds and span at most 1.2 seconds. A known held point is ineligible.
   Local receipt times bound the display estimate. They are not measurement times.
-- Recompute on feed changes and expire the estimate locally on a timer. Sensor
-  evidence retains its existing last-report behavior and source filter. The UI
-  does not store or publish combined estimates.
+- Recompute on feed changes and give each displayed receipt window one local
+  timer. A wall-clock correction cannot extend the scheduled timeout. Retire
+  only that window so fresh readings can still qualify. Source evidence retains
+  its existing last-report behavior and filter. Rooms stores no combined estimates.
 - Verify the selection and expiry as pure logic and run the actual Sensors
   transition through the existing disposable Rooms browser journey.
 

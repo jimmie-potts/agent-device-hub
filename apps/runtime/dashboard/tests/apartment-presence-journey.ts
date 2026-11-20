@@ -219,6 +219,22 @@ export async function apartmentPresenceJourney(browser:Browser,world:World):Prom
     await openSensorLayer(fallback);
     await panel(fallback).getByText('Studio · vacant',{exact:true}).waitFor();
     assert.equal(fallbackSent.length,0);await fallback.close();assert.deepEqual(errors,[]);
+    const clockPage=await desktop.newPage();
+    await clockPage.clock.install();
+    await clockPage.goto(world.url+'/#/rooms');
+    await feed(clockPage,'connected');
+    await clockPage.locator('canvas[data-rendered=true]').waitFor();
+    const clockDot=clockPage.locator('[data-presence-combined]');
+    refreshOverlap();
+    await clockDot.waitFor({state:'visible'});
+    await clockPage.clock.setSystemTime(new Date(Date.now()-3_600_000));
+    await clockPage.clock.runFor(2800);
+    assert.equal(await clockDot.count(),0,'browser wall-clock correction cannot extend the scheduled expiry');
+    await clockPage.clock.setSystemTime(new Date());
+    refreshOverlap();
+    await clockDot.waitFor({state:'visible'});
+    report('presence-b',3,2000);
+    await clockPage.close();
   }finally{await desktop.close();}
   const phoneContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   try{
