@@ -1,17 +1,20 @@
 import React,{useId,useState} from 'react';
+import {lampAttributes,type Glow} from './glass-light.ts';
 import './wemo.css';
 
-export type WemoCardProps={id:string;label:string;power:boolean|undefined;status:string;disabled:boolean;onPower:(on:boolean)=>void;powerControls:React.ReactNode;limit:React.ReactNode;evidence:React.ReactNode};
+export type WemoCardProps={id:string;label:string;power:boolean|undefined;status:string;disabled:boolean;onPower:(on:boolean)=>void;powerControls:React.ReactNode;limit:React.ReactNode;evidence:React.ReactNode;
+  /** The light the plug gives Home's glass layer, from observed power (#1931). */
+  glow?:Glow};
 
 /** Presentation only. Its caller owns observations, commands and limit saves. */
-export function WemoCard({id,label,power,status,disabled,onPower,powerControls,limit,evidence}:WemoCardProps):React.JSX.Element{
+export function WemoCard({id,label,power,status,disabled,onPower,powerControls,limit,evidence,glow}:WemoCardProps):React.JSX.Element{
   const [tab,setTab]=useState<'power'|'limit'>('power');
   const uid=useId();
   const switchTab=(next:'power'|'limit'):void=>{setTab(next);};
   return <div className="wemo-module">
     <article className="wemo-card" data-device={id} aria-label={label}>
       <header className="wemo-heading"><span>Wemo Mini</span><span className="warning" role="status">{status!==''&&<><span aria-hidden="true">! </span>{status}</>}</span></header>
-      <div className="wemo-art" role="img" aria-label="Desk lamp illustration with a smaller Wemo plug" data-on={power===true&&status===''}>
+      <div className="wemo-art" role="img" aria-label="Desk lamp illustration with a smaller Wemo plug" data-on={power===true&&status===''} {...(glow===undefined?{}:lampAttributes(glow))}>
         <div className="wemo-glow"/>
         <div className="wemo-scene" aria-hidden="true">
           <div className="wemo-lamp"><div className="wemo-lamp-beam"/><div className="wemo-lamp-lower"/><div className="wemo-lamp-upper"/><div className="wemo-lamp-joint"/><div className="wemo-lamp-shade"/><div className="wemo-lamp-base"/></div>

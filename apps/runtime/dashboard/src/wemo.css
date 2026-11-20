@@ -60,3 +60,19 @@
 @keyframes wemo-flip{from{transform:rotateX(-13deg)}to{transform:rotateX(0)}}
 @media(prefers-reduced-motion:reduce){.wemo-faces>[role=tabpanel]:not([hidden]){animation:none}}
 @media(max-width:420px){.wemo-card{padding:var(--space-m)}}
+/* The press panel (#1931, plug-panel.tsx): a plug in the Small square Home shape. The whole panel switches it; the
+   icon top left is its lamp, the top right stays clear for the drag handle (#1933) and Open sits bottom right. */
+.card.plug-panel{position:relative;display:grid;grid-template:minmax(0,1fr) auto/minmax(0,1fr);overflow:visible}
+.shell .card.plug-panel{padding:0}
+.plug-panel .plug-press{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;inline-size:100%;block-size:100%;padding:var(--space-l) var(--space-l) var(--space-m);border:0;border-radius:inherit;background:transparent;color:var(--text);font:inherit;text-align:start;cursor:pointer}
+.plug-panel .plug-press:focus-visible{outline:2px solid var(--focus);outline-offset:-4px}
+.plug-panel .plug-press:disabled{background:transparent;color:var(--muted-dense);cursor:default}
+.plug-panel .plug-press:hover:not(:disabled){background:transparent;color:var(--text)}
+.plug-icon{display:grid;place-items:center;inline-size:48px;block-size:48px;margin-block-end:auto;border-radius:50%;background:var(--light-inset);color:var(--muted-dense)}
+.plug-press[aria-pressed=true] .plug-icon{background:var(--plug-on-surface);color:var(--plug-on-ink)}
+.plug-press>:is(strong,small){max-inline-size:calc(100% - 44px);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.plug-press>strong{font-size:var(--type-heading);font-weight:600}
+.plug-press>small{font-size:var(--type-small);color:var(--muted-dense)}
+.plug-result{margin:0;padding:0 52px var(--space-s) var(--space-l);font-size:var(--type-small);color:var(--pending-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plug-open{position:absolute;inset-block-end:var(--space-xs);inset-inline-end:var(--space-xs);display:grid;place-items:center;min-inline-size:44px;min-block-size:44px;padding-inline:var(--space-s);border-radius:var(--light-control-radius);font-size:var(--type-small);font-weight:500}
+@media(prefers-reduced-motion:no-preference){.plug-press{transition:transform .14s ease-out}.plug-press:active:not(:disabled){transform:scale(.97)}}

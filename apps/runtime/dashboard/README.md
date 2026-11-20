@@ -279,10 +279,11 @@ the grid, and keep their full card without it. A Pixoo or Tidbyt card whose
 module does not serve its card, or an unavailable Wispr card, shows the generic
 face in one unit and keeps its saved shape (`src/module-cards.ts` holds the one
 rule `main.tsx` mounts these module cards by). A card whose options menu is open
-is raised above the cards after it, so the whole menu takes a pointer. Other
-cards show a generic face in
-one unit: the name, the current state and **Open**, which leads to the card's
-existing device, Music or module page.
+is raised above the cards after it, so the whole menu takes a pointer. A light,
+room or group with lights in Small square is a ring dial, and a Wemo plug in one
+unit is a press panel (see [Ring dial and press panel](#ring-dial-and-press-panel)).
+Other cards show a generic face in one unit: the name, the current state and
+**Open**, which leads to the card's existing device, Music or module page.
 A placement saved before shapes shows Small as Small square or Tall, Standard as
 the card's Standard shape and Wide as Large square or Wide. Loading never
 writes; the next Done or art chip stores a shape and an agreeing width for every
@@ -407,8 +408,9 @@ retain their separate meanings. Reload, reconnect and restart never resend.
 
 ## Reusable Wemo card
 
-Home and existing Wemo device routes use the same `WemoCard` presentation and
-`WemoDeviceCard` adapter. A large generic desk lamp and smaller Wemo plug remain
+Home in one column and existing Wemo device routes use the same `WemoCard`
+presentation and `WemoDeviceCard` adapter; on Home's unit grid the adapter shows
+the press panel instead. A large generic desk lamp and smaller Wemo plug remain
 visible while Power and Auto-off tabs switch only the controls. Both panels stay
 mounted and share their layout space, preserving drafts and card dimensions.
 The selected On/Off button follows plug-reported power; desired state and command
@@ -1079,6 +1081,60 @@ just enough of the veil color to keep `--glass-ink` (the faintest text,
 `--muted-dense`) at 5:1. Home's backdrop is the art module's `useArtBackdrop`
 image (#1928); any state without an image, and dismissed art, draws the wash, and the rendition the
 layer has drawn, or null, goes back through `useShowArtBackdrop`.
+
+### Lit room
+
+Lights and plugs that current records observe on light the room (#1931). A panel
+marks one element as its lamp with `data-glass-lamp="<level>"` (0 to 1),
+`data-glass-lamp-color="r g b"` (sRGB, 0 to 1) and, while the pointer holds it
+down, `data-glass-pressed`; the lamp's center is where the light comes from. A
+LIFX light's color is its observed `lifx-light` reading (`src/glass-light.ts`
+converts hue, saturation and kelvin); a light whose module reports no color, and
+a plug, use the skin's warm white `--glass-lamp`. Requested, stale and unknown
+state draw no light. The renderer packs the light's linear color and eased level
+and the lamp's position and eased press into two more texel columns; the shader
+lights the panel's glass up to half its color, brightest near the lamp, spills
+light on the backdrop that thins with the square of the distance and halves
+behind another panel, and lights bevels that face the lamp. Its light loops visit
+only the lit panels' rows (`uLightIndex`, at most `MAX_LIGHTS`, 16), the backdrop
+takes light only where it shows, and a panel in the way is estimated from the
+field and gradient the bevel already works out, so a lit room costs about what an
+unlit one does in software WebGL (#1966 review). A pressed panel
+brightens, widens its bevel and spills white light. Level and press ease on a
+time base (16% and 24% of the gap per frame at 60 fps); the layer draws while
+they ease, also past a frame that repeats the last timestamp, and nothing after. With every light off no light term runs. The
+canvas's `data-glass-lights` lists what it last drew, as
+`id:r,g,b,level,press,x,y`, for checks.
+
+### Ring dial and press panel
+
+A light, room or group card with lights in Small square (`src/light-dial.tsx`)
+is a ring that shows the observed brightness, with the name, a state line and,
+for a light that follows the hub mode, its mode line. Drag the ring up or down to
+dim and press it to switch, by mouse, pen or touch; a drag on the ring does not
+scroll the page. For the keyboard the ring is a slider (arrows, Page Up and Down,
+Home, End; one request when the key is released) and its center a switch (Enter
+or Space). It sends the card's existing guarded power and brightness commands. The
+ring and the glow follow observed state. A LIFX bulb reports on its next read, so
+the latest power or brightness request, when it succeeded after the bulb's last
+report, shows in the state line ("Requested off · observed on") and, for
+brightness, as a faint inner arc (`src/requested.ts`; a write of another kind
+never revives an old power request). The switch shows that newest power and a
+press switches away from it. A drag or key starts from the newest brightness, an
+off light's stored one included, and a value that ends where it started is not
+sent. The options menu sits bottom right; the top corners stay
+clear for the unfold arrow (#1932) and the drag handle (#1933).
+
+A Wemo plug in one unit (`src/plug-panel.tsx`) is one toggle button with its
+icon, name and observed state. A Wemo plug reports on its next poll, so its latest
+power request, when it succeeded after its last report, shows as "Requested on ·
+observed off" (a latest request that failed or is in flight does not),
+and the pressed state follows it; pressing sends the existing power command for
+the opposite of that newest power. It is disabled while the power is unknown or
+a guard blocks it (stale, unavailable, held, read-only, a command in flight), a
+result that needs attention shows under it, and **Open** leads to its page with
+the full card. Its top right stays clear for the drag handle. Both work in Quiet
+glass with their state in plain CSS.
 
 ## Build and checks
 

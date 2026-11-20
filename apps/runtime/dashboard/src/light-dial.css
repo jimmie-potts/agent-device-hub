@@ -1,0 +1,29 @@
+/* The ring dial (#1931, light-dial.tsx): a light in the Small square Home shape. The ring and its center sit at the top
+   middle, so the top corners stay clear for the unfold arrow (top left, #1932) and the drag handle (top right, #1933);
+   the name, state and mode lines sit under it and the options open from the bottom right. In Quiet glass the arc,
+   the switch and the lines carry the state on their own. */
+.light-card.light-dial-card{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:2px;padding:var(--space-m) var(--space-m) var(--space-s);text-align:center}
+.light-dial{position:relative;flex:none;display:grid;place-items:center;inline-size:84px;block-size:84px;margin-block:2px var(--space-xs);border-radius:50%;touch-action:none;cursor:ns-resize;color:var(--muted-dense);-webkit-user-select:none;user-select:none}
+.light-dial[data-on]{color:var(--text)}
+.light-dial>svg{position:absolute;inset:0;inline-size:100%;block-size:100%;transform:rotate(-90deg);overflow:visible;pointer-events:none}
+.light-dial-track,.light-dial-arc,.light-dial-draft{fill:none}
+.light-dial-track{stroke:var(--light-dial-track);stroke-width:8}
+.light-dial-arc{stroke:var(--light-dial-color,var(--glass-lamp));stroke-width:8;stroke-linecap:round;stroke-dasharray:100 100;filter:drop-shadow(0 0 5px var(--light-dial-color,var(--glass-lamp)));transition:stroke-dashoffset .24s ease-out}
+.light-dial[data-stale] .light-dial-arc{opacity:.45}
+.light-dial-draft{stroke:var(--accent);stroke-width:3;stroke-linecap:round;stroke-dasharray:100 100}
+.light-dial-requested{opacity:.55}
+.light-dial-slider{position:absolute;inset:0;border-radius:50%}
+.light-dial-slider:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+.light-dial-slider[aria-disabled=true]{cursor:default}
+.light-card .light-dial-switch{position:relative;display:grid;place-items:center;inline-size:52px;block-size:52px;min-height:0;padding:0;border:0;border-radius:50%;background:var(--light-inset);color:inherit;cursor:pointer}
+.light-card .light-dial-switch[aria-checked=true]{background:var(--light-selected)}
+.light-card .light-dial-switch:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.light-card .light-dial-switch:disabled{cursor:default;opacity:.7}
+@media(prefers-reduced-motion:reduce){.light-dial-arc{transition:none}}
+.light-card.light-dial-card>h3{max-inline-size:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:var(--type-heading);font-weight:600}
+.light-dial-card>:is(.light-dial-state,.light-dial-mode){margin:0;max-inline-size:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:var(--type-small);color:var(--muted-dense)}
+/* The result line and the options share the bottom row; the line keeps clear of the options on both sides. */
+/* Home's one-row shapes hide a light card's own result block; the dial's one-line result is its face's. */
+.home-layout-card .light-card.light-dial-card>.light-attention.light-attention-line{display:block;max-inline-size:100%;padding-inline:40px;box-sizing:border-box}
+.light-dial-options{position:absolute;inset-block-end:var(--space-xs);inset-inline-end:var(--space-xs)}
+.light-dial-card .light-options-body{top:calc(100% + var(--space-xs));right:0;text-align:start}

@@ -3,9 +3,13 @@
 // sharp options, the far light model and a join of k = 20. Lengths are CSS pixels. Colors arrive as uniforms read from
 // the skin's --glass-* tokens; the few constants left here are material amounts, not colors of the interface.
 import {MAX_PANELS, MAX_VEILS} from './glass-scene.ts';
+import {MAX_LIGHTS} from './glass-light.ts';
 
-/** Texels per panel in the panel table: 0 is the box (x, y, width, height), 1 holds the corner radius. */
-export const PANEL_TEXELS = 2;
+/**
+ * Texels per panel in the panel table: 0 is the box (x, y, width, height), 1 holds the corner radius, 2 the light's
+ * color in linear channels and its eased level, 3 the lamp's position and the eased press (#1931).
+ */
+export const PANEL_TEXELS = 4;
 
 export const VERTEX = `#version 300 es
 void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));gl_Position=vec4(p*2.-1.,0.,1.);}`;
@@ -16,7 +20,9 @@ precision highp sampler2D;
 uniform sampler2D uArt, uPanels;
 uniform vec2 uRes, uArtSize;
 uniform float uDpr, uHasArt, uDark, uAppear, uDepth, uMerge, uInk, uContrast;
-uniform int uCount, uVeilCount;
+uniform int uCount, uVeilCount, uLights;
+// The rows of the lit or pressed panels (#1931), uLights of them.
+uniform int uLightIndex[${String(MAX_LIGHTS)}];
 uniform vec4 uVeils[${String(MAX_VEILS)}];
 uniform float uVeilEdges[${String(MAX_VEILS)}];
 uniform vec4 uVeil, uVeilDeep, uTone, uRim, uShadow, uWashStart, uWashEnd, uWashBox;
@@ -70,6 +76,8 @@ vec3 veiled(vec3 c, float t){ return pow(mix(pow(clamp(c, 0., 1.), vec3(2.2)), p
 
 vec4 panelBox(int i){ return texelFetch(uPanels, ivec2(0, i), 0); }
 float panel(vec2 p, int i){ vec4 r = panelBox(i); vec2 h = r.zw * .5; return sdRound(p - r.xy - h, h, texelFetch(uPanels, ivec2(1, i), 0).x); }
+vec4 panelLight(int i){ return texelFetch(uPanels, ivec2(2, i), 0); }
+vec4 panelLamp(int i){ return texelFetch(uPanels, ivec2(3, i), 0); }
 // Every panel is one distance field. With uMerge > 0 neighbors join with a smooth minimum, so they lean together.
 float field(vec2 p){ float d = 1e5;
   for (int i = 0; i < ${String(MAX_PANELS)}; i++){ if (i >= uCount) break; float e = panel(p, i); d = uMerge > 0. ? smin(d, e, uMerge) : min(d, e); }
@@ -78,11 +86,39 @@ float field(vec2 p){ float d = 1e5;
 float thumb(vec2 p){ vec2 a = uThumbA.zw * .5, b = uThumbB.zw * .5;
   return smin(sdRound(p - uThumbA.xy - a, a, a.y), sdRound(p - uThumbB.xy - b, b, b.y), 16.); }
 
+// The light of the panels that are lit or pressed (#1931), on the backdrop: it thins with the square of the distance
+// from the lamp, another panel in its way halves it, and a pressed panel adds white light at half a lit one's strength.
+// The reference tests the field 30 px toward the lamp; here that is estimated from the field and its gradient at p
+// (d and g), which the bevel already works out within 20 px of a panel, so no lamp walks every panel. That is where
+// a panel can stand in the way: in the gaps between cards and along their edges.
+vec3 spill(vec2 p, float d, vec2 g){
+  vec3 s = vec3(0.);
+  for (int k = 0; k < ${String(MAX_LIGHTS)}; k++){ if (k >= uLights) break; int i = uLightIndex[k];
+    vec4 light = panelLight(i), lamp = panelLamp(i); float amount = light.a + lamp.z * .5; if (amount < .01) continue;
+    vec3 colour = mix(light.rgb, vec3(1.), lamp.z * .5 / max(amount, .01));
+    vec2 r = p - lamp.xy, toward = normalize(lamp.xy - p + 1e-4);
+    float blocked = d < 20. ? smoothstep(8., -8., d + 30. * dot(g, toward)) * smoothstep(0., 12., panel(p + toward * 30., i)) : 0.;
+    s += colour * amount * 2. / (1. + dot(r, r) / 8000.) * mix(1., .5, blocked); }
+  return s / (1. + luma(s) * .9) * mix(.135, .405, uDark);
+}
+
 // A slab of flat glass: a thin bevel that bends and splits the view, a slightly tinted edge with a faint dark band,
-// a soft reflection, a rim of light facing the upper left. Inside, the automatic veil keeps the panel's text readable.
-vec3 glass(vec2 p, float d, vec2 g, vec3 behind){
-  float u = 1. - clamp(-d / 12., 0., 1.), slope = min(u / sqrt(max(1. - u * u, .02)), 3.) / 3.;
-  vec2 off = -g * slope * 10.2 * mix(2.6, 1., uAppear);
+// a soft reflection, a rim of light facing the upper left. A lit panel takes up to half its color from its light,
+// brightest near the lamp, a pressed one brightens with a wider, stronger bevel, and bevels facing a lamp catch its
+// light (#1931); lamps is false for the switch thumb, which takes no panel's light. Inside, the automatic veil keeps
+// the panel's text readable.
+vec3 glass(vec2 p, float d, vec2 g, vec3 behind, bool lamps){
+  vec3 tint = vec3(0.), others = vec3(0.); float lit = 0., press = 0., core = 0.;
+  // Only the lit panels are visited. An unlit panel adds nothing but its weight, which is 1 inside it, so the weights
+  // are divided by at least 1.
+  if (lamps && uLights > 0){ float total = 0.;
+    for (int k = 0; k < ${String(MAX_LIGHTS)}; k++){ if (k >= uLights) break; int i = uLightIndex[k];
+      vec4 light = panelLight(i), lamp = panelLamp(i); float w = exp(-max(panel(p, i), 0.) * .3); vec2 r = p - lamp.xy;
+      tint += light.rgb * w; lit += light.a * w; press += lamp.z * w; total += w;
+      core += exp(-dot(r, r) / 9000.) * w; others += light.rgb * light.a * max(dot(g, normalize(-r + 1e-4)), 0.) / (1. + dot(r, r) / 16000.); }
+    total = max(total, 1.);tint /= total; lit /= total; press /= total; core /= total; }
+  float u = 1. - clamp(-d / (12. + 4. * press), 0., 1.), slope = min(u / sqrt(max(1. - u * u, .02)), 3.) / 3.;
+  vec2 off = -g * slope * (10.2 + 7.8 * press) * mix(2.6, 1., uAppear);
   vec3 a = length(off) < .25 ? art(p, 4.6) : vec3(art(p + off * 1.2, 4.6).r, art(p + off, 4.6).g, art(p + off * .8, 4.6).b);
   a = sat(a, 1.7);
   vec3 c = mix(a, uTone.rgb, uTone.a);
@@ -90,7 +126,8 @@ vec3 glass(vec2 p, float d, vec2 g, vec3 behind){
   c = mix(c, c * uEdge, slope * .225);
   c *= 1. - smoothstep(2.5, 5.5, -d) * (1. - smoothstep(6., 13., -d)) * .048;
   float sheen = sin((p.x * .6 + p.y) * .011 + 1.) * .5 + .5; c += sheen * sheen * .035 * (1. - slope);
-  c = veiled(c, needed(c));
+  c = mix(c, c * (.75 + tint * .7) + tint * (.03 + .22 * core), lit * .5) + press * (.08 + .14 * core) + others * .07;
+  c = veiled(c, needed(c)) + others * slope * 1.5;
   float ndl = dot(g, LIGHT), rim = 1. - smoothstep(0., 1.7, -d);
   // The reflection lives in the bevel only; inside it would cost thirteen texture reads for nothing.
   if (slope > 0.) c += art(vec2(uRes.x - p.x, p.y) + g * 60., 94.) * slope * slope * .22;
@@ -100,19 +137,21 @@ vec3 glass(vec2 p, float d, vec2 g, vec3 behind){
 
 void main(){
   vec2 p = vec2(gl_FragCoord.x, uRes.y * uDpr - gl_FragCoord.y) / uDpr;
-  vec3 col = backdrop(p, 0.);
   float D = field(p), appear = smoothstep(0., .6, uAppear);
-  float shade = (1. - smoothstep(-8., 36., field(p - vec2(0., 12.)))) * uShadow.a * appear;
-  col = mix(col, uShadow.rgb, shade);
+  // The field's gradient near panels: for the bevel, the lip and the spill's shadows.
   vec2 g = vec2(0., 1.);
   if (D < 20.) g = normalize(vec2(field(p + vec2(1., 0.)) - field(p - vec2(1., 0.)), field(p + vec2(0., 1.)) - field(p - vec2(0., 1.))) + 1e-5);
+  // Light on the backdrop only where the backdrop shows: inside a panel the glass replaces it.
+  vec3 light = uLights > 0 && D > -1. ? spill(p, D, g) : vec3(0.), col = backdrop(p, 0.) + light;
+  float shade = (1. - smoothstep(-8., 36., field(p - vec2(0., 12.)))) * uShadow.a * appear;
+  col = mix(col, uShadow.rgb, shade);
   // The lip of light a slab focuses just past its far edge.
   if (D > 0. && D < 20.) col += col * exp(-D / 5.) * max(dot(g, -LIGHT), 0.) * .55 * appear;
-  if (D < 1.) col = glass(p, D, g, col);
+  if (D < 1.) col = glass(p, D, g, col, true);
   // The thumb is glass over everything else, with a narrower bevel and a little more light, like a pressed panel.
   if (uThumbA.z > 0.){ float d = thumb(p);
     if (d < 1.){ vec2 gt = normalize(vec2(thumb(p + vec2(1., 0.)) - thumb(p - vec2(1., 0.)), thumb(p + vec2(0., 1.)) - thumb(p - vec2(0., 1.))) + 1e-5);
-      col = glass(p, d * 1.6, gt, col); col += (1. - col) * .06 * (1. - smoothstep(-1., .5, d * 1.6)); } }
+      col = glass(p, d * 1.6, gt, col, false); col += (1. - col) * .06 * (1. - smoothstep(-1., .5, d * 1.6)); } }
   // Veils behind text drawn over the layer, last, so they also hold over a panel's bevel and rim: as strong as the
   // brighter of the local backdrop (outside panels) and the pixel itself needs. A veil fades out within 16 px past its
   // box, or, marked edge, stops at it. What the pixel needs is the same for every veil, so the loop only finds the
@@ -121,6 +160,6 @@ void main(){
   for (int i = 0; i < ${String(MAX_VEILS)}; i++){ if (i >= uVeilCount) break;
     float edge = uVeilEdges[i], d = sdRound(p - uVeils[i].xy - uVeils[i].zw * .5, uVeils[i].zw * .5 + 4. * (1. - edge), 12. * (1. - edge));
     mask = max(mask, edge > .5 ? step(d, 0.) : 1. - smoothstep(0., 12., d)); }
-  if (mask > 0.) col = veiled(col, mask * max(needed(col), D > 0. ? needed(backdrop(p, 40.)) : 0.));
+  if (mask > 0.) col = veiled(col, mask * max(needed(col), D > 0. ? needed(backdrop(p, 40.) + light) : 0.));
   color = vec4(col + (h21(gl_FragCoord.xy) - .5) * .018, 1.);
 }`;

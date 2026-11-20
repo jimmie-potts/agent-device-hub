@@ -1,6 +1,7 @@
 import React, {useLayoutEffect, useRef} from 'react';
 import {readScene, sameScene, type GlassScene} from './glass-scene.ts';
-import {createGlassRenderer, luminance, parseColor, type GlassColor, type GlassPicture, type GlassRenderer, type GlassTokens} from './glass-renderer.ts';
+import {lightFrame, RESTING, type EasedLight, type LightClock} from './glass-light.ts';
+import {createGlassRenderer, lightColor, luminance, parseColor, type GlassColor, type GlassPicture, type GlassRenderer, type GlassTokens} from './glass-renderer.ts';
 import {advanceThumb, type GlassThumb} from './glass-thumb.ts';
 import './glass.css';
 
@@ -17,6 +18,10 @@ import './glass.css';
  *   it open while it is the current value; the layer uploads it when it changes and keeps no reference.
  *   `onBackdrop` reports which picture is actually on screen, or null when none is.
  * - `fuse` joins neighboring panels with a smooth minimum so they lean together; without it panels stay apart.
+ *
+ * A panel with a lamp (`data-glass-lamp`, see glass-scene.ts) lights the room (#1931). Its level and press ease toward
+ * the page's marks on a time base (glass-light.ts), so a light that switches on or off or a panel that is pressed
+ * draws frames until it settles, and none after.
  *
  * The canvas takes no pointer input and the layer sends nothing. It draws only while something changes or eases: a box
  * moved or resized, the page scrolled, the window resized, the skin or appearance changed, the backdrop changed, a
@@ -44,17 +49,25 @@ const SOFTWARE = /SwiftShader|llvmpipe|softpipe|Software/i;
 /** The join between neighboring panels when they fuse (the reference's k). */
 const MERGE = 20;
 /** Every skin value the shader reads, by its --glass-* token or shell role. */
-const TOKENS = ['veil', 'veil-deep', 'tone', 'rim', 'shadow', 'edge', 'ink', 'bg', 'wash-start', 'wash-end'] as const;
+const TOKENS = ['veil', 'veil-deep', 'tone', 'rim', 'shadow', 'edge', 'ink', 'bg', 'wash-start', 'wash-end', 'lamp'] as const;
 type Token = (typeof TOKENS)[number];
 
 function readTokens(probe: HTMLElement): GlassTokens {
   const value = (name: Token): GlassColor => {const element = probe.querySelector(`[data-glass-token="${name}"]`);return parseColor(element === null ? '' : getComputedStyle(element).color);};
   const bg = value('bg');
   return {dark: luminance(bg) < 0.2, ink: luminance(value('ink')), veil: value('veil'), veilDeep: value('veil-deep'), tone: value('tone'), rim: value('rim'),
-    shadow: value('shadow'), edge: value('edge'), bg, washStart: value('wash-start'), washEnd: value('wash-end')};
+    shadow: value('shadow'), edge: value('edge'), bg, washStart: value('wash-start'), washEnd: value('wash-end'), lamp: value('lamp')};
 }
 const sameTokens = (a: GlassTokens, b: GlassTokens): boolean => JSON.stringify(a) === JSON.stringify(b);
 const thumbOf = (thumb: GlassThumb | null): string => thumb === null ? '' : [...thumb.lead, ...thumb.lag].map(value => value.toFixed(1)).join(',');
+/**
+ * The light each lit panel was last drawn with, as `id:r,g,b,level,press,x,y` (sRGB channels, then the lamp's center),
+ * for checks and diagnosis. Empty when no light is drawn.
+ */
+const lightsOf = (scene: GlassScene, lights: ReadonlyMap<string, EasedLight>, tokens: GlassTokens): string => scene.panels.flatMap(panel => {
+  const eased = lights.get(panel.id);if (panel.light === undefined || eased === undefined || eased.level + eased.press <= 0) return [];
+  return [`${panel.id}:${[...lightColor(panel.light.color, tokens), eased.level, eased.press].map(value => value.toFixed(3)).join(',')},${panel.light.lamp.x.toFixed(1)},${panel.light.lamp.y.toFixed(1)}`];
+}).join('|');
 const boxesOf = (scene: GlassScene): string => scene.panels.map(panel => `${panel.id}:${[panel.rect.x, panel.rect.y, panel.rect.width, panel.rect.height].map(value => value.toFixed(1)).join(',')}`).join('|');
 
 type Glass = {backdrop: (picture: GlassBackdrop | null) => void; fuse: (value: boolean) => void; dispose: () => void};
@@ -68,6 +81,9 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   let raf = 0, born = -1, frames = 0, scene: GlassScene | undefined, tokens: GlassTokens | undefined, size = '', drawnBackdrop: string | null | undefined;
   // The switch thumb and when it last moved; -1 while it rests, so its next step is one frame long, not the idle time.
   let thumb: GlassThumb | null = null, thumbAt = -1;
+  // The lights' eased values and when they last stepped (glass-light.ts), and whether the first appearance's final,
+  // settled picture has been drawn.
+  let clock: LightClock = RESTING, appeared = false;
   // What the next frame must look at. A frame that finds nothing new draws nothing.
   let readBoxes = true, readSkin = true, force = true, resizing = false, settling: GlassScene | undefined, settleFrames = 0, state: GlassState = 'quiet';
   const setState = (next: GlassState): void => {if (next !== state) {state = next;callbacks.state(next);}};
@@ -109,16 +125,23 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
     const appearing = now - born < APPEAR_MS, step = advanceThumb(thumb, thumbAt, scene?.thumb ?? null, now, still.matches);
     thumb = step.thumb;thumbAt = step.at;if (step.moved) changed = true;
     const travelling = step.travelling;
-    // A frame that moves nothing draws nothing, but a thumb still on its way asks for the next frame.
-    if (!changed && !appearing) {if (travelling) schedule();return;}
     if (tokens === undefined || scene === undefined) return;
+    // The appearance ends with one frame drawn at its settled value, not the last eased one before it.
+    if (!appearing && !appeared) {appeared = true;changed = true;}
+    const lit = lightFrame(clock, scene.panels, now, still.matches);clock = lit.clock;if (lit.changed) changed = true;
+    // A frame that moves nothing draws nothing, but a thumb still on its way or a light still easing asks for the next
+    // frame: a frame can repeat the last timestamp (a zero-length step), and stopping there would leave them short of
+    // their targets with no frame to come.
+    const moving = travelling || lit.again;
+    if (!changed && !appearing) {if (moving) schedule();return;}
+    const lights = clock.lights;
     const t = Math.min(1, Math.max(0, (now - born) / APPEAR_MS)), scroll = doc.scrollingElement ?? doc.documentElement;
-    renderer.draw({scene, tokens, width, height, dpr, appear: 1 - (1 - t) ** 3, depth: Math.min(1, scroll.scrollTop / (height * 0.4)), merge, thumb,
+    renderer.draw({scene, tokens, width, height, dpr, appear: 1 - (1 - t) ** 3, depth: Math.min(1, scroll.scrollTop / (height * 0.4)), merge, thumb, lights,
       washBox: [-scroll.scrollLeft, -scroll.scrollTop, scroll.clientWidth, Math.max(scroll.scrollHeight, height)]});
     frames += 1;canvas.dataset['glassFrames'] = String(frames);canvas.dataset['glassBoxes'] = boxesOf(scene);canvas.dataset['glassBackdrop'] = picture?.id ?? '';
-    canvas.dataset['glassCapsules'] = thumbOf(thumb);
+    canvas.dataset['glassCapsules'] = thumbOf(thumb);canvas.dataset['glassLights'] = lightsOf(scene, lights, tokens);
     setState('webgl');report(picture?.id ?? null);
-    if (appearing || travelling) schedule();
+    if (appearing || moving) schedule();
   };
   function schedule(): void {if (raf === 0 && !disposed) raf = view.requestAnimationFrame(frame);}
   const boxes = (): void => {readBoxes = true;schedule();};
@@ -156,7 +179,7 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   observePanels();
   // Cards added, removed, reordered or reshaped (Edit Home, paging, a new record), and marks that change.
   const page = new MutationObserver(records => {if (records.some(record => record.type === 'childList')) observePanels();boxes();});
-  page.observe(root, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-glass-panel', 'data-glass-veil', 'data-glass-thumb', 'style', 'class', 'hidden']});
+  page.observe(root, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-glass-panel', 'data-glass-veil', 'data-glass-thumb', 'data-glass-lamp', 'data-glass-lamp-color', 'data-glass-pressed', 'style', 'class', 'hidden']});
   // An element added or removed before the root, or beside one of its ancestors.
   const around = new MutationObserver(() => {observePanels();boxes();});
   for (let node = root.parentElement; node !== null && node !== doc.documentElement; node = node.parentElement) around.observe(node, {childList: true});
@@ -167,7 +190,7 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
     event.preventDefault();view.cancelAnimationFrame(raf);raf = 0;renderer = null;canvas.dataset['glassFallback'] = 'lost';setState('quiet');report(null);
   }, {signal});
   canvas.addEventListener('webglcontextrestored', () => {
-    build();if (renderer === null) return;born = -1;size = '';force = true;skin();
+    build();if (renderer === null) return;born = -1;appeared = false;size = '';force = true;skin();
   }, {signal});
   schedule();
 

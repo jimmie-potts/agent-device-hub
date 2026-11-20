@@ -1,12 +1,20 @@
 import React, {useEffect, useId, useRef, useState} from 'react';
+import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {LightingCard, LightingDevice, LightingIntent, lightCapabilities} from './lighting.ts';
 import {useHomeShape} from './home-shape-context.ts';
+import {glowOf, lampAttributes, NO_GLOW} from './glass-light.ts';
+import {LightDial} from './light-dial.tsx';
+import {useDeviceModeNote} from './device-mode.tsx';
+import {newerRequest} from './requested.ts';
+import './light-dial.css';
 type Tab = 'Power' | 'Color' | 'Scenes' | 'Timer';
 const tabs: Tab[] = ['Power', 'Color', 'Scenes', 'Timer'];
 export type LightCardProps = {
   card: LightingCard; devices: readonly LightingDevice[]; capabilities: ReturnType<typeof lightCapabilities>;
   artwork: React.ReactNode; modeChoice?: React.ReactNode; options: React.ReactNode; status: readonly {name: string; text: string; locked: boolean}[];
-  act: (intent: LightingIntent) => void; currentObservationsOnly?: boolean; drag?: React.DragEventHandler<HTMLElement>; drop?: React.DragEventHandler<HTMLElement>;
+  act: (intent: LightingIntent) => void; currentObservationsOnly?: boolean;
+  /** The operation records, so the Small square dial can tell a request newer than the lights' last report. */
+  operations?: readonly OperationRecord[]; drag?: React.DragEventHandler<HTMLElement>; drop?: React.DragEventHandler<HTMLElement>;
 };
 function Slider({label, value, min = 0, max = 100, unit = '%', disabled, commit}: {
   label: string; value: number | undefined; min?: number; max?: number; unit?: string; disabled: boolean; commit: (value: number) => void;
@@ -22,8 +30,8 @@ function Slider({label, value, min = 0, max = 100, unit = '%', disabled, commit}
 }
 function common<T>(values: readonly (T | undefined)[]): T | undefined { return values.length > 0 && values.every(value => value !== undefined && value === values[0]) ? values[0] : undefined; }
 /** Artwork and the menu remain mounted. Only the labelled control face changes on a tab switch. */
-export function LightCard({card, devices, capabilities: cap, artwork, modeChoice, options, status, act, currentObservationsOnly = false, drag, drop}: LightCardProps): React.JSX.Element {
-  const id = useId(), shape = useHomeShape();
+export function LightCard({card, devices, capabilities: cap, artwork, modeChoice, options, status, act, currentObservationsOnly = false, operations = [], drag, drop}: LightCardProps): React.JSX.Element {
+  const id = useId(), shape = useHomeShape(), modeNote = useDeviceModeNote(card.selection.kind === 'device' ? card.selection.id : undefined);
   // In a one-row Home shape (#1672) the card keeps its artwork, state and power; color, scenes and the rest stay one
   // step away in the card's options menu and on its own page.
   const compact = shape === 'square' || shape === 'wide';
@@ -46,19 +54,54 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
   useEffect(() => { if (!paletteDirty) { setHue(colorHue ?? 210); setSaturation(colorSaturation ?? 75); } }, [colorHue, colorSaturation, paletteDirty]);
   const attention = status.filter(item => item.locked || /Refused|Not sent|failed|uncertain|Conflicting/i.test(item.text));
   const statusText = cap.blocked ?? (observedPower === undefined ? power === undefined ? 'Mixed / unknown' : `Requested ${power ? 'on' : 'off'}` : observedPower ? 'On · observed' : 'Off · observed');
-  return <article className="light-card" aria-label={card.name} data-light-card={card.selection.id} onDragOver={event => { if (drop !== undefined) event.preventDefault(); }} onDrop={drop}>
+  // The light this card gives Home's glass layer (#1931): observed state only, from the same members.
+  const glow = currentObservationsOnly ? NO_GLOW : glowOf(card.members, devices);
+  const attentionLine = attention.length > 0 && <p className="light-attention light-attention-line" role="status" title={attention.map(item => `${card.members.length > 1 ? `${item.name}: ` : ''}${item.text}`).join(' ')}>
+    {card.members.length > 1 ? `${attention[0]?.name ?? ''}: ` : ''}{attention[0]?.text}{attention.length > 1 ? ` (+${String(attention.length - 1)})` : ''}</p>;
+  const allowDrop = (event: React.DragEvent<HTMLElement>): void => {if (drop !== undefined) event.preventDefault();};
+  // The Small square shape is the ring dial (#1931); a room or group with no lights keeps its note. Its top corners stay
+  // clear for the unfold arrow (top left, #1932) and the drag handle (top right, #1933); the options sit bottom right.
+  if (shape === 'square' && card.members.length > 0) {
+    // A power or brightness request that completed after every member's last report (a LIFX bulb reports on its next
+    // read) shows beside the observed state (requested.ts). The ring and the glow keep the observed state; the switch
+    // shows the newest power, which is what a press switches away from.
+    const newer = (family: 'power-set' | 'brightness-set'): boolean => members.every(member => member !== undefined && newerRequest(member.record, operations, family));
+    const powerNewer = newer('power-set'), brightnessNewer = newer('brightness-set');
+    const switched = powerNewer ? power ?? observedPower : observedPower ?? power;
+    const onOff = (value: boolean | undefined): string => value === undefined ? 'unknown' : value ? 'on' : 'off';
+    const requestedLevel = brightnessNewer && switched === true && requestedBrightness !== undefined && requestedBrightness !== observedBrightness ? requestedBrightness : undefined;
+    // A drag or a key starts from the newest brightness, an off light's stored one included, so it never jumps to 0.
+    const startLevel = brightnessNewer && requestedBrightness !== undefined ? requestedBrightness : observedBrightness ?? requestedBrightness;
+    const requested = powerNewer && power !== undefined && power !== observedPower ? `Requested ${onOff(power)} · observed ${onOff(observedPower)}`
+      : requestedLevel !== undefined ? `Requested ${String(requestedLevel)}% · observed ${observedBrightness === undefined ? 'unknown' : `${String(observedBrightness)}%`}` : undefined;
+    const kind = card.selection.kind === 'device' ? '' : `${String(card.members.length)} lights · `;
+    const state = `${kind}${cap.blocked ?? requested ?? (observedPower === undefined ? power === undefined ? 'Mixed / unknown' : `Requested ${power ? 'on' : 'off'}`
+      : observedPower ? `On${observedBrightness === undefined ? '' : ` · ${String(observedBrightness)}%`} · observed` : 'Off · observed')}`;
+    return <article className="light-card light-dial-card" aria-label={card.name} data-light-card={card.selection.id} onDragOver={allowDrop} onDrop={drop}>
+      <LightDial name={card.name} power={observedPower} brightness={observedBrightness} pressFrom={switched} requestedLevel={requestedLevel}
+        startLevel={startLevel} describedBy={`${id}-state`}
+        glow={glow} canPower={cap.power} canDim={cap.brightness}
+        stale={members.some(member => member?.live !== true)}
+        onPower={on => {act({family: 'power-set', data: {on}});}} onBrightness={percent => {act({family: 'brightness-set', data: {percent}});}}/>
+      <h3 title={card.name}>{card.name}</h3>
+      <p className="light-dial-state" id={`${id}-state`} title={state}>{state}</p>
+      {modeNote !== undefined && <p className="light-dial-mode" title={modeNote}>{modeNote}</p>}
+      {attentionLine}
+      <div className="light-dial-options">{options}</div>
+    </article>;
+  }
+  return <article className="light-card" aria-label={card.name} data-light-card={card.selection.id} onDragOver={allowDrop} onDrop={drop}>
     <header className="light-card-heading"><div><h3>{card.name}</h3><p title={compact || shape !== undefined ? `${card.selection.kind === 'device' ? 'Light' : `${String(card.members.length)} lights · ${card.selection.kind}`} · ${statusText}` : undefined}>{card.selection.kind === 'device' ? 'Light' : `${card.members.length} lights · ${card.selection.kind}`} · {statusText}</p></div>
       {options}
     </header>
     {/* A room or group with no lights says so where its artwork would be, instead of a blank panel (#1672). */}
-    <div className="light-artwork" data-light-artwork={card.selection.id}>{card.members.length === 0 ? <p className="light-empty">No lights in this {card.selection.kind} yet. Assign lights on the Rooms page.</p> : artwork}</div>
+    <div className="light-artwork" data-light-artwork={card.selection.id} {...(card.members.length === 0 ? {} : lampAttributes(glow))}>{card.members.length === 0 ? <p className="light-empty">No lights in this {card.selection.kind} yet. Assign lights on the Rooms page.</p> : artwork}</div>
     {compact && <div className="light-compact">
       <div className="light-power"><button type="button" disabled={!cap.power} aria-pressed={power === true} onClick={() => { act({family: 'power-set', data: {on: true}}); }}>On</button>
         <button type="button" disabled={!cap.power} aria-pressed={power === false} onClick={() => { act({family: 'power-set', data: {on: false}}); }}>Off</button></div>
       {shape === 'wide' && <Slider label={observedBrightness === undefined ? 'Brightness · requested' : 'Brightness · observed'} value={brightness} disabled={!cap.brightness} commit={percent => { act({family: 'brightness-set', data: {percent}}); }}/>}
       {/* The result of a command sent from this card stays on its face: one line here, each member's detail in its options. */}
-      {attention.length > 0 && <p className="light-attention light-attention-line" role="status" title={attention.map(item => `${card.members.length > 1 ? `${item.name}: ` : ''}${item.text}`).join(' ')}>
-        {card.members.length > 1 ? `${attention[0]?.name ?? ''}: ` : ''}{attention[0]?.text}{attention.length > 1 ? ` (+${String(attention.length - 1)})` : ''}</p>}
+      {attentionLine}
     </div>}
     {!compact && <><div className="light-tabs" role="tablist" aria-label={`${card.name} controls`}>{tabs.map((name, index) => <button key={name} type="button" role="tab" id={`${id}-${name}`} aria-controls={`${id}-face`} aria-selected={tab === name} tabIndex={tab === name ? 0 : -1}
       onClick={() => { setTab(name); }} onKeyDown={event => {

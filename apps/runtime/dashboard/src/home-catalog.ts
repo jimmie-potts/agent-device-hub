@@ -127,9 +127,9 @@ export type HomeCardShapes = {
 /**
  * The shapes a Home card offers (#1672). Core widgets declare theirs in the widget catalog. Light, room and Nanoleaf
  * cards have compact content in every shape, and so do the Pixoo, Tidbyt and Wispr module cards, whose modules read the
- * shape from `FrontendContext.presentation`. Device and Music cards without compact content of their own (Wemo,
- * Roborock, Volcano, the sign, Music) show the generic compact face in one unit, since their full content fits no shape
- * at the 220px unit; Open leads to their existing device or Music page. A module card that cannot draw its compact
+ * shape from `FrontendContext.presentation`. A Wemo plug is a press panel in one unit (#1931). Device and Music cards
+ * without compact content of their own (Roborock, Volcano, the sign, Music) show the generic compact face in one
+ * unit, since their full content fits no shape at the 220px unit; Open leads to their existing device or Music page. A module card that cannot draw its compact
  * content now (`fallback`) shows the generic face in one unit too.
  */
 export function homeCardShapes(card: Pick<HomeCardDefinition, 'id' | 'source' | 'empty' | 'fallback'>): HomeCardShapes {
@@ -141,6 +141,8 @@ export function homeCardShapes(card: Pick<HomeCardDefinition, 'id' | 'source' | 
   // A room or group with no lights has only its name, state and a short note to show, so it offers one-row shapes.
   if (card.source.kind === 'light') return card.empty === true ? {shapes: ['square', 'wide'], standard: 'wide', generic: []} : {shapes: allShapes, standard: 'tall', generic: []};
   if (card.source.kind === 'device' && moduleCardOwners[card.source.owner] !== undefined) return {shapes: allShapes, standard: 'square', generic: [], ...(page === undefined ? {} : {open: page})};
+  // A Wemo plug is a press panel in one unit (#1931); its full card stays on its page.
+  if (card.source.kind === 'device' && card.source.owner === 'bunny/modules/wemo') return {shapes: ['square'], standard: 'square', generic: [], open: `#/component/${encodeURIComponent(card.source.instance)}`};
   if (card.source.kind === 'device') return {...generic, open: `#/component/${encodeURIComponent(card.source.instance)}`};
   if (card.source.kind === 'music') return {...generic, open: `#/music/${encodeURIComponent(card.source.instance)}`};
   return generic;

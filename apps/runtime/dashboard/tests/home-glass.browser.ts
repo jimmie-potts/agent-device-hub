@@ -2,7 +2,10 @@
 // WebGL 2 with SwiftShader. The journey checks that the backdrop is drawn, that every card's glass follows its box
 // through scrolling, resizing, Edit Home and paging, that nothing draws at rest, that WebGL 2 missing or a lost
 // context leaves the Quiet glass panels with working controls, and that panel text keeps 4.5:1 over a dark and a bright
-// artwork in light and dark appearance. With DASHBOARD_RECEIPTS set it writes private screenshots.
+// artwork in light and dark appearance. It also checks the lit room (#1931): a LIFX light glows in its observed color,
+// a light without color and a plug in warm white, from the ring's center; a press brightens a panel; the layer rests
+// once the lights have eased; with every light off nothing is drawn; and the dial and the plug work in Quiet glass.
+// With DASHBOARD_RECEIPTS set it writes private screenshots.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -11,9 +14,10 @@ import {chromium, expect, type BrowserContext, type Locator, type Page} from 'pl
 import {changes, feed, holdDashboardStream, startWorld} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {artworkOf, browserArt} from '../../../../modules/art/dist/src/frontend/model.js';
+import type {HomeLayoutRecord, HomePlacement} from '@jimmie-potts/event-contracts/v2/families';
 
 const receipts = process.env.DASHBOARD_RECEIPTS;
-const world = await startWorld({lighting: true, inbox: true, art: true});
+const world = await startWorld({lighting: true, nanoleaf: true, wemo: true, inbox: true, art: true});
 const browser = await chromium.launch({headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-gpu-compositing']});
 type Sample = 'dark' | 'bright';
 
@@ -82,6 +86,26 @@ async function present(page: Page, artwork: Artwork): Promise<void> {
   await expect(layer(page)).toHaveAttribute('data-glass-backdrop', artwork.renditionId, {timeout: 30_000});
 }
 
+/** Saves Home's arrangement through the existing command, as Edit Home would, and waits for its shapes. */
+async function arrange(page: Page, desktop: HomePlacement[]): Promise<void> {
+  assert.equal(await page.evaluate(async desktop => {
+    const record = (await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': HomeLayoutRecord[]}}).records['home-layout'][0];
+    return (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+      body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record?.revision ?? 0, layouts: {desktop, phone: desktop}}})})).status;
+  }, desktop), 200);
+  for (const entry of desktop.filter(item => !item.hidden)) await expect(page.locator(`[data-home-card="${entry.widget}"]`)).toHaveAttribute('data-home-shape', entry.shape ?? '');
+}
+/** The lights the layer drew last by panel: sRGB color, eased level and press, and the lamp's center. */
+async function lightsDrawn(page: Page): Promise<Map<string, number[]>> {
+  const text = await layer(page).getAttribute('data-glass-lights') ?? '';
+  return new Map(text.split('|').filter(entry => entry !== '').map(entry => {const at = entry.lastIndexOf(':');return [entry.slice(0, at), entry.slice(at + 1).split(',').map(Number)];}));
+}
+/** Hides WebGL 2 from the page, as a browser without it would. */
+function noWebgl2(): void {
+  const original = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext')?.value as (this: HTMLCanvasElement, ...args: unknown[]) => RenderingContext | null;
+  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {configurable: true, writable: true,
+    value(this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {return kind === 'webgl2' ? null : original.call(this, kind, ...rest);}});
+}
 const layer = (page: Page): Locator => page.locator('.home-layout .glass-layer');
 const glassState = async (page: Page): Promise<string | null> => page.locator('.home-layout').getAttribute('data-glass');
 const frames = async (page: Page): Promise<number> => Number(await layer(page).getAttribute('data-glass-frames') ?? 0);
@@ -189,13 +213,82 @@ async function contrast(page: Page): Promise<{min: number; runs: number; worst: 
   return {min, runs: runs.length, worst, texts: runs.map(run => run.text)};
 }
 
-async function open(context: BrowserContext, width = 1440, height = 900): Promise<{page: Page; sent: string[]; errors: string[]}> {
+type Opened = {page: Page; sent: string[]; errors: string[]; consoleErrors: string[]};
+async function open(context: BrowserContext, width = 1440, height = 900): Promise<Opened> {
   await substitute(context);const page = await context.newPage();page.setDefaultTimeout(30_000);await page.setViewportSize({width, height});
   const errors: string[] = [];page.on('pageerror', error => {errors.push(error.message);});
+  // Console errors are kept for the lit room's failure diagnostics only.
+  const consoleErrors: string[] = [];page.on('console', message => {if (message.type() === 'error') consoleErrors.push(message.text());});
   const sent = changes(page);
   await page.goto(world.url);await feed(page, 'connected');
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
-  return {page, sent, errors};
+  return {page, sent, errors, consoleErrors};
+}
+
+/*
+ * The lit room's eased values (#1931) and which run asserts what (owner decision 2026-11-19, "Check state, not
+ * pixels"). The full browser suite (`browser.ts`, and `runtime-browser.mjs run` on main) and a focused run of this
+ * journey assert that every eased value reaches its exact target on a live layer. The hosted smoke chain (`smoke.ts`,
+ * App verification) runs this journey late in one long process, where headless SwiftShader has been seen to stop
+ * delivering the layer's frames. There each eased-value check first reads the layer's state: while the layer is live it
+ * asserts the eased value as everywhere else; when the layer has fallen back to Quiet glass or lost its context it
+ * asserts that the Quiet glass panels are shown and the lit room's controls are usable instead. The exact easing is
+ * also covered by glass-light.test.ts. Any failed eased-value check prints the layer's state and a short timeline.
+ */
+const smoke = /smoke\.ts$/.test(process.argv[1] ?? '');
+type LayerState = {glass: string | null; fallback: string | null; contextLost: boolean; hidden: boolean; frames: number};
+async function layerState(page: Page): Promise<LayerState> {
+  return page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>('.home-layout .glass-layer');
+    return {glass: document.querySelector('.home-layout')?.getAttribute('data-glass') ?? null, fallback: canvas?.dataset['glassFallback'] ?? null,
+      contextLost: canvas?.getContext('webgl2')?.isContextLost() ?? true, hidden: document.hidden, frames: Number(canvas?.dataset['glassFrames'] ?? 0)};
+  });
+}
+const live = (state: LayerState): boolean => state.glass === 'webgl' && state.fallback === null && !state.contextLost && !state.hidden;
+/** Prints why a lit-room check failed: the layer's state, a one-second timeline of its frames and lights, and errors. */
+async function diagnose(opened: Opened, label: string): Promise<void> {
+  const timeline: {at: number; frames: string | null; lights: string | null}[] = [];
+  for (let at = 0; at < 1000; at += 100) {
+    timeline.push({at, ...await opened.page.locator('.home-layout .glass-layer').evaluate(node => ({frames: node.getAttribute('data-glass-frames'), lights: node.getAttribute('data-glass-lights')})).catch(() => ({frames: null, lights: null}))});
+    await opened.page.waitForTimeout(100).catch(() => undefined);
+  }
+  const state = await layerState(opened.page).catch((error: unknown) => String(error));
+  console.error(`home-glass lit room diagnostics (${label}): ${JSON.stringify({smoke, state, timeline, pageErrors: opened.errors, consoleErrors: opened.consoleErrors})}`);
+}
+/** In the smoke chain, once the layer has fallen back: the Quiet glass panels are shown and the lit room's controls are usable. */
+async function quietShown(opened: Opened, label: string): Promise<void> {
+  const {page} = opened;
+  await expect(page.locator('.home-layout'), `${label}: a layer that fell back says so`).toHaveAttribute('data-glass', 'quiet');
+  assert.deepEqual((await surfaces(page)).clear, [], `${label}: every card shows its Quiet glass panel`);
+  for (const control of [page.getByRole('switch', {name: 'lamp-a power', exact: true}), page.getByRole('switch', {name: 'lamp-b power', exact: true}), page.locator('[data-plug-panel="shelf-lamp"] .plug-press')]) {
+    await expect(control).toBeEnabled();
+    const box = await control.boundingBox();assert.ok(box !== null);
+    assert.equal(await control.evaluate((node, point) => {const hit = document.elementFromPoint(point.x, point.y);return hit !== null && (hit === node || node.contains(hit));}, {x: box.x + box.width / 2, y: box.y + box.height / 2}), true, `${label}: the control takes the pointer`);
+  }
+  console.log(`home-glass lit room: ${label}: the layer fell back to Quiet glass in the smoke chain; its Quiet panels and controls were checked instead`);
+}
+/**
+ * Waits until `read()` gives `target` on a live layer. In the smoke chain a layer that has fallen back or lost its
+ * context is checked for its Quiet glass instead ('quiet'); anywhere else that, or a timeout, fails with diagnostics.
+ */
+async function eases(opened: Opened, read: () => Promise<unknown>, target: unknown, label: string): Promise<'eased' | 'quiet'> {
+  let value: unknown;
+  for (const deadline = Date.now() + 15_000; Date.now() < deadline; await opened.page.waitForTimeout(100)) {
+    const state = await layerState(opened.page);
+    if (!live(state)) {
+      if (smoke) {await quietShown(opened, label);return 'quiet';}
+      await diagnose(opened, label);assert.fail(`${label}: the layer is not live (${JSON.stringify(state)})`);
+    }
+    value = await read();
+    if (JSON.stringify(value) === JSON.stringify(target)) return 'eased';
+  }
+  await diagnose(opened, label);
+  assert.fail(`${label}: reached ${JSON.stringify(value)}, not ${JSON.stringify(target)}`);
+}
+/** Whether the canvas-based checks that follow apply: always outside the smoke chain, and there while the layer is live. */
+async function drawing(opened: Opened, label: string): Promise<boolean> {
+  if (!smoke || live(await layerState(opened.page))) return true;
+  await quietShown(opened, label);return false;
 }
 
 const report: Record<string, unknown> = {journey: 'home-glass', physical: false};
@@ -325,11 +418,7 @@ try {
 
   // AC4: without WebGL 2 the cards keep their Quiet glass panels and work.
   const plain = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
-  await plain.addInitScript(() => {
-    const original = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext')?.value as (this: HTMLCanvasElement, ...args: unknown[]) => RenderingContext | null;
-    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {configurable: true, writable: true,
-      value(this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {return kind === 'webgl2' ? null : original.call(this, kind, ...rest);}});
-  });
+  await plain.addInitScript(noWebgl2);
   const fallback = await open(plain);
   await expect(layer(fallback.page)).toHaveAttribute('data-glass-fallback', 'no-webgl2');
   assert.equal(await glassState(fallback.page), 'quiet');
@@ -338,6 +427,149 @@ try {
   await controlsWork(fallback.page, fallback.sent, 'no WebGL 2');
   await shot(fallback.page, '1440-no-webgl2');
   assert.deepEqual(fallback.errors, []);await plain.close();report['noWebgl2'] = true;
+
+  // #1931: the lit room. Two LIFX lights and the Nanoleaf light as ring dials and a plug as a press panel; lamp-a red.
+  // A simulated LIFX bulb reports its state when the module reads it, which a runtime restart does at once.
+  const room = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark'});
+  const lit = await open(room);
+  await expect(lit.page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
+  const square = (widget: string): HomePlacement => ({widget, size: 'small', hidden: false, shape: 'square'});
+  const roomCards = ['light:device:lamp-a', 'light:device:lamp-b', 'light:device:wall', 'device:bunny/modules/wemo:shelf-lamp'];
+  await arrange(lit.page, [{widget: 'light:device:lamp-a', size: 'small', hidden: false, shape: 'tall'}]);
+  const tallLamp = lit.page.locator('[data-light-card="lamp-a"]');
+  await tallLamp.getByRole('tab', {name: 'Color', exact: true}).click();
+  await tallLamp.getByLabel('Hue', {exact: true}).fill('0');await tallLamp.getByLabel('Saturation', {exact: true}).fill('100');
+  await tallLamp.getByRole('button', {name: 'Apply color', exact: true}).click();
+  await expect.poll(() => lit.sent.filter(path => path.endsWith('/lifx-color-set')).length).toBe(1);
+  await arrange(lit.page, roomCards.map(square));
+  const plug = lit.page.locator('[data-plug-panel="shelf-lamp"] .plug-press');
+  await expect(plug).toBeEnabled();if (await plug.getAttribute('aria-pressed') !== 'true') {await plug.click();await expect(plug).toHaveAttribute('aria-pressed', 'true');}
+  await world.restart();await lit.page.reload();await feed(lit.page, 'connected');
+  await expect(lit.page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
+  await present(lit.page, bright);
+  const ring = (id: string): Locator => lit.page.locator(`[data-home-card="light:device:${id}"] .light-dial`);
+  await expect(ring('lamp-a')).toHaveAttribute('data-glass-lamp-color', /^1 0 0$/);
+  await expect(ring('wall')).toHaveAttribute('data-glass-lamp', /^0\.\d+|1$/);
+  const litLevel = (id: string) => async (): Promise<number | undefined> => (await lightsDrawn(lit.page)).get(`light:device:${id}`)?.[3];
+  const litFirst = await eases(lit, litLevel('lamp-a'), Number(await ring('lamp-a').getAttribute('data-glass-lamp')), 'lamp-a eases up to its observed level');
+  const settledLit = await rest(lit.page);
+  // The layer eases each light up from nothing, then draws nothing at rest.
+  await lit.page.waitForTimeout(2000);assert.equal(await frames(lit.page), settledLit, 'nothing draws at rest once the lights have eased');
+  let onShot: Buffer | undefined;let lampBox = await ring('lamp-a').boundingBox();
+  if (litFirst === 'eased' && await drawing(lit, 'the lit room as drawn')) {
+    const drawn = await lightsDrawn(lit.page), warm = await lit.page.locator('.glass-tokens [data-glass-token=lamp]').evaluate(node => getComputedStyle(node).color);
+    const warmColor = [...warm.matchAll(/\d+(\.\d+)?/g)].slice(0, 3).map(match => Number(match[0]) / 255);
+    const lampA = drawn.get('light:device:lamp-a'), wall = drawn.get('light:device:wall'), shelf = drawn.get('device:bunny/modules/wemo:shelf-lamp');
+    assert.ok(lampA !== undefined && wall !== undefined && shelf !== undefined, `every lit panel is drawn: ${[...drawn.keys()].join(', ')}`);
+    assert.deepEqual(lampA.slice(0, 3), [1, 0, 0], 'a LIFX light glows in its observed color');
+    assert.equal(lampA[3], Number(await ring('lamp-a').getAttribute('data-glass-lamp')), 'at its observed level');
+    warmColor.forEach((value, index) => {assert.ok(Math.abs((wall[index] ?? 0) - value) < 0.003, `a light without color glows in the skin's warm white: ${wall.join(',')} vs ${warm}`);});
+    assert.deepEqual(shelf.slice(0, 4), [...shelf.slice(0, 3), 0.8], 'a plug that is on glows at 0.8');
+    lampBox = await ring('lamp-a').boundingBox();assert.ok(lampBox !== null);
+    assert.ok(Math.abs((lampA[5] ?? 0) - (lampBox.x + lampBox.width / 2)) <= 1 && Math.abs((lampA[6] ?? 0) - (lampBox.y + lampBox.height / 2)) <= 1, 'the lamp is the ring\'s center');
+    onShot = await lit.page.screenshot();await shot(lit.page, '1931-lit-1440-dark');
+  }
+  // A press brightens the panel while it is held; then it eases back and the layer rests.
+  const bRing = await ring('lamp-b').boundingBox();assert.ok(bRing !== null);
+  const powerSent = (): number => lit.sent.filter(path => path === '/api/v2/commands/power-set').length, beforePress = powerSent();
+  await lit.page.mouse.move(bRing.x + bRing.width / 2, bRing.y + 5);await lit.page.mouse.down();
+  const litPress = async (): Promise<number> => (await lightsDrawn(lit.page)).get('light:device:lamp-b')?.[4] ?? 0;
+  await eases(lit, litPress, 1, 'a held press on lamp-b eases to 1');
+  await lit.page.mouse.up();
+  await eases(lit, litPress, 0, 'the released press eases back to 0');
+  const pressed = await rest(lit.page);await lit.page.waitForTimeout(1000);assert.equal(await frames(lit.page), pressed, 'nothing draws at rest after a press');
+  // Frames that repeat the last timestamp (a zero-length easing step, seen on hosted runners) must not stall the
+  // easing short of its target (#1966 review, F8): every other animation frame here repeats the one before it.
+  const stutter = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark'});
+  await stutter.addInitScript(() => {
+    const original = window.requestAnimationFrame.bind(window);let last = 0, repeat = false;
+    window.requestAnimationFrame = callback => original(time => {const now = repeat ? last : time;repeat = !repeat;last = now;callback(now);});
+  });
+  const stuttering = await open(stutter);
+  await expect(stuttering.page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
+  const targets = async (): Promise<Record<string, number>> => Object.fromEntries(await stuttering.page.locator('.home-layout [data-glass-panel]').evaluateAll(panels => panels.flatMap(panel => {
+    const level = panel.querySelector('[data-glass-lamp]')?.getAttribute('data-glass-lamp');
+    return level === undefined || level === null || Number(level) === 0 ? [] : [[(panel as HTMLElement).dataset['glassPanel'] ?? '', Number(level)]];
+  })));
+  const wanted = await targets();assert.ok(Object.keys(wanted).length >= 3, `lit panels to ease: ${JSON.stringify(wanted)}`);
+  await eases(stuttering, async () => Object.fromEntries([...await lightsDrawn(stuttering.page)].map(([id, values]): [string, number | undefined] => [id, values[3]]).sort(([a], [b]) => a.localeCompare(b))),
+    Object.fromEntries(Object.entries(wanted).sort(([a], [b]) => a.localeCompare(b))), 'with repeated frame times every lit panel eases to its level');
+  const stutterRing = await stuttering.page.locator('[data-home-card="light:device:lamp-b"] .light-dial').boundingBox();assert.ok(stutterRing !== null);
+  const commandsSent = (): number => stuttering.sent.filter(path => path.includes('/commands/')).length, powerBefore = commandsSent();
+  await stuttering.page.mouse.move(stutterRing.x + stutterRing.width / 2, stutterRing.y + 5);await stuttering.page.mouse.down();
+  const stutterPress = async (): Promise<number> => (await lightsDrawn(stuttering.page)).get('light:device:lamp-b')?.[4] ?? 0;
+  await eases(stuttering, stutterPress, 1, 'with repeated frame times a held press eases to 1');
+  // Out past the press slop and back: no command, no switch.
+  await stuttering.page.mouse.move(stutterRing.x + stutterRing.width / 2, stutterRing.y - 15);await stuttering.page.mouse.move(stutterRing.x + stutterRing.width / 2, stutterRing.y + 5);
+  await stuttering.page.mouse.up();
+  await eases(stuttering, stutterPress, 0, 'with repeated frame times the released press eases back to 0');
+  const stutterRest = await rest(stuttering.page);await stuttering.page.waitForTimeout(1000);
+  assert.equal(await frames(stuttering.page), stutterRest, 'nothing draws at rest once the easing has finished');
+  assert.equal(commandsSent(), powerBefore, 'a press dragged back to its start sends nothing');
+  assert.deepEqual(stuttering.errors, []);await stutter.close();
+  // Text on the lit panels keeps 4.5:1 over a bright and a dark artwork, dark and light.
+  for (const scheme of ['dark', 'light'] as const) for (const sample of [bright, dark]) {
+    await lit.page.emulateMedia({colorScheme: scheme});await present(lit.page, sample);await rest(lit.page);
+    const measured = await contrast(lit.page);
+    contrasts[`lit/${scheme}/${sample === bright ? 'bright' : 'dark'}`] = Math.round(measured.min * 100) / 100;
+    assert.ok(measured.min >= 4.5, `lit ${scheme}: text keeps 4.5:1 (lowest ${measured.min.toFixed(2)}: ${measured.worst})`);
+    await shot(lit.page, `1931-lit-1440-${scheme}-${sample === bright ? 'bright' : 'dark'}`);
+  }
+  await lit.page.emulateMedia({colorScheme: 'dark'});await present(lit.page, bright);await rest(lit.page);
+
+  // Quiet glass: without WebGL 2 the dial and the plug show their state in plain CSS and still switch.
+  const quiet = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'reduce'});
+  await quiet.addInitScript(noWebgl2);
+  const plainRoom = await open(quiet);
+  await expect(layer(plainRoom.page)).toHaveAttribute('data-glass-fallback', 'no-webgl2');
+  const plainDial = plainRoom.page.locator('[data-home-card="light:device:lamp-a"] .light-dial');
+  await expect(plainDial.locator('.light-dial-arc')).toHaveCount(1);
+  assert.notEqual(await plainDial.locator('.light-dial-arc').evaluate(node => getComputedStyle(node).stroke), 'none', 'the arc is drawn in CSS');
+  const plainPlug = plainRoom.page.locator('[data-plug-panel="shelf-lamp"] .plug-press');
+  await expect(plainPlug).toHaveAttribute('aria-pressed', 'true');
+  await shot(plainRoom.page, '1931-quiet-1440');
+  const quietBox = await plainDial.boundingBox();assert.ok(quietBox !== null);
+  await plainRoom.page.mouse.click(quietBox.x + quietBox.width / 2, quietBox.y + 5);
+  await plainPlug.click();await expect(plainPlug).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(() => plainRoom.sent.filter(path => path === '/api/v2/commands/power-set').length).toBe(2);
+  assert.deepEqual(plainRoom.errors, []);await quiet.close();
+
+  // Every light off: once the module reports it, no light is drawn, pixel for pixel as if no panel had a lamp.
+  await expect.poll(powerSent, {message: 'the press switched lamp-b'}).toBe(beforePress + 1);
+  await world.restart();await lit.page.reload();await feed(lit.page, 'connected');
+  await expect(lit.page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});await present(lit.page, bright);
+  // The Nanoleaf light reports its own state at once; a restart would repaint it, so it is switched off after.
+  const wallRing = await ring('wall').boundingBox();assert.ok(wallRing !== null);
+  await expect(lit.page.getByRole('switch', {name: 'wall power', exact: true})).toBeEnabled();
+  await lit.page.mouse.click(wallRing.x + wallRing.width / 2, wallRing.y + 5);
+  for (const id of ['lamp-a', 'lamp-b', 'wall']) await expect(ring(id)).toHaveAttribute('data-glass-lamp', '0');
+  await expect(lit.page.locator('[data-plug-panel="shelf-lamp"] .plug-icon')).toHaveAttribute('data-glass-lamp', '0');
+  await rest(lit.page);
+  if (await drawing(lit, 'every light off')) {
+    assert.equal(await layer(lit.page).getAttribute('data-glass-lights'), '', 'with every light off no light is drawn');
+    const offShot = await lit.page.screenshot();
+    await lit.page.evaluate(() => {for (const element of document.querySelectorAll('[data-glass-lamp]')) element.removeAttribute('data-glass-lamp');});
+    await rest(lit.page);
+    assert.ok((await lit.page.screenshot()).equals(offShot), 'all lights off draws exactly what no lamps draw');
+    if (!smoke) assert.ok(onShot !== undefined, 'outside the smoke chain the lit room was drawn before the lights went off');
+    if (onShot !== undefined && lampBox !== null) {
+      // The light seen on the wall above each lamp was its own color: red above lamp-a, warm white above the wall.
+      const [on, off] = await Promise.all([onShot, offShot].map(image => sharp(image).raw().toBuffer({resolveWithObject: true})));
+      const spillAt = (x: number, y: number): number[] => [0, 1, 2].map(channel => {
+        let sum = 0;for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
+          const at = ((Math.round(y) + dy) * (on?.info.width ?? 0) + Math.round(x) + dx) * (on?.info.channels ?? 3) + channel;sum += (on?.data[at] ?? 0) - (off?.data[at] ?? 0);
+        }
+        return sum / 25;
+      });
+      const lampCard = await lit.page.locator('[data-home-card="light:device:lamp-a"]').boundingBox(), wallCard = await lit.page.locator('[data-home-card="light:device:wall"]').boundingBox();
+      assert.ok(lampCard !== null && wallCard !== null);
+      const red = spillAt(lampBox.x + lampBox.width / 2, lampCard.y - 10), white = spillAt(wallRing.x + wallRing.width / 2, wallCard.y - 10);
+      assert.ok((red[0] ?? 0) > 4 && (red[0] ?? 0) > 3 * Math.max(red[1] ?? 0, red[2] ?? 0, 0.5), `the wall above lamp-a takes its red: ${red.map(value => value.toFixed(1)).join(',')}`);
+      assert.ok((white[0] ?? 0) > 4 && (white[0] ?? 0) >= (white[1] ?? 0) && (white[1] ?? 0) >= (white[2] ?? 0), `the wall above the Nanoleaf light takes warm white: ${white.map(value => value.toFixed(1)).join(',')}`);
+    }
+  }
+  assert.deepEqual(lit.errors, []);await room.close();
+  report['litRoom'] = {lifxColor: true, warmWhite: true, plug: true, lamp: 'ring center', press: true, restAfterEasing: true, allOffDrawsNothing: true, quiet: true};
 
   console.log(JSON.stringify(report));
 } finally {await browser.close();await world.close();}

@@ -139,7 +139,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
             artwork={<div className="lighting-image-group"><div>{device.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div></div>}/>;
         }}/>}
       {cards.length === 0 && <p>{roomView ? 'Create a room, then assign its lights in Manage rooms.' : 'No light cards here. Use Arrange to select Home cards.'}</p>}
-      <div className="lighting-grid">{displayedCards.map(card => <LightCard key={selectionKey(card.selection)} card={card} devices={devices} capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks(), card.brand)}
+      <div className="lighting-grid">{displayedCards.map(card => <LightCard key={selectionKey(card.selection)} card={card} devices={devices} operations={operations} capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks(), card.brand)}
         act={intent => { act(card, intent); }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined} status={card.members.map(id => ({name: devices.find(device => device.record.id === id)?.record.label ?? id, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
         artwork={<div className="lighting-image-group">{card.members.map(id => {
           const device = devices.find(device => device.record.id === id);

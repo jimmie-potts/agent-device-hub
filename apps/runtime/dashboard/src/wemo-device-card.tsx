@@ -7,20 +7,37 @@ import {PowerLimitPanel,type PowerLimitProps} from './power-limit.tsx';
 import {Facts} from './ui.tsx';
 import {WemoCard} from './wemo-card.tsx';
 import {wemoCardState} from './wemo.ts';
+import {useHomeShape} from './home-shape-context.ts';
+import {NO_GLOW, PLUG_LEVEL} from './glass-light.ts';
+import {PlugPanel} from './plug-panel.tsx';
+import {newerRequest} from './requested.ts';
 
 export function WemoDeviceCard({record,owner,live,control,operations,operationsLive,refresh,limit,now}: {
   record:DeviceRecord;owner:string;live:boolean;control:boolean;operations:readonly OperationRecord[];operationsLive:boolean;refresh:()=>Promise<void>;limit:PowerLimitProps;now:number;
 }):React.JSX.Element{
-  const action=useAttempt(record.id,operations,operationsLive);
+  const action=useAttempt(record.id,operations,operationsLive),shape=useHomeShape();
   const props={record,live,control,operationsLive,now};
   const latest=useRef(props);latest.current=props;
   const view=wemoCardState(record,live,control,operationsLive,action.locked,now);
   const held=record.held,limitRecord=limit.record;
   const powerText=(value:{status:'unknown'}|{status:'known';value:boolean}):string=>value.status==='known'?value.value?'On':'Off':'Unknown';
   const routine=action.text==='No command sent from this page.'||action.text.startsWith('Completed: succeeded.');
-  return <WemoCard id={record.id} label={record.label??record.id} power={view.power} status={view.status} disabled={view.disabled}
-    onPower={on=>{const current=latest.current;const gate=wemoCardState(current.record,current.live,current.control,current.operationsLive,action.locked,current.now);if(gate.disabled)return;
-      void action.run(deviceAction(current.record,{family:'power-set',data:{on}},crypto.randomUUID()));}}
+  const power=(on:boolean):void=>{const current=latest.current;const gate=wemoCardState(current.record,current.live,current.control,current.operationsLive,action.locked,current.now);if(gate.disabled)return;
+    void action.run(deviceAction(current.record,{family:'power-set',data:{on}},crypto.randomUUID()));};
+  // A plug that current evidence observes on lights the room in warm white (#1931); stale or unknown power draws none.
+  const glow=view.power===true&&view.status!=='Stale'?{level:PLUG_LEVEL,color:null}:NO_GLOW;
+  // On Home's unit grid the plug is a press panel (#1931); its full card stays on its page and in one column. A plug
+  // reports on its next poll, so its latest power request, when it succeeded after its last report, shows beside the observed power,
+  // and the panel's pressed state and its press follow that request, as the ring dial's switch does.
+  if(shape==='square'){
+    const requested=newerRequest(record,operations,'power-set')&&record.desired.power.status==='known'?record.desired.power.value:undefined;
+    const switched=requested??view.power,word=(value:boolean|undefined):string=>value===undefined?'unknown':value?'on':'off';
+    const state=view.status!==''?view.status:requested!==undefined&&requested!==view.power?`Requested ${word(requested)} · observed ${word(view.power)}`:view.power===true?'On · observed':'Off · observed';
+    return <PlugPanel id={record.id} label={record.label??record.id} power={switched} glow={glow} disabled={view.disabled} onPower={power}
+      state={state} result={action.text} routine={routine} open={`#/component/${encodeURIComponent(record.id)}`}/>;
+  }
+  return <WemoCard id={record.id} label={record.label??record.id} power={view.power} status={view.status} disabled={view.disabled} glow={glow}
+    onPower={power}
     powerControls={<>
       {view.reason!==undefined&&!action.locked&&held===undefined&&<p className="wemo-note">{view.reason}</p>}
       {held!==undefined&&<><p className="wemo-note warning">The last power change has no confirmed result.</p>
