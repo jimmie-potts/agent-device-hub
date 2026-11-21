@@ -3,8 +3,10 @@
 # journey once a change has merged. It gates no pull request, is not a required check and adds nothing to the
 # Selected checks gate. A failure on main comments on the one open issue with a fixed title, or opens it.
 # A pull request runs it only when it changes this workflow or its script, as proof on a hosted runner; it files nothing.
-# Both jobs always run, so the delivery preflight's read of main's jobs finds them; when a push selects no runtime
-# path, the suite job reports success after its select step, as the core job does for steps the selection omits.
+# Since #2015 the suite job is a matrix: each group, `test:runtime-dashboard:browser:<group>` in package.json, runs in
+# its own job, and the report job runs once after every group has finished.
+# Every job always runs, so the delivery preflight's read of main's jobs finds them; when a push selects no runtime
+# path, each suite job reports success after its select step, as the core job does for steps the selection omits.
 name: Runtime dashboard browser suite
 on:
   push:
@@ -23,14 +25,26 @@ concurrency:
   cancel-in-progress: false
 jobs:
   suite:
-    name: Runtime dashboard browser suite on ubuntu-latest
+    name: Runtime dashboard browser suite (group ${{ matrix.group }}) on ubuntu-latest
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
-    # About 16 minutes for the suite on the owner's PC; the limit covers a slower hosted runner, setup and build and a
-    # Chromium install that uses its whole 20-minute step limit.
+    # The groups of package.json's test:runtime-dashboard:browser, balanced by hosted journey times (#2015). A failing
+    # group does not stop the others, so the report can name every group's failing journey.
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ['1', '2', '3']
+    # The longest group, home-idle.browser.ts, takes about 11 minutes on a hosted runner; the limit covers a slower
+    # runner, setup and build and a Chromium install that uses its whole 20-minute step limit.
     timeout-minutes: 60
+    # Each group sets only its own outputs, so the report job reads every group's result (a matrix job's outputs merge).
     outputs:
-      journey: ${{ steps.suite.outputs.journey }}
+      passed_1: ${{ steps.suite.outputs.passed_1 }}
+      journey_1: ${{ steps.suite.outputs.journey_1 }}
+      passed_2: ${{ steps.suite.outputs.passed_2 }}
+      journey_2: ${{ steps.suite.outputs.journey_2 }}
+      passed_3: ${{ steps.suite.outputs.passed_3 }}
+      journey_3: ${{ steps.suite.outputs.journey_3 }}
     # The same environment as App verification, where the smoke check and seven of these journeys already run (#873).
     env:
       XDG_RUNTIME_DIR: ''
@@ -56,14 +70,18 @@ jobs:
         run: bash scripts/apt-retry.sh 300 npx playwright install --with-deps chromium
       - if: steps.select.outputs.run == 'true'
         run: npm run build
-      # Every journey of `npm run test:runtime-dashboard:browser`, in its order, stopping at the first failure.
+      # Every journey of this group's `npm run test:runtime-dashboard:browser:<group>`, in its order, stopping at the
+      # first failure.
       - id: suite
         if: steps.select.outputs.run == 'true'
-        run: node scripts/ci-selection/runtime-browser.mjs run
+        env:
+          SUITE_GROUP: ${{ matrix.group }}
+        run: node scripts/ci-selection/runtime-browser.mjs run "$SUITE_GROUP"
   report:
     name: Report runtime dashboard browser failures
     needs: suite
-    # Runs after every suite result; the script files only for a push to main whose suite did not succeed.
+    # Runs once after every group's result; the script files only for a push to main whose suite did not succeed. The
+    # sparse checkout also has the root files, so the script reads the groups from package.json.
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -81,5 +99,5 @@ jobs:
       - env:
           GITHUB_TOKEN: ${{ github.token }}
           SUITE_RESULT: ${{ needs.suite.result }}
-          FAILED_JOURNEY: ${{ needs.suite.outputs.journey }}
+          SUITE_OUTPUTS: ${{ toJSON(needs.suite.outputs) }}
         run: node scripts/ci-selection/runtime-browser.mjs report

@@ -1932,23 +1932,40 @@ Runtime dashboard browser suite workflow (`runtime-dashboard-browser.yml`) on a
 GitHub-hosted runner after each push to main. Its select step reads the push's
 comparison (`compare/<before>...<after>`) and runs the suite only when the
 affected-check selector maps it to the runtime group. A first push, a force push
-or an unreadable or 300-file comparison also runs it. The suite job's limit is
-60 minutes, including a Chromium install limited to 20. The journeys run in the
-package script's order and stop at the first failure.
+or an unreadable or 300-file comparison also runs it.
+Since [#2015](https://github.com/jimmie-potts/agent-device-hub/issues/2015) the
+suite is a fixed set of journey groups,
+`npm run test:runtime-dashboard:browser:<group>`, and the suite script runs the
+groups in order. Each journey belongs to exactly one group. The workflow runs
+each group in its own parallel job, named `Runtime dashboard browser suite
+(group <group>) on ubuntu-latest`, and a failing group does not cancel the
+others. Group 1 holds `browser.ts`, the Home journeys it used to import, and
+`trusted.ts` and `controls.browser.ts`. Group 2 holds `home-idle.browser.ts`,
+about 11 minutes on a hosted runner. Group 3 holds the rest. Hosted journey
+times set the balance. To add a journey, add it to one group's script; to add a
+group, also add it to the workflow's matrix and job outputs.
+`tests/runtime_browser_ci.test.mjs` fails until the groups and the workflow agree.
+Each group job runs the select step, and its limit is 60 minutes, including a
+Chromium install limited to 20. A group's journeys run in its script's order and
+stop at the first failure.
 A failed run on main comments on the open issue titled "Runtime dashboard browser
-suite fails on main", or opens it. The comment or issue names only the commit,
-the run link and the failing journey. Only the report job has `issues: write`.
+suite fails on main", or opens it. The report job runs once after every group
+has finished. Its comment or issue names only the commit, the run link and each
+failing group's journey, or that a group failed outside a journey. Only the
+report job has `issues: write`.
 The workflow is not a required check and adds nothing to the Selected checks
-gate, so it blocks no pull request. Both its jobs run for every push to main,
+gate, so it blocks no pull request. All its jobs run for every push to main,
 so the delivery preflight reads them with main's other jobs before closure. A
 push that selects no runtime path passes after the select step. Track each
 journey that fails there in its own issue, and fix the journey rather than
 weaken the suite.
-Manual runs (`workflow_dispatch`) always run the suite and file nothing. Pull
+Manual runs (`workflow_dispatch`) always run every group and file nothing. Pull
 requests that change the workflow or `scripts/ci-selection/runtime-browser.mjs`
 run it as proof and file nothing. `tests/runtime_browser_ci.test.mjs`, in
-`npm run test:workflow`, covers the selection, runner, report and workflow shape
-with a fake GitHub API.
+`npm run test:workflow`, covers the selection, the groups, the runner, the report
+and the workflow shape with a fake GitHub API.
+Locally, `node scripts/ci-selection/runtime-browser.mjs run <group>` runs one
+group as its job does, and `run` alone runs every group.
 
 The furnished apartment reuses the Runtime unit tests and existing App
 verification room-model journey. See [Furnished apartment checks](../apps/runtime/DEVELOPMENT.md#furnished-apartment-checks)

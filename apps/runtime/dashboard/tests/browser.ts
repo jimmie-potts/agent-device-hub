@@ -1,5 +1,6 @@
 import {destinationLink, openConnections, openSettings} from './navigation-helpers.ts';
-// The runtime dashboard's full browser suite (Hub #922), converted from `apps/dashboard/tests/browser.mjs`: the shell,
+// The first journey of the runtime dashboard's full browser suite (Hub #922), converted from
+// `apps/dashboard/tests/browser.mjs`: the shell,
 // its routes and Places, and the agent sessions it syncs from the core, on the built runtime with a synthetic hook.
 // Sessions appear, an approval is raised and cleared, a finished turn stays unread until the session record clears it,
 // a lost stream resyncs with nothing replayed, read evidence and a device acknowledgment clear their rows, an ended session offers one
@@ -298,13 +299,3 @@ try {
   await browser.close();
   await world.close();
 }
-
-// The same focused journey runs in hosted smoke and the full local browser suite.
-await import('./tidbyt-card.browser.ts');
-await import('./shell.browser.ts');
-await import('./devices-menu.browser.ts');
-
-await import('./home-layout.browser.ts');
-// Idle stability of Home's list cards at every width (#1672 F18); long, so in the full suite only, not hosted smoke.
-await import('./home-idle.browser.ts');
-await import('./card-consistency.browser.ts');

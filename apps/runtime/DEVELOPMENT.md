@@ -800,8 +800,9 @@ targets and rests when every other animation frame repeats the last timestamp,
 that lit text keeps 4.5:1, that the dial and the plug show their state and
 switch without WebGL 2, and that with every light off the layer draws exactly
 what it draws with no lamps. Which run asserts the eased values (owner decision,
-2026-11-19, "Check state, not pixels"): the full browser suite (`browser.ts`,
-run on main by `node scripts/ci-selection/runtime-browser.mjs run`) and a
+2026-11-19, "Check state, not pixels"): the full browser suite
+(`home-layout.browser.ts`, run on main in its group's job by
+`node scripts/ci-selection/runtime-browser.mjs run <group>`) and a
 focused run of this journey require every eased value to reach its exact target
 on a live layer. The hosted smoke chain (`npm run test:runtime-dashboard:smoke`,
 App verification) runs the journey late in one long process; there each check
@@ -1112,6 +1113,7 @@ npm run test:runtime-dashboard:built     # unit tests: routes, widgets, the sess
 npm run test:runtime-dashboard:smoke     # one trusted loopback page, about 2 s; CI's App verification job runs it
 node apps/runtime/dashboard/tests/tidbyt-card.browser.ts # reusable read-only Tidbyt card; also runs in hosted smoke
 npm run test:runtime-dashboard:browser   # the full browser suite; hosted CI runs it after merges to main (#1942)
+npm run test:runtime-dashboard:browser:2 # one of its journey groups; hosted CI runs each group in its own job (#2015)
 BUNNY_TEST_CADDY=/path/to/verified/caddy node apps/runtime/dashboard/tests/wifi.browser.ts # local HTTPS, phone width; optional BUNNY_TEST_BROWSER=webkit
 node apps/runtime/dashboard/tests/notice-clear.browser.ts # focused confirmed notice override
 node apps/runtime/dashboard/tests/hub-mode.browser.ts <private-evidence-dir> # focused Hub mode controls

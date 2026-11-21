@@ -92,6 +92,9 @@ test('a fully evidenced source candidate reports every applicable gate satisfied
   assert.match(report.notice, new RegExp(HEAD));
 });
 
+// The runtime dashboard browser suite's matrix jobs, one per journey group (#2015).
+const BROWSER_SUITE_JOBS = ['1', '2', '3'].map(group => `Runtime dashboard browser suite (group ${group}) on ubuntu-latest`);
+
 test('the real GitHub Actions configuration enumerates the expected jobs and routes Markdown-only changes', () => {
   assert.deepEqual(Object.keys(WORKFLOW_FILES).sort(), ['checks.yml', 'codeql.yml', 'integration.yml', 'music-native.yml', 'release-qualification.yml', 'runtime-dashboard-browser.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, DEPOT.directory)), false, 'Depot workflows are retired (#870)');
@@ -134,15 +137,16 @@ test('the real GitHub Actions configuration enumerates the expected jobs and rou
   assert.deepEqual(source.uncertain, []);
   const push = expectedJobs(workflows, { event: 'push', branch: 'main', files: ['docs/work-guide/a.md', 'README.md'], filesComplete: true }, ACTIONS);
   // Main security analysis is separate from cheap Integration and full qualification. The runtime dashboard browser
-  // suite's two jobs run after every main push, and the suite itself only when the push selects the runtime (#1942).
+  // suite's jobs, one per journey group (#2015) and the report, run after every main push, and the suite itself only
+  // when the push selects the runtime (#1942).
   assert.deepEqual(push.jobs.map(item => item.name).sort(), ['CodeQL analysis (javascript-typescript)', 'CodeQL analysis (python)', 'Integrated source checks',
-    'Report runtime dashboard browser failures', 'Runtime dashboard browser suite on ubuntu-latest']);
+    'Report runtime dashboard browser failures', ...BROWSER_SUITE_JOBS]);
   const mixed = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/sdlc.md', 'apps/hub/src/server.ts'], filesComplete: true }, ACTIONS);
   assert.equal(mixed.jobs.length, 13, 'one non-Markdown path keeps every job expected');
   assert.ok(mixed.jobs.every(item => item.selected), 'an old-system path selects every job');
   const incomplete = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['docs/work-guide/a.md'], filesComplete: false }, ACTIONS);
-  // Path filters are not applied: Music native and the runtime dashboard browser suite's two jobs stay expected.
-  assert.equal(incomplete.jobs.length, 16, 'an incomplete file list keeps every job expected');
+  // Path filters are not applied: Music native and the runtime dashboard browser suite's four jobs stay expected.
+  assert.equal(incomplete.jobs.length, 18, 'an incomplete file list keeps every job expected');
   assert.ok(incomplete.jobs.every(item => item.selected), 'an incomplete file list selects every job');
   // Hub #1080: a narrow change still expects every job, but the jobs it leaves out are expected to be skipped.
   const narrow = expectedJobs(workflows, { event: 'pull_request', branch: 'main', files: ['apps/runtime/src/main.ts'], filesComplete: true }, ACTIONS);
@@ -265,7 +269,7 @@ const depotEra = { 'ci.yml': WORKFLOW_FILES['checks.yml'], 'workflow.yml': WORKF
 const moveWorld = () => {
   const world = cleanWorld();
   // Adding every workflow file matches the path filters of Music native and the runtime dashboard browser suite (#1942).
-  for (const name of ['Music native compile and synthetic tests', 'Runtime dashboard browser suite on ubuntu-latest', 'Report runtime dashboard browser failures']) {
+  for (const name of ['Music native compile and synthetic tests', ...BROWSER_SUITE_JOBS, 'Report runtime dashboard browser failures']) {
     world.checkRuns[HEAD].push(checkRun(name, HEAD, world.checkRuns[HEAD][0].check_suite.id));
   }
   // A Depot-era base also holds disabled copies under .github/workflows; Depot's directory decides.

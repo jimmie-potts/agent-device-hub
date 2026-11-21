@@ -224,8 +224,8 @@ async function open(context: BrowserContext, width = 1440, height = 900): Promis
 
 /*
  * The lit room's eased values (#1931) and which run asserts what (owner decision 2026-11-19, "Check state, not
- * pixels"). The full browser suite (`browser.ts`, and `runtime-browser.mjs run` on main) and a focused run of this
- * journey assert that every eased value reaches its exact target on a live layer. The hosted smoke chain (`smoke.ts`,
+ * pixels"). The full browser suite (through `home-layout.browser.ts`, and `runtime-browser.mjs run <group>` on main) and a
+ * focused run of this journey assert that every eased value reaches its exact target on a live layer. The hosted smoke chain (`smoke.ts`,
  * App verification) runs this journey late in one long process, where headless SwiftShader has been seen to stop
  * delivering the layer's frames. There each eased-value check first reads the layer's state: while the layer is live it
  * asserts the eased value as everywhere else; when the layer has fallen back to Quiet glass or lost its context it

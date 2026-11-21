@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // The Runtime dashboard browser suite workflow (Hub #1942) runs the full `test:runtime-dashboard:browser` suite after
 // each push to main whose changes the affected-check selector maps to the runtime group, and keeps one open issue for
-// its failures. It gates no pull request and is not a required check.
-//   node scripts/ci-selection/runtime-browser.mjs select   decide whether this run runs the suite: writes run=true|false
-//   node scripts/ci-selection/runtime-browser.mjs run      run the suite's journeys in order: writes journey=<name> when one fails
-//   node scripts/ci-selection/runtime-browser.mjs report   after a failed push to main, comment on the open issue or open it
+// its failures. It gates no pull request and is not a required check. Since #2015 the suite is a fixed set of journey
+// groups, `test:runtime-dashboard:browser:<group>`, and each group runs in its own parallel job.
+//   node scripts/ci-selection/runtime-browser.mjs select         decide whether this run runs the suite: writes run=true|false
+//   node scripts/ci-selection/runtime-browser.mjs run [group]    run one group's journeys in order, or every group's: writes
+//                                                                passed_<group>=true, or journey_<group>=<name> when one fails
+//   node scripts/ci-selection/runtime-browser.mjs report         after a failed push to main, comment on the open issue or open it
 // Like the selector, this module has no dependencies: the select and report steps run it without `npm ci`.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -23,6 +25,8 @@ const ISSUE_PAGE_LIMIT = 50;
 const SHA = /^[0-9a-f]{40}$/;
 const NO_REVISION = '0'.repeat(40);
 const JOURNEY = /^[A-Za-z0-9][\w.:-]{0,119}$/;
+// A group's name is its number, which also names its job and its outputs.
+const GROUP_ENTRY = new RegExp(`^npm run ${SUITE}:([1-9][0-9]?)$`);
 // The login of issues the workflow's GITHUB_TOKEN opens. Anyone can open an issue with the same title in this public
 // repository, so only the workflow's own issue collects the comments.
 export const ISSUE_AUTHOR = 'github-actions[bot]';
@@ -90,38 +94,104 @@ export async function runSelect({ env = process.env, fetch = globalThis.fetch } 
 }
 
 /**
- * The suite's journeys, in order, from its package script. The script is a plain `&&` chain of `node <file>.ts` and
+ * One group's journeys, in order, from its package script. The script is a plain `&&` chain of `node <file>.ts` and
  * `npm run <script>` commands; anything else is refused, so the runner can never run less than the script does.
  */
-export function journeys(command) {
-  if (typeof command !== 'string' || !command) throw new Error(`package.json has no ${SUITE} script`);
+export function journeys(command, script = SUITE) {
+  if (typeof command !== 'string' || !command) throw new Error(`package.json has no ${script} script`);
   return command.split(' && ').map(part => {
     const file = part.match(/^node ([\w./-]+\.ts)$/);
     if (file) return { name: file[1].split('/').at(-1), command: 'node', args: [file[1]] };
-    const script = part.match(/^npm run ([\w:-]+)$/);
-    if (script) return { name: script[1], command: 'npm', args: ['run', script[1]] };
-    throw new Error(`${SUITE} has a command this runner does not read: ${JSON.stringify(part)}`);
+    const nested = part.match(/^npm run ([\w:-]+)$/);
+    if (nested && nested[1] !== SUITE && !nested[1].startsWith(`${SUITE}:`)) return { name: nested[1], command: 'npm', args: ['run', nested[1]] };
+    throw new Error(`${script} has a command this runner does not read: ${JSON.stringify(part)}`);
   });
 }
 
 /**
- * The run step: run each journey as the package script would, stopping at the first failure. A failure writes
- * journey=<name> for the report job. Returns the exit code.
+ * The suite's groups, in order, with their journeys. The suite script is a plain `&&` chain of
+ * `npm run test:runtime-dashboard:browser:<group>`, and every journey belongs to exactly one group. Returns
+ * [{name, journeys}]; anything else is refused.
  */
-export function runSuite({ env = process.env, spawn = spawnSync, scripts } = {}) {
-  const list = journeys((scripts ?? JSON.parse(readFileSync('package.json', 'utf8')).scripts)[SUITE]);
-  for (const [index, journey] of list.entries()) {
-    console.log(`\nJourney ${index + 1} of ${list.length}: ${journey.name}`);
-    const result = spawn(journey.command, journey.args, { env, stdio: 'inherit' });
-    if (result.status !== 0 || result.error) {
-      const how = result.error ? 'could not start' : result.signal ? `ended by ${result.signal}` : `exited with status ${result.status}`;
-      console.log(`::error title=Runtime dashboard browser suite::${journey.name} ${how}`);
-      if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `journey=${journey.name}\n`);
-      return 1;
+export function groups(scripts) {
+  const command = scripts && scripts[SUITE];
+  if (typeof command !== 'string' || !command) throw new Error(`package.json has no ${SUITE} script`);
+  const list = command.split(' && ').map(part => {
+    const entry = part.match(GROUP_ENTRY);
+    if (!entry) throw new Error(`${SUITE} has a command this runner does not read as a group: ${JSON.stringify(part)}`);
+    return { name: entry[1], journeys: journeys(scripts[`${SUITE}:${entry[1]}`], `${SUITE}:${entry[1]}`) };
+  });
+  const names = list.map(group => group.name);
+  if (new Set(names).size !== names.length) throw new Error(`${SUITE} names a group more than once`);
+  const seen = new Map();
+  for (const group of list) {
+    for (const journey of group.journeys) {
+      if (seen.has(journey.name)) throw new Error(`${journey.name} is in group ${seen.get(journey.name)} and group ${group.name}`);
+      seen.set(journey.name, group.name);
     }
   }
-  console.log(`\nAll ${list.length} journeys passed.`);
+  return list;
+}
+
+const packageScripts = () => JSON.parse(readFileSync('package.json', 'utf8')).scripts;
+
+/**
+ * The run step: run one group's journeys, or every group's in order when no group is named, as the package scripts
+ * would, stopping at the first failure. A group whose journeys all pass writes passed_<group>=true; a failure writes
+ * journey_<group>=<name>. The job's outputs carry both to the report job. Returns the exit code.
+ */
+export function runSuite({ env = process.env, spawn = spawnSync, scripts, group } = {}) {
+  const all = groups(scripts ?? packageScripts());
+  const selected = group === undefined ? all : all.filter(item => item.name === group);
+  if (!selected.length) throw new Error(`${SUITE} has no group ${JSON.stringify(group)}; its groups are ${all.map(item => item.name).join(', ')}`);
+  const total = selected.reduce((count, item) => count + item.journeys.length, 0);
+  const output = line => { if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, `${line}\n`); };
+  let index = 0;
+  for (const item of selected) {
+    for (const journey of item.journeys) {
+      index += 1;
+      console.log(`\nJourney ${index} of ${total}, group ${item.name}: ${journey.name}`);
+      const result = spawn(journey.command, journey.args, { env, stdio: 'inherit' });
+      if (result.status !== 0 || result.error) {
+        const how = result.error ? 'could not start' : result.signal ? `ended by ${result.signal}` : `exited with status ${result.status}`;
+        console.log(`::error title=Runtime dashboard browser suite::${journey.name} ${how}`);
+        output(`journey_${item.name}=${journey.name}`);
+        return 1;
+      }
+    }
+    output(`passed_${item.name}=true`);
+  }
+  console.log(`\nAll ${total} journeys passed.`);
   return 0;
+}
+
+/** The suite job's outputs, as `toJSON(needs.suite.outputs)` gives them; anything unreadable records nothing. */
+export function suiteOutputs(text) {
+  try {
+    const value = JSON.parse(text ?? '');
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * What each group recorded: [{name, passed, journey}], where journey is the failing journey's name when the group
+ * recorded one of its own journeys, otherwise null.
+ */
+export function groupResults(list, outputs) {
+  return list.map(group => {
+    const journey = outputs[`journey_${group.name}`];
+    const known = typeof journey === 'string' && JOURNEY.test(journey) && group.journeys.some(item => item.name === journey);
+    return { name: group.name, passed: outputs[`passed_${group.name}`] === 'true', journey: known ? journey : null };
+  });
+}
+
+/** One line per group that did not record a pass: its failing journey, or that it recorded none. */
+function failures(results) {
+  const lines = results.filter(result => !result.passed).map(result => `- Failing journey in group ${result.name}: `
+    + (result.journey ? `\`${result.journey}\`` : 'none recorded (the group failed outside a journey or reached its time limit)'));
+  return lines.length ? lines : ['- Failing journey: none recorded (every group recorded a pass)'];
 }
 
 async function request(env, fetch, method, route, body) {
@@ -151,11 +221,11 @@ async function openIssue(env, fetch) {
 }
 
 /**
- * The report job. After a push to main whose suite job did not succeed, comment on the open issue with the fixed
- * title, or open it. The text names only the commit, the run and the failing journey. Other runs file nothing.
- * Returns {action: 'none' | 'commented' | 'opened', number?, reason?}.
+ * The report job, after every group has finished. After a push to main whose suite job did not succeed, comment on the
+ * open issue with the fixed title, or open it. The text names only the commit, the run and each group's failing
+ * journey. Other runs file nothing. Returns {action: 'none' | 'commented' | 'opened', number?, reason?}.
  */
-export async function report({ env = process.env, fetch = globalThis.fetch } = {}) {
+export async function report({ env = process.env, fetch = globalThis.fetch, scripts } = {}) {
   if (env.GITHUB_EVENT_NAME !== 'push' || env.GITHUB_REF !== 'refs/heads/main') {
     return { action: 'none', reason: `a ${env.GITHUB_EVENT_NAME} run on ${env.GITHUB_REF} files no issue` };
   }
@@ -165,8 +235,8 @@ export async function report({ env = process.env, fetch = globalThis.fetch } = {
     throw new Error('the run does not name its revision, run and repository');
   }
   const run = `${env.GITHUB_SERVER_URL || 'https://github.com'}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}/attempts/${env.GITHUB_RUN_ATTEMPT}`;
-  const journey = JOURNEY.test(env.FAILED_JOURNEY ?? '') ? `\`${env.FAILED_JOURNEY}\`` : 'none recorded (the job failed outside a journey or reached its time limit)';
-  const facts = [`- Commit: ${env.GITHUB_SHA}`, `- Run: ${run}`, `- Failing journey: ${journey}`].join('\n');
+  const results = groupResults(groups(scripts ?? packageScripts()), suiteOutputs(env.SUITE_OUTPUTS));
+  const facts = [`- Commit: ${env.GITHUB_SHA}`, `- Run: ${run}`, ...failures(results)].join('\n');
   const existing = await openIssue(env, fetch);
   if (existing) {
     await request(env, fetch, 'POST', `/repos/${env.GITHUB_REPOSITORY}/issues/${existing.number}/comments`, {
@@ -190,13 +260,16 @@ async function main(argv) {
     console.log(`${decision.run ? 'Runs' : 'Does not run'} the suite: ${decision.reason}`);
     return 0;
   }
-  if (command === 'run') return runSuite();
+  if (command === 'run' && argv.length <= 2) return runSuite({ group: argv[1] });
   if (command === 'report') {
+    // Every run logs what each group recorded, as evidence that the groups' outputs reached this job.
+    const results = groupResults(groups(packageScripts()), suiteOutputs(process.env.SUITE_OUTPUTS));
+    console.log(`Group results: ${results.map(result => `${result.name} ${result.passed ? 'passed' : result.journey ? `failed in ${result.journey}` : 'recorded nothing'}`).join('; ')}`);
     const outcome = await report();
     console.log(outcome.action === 'none' ? `No issue: ${outcome.reason}` : `${outcome.action === 'opened' ? 'Opened' : 'Commented on'} issue #${outcome.number}`);
     return 0;
   }
-  console.error('usage: node scripts/ci-selection/runtime-browser.mjs select|run|report');
+  console.error('usage: node scripts/ci-selection/runtime-browser.mjs select|run [group]|report');
   return 2;
 }
 
