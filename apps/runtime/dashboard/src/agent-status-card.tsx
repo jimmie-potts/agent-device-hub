@@ -1,6 +1,6 @@
 // Presentation only: the caller supplies the core-derived row and any guarded actions.
 import React from 'react';
-import {age, agentSummary, faceText, needsAttention, type NoticeRow, type SessionRow} from './sessions.ts';
+import {agentSummary, faceText, heardAge, needsAttention, type NoticeRow, type SessionRow} from './sessions.ts';
 import {Facts} from './ui.tsx';
 import './agent-status.css';
 
@@ -15,12 +15,14 @@ export function AgentStatusCard({row, live, now, actions}: {
   row: SessionRow; live: boolean; now: number; actions?: React.ReactNode;
 }): React.JSX.Element {
   const stale = row.uncertain || !live;
-  const elapsed = Math.max(0, now - row.lastEvidenceAtMs);
+  // The evidence age, against the page's clock, from the record's evidence time: no read of its own (Hub #1947).
+  const heard = heardAge(now - row.lastEvidenceAtMs);
   return <article className="session agent-status-card" data-session={row.id} data-chip={row.chip}
     data-attention={needsAttention(row)} data-stale={stale}>
     <details className="agent-disclosure">
       <summary className="agent-face">
-        <span className="agent-client" title={row.where}>{row.where}</span>
+        <span className="agent-meta"><span className="agent-client" title={row.where}>{row.where}</span>
+          <span className="agent-heard" title={`Heard ${heard} ago: when the hub last heard from this session, to the minute`}><span className="agent-heard-word">Heard </span>{heard} ago</span></span>
         <div className="session-id"><h3 title={row.name}>{row.name}</h3></div>
         <span className="agent-state"><span className="session-dot" data-chip={row.chip} aria-hidden="true"/>
           <span className="chip" data-chip={row.chip}>{faceText(row, live)}</span>
@@ -29,7 +31,7 @@ export function AgentStatusCard({row, live, now, actions}: {
         </span>
       </summary>
       <div className="agent-evidence">
-        <p className={stale ? 'warning' : 'hint'}>{stale ? `Last known: ${row.chipText}. ` : ''}Last published change: {age(elapsed)} ago.
+        <p className={stale ? 'warning' : 'hint'}>{stale ? `Last known: ${row.chipText}. ` : ''}Last heard: {heard} ago, to the minute.
           {!live ? ' The session copy is not synced.' : row.uncertainty !== undefined ? ` ${row.uncertainty}` : ' Not a completion estimate.'}</p>
         {row.attention.length > 0 && <p className="attention">{row.attention.join(' · ')}</p>}
         {actions}

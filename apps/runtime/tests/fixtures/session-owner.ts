@@ -30,7 +30,7 @@ export function current(message: Message<Session30Record>, nowMs = Date.now()): 
 /** The facts of a `session/3.0` record, so a test can change one and rebuild the record with its status. */
 function factsOf(record: Session30Record): SessionFacts {
   const {status: _status, work, attention, outcome, relationships, ...rest} = structuredClone(record);
-  const unconfirmed = work.reasons.find(reason => reason === 'deadline' || reason === 'restart');
+  const unconfirmed = work.reasons.find(reason => reason === 'restart');
   return {
     ...rest, work: work.state, ...(unconfirmed === undefined ? {} : {unconfirmed}), attention: attention.items, notices: outcome.notices,
     read: outcome.read, ...(outcome.readReceipt === undefined ? {} : {readReceipt: outcome.readReceipt}), children: relationships.children,

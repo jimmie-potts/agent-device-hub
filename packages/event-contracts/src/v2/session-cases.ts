@@ -40,13 +40,13 @@ type CompactStep = {atMs: number} & (
   | {fill: {count: number}}
 );
 /**
- * One expected record: its work state, why running work is unconfirmed besides its evidence (`deadline` or `restart`),
+ * One expected record: its work state, why running work is unconfirmed besides its evidence (`restart`),
  * and its children as `[working, unconfirmed]`. Its status follows from its claims.
  */
 type CompactRecord = {
   session: string; revision: number; generation: number; turn: string | null; work: WorkClaim['state'];
   attention?: CompactAttention[]; notices?: CompactNotice[]; read?: Session30Record['outcome']['read']; unavailable?: [Unavailable['dimension'], Unavailable['reason']][];
-  ordering?: {epoch: string; sequence: number}; observedAtMs: number; lastEvidenceAtMs: number; unconfirmed?: 'deadline' | 'restart';
+  ordering?: {epoch: string; sequence: number}; observedAtMs: number; lastEvidenceAtMs: number; unconfirmed?: 'restart';
   children?: [number, number];
 };
 type CompactCheck = {

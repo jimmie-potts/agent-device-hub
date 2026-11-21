@@ -82,15 +82,15 @@ export const identityOf = (sessionId: string, shape: SessionShape = {}): Identit
 });
 
 /**
- * A valid `session/3.0` record for one session, idle unless the shape says otherwise, at `revision`. Running work whose
- * last evidence is five minutes or more old is unconfirmed for its deadline, as the core publishes it.
+ * A valid `session/3.0` record for one session, idle unless the shape says otherwise, at `revision`. Its evidence time
+ * may be old: silence changes no claim, as the core publishes it (Hub #1947).
  */
 export function sessionRecord(sessionId: string, revision: number, atMs: number, shape: SessionShape = {}): Session30Record {
   const identity = identityOf(sessionId, shape);
   const evidenceAtMs = shape.lastEvidenceAtMs ?? atMs;
   return buildSession({
     id: sessionEntityId(identity), revision, generation: 1, identity, parent: shape.parent ?? {status: 'top-level'}, turn: {status: 'known', id: 'turn-1'},
-    work: shape.work ?? 'idle', ...(atMs - evidenceAtMs >= 300_000 ? {unconfirmed: 'deadline' as const} : {}),
+    work: shape.work ?? 'idle',
     attention: [], notices: [], read: shape.read ?? 'unknown', unavailable: [], ordering: {status: 'unknown'},
     observedAtMs: evidenceAtMs, lastEvidenceAtMs: evidenceAtMs, children: {working: 0, unconfirmed: 0},
   });

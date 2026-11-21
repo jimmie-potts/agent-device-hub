@@ -81,7 +81,11 @@ export type StatusClass = 'needs-owner' | 'working' | 'finished' | 'quiet' | 'un
 /** The hub-computed status: a closed class and an open kebab-case detail. A detail a reader does not know falls back to its class. */
 export type SessionStatus = {class: StatusClass; detail: string};
 export type Confidence = 'confirmed' | 'unconfirmed';
-/** Why work is unconfirmed: a passed deadline, a core restart, or ambiguous or lost activity evidence. */
+/**
+ * Why work is unconfirmed: a core restart, or ambiguous or lost activity evidence. Silence alone never makes it unconfirmed
+ * (Hub #1947). `deadline`, the passed work deadline of a release before #1947, stays accepted so records and messages that
+ * release stored still read; the record builder never emits it.
+ */
 export type WorkReason = 'deadline' | 'restart' | 'ambiguous' | 'lost';
 /** The work claim. Confirmed work has no reason, and unconfirmed work at least one. */
 export type WorkClaim = {state: 'active' | 'idle' | 'interrupted' | 'unknown'; confidence: Confidence; evidenceAtMs: number; reasons: WorkReason[]};

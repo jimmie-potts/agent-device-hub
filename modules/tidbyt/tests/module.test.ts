@@ -143,15 +143,18 @@ test('the status tile shows the synced sessions, and the now-playing tile what p
 });
 
 // Hub #1865, design decision 10: the tile shows `?` only for an unknown status, unconfirmed work or an unsynced copy. The
-// core's records after six minutes of silence carry that evidence time, with running work unconfirmed at its deadline.
-test('a question silent for six minutes shows on the tile without `?`, and only unconfirmed work shows one', async context => {
-  const silent = {at: START_MS - 6 * MINUTE, unconfirmed: 'deadline'} as const;
+// core's records after six minutes of silence carry that evidence time, and silence alone leaves every claim as it was
+// (Hub #1947): only running work a restart left unconfirmed shows `?`.
+test('a question and running work silent for six minutes show on the tile without `?`, and only restarted work shows one', async context => {
+  const silent = {at: START_MS - 6 * MINUTE} as const;
   const question = {id: {status: 'known', id: 'q-1'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}} as const;
-  const sessions = [asking({label: label('asking'), attention: [question], ...silent}), working({label: label('busy'), ...silent})];
+  const sessions = [asking({label: label('asking'), attention: [question], ...silent}), working({label: label('busy'), ...silent}),
+    working({label: label('restarted'), at: START_MS - 7 * MINUTE, unconfirmed: 'restart'})];
   const h = await host(context, {sessions, section: STATUS_ONLY});
   await until(() => pushes(h) === 1, 'the first push');
   const expected = statusFrame({feed: 'available', idle: false, rows: [
-    {kind: 'session', state: 'ASK', label: 'ASKING', uncertain: false}, {kind: 'session', state: 'RUN', label: 'BUSY', uncertain: true},
+    {kind: 'session', state: 'ASK', label: 'ASKING', uncertain: false}, {kind: 'session', state: 'RUN', label: 'BUSY', uncertain: false},
+    {kind: 'session', state: 'RUN', label: 'RESTARTED', uncertain: true},
   ]});
   assert.deepEqual(shown(h, STATUS).picture, picture(expected.rgb));
   assert.deepEqual(h.problems(), []);

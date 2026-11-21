@@ -237,8 +237,8 @@ suite('animations and favorites', () => {
 });
 
 // Hub #1865, design decision 10 and the owner's decision of 2026-11-18: the Lines follow the hub's shared status and keep no
-// session rule of their own. Five minutes of silence reach the module as the core's republished record, whose evidence is
-// that old and whose running work is unconfirmed for its deadline.
+// session rule of their own. Silence changes no claim (Hub #1947): a record whose evidence is minutes old keeps its status,
+// and only running work a restart left unconfirmed holds steady.
 suite('the Lines follow the hub\'s shared status', () => {
   const QUESTION = [{id: {status: 'known', id: 'ask'}, kind: 'question', turn: {status: 'known', id: 't1'}}] as const;
   const keyOf = (name: string): string => identityKey({...QUALIFIED, sessionId: name});
@@ -277,19 +277,21 @@ suite('the Lines follow the hub\'s shared status', () => {
       world.verify();
     });
 
-  test('unconfirmed work holds steady, and an unknown status, a new task\'s included, shows idle at once', async context => {
+  test('unconfirmed work holds steady, silent work does not, and an unknown status, a new task\'s included, shows idle at once', async context => {
     const world = await ModuleWorld.open(context);
     await world.core.set('busy');
+    await world.core.set('quiet');
     await world.core.set('lost');
     await world.start();
-    await world.until(() => world.wall()?.tasks.filter(task => task.status === 'working').length === 2, 5000, 'both tasks working');
+    await world.until(() => world.wall()?.tasks.filter(task => task.status === 'working').length === 3, 5000, 'three tasks working');
     await world.advance(3000);
     const silent = world.clock.now() - 360_000;
-    await world.core.set('busy', {evidenceAtMs: silent});
+    await world.core.set('busy', {evidenceAtMs: silent, unconfirmed: 'restart'});
+    await world.core.set('quiet', {evidenceAtMs: silent});
     await world.core.set('lost', {work: 'unknown', evidenceAtMs: silent});
     await world.core.set('newcomer', {work: 'unknown', evidenceAtMs: silent});
     await world.advance(1000);
-    assert.deepEqual(statuses(world), {[keyOf('busy')]: 'working', [keyOf('lost')]: 'idle', [keyOf('newcomer')]: 'idle'});
+    assert.deepEqual(statuses(world), {[keyOf('busy')]: 'working', [keyOf('quiet')]: 'working', [keyOf('lost')]: 'idle', [keyOf('newcomer')]: 'idle'});
     assert.deepEqual(held(world), [keyOf('busy')], 'only the working task whose work the hub no longer confirms is held steady');
     world.verify();
   });

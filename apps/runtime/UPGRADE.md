@@ -224,6 +224,32 @@ After a forward upgrade again, the first start's transaction clears the
 marking on every session whose work is no longer running, and marks the
 sessions whose work runs, so a stale marking does not outlast that start.
 
+## Work deadline removal (#1947)
+
+The #1947 release removes #1865's five-minute work deadline. It changes no
+table. On a store that `037b327a` (#1865 step 9) wrote, the first start's
+transaction, which already marks running work unconfirmed for the restart:
+
+- removes `deadlineUnconfirmed` and `progressAtMs` from the JSON of every
+  stored session in `core_sessions`;
+- marks running work that the deadline had left unconfirmed as unconfirmed for
+  the restart (reason `restart`), so it no longer shows reason `deadline`;
+- publishes each changed record once, at one new revision, with no occurrence,
+  and history keeps each as a change row.
+
+Qualifying evidence on the session's current turn then confirms the work, as
+after any restart. Published records, outbox messages and history rows that
+carry the reason `deadline` stay as they are: `session/3.0` keeps that value
+accepted, never emitted, so they still read. From this release on, a session
+publication whose only changes are its evidence instants writes no history row
+and confirms the session's span (see [Core history spans](#core-history-spans)).
+
+Returning to `037b327a` on a store this release opened rests on a code reading
+of `037b327a`, not on a test that opens such a store with that code: that
+release finds no deadline fields, starts the work deadline
+of running work that a restart did not mark from its last evidence, and writes a
+history row for each session publication again. Prefer fixing forward.
+
 ## Retired settings replication metadata
 
 The runtime leaves existing history rows and the former settings metadata

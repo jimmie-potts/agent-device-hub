@@ -56,8 +56,8 @@ it('a question from a session whose work is unconfirmed still raises its opportu
   const restarted = await raise({unconfirmed: 'restart'});
   assert.equal(restarted?.category, 'coding-attention', 'work left unconfirmed by a restart does not withhold the question');
   assert.equal(restarted?.validUntilMs, clock.now() + 30_000);
-  const silent = await raise({unconfirmed: 'deadline', lastEvidenceAtMs: clock.now() - 360_000});
-  assert.equal(silent?.cue, 'question', 'work unconfirmed after its deadline does not withhold the question');
+  const silent = await raise({lastEvidenceAtMs: clock.now() - 360_000});
+  assert.equal(silent?.cue, 'question', 'a session silent for six minutes does not withhold the question');
 });
 
 it('the window keeps the reporting host clock: a clock ahead of the hub drops the opportunity', async context => {

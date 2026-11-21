@@ -234,12 +234,12 @@ it('owner-started clearings carry the session\'s current turn, the owner\'s inst
   const world = await World.open(context);
   await world.observe(turnStarted, {sequence: 1});
   await world.observe(unknownApproval, {sequence: 2});
-  // Explicit approval recovery needs unconfirmed work: five minutes without qualifying work evidence, which the core's
-  // timer commits as the work deadline.
-  world.clock.advance(299_999);
+  // Explicit approval recovery needs running work a core restart left unconfirmed (Hub #1947): silence alone leaves work
+  // confirmed, however long it lasts.
+  world.clock.advance(300_000);
   await world.store.refresh();
-  assert.deepEqual(await world.recoverApproval(IDENTITY, 'turn-1'), {ok: false, code: 'invalid-state'}, 'a millisecond before, work is confirmed');
-  world.clock.advance(1);
+  assert.deepEqual(await world.recoverApproval(IDENTITY, 'turn-1'), {ok: false, code: 'invalid-state'}, 'five silent minutes leave work confirmed');
+  await world.crashAndRestart();
   await world.store.refresh();
   const from = world.published.length;
   const recovered = await world.recoverApproval(IDENTITY, 'turn-1');
@@ -270,19 +270,19 @@ it('expiry after 24 hours without evidence publishes a removal with reason expir
   assert.ok((world.rows('SELECT type FROM core_history') as {type: string}[]).some(row => row.type === 'org.bunny.turn.ended'));
 });
 
-it('running work turns unconfirmed for its deadline at five minutes at a new revision', async context => {
+it('running work stays confirmed through silence, and nothing falls due before the session expires (Hub #1947)', async context => {
   const world = await World.open(context);
   await world.observe(turnStarted);
-  const revision = world.store.revision;
-  world.clock.advance(299_999);
-  assert.equal(await world.store.refresh(), false, 'still confirmed a millisecond before');
-  world.clock.advance(1);
-  assert.equal(await world.store.refresh(), true);
+  const revision = world.store.revision, from = world.published.length;
+  assert.equal(world.store.nextDue(), START + 86_400_000, 'nothing turns on its own before the session expires');
+  world.clock.advance(300_000);
+  assert.equal(await world.store.refresh(), false, 'five silent minutes publish nothing');
+  world.clock.advance(23 * 3_600_000);
+  assert.equal(await world.store.refresh(), false, 'nor do 23 hours');
   await flush();
-  const [record] = sessions(world.since(1));
-  assert.deepEqual([record?.work.confidence, record?.work.reasons], ['unconfirmed', ['deadline']]);
-  assert.ok((record?.revision ?? 0) > revision, 'the revision is raised first, so no consumer drops it as stale');
-  assert.equal(world.store.nextDue(), START + 86_400_000, 'nothing else turns on its own before the session expires');
+  assert.deepEqual(sessions(world.since(from)), []);
+  const [record] = world.store.records();
+  assert.deepEqual([record?.work.confidence, record?.work.reasons, record?.revision], ['confirmed', [], revision]);
 });
 
 it('after a restart running work is unconfirmed until qualifying evidence, at revisions above every earlier one', async context => {
@@ -592,8 +592,8 @@ it('a failure names only the commit it came from: a later commit clears it', asy
   const world = await World.open(context);
   await world.observe(turnStarted);
   fillDisk(world.db);
-  world.clock.advance(300_000);
-  await assert.rejects(world.store.refresh(), 'the store refuses to publish the running work turning unconfirmed');
+  world.clock.advance(86_400_000);
+  await assert.rejects(world.store.refresh(), 'the store refuses to commit the session\'s expiry');
   world.db.exec('PRAGMA max_page_count = 1073741823');
   await world.store.refresh();
   assert.equal(world.store.takeFailure(), undefined, 'the full disk is no longer named');

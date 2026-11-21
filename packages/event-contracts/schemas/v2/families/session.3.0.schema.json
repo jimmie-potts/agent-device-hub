@@ -69,7 +69,7 @@
       }
     },
     "work": {
-      "description": "The work claim. `reasons` says why it is unconfirmed: a passed deadline, a core restart, or ambiguous or lost activity evidence. Confirmed work has no reason, and unconfirmed work at least one.",
+      "description": "The work claim. `reasons` says why it is unconfirmed: a core restart, or ambiguous or lost activity evidence. Silence alone never makes it unconfirmed (Hub #1947): `deadline`, the passed work deadline of a release before #1947, stays accepted so records and messages that release stored still read, and is never emitted. Confirmed work has no reason, and unconfirmed work at least one.",
       "type": "object", "additionalProperties": false, "required": ["state", "confidence", "evidenceAtMs", "reasons"],
       "properties": {
         "state": {"enum": ["active", "idle", "interrupted", "unknown"]},

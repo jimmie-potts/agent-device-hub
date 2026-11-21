@@ -33,7 +33,7 @@ void test('a session/3.0 change is titled from its status, an older row keeps it
   // Rows written as session/3.0: the status names what changed.
   assert.deepEqual([
     session({status: {class: 'needs-owner', detail: 'approval'}, attention: {items: [], confidence: 'confirmed', evidenceAtMs: 1}}),
-    session({status: {class: 'working', detail: 'unconfirmed'}, work: {state: 'active', confidence: 'unconfirmed', evidenceAtMs: 1, reasons: ['deadline']}}),
+    session({status: {class: 'working', detail: 'unconfirmed'}, work: {state: 'active', confidence: 'unconfirmed', evidenceAtMs: 1, reasons: ['restart']}}),
     session({status: {class: 'finished', detail: 'turn-ended'}}), session({status: {class: 'quiet', detail: 'acknowledged'}}),
     session({status: {class: 'unknown', detail: 'lost'}}),
   ], ['Agent needs you', 'Agent working', 'Turn finished', 'Agent quiet', 'Agent activity unknown']);
@@ -257,4 +257,18 @@ void test('the optional open member is read whole or not at all, and an old repl
   answer = {schema: 'history/2.0', rows: [change({})]};
   await reader.read('');assert.equal(Object.hasOwn(states.at(-1) ?? {}, 'open'), false, 'a reply without open makes the snapshot it made before');
   reader.dispose();
+});
+
+// Hub #1947 (owner decision of 2026-11-21): a busy session's evidence-only publications confirm its open span and write no
+// row, so the session reads as one entry, its last change, with the span's last confirmation under it.
+void test('a busy session reads as one entry whose open span gives its last reading', () => {
+  const working = row({family: 'session', id: 's1', revision: 4, previous: 3, changed: {status: {class: 'working', detail: 'confirmed'}}, removed: []},
+    {seq: 9, kind: 'change', atMs: T, source: 'bunny/core', subject: 's1', type: 'org.bunny.session.updated', requestId: null});
+  const span: HistoryOpenSpan = {source: 'bunny/core', family: 'session', id: 's1', revision: 4, sinceAtMs: T, lastConfirmedAtMs: T + H, confirmations: 61};
+  const shown = openSpans([working], [span]).byRow;
+  assert.deepEqual([...shown.keys()], [9]);
+  const face = historyFace(working, shown.get(9), at);
+  assert.equal(face.title, 'Agent working');
+  assert.equal(face.category, 'Agents');
+  assert.deepEqual(face.notes, ['Unchanged since @0m, last reading at @60m, 61 readings']);
 });

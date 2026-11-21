@@ -139,7 +139,7 @@ function recoverTool(host: McpHost): ServiceExtension {
     }, 'urn:bunny:tool:core:recover_approval:output'),
     scope: 'control',
     description: 'Only on the user\'s explicit request, retire the one uncertain approval marker without an attention ID that a session holds on one turn, '
-      + 'while the session\'s work claim is unconfirmed for its deadline or a restart. Read core_sessions first and pass the session\'s id, its turn and '
+      + 'while a core restart left the session\'s running work unconfirmed (work reason restart). Read core_sessions first and pass the session\'s id, its turn and '
       + 'its revision as expectedRevision. '
       + 'This approves or denies nothing at the agent, and fresh approval evidence can raise a new marker. Never retry an uncertain result automatically.',
     annotations: {readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true},

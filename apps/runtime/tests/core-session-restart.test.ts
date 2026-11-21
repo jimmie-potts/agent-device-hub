@@ -182,7 +182,7 @@ it('a host clock behind the hub delays confirmation to its next evidence; one ah
   assert.equal(restarted(record(w, CODEX)), false, 'a delayed event from a host clock ahead confirms work (design decision 4)');
 });
 
-it('after a restart an approval can be recovered only where the restart or the work deadline left running work unconfirmed', async context => {
+it('after a restart an approval can be recovered only where the restart left running work unconfirmed', async context => {
   const w = await open(context);
   const approval: LifecycleEvent = {kind: 'attention-approval', attention: {status: 'unknown'}};
   const halted = identity('claude', 'halted');
@@ -202,7 +202,7 @@ it('after a restart an approval can be recovered only where the restart or the w
   assert.equal(await recover(halted), 'invalid-state');
   assert.equal(await recover(RUNNING), 'ambiguous', 'recovered');
   assert.equal(record(w, RUNNING).attention.items.length, 0);
-  // Work that is not running has no deadline (design decision 10): five minutes of silence do not make it recoverable.
+  // Silence never makes a session recoverable (Hub #1947): five minutes of it change nothing.
   w.clock.advance(300_000);
   await w.store.refresh();
   assert.equal(await recover(halted), 'invalid-state', 'silence alone never allows it');

@@ -454,7 +454,7 @@ it('expiry falls due on the core\'s clock without another provider event', async
   await s.observe('idle', {kind: 'session-started'}, unknownParent);
   s.advance(3_600_000);
   await s.observe('recent', {kind: 'session-started'}, unknownParent);
-  // #1865 step 9: quiet roots have no running work, so no work deadline comes first: only the idle session's expiry.
+  // Only expiry falls due without evidence (Hub #1947 removed the work deadline): the idle session's comes first.
   assert.equal(s.world.store.nextDue(), START + DAY, 'expiry first');
   await s.due();
   s.advance(DAY - 3_600_000);
@@ -618,8 +618,8 @@ for (const [provider, client] of [['codex', 'desktop'], ['codex', 'cli'], ['clau
     s.advance(31 * 60_000);
     await s.due();
     assert.deepEqual(s.ids(), ['child', 'finished', 'interrupted', 'long', 'parent', 'waiting']);
-    // #1865 step 9: silence makes only running work unconfirmed, for its deadline; every other claim keeps its meaning.
-    assert.ok(s.world.store.records().every(record => record.work.state === 'active' ? record.work.reasons.includes('deadline') : record.work.confidence === 'confirmed'));
+    // Hub #1947: silence changes no claim, running work included.
+    assert.ok(s.world.store.records().every(record => record.work.confidence === 'confirmed'));
     assert.equal(s.record('long').work.state, 'active');
     assert.equal(s.record('finished').outcome.notices.length, 1);
     s.advance(DAY - 31 * 60_000 - 1);
@@ -759,8 +759,7 @@ it('unchanged starts and stops with new receipt times cannot revive, refresh or 
   s.advance(300_000);
   assert.equal(await s.observe('session', started, {...unknownParent, turn: 'a'}), 'duplicate');
   await s.due();
-  assert.deepEqual(s.record('session').work.reasons, ['deadline'], 'a repeated start is no new evidence');
-  assert.ok(s.world.store.revision > startedAt);
+  assert.deepEqual([s.record('session').work.reasons, s.world.store.revision], [[], startedAt], 'a repeated start is no new evidence, and silence changes nothing');
   s.advance(1);
   await s.observe('session', ended, {...unknownParent, turn: 'a'});
   await s.world.acknowledge(desktop('session'), s.record('session').outcome.notices[0]?.id ?? '', 'dashboard');
@@ -971,10 +970,13 @@ it('explicit recovery retires only an uncertain uncorrelated approval', async co
   const before = s.record(ID);
   assert.equal(before.attention.items[0]?.kind, 'approval');
   assert.deepEqual(await s.world.recoverApproval(codexCli(ID), 'turn-1'), {ok: false, code: 'invalid-state'});
-  // #1865 step 9: the core's timer commits the work deadline five minutes after the last qualifying evidence.
+  // Hub #1947: silence leaves work confirmed, so recovery waits for a restart's marking.
   s.advance(300_000);
   await s.due();
-  assert.deepEqual(s.record(ID).work.reasons, ['deadline']);
+  assert.deepEqual(await s.world.recoverApproval(codexCli(ID), 'turn-1'), {ok: false, code: 'invalid-state'}, 'five silent minutes are not enough');
+  await s.world.crashAndRestart();
+  await s.due();
+  assert.deepEqual(s.record(ID).work.reasons, ['restart']);
   assert.equal((await s.world.recoverApproval(codexCli(ID), 'turn-1')).ok, true);
   const after = s.record(ID);
   assert.deepEqual(after.attention.items, []);
@@ -1224,8 +1226,12 @@ it('observation age and unique child counts are independent of reads', async con
   s.advance(300_000);
   await s.take(structuredClone(start));
   await s.due();
-  assert.deepEqual(s.record(ID).work.reasons, ['deadline'], 'a repeated start is no new evidence');
-  assert.deepEqual(s.record(ID).relationships.children, {working: 0, unconfirmed: 1});
+  assert.deepEqual(s.record(ID).work.reasons, [], 'a repeated start is no new evidence, and silence changes no claim');
+  assert.deepEqual(s.record(ID).relationships.children, {working: 1, unconfirmed: 0});
+  await s.world.crashAndRestart();
+  await s.due();
+  assert.deepEqual(s.record(ID).work.reasons, ['restart']);
+  assert.deepEqual(s.record(ID).relationships.children, {working: 0, unconfirmed: 1}, 'a restart leaves the child unconfirmed');
 });
 
 it('a failed commit publishes no speculative revision and keeps the committed state', async context => {

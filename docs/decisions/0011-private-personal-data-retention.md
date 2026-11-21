@@ -267,8 +267,9 @@ are enough for a stretch of repeated readings, without each repeat's own time.
 The owner-selected rule, for core history:
 
 - **Kept:** every reading that changes a member other than a declared
-  bookkeeping member writes a history row, as before. A stretch of readings
-  that differ only in bookkeeping members is kept as its first confirmation,
+  bookkeeping member, or for an agent session other than its evidence
+  instants (since Hub #1947, below), writes a history row, as before. A stretch
+  of readings that differ only in those members is kept as its first confirmation,
   its last confirmation and the count of readings. For a record family that
   publishes on a poll, a silence longer than four times its polling interval,
   and at least two minutes, is kept as a gap row (decision 4, answered at
@@ -279,7 +280,12 @@ The owner-selected rule, for core history:
   #1768, safety members are never bookkeeping, and story
   [#1771](https://github.com/jimmie-potts/agent-device-hub/issues/1771) is to
   refuse them. The session record's times stay rows for now (decision 6, answered at
-  15:48:22Z).
+  15:48:22Z). Since 2026-11-21 ([#1947](https://github.com/jimmie-potts/agent-device-hub/issues/1947),
+  owner decision), a session state whose only changes are its evidence instants
+  confirms the entity's span instead: the span keeps its last confirmation and
+  count. A later change row keeps the moved instants; a removal's closing row
+  keeps only the span, so the instants of the confirmations after the last
+  change row are not kept.
 
 [ADR 0012's amendment of 2026-11-12](0012-bunny-event-platform.md#amendment-2026-11-12)
 records the rule and the other decisions. The rule applies once

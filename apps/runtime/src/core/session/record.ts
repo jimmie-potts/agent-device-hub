@@ -1,16 +1,16 @@
 // The core's `session/3.0` records (Hub #1865, design decisions 3 and 5): each stored session's public part as the record
 // the core publishes, with its children counted from the other sessions and its status computed by the contracts
-// package's `buildSession`. A record publishes only when its public meaning changes: a change of instants alone, such as
-// a work observation that only advances the private progress time, is no change, so a record's `lastEvidenceAtMs` is the
-// evidence time of its last published change.
+// package's `buildSession`. A record publishes when its public meaning changes. Its evidence time is part of that meaning
+// at a coarse resolution (Hub #1947): a change of instants alone publishes only once `lastEvidenceAtMs` has moved
+// `SESSION_LIMITS.evidenceResolutionMs` past the published record's, so a busy session's published evidence time is
+// current enough to show its evidence age, and progress between publications writes the session only.
 import type {Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession} from '@jimmie-potts/event-contracts/v2/session';
 import {countChildren} from './children.js';
-import type {StoredSession} from './model.js';
+import {SESSION_LIMITS, type StoredSession} from './model.js';
 
-/** Why running work is unconfirmed without evidence saying so: a core restart, or its passed deadline. */
-const unconfirmedBy = (session: StoredSession): {unconfirmed?: 'restart' | 'deadline'} =>
-  session.restartUnconfirmed === true ? {unconfirmed: 'restart'} : session.deadlineUnconfirmed === true ? {unconfirmed: 'deadline'} : {};
+/** Why running work is unconfirmed without evidence saying so: a core restart, the only such reason. */
+const unconfirmedBy = (session: StoredSession): {unconfirmed?: 'restart'} => session.restartUnconfirmed === true ? {unconfirmed: 'restart'} : {};
 
 /** Every stored session as its record at `revision`, by entity ID and in the sessions' order. */
 export function publicRecords(sessions: Iterable<StoredSession>, revision: number): Map<string, Session30Record> {
@@ -51,9 +51,12 @@ function meaning(record: Session30Record): string {
 }
 
 /**
- * Whether `next` changes the public meaning of the record last published, which publishes it at a new revision. The
- * store publishes a session whose stored record a release before the switch published (`session/2.x`) whatever this says.
+ * Whether `next` changes the public meaning of the record last published, which publishes it at a new revision: any
+ * member but its revision and instants changed, or its evidence time moved at least `evidenceResolutionMs` past the
+ * published one (Hub #1947). The store publishes a session whose stored record a release before the switch published
+ * (`session/2.x`) whatever this says.
  */
 export function meaningChanged(published: Session30Record | undefined, next: Session30Record): boolean {
-  return published === undefined || meaning(published) !== meaning(next);
+  return published === undefined || meaning(published) !== meaning(next) ||
+    next.lastEvidenceAtMs - published.lastEvidenceAtMs >= SESSION_LIMITS.evidenceResolutionMs;
 }

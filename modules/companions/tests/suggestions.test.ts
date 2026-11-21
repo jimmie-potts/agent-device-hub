@@ -77,8 +77,9 @@ void test('current policy and exact source snapshot fence copy at its final chec
 });
 
 void test('the session\'s silence never withdraws a suggestion; only its exact match, its evidence window and a question\'s 30 s do', () => {
-  // Running work a restart or its deadline left unconfirmed, and a record whose last change is ten minutes old.
-  for (const patch of [{work: 'active', unconfirmed: 'restart'}, {work: 'active', unconfirmed: 'deadline'}, {lastEvidenceAtMs: now - 600_000}] as const) {
+  // Running work a restart left unconfirmed, running work silent for ten minutes, and a record whose last change is ten
+  // minutes old.
+  for (const patch of [{work: 'active', unconfirmed: 'restart'}, {work: 'active', lastEvidenceAtMs: now - 600_000}, {lastEvidenceAtMs: now - 600_000}] as const) {
     const result = propose(evidence(), {...context(), sessions: [buildSession({...facts, ...patch})]});
     assert.equal(result.kind, 'proposal', JSON.stringify(patch));
     if (result.kind === 'proposal') assert.equal(result.validUntilMs, now + 300_000, 'the evidence window alone bounds the proposal');

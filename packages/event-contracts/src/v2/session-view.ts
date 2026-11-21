@@ -74,8 +74,8 @@ const confidenceOf = (unavailable: readonly Unavailable[], dimension: Unavailabl
 export type SessionFacts = Pick<Session30Record, 'id' | 'revision' | 'generation' | 'identity' | 'parent' | 'turn' | 'unavailable' | 'ordering' |
   'observedAtMs' | 'lastEvidenceAtMs' | 'label' | 'title' | 'project' | 'projectId' | 'hostSessionId'> & {
   work: WorkClaim['state'];
-  /** Why running work is unconfirmed without evidence saying so: its deadline passed, or the core restarted. */
-  unconfirmed?: 'deadline' | 'restart';
+  /** Why running work is unconfirmed without evidence saying so: the core restarted. Silence alone never does (Hub #1947). */
+  unconfirmed?: 'restart';
   attention: Attention[];
   notices: Notice[];
   read: OutcomeClaim['read'];
@@ -85,9 +85,9 @@ export type SessionFacts = Pick<Session30Record, 'id' | 'revision' | 'generation
 };
 
 /**
- * The `session/3.0` record of a session's facts (design decisions 3 and 4), with the status of its claims. Active work is
- * unconfirmed for its deadline or a restart (one reason, the restart first), and while an ambiguous or lost activity
- * entry exists (its reason, after any other); work that is not active is never unconfirmed. Ambiguous or lost evidence
+ * The `session/3.0` record of a session's facts (design decisions 3 and 4, as Hub #1947 amends them), with the status of
+ * its claims. Active work is unconfirmed after a restart, and while an ambiguous or lost activity entry exists (its
+ * reason, after the restart); work that is not active is never unconfirmed. Ambiguous or lost evidence
  * makes the attention, outcome and relationship claims unconfirmed by their dimensions: attention, read and parent.
  * Silence never makes attention or an outcome unconfirmed. Every claim takes the record's last evidence time.
  */
@@ -95,7 +95,8 @@ export function buildSession(facts: SessionFacts): Session30Record {
   const {lastEvidenceAtMs: evidenceAtMs, unavailable} = facts;
   const evidence = unavailable.flatMap(({dimension, reason}): WorkReason[] =>
     dimension === 'activity' && (reason === 'ambiguous' || reason === 'lost') ? [reason] : []);
-  const reasons: WorkReason[] = facts.work === 'active' ? [...(facts.unconfirmed === undefined ? [] : [facts.unconfirmed]), ...evidence] : [];
+  // Only a restart is a reason without evidence; `deadline`, which a record of a release before Hub #1947 may hold, is never built.
+  const reasons: WorkReason[] = facts.work === 'active' ? [...((facts.unconfirmed as string | undefined) === 'restart' ? ['restart' as const] : []), ...evidence] : [];
   const claims: SessionClaims = {
     turn: facts.turn,
     work: {state: facts.work, confidence: reasons.length > 0 ? 'unconfirmed' : 'confirmed', evidenceAtMs, reasons},

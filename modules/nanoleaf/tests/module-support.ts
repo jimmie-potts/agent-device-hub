@@ -73,11 +73,10 @@ const settle = async (): Promise<void> => {
 export type SessionOptions = {
   identity?: Identity; work?: SessionFacts['work']; turn?: string; attention?: SessionFacts['attention'];
   notices?: SessionFacts['notices']; read?: SessionFacts['read']; title?: string; generation?: number;
-  /**
-   * The session's last evidence, now by default. Five minutes or more before now, the core reports running work
-   * unconfirmed for its deadline; silence changes nothing else.
-   */
+  /** The session's last evidence, now by default. Silence changes no claim (Hub #1947). */
   evidenceAtMs?: number;
+  /** Running work a core restart left unconfirmed, the only reason the hub publishes for it. */
+  unconfirmed?: 'restart';
 };
 
 /** A notice ID as the owner gives one: a SHA-256 hash. */
@@ -132,7 +131,7 @@ export class StandInCore {
     const evidenceAtMs = options.evidenceAtMs ?? this.clock.now();
     const record = buildSession({
       id, revision: this.revision, generation: options.generation ?? 0, identity, parent: {status: 'top-level'}, turn: {status: 'known', id: turn},
-      work: options.work ?? 'active', ...(this.clock.now() - evidenceAtMs >= 300_000 ? {unconfirmed: 'deadline' as const} : {}),
+      work: options.work ?? 'active', ...(options.unconfirmed === undefined ? {} : {unconfirmed: options.unconfirmed}),
       attention: options.attention ?? [], notices: options.notices ?? [], read: options.read ?? 'unknown',
       unavailable: [], ordering: {status: 'unknown'}, observedAtMs: evidenceAtMs, lastEvidenceAtMs: evidenceAtMs,
       children: {working: 0, unconfirmed: 0}, ...(options.title === undefined ? {} : {title: {value: options.title, source: 'provider'}}),

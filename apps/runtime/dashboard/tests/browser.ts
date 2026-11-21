@@ -253,7 +253,7 @@ try {
   await chip('Port the wall', 'Idle');
   assert.equal(await row('Port the wall').getAttribute('data-stale'), 'false', 'a restart does not make an idle session uncertain');
   await row('Port the wall').locator('summary').click();
-  await row('Port the wall').getByText(/^Last published change: .* ago\. Not a completion estimate\.$/).waitFor();
+  await row('Port the wall').getByText(/^Last heard: .* ago, to the minute\. Not a completion estimate\.$/).waitFor();
   assert.equal(world.browserSessions(), 1);
   checks.push('an ended session offers one sign-in, which restores the page');
 

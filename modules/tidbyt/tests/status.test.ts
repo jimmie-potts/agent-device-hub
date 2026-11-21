@@ -107,7 +107,7 @@ void test('titles follow explicit labels and precede project display names and l
 });
 
 void test('unconfirmed work marks one row; an unavailable copy marks every row and never reports idle', () => {
-  const view = statusView(copy([working({label: label('stale'), unconfirmed: 'deadline'}), asking({label: label('fresh')})]));
+  const view = statusView(copy([working({label: label('stale'), unconfirmed: 'restart'}), asking({label: label('fresh')})]));
   assert.deepEqual(rowSummary(view), ['FRESH ASK', 'STALE RUN?']);
   const restarted = statusView(copy([working({label: label('restarted'), unconfirmed: 'restart'})]));
   assert.deepEqual(rowSummary(restarted), ['RESTARTED RUN?']);
@@ -121,18 +121,18 @@ void test('unconfirmed work marks one row; an unavailable copy marks every row a
   }
 });
 
-// Hub #1865, design decision 10: the tile marks `?` only for an unknown status, unconfirmed work or an unsynced copy. A
-// session that waits for the owner or holds a finished turn is never `?` from its silence.
-void test('a question silent for ten minutes and a silent finished turn show without `?`, and unconfirmed work shows with one', () => {
-  // The core marked the running work unconfirmed at its deadline; silence changes no other claim.
-  const silent = {at: START_MS - 10 * 60_000, unconfirmed: 'deadline'} as const;
+// Hub #1865, design decision 10: the tile marks `?` only for an unknown status, unconfirmed work or an unsynced copy. No
+// session is `?` from its silence alone (Hub #1947): only a restart leaves running work unconfirmed.
+void test('a question, a finished turn and running work silent for ten minutes show without `?`, and restarted work shows with one', () => {
+  const silent = {at: START_MS - 10 * 60_000} as const;
   const question = [{id: {status: 'known', id: 'q-1'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}}] as const;
   const view = statusView(copy([
     asking({label: label('asking'), attention: [...question], ...silent}),
     finished({label: label('done'), ...silent}),
     working({label: label('busy'), ...silent}),
+    working({label: label('restarted'), ...silent, at: START_MS - 11 * 60_000, unconfirmed: 'restart'}),
   ]));
-  assert.deepEqual(rowSummary(view), ['ASKING ASK', 'BUSY RUN?', 'DONE DONE']);
+  assert.deepEqual(rowSummary(view), ['ASKING ASK', 'BUSY RUN', 'RESTARTED RUN?', 'DONE DONE']);
 });
 
 void test('the tile follows the shared session cases: ASK, RUN and DONE rows, with `?` only where the case expects one', () => {
@@ -174,7 +174,7 @@ void test('the status frame is a valid renderer frame with a state-colored marke
 void test('uncertain rows are dimmed and use a ? marker; overflow and feed rows are drawn', () => {
   const same = identity();
   const fresh = statusFrame(statusView(copy([working({identity: same, label: label('same')})])));
-  const stale = statusFrame(statusView(copy([working({identity: same, label: label('same'), unconfirmed: 'deadline'})])));
+  const stale = statusFrame(statusView(copy([working({identity: same, label: label('same'), unconfirmed: 'restart'})])));
   assert.ok(brightest(rowPixels(stale, 0)) < brightest(rowPixels(fresh, 0)) / 2, 'a stale row is dimmed');
   const marker = (frame: Frame): boolean[] => rowPixels(frame, 0).filter((_, i) => i % 64 < 3).map(p => p.some(v => v > 0));
   assert.notDeepEqual(marker(stale), marker(fresh), 'the marker\'s shape changes');

@@ -667,7 +667,7 @@ class Core {
   }
 
   /**
-   * Commits what has fallen due: expiry and the work deadlines (design decision 4). A refusal is not fatal: the next attempt waits
+   * Commits what has fallen due: the start transaction and expiry (design decision 4). A refusal is not fatal: the next attempt waits
    * a capped, doubling backoff, and each one is logged at DEBUG only. True when the records are up to date.
    */
   async #refresh(): Promise<boolean> {
@@ -946,7 +946,7 @@ class Core {
   /**
    * Answers `approval-recover` (Hub #835), the old Hub's operator recovery, through the session logic: it
    * retires the one approval marker without an attention ID that the session holds on `turnId`, only while the
-   * session's work claim is unconfirmed for its deadline or a restart. `expectedRevision` must be the session record's revision, so an operator who read a
+   * session's running work is unconfirmed by a core restart (Hub #1947). `expectedRevision` must be the session record's revision, so an operator who read a
    * record that has changed since is refused with `revision-conflict` and reads again. The change commits before the
    * reply, in the command's trace, with `attention-cleared` (cause `recovered`) and the session's new state as its
    * evidence; no outcome follows. A session with no such marker, or whose work is confirmed, is `invalid-state`.
@@ -1018,8 +1018,7 @@ class Core {
   }
 
   /**
-   * Runs the core's next due change on its scheduler: running work's deadline passing (design decision 4), a session
-   * expiring or a guard lapsing. After a refresh the store refused, the next attempt waits its backoff instead.
+   * Runs the core's next due change on its scheduler: a session expiring or a guard lapsing (design decision 4). After a refresh the store refused, the next attempt waits its backoff instead.
    */
   #schedule(): void {
     this.#timer?.();

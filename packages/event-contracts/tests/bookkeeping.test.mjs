@@ -38,7 +38,7 @@ test('the declared members, as decided on #1768', () => {
     'power-limit': ['/observedAtMs', '/updatedAtMs'],
     'playback': ['/observedAtMs'],
   });
-  assert.deepEqual(bookkeeping.session, [], 'agent session times stay rows (decision 6)');
+  assert.deepEqual(bookkeeping.session, [], 'sessions declare none; history confirms evidence-only session states by its own rule (Hub #1947)');
 });
 
 test('every declared pointer names a single-value member of every version of its family', () => {

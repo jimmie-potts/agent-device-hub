@@ -218,6 +218,7 @@ test('a restart, the reset and silence change no class but work', () => {
   assert.deepEqual([reset.messages, reset.removed, reset.occurrences], [[], [], []], 'the reset publishes nothing and the next sync serves no session');
   assert.ok(back.views.claude.generation > byId.reset.checks[0].views.claude.generation, 'a returning session has a new generation');
   const silent = byId['question-silent'].checks[1].views.codex;
-  assert.deepEqual([statusText(silent), silent.attention.confidence, silent.work.reasons], ['needs-owner/question', 'confirmed', ['deadline']]);
+  assert.deepEqual([statusText(silent), silent.attention.confidence, silent.work.confidence], ['needs-owner/question', 'confirmed', 'confirmed'],
+    'silence changes no claim (Hub #1947)');
   assert.equal(statusText(forConsumer(silent, set.policies.nanoleaf)), 'needs-owner/question');
 });

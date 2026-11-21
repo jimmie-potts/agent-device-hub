@@ -864,17 +864,22 @@ filtering and the existing guarded label editor over the shell's one session cop
 Home supplies its widget frame; other containers can reuse the components without
 starting another feed.
 
-Card faces show the label (then title or native ID), project/client and state.
-Approval, input and question attention add amber highlighting and text. Native
-card disclosure reveals the time since the session's last published change,
-labeled as such, attention lines, retained notices and their acknowledgments,
+Card faces show the label (then title or native ID), project/client, state and
+how long ago the hub last heard from the session (**Heard 3m ago**, or **3m ago**
+on a closed Home tile, Hub #1947).
+The page computes that age against its own clock from the record's
+`lastEvidenceAtMs`, which the core publishes to the minute, so a stuck
+"working" session can be told apart from real work without another read or any
+polling. Approval, input and question attention add amber highlighting and
+text. Native card disclosure repeats the evidence age, attention lines, retained notices and their acknowledgments,
 source/session/work/read/parent/child evidence and optional label editing.
 Collapse and filtering retain drafts; replacing a generation retires them.
 Read-only callers see the same evidence without label controls. A card is
 uncertain only when the hub's status is unknown, its working status has
-unconfirmed work (**Unconfirmed**, in the working chip's color), or the copy is not synced
-(**Stale**). Silence never makes a session that waits for the owner or holds a
-finished turn uncertain. Uncertain cards retain their last-known state in the
+unconfirmed work (**Unconfirmed**, in the working chip's color), which a core
+restart or lost or ambiguous activity evidence on running work leaves, or the
+copy is not synced (**Stale**). Silence never makes
+a session uncertain; its evidence age shows it instead. Uncertain cards retain their last-known state in the
 expanded evidence and contribute no current Working count. Needs you and Unread
 counts describe retained evidence across the full copy, independent of filters.
 No separate attention box is placed on Home. Inspecting a card never clears a notice.

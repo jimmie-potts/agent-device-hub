@@ -1,5 +1,5 @@
 {
- "description": "The shared synthetic session case set (Hub #1865, design decision 10). Each case is an input sequence and checks. Steps are at `atMs` after `startAtMs`: an observation (`observe`), a transport repeat of an earlier step (`again`), a different message under an earlier step's message ID (`conflict`), a consumer's notice acknowledgment, a clock advance, a core restart, the one-time cutover reset, or launch-only roots that fill the session limit (`fill`). A check holds, after `after` steps and at `atMs`, the expected copy as session/3.0 records, the removals, the occurrences since the previous check in publication order, and each reader's expected output. Records name sessions, turns and notices by name, give the work state with why running work is unconfirmed besides its evidence (`unconfirmed`: `deadline` or `restart`) and children as `[working, unconfirmed]`, and take their status from their claims; and the loader in src/v2/session-cases.ts expands them into messages the core families accept. Revisions and generations count steps: the core compares their order, not their values. `since` names the first step of #1865 whose core produces the case: `now` is today's core, `step 7` the storage step and `step 8` the restart, root-start and capacity step. Reader outputs follow design decision 10 and hold for the shared read function from step 1, with status rule 3 as `noticeCounts` defines it: a notice counts until a known later turn supersedes it (owner decision, 2026-11-18). Everything here is synthetic.",
+ "description": "The shared synthetic session case set (Hub #1865, design decision 10). Each case is an input sequence and checks. Steps are at `atMs` after `startAtMs`: an observation (`observe`), a transport repeat of an earlier step (`again`), a different message under an earlier step's message ID (`conflict`), a consumer's notice acknowledgment, a clock advance, a core restart, the one-time cutover reset, or launch-only roots that fill the session limit (`fill`). A check holds, after `after` steps and at `atMs`, the expected copy as session/3.0 records, the removals, the occurrences since the previous check in publication order, and each reader's expected output. Records name sessions, turns and notices by name, give the work state with why running work is unconfirmed besides its evidence (`unconfirmed`: `restart`) and children as `[working, unconfirmed]`, and take their status from their claims; and the loader in src/v2/session-cases.ts expands them into messages the core families accept. Revisions and generations count steps: the core compares their order, not their values. `since` names the first step of #1865 whose core produces the case: `now` is today's core, `step 7` the storage step and `step 8` the restart, root-start and capacity step. Hub #1947 removed the five-minute work deadline: silence never changes a claim. Reader outputs follow design decision 10 and hold for the shared read function from step 1, with status rule 3 as `noticeCounts` defines it: a notice counts until a known later turn supersedes it (owner decision, 2026-11-18). Everything here is synthetic.",
  "startAtMs": 1791288000000,
  "sessions": {
   "claude": {"identity": {"provider": "claude", "client": "code", "hostId": "synthetic-host", "sourceId": "claude-hooks", "sessionId": "synthetic-claude"}, "parent": "unknown"},
@@ -118,7 +118,7 @@
   {
    "id": "question-silent",
    "name": "a question silent for more than five minutes",
-   "covers": "design decision 4: silence makes only the running work unconfirmed; the question keeps its meaning",
+   "covers": "design decision 4 as Hub #1947 amends it: silence changes no claim, so the session is not republished and the question keeps its meaning",
    "since": "now",
    "steps": [
     {"atMs": 0, "observe": {"session": "codex", "turn": "t1", "event": {"kind": "turn-started"}}},
@@ -139,8 +139,8 @@
      }},
     {"after": 3, "atMs": 361000,
      "records": [
-      {"session": "codex", "revision": 3, "generation": 1, "turn": "t1", "work": "active", "attention": [{"kind": "question", "id": "q1", "turn": "t1"}],
-       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "unconfirmed": "deadline"}
+      {"session": "codex", "revision": 2, "generation": 1, "turn": "t1", "work": "active", "attention": [{"kind": "question", "id": "q1", "turn": "t1"}],
+       "unavailable": [["ordering", "missing"]], "observedAtMs": 1000, "lastEvidenceAtMs": 1000}
      ],
      "readers": {
       "status": {"codex": "needs-owner/question"}, "lifx": "attention", "tronbyt": [["ASK", false]], "pixoo": {"codex": false},
@@ -152,7 +152,7 @@
   {
    "id": "working-silent",
    "name": "working silent for more than five minutes",
-   "covers": "design decision 4: active work becomes unconfirmed five minutes after its last evidence",
+   "covers": "design decision 4 as Hub #1947 amends it: silence never makes running work unconfirmed, and the session is not republished",
    "since": "now",
    "steps": [
     {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
@@ -161,11 +161,11 @@
    "checks": [
     {"after": 2, "atMs": 360000,
      "records": [
-      {"session": "claude", "revision": 2, "generation": 1, "turn": "p1", "work": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 0, "lastEvidenceAtMs": 0, "unconfirmed": "deadline"}
+      {"session": "claude", "revision": 1, "generation": 1, "turn": "p1", "work": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 0, "lastEvidenceAtMs": 0}
      ],
      "readers": {
-      "status": {"claude": "working/unconfirmed"}, "lifx": "working", "tronbyt": [["RUN", true]], "pixoo": {"claude": true},
-      "nanoleaf": {"tasks": {"claude": "working"}, "steady": ["claude"]}, "dashboard": {"claude": "working"}
+      "status": {"claude": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false},
+      "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working"}
      }}
    ]
   },
@@ -282,13 +282,13 @@
   {
    "id": "child-only",
    "name": "a root that works only through its child",
-   "covers": "design decisions 3 and 10: a working child makes its idle root working until the child's own work is unconfirmed, and then the root's finished turn shows on every device, Nanoleaf included",
-   "since": "now",
+   "covers": "design decisions 3 and 10: a working child makes its idle root working until the child's own work is unconfirmed, here by a restart (Hub #1947), and then the root's finished turn shows on every device, Nanoleaf included",
+   "since": "step 8",
    "steps": [
     {"atMs": 0, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-started"}}},
     {"atMs": 1000, "observe": {"session": "claude-agent", "turn": null, "event": {"kind": "session-started"}}},
     {"atMs": 2000, "observe": {"session": "claude", "turn": "p1", "event": {"kind": "turn-ended"}}},
-    {"atMs": 302000, "advance": true}
+    {"atMs": 302000, "restart": true}
    ],
    "checks": [
     {"after": 3, "atMs": 3000,
@@ -308,7 +308,7 @@
       {"session": "claude", "revision": 4, "generation": 1, "turn": "p1", "work": "idle", "notices": [{"turn": "p1", "acknowledgedBy": []}],
        "unavailable": [["ordering", "missing"]], "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "children": [0, 1]},
       {"session": "claude-agent", "revision": 4, "generation": 2, "turn": null, "work": "active", "unavailable": [["turn", "missing"], ["ordering", "missing"]],
-       "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "unconfirmed": "deadline"}
+       "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "unconfirmed": "restart"}
      ],
      "readers": {
       "status": {"claude": "finished/turn-ended", "claude-agent": "working/unconfirmed"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"claude": false}, "pixooChildren": {"claude": true},
@@ -425,13 +425,13 @@
    "checks": [
     {"after": 4, "atMs": 86461000,
      "records": [
-      {"session": "claude-b", "revision": 4, "generation": 3, "turn": "r1", "work": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 82800000, "lastEvidenceAtMs": 82800000, "unconfirmed": "deadline"}
+      {"session": "claude-b", "revision": 3, "generation": 3, "turn": "r1", "work": "active", "unavailable": [["ordering", "missing"]], "observedAtMs": 82800000, "lastEvidenceAtMs": 82800000}
      ],
      "removed": [{"session": "claude", "reason": "expired"}],
      "occurrences": [{"kind": "turn-ended", "session": "claude", "notice": "p1"}],
      "readers": {
-      "status": {"claude-b": "working/unconfirmed"}, "lifx": "working", "tronbyt": [["RUN", true]], "pixoo": {"claude-b": true},
-      "nanoleaf": {"tasks": {"claude-b": "working"}, "steady": ["claude-b"]}, "dashboard": {"claude-b": "working"}
+      "status": {"claude-b": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude-b": false},
+      "nanoleaf": {"tasks": {"claude-b": "working"}, "steady": []}, "dashboard": {"claude-b": "working"}
      }}
    ]
   },

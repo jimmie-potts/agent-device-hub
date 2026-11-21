@@ -166,25 +166,38 @@ const recover = (session: string, turnId: string, expectedRevision: number): {ke
   draft: {type: 'org.bunny.approval.recover.requested', subject: session, dataschema: RECOVER_SCHEMA, data: {turnId, expectedRevision}},
 });
 
-it('an operator recovers the one uncertain approval without an ID once the session\'s evidence is uncertain, and only then', async context => {
+it('an operator recovers the one uncertain approval without an ID once a restart left the session\'s work unconfirmed, and only then', async context => {
   const clock = manualClock();
-  const core = await coreRun(context, {clock: {now: clock.now}, scheduler: clock.scheduler});
-  const ask = async (...args: Parameters<typeof recover>): Promise<{answer: string; reply?: Message}> => {
+  const dir = await stateDir(context);
+  const asker = (core: CoreRun) => async (...args: Parameters<typeof recover>): Promise<{answer: string; reply?: Message}> => {
     const {key, draft} = recover(...args);
     const result = await core.pixoo.request(key, draft, {timeoutMs: 5000});
     return result.status === 'accepted' ? {answer: 'accepted', reply: result.reply} : {answer: result.error.error.code};
   };
-  await publish(core.hook, turnStarted, START);
-  await publish(core.hook, unknownApproval, START);
-  await waitFor(() => core.record()?.attention.items.length === 1, 5000, 'the waiting session');
-  const waiting = core.record()?.revision ?? -1;
-  assert.equal((await ask(SESSION_ID, 'turn-1', waiting)).answer, 'invalid-state', 'evidence is current, so the marker may still be real');
-  assert.equal((await ask(OTHER_ID, 'turn-1', waiting)).answer, 'not-found', 'no such session');
-  // Five minutes without qualifying work evidence: the running work turns unconfirmed at a new revision.
+  const first = await coreRun(context, {clock: {now: clock.now}, scheduler: clock.scheduler, stateDir: dir});
+  await publish(first.hook, turnStarted, START);
+  await publish(first.hook, unknownApproval, START);
+  await waitFor(() => first.record()?.attention.items.length === 1, 5000, 'the waiting session');
+  const waiting = first.record()?.revision ?? -1;
+  assert.equal((await asker(first)(SESSION_ID, 'turn-1', waiting)).answer, 'invalid-state', 'work is confirmed, so the marker may still be real');
+  assert.equal((await asker(first)(OTHER_ID, 'turn-1', waiting)).answer, 'not-found', 'no such session');
+  // Five minutes without work evidence change nothing (Hub #1947): the work stays confirmed and recovery stays refused.
   clock.advance(300_000);
-  await waitFor(() => core.record()?.work.reasons.includes('deadline') === true, 5000, 'the unconfirmed work');
+  await flush();
+  assert.deepEqual([first.record()?.revision, first.record()?.work.confidence], [waiting, 'confirmed']);
+  assert.equal((await asker(first)(SESSION_ID, 'turn-1', waiting)).answer, 'invalid-state', 'silence alone never allows it');
+  const refusals = (core: CoreRun): unknown[][] =>
+    core.logs.filter(record => record.event_name === 'command.rejected').map(record => [record.attributes['bunny.code'], record.severity_text]);
+  assert.deepEqual(refusals(first), [['invalid-state', 'INFO'], ['not-found', 'INFO'], ['invalid-state', 'INFO']]);
+  await first.runtime.stop();
+
+  // A restart leaves the running work unconfirmed at a new revision.
+  clock.advance(1000);
+  const core = await coreRun(context, {clock: {now: clock.now}, scheduler: clock.scheduler, stateDir: dir});
+  await waitFor(() => core.record()?.work.reasons.includes('restart') === true, 5000, 'the unconfirmed work');
   const uncertain = core.record()?.revision ?? -1;
   assert.ok(uncertain > waiting);
+  const ask = asker(core);
   assert.equal((await ask(SESSION_ID, 'turn-1', waiting)).answer, 'revision-conflict', 'the operator read an older record');
   assert.equal((await ask(SESSION_ID, 'turn-2', uncertain)).answer, 'invalid-state', 'no marker on that turn');
   assert.equal(core.record()?.attention.items.length, 1, 'no refusal changed the record');
@@ -197,8 +210,7 @@ it('an operator recovers the one uncertain approval without an ID once the sessi
   assert.equal(traceOf(cleared), traceOf(recovered.reply), 'the recovery joins the command\'s trace');
   assert.equal((await ask(SESSION_ID, 'turn-1', core.record()?.revision ?? -1)).answer, 'invalid-state', 'a second recovery finds nothing to retire');
   assert.equal(core.seen.some(message => message.kind === 'outcome' && message.source === 'bunny/core'), false, 'the reply is the whole answer');
-  const rejected = core.logs.filter(record => record.event_name === 'command.rejected').map(record => [record.attributes['bunny.code'], record.severity_text]);
-  assert.deepEqual(rejected, [['invalid-state', 'INFO'], ['not-found', 'INFO'], ['revision-conflict', 'INFO'], ['invalid-state', 'INFO'], ['invalid-state', 'INFO']]);
+  assert.deepEqual(refusals(core), [['revision-conflict', 'INFO'], ['invalid-state', 'INFO'], ['invalid-state', 'INFO']]);
   const completed = core.logs.filter(record => record.event_name === 'command.completed' && record.attributes['bunny.participant'] === 'bunny/modules/pixoo');
   assert.equal(completed.length, 1);
 });
@@ -234,19 +246,20 @@ it('an observation that breaks profile 2.0, or reuses (source, id) with other co
   assert.equal(core.sessions().length, 1);
 });
 
-it('running work turns unconfirmed on the core\'s own timer at five minutes, at a revision every copy applies', async context => {
+it('the core\'s own timer changes nothing through silence and removes the session at its expiry (Hub #1947)', async context => {
   const clock = manualClock();
   const core = await coreRun(context, {clock: {now: clock.now}, scheduler: clock.scheduler});
   await publish(core.hook, turnStarted, START);
   await waitFor(() => core.record() !== undefined, 5000, 'the session');
   const before = core.record();
   assert.equal(before?.work.confidence, 'confirmed');
-  clock.advance(299_999);
-  await new Promise(resolve => { setImmediate(resolve); });
-  assert.equal(core.record()?.work.confidence, 'confirmed');
-  clock.advance(1);
-  await waitFor(() => core.record()?.work.reasons.includes('deadline') === true, 5000, 'the unconfirmed work in the copy');
-  assert.ok((core.record()?.revision ?? 0) > (before?.revision ?? 0));
+  for (const ms of [300_000, 3_600_000]) {
+    clock.advance(ms);
+    await flush();
+    assert.deepEqual(core.record(), before, 'silence publishes nothing and leaves the work confirmed');
+  }
+  clock.advance(START + 86_400_000 - clock.now());
+  await waitFor(() => core.sessions().length === 0, 5000, 'the expired session');
 });
 
 it('a full disk refuses an observation before anything reports it accepted, changes nothing, and once there is room the core takes it', async context => {
@@ -366,7 +379,7 @@ it('a full disk refuses an acknowledgment with capacity before it records anythi
   await waitFor(() => core.record()?.outcome.notices[0]?.acknowledgedBy.includes('pixoo') === true, 5000, 'the acknowledgment');
 });
 
-it('a work deadline the store cannot publish is tried again on a capped, doubling backoff, with one condition record and a summary a minute', async context => {
+it('a due expiry the store cannot commit is tried again on a capped, doubling backoff, with one condition record and a summary a minute', async context => {
   const clock = manualClock();
   let database: DatabaseSync | undefined;
   const hook = fixture('hook');
@@ -378,8 +391,8 @@ it('a work deadline the store cannot publish is tried again on a capped, doublin
   assert.ok(database);
   fillDisk(database);
   const attempts = (): number => logs.filter(record => record.event_name === 'operation.failed' && record.attributes['bunny.operation'] === 'status').length;
-  // The running work turns unconfirmed at five minutes; the store refuses that and every attempt for the next two minutes.
-  clock.advance(300_000);
+  // The session expires after a day without evidence; the store refuses that and every attempt for the next two minutes.
+  clock.advance(86_400_000);
   await flush();
   for (let second = 0; second < 125; second += 1) {
     clock.advance(1000);
@@ -388,7 +401,7 @@ it('a work deadline the store cannot publish is tried again on a capped, doublin
   assert.equal(attempts(), 8, 'attempts at 0, 1, 3, 7, 15, 31, 63 and 123 s: doubling, capped at 60 s');
   assert.deepEqual(storage(logs).map(record => [record.severity_text, record.attributes['bunny.duration_ms'], record.attributes['bunny.attempt_count']]),
     [['WARN', undefined, undefined], ['WARN', 63_000, 6], ['WARN', 123_000, 1]], 'the transition, then a summary at most once a minute with the refusals since');
-  // Room again: the next attempt, 60 s after the last, publishes the record, and the condition ends with one record.
+  // Room again: the next attempt, 60 s after the last, publishes the removal, and the condition ends with one record.
   database.exec(ROOM);
   clock.advance(60_000);
   await waitFor(() => storage(logs).at(-1)?.event_name === 'operation.completed', 5000, 'the recovery');
