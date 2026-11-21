@@ -2,8 +2,68 @@
 import assert from 'node:assert/strict';
 import {setTimeout as pause} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import {type Page} from 'playwright';
 import {feed,startWorld,holdDashboardStream} from './harness.ts';
 const world=await startWorld({wemo:true}),browser=await chromium.launch({headless:true});
+type Sent={path:string;target:string;keys:string;on:unknown};
+/** Every power command the page sends, reduced to its route, target, data fields and value. */
+function powerCommands(page:Page):Sent[]{
+  const sent:Sent[]=[];
+  page.on('request',request=>{const {pathname}=new URL(request.url());if(request.method()!=='POST'||!pathname.startsWith('/api/v2/commands/'))return;
+    const body=JSON.parse(request.postData()??'{}') as {target:string;data:Record<string,unknown>};sent.push({path:pathname,target:body.target,keys:Object.keys(body.data).sort().join(','),on:body.data['on']});});
+  return sent;
+}
+/**
+ * A plug on Home's wide grid is a press panel (#1931): pointer, keyboard and touch each switch it with the full card's
+ * command; its pressed state and its light follow the plug's observed power, and a lost reply leaves it locked.
+ */
+async function pressPanel(browser:Awaited<ReturnType<typeof chromium.launch>>,url:string,plugs:typeof world):Promise<Record<string,unknown>>{
+  const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
+  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  const sent=powerCommands(page);
+  await page.goto(`${url}/#/component/shelf-lamp`);await feed(page,'connected');
+  const card=page.locator('[data-device="shelf-lamp"]');await card.getByRole('button',{name:'Turn on',exact:true}).click();
+  await card.getByRole('status').filter({hasText:'Completed: succeeded.'}).waitFor();
+  const reference=sent.splice(0);assert.deepEqual(reference.map(item=>item.path),['/api/v2/commands/power-set']);
+  const same=async(on:boolean,label:string):Promise<void>=>{
+    const deadline=Date.now()+15000;while(sent.length===0&&Date.now()<deadline)await pause(50);
+    assert.deepEqual(sent.splice(0),[{...reference[0],on}],`${label} sends the full card's command once`);
+  };
+  await page.goto(url);await feed(page,'connected');
+  const panel=page.locator('[data-plug-panel="shelf-lamp"]'),button=panel.getByRole('button',{name:'Shelf lamp power',exact:true}),lamp=panel.locator('.plug-icon');
+  const shows=async(on:boolean):Promise<void>=>{
+    await panel.locator('.plug-press small').filter({hasText:on?/^On · observed$/:/^Off · observed$/}).waitFor();
+    assert.equal(await button.getAttribute('aria-pressed'),String(on));assert.equal(await lamp.getAttribute('data-glass-lamp'),on?'0.8':'0','the light follows the observed power');
+    await page.waitForFunction(()=>document.querySelector<HTMLButtonElement>('[data-plug-panel="shelf-lamp"] .plug-press')?.disabled===false);
+  };
+  await shows(true);
+  assert.equal(await panel.getByRole('link',{name:'Open Shelf lamp',exact:true}).getAttribute('href'),'#/component/shelf-lamp');
+  await button.click();await same(false,'a pointer press');
+  // Right after the command completes, before the plug's next report: the panel shows the request, and a press acts
+  // on it, so a second press switches back rather than sending the same command again.
+  await page.waitForFunction(()=>document.querySelector<HTMLButtonElement>('[data-plug-panel="shelf-lamp"] .plug-press')?.disabled===false);
+  const early=await panel.evaluate(node=>({pressed:node.querySelector('.plug-press')?.getAttribute('aria-pressed'),state:node.querySelector('.plug-press small')?.textContent}));
+  assert.equal(early.pressed,'false','the panel shows the request at once');assert.match(early.state??'',/^(Requested off · observed on|Off · observed)$/);
+  await button.focus();await page.keyboard.press('Space');await same(true,'Space right after');await shows(true);
+  await button.focus();await page.keyboard.press('Enter');await same(false,'Enter');await shows(false);
+  assert.equal(plugs.wemo.state()['shelf-lamp']?.power,false);
+  // Touch: a tap switches it.
+  const touch=await browser.newContext({viewport:{width:1440,height:1000},hasTouch:true}),phone=await touch.newPage();phone.setDefaultTimeout(15000);
+  const tapped=powerCommands(phone);await phone.goto(url);await feed(phone,'connected');
+  const touchButton=phone.locator('[data-plug-panel="shelf-lamp"]').getByRole('button',{name:'Shelf lamp power',exact:true});
+  await phone.waitForFunction(()=>document.querySelector<HTMLButtonElement>('[data-plug-panel="shelf-lamp"] .plug-press')?.disabled===false);
+  await touchButton.tap();
+  const deadline=Date.now()+15000;while(tapped.length===0&&Date.now()<deadline)await pause(50);
+  assert.deepEqual(tapped,[{...reference[0],on:true}],'a tap sends the full card\'s command once');
+  await touch.close();await shows(true);
+  // A lost reply: the panel says so, it cannot be pressed, and nothing is sent again.
+  plugs.wemoLoseReply();await button.click();await same(false,'a press whose reply is lost');
+  await panel.locator('.plug-result').filter({hasText:'Uncertain result.'}).waitFor();
+  assert.equal(await button.isDisabled(),true,'an uncertain plug cannot be pressed');
+  await page.waitForTimeout(300);assert.deepEqual(sent,[],'nothing is sent again');
+  assert.deepEqual(errors,[]);await context.close();
+  return {pointer:true,keyboard:true,touch:true,observedPressed:true,uncertain:true,readOnly:true};
+}
 try{
   const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(15000);
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
@@ -77,8 +137,8 @@ try{
   await shelf.getByRole('button',{name:'Release Wemo hold',exact:true}).click();await shelf.getByRole('status').filter({hasText:'Completed: succeeded.'}).waitFor();
   assert.equal(world.wemo.state()['shelf-lamp']?.writes,1,'hold release reads fresh state but sends no power');
   await shelf.getByRole('button',{name:'Turn off',exact:true}).click();await shelf.getByRole('status').filter({hasText:'Completed: succeeded.'}).waitFor();assert.equal(world.wemo.state()['shelf-lamp']?.writes,2);
-  // The wide Home grid (#1672) shows each plug as the generic compact face, whose Open leads to its device page;
-  // Home in one column keeps the full card.
+  // The wide Home grid shows each plug as a press panel (#1931), whose Open leads to its device page; Home in one
+  // column keeps the full card.
   await reopened.getByRole('link',{name:'Home',exact:true}).click();
   assert.equal(await reopened.getByRole('link',{name:'Open Shelf lamp',exact:true}).getAttribute('href'),'#/component/shelf-lamp');
   await reopened.setViewportSize({width:560,height:1000});await shelf.getByRole('tab',{name:'Power',exact:true}).waitFor();
@@ -111,5 +171,11 @@ try{
   await shelf.getByRole('tab',{name:'Power',exact:true}).click();
   await reopened.setViewportSize({width:390,height:844});
   if(process.env.DASHBOARD_RECEIPTS!==undefined)await reopened.screenshot({path:process.env.DASHBOARD_RECEIPTS+'/wemo-card-phone.png',fullPage:true});
-  assert.deepEqual(errors,[]);console.log(JSON.stringify({journey:'wemo-power-limit',writes:2,pageClosedEnforcement:true,independent:true,explicitHoldReleaseWithoutWrite:true,stableTabs:true,geometryNegativeControl:true,homeReuse:true,readOnly:true,stale:true,uncertainSave:true}));await context.close();
+  // The press panel (#1931) on the wide grid: read-only shows the observed state and sends nothing.
+  await reopened.setViewportSize({width:1440,height:1000});
+  const readOnlyPanel=reopened.locator('[data-plug-panel="shelf-lamp"]');
+  assert.equal(await readOnlyPanel.getByRole('button',{name:'Shelf lamp power',exact:true}).isDisabled(),true,'a read-only press panel is disabled');
+  await readOnlyPanel.getByText('Read-only',{exact:true}).waitFor();
+  const press=await pressPanel(browser,world.url,world);
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({journey:'wemo-power-limit',press,writes:2,pageClosedEnforcement:true,independent:true,explicitHoldReleaseWithoutWrite:true,stableTabs:true,geometryNegativeControl:true,homeReuse:true,readOnly:true,stale:true,uncertainSave:true}));await context.close();
 }finally{await browser.close();await world.close();}

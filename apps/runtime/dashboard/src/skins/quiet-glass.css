@@ -85,6 +85,12 @@
   --glass-chip-edge:light-dark(rgb(255 255 255/.75),rgb(255 255 255/.2));
   --glass-track:light-dark(rgb(28 39 64/.08),rgb(0 0 0/.16));
   --glass-halo:light-dark(rgb(255 255 255/.7),rgb(0 0 0/.55));
+  /* The lit room (#1931): the warm white a light glows in when its module reports no color (owner decision 8 of #1927),
+     the ring dial's track and a plug that is on. */
+  --glass-lamp:#ffd08a;
+  --light-dial-track:light-dark(rgb(28 39 64/.12),rgb(255 255 255/.14));
+  --plug-on-surface:var(--glass-lamp);
+  --plug-on-ink:#2a1c05;
   --shell-rail:light-dark(#e2e9f5,#1b2436);
   --shell-shadow:0 12px 28px light-dark(#50628016,#00000030),inset 0 1px 0 light-dark(#ffffff,#ffffff14);
   --shell-drawer-shadow:0 20px 44px light-dark(#3b4c6e2e,#00000075);

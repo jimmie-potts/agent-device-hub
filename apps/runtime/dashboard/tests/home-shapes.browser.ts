@@ -541,10 +541,11 @@ try {
     const inside = async (card: Locator, text: RegExp): Promise<void> => {
       const line = card.locator('.light-attention-line');await expect(line).toHaveText(text);
       const outer = await card.boundingBox(), box = await line.boundingBox();
-      assert.ok(outer !== null && box !== null && box.y >= outer.y && box.y + box.height <= outer.y + outer.height + 1 && box.height > 0, 'the result line is inside the card');
+      assert.ok(outer !== null && box !== null && box.y >= outer.y && box.y + box.height <= outer.y + outer.height + 1 && box.height > 0, `the result line is inside the card: ${JSON.stringify({outer, box})}`);
     };
-    await page.waitForFunction(id => document.querySelector<HTMLButtonElement>(`[data-home-card="${id}"] .light-power button`)?.disabled === false, lamps[0] ?? '');
-    world.loseDeviceReply();await square.getByRole('button', {name: 'On', exact: true}).click();await inside(square, /Uncertain/);
+    // The Small square is the ring dial (#1931); its center is the power switch.
+    const dialSwitch = square.getByRole('switch', {name: /power$/});await expect(dialSwitch).toBeEnabled();
+    world.loseDeviceReply();await dialSwitch.click();await inside(square, /Uncertain/);
     world.restoreDeviceReply();
     await page.route('**/api/v2/commands/power-set', route => route.fulfill({status: 403, contentType: 'application/json', body: JSON.stringify({error: {code: 'forbidden', retryable: false}})}));
     await page.waitForFunction(id => document.querySelector<HTMLButtonElement>(`[data-home-card="${id}"] .light-power button`)?.disabled === false, lamps[1] ?? '');

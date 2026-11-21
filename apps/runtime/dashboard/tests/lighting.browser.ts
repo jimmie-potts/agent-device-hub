@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
+import {dialJourney} from './light-dial-journey.ts';
 const world = await startWorld({lighting: true, nanoleaf: true});
 const browser = await chromium.launch({headless: true});
 try {
@@ -181,4 +182,9 @@ try {
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({journey: 'reusable-lighting', stationaryArtwork: true, keyboard: true, groupSends: 3, roomReloadSecondBrowserRestart: true, uncertainNoReplay: true, layoutLostReplyNoReplay: true, hiddenRegroup: true, physical: false}));
   await context.close();
-} finally { await browser.close(); await world.close(); }
+} catch (error) { await browser.close(); throw error; } finally { await world.close(); }
+// The ring dial on Home's Small square (#1931), on a fresh world so earlier holds and requests do not carry over.
+const dialWorld = await startWorld({lighting: true, nanoleaf: true});
+try {
+  console.log(JSON.stringify({journey: 'light-dial', ...await dialJourney(browser, dialWorld), physical: false}));
+} finally { await browser.close(); await dialWorld.close(); }

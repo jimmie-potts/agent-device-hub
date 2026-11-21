@@ -5,13 +5,16 @@ import test from 'node:test';
 import {MAX_PANELS, readScene, sameScene, type GlassScene} from '../src/glass-scene.ts';
 import {luminance, parseColor} from '../src/glass-renderer.ts';
 import {FRAGMENT} from '../src/glass-shader.ts';
+import {MAX_LIGHTS} from '../src/glass-light.ts';
 import {LAG_RATE, LEAD_RATE, advanceThumb, stepThumb, thumbSettled, type GlassThumb} from '../src/glass-thumb.ts';
 
-type Fake = {dataset: Record<string, string>; radius: string; box: {left: number; top: number; width: number; height: number}; shown?: boolean};
+type Box = {left: number; top: number; width: number; height: number};
+type Fake = {dataset: Record<string, string>; radius: string; box: Box; shown?: boolean; lamp?: {dataset: Record<string, string>; box: Box}};
 const element = (id: string, left: number, top: number, width = 220, height = 220, radius = '34px'): Fake => ({dataset: {glassPanel: id}, radius, box: {left, top, width, height}});
 /** A root whose querySelectorAll returns fake marked elements; getComputedStyle reads their radius. */
 function page(panels: Fake[], veils: Fake[] = [], thumbs: Fake[] = []): ParentNode {
-  const wrap = (fake: Fake): unknown => ({dataset: fake.dataset, radius: fake.radius, getBoundingClientRect: () => fake.box, checkVisibility: () => fake.shown !== false});
+  const wrap = (fake: Fake): unknown => ({dataset: fake.dataset, radius: fake.radius, getBoundingClientRect: () => fake.box, checkVisibility: () => fake.shown !== false,
+    querySelector: () => fake.lamp === undefined ? null : {dataset: fake.lamp.dataset, getBoundingClientRect: () => fake.lamp?.box}});
   (globalThis as {getComputedStyle?: unknown}).getComputedStyle = (node: {radius: string}) => ({getPropertyValue: () => node.radius});
   return {querySelectorAll: (selector: string) => (selector === '[data-glass-panel]' ? panels : selector === '[data-glass-thumb]' ? thumbs : veils).map(wrap)} as unknown as ParentNode;
 }
@@ -38,6 +41,17 @@ void test('the scene is capped at Home\'s placement limit', () => {
   assert.equal(readScene(root, root, viewport).panels.length, MAX_PANELS);
 });
 
+void test('a panel\'s lamp gives its light: level, color, lamp center and press (#1931)', () => {
+  const lamp = (dataset: Record<string, string>): NonNullable<Fake['lamp']> => ({dataset, box: {left: 60, top: 20, width: 80, height: 80}});
+  const root = page([{...element('lit', 0, 0), lamp: lamp({glassLamp: '0.6', glassLampColor: '1 0.5 0'})}, {...element('warm', 300, 0), lamp: lamp({glassLamp: '2', glassPressed: ''})},
+    {...element('bad', 600, 0), lamp: lamp({glassLamp: 'x', glassLampColor: '1 0'})}, element('plain', 900, 0)]);
+  const [lit, warm, bad, plain] = readScene(root, root, viewport).panels;
+  assert.deepEqual(lit?.light, {color: [1, 0.5, 0], level: 0.6, lamp: {x: 100, y: 60}, pressed: false});
+  assert.deepEqual(warm?.light, {color: null, level: 1, lamp: {x: 100, y: 60}, pressed: true}, 'no color is the skin\'s warm white; the level is at most 1');
+  assert.deepEqual(bad?.light, {color: null, level: 0, lamp: {x: 100, y: 60}, pressed: false}, 'unreadable values draw no light');
+  assert.equal(plain?.light, undefined, 'a panel without a lamp has no light');
+});
+
 void test('a read that moves nothing compares equal, so it draws no frame', () => {
   const scene = (x: number, radius = 34): GlassScene => ({panels: [{id: 'a', rect: {x, y: 0, width: 220, height: 220}, radius}], veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: false}], thumb: {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'work'}});
   assert.equal(sameScene(scene(10), scene(10.1)), true, 'subpixel noise is not a change');
@@ -45,6 +59,12 @@ void test('a read that moves nothing compares equal, so it draws no frame', () =
   assert.equal(sameScene(scene(10), scene(10, 20)), false, 'a new radius is');
   assert.equal(sameScene(scene(10), {...scene(10), veils: []}), false, 'a removed veil is');
   assert.equal(sameScene(scene(10), {...scene(10), veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: true}]}), false, 'a veil that changes its edge is');
+  const lit = (level: number, pressed = false, color: readonly [number, number, number] | null = null): GlassScene => ({panels: [{id: 'a', rect: {x: 0, y: 0, width: 220, height: 220}, radius: 34, light: {color, level, lamp: {x: 110, y: 60}, pressed}}], veils: [], thumb: null});
+  assert.equal(sameScene(lit(0.5), lit(0.5)), true);
+  assert.equal(sameScene(lit(0.5), lit(0.6)), false, 'a new level is a change');
+  assert.equal(sameScene(lit(0.5), lit(0.5, true)), false, 'a press is');
+  assert.equal(sameScene(lit(0.5), lit(0.5, false, [1, 0, 0])), false, 'a new color is');
+  assert.equal(sameScene(lit(0.5), {...lit(0.5), panels: [{id: 'a', rect: {x: 0, y: 0, width: 220, height: 220}, radius: 34}]}), false, 'a lamp that goes away is');
   assert.equal(sameScene(scene(10), {...scene(10), thumb: {rect: {x: 90, y: 300, width: 90, height: 40}, key: 'free'}}), false, 'a thumb that moves to the next segment is');
   assert.equal(sameScene(scene(10), {...scene(10), thumb: {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'free'}}), false, 'another segment in the same place is');
   assert.equal(sameScene(scene(10), {...scene(10), thumb: null}), false, 'a thumb that goes is');
@@ -118,4 +138,24 @@ void test('a frame at the same time as the last moves the thumb nothing but keep
   // A clock that runs backwards never steps backwards.
   const back = advanceThumb(first.thumb, first.at, to, 1990, false);
   assert.equal(back.moved, false);assert.equal(back.travelling, true);
+});
+
+// #1931 (PR 1966 review): in software WebGL the page waits for every pixel of every frame, so the lit room's cost must
+// not grow with every panel on the page. The light loops visit only the lit panels' rows (at most MAX_LIGHTS), the
+// spill estimates a panel in the way from the field and gradient worked out once per pixel instead of walking every
+// panel for each lamp, and the backdrop takes light only where it shows.
+void test('the light loops visit only the lit panels, and no lamp walks every panel', () => {
+  const body = (name: string): string => {
+    const start = FRAGMENT.indexOf(`${name}(`), open = FRAGMENT.indexOf('{', start);assert.ok(start >= 0 && open > start, `${name} is found`);
+    let depth = 0;for (let at = open; at < FRAGMENT.length; at += 1) {if (FRAGMENT[at] === '{') depth += 1;if (FRAGMENT[at] === '}' && (depth -= 1) === 0) return FRAGMENT.slice(open, at + 1);}
+    throw new Error(`${name} is not closed`);
+  };
+  const spill = body('vec3 spill'), glass = body('vec3 glass');
+  for (const [name, code] of [['spill', spill], ['glass', glass]] as const) {
+    assert.match(code, new RegExp(`for \\(int k = 0; k < ${String(MAX_LIGHTS)}; k\\+\\+\\)\\{ if \\(k >= uLights\\) break; int i = uLightIndex\\[k\\];`), `${name} visits the lit rows`);
+    assert.doesNotMatch(code, /i < \d+; i\+\+\)\{ if \(i >= uCount\)/, `${name} has no loop over every panel`);
+  }
+  assert.doesNotMatch(spill, /field\(/, 'no lamp works out the whole field');
+  assert.match(FRAGMENT, /vec3 light = uLights > 0 && D > -1\. \? spill\(p, D, g\) : vec3\(0\.\)/, 'the backdrop takes light only where it shows, and none when nothing is lit');
+  assert.match(FRAGMENT, /if \(lamps && uLights > 0\)\{/, 'a panel works out light only when something is lit');
 });

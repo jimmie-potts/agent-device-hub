@@ -69,12 +69,13 @@ void test('every Home card offers only shapes from the catalog, with an existing
     if (shapes.generic.length > 0 && widget.id !== 'volcano') assert.match(shapes.open ?? '', /^#\//, widget.id);
   }
   assert.deepEqual(homeCardShapes({id: 'inbox', source: {kind: 'core'}}).shapes, ['wide', 'tall', 'large-square']);
-  // Pixoo, Tidbyt and Wispr draw compact content of their own in every shape (#1672 PR B); Wemo keeps the generic face.
+  // Pixoo, Tidbyt and Wispr draw compact content of their own in every shape (#1672 PR B); a Wemo plug is a press panel
+  // in one unit (#1931), with Open to its page.
   for (const owner of ['pixoo', 'tidbyt']) assert.deepEqual(homeCardShapes({id: `device:bunny/modules/${owner}:d`, source: {kind: 'device', owner: `bunny/modules/${owner}`, instance: 'd'}}),
     {shapes: ['square', 'wide', 'tall', 'large-square'], standard: 'square', generic: [], open: '#/component/d'});
   assert.deepEqual(homeCardShapes({id: 'wispr', source: {kind: 'core'}}), {shapes: ['square', 'wide', 'tall', 'large-square'], standard: 'square', generic: [], open: '#/module/wispr/analytics'});
   assert.deepEqual(homeCardShapes({id: 'device:bunny/modules/wemo:plug', source: {kind: 'device', owner: 'bunny/modules/wemo', instance: 'plug'}}),
-    {shapes: ['square'], standard: 'square', generic: ['square'], open: '#/component/plug'});
+    {shapes: ['square'], standard: 'square', generic: [], open: '#/component/plug'});
   assert.deepEqual(homeCardShapes({id: 'music:bunny/modules/playback:room', source: {kind: 'music', owner: 'bunny/modules/playback', instance: 'room'}}).open, '#/music/room');
   assert.deepEqual(homeCardShapes({id: 'light:room:office', source: {kind: 'light', selection: {kind: 'room', id: 'office'}}}).shapes, ['square', 'wide', 'tall', 'large-square']);
 });

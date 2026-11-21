@@ -764,7 +764,8 @@ Synthetic records only; with `DASHBOARD_RECEIPTS` set it saves private 2x
 screenshots. Journeys that inspect a module card's full content on Home
 (companions, speech, mode overrides, Music artwork, Roborock, Volcano, Wemo,
 Tidbyt, card consistency) do so in one column, where Home keeps full cards, and
-check the generic compact face and its Open link on the wide grid; the Pixoo,
+check the generic compact face and its Open link on the wide grid (for Wemo, the
+press panel, below); the Pixoo,
 Tidbyt and Wispr journeys and hosted smoke check those modules' compact cards
 there instead.
 
@@ -786,8 +787,30 @@ text drawn over the layer (panels, heading, notices, status lines, empty cells
 and the footer) measures at least 4.5:1 against the pixels behind it for a dark
 and a bright artwork in light and dark appearance, at rest, while reconnecting
 and in Edit Home. The hero's switch and chips (#1930) are measured too, against
-their translucent fills as drawn over the layer. With `DASHBOARD_RECEIPTS` set it
-saves private screenshots.
+their translucent fills as drawn over the layer. For the lit room (#1931) it
+places two LIFX lights, the Nanoleaf light and a plug as Small squares, turns
+one LIFX light red, and restarts the runtime so the simulated bulbs report at
+once. It checks that the red light glows in its observed color from its ring's
+center and the wall above it turns red, that the Nanoleaf light and the plug
+glow in the skin's warm white, that a held press brightens a panel and eases
+back, that the layer rests after the lights ease, that easing still reaches its
+targets and rests when every other animation frame repeats the last timestamp,
+that lit text keeps 4.5:1, that the dial and the plug show their state and
+switch without WebGL 2, and that with every light off the layer draws exactly
+what it draws with no lamps. Which run asserts the eased values (owner decision,
+2026-11-19, "Check state, not pixels"): the full browser suite (`browser.ts`,
+run on main by `node scripts/ci-selection/runtime-browser.mjs run`) and a
+focused run of this journey require every eased value to reach its exact target
+on a live layer. The hosted smoke chain (`npm run test:runtime-dashboard:smoke`,
+App verification) runs the journey late in one long process; there each check
+first reads the layer's state (`data-glass`, `data-glass-fallback`, the context,
+the document's visibility). While the layer is live it asserts the same eased
+values; once it has fallen back to Quiet glass or lost its context, it asserts
+the Quiet glass panels and usable lit-room controls instead. The exact easing is
+also covered by `glass-light.test.ts`. A failed lit-room check prints the
+layer's state, a one-second timeline of `data-glass-frames` and
+`data-glass-lights`, and the page and console errors. With `DASHBOARD_RECEIPTS`
+set it saves private screenshots.
 
 Home's hero (#1930) follows the glass journey in the same chain. After the root
 build, `node apps/runtime/dashboard/tests/home-hero.browser.ts` launches Chromium
@@ -806,6 +829,17 @@ grid and the picker, and kept by a save and by Reset; no horizontal scroll at 14
 switch. `node --test apps/runtime/dashboard/tests/home-hero.test.ts
 apps/runtime/dashboard/tests/glass.test.ts` cover the chips' wording and the
 thumb's time base. With `DASHBOARD_RECEIPTS` set it saves private screenshots.
+
+The lighting journey's ring dial part (#1931,
+`apps/runtime/dashboard/tests/light-dial-journey.ts`, on a fresh world after the
+reusable lighting part) compares every command the Small square dial sends by
+pointer press and drag, touch tap and drag (through Chrome DevTools touch
+events, checking that the page does not scroll) and keyboard (slider keys, Space
+and Enter on the switch) with the commands the Wide card sends, and checks that
+the ring, the switch and the glow keep observed state while a request is in
+flight, refused, newer than the bulb's report or uncertain, and in a read-only
+session. The Wemo journey checks the plug press panel the same way by pointer,
+keyboard and touch, with a lost reply leaving it locked.
 
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the

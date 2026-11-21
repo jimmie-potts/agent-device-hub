@@ -25,3 +25,4 @@
 .glass-tokens [data-glass-token=bg]{color:var(--bg)}
 .glass-tokens [data-glass-token=wash-start]{color:var(--shell-wash-start)}
 .glass-tokens [data-glass-token=wash-end]{color:var(--shell-wash-end)}
+.glass-tokens [data-glass-token=lamp]{color:var(--glass-lamp)}
