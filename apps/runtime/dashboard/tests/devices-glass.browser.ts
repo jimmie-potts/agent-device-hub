@@ -10,6 +10,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
+import {drawnMismatches} from './glass-boxes.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {glyphContrast, type Capture} from './glyph-contrast.ts';
 import {openDeviceMenu} from './navigation-helpers.ts';
@@ -42,23 +43,19 @@ async function rest(page: Page): Promise<number> {
 /** The panels the layer drew last, against the boxes of the marked elements now in or near the window. */
 async function followsBoxes(page: Page, label: string): Promise<number> {
   await rest(page);
-  const {drawn, boxes} = await page.evaluate(() => {
+  // The boxes the last frame drew (data-glass-drawn), against the live boxes, both cut to what can be seen: a visible
+  // change that no frame followed leaves stale glass and fails here (glass-boxes.ts, #1965).
+  const {drawn, boxes, viewport} = await page.evaluate(() => {
     const canvas = document.querySelector<HTMLCanvasElement>('#main > .glass-layer');
     const boxes = [...document.querySelectorAll<HTMLElement>('#main [data-glass-panel]')].flatMap(element => {
       const box = element.getBoundingClientRect();
       const near = box.width > 0 && box.height > 0 && box.left < innerWidth + 64 && box.top < innerHeight + 64 && box.right > -64 && box.bottom > -64;
-      return near ? [`${element.dataset['glassPanel'] ?? ''}:${[box.left, box.top, box.width, box.height].map(value => value.toFixed(1)).join(',')}`] : [];
+      return near ? [{id: element.dataset['glassPanel'] ?? '', x: box.left, y: box.top, width: box.width, height: box.height}] : [];
     });
-    return {drawn: canvas?.dataset['glassBoxes'] ?? '', boxes};
+    return {drawn: canvas?.dataset['glassDrawn'] ?? '', boxes, viewport: {width: innerWidth, height: innerHeight}};
   });
-  const parse = (entry: string): [string, number[]] => {const at = entry.lastIndexOf(':');return [entry.slice(0, at), entry.slice(at + 1).split(',').map(Number)];};
-  const shown = new Map(drawn.split('|').filter(entry => entry !== '').map(parse));
   assert.ok(boxes.length > 0, `${label}: the page marks its panels`);
-  assert.equal(shown.size, boxes.length, `${label}: the layer draws every panel in view (${drawn} vs ${boxes.join('|')})`);
-  for (const [id, box] of boxes.map(parse)) {
-    const glass = shown.get(id);assert.ok(glass !== undefined, `${label}: ${id} has glass`);
-    glass.forEach((value, index) => {assert.ok(Math.abs(value - (box[index] ?? 0)) <= 0.6, `${label}: ${id} glass ${glass.join(',')} follows its box ${box.join(',')}`);});
-  }
+  assert.deepEqual(drawnMismatches(drawn, boxes, viewport), [], `${label}: the glass on screen follows every panel in view`);
   return boxes.length;
 }
 /** Whether the outermost card surface in each panel is see-through, so the glass shows. */
@@ -175,6 +172,17 @@ try {
       }
       await page.setViewportSize({width: 1440, height: 900});
     }
+    // A page that grows below the window draws no frame (#1950): a Pixoo page's content changes size as its records
+    // arrive, and without a GPU each frame holds the main thread. Content added at the end of the page, out of view,
+    // changes no glass that can be seen.
+    await page.goto(`${world.url}/#/module/pixoo/playlists`);await feed(page, 'connected');await PAGES[3].ready(page).waitFor();
+    await page.setViewportSize({width: 1440, height: 500});
+    const grown = await rest(page);
+    await page.locator('#main [data-glass-panel]').last().evaluate(panel => {const filler = document.createElement('div');filler.style.blockSize = '400px';filler.dataset['filler'] = '';panel.append(filler);});
+    await page.waitForTimeout(1000);
+    assert.equal(await rest(page), grown, `${scheme}: a page that grows below the window draws no frame`);
+    await page.locator('[data-filler]').evaluate(node => {node.remove();});
+    await page.setViewportSize({width: 1440, height: 900});
     // Scrolling the directory moves the glass with the cards, then it rests again.
     await page.goto(`${world.url}/#/devices`);await feed(page, 'connected');await PAGES[0].ready(page).waitFor();
     await page.setViewportSize({width: 1024, height: 600});await page.mouse.wheel(0, 300);await followsBoxes(page, `${scheme}: scrolled`);
@@ -185,7 +193,7 @@ try {
       assert.equal(await frames(page) - settled, 1, `${scheme}: one window resize to ${String(width)}px draws one frame`);
     }
     const backing = await layer(page).evaluate(node => ({software: (node as HTMLCanvasElement).dataset['glassSoftware'] !== undefined, pixels: (node as HTMLCanvasElement).width * (node as HTMLCanvasElement).height}));
-    if (backing.software) assert.ok(backing.pixels <= 1_010_000, `software rendering draws at most a million pixels (${String(backing.pixels)})`);
+    if (backing.software) assert.ok(backing.pixels <= 252_000, `software rendering draws at most 250,000 pixels (${String(backing.pixels)})`);
     report['software'] = backing.software;
     // The popout keeps its own fill over the glass; expanding a brand moves no panel.
     const menu = await openDeviceMenu(page);await menu.getByRole('menuitem', {name: 'Nanoleaf', exact: true}).click();

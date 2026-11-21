@@ -11,6 +11,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
+import {drawnMismatches} from './glass-boxes.ts';
 import {changes, feed, holdDashboardStream, startWorld} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {artworkOf, browserArt} from '../../../../modules/art/dist/src/frontend/model.js';
@@ -122,22 +123,18 @@ async function rest(page: Page): Promise<number> {
 /** The panels the layer drew last, against the boxes of the marked elements now in or near the window. */
 async function followsBoxes(page: Page, label: string): Promise<number> {
   await rest(page);
-  const {drawn, boxes} = await page.evaluate(() => {
+  // The boxes the last frame drew (data-glass-drawn), against the live boxes, both cut to what can be seen: a visible
+  // change that no frame followed leaves stale glass and fails here (glass-boxes.ts, #1965).
+  const {drawn, boxes, viewport} = await page.evaluate(() => {
     const canvas = document.querySelector<HTMLCanvasElement>('.home-layout .glass-layer');
     const boxes = [...document.querySelectorAll<HTMLElement>('.home-layout [data-glass-panel]')].flatMap(element => {
       const box = element.getBoundingClientRect();
       const near = box.width > 0 && box.height > 0 && box.left < innerWidth + 64 && box.top < innerHeight + 64 && box.right > -64 && box.bottom > -64;
-      return near ? [`${element.dataset['glassPanel'] ?? ''}:${[box.left, box.top, box.width, box.height].map(value => value.toFixed(1)).join(',')}`] : [];
+      return near ? [{id: element.dataset['glassPanel'] ?? '', x: box.left, y: box.top, width: box.width, height: box.height}] : [];
     });
-    return {drawn: canvas?.dataset['glassBoxes'] ?? '', boxes};
+    return {drawn: canvas?.dataset['glassDrawn'] ?? '', boxes, viewport: {width: innerWidth, height: innerHeight}};
   });
-  const parse = (entry: string): [string, number[]] => {const at = entry.lastIndexOf(':');return [entry.slice(0, at), entry.slice(at + 1).split(',').map(Number)];};
-  const shown = new Map(drawn.split('|').filter(entry => entry !== '').map(parse));
-  assert.equal(shown.size, boxes.length, `${label}: the layer draws every card in view (${drawn} vs ${boxes.join('|')})`);
-  for (const [id, box] of boxes.map(parse)) {
-    const glass = shown.get(id);assert.ok(glass !== undefined, `${label}: ${id} has glass`);
-    glass.forEach((value, index) => {assert.ok(Math.abs(value - (box[index] ?? 0)) <= 0.6, `${label}: ${id} glass ${glass.join(',')} follows its box ${box.join(',')}`);});
-  }
+  assert.deepEqual(drawnMismatches(drawn, boxes, viewport), [], `${label}: the glass on screen follows every card in view`);
   return boxes.length;
 }
 /** Whether the outermost card surface in each panel is see-through, so the glass shows. */
@@ -300,7 +297,10 @@ try {
   const context = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference'});
   const {page, sent, errors} = await open(context);
   await expect(page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
-  assert.ok(await rest(page) > 1, 'the first appearance eases over several frames, then stops');
+  // With a GPU the first appearance eases over several frames; rendering in software it is one settled frame, since
+  // each software frame holds the page's main thread (#1965). Either way it then stops.
+  const appeared = await rest(page), software = await layer(page).evaluate(node => (node as HTMLElement).dataset['glassSoftware'] !== undefined);
+  assert.ok(software ? appeared >= 1 : appeared > 1, `the first appearance draws and then stops (${String(appeared)} frames, software ${String(software)})`);
   await expect(page.locator('[data-art-backdrop]')).toHaveAttribute('data-art-backdrop', /^(none|stale)$/);
   assert.equal(await layer(page).getAttribute('data-glass-backdrop'), '', 'with no artwork the layer draws the Quiet glass wash');
   assert.deepEqual((await surfaces(page)).filled, ['inbox'], 'the card surfaces are see-through over the glass, except the Inbox that needs attention');
@@ -325,12 +325,13 @@ try {
   await page.mouse.wheel(0, 420);await followsBoxes(page, 'scrolled');
   await page.setViewportSize({width: 1100, height: 800});await followsBoxes(page, 'resized');
   // A window resize draws one frame, after the page has repacked, and a context that renders in software draws at most
-  // about a million pixels: the page's main thread waits for every software frame, so a wide window must not cost
-  // more (the full browser suite's Home shapes journey timed out waiting for a repack at 2560 px, #1929).
+  // 250,000 pixels: the page's main thread waits for every software frame, so a wide window must not cost more (the
+  // full browser suite's Home shapes journey timed out waiting for a repack at 2560 px, #1929, and the suite's time
+  // tripled with the glass, #1965).
   const settled = await rest(page);await page.setViewportSize({width: 2560, height: 1000});await followsBoxes(page, 'wide');
   assert.equal(await frames(page) - settled, 1, 'one window resize draws one frame');
   const backing = await layer(page).evaluate(node => ({software: (node as HTMLCanvasElement).dataset['glassSoftware'] !== undefined, pixels: (node as HTMLCanvasElement).width * (node as HTMLCanvasElement).height}));
-  if (backing.software) assert.ok(backing.pixels <= 1_010_000, `software rendering draws at most a million pixels (${String(backing.pixels)})`);
+  if (backing.software) assert.ok(backing.pixels <= 252_000, `software rendering draws at most 250,000 pixels (${String(backing.pixels)})`);
   report['software'] = backing.software;
   await page.setViewportSize({width: 1440, height: 900});await page.evaluate(() => {scrollTo(0, 0);});await followsBoxes(page, 'restored');
 

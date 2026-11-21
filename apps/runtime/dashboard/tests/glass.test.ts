@@ -2,7 +2,7 @@
 // The drawing itself is checked in a browser by home-glass.browser.ts.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {MAX_PANELS, readScene, sameScene, type GlassScene} from '../src/glass-scene.ts';
+import {MAX_PANELS, readScene, sameScene, visibleScene, type GlassScene} from '../src/glass-scene.ts';
 import {luminance, parseColor} from '../src/glass-renderer.ts';
 import {FRAGMENT} from '../src/glass-shader.ts';
 import {MAX_LIGHTS} from '../src/glass-light.ts';
@@ -158,4 +158,16 @@ void test('the light loops visit only the lit panels, and no lamp walks every pa
   assert.doesNotMatch(spill, /field\(/, 'no lamp works out the whole field');
   assert.match(FRAGMENT, /vec3 light = uLights > 0 && D > -1\. \? spill\(p, D, g\) : vec3\(0\.\)/, 'the backdrop takes light only where it shows, and none when nothing is lit');
   assert.match(FRAGMENT, /if \(lamps && uLights > 0\)\{/, 'a panel works out light only when something is lit');
+});
+
+void test('a change beyond the window and its shadow is no visible change, so it draws no frame (#1950)', () => {
+  const viewport = {width: 1440, height: 900};
+  const page = (height: number, y = 120): GlassScene => ({panels: [{id: 'page', rect: {x: 216, y, width: 1000, height}, radius: 26}], veils: [{rect: {x: 216, y: 40, width: 300, height: 40}, edge: false}], thumb: null});
+  const seen = (scene: GlassScene): GlassScene => visibleScene(scene, viewport);
+  assert.equal(sameScene(seen(page(2000)), seen(page(2400))), true, 'a module page that grows below the window looks the same');
+  assert.equal(sameScene(seen(page(700)), seen(page(760))), false, 'a page whose bottom edge is in view looks different');
+  assert.equal(sameScene(seen(page(2000)), seen(page(2000, 100))), false, 'a page that moves in view looks different');
+  assert.equal(sameScene(seen(page(900, -60)), seen(page(900, -60))), true);
+  assert.deepEqual(seen(page(2000)).panels[0]?.rect, {x: 216, y: 120, width: 1000, height: 844}, 'the box is cut 64px past the window, past its shadow and lip');
+  assert.equal(sameScene(page(2000), page(2400)), false, 'the full scene still records the new box');
 });

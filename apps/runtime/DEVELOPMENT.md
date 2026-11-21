@@ -776,11 +776,13 @@ SwiftShader for WebGL 2. It creates two artworks through the art module's
 Gallery and serves dark and bright synthetic pixels through the module's content
 route. It checks that the Quiet glass wash and then the artwork are drawn behind
 see-through card surfaces and a frosted rail; that the boxes the layer last drew
+(`data-glass-drawn`, cut to what can be seen, compared by `apps/runtime/dashboard/tests/glass-boxes.ts`,
+whose unit test has a negative control)
 match every card's box after loading, scrolling, resizing, moving and reshaping
 a card in Edit Home, Cancel, paging the Inbox in one column and a reconnecting
 notice above Home; that the frame count holds for two seconds at rest; that a
 window resize to 2,560 px draws one frame and, with software rendering, at most
-about a million pixels; that a light switches off and on through the layer,
+250,000 pixels; that a light switches off and on through the layer,
 after a forced context loss (Quiet glass panels) and without WebGL 2; that a
 restored context draws again; that leaving Home loses the context; and that all
 text drawn over the layer (panels, heading, notices, status lines, empty cells
@@ -1026,7 +1028,8 @@ with `openAudio` and a page outside the hardware inventory with `jumpTo`.
 on the glass layer with SwiftShader, as `home-glass.browser.ts` does for Home:
 every card's glass follows its box at 1440, 390 and 320px and after scrolling,
 the card surfaces are clear, nothing draws at rest, a window resize draws one
-frame and software rendering stays under about a million pixels, the visible
+frame and software rendering stays under 250,000 pixels, a page
+that grows below the window draws no frame, the visible
 veils stay few, text over the layer keeps 4.5:1 at 1440, 390 and 320px in light
 and dark, the popout keeps its fill, the directory, Companions (also after a
 reload) and Home opened from the phone drawer look the same after a redraw from
@@ -1041,8 +1044,9 @@ fails the journey, naming the run, since its ink is too close to its ground to
 show (`apps/runtime/dashboard/tests/glyph-contrast.ts`, with a negative control in
 `apps/runtime/dashboard/tests/glyph-contrast.test.ts`). `devices-menu.browser.ts` also scrolls a glass page
 under the open popout in a short window and checks the popout stays whole and
-under the pointer. With `DASHBOARD_RECEIPTS` set it writes private
-screenshots.
+under the pointer, and `pixoo-player.browser.ts` checks that playback status
+ticks on the glass Player page draw no frame. With `DASHBOARD_RECEIPTS` set it
+writes private screenshots.
 
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`

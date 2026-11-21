@@ -1048,22 +1048,25 @@ closed phone drawer, or outside the window draws nothing. Every text that can si
 on the backdrop needs a veil or a fill of its own. Later stories add optional
 panel fields parsed from more attributes, one texel each in the renderer's panel
 table (`src/glass-renderer.ts`) and a term in the shader (`src/glass-shader.ts`).
-The layer draws only while something changes or settles: a box moved or resized
+The layer draws only while something changes or settles that can be seen: a box
+moved or resized within the window and the reach of its shadow (a page that grows
+below the window draws nothing, #1950)
 (including by something added or resized above the page), a scroll, a window
 resize, a mark or skin change, a new backdrop, a thumb still travelling, or the 700
 ms first appearance. At
 rest it draws nothing. After a window resize it waits until two reads of the boxes
 agree, so it draws once, after the page has repacked. It caps the pixel ratio at
 2; where the browser renders WebGL in software (SwiftShader and similar, marked
-`data-glass-software` on the canvas), it draws at most about a million pixels and
-the browser scales them up, because the page's main thread waits for every
-software frame. It takes no pointer input, sends nothing, and loses its context when
+`data-glass-software` on the canvas), it draws at most 250,000 pixels and the
+browser scales them up, and the first appearance is one settled frame, because
+the page's main thread waits for every software frame (#1965). It takes no pointer input, sends nothing, and loses its context when
 the page is left.
 
 The Devices directory, the Companions overview and the Pixoo and Tidbyt pages
 (#1950) draw on the same layer through `useGlassPage` (`src/glass-page.tsx`),
 which mounts it on the page's `main` while one of them is open: the Quiet glass
-wash with no `backdrop` and no `fuse`. Each directory or overview card is
+wash with no `backdrop` and no `fuse`, and without the first appearance, so a
+page change costs one frame. Each directory or overview card is
 wrapped in a `data-glass-panel` element, a display's device card and a
 display's module page are one panel each, and the heading, section headings,
 notices, the breadcrumb and the view pages under the tabs carry veils. The
