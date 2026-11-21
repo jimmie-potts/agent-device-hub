@@ -40,6 +40,10 @@ export type GlassFrame = {
   thumb: GlassThumb | null;
   /** Each lit panel's eased level and press by panel id (#1931); a panel missing here draws no light. */
   lights: ReadonlyMap<string, EasedLight>;
+  /** Each liquid panel's state from 0 to 1 by panel id (#1932); a panel missing here is at rest. */
+  liquid: ReadonlyMap<string, number>;
+  /** Seconds on a steady clock; the liquid edge flows with it. */
+  clock: number;
 };
 /** The backdrop texture's source: a decoded picture the caller owns and keeps open while it is current. */
 export type GlassPicture = {bitmap: ImageBitmap; width: number; height: number};
@@ -106,7 +110,7 @@ export function createGlassRenderer(gl: WebGL2RenderingContext): GlassRenderer {
       const {scene, tokens} = frame, count = Math.min(scene.panels.length, MAX_PANELS);
       table.fill(0);lightIndex.fill(0);
       scene.panels.slice(0, count).forEach((panel, index) => {
-        table.set([panel.rect.x, panel.rect.y, panel.rect.width, panel.rect.height, panel.radius, 0, 0, 0], index * PANEL_TEXELS * 4);
+        table.set([panel.rect.x, panel.rect.y, panel.rect.width, panel.rect.height, panel.radius, frame.liquid.get(panel.id) ?? 0, 0, 0], index * PANEL_TEXELS * 4);
       });
       // Only the lit panels' light goes in, and the shader visits only their rows.
       const lit = litRows(scene.panels, frame.lights, count);
@@ -123,7 +127,7 @@ export function createGlassRenderer(gl: WebGL2RenderingContext): GlassRenderer {
       gl.uniform2f(at('uRes'), frame.width, frame.height);gl.uniform1f(at('uDpr'), frame.dpr);
       gl.uniform2f(at('uArtSize'), size?.[0] ?? 1, size?.[1] ?? 1);gl.uniform1f(at('uHasArt'), size === null ? 0 : 1);
       gl.uniform1f(at('uDark'), tokens.dark ? 1 : 0);gl.uniform1f(at('uInk'), tokens.ink);gl.uniform1f(at('uContrast'), CONTRAST);
-      gl.uniform1f(at('uAppear'), frame.appear);gl.uniform1f(at('uDepth'), frame.depth);gl.uniform1f(at('uMerge'), frame.merge);
+      gl.uniform1f(at('uAppear'), frame.appear);gl.uniform1f(at('uDepth'), frame.depth);gl.uniform1f(at('uMerge'), frame.merge);gl.uniform1f(at('uClock'), frame.clock);
       gl.uniform1i(at('uCount'), count);gl.uniform1i(at('uLights'), lit.length);gl.uniform1iv(at('uLightIndex'), lightIndex);gl.uniform1i(at('uVeilCount'), Math.min(scene.veils.length, MAX_VEILS));gl.uniform4fv(at('uVeils'), veils);gl.uniform1fv(at('uVeilEdges'), edges);
       color4('uVeil', tokens.veil);color4('uVeilDeep', tokens.veilDeep);color4('uTone', tokens.tone);color4('uRim', tokens.rim);color4('uShadow', tokens.shadow);
       color4('uWashStart', tokens.washStart);color4('uWashEnd', tokens.washEnd);gl.uniform4f(at('uWashBox'), ...frame.washBox);

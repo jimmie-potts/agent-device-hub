@@ -26,4 +26,35 @@
 /* Home's one-row shapes hide a light card's own result block; the dial's one-line result is its face's. */
 .home-layout-card .light-card.light-dial-card>.light-attention.light-attention-line{display:block;max-inline-size:100%;padding-inline:40px;box-sizing:border-box}
 .light-dial-options{position:absolute;inset-block-end:var(--space-xs);inset-inline-end:var(--space-xs)}
-.light-dial-card .light-options-body{top:calc(100% + var(--space-xs));right:0;text-align:start}
+/* The menu hangs from its button at the card's right, which is narrower than the menu, so the menu takes its width
+   from the card (a size container): at most the card's width, so it never runs past the card's left edge. */
+.light-card.light-dial-card{container-type:inline-size}
+.light-dial-card .light-options-body{top:calc(100% + var(--space-xs));right:0;width:min(310px,calc(100cqi - 8px));text-align:start}
+
+/* A status about the card's arrangement, such as stale layout records (#1932): one line under the state in the dial,
+   clear of the options like the result line, with the full text in its title; wrapped in a two-row card. */
+.light-card-notice{margin:0;font-size:var(--type-small);color:var(--muted-dense)}
+.light-dial-card>.light-card-notice{max-inline-size:100%;padding-inline:40px;box-sizing:border-box;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* The unfold arrow (#1932): the dial's top left corner, a 44px target, turned down while the card is open. */
+.light-card .light-unfold{position:absolute;inset-block-start:4px;inset-inline-start:4px;z-index:2;display:grid;place-items:center;inline-size:44px;block-size:44px;min-height:0;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted-dense);cursor:pointer}
+.light-unfold>svg{transition:transform .2s ease-out}
+.light-unfold[aria-expanded=true]>svg{transform:rotate(90deg)}
+.light-card .light-unfold:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+@media(prefers-reduced-motion:reduce){.light-unfold>svg{transition:none}}
+
+/* Unfolded on Home (#1932): Large square, the dial beside the arrow with the card's lines, its page link and its options,
+   and the full tabbed controls under them. Nothing scrolls inside the card. */
+.home-layout-card .light-card.light-dial-card.light-unfolded{display:flex;flex-direction:column;align-items:stretch;gap:var(--space-xs);text-align:start}
+.light-unfolded-head{display:flex;align-items:center;gap:var(--space-m);min-inline-size:0;padding-inline:36px 40px}
+.light-unfolded-head>.light-dial{margin:0}
+.light-unfolded-lines{flex:1 1 auto;display:grid;gap:2px;min-inline-size:0}
+.light-unfolded-lines>h3{margin:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:var(--type-heading);font-weight:600}
+.light-unfolded-lines>p{margin:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:var(--type-small);color:var(--muted-dense)}
+.light-unfolded-lines>a{justify-self:start;font-size:var(--type-small);font-weight:500}
+.light-dial-card.light-unfolded>.light-card-notice{padding-inline:0;white-space:normal;overflow-wrap:anywhere}
+.light-unfolded-controls{flex:1 1 auto;display:flex;flex-direction:column;min-block-size:0}
+.home-layout-card .light-unfolded-controls .light-face-space{flex:1 1 auto;block-size:auto;min-block-size:0}
+.home-layout-card .light-unfolded-controls .light-face{block-size:auto;min-block-size:0;padding-block-start:var(--space-xs);overflow:visible}
+.light-unfolded-head>.light-dial-options{position:relative;inset:auto;flex:none}
+.home-layout-card .light-unfolded .light-attention-line{display:block;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

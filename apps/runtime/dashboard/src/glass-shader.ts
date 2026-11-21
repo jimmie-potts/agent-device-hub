@@ -6,8 +6,9 @@ import {MAX_PANELS, MAX_VEILS} from './glass-scene.ts';
 import {MAX_LIGHTS} from './glass-light.ts';
 
 /**
- * Texels per panel in the panel table: 0 is the box (x, y, width, height), 1 holds the corner radius, 2 the light's
- * color in linear channels and its eased level, 3 the lamp's position and the eased press (#1931).
+ * Texels per panel in the panel table: 0 is the box (x, y, width, height), 1 holds the corner radius and the liquid
+ * state `wob` (#1932), 2 the light's color in linear channels and its eased level, 3 the lamp's position and the eased
+ * press (#1931).
  */
 export const PANEL_TEXELS = 4;
 
@@ -19,7 +20,7 @@ precision highp float;
 precision highp sampler2D;
 uniform sampler2D uArt, uPanels;
 uniform vec2 uRes, uArtSize;
-uniform float uDpr, uHasArt, uDark, uAppear, uDepth, uMerge, uInk, uContrast;
+uniform float uDpr, uHasArt, uDark, uAppear, uDepth, uMerge, uInk, uContrast, uClock;
 uniform int uCount, uVeilCount, uLights;
 // The rows of the lit or pressed panels (#1931), uLights of them.
 uniform int uLightIndex[${String(MAX_LIGHTS)}];
@@ -35,6 +36,8 @@ float luma(vec3 c){ return dot(c, vec3(.2126, .7152, .0722)); }
 float lum(vec3 c){ return luma(pow(clamp(c, 0., 1.), vec3(2.2))); }
 vec3 sat(vec3 c, float s){ return mix(vec3(luma(c)), c, s); }
 float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+  return mix(mix(h21(i), h21(i + vec2(1., 0.)), f.x), mix(h21(i + vec2(0., 1.)), h21(i + vec2(1., 1.)), f.x), f.y); }
 float sdRound(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r; }
 float smin(float a, float b, float k){ float h = clamp(.5 + .5 * (b - a) / k, 0., 1.); return mix(b, a, h) - k * h * (1. - h); }
 
@@ -75,12 +78,22 @@ float needed(vec3 c){
 vec3 veiled(vec3 c, float t){ return pow(mix(pow(clamp(c, 0., 1.), vec3(2.2)), pow(uVeil.rgb, vec3(2.2)), t), vec3(1. / 2.2)); }
 
 vec4 panelBox(int i){ return texelFetch(uPanels, ivec2(0, i), 0); }
-float panel(vec2 p, int i){ vec4 r = panelBox(i); vec2 h = r.zw * .5; return sdRound(p - r.xy - h, h, texelFetch(uPanels, ivec2(1, i), 0).x); }
+vec4 panelShape(int i){ return texelFetch(uPanels, ivec2(1, i), 0); }
+// A panel that is moving or changing size turns liquid (#1932), as the reference does: its corners round toward a
+// capsule by up to 60% and its edge is displaced by noise, up to 17 px either way at full wob (shape.y), flowing with
+// uClock. The noise fades out between 48 and 80 px from the edge, where it no longer shapes the edge, the join, the
+// lip or the shadow, so a pixel far from every edge computes none.
+float panelOf(vec2 p, int i, vec4 shape){ vec4 r = panelBox(i); vec2 h = r.zw * .5;
+  float small = min(h.x, h.y), w = shape.y, d = sdRound(p - r.xy - h, h, min(mix(shape.x, small, w * .6), small));
+  float reach = w > 0. ? 1. - smoothstep(48., 80., abs(d)) : 0.;
+  return reach > 0. ? d + (vn(p * .021 + vec2(uClock * 1.1, float(i) * 7.3)) - .5) * 34. * w * reach : d; }
+float panel(vec2 p, int i){ return panelOf(p, i, panelShape(i)); }
 vec4 panelLight(int i){ return texelFetch(uPanels, ivec2(2, i), 0); }
 vec4 panelLamp(int i){ return texelFetch(uPanels, ivec2(3, i), 0); }
-// Every panel is one distance field. With uMerge > 0 neighbors join with a smooth minimum, so they lean together.
+// Every panel is one distance field. With uMerge > 0 neighbors join with a smooth minimum, so they lean together; a
+// liquid panel's join widens to 2.3 times at full wob.
 float field(vec2 p){ float d = 1e5;
-  for (int i = 0; i < ${String(MAX_PANELS)}; i++){ if (i >= uCount) break; float e = panel(p, i); d = uMerge > 0. ? smin(d, e, uMerge) : min(d, e); }
+  for (int i = 0; i < ${String(MAX_PANELS)}; i++){ if (i >= uCount) break; vec4 shape = panelShape(i); float e = panelOf(p, i, shape); d = uMerge > 0. ? smin(d, e, uMerge * (1. + 1.3 * shape.y)) : min(d, e); }
   return d; }
 // The thumb is the two capsules joined with a smooth minimum (the reference's k = 16), so it stretches as it travels.
 float thumb(vec2 p){ vec2 a = uThumbA.zw * .5, b = uThumbB.zw * .5;

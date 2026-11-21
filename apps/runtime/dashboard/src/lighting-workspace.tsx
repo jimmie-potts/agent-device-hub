@@ -14,6 +14,7 @@ import {PinToggle} from './pins.tsx';
 import {RoomModels} from './room-models.tsx';
 import {roomBinding} from './room-bindings.ts';
 type Bindings = Map<string, FrontendCommand>;
+const STALE_LAYOUT = 'Layout records are unavailable or stale. Arrangement is read-only.';
 function AttemptBinding({target, operations, operationsLive, bindings, changed}: {target: string; operations: readonly OperationRecord[]; operationsLive: boolean; bindings: Bindings; changed: () => void}): null {
   const command = useAttempt(target, operations, operationsLive);
   bindings.set(target, command);
@@ -120,7 +121,8 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
           const next = structuredClone(layout); next.assignments = next.assignments.filter(item => item.device !== device.record.id); if (event.target.value !== '') next.assignments.push({device: device.record.id, room: event.target.value}); save(next);
         }}><option value="">Unassigned</option>{layout.rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label>)}
       </div></details></div></header>}
-      {!layoutLive && <p role="status" data-glass-veil>Layout records are unavailable or stale. Arrangement is read-only.</p>}
+      {/* A Home card shows this inside its own face (#1932), where it neither sits on the backdrop nor pushes the face down. */}
+      {!layoutLive && homeSelection === undefined && <p role="status" data-glass-veil>{STALE_LAYOUT}</p>}
       {(layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status" data-glass-veil>Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
       {message !== '' && <p role="status" data-glass-veil>{message}</p>}
       {roomView && <RoomModels connection={connection} connected={connected && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true} layout={layout} layoutLive={layoutLive} devices={devices} copies={runtime.copies}
@@ -140,6 +142,7 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
         }}/>}
       {cards.length === 0 && <p>{roomView ? 'Create a room, then assign its lights in Manage rooms.' : 'No light cards here. Use Arrange to select Home cards.'}</p>}
       <div className="lighting-grid">{displayedCards.map(card => <LightCard key={selectionKey(card.selection)} card={card} devices={devices} operations={operations} capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks(), card.brand)}
+        {...(!layoutLive && homeSelection !== undefined ? {notice: STALE_LAYOUT} : {})}
         act={intent => { act(card, intent); }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined} status={card.members.map(id => ({name: devices.find(device => device.record.id === id)?.record.label ?? id, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
         artwork={<div className="lighting-image-group">{card.members.map(id => {
           const device = devices.find(device => device.record.id === id);

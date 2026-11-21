@@ -5,6 +5,10 @@
 // artwork in light and dark appearance. It also checks the lit room (#1931): a LIFX light glows in its observed color,
 // a light without color and a plug in warm white, from the ring's center; a press brightens a panel; the layer rests
 // once the lights have eased; with every light off nothing is drawn; and the dial and the plug work in Quiet glass.
+// And the unfold (#1932): a light opens in place to Large square by pointer, touch and keyboard with focus moving in
+// and back, one at a time, never saved and sending nothing; the cards that move ease and turn liquid, then the layer
+// rests; a window resize and reduced motion stir nothing; no sideways scroll at any width; it works in Quiet glass; and
+// a stale lighting layout's notice sits inside the card instead of pushing its face down.
 // With DASHBOARD_RECEIPTS set it writes private screenshots.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
@@ -533,6 +537,14 @@ try {
   await plainRoom.page.mouse.click(quietBox.x + quietBox.width / 2, quietBox.y + 5);
   await plainPlug.click();await expect(plainPlug).toHaveAttribute('aria-pressed', 'false');
   await expect.poll(() => plainRoom.sent.filter(path => path === '/api/v2/commands/power-set').length).toBe(2);
+  // #1932: in Quiet glass the arrow opens the light in place with its controls, which work, and Escape closes it.
+  const plainCard = plainRoom.page.locator('[data-home-card="light:device:lamp-b"]'), plainArrow = plainCard.getByRole('button', {name: 'lamp-b controls', exact: true});
+  await plainArrow.click();await expect(plainCard).toHaveAttribute('data-home-unfolded', '');
+  await expect(plainCard.getByRole('tab', {name: 'Power', exact: true})).toBeFocused();
+  const plainOff = plainCard.getByRole('button', {name: 'Off', exact: true});await expect(plainOff).toBeEnabled();await plainOff.click();
+  await expect.poll(() => plainRoom.sent.filter(path => path === '/api/v2/commands/power-set').length).toBe(3);
+  await shot(plainRoom.page, '1932-quiet-open-1440');
+  await plainRoom.page.keyboard.press('Escape');await expect(plainCard).not.toHaveAttribute('data-home-unfolded');await expect(plainArrow).toBeFocused();
   assert.deepEqual(plainRoom.errors, []);await quiet.close();
 
   // Every light off: once the module reports it, no light is drawn, pixel for pixel as if no panel had a lamp.
@@ -571,6 +583,126 @@ try {
   }
   assert.deepEqual(lit.errors, []);await room.close();
   report['litRoom'] = {lifxColor: true, warmWhite: true, plug: true, lamp: 'ring center', press: true, restAfterEasing: true, allOffDrawsNothing: true, quiet: true};
+
+  // #1932: unfold a light in place. A touch-capable window, so the same page is used by pointer, touch and keyboard.
+  const unfoldContext = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark', hasTouch: true});
+  const unfolding = await open(unfoldContext), up = unfolding.page;
+  await expect(up.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
+  await present(up, dark);await rest(up);
+  // Every liquid panel the layer draws is logged, so a check can tell whether the motion turned anything liquid.
+  await layer(up).evaluate(canvas => {
+    const seen: string[] = [];(window as unknown as {liquidSeen: string[]}).liquidSeen = seen;
+    new MutationObserver(() => {const value = canvas.getAttribute('data-glass-liquid') ?? '';if (value !== '') seen.push(value);}).observe(canvas, {attributes: true, attributeFilter: ['data-glass-liquid']});
+  });
+  const liquidSeen = async (clear = true): Promise<string[]> => up.evaluate(clearing => {const holder = window as unknown as {liquidSeen: string[]};const seen = [...holder.liquidSeen];if (clearing) holder.liquidSeen.length = 0;return seen;}, clear);
+  // Settled: no frame for half a second and no panel liquid, so a slow software frame cannot leave a tail in the log.
+  const calm = async (): Promise<void> => {await rest(up);await expect(layer(up)).toHaveAttribute('data-glass-liquid', '');await rest(up);};
+  const savedLayout = async (): Promise<string> => up.evaluate(async () => JSON.stringify((await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': HomeLayoutRecord[]}}).records['home-layout'][0]));
+  const savedBefore = await savedLayout(), commandsBefore = unfolding.sent.filter(path => path.startsWith('/api/v2/commands/')).length;
+  const lightCard = (id: string): Locator => up.locator(`[data-home-card="light:device:${id}"]`);
+  const arrowOf = (id: string): Locator => lightCard(id).getByRole('button', {name: `${id} controls`, exact: true});
+  const powerTab = (id: string): Locator => lightCard(id).getByRole('tab', {name: 'Power', exact: true});
+  const isOpen = async (id: string): Promise<void> => {
+    await expect(lightCard(id)).toHaveAttribute('data-home-unfolded', '');await expect(lightCard(id)).toHaveAttribute('data-home-shape', 'large-square');
+    await expect(arrowOf(id)).toHaveAttribute('aria-expanded', 'true');await expect(up.locator('[data-home-unfolded]')).toHaveCount(1);
+  };
+  const isClosed = async (id: string): Promise<void> => {
+    await expect(lightCard(id)).not.toHaveAttribute('data-home-unfolded');await expect(lightCard(id)).toHaveAttribute('data-home-shape', 'square');
+    await expect(arrowOf(id)).toHaveAttribute('aria-expanded', 'false');
+  };
+  const sideways = async (label: string): Promise<void> => {
+    const [scroll, inner] = await up.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
+    assert.ok((scroll ?? 0) <= (inner ?? 0), `${label}: no sideways scroll (${String(scroll)} > ${String(inner)})`);
+  };
+  // Pointer: the arrow opens lamp-a in place; the cards that move ease and turn liquid, then the layer rests.
+  await isClosed('lamp-a');
+  await arrowOf('lamp-a').click();await isOpen('lamp-a');await expect(powerTab('lamp-a')).toBeFocused();
+  await expect.poll(async () => (await liquidSeen(false)).join('|')).toContain('light:device:lamp-a:');
+  await expect(layer(up), 'every panel settles').toHaveAttribute('data-glass-liquid', '', {timeout: 30_000});await followsBoxes(up, 'unfolded');
+  const settledOpen = await frames(up);await up.waitForTimeout(1500);assert.equal(await frames(up), settledOpen, 'the canvas stops drawing after the motion ends');
+  const moved = new Set((await liquidSeen()).flatMap(entry => entry.split('|').map(item => item.slice(0, item.lastIndexOf(':')))));
+  assert.ok(moved.size > 1, `the opened light and the cards it moved turned liquid: ${[...moved].join(', ')}`);
+  report['unfoldLiquid'] = [...moved];
+  const fits = await lightCard('lamp-a').locator('.light-card').evaluate(node => [node.scrollHeight - node.clientHeight, node.scrollWidth - node.clientWidth]);
+  assert.deepEqual(fits, [0, 0], 'the opened controls fit the panel with nothing scrolled');
+  for (const name of ['Power', 'Color', 'Scenes', 'Timer']) await expect(lightCard('lamp-a').getByRole('tab', {name, exact: true})).toBeVisible();
+  await expect(lightCard('lamp-a').getByRole('link', {name: 'Open page', exact: true})).toHaveAttribute('href', '#/component/lamp-a');
+  await sideways('1440 open');await shot(up, '1932-open-1440-dark');
+  // The opened panel's text keeps 4.5:1, dark and light, over both artworks.
+  for (const scheme of ['dark', 'light'] as const) for (const sample of [dark, bright]) {
+    await up.emulateMedia({colorScheme: scheme});await present(up, sample);await rest(up);
+    const measured = await contrast(up), label = `unfolded/${scheme}/${sample === dark ? 'dark' : 'bright'}`;
+    contrasts[label] = Math.round(measured.min * 100) / 100;
+    assert.ok(measured.min >= 4.5, `${label}: text keeps 4.5:1 (lowest ${measured.min.toFixed(2)}: ${measured.worst})`);
+    await shot(up, `1932-open-1440-${scheme}-${sample === dark ? 'dark' : 'bright'}`);
+  }
+  await up.emulateMedia({colorScheme: 'dark'});await present(up, dark);await calm();await liquidSeen();
+  // A window resize repacks the grid but stirs nothing.
+  await up.setViewportSize({width: 1100, height: 900});await followsBoxes(up, 'unfolded resized');
+  assert.deepEqual(await liquidSeen(), [], 'a window resize does not turn panels liquid');
+  await up.setViewportSize({width: 1440, height: 900});await followsBoxes(up, 'unfolded restored');await liquidSeen();
+  // The arrow closes it again and keeps focus.
+  await arrowOf('lamp-a').click();await isClosed('lamp-a');await expect(arrowOf('lamp-a')).toBeFocused();await rest(up);
+  // Keyboard: Enter on the arrow opens it with focus in its controls; Escape closes it and focus returns to the arrow.
+  await arrowOf('lamp-a').focus();await up.keyboard.press('Enter');await isOpen('lamp-a');await expect(powerTab('lamp-a')).toBeFocused();
+  await up.keyboard.press('Tab');await expect(lightCard('lamp-a').locator('.light-face')).toBeFocused();
+  await up.keyboard.press('Escape');await isClosed('lamp-a');await expect(arrowOf('lamp-a')).toBeFocused();await rest(up);
+  // Touch: a tap opens lamp-b; opening lamp-a then closes lamp-b, one panel at a time.
+  await arrowOf('lamp-b').tap();await isOpen('lamp-b');await expect(powerTab('lamp-b')).toBeFocused();await rest(up);
+  await arrowOf('lamp-a').tap();await isOpen('lamp-a');await isClosed('lamp-b');await expect(powerTab('lamp-a')).toBeFocused();await rest(up);
+  // Wider and narrower windows: the open panel keeps to the grid; one column stacks every card with its full controls
+  // and closes the panel, so it does not open again later.
+  await up.setViewportSize({width: 1024, height: 800});await rest(up);await isOpen('lamp-a');await sideways('1024 open');await shot(up, '1932-open-1024-dark');
+  // At 620 px the grid has two columns: every dial's options menu, and the open one's, stays inside the window.
+  await up.setViewportSize({width: 620, height: 800});await rest(up);await isOpen('lamp-a');await sideways('620 open');
+  for (const id of ['lamp-a', 'lamp-b', 'wall']) {
+    const menu = lightCard(id).locator('details.light-options');await menu.locator('summary').scrollIntoViewIfNeeded();await menu.locator('summary').click();
+    const box = await menu.locator('.light-options-body').boundingBox(), inner = await up.evaluate(() => innerWidth);assert.ok(box !== null);
+    assert.ok(box.x >= 0 && box.x + box.width <= inner, `620: ${id}'s options menu stays in the window (${String(box.x)} to ${String(box.x + box.width)} of ${String(inner)})`);
+    await shot(up, `1932-620-${id}-menu`);await menu.locator('summary').click();
+  }
+  for (const width of [390, 320]) {
+    await up.setViewportSize({width, height: 844});await rest(up);await sideways(`${String(width)} after open`);
+    await expect(up.locator('[data-home-unfolded]')).toHaveCount(0);await expect(lightCard('lamp-a').getByRole('tab', {name: 'Power', exact: true})).toBeVisible();
+    await shot(up, `1932-${String(width)}-dark`);
+  }
+  await up.setViewportSize({width: 1440, height: 900});await rest(up);await expect(up.locator('[data-home-unfolded]')).toHaveCount(0);
+  // Edit Home closes the open panel and keeps every card's saved shape.
+  await arrowOf('lamp-a').click();await isOpen('lamp-a');await rest(up);
+  await up.getByRole('button', {name: 'Edit Home', exact: true}).click();
+  await expect(up.locator('[data-home-unfolded]')).toHaveCount(0);await expect(lightCard('lamp-a')).toHaveAttribute('data-home-shape', 'square');
+  await up.getByRole('button', {name: 'Cancel', exact: true}).click();await rest(up);
+  // A reload shows no open panel; opening and closing sent nothing and the saved layout is unchanged.
+  await arrowOf('lamp-a').click();await isOpen('lamp-a');await rest(up);
+  await up.reload();await feed(up, 'connected');await expect(up.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
+  await isClosed('lamp-a');await expect(up.locator('[data-home-unfolded]')).toHaveCount(0);
+  assert.equal(await savedLayout(), savedBefore, 'opening and closing never change the saved layout');
+  assert.equal(unfolding.sent.filter(path => path.startsWith('/api/v2/commands/')).length, commandsBefore, 'opening and closing send nothing');
+  // Reduced motion: the panel opens at once, with no eased move and nothing liquid.
+  await layer(up).evaluate(canvas => {
+    const seen: string[] = [];(window as unknown as {liquidSeen: string[]}).liquidSeen = seen;
+    new MutationObserver(() => {const value = canvas.getAttribute('data-glass-liquid') ?? '';if (value !== '') seen.push(value);}).observe(canvas, {attributes: true, attributeFilter: ['data-glass-liquid']});
+  });
+  await present(up, dark);await up.emulateMedia({reducedMotion: 'reduce'});await calm();await liquidSeen();
+  await arrowOf('lamp-b').click();await isOpen('lamp-b');
+  assert.equal(await up.evaluate(() => document.getAnimations().filter(animation => animation.id === 'home-unfold').length), 0, 'reduced motion moves the cards at once');
+  await followsBoxes(up, 'reduced motion');assert.deepEqual(await liquidSeen(), [], 'reduced motion turns nothing liquid');
+  await up.keyboard.press('Escape');await isClosed('lamp-b');await rest(up);await up.emulateMedia({reducedMotion: 'no-preference'});
+  // A stale lighting layout: its notice sits inside each light card, below the state, and leaves the dial in place.
+  // The page itself moves down under the reconnecting notices, so the dial is measured from its card's top.
+  const ringTop = async (id: string): Promise<number> => ((await lightCard(id).locator('.light-dial').boundingBox())?.y ?? Number.NaN) - ((await lightCard(id).boundingBox())?.y ?? Number.NaN);
+  await arrowOf('lamp-a').click();await isOpen('lamp-a');await rest(up);
+  const ringBefore = await ringTop('lamp-b'), openRingBefore = await ringTop('lamp-a');
+  const releaseStream = await holdDashboardStream(up);world.dropDashboardStreams();await feed(up, 'reconnecting');
+  await expect(lightCard('lamp-b').locator('.light-dial-card > .light-card-notice')).toHaveText('Layout records are unavailable or stale. Arrangement is read-only.');
+  await expect(lightCard('lamp-a').locator('.light-unfolded > .light-card-notice')).toBeVisible();
+  await expect(up.locator('.home-layout .lighting-workspace > p[role=status]')).toHaveCount(0);
+  await rest(up);
+  assert.ok(Math.abs(await ringTop('lamp-b') - ringBefore) <= 1 && Math.abs(await ringTop('lamp-a') - openRingBefore) <= 1, 'the notice does not push the dial down');
+  await shot(up, '1932-stale-1440-dark');
+  releaseStream();await feed(up, 'connected');
+  assert.deepEqual(unfolding.errors.filter(message => !/Failed to load resource/.test(message)), []);await unfoldContext.close();
+  report['unfold'] = {pointer: true, touch: true, keyboard: true, oneAtATime: true, reloadClosed: true, layoutUnchanged: true, restsAfterMotion: true, resizeStirsNothing: true, reducedMotion: true, widths: [1440, 1024, 390, 320], staleNotice: true};
 
   console.log(JSON.stringify(report));
 } finally {await browser.close();await world.close();}

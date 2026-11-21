@@ -1052,9 +1052,10 @@ The layer draws only while something changes or settles that can be seen: a box
 moved or resized within the window and the reach of its shadow (a page that grows
 below the window draws nothing, #1950)
 (including by something added or resized above the page), a scroll, a window
-resize, a mark or skin change, a new backdrop, a thumb still travelling, or the 700
-ms first appearance. At
-rest it draws nothing. After a window resize it waits until two reads of the boxes
+resize, a mark or skin change, a new backdrop, a thumb still travelling, a panel
+that is animating or settling, or the 700 ms first appearance. A panel element
+with a running animation is read every frame while it runs. At rest it draws
+nothing. After a window resize it waits until two reads of the boxes
 agree, so it draws once, after the page has repacked. It caps the pixel ratio at
 2; where the browser renders WebGL in software (SwiftShader and similar, marked
 `data-glass-software` on the canvas), it draws at most 250,000 pixels and the
@@ -1130,8 +1131,10 @@ brightness, as a faint inner arc (`src/requested.ts`; a write of another kind
 never revives an old power request). The switch shows that newest power and a
 press switches away from it. A drag or key starts from the newest brightness, an
 off light's stored one included, and a value that ends where it started is not
-sent. The options menu sits bottom right; the top corners stay
-clear for the unfold arrow (#1932) and the drag handle (#1933).
+sent. The options menu sits bottom right; the top left holds the unfold arrow
+(#1932) and the top right stays clear for the drag handle (#1933). On Home a
+stale lighting layout's notice sits inside the card, one line under the state
+with the full text in its title, rather than above the card.
 
 A Wemo plug in one unit (`src/plug-panel.tsx`) is one toggle button with its
 icon, name and observed state. A Wemo plug reports on its next poll, so its latest
@@ -1143,6 +1146,36 @@ a guard blocks it (stale, unavailable, held, read-only, a command in flight), a
 result that needs attention shows under it, and **Open** leads to its page with
 the full card. Its top right stays clear for the drag handle. Both work in Quiet
 glass with their state in plain CSS.
+
+### Unfold and liquid glass
+
+On Home's grid a light, room or group dial in Small square has an arrow at its
+top left (`src/home-unfold.ts`, `src/light-card.tsx`). It opens the card in place
+to Large square, packed with the same first-fit packing: the dial with its name,
+state, a link to its page (a light's component page, Rooms for a room, a group's
+brand page) and its options, over the two-row card's tabbed controls (power and
+brightness with the saved mode, color, scenes, timer). Focus moves to the first
+tab; the arrow or Escape closes it and focus returns to the arrow. One card is
+open at a time. The open card lives only in Home's memory: it is never saved,
+sends nothing, and a reload, Edit Home, a narrow screen or the Phone arrangement
+show none open. The cards whose boxes change ease from where they were (FLIP,
+720 ms, `linear(0, .3 7%, .68 18%, .96 31%, 1.05 43%, 1.02 57%, .994 74%, 1)`);
+with reduced motion they move at once.
+
+While a panel animates (the unfold's eased move), the glass layer turns a panel
+liquid by how fast its box changes (`src/glass-liquid.ts`); a box that jumps at
+once draws one frame as before: `wob` from 0 to 1, full at 540 px/s (the reference's 9
+per frame), rising half the gap per frame at 60 fps and settling by
+`exp(-3.4 s)`, on a time base. Boxes are measured from the layer's root, so a
+scroll or a notice above the page stirs nothing; a window resize rebases them,
+and reduced motion keeps every panel still. The renderer packs `wob` beside the
+corner radius; the shader rounds corners toward a capsule by up to 60%, moves
+the edge by noise up to 17 px (computed only within 80 px of an edge, so a
+pixel far from every edge costs nothing more) and widens the join to 2.3 times.
+A frame with a repeated timestamp keeps the state and measures the move on the
+next one. The canvas's
+`data-glass-liquid` lists the liquid panels it last drew, as `id:wob`, for
+checks.
 
 ## Build and checks
 
