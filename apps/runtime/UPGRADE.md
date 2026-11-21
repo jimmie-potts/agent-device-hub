@@ -270,17 +270,26 @@ quiet or unknown.
 ### No return below this release while a native session is stored
 
 A release before this one cannot publish a native session's record. It labels
-every stored record `session/3.0`, whose schema names no native source, and its
-validator refuses the record (`invalid-message`, `payload /identity/client`).
-At its first start, the start transaction republishes the stored records, so
-the refusal rolls the whole transaction back. Until every native session has
-gone a day without evidence and expired, that core then refuses every agent's
-lifecycle observation, Claude's and Codex's included, with `storage-failed`,
-and answers every core sync with `unavailable`, for every family. This holds
-whether or not a native task was running or had a result. It was tested on the
-review of the #505 pull request with an `e72f33fd` build and five stored native
-sessions, none running: the core still refused at 86,000 s after the last
-native change and recovered at 86,410 s, when the sessions had expired.
+every record `session/3.0`, whose schema names no native source, and its
+validator refuses a native record (`invalid-message`, `payload /identity/client`).
+That release republishes a stored record when its start or its first refresh
+changes it: the start transaction marks running work unconfirmed, and the
+record it rebuilds drops a notice's `result`. A stored native session with
+running work or a notice result is therefore republished, and the refusal rolls
+the whole commit back. Until every such session has gone a day without
+evidence and expired, that core then refuses every agent's lifecycle
+observation, Claude's and Codex's included, as `bunny.code` `unavailable` (the
+store's own outcome is `storage-failed`), and answers every core sync with
+`unavailable`, for every family. A store that holds only native sessions with
+neither, such as a task waiting on its question, opens cleanly, but any later
+change to such a session would be refused the same way.
+
+This was tested on the review of the #505 pull request with an `e72f33fd`
+build. Stores holding ended and running native tasks beside a running Claude
+session were refused at 86,000 s after the last native change and recovered at
+86,410 s, when the native sessions had expired. A store holding one succeeded
+and one needs-owner native session was also refused, and a store holding only
+a waiting native task opened cleanly and accepted a Claude observation.
 `037b327a` has the same code.
 
 Prefer fixing forward. A return below this release needs, as a precondition,
