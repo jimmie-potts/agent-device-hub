@@ -196,8 +196,7 @@ try {
       assert.equal(await frames(page) - settled, 1, `${scheme}: one window resize to ${String(width)}px draws one frame`);
     }
     const backing = await layer(page).evaluate(node => ({software: (node as HTMLCanvasElement).dataset['glassSoftware'] !== undefined, pixels: (node as HTMLCanvasElement).width * (node as HTMLCanvasElement).height}));
-    // A page with only the wash behind it draws at most a quarter of Home's software pixels (glass-page.tsx).
-    if (backing.software) assert.ok(backing.pixels <= 252_000, `software rendering on a glass page draws at most 250,000 pixels (${String(backing.pixels)})`);
+    if (backing.software) assert.ok(backing.pixels <= 252_000, `software rendering draws at most 250,000 pixels (${String(backing.pixels)})`);
     report['software'] = backing.software;
     // The popout keeps its own fill over the glass; expanding a brand moves no panel.
     const menu = await openDeviceMenu(page);await menu.getByRole('menuitem', {name: 'Nanoleaf', exact: true}).click();

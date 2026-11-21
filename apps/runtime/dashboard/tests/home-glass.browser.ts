@@ -300,7 +300,10 @@ try {
   const context = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference'});
   const {page, sent, errors} = await open(context);
   await expect(page.locator('.home-layout')).toHaveAttribute('data-glass', 'webgl', {timeout: 30_000});
-  assert.ok(await rest(page) > 1, 'the first appearance eases over several frames, then stops');
+  // With a GPU the first appearance eases over several frames; rendering in software it is one settled frame, since
+  // each software frame holds the page's main thread (#1965). Either way it then stops.
+  const appeared = await rest(page), software = await layer(page).evaluate(node => (node as HTMLElement).dataset['glassSoftware'] !== undefined);
+  assert.ok(software ? appeared >= 1 : appeared > 1, `the first appearance draws and then stops (${String(appeared)} frames, software ${String(software)})`);
   await expect(page.locator('[data-art-backdrop]')).toHaveAttribute('data-art-backdrop', /^(none|stale)$/);
   assert.equal(await layer(page).getAttribute('data-glass-backdrop'), '', 'with no artwork the layer draws the Quiet glass wash');
   assert.deepEqual((await surfaces(page)).filled, ['inbox'], 'the card surfaces are see-through over the glass, except the Inbox that needs attention');
@@ -325,12 +328,13 @@ try {
   await page.mouse.wheel(0, 420);await followsBoxes(page, 'scrolled');
   await page.setViewportSize({width: 1100, height: 800});await followsBoxes(page, 'resized');
   // A window resize draws one frame, after the page has repacked, and a context that renders in software draws at most
-  // about a million pixels: the page's main thread waits for every software frame, so a wide window must not cost
-  // more (the full browser suite's Home shapes journey timed out waiting for a repack at 2560 px, #1929).
+  // 250,000 pixels: the page's main thread waits for every software frame, so a wide window must not cost more (the
+  // full browser suite's Home shapes journey timed out waiting for a repack at 2560 px, #1929, and the suite's time
+  // tripled with the glass, #1965).
   const settled = await rest(page);await page.setViewportSize({width: 2560, height: 1000});await followsBoxes(page, 'wide');
   assert.equal(await frames(page) - settled, 1, 'one window resize draws one frame');
   const backing = await layer(page).evaluate(node => ({software: (node as HTMLCanvasElement).dataset['glassSoftware'] !== undefined, pixels: (node as HTMLCanvasElement).width * (node as HTMLCanvasElement).height}));
-  if (backing.software) assert.ok(backing.pixels <= 1_010_000, `software rendering draws at most a million pixels (${String(backing.pixels)})`);
+  if (backing.software) assert.ok(backing.pixels <= 252_000, `software rendering draws at most 250,000 pixels (${String(backing.pixels)})`);
   report['software'] = backing.software;
   await page.setViewportSize({width: 1440, height: 900});await page.evaluate(() => {scrollTo(0, 0);});await followsBoxes(page, 'restored');
 

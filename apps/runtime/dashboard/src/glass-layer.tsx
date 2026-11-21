@@ -35,11 +35,6 @@ export type GlassLayerProps = {
   backdrop?: GlassBackdrop | null;
   onBackdrop?: (id: string | null) => void;
   fuse?: boolean;
-  /**
-   * The most pixels a frame draws when the browser renders WebGL in software (see SOFTWARE_PIXELS). A page without
-   * an artwork behind it draws the smooth wash and can draw fewer (#1950).
-   */
-  softwarePixels?: number;
   /** Whether the glass eases in over its first 700 ms; without it the first frame is the settled one. */
   appear?: boolean;
 };
@@ -48,10 +43,13 @@ export type GlassLayerProps = {
 const APPEAR_MS = 700;
 /**
  * Without a GPU the browser renders WebGL in software and reads every frame back for its compositor, which holds the
- * page's main thread for the whole draw: about half a second for a 2560 by 1000 window on a desktop processor. There
- * the layer draws at most about a million pixels and the browser scales them up; with a GPU it draws every pixel.
+ * page's main thread for the whole draw: about 110 ms for a million pixels on a desktop processor, several times that
+ * on a shared build host, where the dashboard's journeys spent most of their time waiting for glass frames (#1965).
+ * There the layer draws at most 250,000 pixels and the browser scales them up, and it skips the 700 ms first
+ * appearance, which would otherwise be a run of such frames on every page load. With a GPU it draws every pixel and
+ * eases in.
  */
-const SOFTWARE_PIXELS = 1_000_000;
+const SOFTWARE_PIXELS = 250_000;
 const SOFTWARE = /SwiftShader|llvmpipe|softpipe|Software/i;
 /** The join between neighboring panels when they fuse (the reference's k). */
 const MERGE = 20;
@@ -81,7 +79,7 @@ type Glass = {backdrop: (picture: GlassBackdrop | null) => void; fuse: (value: b
 
 /** Starts drawing on the canvas, or reports quiet and does nothing when WebGL 2 is unavailable. */
 function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLElement, callbacks: {state: (state: GlassState) => void; backdrop: (id: string | null) => void},
-  options: {softwarePixels: number; appear: boolean}): Glass {
+  options: {appear: boolean}): Glass {
   const view = canvas.ownerDocument.defaultView ?? window, doc = canvas.ownerDocument;
   let gl: WebGL2RenderingContext | null = null;
   try {gl = canvas.getContext('webgl2', {alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'low-power'});} catch {gl = null;}
@@ -123,7 +121,7 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
       if ((settling === undefined || !sameScene(settling, next)) && (settleFrames += 1) < 10) {settling = next;schedule();return;}
       resizing = false;settling = undefined;settleFrames = 0;readBoxes = true;
     }
-    const ratio = Math.min(view.devicePixelRatio > 0 ? view.devicePixelRatio : 1, 2), dpr = software ? Math.min(ratio, Math.sqrt(options.softwarePixels / (width * height))) : ratio;
+    const ratio = Math.min(view.devicePixelRatio > 0 ? view.devicePixelRatio : 1, 2), dpr = software ? Math.min(ratio, Math.sqrt(SOFTWARE_PIXELS / (width * height))) : ratio;
     const backing = `${String(Math.round(width * dpr))}x${String(Math.round(height * dpr))}`;
     let changed = force;force = false;
     if (backing !== size) {size = backing;canvas.width = Math.round(width * dpr);canvas.height = Math.round(height * dpr);changed = true;}
@@ -134,7 +132,7 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
       if (scene === undefined || !sameScene(visibleScene(scene, {width, height}), visibleScene(next, {width, height}))) changed = true;
       scene = next;canvas.dataset['glassBoxes'] = boxesOf(scene);
     }
-    if (born < 0) born = still.matches || !options.appear ? -APPEAR_MS : now;
+    if (born < 0) born = still.matches || !options.appear || software ? -APPEAR_MS : now;
     const appearing = now - born < APPEAR_MS, step = advanceThumb(thumb, thumbAt, scene?.thumb ?? null, now, still.matches);
     thumb = step.thumb;thumbAt = step.at;if (step.moved) changed = true;
     const travelling = step.travelling;
@@ -217,14 +215,14 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   };
 }
 
-export function GlassLayer({onState, backdrop = null, onBackdrop, fuse = false, softwarePixels = SOFTWARE_PIXELS, appear = true}: GlassLayerProps): React.JSX.Element {
+export function GlassLayer({onState, backdrop = null, onBackdrop, fuse = false, appear = true}: GlassLayerProps): React.JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null), probe = useRef<HTMLDivElement>(null), glass = useRef<Glass | null>(null);
   const callbacks = useRef({state: onState, backdrop: onBackdrop});
   callbacks.current = {state: onState, backdrop: onBackdrop};
   useLayoutEffect(() => {
     const element = canvas.current, owner = element?.parentElement?.closest<HTMLElement>('[data-glass]') ?? null, tokens = probe.current;
     if (element === null || owner === null || tokens === null) return;
-    const started = startGlass(element, owner, tokens, {state: value => {callbacks.current.state(value);}, backdrop: id => {callbacks.current.backdrop?.(id);}}, {softwarePixels, appear});
+    const started = startGlass(element, owner, tokens, {state: value => {callbacks.current.state(value);}, backdrop: id => {callbacks.current.backdrop?.(id);}}, {appear});
     glass.current = started;
     return () => {glass.current = null;started.dispose();callbacks.current.state('quiet');callbacks.current.backdrop?.(null);};
   }, []);

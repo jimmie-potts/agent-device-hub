@@ -780,7 +780,7 @@ match every card's box after loading, scrolling, resizing, moving and reshaping
 a card in Edit Home, Cancel, paging the Inbox in one column and a reconnecting
 notice above Home; that the frame count holds for two seconds at rest; that a
 window resize to 2,560 px draws one frame and, with software rendering, at most
-about a million pixels; that a light switches off and on through the layer,
+250,000 pixels; that a light switches off and on through the layer,
 after a forced context loss (Quiet glass panels) and without WebGL 2; that a
 restored context draws again; that leaving Home loses the context; and that all
 text drawn over the layer (panels, heading, notices, status lines, empty cells
@@ -1026,7 +1026,7 @@ with `openAudio` and a page outside the hardware inventory with `jumpTo`.
 on the glass layer with SwiftShader, as `home-glass.browser.ts` does for Home:
 every card's glass follows its box at 1440, 390 and 320px and after scrolling,
 the card surfaces are clear, nothing draws at rest, a window resize draws one
-frame and software rendering stays under 250,000 pixels on these pages, a page
+frame and software rendering stays under 250,000 pixels, a page
 that grows below the window draws no frame, the visible
 veils stay few, text over the layer keeps 4.5:1 at 1440, 390 and 320px in light
 and dark, the popout keeps its fill, the directory, Companions (also after a
