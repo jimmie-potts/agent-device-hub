@@ -10,6 +10,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import sharp from 'sharp';
 import {chromium, expect, type BrowserContext, type Locator, type Page} from 'playwright/test';
+import {drawnMismatches} from './glass-boxes.ts';
 import {changes, feed, startWorld} from './harness.ts';
 import {glyphContrast, type Capture} from './glyph-contrast.ts';
 import {openDeviceMenu} from './navigation-helpers.ts';
@@ -42,23 +43,19 @@ async function rest(page: Page): Promise<number> {
 /** The panels the layer drew last, against the boxes of the marked elements now in or near the window. */
 async function followsBoxes(page: Page, label: string): Promise<number> {
   await rest(page);
-  const {drawn, boxes} = await page.evaluate(() => {
+  // The boxes the last frame drew (data-glass-drawn), against the live boxes, both cut to what can be seen: a visible
+  // change that no frame followed leaves stale glass and fails here (glass-boxes.ts, #1965).
+  const {drawn, boxes, viewport} = await page.evaluate(() => {
     const canvas = document.querySelector<HTMLCanvasElement>('#main > .glass-layer');
     const boxes = [...document.querySelectorAll<HTMLElement>('#main [data-glass-panel]')].flatMap(element => {
       const box = element.getBoundingClientRect();
       const near = box.width > 0 && box.height > 0 && box.left < innerWidth + 64 && box.top < innerHeight + 64 && box.right > -64 && box.bottom > -64;
-      return near ? [`${element.dataset['glassPanel'] ?? ''}:${[box.left, box.top, box.width, box.height].map(value => value.toFixed(1)).join(',')}`] : [];
+      return near ? [{id: element.dataset['glassPanel'] ?? '', x: box.left, y: box.top, width: box.width, height: box.height}] : [];
     });
-    return {drawn: canvas?.dataset['glassBoxes'] ?? '', boxes};
+    return {drawn: canvas?.dataset['glassDrawn'] ?? '', boxes, viewport: {width: innerWidth, height: innerHeight}};
   });
-  const parse = (entry: string): [string, number[]] => {const at = entry.lastIndexOf(':');return [entry.slice(0, at), entry.slice(at + 1).split(',').map(Number)];};
-  const shown = new Map(drawn.split('|').filter(entry => entry !== '').map(parse));
   assert.ok(boxes.length > 0, `${label}: the page marks its panels`);
-  assert.equal(shown.size, boxes.length, `${label}: the layer draws every panel in view (${drawn} vs ${boxes.join('|')})`);
-  for (const [id, box] of boxes.map(parse)) {
-    const glass = shown.get(id);assert.ok(glass !== undefined, `${label}: ${id} has glass`);
-    glass.forEach((value, index) => {assert.ok(Math.abs(value - (box[index] ?? 0)) <= 0.6, `${label}: ${id} glass ${glass.join(',')} follows its box ${box.join(',')}`);});
-  }
+  assert.deepEqual(drawnMismatches(drawn, boxes, viewport), [], `${label}: the glass on screen follows every panel in view`);
   return boxes.length;
 }
 /** Whether the outermost card surface in each panel is see-through, so the glass shows. */

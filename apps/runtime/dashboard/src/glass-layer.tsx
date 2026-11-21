@@ -149,7 +149,9 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
     const t = Math.min(1, Math.max(0, (now - born) / APPEAR_MS)), scroll = doc.scrollingElement ?? doc.documentElement;
     renderer.draw({scene, tokens, width, height, dpr, appear: 1 - (1 - t) ** 3, depth: Math.min(1, scroll.scrollTop / (height * 0.4)), merge, thumb, lights,
       washBox: [-scroll.scrollLeft, -scroll.scrollTop, scroll.clientWidth, Math.max(scroll.scrollHeight, height)]});
-    frames += 1;canvas.dataset['glassFrames'] = String(frames);canvas.dataset['glassBoxes'] = boxesOf(scene);canvas.dataset['glassBackdrop'] = picture?.id ?? '';
+    // The boxes this frame drew, as far as they can be seen, for checks: the boxes last read are in glassBoxes.
+    frames += 1;canvas.dataset['glassFrames'] = String(frames);canvas.dataset['glassBoxes'] = boxesOf(scene);canvas.dataset['glassDrawn'] = boxesOf(visibleScene(scene, {width, height}));
+    canvas.dataset['glassBackdrop'] = picture?.id ?? '';
     canvas.dataset['glassCapsules'] = thumbOf(thumb);canvas.dataset['glassLights'] = lightsOf(scene, lights, tokens);
     setState('webgl');report(picture?.id ?? null);
     if (appearing || moving) schedule();
