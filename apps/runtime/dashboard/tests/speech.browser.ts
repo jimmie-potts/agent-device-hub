@@ -358,9 +358,9 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
     await reflow();
     const heldAnchor = await readingAnchor();
     assert.equal(typeof heldAnchor, 'string');
-    // The other companion pages are in the Devices menu (Hub #1889). Opening and closing it leaves the page as it was.
+    // The Devices menu (Hub #1889, #1950) opens over the Conversation page. Opening and closing it leaves the page as it was.
     const deviceMenu = await openDeviceMenu(page);
-    await deviceMenu.getByRole('menuitem', {name: 'Reachy', exact: true}).waitFor();
+    await deviceMenu.getByRole('menuitem', {name: 'All devices', exact: true}).waitFor();
     await page.keyboard.press('Escape');
     await deviceMenu.waitFor({state: 'detached'});
     await reflow();

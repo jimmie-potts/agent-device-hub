@@ -53,8 +53,11 @@ npm run test:pixoo     # builds, then runs the moved Vitest suite and the module
 The explicit `./frontend` entry exports the module's `frontend` contribution,
 `PixooDisplay`, `MediaPicker` and `PlaylistEditor` (#1154). The same glass card
 appears on Home, the Pixoo device page and Player. Display/Content tabs keep the
-artwork mounted; drafts survive tab switches. Advanced Library, Playlists,
-Player, Monitor and Settings remain available. The Display face also renders
+artwork mounted; drafts survive tab switches. In the dashboard the Pixoo is one
+device (#1950): its page is **Display**, which links **Advanced playback**
+(Player) and **Device settings** (Settings), beside **Media** (Library and
+Playlists) and **Agent status** (Monitor). The shell owns those tabs; every
+page keeps its address and its own reads and commands. The Display face also renders
 optional shell-owned Work/Free/Quiet controls for a saved individual Hub-mode
 exception. This uses the existing `context.ui.ModeChoice` slot without another
 connection. The Pixoo takes the Hub's modes as its own

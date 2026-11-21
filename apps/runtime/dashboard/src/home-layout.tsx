@@ -163,7 +163,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const boxOf = (place: ShapePlacement, shape: HomeShape): HomeCardBox => ({shape, width: place.columns * cell + (place.columns - 1) * HOME_GAP, height: place.rows * cell + (place.rows - 1) * HOME_GAP});
   return <div className={`home-layout${editing ? ' is-editing' : ''}${breakpoint === 'phone' ? ' home-phone' : ''}`} ref={host} data-glass={glass}>
     <GlassLayer onState={setGlass} backdrop={backdrop} onBackdrop={onBackdrop} fuse/>
-    <header className="page home-layout-heading"><h1 data-glass-veil>Home</h1><div className="actions" data-glass-veil><NavLink route={{kind: 'timeline'}}>Timeline</NavLink>{!editing && <button type="button" className="secondary" ref={editButton} disabled={!editable} onClick={() => {
+    <header className="page home-layout-heading"><h1 data-glass-veil>Home</h1><div className="actions" data-glass-veil><NavLink route={{kind: 'audio'}}>Audio</NavLink><NavLink route={{kind: 'timeline'}}>Timeline</NavLink>{!editing && <button type="button" className="secondary" ref={editButton} disabled={!editable} onClick={() => {
       if (record === undefined) return;setSelected(natural);setOptionsFor(undefined);setDraft({base: record.revision, layouts: structuredClone(current)});setMessage('');
     }}>Edit Home</button>}</div></header>
     {/* Editing disables the hero's controls as it does the cards'. */}

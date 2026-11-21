@@ -25,12 +25,12 @@ export function navigate(route: Route): void {
 }
 
 /** A real anchor keeps modified clicks native; an ordinary click navigates through the shell and then calls `onChosen`. */
-export function NavLink({route, current, selected, label, title, role, tabIndex, className, onChosen, children}: {
-  route: Route; current?: Route; selected?: boolean; label?: string; title?: string; role?: 'menuitem'; tabIndex?: number; className?: string;
+export function NavLink({route, current, selected, ancestor, label, title, role, tabIndex, className, onChosen, children}: {
+  route: Route; current?: Route; selected?: boolean; ancestor?: boolean; label?: string | undefined; title?: string; role?: 'menuitem'; tabIndex?: number; className?: string | undefined;
   onChosen?: () => void; children: React.ReactNode;
 }): React.JSX.Element {
   const href = routeHash(route);
-  return <a href={href} role={role} tabIndex={tabIndex} className={className} aria-label={label} title={title}
+  return <a href={href} role={role} tabIndex={tabIndex} className={className} aria-label={label} title={title} data-ancestor={ancestor === true ? '' : undefined}
     aria-current={selected === true || (current !== undefined && routeHash(current) === href) ? 'page' : undefined} onClick={event => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
@@ -40,28 +40,31 @@ export function NavLink({route, current, selected, label, title, role, tabIndex,
 }
 
 /**
- * The Devices row's menu (Hub #1889), as the shell holds it: whether it is open, the row itself, whether the open page
- * has a row of its own in the rail, and what a press on the row does.
+ * The Devices row's menu (Hub #1889), as the shell holds it: whether it is open, the row itself, and what a press on
+ * the row does.
  */
-export type DevicesRow = {open: boolean; menuId: string; button: React.RefObject<HTMLButtonElement | null>; ownRow: boolean; toggle: () => void; show: () => void};
+export type DevicesRow = {open: boolean; menuId: string; button: React.RefObject<HTMLButtonElement | null>; toggle: () => void; show: () => void};
 
 /**
- * The five destinations. Four are links. Devices is a button that opens the menu of every device page; the menu's
- * "All devices" is the link to the directory. The row is marked current on the directory and on every page under it.
- * On a page that has its own row in the rail, among the pinned pages or the conversations, the mark is drawn lightly,
- * so the rail boxes one row; a page with no row of its own leaves the box on Devices.
+ * The five destinations (Hub #1950): Home, Companions, Rooms, Devices and Automation. Four are links. Devices is a
+ * button that opens the menu of the configured hardware; the menu's "All devices" is the link to the directory. A
+ * destination is marked current on its own page and on every page under it, such as Habitat under Companions. When
+ * the open page has its own row in the rail (`ownRow`), among the pinned pages or the conversations, the mark is drawn
+ * lightly, so the rail boxes one row; a page with no row of its own leaves the box on its destination.
  */
-export function ShellNavigation({route, devices}: {route: Route; devices: DevicesRow}): React.JSX.Element {
-  const destination = navigationDestination(route);
+export function ShellNavigation({route, ownRow, devices, hardware}: {route: Route; ownRow: boolean; devices: DevicesRow; hardware: (module: string) => boolean}): React.JSX.Element {
+  const destination = navigationDestination(route, hardware);
+  const ancestor = (kind: string): '' | undefined => destination === kind && ownRow && routeHash(route) !== routeHash({kind}) ? '' : undefined;
   return <nav className="primary-navigation" aria-label="Main navigation">
-    {([['home', 'Home'], ['habitat', 'Habitat'], ['rooms', 'Rooms'], ['devices', 'Devices'], ['automation', 'Automation']] as const).map(([kind, label]) => kind === 'devices'
+    {([['home', 'Home'], ['companions', 'Companions'], ['rooms', 'Rooms'], ['devices', 'Devices'], ['automation', 'Automation']] as const).map(([kind, label]) => kind === 'devices'
       ? <button key={kind} ref={devices.button} type="button" className="rail-devices" aria-haspopup="menu" aria-expanded={devices.open} aria-controls={devices.open ? devices.menuId : undefined}
-        aria-current={destination === 'devices' ? 'page' : undefined} data-ancestor={destination === 'devices' && devices.ownRow ? '' : undefined}
+        aria-current={destination === 'devices' ? 'page' : undefined} data-ancestor={ancestor(kind)}
         onClick={devices.toggle} onKeyDown={event => {
           if (event.key !== 'ArrowDown' || devices.open) return;
           event.preventDefault();
           devices.show();
         }}><RailIcon name="devices"/><span className="rail-text">{label}</span><span className="rail-go"><RailIcon name="chevron" size={14}/></span></button>
-      : <NavLink key={kind} route={{kind}} selected={destination === kind}><RailIcon name={kind}/><span className="rail-text">{label}</span></NavLink>)}
+      : <NavLink key={kind} route={{kind}} selected={destination === kind} ancestor={ancestor(kind) !== undefined}><RailIcon name={kind}/><span className="rail-text">{label}</span></NavLink>)}
   </nav>;
 }
+
