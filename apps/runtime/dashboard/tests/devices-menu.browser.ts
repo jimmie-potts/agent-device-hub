@@ -132,11 +132,26 @@ try {
   await page.locator('.rail-head .brand').click();
   await menu.waitFor({state: 'detached'});
   assert.equal(await page.evaluate(() => document.activeElement === document.body), true, 'the press moved focus to nothing, so the press itself closed the menu');
-  // Focus moving out of the menu closes it too.
+  // Focus moving out of the menu closes it too. The menu is drawn right after the rail (#1950 review), so Tab leaves
+  // it for the page's first stop, and Shift+Tab, past its close button, for the rail's last stop.
   await devices.click(); await menu.waitFor();
   await page.keyboard.press('Tab');
   await menu.waitFor({state: 'detached'});
-  assert.equal(await page.evaluate(() => document.activeElement !== null && document.activeElement !== document.body && document.activeElement.closest('.device-menu') === null), true, 'Tab leaves the menu, which closes behind it');
+  assert.deepEqual(await page.evaluate(() => {
+    const active = document.activeElement, first = [...document.querySelectorAll<HTMLElement>('#main :is(a[href],button,input,select,textarea,summary,[tabindex])')]
+      .find(element => element.tabIndex >= 0 && element.checkVisibility() && element.closest('[inert]') === null && !(element as HTMLButtonElement).disabled);
+    return {first: active !== null && active === first, inInventory: active?.closest('.inventory') !== null, name: active?.getAttribute('aria-label') ?? active?.textContent ?? ''};
+  }), {first: true, inInventory: true, name: 'Tidbyt'}, 'Tab leaves the menu for the page\'s first stop, the first directory card, and the menu closes behind it');
+  await devices.click(); await menu.waitFor();
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await focused(), 'Close device pages', 'Shift+Tab from an item reaches the menu\'s close button');
+  await page.keyboard.press('Shift+Tab');
+  await menu.waitFor({state: 'detached'});
+  assert.deepEqual(await page.evaluate(() => {
+    const active = document.activeElement, stops = [...document.querySelectorAll<HTMLElement>('#rail :is(a[href],button,input,select,textarea,summary,[tabindex])')]
+      .filter(element => element.tabIndex >= 0 && element.checkVisibility() && !(element as HTMLButtonElement).disabled);
+    return {last: active !== null && active === stops.at(-1), inFoot: active?.closest('.sidebar-foot') !== null};
+  }), {last: true, inFoot: true}, 'Shift+Tab past the close button reaches the rail\'s last stop, and the menu closes');
   // The palette's keys close the menu, and a slash typed in the menu is not the palette's.
   await devices.click(); await menu.waitFor();
   await page.keyboard.press('/');
@@ -578,6 +593,24 @@ try {
     await page.getByRole('button', {name: 'Close device pages', exact: true}).click();
     await menu.waitFor({state: 'detached'});
     assert.deepEqual([await page.locator('.shell').getAttribute('data-drawer'), await focused()], ['open', 'Devices'], 'the menu\'s own button closes it, leaving the drawer open with focus on the Devices row');
+    // Over the drawer the page behind is inert, so on the directory Tab from the menu goes round to the menu button,
+    // the menu closes and the drawer stays open; Shift+Tab past the menu's close button reaches the drawer's last stop.
+    await page.goto(`${world.url}/#/devices`); await feed(page, 'connected');
+    if (await page.locator('.shell').getAttribute('data-drawer') !== 'open') { await drawerButton.click(); await drawer.waitFor(); }
+    await devices.click(); await menu.waitFor();
+    await page.keyboard.press('Tab');
+    await menu.waitFor({state: 'detached'});
+    assert.deepEqual([await focused(), await page.locator('.shell').getAttribute('data-drawer')], ['Open navigation', 'open'], `at ${String(width)}px Tab from the menu reaches the menu button`);
+    await devices.click(); await menu.waitFor();
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await focused(), 'Close device pages');
+    await page.keyboard.press('Shift+Tab');
+    await menu.waitFor({state: 'detached'});
+    assert.deepEqual(await page.evaluate(() => {
+      const active = document.activeElement, stops = [...document.querySelectorAll<HTMLElement>('#rail :is(a[href],button,input,select,textarea,summary,[tabindex])')]
+        .filter(element => element.tabIndex >= 0 && element.checkVisibility() && !(element as HTMLButtonElement).disabled);
+      return {last: active !== null && active === stops.at(-1), open: document.querySelector('.shell')?.getAttribute('data-drawer') === 'open'};
+    }), {last: true, open: true}, `at ${String(width)}px Shift+Tab past the close button reaches the drawer's last stop`);
     // Escape closes the menu first, and only then the drawer.
     await devices.click(); await menu.waitFor();
     await page.keyboard.press('Escape');

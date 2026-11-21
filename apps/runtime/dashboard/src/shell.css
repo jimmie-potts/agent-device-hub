@@ -100,6 +100,8 @@
 .device-menu{position:fixed;inset-block-start:8px;inset-inline-start:192px;z-index:30;display:flex;flex-direction:column;inline-size:min(404px,calc(100vw - 200px));max-block-size:calc(100dvh - 16px);padding:6px;border:1px solid var(--edge-dense);border-radius:16px;background:var(--panel);box-shadow:var(--shell-drawer-shadow);overflow:hidden;transform-origin:left 24px;animation:device-menu-in 160ms cubic-bezier(.23,1,.32,1)}
 @keyframes device-menu-in{from{opacity:0;transform:translateX(-6px) scale(.98)}}
 @keyframes device-menu-over{from{opacity:0;transform:translateX(12px)}}
+/* Where the shell draws the menu: right after the rail, with no box of its own in the shell's grid. */
+.device-menu-host{display:contents}
 .device-menu-head{display:flex;flex:none;align-items:center;justify-content:space-between;padding:2px 2px 2px 10px}
 .device-menu>[role=menu]{display:flex;flex:1 1 auto;flex-direction:column;min-block-size:0}
 .device-menu-scroll{flex:0 1 auto;min-block-size:0;overflow:auto;overscroll-behavior:contain}

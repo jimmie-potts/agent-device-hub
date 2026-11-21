@@ -211,7 +211,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const [menuWanted, setMenu] = useState(false);
   const menu = menuWanted && (!phone || drawer);
   const devicesRow = useRef<HTMLButtonElement>(null);
-  const shellRoot = useRef<HTMLDivElement>(null);
+  const menuHost = useRef<HTMLDivElement>(null);
   const pins = usePins();
   useEffect(() => { setDrawer(false); setMenu(false); }, [address]);
   useEffect(() => { setMenu(false); }, [phone]);
@@ -408,7 +408,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
   const artNotice = scheduledArtNotice(schedule.record, state.feed === 'connected' && schedule.synced, operations, operationsLive, now);
   // An ended session expands the rail at every width, so "Sign in again" is never squeezed into the icon rail.
   const ended = state.feed === 'ended', railExpanded = rail.expanded || ended;
-  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><PinTargetsProvider targets={pinnable}><div ref={shellRoot} className={workspace ? 'shell workspace-shell' : 'shell'}
+  return <ArtPresentationProvider notice={artNotice} timeZone={schedule.record?.timeZone}><ArtThemeProvider><DeviceModesProvider value={{record: mode, live: state.feed === 'connected' && modeCopy?.synced === true, control: runtime.control, operations, operationsLive, devices: modeDevices}}><PinTargetsProvider targets={pinnable}><div className={workspace ? 'shell workspace-shell' : 'shell'}
     data-rail-wide={ended ? 'expanded' : railAttribute(rail.saved.wide)} data-rail-narrow={ended ? 'expanded' : railAttribute(rail.saved.narrow)}
     data-drawer={drawer ? 'open' : undefined} data-rail-short={railShort ? '' : undefined}>
     <a className="skip" href="#main" inert={drawer || jump} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
@@ -446,9 +446,11 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         {state.feed === 'ended' && <button type="button" onClick={signInAgain}>Sign in again</button>}
       </div>
       {/* The menu is drawn outside the rail (#1950): over the glass layer the frosted rail would hold it and scroll it
-          away. It stays the rail's child in React, so its choices still close the phone drawer. */}
-      {menu && shellRoot.current !== null && createPortal(<DeviceMenu id="devices-menu" runtime={runtime} pins={pins} route={route} row={devicesRow} onClose={closeMenu} onDropped={menuDropped}/>, shellRoot.current)}
+          away. It is drawn right after the rail, so Tab and Shift+Tab leave it as they did from the rail's end, and it
+          stays the rail's child in React, so its choices still close the phone drawer. */}
+      {menu && menuHost.current !== null && createPortal(<DeviceMenu id="devices-menu" runtime={runtime} pins={pins} route={route} row={devicesRow} onClose={closeMenu} onDropped={menuDropped}/>, menuHost.current)}
     </aside>
+    <div ref={menuHost} className="device-menu-host"/>
     <div className="rail-scrim" onClick={() => { setDrawer(false); menuButton.current?.focus(); }}/>
     {jump && <JumpPalette entries={jumpPlaces} onOpen={jumpTo} onClose={closeJump}/>}
     <main id="main" tabIndex={-1} inert={drawer || jump} data-feed={state.feed} data-copies={copiesState(runtime)} data-revision={state.sessions.revision} data-syncs={state.sessions.syncs} data-glass={glass}>
