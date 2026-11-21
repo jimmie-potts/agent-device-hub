@@ -1,0 +1,193 @@
+import React, {useLayoutEffect, useRef} from 'react';
+import {readScene, sameScene, type GlassScene} from './glass-scene.ts';
+import {createGlassRenderer, luminance, parseColor, type GlassColor, type GlassPicture, type GlassRenderer, type GlassTokens} from './glass-renderer.ts';
+import {advanceThumb, type GlassThumb} from './glass-thumb.ts';
+import './glass.css';
+
+/**
+ * The glass layer (#1929): one WebGL 2 canvas fixed under a page that draws a backdrop and flat, transparent liquid
+ * glass for every element marked `data-glass-panel` inside `root` (see glass-scene.ts). Any page can use it:
+ *
+ * - The page sets `data-glass={glass}` on its root and renders `<GlassLayer onState={setGlass}/>` inside it; the layer's
+ *   root is the nearest ancestor with that attribute. `glass.css` keys everything on that attribute: under `data-glass="webgl"` the card surfaces inside each
+ *   panel turn transparent, the shell's own background steps aside and the rail and phone bar are frosted. Under
+ *   `data-glass="quiet"` (the initial state, no WebGL 2, a lost context or a shader that will not build) nothing
+ *   changes and the page shows its ordinary Quiet glass panels.
+ * - `backdrop` is the picture behind the page, or null for the Quiet glass wash. The caller owns the bitmap and keeps
+ *   it open while it is the current value; the layer uploads it when it changes and keeps no reference.
+ *   `onBackdrop` reports which picture is actually on screen, or null when none is.
+ * - `fuse` joins neighboring panels with a smooth minimum so they lean together; without it panels stay apart.
+ *
+ * The canvas takes no pointer input and the layer sends nothing. It draws only while something changes or eases: a box
+ * moved or resized, the page scrolled, the window resized, the skin or appearance changed, the backdrop changed, a
+ * switch's thumb is still travelling (glass-thumb.ts), or the first appearance (700 ms) is still running. Boxes are read at most once per frame. Leaving the page releases the
+ * context, the observers and the listeners.
+ */
+export type GlassState = 'webgl' | 'quiet';
+export type GlassBackdrop = GlassPicture & {id: string};
+export type GlassLayerProps = {
+  onState: (state: GlassState) => void;
+  backdrop?: GlassBackdrop | null;
+  onBackdrop?: (id: string | null) => void;
+  fuse?: boolean;
+};
+
+/** How long the first appearance takes. */
+const APPEAR_MS = 700;
+/**
+ * Without a GPU the browser renders WebGL in software and reads every frame back for its compositor, which holds the
+ * page's main thread for the whole draw: about half a second for a 2560 by 1000 window on a desktop processor. There
+ * the layer draws at most about a million pixels and the browser scales them up; with a GPU it draws every pixel.
+ */
+const SOFTWARE_PIXELS = 1_000_000;
+const SOFTWARE = /SwiftShader|llvmpipe|softpipe|Software/i;
+/** The join between neighboring panels when they fuse (the reference's k). */
+const MERGE = 20;
+/** Every skin value the shader reads, by its --glass-* token or shell role. */
+const TOKENS = ['veil', 'veil-deep', 'tone', 'rim', 'shadow', 'edge', 'ink', 'bg', 'wash-start', 'wash-end'] as const;
+type Token = (typeof TOKENS)[number];
+
+function readTokens(probe: HTMLElement): GlassTokens {
+  const value = (name: Token): GlassColor => {const element = probe.querySelector(`[data-glass-token="${name}"]`);return parseColor(element === null ? '' : getComputedStyle(element).color);};
+  const bg = value('bg');
+  return {dark: luminance(bg) < 0.2, ink: luminance(value('ink')), veil: value('veil'), veilDeep: value('veil-deep'), tone: value('tone'), rim: value('rim'),
+    shadow: value('shadow'), edge: value('edge'), bg, washStart: value('wash-start'), washEnd: value('wash-end')};
+}
+const sameTokens = (a: GlassTokens, b: GlassTokens): boolean => JSON.stringify(a) === JSON.stringify(b);
+const thumbOf = (thumb: GlassThumb | null): string => thumb === null ? '' : [...thumb.lead, ...thumb.lag].map(value => value.toFixed(1)).join(',');
+const boxesOf = (scene: GlassScene): string => scene.panels.map(panel => `${panel.id}:${[panel.rect.x, panel.rect.y, panel.rect.width, panel.rect.height].map(value => value.toFixed(1)).join(',')}`).join('|');
+
+type Glass = {backdrop: (picture: GlassBackdrop | null) => void; fuse: (value: boolean) => void; dispose: () => void};
+
+/** Starts drawing on the canvas, or reports quiet and does nothing when WebGL 2 is unavailable. */
+function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLElement, callbacks: {state: (state: GlassState) => void; backdrop: (id: string | null) => void}): Glass {
+  const view = canvas.ownerDocument.defaultView ?? window, doc = canvas.ownerDocument;
+  let gl: WebGL2RenderingContext | null = null;
+  try {gl = canvas.getContext('webgl2', {alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'low-power'});} catch {gl = null;}
+  let renderer: GlassRenderer | null = null, picture: GlassBackdrop | null = null, merge = 0, disposed = false;
+  let raf = 0, born = -1, frames = 0, scene: GlassScene | undefined, tokens: GlassTokens | undefined, size = '', drawnBackdrop: string | null | undefined;
+  // The switch thumb and when it last moved; -1 while it rests, so its next step is one frame long, not the idle time.
+  let thumb: GlassThumb | null = null, thumbAt = -1;
+  // What the next frame must look at. A frame that finds nothing new draws nothing.
+  let readBoxes = true, readSkin = true, force = true, resizing = false, settling: GlassScene | undefined, settleFrames = 0, state: GlassState = 'quiet';
+  const setState = (next: GlassState): void => {if (next !== state) {state = next;callbacks.state(next);}};
+  const report = (id: string | null): void => {if (id !== drawnBackdrop) {drawnBackdrop = id;callbacks.backdrop(id);}};
+  const build = (): void => {
+    if (gl === null) return;
+    try {renderer = createGlassRenderer(gl);renderer.backdrop(picture);delete canvas.dataset['glassFallback'];} catch {renderer = null;canvas.dataset['glassFallback'] = 'program';}
+  };
+  // Why the page shows Quiet glass, for diagnosis: no WebGL 2, a program that would not build, or a lost context.
+  if (gl === null) canvas.dataset['glassFallback'] = 'no-webgl2';
+  // Whether the context renders in software (see SOFTWARE_PIXELS). The renderer's name is the only sign browsers give.
+  const debug = gl?.getExtension('WEBGL_debug_renderer_info'), software = gl !== null && debug !== null && debug !== undefined && SOFTWARE.test(String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)));
+  if (software) canvas.dataset['glassSoftware'] = '';
+  build();
+  if (gl === null || renderer === null) {setState('quiet');report(null);return {backdrop: () => {}, fuse: () => {}, dispose: () => {}};}
+  const still = view.matchMedia('(prefers-reduced-motion: reduce)');
+
+  const frame = (now: number): void => {
+    raf = 0;
+    if (disposed || renderer === null || gl === null || gl.isContextLost()) return;
+    if (doc.hidden) return;
+    const width = canvas.clientWidth, height = canvas.clientHeight;
+    if (width === 0 || height === 0) return;
+    // A window resize moves the boxes twice: the browser reflows at once and the page repacks its grid in the tasks
+    // after. Drawing each would cost two frames; the layer waits until two reads agree, for up to ten frames, and
+    // draws once. The canvas keeps its last picture, stretched, until then.
+    if (resizing) {
+      const next = readScene(root, doc, {width, height});
+      if ((settling === undefined || !sameScene(settling, next)) && (settleFrames += 1) < 10) {settling = next;schedule();return;}
+      resizing = false;settling = undefined;settleFrames = 0;readBoxes = true;
+    }
+    const ratio = Math.min(view.devicePixelRatio > 0 ? view.devicePixelRatio : 1, 2), dpr = software ? Math.min(ratio, Math.sqrt(SOFTWARE_PIXELS / (width * height))) : ratio;
+    const backing = `${String(Math.round(width * dpr))}x${String(Math.round(height * dpr))}`;
+    let changed = force;force = false;
+    if (backing !== size) {size = backing;canvas.width = Math.round(width * dpr);canvas.height = Math.round(height * dpr);changed = true;}
+    if (readSkin) {readSkin = false;const next = readTokens(probe);if (tokens === undefined || !sameTokens(tokens, next)) {tokens = next;changed = true;}}
+    if (readBoxes) {readBoxes = false;const next = readScene(root, doc, {width, height});if (scene === undefined || !sameScene(scene, next)) {scene = next;changed = true;}}
+    if (born < 0) born = still.matches ? -APPEAR_MS : now;
+    const appearing = now - born < APPEAR_MS, step = advanceThumb(thumb, thumbAt, scene?.thumb ?? null, now, still.matches);
+    thumb = step.thumb;thumbAt = step.at;if (step.moved) changed = true;
+    const travelling = step.travelling;
+    // A frame that moves nothing draws nothing, but a thumb still on its way asks for the next frame.
+    if (!changed && !appearing) {if (travelling) schedule();return;}
+    if (tokens === undefined || scene === undefined) return;
+    const t = Math.min(1, Math.max(0, (now - born) / APPEAR_MS)), scroll = doc.scrollingElement ?? doc.documentElement;
+    renderer.draw({scene, tokens, width, height, dpr, appear: 1 - (1 - t) ** 3, depth: Math.min(1, scroll.scrollTop / (height * 0.4)), merge, thumb,
+      washBox: [-scroll.scrollLeft, -scroll.scrollTop, scroll.clientWidth, Math.max(scroll.scrollHeight, height)]});
+    frames += 1;canvas.dataset['glassFrames'] = String(frames);canvas.dataset['glassBoxes'] = boxesOf(scene);canvas.dataset['glassBackdrop'] = picture?.id ?? '';
+    canvas.dataset['glassCapsules'] = thumbOf(thumb);
+    setState('webgl');report(picture?.id ?? null);
+    if (appearing || travelling) schedule();
+  };
+  function schedule(): void {if (raf === 0 && !disposed) raf = view.requestAnimationFrame(frame);}
+  const boxes = (): void => {readBoxes = true;schedule();};
+  const skin = (): void => {readSkin = true;readBoxes = true;schedule();};
+
+  const events = new AbortController(), signal = events.signal;
+  view.addEventListener('resize', () => {resizing = true;settleFrames = 0;boxes();}, {signal});
+  view.addEventListener('scroll', boxes, {signal, passive: true, capture: true});
+  doc.addEventListener('visibilitychange', () => {if (!doc.hidden) {force = true;skin();}}, {signal});
+  doc.fonts.addEventListener('loadingdone', boxes, {signal});
+  view.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', skin, {signal});
+  // Each panel's size is observed; the set is renewed only when the marked elements change.
+  const sizes = new ResizeObserver(boxes);let observed: readonly Element[] = [];
+  // Whatever comes before the root or one of its ancestors can move it without resizing it, such as a notice that
+  // appears above the page, so those elements' sizes are observed too.
+  const before = (): Element[] => {
+    const found: Element[] = [];
+    for (let node: Element | null = root; node !== null && node !== doc.body; node = node.parentElement) for (let sibling = node.previousElementSibling; sibling !== null; sibling = sibling.previousElementSibling) found.push(sibling);
+    return found;
+  };
+  const observePanels = (): void => {
+    const next = [root, ...root.querySelectorAll('[data-glass-panel]'), ...before()];
+    if (next.length === observed.length && next.every((element, index) => element === observed[index])) return;
+    sizes.disconnect();for (const element of next) sizes.observe(element);observed = next;
+  };
+  observePanels();
+  // Cards added, removed, reordered or reshaped (Edit Home, paging, a new record), and marks that change.
+  const page = new MutationObserver(records => {if (records.some(record => record.type === 'childList')) observePanels();boxes();});
+  page.observe(root, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-glass-panel', 'data-glass-veil', 'data-glass-thumb', 'style', 'class', 'hidden']});
+  // An element added or removed before the root, or beside one of its ancestors.
+  const around = new MutationObserver(() => {observePanels();boxes();});
+  for (let node = root.parentElement; node !== null && node !== doc.documentElement; node = node.parentElement) around.observe(node, {childList: true});
+  // The art theme and the appearance change the skin's values on the document element.
+  const theme = new MutationObserver(skin);
+  theme.observe(doc.documentElement, {attributes: true, attributeFilter: ['style', 'class', 'data-art-theme']});
+  canvas.addEventListener('webglcontextlost', event => {
+    event.preventDefault();view.cancelAnimationFrame(raf);raf = 0;renderer = null;canvas.dataset['glassFallback'] = 'lost';setState('quiet');report(null);
+  }, {signal});
+  canvas.addEventListener('webglcontextrestored', () => {
+    build();if (renderer === null) return;born = -1;size = '';force = true;skin();
+  }, {signal});
+  schedule();
+
+  return {
+    backdrop: next => {picture = next;renderer?.backdrop(next);force = true;schedule();},
+    fuse: value => {const next = value ? MERGE : 0;if (next !== merge) {merge = next;force = true;schedule();}},
+    dispose: () => {
+      disposed = true;view.cancelAnimationFrame(raf);events.abort();sizes.disconnect();page.disconnect();around.disconnect();theme.disconnect();
+      renderer?.dispose();renderer = null;gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    },
+  };
+}
+
+export function GlassLayer({onState, backdrop = null, onBackdrop, fuse = false}: GlassLayerProps): React.JSX.Element {
+  const canvas = useRef<HTMLCanvasElement>(null), probe = useRef<HTMLDivElement>(null), glass = useRef<Glass | null>(null);
+  const callbacks = useRef({state: onState, backdrop: onBackdrop});
+  callbacks.current = {state: onState, backdrop: onBackdrop};
+  useLayoutEffect(() => {
+    const element = canvas.current, owner = element?.parentElement?.closest<HTMLElement>('[data-glass]') ?? null, tokens = probe.current;
+    if (element === null || owner === null || tokens === null) return;
+    const started = startGlass(element, owner, tokens, {state: value => {callbacks.current.state(value);}, backdrop: id => {callbacks.current.backdrop?.(id);}});
+    glass.current = started;
+    return () => {glass.current = null;started.dispose();callbacks.current.state('quiet');callbacks.current.backdrop?.(null);};
+  }, []);
+  // A new picture is uploaded before paint, while the caller still holds its bitmap open.
+  useLayoutEffect(() => {glass.current?.backdrop(backdrop);}, [backdrop]);
+  useLayoutEffect(() => {glass.current?.fuse(fuse);}, [fuse]);
+  return <>
+    <canvas ref={canvas} className="glass-layer" aria-hidden="true"/>
+    <div ref={probe} className="glass-tokens" hidden>{TOKENS.map(name => <i key={name} data-glass-token={name}/>)}</div>
+  </>;
+}

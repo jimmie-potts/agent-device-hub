@@ -1,3 +1,4 @@
+import type {ArtShowEffects} from './art-show.js';
 import type {ReadReceipt} from './read-receipts.js';
 import {assistantFamilies} from './assistant.js';
 import {lightingLayoutFamilies} from './lighting-layout.js';
@@ -134,6 +135,7 @@ export type ModeSetRequest = {requestId: string; mode: Mode; expectedRevision?: 
 export type MomentPlayRequest = {
   requestId: string; momentId: string; mood: string; palette?: string[]; durationMs: number; priorityClass: 'event' | 'flourish';
   coversStatus: boolean; startAtMs: number; toleranceMs: number;
+  expectedConfigurationRevision?: number; expectedGeneration?: {epoch: string; sequence: number};
   /** `moment-play/2.1` only: the staged composition the device plays; it refuses an unknown or expired one before any effect. */
   art?: {compositionId: string};
   /** `moment-play/2.2` only, alongside exact art and affirmative notice capability. */
@@ -454,6 +456,11 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('playback', 'state', 'org.bunny.playback.updated', checkEntity),
   define('playback', 'state', 'org.bunny.playback.updated', checkPlaybackArtwork, '2.1'),
   define('operation', 'state', 'org.bunny.operation.updated', checkOperation),
+  define('art-show-effects', 'state', 'org.bunny.art-show-effects.updated', message => {
+    const record = message.data as ArtShowEffects;
+    return message.source === CORE_SOURCE && record.id === operationEntityId(record.requestId)
+      ? entity(message, record.id) : 'envelope art show effects belong to the core';
+  }),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
   define('desktop-metadata', 'occurrence', 'org.bunny.desktop-metadata.observed', checkDesktopMetadata),
   define('volcano-observation', 'occurrence', 'org.bunny.volcano-observation.observed', checkVolcanoObservation),
@@ -468,6 +475,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment),
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment, '2.1'),
   define('moment-play', 'command', 'org.bunny.moment.play.requested', checkNoticeMoment, '2.2'),
+  define('moment-play', 'command', 'org.bunny.moment.play.requested', checkMoment, '2.3'),
   define('notice-acknowledge', 'command', 'org.bunny.notice.acknowledge.requested', checkSessionSubject),
   define('approval-recover', 'command', 'org.bunny.approval.recover.requested', checkSessionSubject),
   define('notice-clear', 'command', 'org.bunny.notice.clear.requested', checkSessionSubject),

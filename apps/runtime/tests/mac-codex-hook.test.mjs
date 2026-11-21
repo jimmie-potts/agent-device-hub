@@ -10,14 +10,16 @@ import {fileURLToPath} from 'node:url';
 import {sanitizeMacCodexHook, sanitizedInput} from '../bin/mac-codex-hook.mjs';
 
 const base = {session_id: 'synthetic-session', turn_id: 'synthetic-turn'};
-const events = ['SessionStart', 'UserPromptSubmit', 'Stop', 'Interrupt', 'SessionEnd'];
+const events = ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'Stop', 'Interrupt', 'SessionEnd'];
+const childEvents = ['SubagentStart', 'SubagentStop'];
+const child = {session_id: 'synthetic-session', agent_id: 'synthetic-agent'};
 
 for (const hook_event_name of events) {
   test(`${hook_event_name} keeps only root lifecycle identity`, () => {
     const raw = {...base, hook_event_name, source: 'startup', prompt: 'PRIVATE_CANARY',
       last_assistant_message: 'PRIVATE_CANARY', cwd: '/PRIVATE_CANARY',
       transcript_path: '/PRIVATE_CANARY', model: 'PRIVATE_CANARY', permission_mode: 'default',
-      tool_input: {secret: 'PRIVATE_CANARY'}, reason: 'other', stop_hook_active: false};
+      tool_name: 'PRIVATE_CANARY', tool_input: {secret: 'PRIVATE_CANARY', description: 'PRIVATE_CANARY'}, reason: 'other', stop_hook_active: false};
     assert.deepEqual(sanitizeMacCodexHook(raw), {...base, hook_event_name});
   });
 }
@@ -27,7 +29,7 @@ test('session events may omit turn identity; turn events require it', () => {
     assert.deepEqual(sanitizeMacCodexHook({session_id: 's', hook_event_name, source: 'resume'}),
       {session_id: 's', hook_event_name});
   }
-  for (const hook_event_name of ['UserPromptSubmit', 'Stop', 'Interrupt']) {
+  for (const hook_event_name of ['UserPromptSubmit', 'PermissionRequest', 'Stop', 'Interrupt']) {
     assert.equal(sanitizeMacCodexHook({session_id: 's', hook_event_name}), null);
   }
 });
@@ -40,8 +42,38 @@ test('child presence is refused rather than attributed to the parent', () => {
   }
 });
 
+for (const hook_event_name of childEvents) {
+  test(`${hook_event_name} keeps only the parent session and the agent`, () => {
+    const raw = {...child, hook_event_name, turn_id: 'parent-turn', agent_type: 'PRIVATE_CANARY',
+      agent_transcript_path: '/PRIVATE_CANARY', last_assistant_message: 'PRIVATE_CANARY', cwd: '/PRIVATE_CANARY',
+      transcript_path: '/PRIVATE_CANARY', model: 'PRIVATE_CANARY', permission_mode: 'default', stop_hook_active: false};
+    assert.deepEqual(sanitizeMacCodexHook(raw), {...child, hook_event_name});
+  });
+}
+
+test('a subagent event without a usable child or parent identity is refused', () => {
+  for (const hook_event_name of childEvents) {
+    for (const agent_id of [undefined, null, '', false, 2, 'has spaces', 'x'.repeat(129), child.session_id]) {
+      assert.equal(sanitizeMacCodexHook({...child, hook_event_name, agent_id}), null);
+    }
+    assert.equal(sanitizeMacCodexHook({session_id: child.session_id, hook_event_name}), null);
+    assert.equal(sanitizeMacCodexHook(Object.assign(Object.create({agent_id: 'inherited'}), {session_id: 's', hook_event_name})), null);
+    for (const session_id of [undefined, null, '', 'has spaces', 'x'.repeat(129)]) {
+      assert.equal(sanitizeMacCodexHook({...child, hook_event_name, session_id}), null);
+    }
+  }
+});
+
+test('subagent fields other than identity are never evaluated', () => {
+  const raw = {...child, hook_event_name: 'SubagentStop'};
+  for (const key of ['turn_id', 'agent_transcript_path', 'last_assistant_message']) {
+    Object.defineProperty(raw, key, {enumerable: true, get() { throw new Error('must not read'); }});
+  }
+  assert.deepEqual(sanitizeMacCodexHook(raw), {...child, hook_event_name: 'SubagentStop'});
+});
+
 test('unselected events, compaction and unknown start sources are refused', () => {
-  for (const hook_event_name of ['PermissionRequest', 'SubagentStart', 'SubagentStop', 'PostToolUse', 'Unknown']) {
+  for (const hook_event_name of ['PreToolUse', 'PostToolUse', 'PreCompact', 'PostCompact', 'PreModelRequest', 'PostModelRequest', 'Unknown']) {
     assert.equal(sanitizeMacCodexHook({...base, hook_event_name}), null);
   }
   for (const source of ['compact', 'unknown', undefined, null]) {
@@ -155,6 +187,25 @@ async function receiver(context, {hang = false, lifecycleVersion} = {}) {
   return {path, calls, server, directory};
 }
 
+// Any attempt to open a supplied path fails loudly.
+const poison = `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+  for (const [object, keys] of [[fs, ['open', 'openSync', 'readFile', 'readFileSync']], [fs.promises, ['open', 'readFile']]]) {
+    for (const key of keys) { const original = object[key]; object[key] = function(path, ...args) {
+      if (String(path).includes('DO_NOT_OPEN')) { process.stderr.write('FORBIDDEN_READ'); throw new Error('forbidden'); }
+      return original.call(this, path, ...args);
+    }; }
+  } syncBuiltinESMExports();`;
+const POISON = ['--import', 'data:text/javascript,' + encodeURIComponent(poison)];
+
+/** The core's own check of a published message: profile 2.0 and the core families, lifecycle 2.0 among them. */
+async function coreValidator() {
+  const {MessageValidator} = await import('@jimmie-potts/event-contracts/v2');
+  const {registerCoreFamilies} = await import('@jimmie-potts/event-contracts/v2/families');
+  const validator = new MessageValidator();
+  registerCoreFamilies(validator);
+  return message => validator.validate(message).ok;
+}
+
 function invoke(producer, input, options = [], env = process.env) {
   return new Promise((resolve, reject) => {
     const started = performance.now();
@@ -183,20 +234,15 @@ function quiet(result) {
 test('native wrapper publishes all selected events with source-bound metadata only', async context => {
   const {producerSource} = await import('@jimmie-potts/runtime/hook');
   const {REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER} = await import('@jimmie-potts/sdk');
+  const valid = await coreValidator();
   const world = await receiver(context);
-  const poison = `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
-    for (const [object, keys] of [[fs, ['open', 'openSync', 'readFile', 'readFileSync']], [fs.promises, ['open', 'readFile']]]) {
-      for (const key of keys) { const original = object[key]; object[key] = function(path, ...args) {
-        if (String(path).includes('DO_NOT_OPEN')) { process.stderr.write('FORBIDDEN_READ'); throw new Error('forbidden'); }
-        return original.call(this, path, ...args);
-      }; }
-    } syncBuiltinESMExports();`;
-  const options = ['--import', 'data:text/javascript,' + encodeURIComponent(poison)];
-  const kinds = ['session-started', 'turn-started', 'turn-ended', 'turn-interrupted', 'runtime-ended'];
+  const options = POISON;
+  const kinds = ['session-started', 'turn-started', 'attention-approval', 'turn-ended', 'turn-interrupted', 'runtime-ended'];
   for (const [index, hook_event_name] of events.entries()) {
     quiet(await invoke(world.path, {...base, hook_event_name, source: 'startup',
       prompt: 'PRIVATE_CANARY', last_assistant_message: 'PRIVATE_CANARY', cwd: '/DO_NOT_OPEN',
-      transcript_path: '/DO_NOT_OPEN/transcript.jsonl'}, options, {...process.env, CODEX_HOME: '/DO_NOT_OPEN'}));
+      transcript_path: '/DO_NOT_OPEN/transcript.jsonl', tool_name: 'PRIVATE_CANARY', tool_input: {command: 'PRIVATE_CANARY'}},
+    options, {...process.env, CODEX_HOME: '/DO_NOT_OPEN'}));
     assert.equal(world.calls.length, index + 1);
     const call = world.calls[index];
     assert.equal(call.url, REMOTE_PATH + '/publish');
@@ -206,6 +252,7 @@ test('native wrapper publishes all selected events with source-bound metadata on
     const message = call.body.message;
     assert.equal(message.source, producerSource(SOURCE));
     assert.equal(message.data.event.kind, kinds[index]);
+    assert.equal(valid(message), true, 'the core\'s lifecycle 2.0 contract admits it');
     assert.deepEqual(message.data.identity, {...SOURCE, sessionId: base.session_id});
     assert.deepEqual(message.data.turn, {status: 'known', id: base.turn_id});
     assert.ok(Number.isFinite(message.data.observedAtMs));
@@ -215,13 +262,40 @@ test('native wrapper publishes all selected events with source-bound metadata on
   }
 });
 
+test('native wrapper publishes subagent events as the child under its parent, with no turn and no content', async context => {
+  const {producerSource} = await import('@jimmie-potts/runtime/hook');
+  const valid = await coreValidator();
+  const world = await receiver(context, {lifecycleVersion: '1.2'});
+  const kinds = ['session-started', 'turn-ended'];
+  for (const [index, hook_event_name] of childEvents.entries()) {
+    quiet(await invoke(world.path, {...child, hook_event_name, turn_id: 'parent-turn', agent_type: 'PRIVATE_CANARY',
+      agent_transcript_path: '/DO_NOT_OPEN/agent.jsonl', last_assistant_message: 'PRIVATE_CANARY', cwd: '/DO_NOT_OPEN',
+      transcript_path: '/DO_NOT_OPEN/transcript.jsonl'}, POISON, {...process.env, CODEX_HOME: '/DO_NOT_OPEN'}));
+    assert.equal(world.calls.length, index + 1);
+    const message = world.calls[index].body.message;
+    assert.equal(message.source, producerSource(SOURCE));
+    assert.deepEqual(message.data.event, {kind: kinds[index]});
+    assert.deepEqual(message.data.identity, {...SOURCE, sessionId: child.agent_id});
+    assert.deepEqual(message.data.parent, {status: 'known', identity: {...SOURCE, sessionId: child.session_id}});
+    assert.deepEqual(message.data.turn, {status: 'unknown'}, 'a child never borrows its parent\'s turn');
+    assert.deepEqual(Object.keys(message.data).sort(), ['event', 'identity', 'observedAtMs', 'ordering', 'parent', 'turn'],
+      'a child gets no title, project or host session');
+    assert.equal(valid(message), true, 'the core\'s lifecycle 2.0 contract admits it');
+    assert.equal(/PRIVATE_CANARY|DO_NOT_OPEN|parent-turn/.test(JSON.stringify(world.calls[index].body)), false);
+  }
+});
+
 test('native wrapper drops child, compact and malformed input without publication', async context => {
   const world = await receiver(context);
   for (const input of [
     {...base, hook_event_name: 'Stop', agent_id: 'child'},
     {...base, hook_event_name: 'Stop', agent_id: null},
+    {...base, hook_event_name: 'PermissionRequest', agent_id: 'child'},
+    {session_id: base.session_id, hook_event_name: 'PermissionRequest'},
+    {...base, hook_event_name: 'SubagentStart'},
+    {...base, hook_event_name: 'SubagentStop', agent_id: base.session_id},
     {...base, hook_event_name: 'SessionStart', source: 'compact'},
-    {...base, hook_event_name: 'PermissionRequest'}, '{', Buffer.from([0xc3, 0x28]),
+    {...base, hook_event_name: 'PreToolUse'}, '{', Buffer.from([0xc3, 0x28]),
     Buffer.alloc(8 * 1024 * 1024 + 1, 32),
   ]) quiet(await invoke(world.path, input));
   assert.equal(world.calls.length, 0);

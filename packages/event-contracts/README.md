@@ -770,7 +770,7 @@ owns the handoff and its policy.
 
 | Family | Type | Sender and purpose |
 | --- | --- | --- |
-| `art-request` | `org.bunny.art.request.requested` | The dashboard, for the owner. Starts a job, or cancels any job, automatic or not, by its `jobRequestId`. Subject `art`. |
+| `art-request` | `org.bunny.art.request.requested` | Version 2.0 serves dashboard generation and cancellation. Version 2.1 serves the companions module after Conversation approval, generates one still or GIF, and never stages or presents it. Subject `art`. |
 | `art-auto` | `org.bunny.art.auto.requested` | `bunny/core`. Version 2.0 starts an automatic job; 2.1 also prepares saved display art or selects saved browser art. No typed text or cancel. Subject `art`. |
 | `art-dispatch` | `org.bunny.art.dispatch.requested` | `bunny/modules/art`, to the core: forward one `art-stage` or `art-ambient-set` to `target`. Never a moment. Subject `art`. |
 | `art-stage` | `org.bunny.art.stage.requested` | The core, for the art module. The device keeps a private copy, with no display effect. Subject: the device. |

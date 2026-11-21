@@ -62,6 +62,8 @@ export type WorldOptions = {
   artSchedule?: {choice: () => number};
   /** A numeric-only fake Music producer may use the existing endpoint role; no native helper. */
   musicCapture?: boolean;
+  /** Explicit fake for Music light show authoring through the disposable owner. */
+  musicShowAuthoring?: NonNullable<Parameters<typeof createNanoleafModule>[0]['authoringProvider']>;
   /** A synthetic playback observation producer over the disposable gateway and real Playback owner. */
   musicPlayback?: boolean;
   /** A dedicated synthetic Claude terminal receipt producer for the real helper. */
@@ -73,6 +75,9 @@ export type WorldOptions = {
   privateProxy?: {origin: string; tokenDigest: string};
   companions?: boolean;
   assistantLights?: boolean;
+  assistantWemo?: boolean;
+  assistantCatalog?: readonly string[];
+  artRecentLimit?: number;
   /** A coding-worker credential and the delegation tool, so a journey can connect a fake worker through the real gateway (Hub #502). */
   coding?: boolean;
   /** Synthetic browser qualification only; never a real voice or installed receipt. */
@@ -261,7 +266,10 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const presence=new SimulatedPresence();
   let roborockModule:RoborockModule|undefined;
   const refreshRoborock=async():Promise<void>=>{assert.equal(options.roborock,true);const refresh=roborockModule?.refreshForTest;assert.ok(refresh!==undefined);await refresh();};
-  const microduck=new SimulatedMicroDuck();
+  // On a world clock the simulator observes on it too, so the module's freshness and hold timers measure virtual time
+  // and a stall of the process in real time cannot age an observation (#1946).
+  const worldTime=options.clock;
+  const microduck=new SimulatedMicroDuck(worldTime===undefined?undefined:{now:()=>worldTime.clock.now(),scheduler:worldTime.scheduler});
   const reachy = new SimulatedReachy();let loseReachyReply=false;
   const reachyTransport:ReachyTransport=options.reachyTransport??{connect:(...a)=>reachy.connect(...a),cancel:(...a)=>reachy.cancel(...a),move:async(...a)=>{const id=await reachy.move(...a);if(loseReachyReply){loseReachyReply=false;throw new Error('synthetic missing UUID');}return id;}};
   const wemo=new SimulatedWemo();let loseWemoReply=false;
@@ -286,11 +294,11 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true,
   });
   const moduleConfig = {
-    ...(options.art === true ? {art: {}} : {}),
+    ...(options.art === true ? {art: options.artRecentLimit === undefined ? {} : {recentLimit: options.artRecentLimit}} : {}),
     ...(options.artSchedule === undefined ? {} : {weather: WEATHER_SECTION}),
     ...(options.tidbyt === true ? {tidbyt: {...TIDBYT_SECTION, secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
     ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),
-    ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode', ...(options.coding === true ? ['delegate_coding'] : []), ...(options.assistantLights === true ? ['read_lifx', 'set_lifx_power', 'set_lifx_brightness'] : [])]}}} : {}),
+    ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode', ...(options.coding === true ? ['delegate_coding'] : []), ...(options.assistantLights === true ? ['read_lifx', 'set_lifx_power', 'set_lifx_brightness'] : []), ...(options.assistantWemo === true ? ['read_wemo', 'set_wemo_power'] : []), ...(options.assistantCatalog ?? [])]}}} : {}),
     ...(options.microduck===true?{microduck:options.microduckSection??MICRODUCK_SIMULATED_SECTION}:{}),
     ...(options.reachy === true ? {'reachy-mini':REACHY_SIMULATED_SECTION} : {}),
     ...options.roborock===true?{roborock:{id:'vacuum'}}:{},
@@ -350,7 +358,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}, ...(options.clock === undefined ? {} : {monotonic: now})})]
         : options.pixooPages === true || options.musicPlayback === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
-      ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request, datagram: lines.datagram})] : [])]
+      ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request, datagram: lines.datagram,
+        ...(options.musicShowAuthoring === undefined ? {} : {authoringProvider: options.musicShowAuthoring})})] : [])]
       .map(module => options.clock?.working === undefined ? module : holdingWorkers(module, options.clock.working)),
     ...(options.clock === undefined ? {} : {clock: options.clock.clock, scheduler: options.clock.scheduler}),
     port, stateDir, configFile: config, edge: {schemas: {...(options.artSchedule === undefined ? {} : weatherSchemas),...(options.art === true ? artRegistration.schemas : {}),...(options.microduck===true?microduckSchemas:{}),...(options.reachy===true?reachySchemas:{}),...(options.wemo===true?wemoSchemas:{}),...options.roborock===true?roborockSchemas:{}, ...options.volcano===true?volcanoSchemas:{}, ...options.presence===true?presenceSchemas:{}, ...options.inbox === true ? gadgetSchemas : {}, ...withDevices ? {...lifxSchemas, ...signSchemas} : {}, ...options.pixooPages === true ? pixooOwnSchemas : {}, ...options.nanoleaf === true ? nanoleafSchemas : {}}}, log: record => { logs.push(record); }, environment: 'test',

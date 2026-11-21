@@ -358,7 +358,15 @@ light's ending never writes, holds or ends the other.
   brightness or moment (`manual`, no restoration); an alert (`alert`, then restore); a
   retired or stale input (`source-lost`, then restore); a once-per-second read that finds
   another selection, a changed brightness or the power off (`manual`, no restoration);
-  a failed datagram send or read (`device`, code `unavailable`, no restoration, no retry).
+  a failed datagram send or read (`device`, code `unavailable`, no restoration).
+  For live Music and saved shows on NL22, one deadline during the playing status check
+  holds datagrams until the next regular check confirms the stream, power on and unchanged
+  brightness. A reply missing that evidence ends playback as `device` unless it confirms
+  a manual change such as power off. Restoration
+  reached during the hold also needs fresh confirmation before writing. The show timeline,
+  source freshness and pending endings continue to be checked. A confirmed takeover ends
+  the session `manual`. A second consecutive missed check ends it `device` if no other
+  ending is due. After confirmation, only current frames are sent.
   A lost answer to the streaming entry ends the Start `uncertain` and holds the light.
 - **Restoration** re-reads the light and writes brightness, then the base: a scene by
   name (`PUT /effects {select}`), or a colour in one `PUT /state` with its hue and
@@ -585,6 +593,47 @@ or expired position evidence ends the show. The start uses the configured
 library scope and item identifier. It gives no assurance of audio-version
 identity or speaker-clock timing.
 
+### Draft a show with Claude
+
+In **Saved shows**, describe the colors, effects or mood you want. Choose the
+current measured excerpt or a generic sequence. Both use the current Mac Music
+title and artist. The measured option also sends derived timing and intensity
+spans. Anthropic retains prompts and completions for at least 30 days, with
+longer retention possible for safety investigations and legal requirements.
+The request excludes audio, Music library identifiers and device data.
+[Claude Fable 5.2 model documentation](https://platform.claude.com/docs/en/models/fable-5-2/overview)
+[Anthropic Covered Models policy](https://support.claude.com/en/articles/15425695-covered-models)
+
+The runtime makes one attempt per request. The Music ledger uses a USD 20
+monthly ceiling and USD 3 daily allowance, separate from Art. A cancelled or
+unanswered attempt can still incur a charge. A response with usable provider
+usage shows an estimated cost on its draft. The ledger uses the higher US
+inference rate for admission and settles from the reported region and usage.
+When Anthropic reports usage without a recognized region, the draft identifies
+the higher-rate estimate. A lost answer keeps the reservation charged against
+the allowance. Restart ends unfinished requests without resending them. Start
+each paid request in Saved shows. The inbox keeps failed and uncertain outcomes
+from accepted commands for review.
+[Anthropic inference geography](https://platform.claude.com/docs/en/manage-claude/data-residency)
+[Anthropic API pricing](https://platform.claude.com/docs/en/about-claude/pricing)
+
+**Open latest generated draft** retrieves the last successful generation after reload.
+A measured draft stays within the available cue spans. A generic draft uses
+elapsed time up to 30 seconds. The storyboard and cue editor let you inspect
+and change both. **Save new version** saves the current edit with its generation
+route, cost estimate and confidence in `nanoleaf-show-version/2.1`. Manually
+authored versions continue to use `nanoleaf-show-version/2.0`. Audio plays the
+exact version you choose, with no provider call during playback.
+
+Music authoring uses the optional Nanoleaf configuration field
+`musicAuthoringSecret` to name a workspace-scoped Claude API key in the module's
+`secrets` map. Select a workspace that permits Fable 5.2 and its retention
+policy. Configuration refuses a shared key and device-token path before the runtime reads
+either file. A key whose value matches a configured device token disables Music
+authoring. The manual editor is available without a key. Set up the credential
+in the authorized installation window.
+[Anthropic workspace authentication](https://platform.claude.com/docs/en/manage-claude/authentication#select-a-workspace)
+
 ## Families
 
 The module answers each device's own keys, `bunny.cmd.<family>.<device id>`, and serves
@@ -608,7 +657,9 @@ the wall pages (#934) apply that rule.
 | `nanoleaf-reactive-presets` | state | The bounded private library of frozen reactive recipes at `reactive-presets` |
 | `nanoleaf-reactive-preset-save` | command | Save one immutable named reactive recipe against the current library revision, with a metadata-only outcome |
 | `nanoleaf-shows` | state | The private decorative library's immutable version summaries, with subject `shows` |
-| `nanoleaf-show-save` | command | Append a guarded named decorative version at target `shows`, with a metadata-only outcome |
+| `nanoleaf-show-save` | command | Append a guarded named version at target `shows`, with a metadata-only outcome |
+| `nanoleaf-show-generate` | command | Request one Claude draft at target `shows`; open the completed result by request ID or reopen the latest draft |
+| `nanoleaf-show-generate-cancel` | command | Ask the module to stop waiting for an active generation at target `shows` |
 | `device-mode-set`, `power-set`, `brightness-set`, `scene-activate` | command | Work, Quiet and Free; power, brightness and scenes |
 | `moment-play` | command | Bounded Lines moments in Work or over a named Free base; terminal outcome follows restoration |
 | `music-lighting-work` | command | From the core only: start a live Music session on the Lines or the NL22 over the Free base it shows, or stop it; Start completes with its streaming entry, Stop after its restoration |

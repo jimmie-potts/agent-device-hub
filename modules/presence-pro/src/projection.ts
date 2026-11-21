@@ -1,8 +1,9 @@
-import type {SensorConfig} from './configuration.js';
+import {settingChannels, type Binding, type ExclusionBinding, type SensorConfig} from './configuration.js';
 import {known, unknown, type PresenceObservation, type Target} from './contracts.js';
 
 export type ScalarReport = {key: number; value: unknown; missing?: boolean};
 type Point = {x: number; y: number};
+type Exclusion = {status: 'pending' | 'invalid'} | {status: 'known'; vertices: Point[]};
 const emptyTarget = (slot: number): Target => ({slot, active: {value: unknown(), receivedAtMs: unknown()}, rawMm: {x: unknown(), y: unknown(), xReceivedAtMs: unknown(), yReceivedAtMs: unknown()}, apartmentMeters: unknown(), calibrationRevision: unknown()});
 const clear = (target: Target): void => { target.rawMm = emptyTarget(target.slot).rawMm; target.apartmentMeters = unknown(); };
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= 1e9;
@@ -36,9 +37,11 @@ export function inside(point: Point, vertices: Point[]): boolean {
 export class Projection {
   readonly #config: SensorConfig;
   readonly #settings = new Map<number, unknown>();
+  readonly #settingKeys: ReadonlySet<number>;
   current: PresenceObservation;
   constructor(config: SensorConfig) {
     this.#config = config;
+    this.#settingKeys = new Set(settingChannels(config.settings).map(({binding}) => binding.key));
     this.current = this.#empty('starting', 'starting');
   }
   #empty(connection: PresenceObservation['connection'], reason: PresenceObservation['reason']): PresenceObservation {
@@ -49,14 +52,35 @@ export class Projection {
   }
   connected(): void { this.#settings.clear(); this.current = this.#empty('connected', 'none'); }
   disconnected(reason: PresenceObservation['reason'] = 'unavailable'): void { this.#settings.clear(); this.current = this.#empty('disconnected', reason); }
+  #rectangleCoordinate(binding: Binding, minimum: number): number | null | undefined {
+    if (!this.#settings.has(binding.key)) return undefined;
+    const value = this.#settings.get(binding.key);
+    return typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= 6000 ? value : null;
+  }
+  #exclusion(binding: ExclusionBinding): Exclusion {
+    if ('key' in binding) {
+      if (!this.#settings.has(binding.key)) return {status: 'pending'};
+      const vertices = polygon(this.#settings.get(binding.key));
+      return vertices === undefined ? {status: 'invalid'} : {status: 'known', vertices};
+    }
+    const xStart = this.#rectangleCoordinate(binding.xStart, -6000);
+    const xEnd = this.#rectangleCoordinate(binding.xEnd, -6000);
+    const yStart = this.#rectangleCoordinate(binding.yStart, -1560);
+    const yEnd = this.#rectangleCoordinate(binding.yEnd, -1560);
+    if (xStart === null || xEnd === null || yStart === null || yEnd === null) return {status: 'invalid'};
+    if (xStart === undefined || xEnd === undefined || yStart === undefined || yEnd === undefined) return {status: 'pending'};
+    // The same inclusive boundary check handles reversed corners and collapsed masks.
+    return {status: 'known', vertices: [
+      {x: xStart, y: yStart}, {x: xEnd, y: yStart}, {x: xEnd, y: yEnd}, {x: xStart, y: yEnd},
+    ]};
+  }
   #interpretable(): boolean {
     const settings = this.#config.settings;
     if (settings === undefined) return false;
     const detail = this.#settings.get(settings.detail.key);
     return typeof detail === 'string' && DETAILS.indexOf(detail) >= 3
       && finite(this.#settings.get(settings.angle.key)) && typeof this.#settings.get(settings.upsideDown.key) === 'boolean'
-      && finite(this.#settings.get(settings.range.key)) && Number(this.#settings.get(settings.range.key)) > 0
-      && settings.exclusions.every(binding => polygon(this.#settings.get(binding.key)) !== undefined);
+      && finite(this.#settings.get(settings.range.key)) && Number(this.#settings.get(settings.range.key)) > 0;
   }
   #invalidSettings(): boolean {
     const settings = this.#config.settings;
@@ -64,8 +88,7 @@ export class Projection {
     return [settings.angle, settings.range].some(binding => this.#settings.has(binding.key) && !finite(this.#settings.get(binding.key)))
       || this.#settings.has(settings.range.key) && Number(this.#settings.get(settings.range.key)) <= 0
       || this.#settings.has(settings.upsideDown.key) && typeof this.#settings.get(settings.upsideDown.key) !== 'boolean'
-      || this.#settings.has(settings.detail.key) && (typeof this.#settings.get(settings.detail.key) !== 'string' || DETAILS.indexOf(String(this.#settings.get(settings.detail.key))) < 3)
-      || settings.exclusions.some(binding => this.#settings.has(binding.key) && polygon(this.#settings.get(binding.key)) === undefined);
+      || this.#settings.has(settings.detail.key) && (typeof this.#settings.get(settings.detail.key) !== 'string' || DETAILS.indexOf(String(this.#settings.get(settings.detail.key))) < 3);
   }
   report(report: ScalarReport, receivedAtMs: number): void {
     if (this.current.connection !== 'connected') return;
@@ -79,12 +102,15 @@ export class Projection {
       if (result !== undefined) { result.value = typeof value === 'boolean' ? value ? 'occupied' : 'vacant' : 'unknown'; result.receivedAtMs = stamp; }
     }
     const settings = config.settings;
-    if (settings !== undefined && [settings.detail, settings.angle, settings.upsideDown, settings.range, ...settings.exclusions].some(binding => binding.key === key)) {
+    if (this.#settingKeys.has(key)) {
       const previous = this.#settings.get(key);
       this.#settings.set(key, value);
       // A settings change can change coordinates or masks. Never reuse the old occupant's axes across it.
       if (previous !== undefined && previous !== value || value === undefined) for (const target of state.targets) clear(target);
     }
+    const exclusions = settings?.exclusions.map(binding => this.#exclusion(binding)) ?? [];
+    const invalidSettings = this.#invalidSettings() || exclusions.some(mask => mask.status === 'invalid');
+    const interpretable = this.#interpretable() && exclusions.every(mask => mask.status === 'known');
     for (const [index, binding] of config.targets.entries()) {
       const target = state.targets[index];
       if (target === undefined) continue;
@@ -101,12 +127,12 @@ export class Projection {
       const calibration = config.calibration;
       target.calibrationRevision = calibration === undefined ? unknown() : known(calibration.revision);
       const {x, y} = target.rawMm;
-      if (this.#invalidSettings()) { clear(target); continue; }
+      if (invalidSettings) { clear(target); continue; }
       if (target.active.value.status === 'known' && !target.active.value.value) continue;
-      if (!this.#interpretable() || target.active.value.status !== 'known') continue;
+      if (!interpretable || target.active.value.status !== 'known') continue;
       if (x.status !== 'known' || y.status !== 'known') continue;
       if (x.value === 0 && y.value === 0) { clear(target); continue; }
-      if (settings?.exclusions.some(exclusion => inside({x: x.value, y: y.value}, polygon(this.#settings.get(exclusion.key)) ?? [])) === true) { clear(target); continue; }
+      if (exclusions.some(mask => mask.status === 'known' && inside({x: x.value, y: y.value}, mask.vertices))) { clear(target); continue; }
       if (calibration === undefined || settings === undefined || calibration.angle !== this.#settings.get(settings.angle.key)
         || calibration.upsideDown !== this.#settings.get(settings.upsideDown.key) || calibration.rangeCm !== this.#settings.get(settings.range.key)) continue;
       const localX = x.value / 1000, forward = y.value / 1000;

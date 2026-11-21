@@ -1,7 +1,8 @@
 // CI's smoke check of the runtime's dashboard (Hub #922), as PR #986 gave the old one: the full browser suite
-// (`npm run test:runtime-dashboard:browser`) runs locally. One trusted loopback page on the built runtime with the core:
-// the gateway serves the built page, which signs in without a form, shows a synthetic session's finished turn as unread
-// from its synced record, keeps the Hub mode and inbox panels, and sends no command while it loads.
+// (`npm run test:runtime-dashboard:browser`) runs locally and after merges to main (#1942). One trusted loopback page
+// on the built runtime with the core: the gateway serves the built page, which signs in without a form, shows a
+// synthetic session's finished turn as unread from its synced record, keeps the Hub mode and inbox panels, and sends no
+// command while it loads.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
@@ -35,7 +36,7 @@ try {
 
   const row = page.locator('article.session').filter({has: page.getByRole('heading', {name: 'Port the wall', exact: true})});
   await row.locator('.chip', {hasText: 'Finished · unread'}).waitFor();
-  assert.equal(await page.locator('[data-widget="hub-mode"]').count(), 1, 'the Hub mode panel');
+  assert.equal(await page.locator('[data-hub-mode]').count(), 1, 'the Hub mode panel');
   const inbox = page.locator('[data-inbox-panel]');
   assert.equal(await inbox.count(), 1, 'the inbox panel');
   await inbox.getByText('No commands need handling.', {exact: true}).waitFor();

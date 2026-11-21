@@ -17,3 +17,14 @@ export class Partial extends Error {
     super('The operation stopped after changing saved state.', {cause});
   }
 }
+
+/** A fixed, safe failure message. The original transport error stays in memory. */
+export class DeviceUnreachable extends Error {
+  override name = 'DeviceUnreachable';
+  constructor(cause?: unknown) {
+    super('The device did not answer.', cause === undefined ? undefined : {cause});
+  }
+}
+
+/** A GET exceeded a deadline enforced by the Nanoleaf link or transport. */
+export class DeviceReadDeadline extends DeviceUnreachable {}

@@ -36,22 +36,21 @@ export async function artSelectionJourney(): Promise<void> {
     };
     world.art.act('warm-colors');const first = await generate();
     world.art.act('cool-colors');const second = await generate();
+    // Home presents the selected art as its backdrop (#1930): the backdrop source follows the selection as the Art widget
+    // does, and the glass layer reports the rendition it has drawn.
     await page.goto(`${world.url}/#/`);await feed(page, 'connected');
-    await page.getByRole('button', {name: 'Edit Home', exact: true}).click();
-    await page.getByRole('button', {name: 'Add card', exact: true}).click();await page.getByRole('button', {name: 'Add Art', exact: true}).click();
-    await page.getByRole('button', {name: 'Close', exact: true}).click();await page.getByRole('button', {name: 'Done', exact: true}).click();
-    const image = page.locator('[data-home-card="art"] .art-image');
+    const image = page.locator('[data-art-backdrop]'), layer = page.locator('.home-layout .glass-layer');
     const colors = () => page.evaluate(() => {
       const probe = document.createElement('span');probe.style.visibility = 'hidden';document.body.append(probe);
       const values = ['--accent', '--panel', '--bg'].map(role => {probe.style.color = `var(${role})`;return getComputedStyle(probe).color;});
       probe.remove();return values;
     });
     const settledFrame = () => page.evaluate(() => new Promise<void>(resolve => {requestAnimationFrame(() => {requestAnimationFrame(() => {resolve();});});}));
-    const pixels = () => image.locator('canvas').evaluate(node => {
-      if (!(node instanceof HTMLCanvasElement)) throw new Error('missing-art-canvas');
-      return node.toDataURL();
-    });
-    await expect(image).toHaveAttribute('data-art-image-state', 'ready');
+    // The rendition the layer has drawn, once it has drawn the backdrop's current image.
+    const pixels = async (): Promise<string | null> => {
+      const current = await image.getAttribute('data-rendition');await expect(layer).toHaveAttribute('data-glass-backdrop', current ?? '');return current;
+    };
+    await expect(image).toHaveAttribute('data-art-backdrop', 'ready');
     await expect(image).toHaveAttribute('data-artwork', second.artworkId, {timeout: 10_000});
     await expect(page.locator('html')).toHaveAttribute('data-art-theme', 'applied');
     const secondColors = await colors(), beforeSelection = world.art.state();
@@ -64,7 +63,7 @@ export async function artSelectionJourney(): Promise<void> {
     for (let index = 0; index < 25; index += 1) latest = await generate();
     await expect(image).toHaveAttribute('data-artwork', first.artworkId);
     await page.reload();await feed(page, 'connected');
-    await expect(image).toHaveAttribute('data-art-image-state', 'ready');await expect(image).toHaveAttribute('data-artwork', first.artworkId);
+    await expect(image).toHaveAttribute('data-art-backdrop', 'ready');await expect(image).toHaveAttribute('data-artwork', first.artworkId);
     await expect(page.locator('html')).toHaveAttribute('data-art-theme', 'applied');await expect.poll(colors).toEqual(firstColors);
     const settledCalls = world.art.state();
     const previousPixels = await pixels(), previousColors = await colors();
@@ -73,28 +72,27 @@ export async function artSelectionJourney(): Promise<void> {
     let intercepted = false;
     await page.route(`**/modules/art/content/artwork.${second.artworkId}`, async route => {intercepted = true;await held;await route.continue();});
     await select(second);await expect.poll(() => intercepted).toBe(true);
-    await expect(image).toHaveAttribute('data-art-image-state', 'loading');await expect(image).toHaveAttribute('data-artwork', first.artworkId);
+    await expect(image).toHaveAttribute('data-art-backdrop', 'loading');await expect(image).toHaveAttribute('data-artwork', first.artworkId);
     assert.equal(await pixels(), previousPixels, 'pending metadata retains the actual decoded pixels');
     await settledFrame();assert.deepEqual(await colors(), previousColors, 'pending selected metadata cannot replace the visible palette');
-    await expect(image.getByRole('img')).toBeVisible();await page.screenshot({path: join(artifacts, 'art-selection-metadata-loading.png'), fullPage: true});
-    await select(latest);await expect(image).toHaveAttribute('data-artwork', latest.artworkId);await expect(image).toHaveAttribute('data-art-image-state', 'ready');
+    await page.screenshot({path: join(artifacts, 'art-selection-metadata-loading.png'), fullPage: true});
+    await select(latest);await expect(image).toHaveAttribute('data-artwork', latest.artworkId);await expect(image).toHaveAttribute('data-art-backdrop', 'ready');
     await expect.poll(colors).toEqual(secondColors);
     assert.ok(releaseMetadata !== undefined);releaseMetadata();await page.unrouteAll({behavior: 'wait'});
     await expect(image).toHaveAttribute('data-artwork', latest.artworkId);
-    await select(first);await expect(image).toHaveAttribute('data-artwork', first.artworkId);await expect(image).toHaveAttribute('data-art-image-state', 'ready');
+    await select(first);await expect(image).toHaveAttribute('data-artwork', first.artworkId);await expect(image).toHaveAttribute('data-art-backdrop', 'ready');
     await expect.poll(colors).toEqual(firstColors);const retainedPixels = await pixels();
     // Missing metadata never silently substitutes the latest item; preserve the actual prior image and truthful status.
     await page.route(`**/modules/art/content/artwork.${second.artworkId}`, route => route.fulfill({status: 404, contentType: 'application/json', body: '{}'}));
-    await select(second);await expect(image).toHaveAttribute('data-art-image-state', 'unavailable');await expect(image).toHaveAttribute('data-artwork', first.artworkId);
-    await expect(image).toContainText('Selected artwork is unavailable');
+    await select(second);await expect(image).toHaveAttribute('data-art-backdrop', 'unavailable');await expect(image).toHaveAttribute('data-artwork', first.artworkId);
     assert.equal(await pixels(), retainedPixels, 'refused metadata retains the actual decoded pixels rather than the latest art');
     await settledFrame();assert.deepEqual(await colors(), firstColors, 'refused selected metadata cannot replace the visible palette');
     await page.screenshot({path: join(artifacts, 'art-selection-metadata-unavailable.png'), fullPage: true});
     await page.unrouteAll({behavior: 'wait'});
     await select(latest);await expect(image).toHaveAttribute('data-artwork', latest.artworkId);
-    await select(second);await expect(image).toHaveAttribute('data-artwork', second.artworkId);await expect(image).toHaveAttribute('data-art-image-state', 'ready');
+    await select(second);await expect(image).toHaveAttribute('data-artwork', second.artworkId);await expect(image).toHaveAttribute('data-art-backdrop', 'ready');
     await world.restart();await page.reload();await feed(page, 'connected');
-    await expect(image).toHaveAttribute('data-artwork', second.artworkId);await expect(image).toHaveAttribute('data-art-image-state', 'ready');
+    await expect(image).toHaveAttribute('data-artwork', second.artworkId);await expect(image).toHaveAttribute('data-art-backdrop', 'ready');
     assert.deepEqual(world.art.state(), settledCalls, 'metadata reads, selection and restart never call either provider');
     assert.deepEqual(errors, []);await page.screenshot({path: join(artifacts, 'art-selection-restarted.png'), fullPage: true});
     console.log(`Art selection browser passed; synthetic screenshots: ${artifacts}`);

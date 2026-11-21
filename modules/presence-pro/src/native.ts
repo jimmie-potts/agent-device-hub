@@ -35,6 +35,10 @@ export function switchMissing(bytes: Uint8Array): boolean {
   }
   return false;
 }
+class IgnoredUpdateFrame {
+  toObject(): Record<string, never> { return {}; }
+}
+
 const swallow = (): void => {};
 export const nativeFactory: NativeFactory = (sensor, secrets, callbacks) => {
   if (sensor.security.mode === 'noise' && (secrets.key === undefined || !/^[A-Za-z0-9+/]{43}=$/.test(secrets.key) || Buffer.from(secrets.key, 'base64').length !== 32)) throw new NativeFault('forbidden');
@@ -43,6 +47,9 @@ export const nativeFactory: NativeFactory = (sensor, secrets, callbacks) => {
   const helper = (connection as unknown as {frameHelper: FrameHelper}).frameHelper;
   const build = helper.buildMessage.bind(helper);
   helper.buildMessage = (type, bytes) => {
+    // ESPHome ListEntitiesUpdateResponse and UpdateStateResponse are outside this read-only module.
+    // Return a frame for the pinned client to consume so it can continue parsing occupancy.
+    if (type === 116 || type === 117) return new IgnoredUpdateFrame();
     const message = build(type, bytes);
     if (type === 26 && switchMissing(bytes)) {
       const toObject = message.toObject.bind(message);

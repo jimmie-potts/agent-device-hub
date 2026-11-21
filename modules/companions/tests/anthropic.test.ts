@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {ANTHROPIC_URL, ANTHROPIC_VERSION, AnthropicProvider, MAX_TOKENS, toMessages, type Transport} from '../src/assistant/anthropic.js';
 import {ProviderFault, type TranscriptItem, type TurnInput} from '../src/assistant/provider.js';
-import {permittedTools} from '../src/assistant/tools.js';
+import {permittedTools, TOOLS} from '../src/assistant/tools.js';
 
 type Sent = {url: string; init: Parameters<Transport>[1]};
 function fake(answer: (sent: Sent) => Response | Promise<Response>): {transport: Transport; sent: Sent[]} {
@@ -108,6 +108,37 @@ void test('tool-use answers carry the calls, refusals and truncation stop the tu
   // A second tool call in one answer is dropped with its block, so no replayed tool_use lacks a result.
   const {transport: twice} = fake(() => json({content: [{type: 'tool_use', id: 'toolu_a', name: 'read_sessions', input: {}}, {type: 'tool_use', id: 'toolu_b', name: 'set_mode', input: {mode: 'work'}}], stop_reason: 'tool_use', usage: {input_tokens: 1, output_tokens: 1}}));
   assert.deepEqual(await new AnthropicProvider({key: 'k', transport: twice}).turn(input, signal()), {text: null, calls: [{id: 'toolu_a', name: 'read_sessions', input: {}}], stop: 'tool', units: 2, blocks: [{type: 'tool_use', id: 'toolu_a', name: 'read_sessions', input: {}}]});
+});
+
+void test('the full Conversation catalog reaches Claude within its strict tool limit', async () => {
+  const allTools = permittedTools(TOOLS.map(tool => tool.name), false);
+  const call = {id: 'toolu_show', name: 'control_music_lighting_control',
+    input: {owner: 'bunny/core', target: 'light', arguments: '{"action":"stop"}'}};
+  const {transport, sent} = fake(({init}) => {
+    const {tools} = JSON.parse(init.body) as {tools: {name: string; strict?: boolean; input_schema: unknown}[]};
+    assert.deepEqual(tools.map(tool => [tool.name, tool.input_schema]), allTools.map(tool => [tool.name, tool.input]));
+    if (tools.filter(tool => tool.strict === true).length > 20) return json({type: 'error'}, 400);
+    assert.equal(tools.find(tool => tool.name === call.name)?.strict, undefined);
+    return json({content: [{type: 'tool_use', ...call}], stop_reason: 'tool_use', usage});
+  });
+  const provider = new AnthropicProvider({key: 'k', transport});
+  assert.deepEqual((await provider.turn({...input, tools: allTools}, signal())).calls, [call]);
+  assert.equal(sent.length, 1);
+});
+
+void test('malformed expanded catalog calls are refused at the provider boundary', async () => {
+  const allTools = permittedTools(TOOLS.map(tool => tool.name), false);
+  const fields = {owner: 'bunny/core', target: 'light', arguments: '{"action":"stop"}'};
+  for (const invalid of [{...fields, extra: true}, {...fields, arguments: {}}, {target: 'light', arguments: '{}'}]) {
+    const {transport, sent} = fake(() => json({
+      content: [{type: 'tool_use', id: 'toolu_show', name: 'control_music_lighting_control', input: invalid}],
+      stop_reason: 'tool_use', usage,
+    }));
+    const provider = new AnthropicProvider({key: 'k', transport});
+    await assert.rejects(provider.turn({...input, tools: allTools}, signal()),
+      (error: unknown) => error instanceof ProviderFault && error.code === 'invalid-message');
+    assert.equal(sent.length, 1);
+  }
 });
 
 void test('HTTP errors, malformed answers, oversized bodies and aborts map once to registry codes', async () => {

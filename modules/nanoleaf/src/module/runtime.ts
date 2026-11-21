@@ -34,7 +34,7 @@ import {initialize} from '../database.js';
 import {readReactiveCatalog, saveReactivePreset, ReactiveFailure, REACTIVE_ERRORS} from '../music-presets.js';
 import {REACTIVE_TARGET} from '../music-preset-data.js';
 import {readShowVersion, saveShow, showCatalog, ShowFailure, SHOW_ERRORS} from '../music-shows.js';
-import {SHOW_TARGET, showMeasurement, type ShowMeasurement} from '../music-show-data.js';
+import {SHOW_CATALOG_SCHEMA, SHOW_TARGET, showMeasurement, showProvenance, type ShowMeasurement, type ShowProvenance} from '../music-show-data.js';
 import {favoriteEdit, Failure, validFavoriteEdit} from '../favorites.js';
 import {writeJson} from '../jsonfile.js';
 import {expireQueued, finish, holdOf, journal, recoverAttempts, type Outcome, type Report, type Transact, initJournalAdmissionMarks, journalAdmissionMark} from '../journal.js';
@@ -61,6 +61,8 @@ import {ReadTimingProbe} from './read-timing.js';
 import {NANOLEAF_FAMILIES, OUTCOME_SCHEMA, schemaOf} from './schemas.js';
 import {editorContent} from './editor-content.js';
 import {showContent} from './show-content.js';
+import {createMusicShowAuthoringProvider, type MusicShowAuthoringProvider} from '../music-show-authoring-provider.js';
+import {ShowAuthoring, type CancelGeneration, type GenerateShow} from './show-authoring.js';
 import {musicPreviewContent} from './music-preview-content.js';
 import {
   animationsView, capabilities, configurationRevision, deviceRecord, MODULE_TABLES, nextTransmission, savedLayout, savedTransmission, selectionText, STATE_TYPES,
@@ -174,6 +176,7 @@ export class NanoleafRuntime {
   #playback: PlaybackPositionState | undefined;
   #captureState: CaptureState | undefined;
   #captureLive = false;
+  readonly #showAuthoring: ShowAuthoring;
   readonly #measurementKey = randomBytes(32);
   #positionLive = false;
   #positionEpoch = 0;
@@ -184,7 +187,7 @@ export class NanoleafRuntime {
   readonly #feeds: MusicFeeds;
   readonly #readTiming: ReadTimingProbe;
 
-  private constructor(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, directory: string, db: Db) {
+  private constructor(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, directory: string, db: Db, authoringProvider: MusicShowAuthoringProvider | undefined) {
     this.#context = context;
     this.#config = config;
     this.#directory = directory;
@@ -196,6 +199,10 @@ export class NanoleafRuntime {
     this.#ids = config.devices.map(device => device.id);
     const {sdk, clock, log, trace} = context;
     this.#outbox = new Outbox({sdk, database: db, clock, log, trace});
+    this.#showAuthoring = new ShowAuthoring(context, db, this.#outbox, authoringProvider, ({measurement, provenance}) => ({
+      authoringProof: this.#authoringProof(provenance, measurement),
+      ...(measurement === undefined ? {} : {measurementProof: this.#measurementProof(measurement)}),
+    }));
     this.#readTiming = new ReadTimingProbe(context.scheduler);
     this.#availability = new DeviceAvailability({log, clock});
     const metadata = config.codexMetadata === undefined ? null
@@ -211,7 +218,7 @@ export class NanoleafRuntime {
    * the core's sessions, which the core serves before it awaits anything.
    */
   static async start(context: ModuleContext<NanoleafConfig>, config: NanoleafConfig, transport: LightRequest,
-    datagram: LightDatagram, readWithDiagnostics?: typeof classifiedRead): Promise<NanoleafRuntime> {
+    datagram: LightDatagram, readWithDiagnostics?: typeof classifiedRead, authoringProvider?: MusicShowAuthoringProvider): Promise<NanoleafRuntime> {
     const db = context.database();
     const directory = context.files();
     initialize(db, () => context.clock.now() / 1000);
@@ -223,7 +230,18 @@ export class NanoleafRuntime {
     writeJson(join(directory, 'config.json'), registryFile(config));
     const tokens = new Map<string, string>();
     for (const device of config.devices) if (!tokens.has(device.secret)) tokens.set(device.secret, await context.secrets.read(device.secret));
-    const runtime = new NanoleafRuntime(context, config, directory, db);
+    if (authoringProvider === undefined && config.musicAuthoringSecret !== undefined) {
+      const key = await context.secrets.read(config.musicAuthoringSecret).catch(() => '');
+      const candidate = key.trim();
+      if (candidate !== '') {
+        if ([...tokens.values()].some(token => token.trim() === candidate)) {
+          recordLog(context.log, 'operation.failed', {'bunny.operation': 'startup', 'bunny.outcome': OutcomeWord.failed, 'bunny.code': 'invalid-state'});
+        } else {
+          authoringProvider = createMusicShowAuthoringProvider({key: candidate, db, now: () => context.clock.now()});
+        }
+      }
+    }
+    const runtime = new NanoleafRuntime(context, config, directory, db, authoringProvider);
     for (const device of config.devices) {
       const saved = savedTransmission(db, device.id);
       if (saved !== undefined) runtime.#written.set(device.id, {latest: saved, commandWritten: false});
@@ -277,12 +295,17 @@ export class NanoleafRuntime {
       recordLog(log, 'outbox.deferred', {'bunny.code': error instanceof SdkError ? error.body.error.code : 'internal'});
     }
     await this.#endStoredCommands();
+    await this.#showAuthoring.recover();
     this.#feed.configure(sharedConfig(this.#config.qualifiedSources));
     for (const device of this.#ids) this.#changed(device);
     this.#flushNow();
     await sdk.serveSync([...SERVED], request => this.#snapshot(request.data.families));
     await sdk.respond<{requestId: string} & Record<string, unknown>>(`bunny.cmd.${NANOLEAF_FAMILIES.showSave.family}.${SHOW_TARGET}`,
       command => this.#showSave(command));
+    await sdk.respond<GenerateShow>(`bunny.cmd.${NANOLEAF_FAMILIES.showGenerate.family}.${SHOW_TARGET}`,
+      command => this.#showAuthoring.start(command, () => this.#authoringInput(command.data)));
+    await sdk.respond<CancelGeneration>(`bunny.cmd.${NANOLEAF_FAMILIES.showGenerateCancel.family}.${SHOW_TARGET}`,
+      command => this.#showAuthoring.cancel(command));
     await sdk.respond<{requestId: string} & Record<string, unknown>>(`bunny.cmd.${NANOLEAF_FAMILIES.reactivePresetSave.family}.${REACTIVE_TARGET}`,
       command => this.#reactiveSave(command));
     // Music features reach a live session by subscription only; a gap in them is source loss for every session (#1272).
@@ -304,12 +327,13 @@ export class NanoleafRuntime {
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (ref === 'music-preview') return musicPreviewContent(request);
     if (ref === 'show-version') return showContent(this.#db, request);
+    if (ref === 'generated-show-draft' || ref === 'latest-generated-show-draft') {
+      return this.#showAuthoring.content(request, ref === 'latest-generated-show-draft');
+    }
     if (ref === 'measured-show-draft') {
       if (request === undefined || Object.keys(request.query).length !== 0) return errorBody('invalid-request');
       if (request.signal.aborted) return errorBody('cancelled');
-      const position = this.#currentPosition(), analysis = this.#analysis;
-      const result = position !== undefined && analysis?.context === position.context && sameMeasuredItem(position.item, analysis.item)
-        ? analysis.planner.result() : undefined;
+      const result = this.#currentAnalysis();
       return result === undefined
         ? errorBody('unavailable', {detail: 'Play a Music item with measurement active before preparing a measured show.'})
         : {type: 'application/json', bytes: Buffer.from(JSON.stringify({...result, measurementProof: this.#measurementProof(result)}))};
@@ -320,6 +344,7 @@ export class NanoleafRuntime {
   /** Stops following, ends each supervisor at its next wait, and waits for them. */
   async stop(): Promise<void> {
     this.#flush?.();
+    await this.#showAuthoring.stop();
     await Promise.allSettled([...this.#supervisors.values()]);
   }
 
@@ -515,7 +540,7 @@ export class NanoleafRuntime {
     });
     if (families.includes(NANOLEAF_FAMILIES.shows.family)) {
       try {
-        states.push({type: NANOLEAF_FAMILIES.shows.type, subject: SHOW_TARGET, dataschema: schemaOf(NANOLEAF_FAMILIES.shows.family), data: showCatalog(this.#db)});
+        states.push({type: NANOLEAF_FAMILIES.shows.type, subject: SHOW_TARGET, dataschema: SHOW_CATALOG_SCHEMA, data: showCatalog(this.#db)});
       } catch (error) {
         return error instanceof ShowFailure ? errorBody(error.code, {detail: SHOW_ERRORS[error.code]})
           : errorBody('unavailable', {detail: 'The private show library cannot be read.'});
@@ -637,6 +662,52 @@ export class NanoleafRuntime {
       this.#retireMeasurement();
       if (change === undefined) this.#captureLive = false;
     }
+  }
+
+  #currentAnalysis(position = this.#currentPosition()) {
+    const analysis = this.#analysis;
+    return position !== undefined && analysis?.context === position.context && sameMeasuredItem(position.item, analysis.item)
+      ? analysis.planner.result() : undefined;
+  }
+
+  #authoringInput({source, style}: GenerateShow) {
+    const now = this.#context.clock.now();
+    const playback = this.#positionLive ? this.#playback : undefined;
+    if (playback?.source !== 'music' || playback.availability !== 'available' || playback.evidence.status !== 'observed') {
+      return errorBody('unavailable', {detail: 'Open a Music library item before generating a draft.'});
+    }
+    const {title, artist} = playback.evidence.observation.metadata;
+    if (title.status !== 'observed' || artist.status !== 'observed' || title.value.trim() === '' || artist.value.trim() === ''
+        || title.interval.earliestAtMs > now || now - title.interval.earliestAtMs >= 5000
+        || artist.interval.earliestAtMs > now || now - artist.interval.earliestAtMs >= 5000) {
+      return errorBody('unavailable', {detail: 'Current Music track title and artist are required.'});
+    }
+    if (source === 'generic') return {disclosure: {title: title.value, artist: artist.value, style, analysis: null}};
+    const measured = this.#currentAnalysis(this.#currentPosition(now));
+    if (measured === undefined) return errorBody('unavailable', {detail: 'Play the Music item with measurement active, or choose a generic sequence.'});
+    const {analysis, item, timeline} = measured;
+    const spans = timeline.cues.map(({offsetMs, durationMs, intensity}) => ({offsetMs, durationMs, intensity}));
+    return {disclosure: {title: title.value, artist: artist.value, style, analysis: {...analysis, spans}}, measurement: {item, analysis}};
+  }
+
+  #authoringProof(provenance: ShowProvenance, measurement: ShowMeasurement | undefined): string {
+    return createHmac('sha256', this.#measurementKey)
+      .update(JSON.stringify(['authoring', provenance, measurement === undefined ? null : this.#measurementProof(measurement)])).digest('hex');
+  }
+
+  #confirmAuthoring(input: Record<string, unknown>, proof: unknown): void {
+    if (input.provenance === undefined && proof === undefined) return;
+    const provenance = showProvenance(input.provenance);
+    if (provenance === undefined) throw new ShowFailure('invalid-request');
+    const measurement = showMeasurement(input.measurement);
+    const expected = this.#authoringProof(provenance, measurement);
+    if (typeof proof === 'string' && /^[a-f0-9]{64}$/.test(proof)
+        && timingSafeEqual(Buffer.from(proof, 'hex'), Buffer.from(expected, 'hex'))) return;
+    if (typeof input.showId === 'string' && typeof input.expectedVersion === 'number' && input.expectedVersion > 0) {
+      const prior = readShowVersion(this.#db, input.showId, input.expectedVersion);
+      if (prior.provenance !== undefined && this.#authoringProof(prior.provenance, prior.kind === 'measured' ? prior.measurement : undefined) === expected) return;
+    }
+    throw new CommandRefused('invalid-state', 'Read the generated draft again before saving its provenance.');
   }
 
   #measurementProof({item, analysis}: ShowMeasurement): string {
@@ -955,12 +1026,12 @@ export class NanoleafRuntime {
     await sdk.respond<MomentPlayRequest>(`bunny.cmd.moment-play.${device}`, command=>this.#moment(device,command));
     await sdk.respond<LightingWork>(`bunny.cmd.${MUSIC_WORK}.${device}`, command => this.#musicWork(device, command));
     const {wallEdit, machineEdit, animationPlay, favoriteEdit: favorite, acknowledge} = NANOLEAF_FAMILIES;
-    await sdk.respond<{requestId: string; edit: unknown}>(`bunny.cmd.${wallEdit.family}.${device}`, command => this.#wallEdit(device, command));
+    await sdk.respond<Guards & {edit: unknown}>(`bunny.cmd.${wallEdit.family}.${device}`, command => this.#wallEdit(device, command));
     await sdk.respond<Guards & {edit: unknown}>(`bunny.cmd.${machineEdit.family}.${device}`, command => this.#machineEdit(device, command));
-    await sdk.respond<{requestId: string; animation: Record<string, unknown>}>(`bunny.cmd.${animationPlay.family}.${device}`,
+    await sdk.respond<Guards & {animation: Record<string, unknown>}>(`bunny.cmd.${animationPlay.family}.${device}`,
       command => this.#animation(device, command));
     await sdk.respond<Guards & {edit: Record<string, unknown>}>(`bunny.cmd.${favorite.family}.${device}`, command => this.#favorite(device, command));
-    await sdk.respond<{requestId: string; task: string; noticeId: string}>(`bunny.cmd.${acknowledge.family}.${device}`,
+    await sdk.respond<Guards & {task: string; noticeId: string}>(`bunny.cmd.${acknowledge.family}.${device}`,
       command => this.#acknowledge(device, command));
   }
 
@@ -997,12 +1068,16 @@ export class NanoleafRuntime {
     return this.#admit(command, (_report, add) => {
       if (command.subject !== SHOW_TARGET) throw new CommandRefused('invalid-request', 'Select the show library.');
       if (expiresMs(command, this.#context.clock.now()) <= this.#context.clock.now()) throw new CommandRefused('expired', 'The show save expired.');
-      const {requestId, measurementProof, ...input} = command.data;
+      const {requestId, measurementProof, authoringProof, admitByMs, ...input} = command.data;
+      if (typeof admitByMs === 'number' && admitByMs <= this.#context.clock.now()) {
+        throw new CommandRefused('expired', 'The approved show save expired.');
+      }
       this.#confirmMeasurement(input, measurementProof);
+      this.#confirmAuthoring(input, authoringProof);
       this.#revision = Math.max(this.#revision + 1, Math.floor(this.#context.clock.now()));
-      saveShow(this.#db, input, this.#revision);
+      saveShow(this.#db, input, this.#revision, requestId);
       add(`bunny.state.${NANOLEAF_FAMILIES.shows.family}.${SHOW_TARGET}`, {
-        kind: 'state', type: NANOLEAF_FAMILIES.shows.type, subject: SHOW_TARGET, dataschema: schemaOf(NANOLEAF_FAMILIES.shows.family), data: showCatalog(this.#db),
+        kind: 'state', type: NANOLEAF_FAMILIES.shows.type, subject: SHOW_TARGET, dataschema: SHOW_CATALOG_SCHEMA, data: showCatalog(this.#db),
       }, {parent: command});
       add(`bunny.event.${NANOLEAF_FAMILIES.showSave.family}.${SHOW_TARGET}`, {
         kind: 'outcome', type: 'org.bunny.nanoleaf-show.save.completed', subject: SHOW_TARGET, dataschema: OUTCOME_SCHEMA,
@@ -1082,6 +1157,11 @@ export class NanoleafRuntime {
     const {requestId}=command.data, revision=momentRevision(this.#db,device), mode=controlState(this.#db,device).mode;
     const link=this.#links.get(device);
     if(link===undefined) return errorBody('not-found',{requestId});
+    try {this.#guard(device, command.data);}
+    catch (error) {
+      if (error instanceof CommandRefused) return errorBody(error.code, {requestId, detail: error.detail});
+      throw error;
+    }
     if(!commandSupported(capabilities(this.#db,device),{family:'moment-play',data:command.data}) || mode==='quiet') return errorBody('unsupported-capability',{requestId});
     let freeBase:FreeBase|undefined;
     if(mode==='free') {
@@ -1095,6 +1175,7 @@ export class NanoleafRuntime {
       if(freeBase===undefined) return errorBody('unsupported-capability',{requestId});
     }
     return this.#admit(command,()=>{
+      this.#guard(device, command.data);
       if(momentRevision(this.#db,device)!==revision || controlState(this.#db,device).mode!==mode) throw new CommandRefused('revision-conflict','the device choice changed during the read');
       if(savedLayout(this.#directory,device)===undefined) throw new CommandRefused('invalid-state','the saved Lines layout is not available yet');
       this.#record(command,device,'moment-play');
@@ -1203,9 +1284,10 @@ export class NanoleafRuntime {
     });
   }
 
-  #animation(device: string, command: Command<{requestId: string; animation: Record<string, unknown>}>): Promise<Reply> {
+  #animation(device: string, command: Command<Guards & {animation: Record<string, unknown>}>): Promise<Reply> {
     const {requestId, animation} = command.data;
     return this.#admit(command, report => {
+      this.#guard(device, command.data);
       // The saved device layout places the animation; until the device answered once there is none.
       // The condition clears by itself, so it is the device's state, as for a wall edit then.
       if (savedLayout(this.#directory, device) === undefined) {
@@ -1237,9 +1319,10 @@ export class NanoleafRuntime {
     }
   }
 
-  #wallEdit(device: string, command: Command<{requestId: string; edit: unknown}>): Promise<Reply> {
+  #wallEdit(device: string, command: Command<Guards & {edit: unknown}>): Promise<Reply> {
     const family = NANOLEAF_FAMILIES.wallEdit.family;
     return this.#admit(command, report => {
+      this.#guard(device, command.data);
       const edit = editOf(command.data.edit);
       bumpRevision(this.#db, applyEdit(this.#db, this.#feed.copy, savedLayout(this.#directory, device), device, edit, this.#ids));
       this.#record(command, device, family);
@@ -1311,11 +1394,12 @@ export class NanoleafRuntime {
    * a task it shows. A task it does not show, such as a skipped session from a source not qualified, is refused without
    * sending a request. The core's answer is the outcome.
    */
-  #acknowledge(device: string, command: Command<{requestId: string; task: string; noticeId: string}>): Promise<Reply> {
+  #acknowledge(device: string, command: Command<Guards & {task: string; noticeId: string}>): Promise<Reply> {
     const family = NANOLEAF_FAMILIES.acknowledge.family;
     const {requestId, task, noticeId} = command.data;
     let session: string | undefined;
     return this.#admit(command, () => {
+      this.#guard(device, command.data);
       const copy = this.#feed.copy.envelope;
       const presentedTask = copy === null ? undefined : presented(copy.snapshot).get(task);
       const root = presentedTask?.[0];

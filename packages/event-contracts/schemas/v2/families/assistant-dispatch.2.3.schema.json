@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/assistant-dispatch/2.3",
+  "description": "One approved Conversation catalog action. The core resolves its allowed owner and validates the destination command against its owning schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "family", "target", "command", "binding", "data"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "family": {"const": "catalog-action"},
+    "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+    "command": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "target", "owner"],
+      "properties": {
+        "kind": {"enum": ["device", "record", "fixed"]},
+        "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+        "owner": {"type": "string", "maxLength": 64},
+        "configurationRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+        "generation": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ticket"},
+        "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"}
+      }
+    },
+    "admitByMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "data": {"type": "object", "maxProperties": 12}
+  }
+}

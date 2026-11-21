@@ -49,6 +49,10 @@ alone, and the record's rules derive the artwork's outcome.
 | Pixoo | `gpt-image-2.6-flare`, 512×512, low, 8-frame GIF | One 64×64 GIF with at most 32 colors |
 | Browser | `gpt-image-2`, 1536×1024, medium | Two WebP renditions |
 
+For the Tidbyt, ask for a close-up of one subject performing one action. The subject
+fills about two-thirds to three-quarters of the panel height against a quiet background.
+Keep the camera still and give the scene one small looping movement.
+
 A returned GIF is decoded under bounded limits and checked for its size, its frame count
 and timing inside Pixoo's observed envelope, then reduced frame by frame with Lanczos and
 rebuilt with one palette and uniform timing. A wrong or undecodable GIF still costs its
@@ -62,6 +66,27 @@ Generic provider refusals do not identify a preview-access problem; the result r
 `provider-refused` unless the provider establishes a more specific supported reason.
 Sunburst is permitted for owner requests but is not selected by this implementation.
 Procedural art is available only as a failed display call's free fallback.
+
+## Stage a temporary Tidbyt GIF
+
+Send a control-authenticated binary request to
+`POST /api/v2/modules/art/upload?family=art-upload-stage&target=art&requestId=REQUEST_ID&name=preview.gif`
+with `Content-Type: application/octet-stream` and the original GIF bytes. Use a fresh request ID per upload.
+Art resolves the configured Tidbyt from its device record. The input must be 64×32, at most 160 KiB,
+with 2 to 20 frames and 100 to 800 ms per frame. Tidbyt checks the complete file and retains its exact frames.
+The label is required by the upload API and discarded. Staging uses no provider and creates no gallery item.
+
+Wait for the upload operation to complete with `succeeded` and `observed`. Its accepted reply alone
+only records admission. Derive the temporary artwork ID with `localGifReference(requestId, sha256)`
+from the browser-safe `@jimmie-potts/event-contracts/v2/art-show` entry. The digest is lowercase hex
+over the original bytes. The writer keeps the copy for ten minutes. The stage command's child request ID
+is the same temporary artwork ID.
+
+Explicitly show it with `POST /api/v2/commands/art-show`. Supply a fresh request ID, target `hub`,
+and data `{"artworkId":"<temporary artwork ID>","targets":["<configured Tidbyt routing ID>"]}`.
+The ordinary Show now checks and 30-second hold apply. Observe the moment operation for the selected target,
+including release before the next comparison. A transmitted receipt records the writer's result.
+Only someone watching the panel can confirm what it showed. An uncertain operation is never resent automatically.
 
 ## Spending
 
@@ -101,6 +126,7 @@ same spending ledger, pace, loop guard and no-retry rules apply to both choices.
   | `catalog` | Saved artworks, newest first; query `after` and `limit` (at most 100) |
   | `ledger` | Every call, oldest first; query `after` and `limit` (at most 100) |
   | `artwork.<artworkId>` | One artwork's result, creation time and calls |
+  | `conversation.<requestId>` | One approved Conversation job’s pending status, final outcome or exact saved rendition |
   | `rendition.<renditionId>` | The bytes of one rendition |
 
 - **Span:** `bunny.art.call`, diagnostic profile 1.8.
@@ -137,7 +163,8 @@ decoded the image. The private `art_browser_selection` table holds this pointer.
 
 | Family | Sender | What it does |
 | --- | --- | --- |
-| `art-request` | The dashboard, through the tracked route | Starts a job, or cancels any job |
+| `art-request/2.0` | The dashboard, through the tracked route | Starts a job, or cancels any job |
+| `art-request/2.1` | Companions, through the tracked route after approval | Generates a single still or GIF for Conversation without staging or presenting it on any display |
 | `art-auto` | The core's automation only | Starts an automatic job; 2.1 prepares saved art or selects its browser composition; 2.2 also selects saved Tidbyt ambient art |
 | `art-catalog-edit` | The dashboard, through the tracked route | Favorite, feedback, delete, or reuse saved art |
 | `art-dispatch` | This module, to the core | Forwards `art-stage` and `art-ambient-set` |
@@ -203,7 +230,10 @@ or a fresh weather observation, the art says nothing about weather.
 
 ## Browser gallery and Home art
 
-The module's `./frontend` entry supplies the Art Gallery page and Home widget.
+The module's `./frontend` entry supplies the Art Gallery page, the Art widget,
+Home's backdrop source and Home's forecast chip. The runtime shell's Clear Home
+(Hub #1930) shows no Art widget: the presented art is its backdrop and the
+widget's controls are chips in its hero.
 They share the shell's authenticated module scope and SDK connection. The gallery
 reads the paginated private catalog, requests owner art or variations, saves
 favorites and records explicit feedback through `art-catalog-edit`. Opening a
@@ -231,8 +261,8 @@ The Home widget follows the owner's exact browser selection, including selected
 art outside the recent state window. With no selection, it keeps the latest-art
 fallback. Authenticated artwork metadata and image bytes must both match the
 selected identity; obsolete or failed reads cannot select a newer image instead.
-Gallery browsing retains its own local manual choice. Home pinning reserves
-layout space and is not a pin on an artwork.
+Gallery browsing retains its own local manual choice. Home pinning is a flag on
+the Home arrangement, not a pin on an artwork.
 
 Browser compositions use the rich still rendition. Bytes must match its declared
 size and media type and decode to its declared dimensions before replacing the
@@ -250,12 +280,39 @@ catalog, preference or durable state. Theme consumers may use only ready visible
 art. The runtime shell applies bounded decorative colors from that evidence;
 browser-local lock/default preferences remain outside the art catalog.
 
-The existing core Home owner stores optional art shape and pin metadata. A pinned
-art row reserves space independently of image arrival. Unpinned art uses only
-unused viewport space after functional cards, and disappears when no complete
-bounded shape fits. Pointer/focus interaction freezes automatic placement.
-Dismiss/restore concern that widget placement; they do not submit dislike
-feedback. Gallery favorites are distinct from Home pinning.
+`ArtBackdropSource` gives the shell the decoded presented image for Home's
+backdrop (Hub #1928). The shell mounts it once on Home through its module
+frontend scope, and it renders nothing visible. It follows the same record and
+selection as the Home widget, but loads that composition's largest still, since
+the backdrop fills the page. It reads each rendition once through the same
+content route and validates it like the widget; another artwork with the same
+rendition reuses the decoded bitmap. `useArtBackdrop` returns its status
+(`none`, `loading`, `ready`, `stale` or `unavailable`) and the last ready image:
+an `ImageBitmap` with its size, artwork, composition and rendition IDs and
+palette. A newer image that is loading, stale or failed leaves that image in
+place, and an obsolete load never replaces a newer one. With nothing to
+present, or no source mounted, it reports `none` with no image. Gallery
+browsing never changes it. The source owns the bitmaps: a replaced one closes
+after consumers have committed the new value, and all close when it unmounts,
+so a consumer uploads a new image in a layout effect when its identity changes.
+The shell reports the rendition it has drawn with `useShowArtBackdrop`, or
+`null` when it draws none. `useArtPresentation` combines that evidence with
+the visible widget's, so one surface going idle does not erase the other's.
+
+`PresentedArtNotice` is the forecast notice as a compact chip for the shell
+(Hub #1930). It reads the combined presentation evidence, so it binds to the
+artwork the page presents, the visible widget's or the backdrop rendition the
+shell reports drawn, under the same rules as the widget's notice: only after the
+opportunity's browser selection succeeded, only from its start, and only until it
+expires. It states the notice in the widget's words; its kind and its separation
+from the artwork are in its accessible text and title. Given `href`, it is a link,
+so it takes keyboard focus.
+
+The existing core Home owner stores optional art shape, pin and dismissal
+metadata. The shell's hero chips change the pin and the dismissal; a dismissed
+art placement leaves Home without its backdrop. Dismiss and restore concern that
+placement; they do not submit dislike feedback. Gallery favorites are distinct
+from Home pinning.
 
 ## Checks
 

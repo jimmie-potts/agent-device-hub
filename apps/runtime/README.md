@@ -348,7 +348,7 @@ and exits 1, and the service manager restarts it whole.
   | Kind | Families | Reply | Outcome |
   | --- | --- | --- | --- |
   | device | every command to one device, such as `power-set` or `playback-control` | 5 s | 30 s |
-  | moment | `moment-play` | 5 s | 150 s: 60 s of lead and 60 s of tolerance at most |
+  | moment | `moment-play`, `art-show`, `nanoleaf-show-generate` | 5 s | 150 s |
   | mode | `mode-set`, `mode-override-set` | 5 s | 60 s |
 
   The state machine is `src/core/operations.ts`: `sent`, then `accepted`, then

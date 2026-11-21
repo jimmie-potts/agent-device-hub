@@ -361,7 +361,8 @@ as for every configured module; an empty section keeps every default:
   `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`). The
   synthetic provider takes neither.
 - `assistant.tools` lists the permitted tools by name, each once:
-  `read_sessions`, `set_mode`, `delegate_coding`, `read_lifx`, `set_lifx_power` and `set_lifx_brightness`. The engine builds the model's tool
+  `read_sessions`, `set_mode`, `delegate_coding`, `read_lifx`, `set_lifx_power`, `set_lifx_brightness`, `read_wemo` and `set_wemo_power`.
+  The engine builds the model's tool
   definitions from the list at start and checks membership again when a call
   executes, so a changed section cannot widen an effect. The built-in
   `ask_owner` is always available; the synthetic fixture read is never listed.
@@ -404,6 +405,16 @@ as for every configured module; an empty section keeps every default:
   the provider. **Read aloud** beside a saved assistant message asks to hear it
   again through the `speak` control, whose accepted receipt means the request
   was saved, while the playback report says whether the browser spoke.
+
+### Artwork in replies
+
+Allowlist `create_artwork` for B.U.N.N.Y. Conversation to offer a still image
+or animated GIF. The approval names the artwork and discloses generation use.
+Art queues the request under the existing allowance. The reply tracks that
+specific job and displays the exact saved rendition or the job's outcome.
+The animation stays on its first frame until played. Opening a conversation
+or playing a GIF does not generate art or send it to a device. If the art is
+removed from the library, the saved reply remains readable.
 
 ### Coding delegation
 
@@ -536,7 +547,7 @@ that local control was saved; task completion is reported separately.
 
 Allow `read_lifx`, `set_lifx_power`, or `set_lifx_brightness` in the private
 Conversation tool list. Read status by a configured light name or routing ID.
-A read reports the last observation and supported controls. Conversation labels an observation stale after 30 seconds or when it predates a command. If several lights
+A read reports the last observation and supported controls. Conversation labels an observation stale after 30 seconds or when it predates a command. An explicit stale read requests the owner's rate-limited refresh. An unchanged result can retain its original observation timestamp. If several lights
 match a write, Conversation asks for the exact ID before proposing it.
 
 The approval shows the selected light and value. It binds the action to the
@@ -544,6 +555,50 @@ light's configuration revision and generation. The core forwards the approved
 action through the tracked dispatcher. Expand **Tool result** to see the
 operation result and its available evidence. Device availability, changed
 configuration, a restart, or a revoked tool can invalidate an approval.
+
+### Wemo status and power
+
+`read_wemo` reports the plug's observed power, freshness, and hold state.
+`set_wemo_power` proposes on or off for one named plug. The approval binds
+the Wemo owner and the plug's configuration revision and generation. The
+core tracks the existing power command. The plug's queue and hold still
+govern the write, and the core's existing maximum-on policy still applies.
+
+### Device controls and saved content
+
+Enable `read_devices` to look up installed devices by name or ID. Results
+identify the owner, available observations and enabled controls. Use
+`read_playback`, `read_roborock` and `read_volcano` for their own status
+records. Roborock has no cleaning command in this integration. Volcano
+publishes equipment status and supports editing the software session gap.
+
+Each added command has its own name in `assistant.tools`. The
+[Conversation action catalog](../../packages/event-contracts/src/v2/assistant-actions.ts)
+lists the exact command families and eligible owners. Command names take
+the form `control_<family>` with underscores. Existing LIFX and Wemo power
+permissions keep their original names. Conversation shows the target, owner
+and exact values for approval. The existing owner command checks device
+revisions, generation and capability. The tracked operation shows acceptance
+and the available effect evidence separately.
+
+`read_saved_art` offers saved artwork IDs and compositions. After approval,
+`control_art_show` uses the existing `art-show` preparation and presentation
+path. `read_art_show_effects` uses the approved request ID to show each
+display's preparation and presentation evidence. A skipped phase shows its owner refusal.
+If the evidence is unavailable, the phase reports that separately.
+
+For light shows, `create_light_show_draft` uses a Nanoleaf starter timeline.
+`edit_light_show_cue` applies edits against the current draft revision.
+`preview_light_show_draft` shows cue timing, colors and intensity.
+`save_light_show` uses a separate approval to write a version to the existing
+Nanoleaf catalog. Each immutable version can confirm its save by request
+identity after a lost reply. If the save expires without a matching version,
+the owner can make a new approval against the catalog's current revision.
+`read_light_shows` pages through drafts, saved versions and lighting sessions.
+Supply an exact ID for its records, or leave it empty to list a category.
+`control_music_lighting_control` approves playback of one exact saved version
+on an eligible light. Stop, pause, resume and seek bind the active generation.
+Drafting, editing, previewing and saving send no lighting command.
 
 ### Conversation history contract
 

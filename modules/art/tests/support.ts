@@ -49,6 +49,7 @@ export async function hosted(t: TestContext, options: HostOptions = {}) {
   const value = {
     dir, clock, bus, operator, spans,
     get host(): ModuleHarness {return host;},
+    get upload() {return module.manifest.upload;},
     get state(): ArtState21 {return state ?? assert.fail('no art state yet');},
     outcomes,
     owner: (data: object, requestId: string) => operator.request('bunny.cmd.art-request.art', {type: 'org.bunny.art.request.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-request/2.0', data}, {requestId, timeoutMs: 2000}),

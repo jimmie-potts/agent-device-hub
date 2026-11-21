@@ -82,7 +82,7 @@ A result SHALL be one artwork with one composition per target, whose immutable i
 - **THEN** the target is refused before any call
 
 ### Requirement: Display art is a reduced provider GIF with a free fallback
-The module SHALL request one eight-frame GIF per display from OpenAI's GIF output on the generation endpoint. It SHALL decode the result under bounded limits, check its size, frame count and timing inside Pixoo's observed envelope, reduce each frame with Lanczos to 64×64 or 64×32, and rebuild one GIF with at most 32 colors. A wrong or undecodable GIF SHALL still count as spent. It, a preview-access refusal or another definite failure SHALL fall back to free local motion with no further call. A moderation refusal SHALL stand, and an unknown outcome SHALL stay uncertain. The browser composition SHALL be its own still.
+For a device display job, the module SHALL request one eight-frame GIF per display from OpenAI's GIF output on the generation endpoint. It SHALL decode the result under bounded limits, check its size, frame count and timing inside Pixoo's observed envelope, reduce each frame with Lanczos to 64×64 or 64×32, and rebuild one GIF with at most 32 colors. A wrong or undecodable GIF SHALL still count as spent. It, a preview-access refusal or another definite failure SHALL fall back to free local motion with no further call. A moderation refusal SHALL stand, and an unknown outcome SHALL stay uncertain. The browser composition SHALL be its own still.
 
 #### Scenario: A GIF passes
 - **WHEN** the returned GIF has the requested size and frame count and timing inside the envelope
@@ -119,7 +119,7 @@ Prompts SHALL hold only the owner's typed text, imagination, time, season and we
 The module SHALL prune only unsaved, unreferenced art past a configured recent limit, keep favorites until they are deleted, and store explicit feedback only. Deletion SHALL remove art from selection at once and its bytes when nothing can still refer to them, and SHALL report retained copies.
 
 #### Scenario: Recent art passes the limit
-- **WHEN** art beyond the limit is neither a favorite nor referenced by a staged copy
+- **WHEN** art beyond the limit is neither a favorite nor referenced by a staged copy or Conversation job
 - **THEN** it is pruned, while favorites and referenced art stay
 
 #### Scenario: Art a device holds is deleted
@@ -317,3 +317,31 @@ The gallery SHALL offer Show now for the selected artwork and on each saved artw
 #### Scenario: Older art can be shown
 - **WHEN** a later gallery page shows a retained artwork that is not in the current art record
 - **THEN** its Show now control is enabled and sends one `art-show` command for that artwork, as for recent art
+
+### Requirement: Temporary local Tidbyt GIFs
+
+Art SHALL accept a bounded owner-selected 64×32 animated GIF through the authenticated module upload API and forward its exact bytes to the configured art-capable Tidbyt for staging. Successful staging SHALL require the writer's confirmation. Only an explicit Show now request for the confirmed, unexpired reference and the same target MAY start a 30-second Tidbyt moment. The ordinary moment controls, release and outcome semantics SHALL apply.
+
+#### Scenario: Compare two local animations
+
+- **WHEN** the owner uploads two different valid animations and later shows each temporary reference in sequence
+- **THEN** the uploads produce zero display pushes, provider calls and gallery entries, and each show uses its exact animation for a 30-second moment.
+
+#### Scenario: Refused or interrupted work
+
+- **WHEN** input is oversized or invalid, or staging has expired, failed or has an uncertain outcome
+- **THEN** the system refuses playback of that reference and never automatically resends a command.
+
+#### Scenario: Duplicate upload or show
+
+- **WHEN** an accepted request is submitted again
+- **THEN** its recorded identity prevents a second effect and changed content under the same request identity conflicts.
+
+### Requirement: Conversation artwork is retained without staging
+
+Art SHALL use its existing still or bounded GIF processor for an approved `art-request/2.1`. This request SHALL produce no stage, ambient change or display operation. GIF failure SHALL keep the actual outcome rather than substituting local display motion. Art SHALL preserve Conversation artwork past the ordinary recent limit, unless the owner explicitly deletes the artwork. Its authenticated `conversation.<requestId>` content SHALL return the job's pending or final outcome, or its exact saved artwork and rendition if available.
+
+#### Scenario: A retained GIF is read after restart
+
+- **WHEN** a Conversation GIF completes and Art restarts or passes the recent limit
+- **THEN** the job resolves to the same saved rendition and no generation or device command is sent again

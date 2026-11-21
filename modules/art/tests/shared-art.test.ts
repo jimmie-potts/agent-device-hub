@@ -3,13 +3,14 @@ import {test} from 'node:test';
 import {errorBody, type ErrorDetail} from '@jimmie-potts/event-contracts/v2';
 import type {ArtComposition} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {ArtDispatchSeam, ArtStageRequest, StageResult} from '../src/seams.js';
-import {distinctDrawing, fakeImages} from './fixtures.js';
+import {distinctDrawing, fakeImages, gifBytes} from './fixtures.js';
 import {gate, hosted, until, type Hosted} from './support.js';
 
 function dispatch() {
   const stages: ArtStageRequest[] = [];
   let report: (requestId: string, result: StageResult, error?: ErrorDetail) => void = () => {};
   const seam: ArtDispatchSeam = {
+    tidbytTarget: () => 'shelf',
     stage: request => {stages.push(request); return Promise.resolve({status: 'accepted'});},
     ambient: () => assert.fail('preparation and browser selection have no display effect'),
     watch: callback => {report = callback; return Promise.resolve([]);},
@@ -317,4 +318,47 @@ void test('terminal preparation retention is bounded while its receipt still pre
   await art.restart();
   assert.equal((await automatic(art, data, 'oldest')).status, 'accepted');
   assert.equal(transport.stages.length, 3);
+});
+
+void test('local GIF upload waits for the configured writer and exposes only a confirmed temporary copy for Show now', async t => {
+  const transport = dispatch();
+  const art = await hosted(t, {dispatch: transport.seam});
+  const upload = art.upload;
+  assert.ok(upload, 'Art declares its authenticated binary upload');
+  const bytes = gifBytes(64, 32), requestId = 'temporary-campfire';
+  const input = {target: 'art', requestId, name: 'comparison.gif', bytes, signal: new AbortController().signal};
+  for (const invalid of [{...input, target: 'other'}, {...input, bytes: Buffer.from('bad')}, {...input, bytes: gifBytes(64, 64)}, {...input, bytes: Buffer.alloc(160 * 1024 + 1)}]) {
+    assert.ok('error' in await upload.stage(invalid));
+  }
+  const prepared = await upload.stage(input);
+  assert.ok(!('error' in prepared));
+  assert.equal(transport.stages.length, 0);
+  const send = (data: object) => art.operator.request('bunny.cmd.art-upload-stage.art', {
+    type: 'org.bunny.art-upload.stage.requested', subject: 'art', dataschema: 'https://bunny.invalid/events/art-upload-stage/2.0', data,
+  }, {requestId, timeoutMs: 2000});
+  assert.equal((await send(prepared.data)).status, 'accepted');
+  await prepared.finish({status: 'accepted', requestId});
+  assert.equal((await send(prepared.data)).status, 'accepted', 'duplicate admission carries no new effect');
+  assert.equal((await send({sha256: 'e'.repeat(64)})).status, 'rejected', 'the request is bound to its input');
+  const stage = transport.stages[0] ?? assert.fail('writer received the stage');
+  assert.equal(stage.expectedTargetId, 'shelf');
+  assert.deepEqual(Buffer.from(stage.bytes), bytes);
+  assert.deepEqual([stage.frames, stage.durationMs], [8, 1600]);
+  const reference = {action: 'prepare', artworkId: stage.requestId, compositionId: stage.compositionId, target: 'shelf'};
+  assert.equal((await automatic(art, reference, 'premature')).status, 'rejected');
+  transport.report(stage.requestId, 'succeeded');
+  await until(() => art.db().prepare("SELECT status FROM art_stages WHERE request_id=?").get(stage.requestId)?.status === 'succeeded');
+  assert.equal((await automatic(art, reference, 'ready')).status, 'accepted');
+  assert.equal((await automatic(art, {...reference, target: 'other'}, 'wrong-device')).status, 'rejected');
+  assert.deepEqual(art.state.candidates, []);
+  assert.deepEqual(art.state.artworks, []);
+  assert.equal(transport.stages.length, 1);
+  transport.report(stage.requestId, 'conflict');
+  await until(() => art.db().prepare("SELECT status FROM art_stages WHERE request_id=?").get(stage.requestId)?.status === 'uncertain');
+  assert.equal((await automatic(art, reference, 'conflicted')).status, 'rejected');
+  await art.restart();
+  assert.equal((await automatic(art, reference, 'after-restart')).status, 'rejected');
+  assert.equal(transport.stages.length, 1, 'restart never retransmits');
+  art.clock.value += stage.lifetimeMs;
+  assert.equal((await automatic(art, reference, 'lapsed')).status, 'rejected');
 });

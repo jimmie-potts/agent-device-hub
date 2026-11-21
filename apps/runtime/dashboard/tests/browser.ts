@@ -37,12 +37,13 @@ try {
   await feed(page, 'connected');
   await page.getByRole('heading', {name: 'Home', exact: true}).waitFor();
   await page.locator('.empty', {hasText: 'No sessions observed'}).waitFor();
-  assert.deepEqual(await page.locator('.home-layout-grid [data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['hub-mode', 'sessions', 'inbox']);
+  assert.deepEqual(await page.locator('.home-layout-grid [data-widget]').evaluateAll(all => all.map(widget => widget.getAttribute('data-widget'))), ['sessions', 'inbox']);
   // On the unit grid (#1672) the built-in layout shows each core card in its Standard shape; home-shapes.browser.ts
-  // checks the tiling. At 1440 px the Wide Inbox packs into the row below Hub mode.
+  // checks the tiling. The Hub mode is the hero above the grid (#1930), not a card.
   assert.deepEqual(await page.locator('.home-layout-grid > [data-home-card]').evaluateAll(nodes => nodes.map(node => `${(node as HTMLElement).dataset.homeCard ?? ''}=${(node as HTMLElement).dataset.homeShape ?? ''}`)),
-    ['hub-mode=wide', 'sessions=large-square', 'inbox=wide'], 'the three core cards show their Standard shapes on the desktop grid');
-  assert.equal(await page.locator('[data-widget=hub-mode] button').count(), 3, 'the mode panel offers Work, Free and Quiet without applying on load');
+    ['sessions=large-square', 'inbox=wide'], 'the core cards show their Standard shapes on the desktop grid');
+  assert.equal(await page.locator('.home-layout-grid [data-hub-mode]').count(), 0, 'the Hub mode is not a card');
+  assert.equal(await page.locator('[data-hub-mode] [role=group] button').count(), 3, 'the hero offers Work, Free and Quiet without applying on load');
   assert.equal(await page.locator('[data-widget=attention]').count(), 0);
   checks.push('Home composes reusable agent cards without a duplicate attention panel');
 

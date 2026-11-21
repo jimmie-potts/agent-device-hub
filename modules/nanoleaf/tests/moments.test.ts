@@ -63,11 +63,19 @@ for(const choice of ['none','scene','configuration','mode','work-configuration']
 test('bounded moment restores a named Free base and restart does not replay it',async context=>{
   const world=await ModuleWorld.open(context);await world.start();
   await world.until(()=>world.device_()?.availability==='available',10000,'available');
-  let command=deviceCommand('device-mode-set',{requestId:'free',mode:'free'});
+  const command=deviceCommand('device-mode-set',{requestId:'free',mode:'free'});
   await world.request(command.key,command.draft);await world.advance(2000);
   const before=world.writes().length;
-  command=moment(world,'one');
-  const reply=await world.request(command.key,command.draft);
+  const current = world.device_(); assert.ok(current);
+  const guarded = (id: string, configurationRevision: number) => {
+    const {key, draft} = moment(world, id);
+    return world.request(key, {...draft, dataschema: 'https://bunny.invalid/events/moment-play/2.3',
+      data: {...draft.data, expectedConfigurationRevision: configurationRevision, expectedGeneration: current.generation}});
+  };
+  const stale = await guarded('stale', current.configurationRevision + 1);
+  assert.equal(stale.status === 'rejected' && stale.error.error.code, 'revision-conflict');
+  assert.equal(world.writes().length, before);
+  const reply=await guarded('one', current.configurationRevision);
   assert.equal(reply.status,'accepted');
   await world.until(()=>world.outcomes('one').length===1,15000,'moment completion');
   assert.equal(world.outcomes('one')[0]?.data.result,'succeeded');

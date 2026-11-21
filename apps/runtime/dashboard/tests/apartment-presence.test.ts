@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {known, unknown, type PresenceObservation} from '@jimmie-potts/presence-pro/contracts';
-import {apartmentPresence} from '../src/apartment-presence.ts';
+import {apartmentPresence,combinedApartmentPoint} from '../src/apartment-presence.ts';
 import type {RuntimeCopy} from '../src/runtime-feeds.ts';
 import {furnishedFixture} from './apartment-fixture.ts';
 
@@ -70,4 +70,51 @@ void test('point geometry is presentation only; boundaries, outside points and m
   assert.equal(missing.rooms.get('studio')?.value,'unknown');
   assert.equal(missing.points.length,0,'an unlisted source mapping is not silently repaired by geometry');
   assert.equal(project([a]).rooms.get('reading')?.contributors.length,0);
+});
+
+function positioned(record:PresenceObservation,x:number,z=2):PresenceObservation {
+  return {...record,targets:record.targets.map(target=>({...target,apartmentMeters:known({x,z})}))};
+}
+
+void test('compatible reports produce one midpoint and expiry leaves both source points intact',()=>{
+  const a=positioned(presenceRecord(),3.5);
+  const b=presenceRecord('presence-b');
+  const view=project([a,b]);
+  const combined=combinedApartmentPoint(model,view,1800);
+  assert.ok(combined);
+  assert.deepEqual(combined.position,[3.75,.04,2]);
+  assert.equal(combined.roomId,'studio');
+  assert.equal(combined.expiresAtMs,3800);
+  assert.equal(combinedApartmentPoint(model,view,3800),undefined);
+  assert.ok(combinedApartmentPoint(model,project([a,{...b,held:{...b.held,value:unknown()}}]),1800));
+  assert.equal(view.points.length,2);
+  assert.equal(view.rooms.get('studio')?.value,'occupied');
+});
+
+void test('distance, room, stale or held evidence and multiple candidates prevent a combined dot',()=>{
+  const a=positioned(presenceRecord(),3.5);
+  const b=presenceRecord('presence-b');
+  const target=b.targets[0];assert.ok(target);
+  const incompatible:PresenceObservation[]=[
+    positioned(b,2.7),
+    {...b,held:{...b.held,value:known(true)}},
+    {...b,connection:'disconnected',targets:[]},
+    {...b,targets:[target,{...target,slot:2}]},
+    {...b,targets:[{...target,rawMm:{...target.rawMm,xReceivedAtMs:known(20)}}]},
+    {...b,targets:[{...target,rawMm:{...target.rawMm,yReceivedAtMs:known(2000)}}]},
+    {...b,targets:[{...target,rawMm:{...target.rawMm,yReceivedAtMs:unknown()}}]},
+  ];
+  for(const replacement of incompatible)assert.equal(combinedApartmentPoint(model,project([a,replacement]),1800),undefined);
+  assert.equal(combinedApartmentPoint(model,project([a,b],false),1800),undefined);
+  assert.equal(combinedApartmentPoint(model,project([a]),1800),undefined);
+  assert.equal(combinedApartmentPoint(model,project([positioned(a,4.4),positioned(b,4.6)]),1800),undefined);
+});
+
+void test('the midpoint cannot map through a notch in the same room',()=>{
+  const studio=model.rooms.find(room=>room.id==='studio');assert.ok(studio);
+  const concave:typeof model={...model,rooms:[{...studio,footprint:[[0,0],[3,0],[3,3],[1.5,3],[1.5,1],[1.25,1],[1.25,3],[0,3]]}]};
+  const points=[positioned(presenceRecord(),1.2),positioned(presenceRecord('presence-b'),1.55)];
+  const view=apartmentPresence(concave,[copy(points)],true);
+  assert.equal(view.points.length,2);
+  assert.equal(combinedApartmentPoint(concave,view,1800),undefined);
 });

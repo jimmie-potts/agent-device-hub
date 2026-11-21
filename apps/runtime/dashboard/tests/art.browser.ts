@@ -2,23 +2,24 @@
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {chromium, expect, type Page} from 'playwright/test';
+import type {HomeArrangements} from '@jimmie-potts/event-contracts/v2/families';
 import {browserArtifactDirectory} from './browser-artifacts.ts';
 import {changes, feed, startWorld} from './harness.ts';
-import {cardOptions} from './home-editor.ts';
 import {artSelectionJourney} from './art-selection-journey.ts';
 import {artScheduleJourney} from './art-schedule-journey.ts';
 import {artNoticeJourney} from './art-notice-journey.ts';
 import {artShowJourney} from './art-show-journey.ts';
+import {artBackdropJourney} from './art-backdrop-journey.ts';
 import {destinationLink} from './navigation-helpers.ts';
 
 await artScheduleJourney();
 await artNoticeJourney();
 await artSelectionJourney();
 await artShowJourney();
+await artBackdropJourney();
 
 const world = await startWorld({art: true}), browser = await chromium.launch({headless: true});
 const artifacts = await browserArtifactDirectory();
-const settle = (page: Page): Promise<void> => page.evaluate(() => new Promise<void>(resolve => {requestAnimationFrame(() => {requestAnimationFrame(() => {resolve();});});}));
 const noOverflow = async (page: Page): Promise<void> => {assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'art must not create horizontal scrolling');};
 try {
   const context = await browser.newContext({viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce'}), page = await context.newPage();
@@ -102,78 +103,46 @@ try {
   const uncertainCalls = world.art.state().imageCalls;
   await page.reload();await feed(page, 'connected');await expect(create).toBeEnabled();assert.equal(world.art.state().imageCalls, uncertainCalls);
   await expect(page.getByRole('region', {name: 'Art allowance'})).toContainText('Uncertain');
-  // Reserve a Home row through the existing layout owner; image changes never change its order.
+  // Home shows the presented art as its backdrop and the Art card's controls as hero chips (#1930); there is no Art card.
   await page.setViewportSize({width: 1440, height: 1100});await (await destinationLink(page, /^Home/)).click();
   const edit = page.getByRole('button', {name: 'Edit Home', exact: true});await expect(edit).toBeEnabled();
-  await edit.click();await page.getByRole('button', {name: 'Add card', exact: true}).click();
-  await page.getByRole('button', {name: 'Add Art', exact: true}).click();await page.getByRole('button', {name: 'Close', exact: true}).click();
-  await page.getByRole('button', {name: 'Done', exact: true}).click();await expect(edit).toBeEnabled();
-  const art = page.locator('[data-home-card="art"]:not([data-art-placement=automatic])'), controls = art.getByRole('group', {name: 'Art placement'});
-  await expect(art.locator('.art-image')).toHaveAttribute('data-art-image-state', 'ready');
-  const order = await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-home-card')));
-  const savedGeometry = () => page.locator('[data-home-card]:not([data-home-card="art"])').evaluateAll(nodes => nodes.map(node => {const r = node.getBoundingClientRect();return [node.getAttribute('data-home-card'), r.x, r.y, r.width, r.height];}));
-  await edit.focus();const beforeArrival = await savedGeometry();
+  const hero = page.locator('[data-hub-mode]'), chip = (name: string) => hero.getByRole('button', {name, exact: true});
+  await expect(page.locator('[data-art-backdrop]')).toHaveAttribute('data-art-backdrop', 'ready');
+  await expect(page.locator('[data-home-card="art"]')).toHaveCount(0);
+  await expect(hero.getByRole('link', {name: 'Open Gallery', exact: true})).toHaveAttribute('href', '#/module/art/gallery');
+  const geometry = () => page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => {const r = node.getBoundingClientRect();return [node.getAttribute('data-home-card'), r.x, r.y, r.width, r.height];}));
+  await edit.focus();const beforeArrival = await geometry();
   const creator = await context.newPage();await creator.goto(`${world.url}/#/module/art/gallery`);await feed(creator, 'connected');
   await creator.getByRole('checkbox', {name: 'Tidbyt', exact: true}).uncheck();await creator.getByRole('checkbox', {name: 'Pixoo', exact: true}).uncheck();
   await creator.getByLabel('What would you like to see?', {exact: true}).fill('Synthetic focus preservation');
   await creator.getByRole('button', {name: 'Create art', exact: true}).click();await expect(creator.locator('[data-art-job]').first()).toContainText('succeeded');
   await expect.poll(() => world.art.state().imageCalls).toBe(uncertainCalls + 1);
-  await expect(edit).toBeFocused();assert.deepEqual(await savedGeometry(), beforeArrival, 'image arrival preserves functional geometry and focused control');
+  await expect(edit).toBeFocused();assert.deepEqual(await geometry(), beforeArrival, 'image arrival preserves card geometry and the focused control');
   await creator.close();
-  const afterArrivalCalls = world.art.state().imageCalls;
-  const layoutStart = sent.length;
-  // On the wide Home grid (#1672) the art card's shape is chosen in Edit Home and the image is cropped to it.
-  for (const [shape, label] of [['wide', 'Wide'], ['square', 'Small square'], ['tall', 'Tall'], ['large-square', 'Large square']] as const) {
-    await edit.click();await cardOptions(page, 'Art');await page.getByRole('group', {name: 'Shape of Art', exact: true}).getByRole('button', {name: label, exact: true}).click();
-    await page.getByRole('button', {name: 'Done', exact: true}).click();await expect(edit).toBeEnabled();
-    await expect(art).toHaveAttribute('data-home-shape', shape);await noOverflow(page);
-    const frame = await art.locator('.art-image-frame').boundingBox(), card = await art.boundingBox();
-    assert.ok(frame !== null && card !== null && frame.height >= 75 && frame.y + frame.height <= card.y + card.height + 1, `${shape} leaves a usable art image inside the card: ${JSON.stringify({frame, card})}`);
-    await art.screenshot({path: join(artifacts, `art-shape-1440-${shape}.png`)});
+  const afterArrivalCalls = world.art.state().imageCalls, layoutStart = sent.length;
+  // Pin and Unpin, Dismiss and Restore change only the saved art placement of this arrangement, as the Art card's did.
+  const stored = async (): Promise<HomeArrangements> => page.evaluate(async () => {
+    const data = await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': {layouts: HomeArrangements}[]}};
+    const record = data.records['home-layout'][0];if (record === undefined) throw new Error('home-record');return record.layouts;
+  });
+  const artOf = async (key: keyof HomeArrangements) => (await stored())[key].find(entry => entry.widget === 'art');
+  await chip('Pin art').click();await expect(chip('Unpin art')).toBeEnabled();
+  assert.deepEqual((await artOf('desktop'))?.art, {format: 'auto', pinned: true});assert.equal(await artOf('phone'), undefined, 'the phone arrangement is independent');
+  await chip('Unpin art').click();await expect(chip('Pin art')).toBeEnabled();assert.deepEqual((await artOf('desktop'))?.art, {format: 'auto', pinned: false});
+  await chip('Dismiss art').click();await expect(chip('Restore art')).toBeEnabled();
+  assert.equal((await artOf('desktop'))?.hidden, true);
+  await expect(hero.getByRole('link', {name: 'Open Gallery', exact: true})).toHaveCount(0);await expect(chip('Pin art')).toHaveCount(0);
+  await page.reload();await feed(page, 'connected');await expect(chip('Restore art')).toBeEnabled();
+  await page.screenshot({path: join(artifacts, 'art-home-dismissed-1440.png'), fullPage: true});
+  await chip('Restore art').click();await expect(chip('Dismiss art')).toBeEnabled();assert.equal((await artOf('desktop'))?.hidden, false);
+  await world.restart();await page.reload();await feed(page, 'connected');
+  await expect(hero.getByRole('link', {name: 'Open Gallery', exact: true})).toBeVisible();await expect(chip('Pin art')).toBeEnabled();
+  assert.deepEqual(sent.slice(layoutStart), Array.from({length: 4}, () => '/api/v2/commands/home-layout-set'), 'the art chips send only layout commands, one each');
+  assert.equal(world.art.state().imageCalls, afterArrivalCalls, 'layout choices and restart never generate or replay art');
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({width, height: 1100});await noOverflow(page);
+    await page.screenshot({path: join(artifacts, `art-home-${String(width)}.png`), fullPage: true});
   }
-  await page.screenshot({path: join(artifacts, 'art-home-1440.png'), fullPage: true});
-  for (const width of [390, 320]) {
-    await page.setViewportSize({width, height: 1100});
-    await expect(page.locator('.home-layout')).toHaveClass(/home-phone/);
-    await expect(art).toBeVisible();
-    for (const shape of ['banner', 'square', 'tall']) {
-      await controls.getByRole('combobox', {name: 'Art shape'}).selectOption(shape);
-      await expect(controls.getByRole('combobox', {name: 'Art shape'})).toBeEnabled();
-      await expect(art.locator('[data-art-format]')).toHaveAttribute('data-art-format', shape);await noOverflow(page);
-      const frame = await art.locator('.art-image-frame').boundingBox();assert.ok(frame !== null && frame.height >= 75, 'wrapped mobile controls leave a usable art image');
-      await art.screenshot({path: join(artifacts, `art-shape-${width}-${shape}.png`)});
-    }
-    await page.screenshot({path: join(artifacts, `art-home-${width}.png`), fullPage: true});
-  }
-  assert.ok(sent.slice(layoutStart).every(path => path.endsWith('/home-layout-set')), 'shape changes send only layout commands');
-  assert.equal(world.art.state().imageCalls, afterArrivalCalls, 'layout does not generate');
-  await page.setViewportSize({width: 1440, height: 1100});assert.deepEqual(await page.locator('[data-home-card]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-home-card'))), order);
-  await controls.getByRole('button', {name: 'Dismiss', exact: true}).click();await expect(art).toHaveCount(0);
-  await page.reload();await feed(page, 'connected');await expect(art).toHaveCount(0);
-  await page.getByRole('button', {name: 'Restore art widget'}).click();await expect(art).toBeVisible();
-  await world.restart();await page.reload();await feed(page, 'connected');await expect(art).toBeVisible();assert.equal(world.art.state().imageCalls, afterArrivalCalls, 'restart does not replay art');
-  // Automatic placement uses only a free trailing rectangle and freezes during interaction.
-  await edit.click();
-  // Each card's Hide is in its options on the grid (#1672). Keep Hub mode so the grid has trailing empty cells for automatic art.
-  const cardNames = await page.getByRole('button', {name: /^Options for /}).evaluateAll(nodes => nodes.map(node => (node.getAttribute('aria-label') ?? '').slice('Options for '.length)));
-  for (const name of cardNames) {
-    if (name === 'Art' || name === 'Hub mode') continue;
-    await cardOptions(page, name);
-    const button = page.getByRole('button', {name: `Hide ${name}`, exact: true});if (await button.isEnabled()) await button.click();
-  }
-  await page.getByRole('button', {name: 'Done', exact: true}).click();await expect(edit).toBeEnabled();
-  await controls.getByRole('button', {name: 'Unpin art', exact: true}).click();await expect(art).toHaveCount(0);
-  await page.getByRole('heading', {name: 'Home', exact: true}).click();
-  // On the grid, automatic art takes the largest shape in the empty cells after the last card (#1672).
-  const automatic = page.locator('.home-layout-grid > [data-art-placement="automatic"]');await expect(automatic).toBeVisible();
-  const automaticCommands = sent.length, cells = (): Promise<string | null> => automatic.evaluate(node => `${(node as HTMLElement).style.gridColumn} ${(node as HTMLElement).style.gridRow}`);
-  await expect(automatic).toHaveAttribute('data-home-shape', 'wide');const before = await cells();
-  // The viewport's height never moves it; a narrower grid gives it the square left after Hub mode, with no command.
-  await page.setViewportSize({width: 1440, height: 300});await settle(page);assert.equal(await cells(), before, 'viewport height keeps automatic art in place');
-  // 980px with the icon rail (Hub #1887) gives the same main column that 1100px gave with the full rail.
-  await page.setViewportSize({width: 980, height: 1100});await expect(automatic).toHaveAttribute('data-home-shape', 'square');
-  assert.equal(sent.length, automaticCommands, 'free-space fitting sends no commands');
-  await page.setViewportSize({width: 1440, height: 1100});await expect(automatic).toBeVisible();
   assert.deepEqual(errors, [], 'no browser errors');
   console.log(`Art browser passed; synthetic screenshots: ${artifacts}`);
 } finally {world.art.act('release');await browser.close();await world.close();}

@@ -3,6 +3,7 @@ import {test} from 'node:test';
 import {Projection} from '../src/projection.js';
 import {SYNTHETIC_SENSOR, reports} from '../src/simulated.js';
 import {known} from '../src/contracts.js';
+import {channels, configurePresence} from '../src/configuration.js';
 
 const ready = (): Projection => { const projection = new Projection(SYNTHETIC_SENSOR); projection.connected(); for (const report of reports()) projection.report(report, 1000); return projection; };
 const point = (projection: Projection) => structuredClone(projection.current).targets[0]?.apartmentMeters;
@@ -69,6 +70,48 @@ void test('exclusion polygons omit points even with Active=true, and assumed pre
   assert.equal(point(projection)?.status, 'unknown'); assert.equal(projection.current.targets[0]?.rawMm.x.status, 'unknown');
   assert.deepEqual(projection.current.targets[0]?.active.value, known(true));
   projection.report({key: 5, value: false, missing: true}, 1005); assert.equal(projection.current.held.value.status, 'unknown');
+});
+
+void test('stock rectangular exclusions require both masks and clear inclusive edges without changing occupancy', () => {
+  const first = {xStart: {key: 13}, xEnd: {key: 14}, yStart: {key: 15}, yEnd: {key: 16}};
+  const second = {xStart: {key: 17}, xEnd: {key: 18}, yStart: {key: 19}, yEnd: {key: 20}};
+  const configure = (exclusions: unknown[]) => configurePresence({sensors: [{
+    ...SYNTHETIC_SENSOR, settings: {...SYNTHETIC_SENSOR.settings, exclusions},
+  }]});
+  assert.ok('error' in configure([first, {key: 21}]), 'mixed mask formats are refused');
+  assert.ok('error' in configure([first, {...second, yEnd: undefined}]), 'partial rectangular bindings are refused');
+  assert.ok('error' in configure([first, {...second, yEnd: first.xStart}]), 'duplicate keys are refused');
+  const configured = configure([first, second]);
+  assert.ok('config' in configured, 'accepts stock rectangular bindings');
+  const sensor = configured.config.sensors[0]; assert.ok(sensor);
+  assert.deepEqual(channels(sensor).filter(({binding}) => binding.key >= 13).map(({type}) => type), Array(8).fill('Number'));
+  const projection = new Projection(sensor); projection.connected();
+  const axes = (x: number, y: number): void => {
+    projection.report({key: 2, value: x}, 1000);
+    projection.report({key: 3, value: y}, 1000);
+  };
+  for (const report of reports().filter(({key}) => key !== 11 && key !== 12)) projection.report(report, 1000);
+  for (const [index, value] of [-6000, -6000, -1560, -1560, 3500, 1500, 2500].entries()) projection.report({key: index + 13, value}, 1000);
+  assert.equal(point(projection)?.status, 'unknown', 'one unread corner prevents projection');
+  projection.report({key: 20, value: 1500}, 1000);
+  assert.deepEqual(point(projection), known({x: 4, z: 2}));
+  axes(1500, 2000);
+  assert.equal(point(projection)?.status, 'unknown', 'edge of reversed rectangle is excluded');
+  assert.equal(projection.current.occupancy.value, 'occupied');
+  axes(1000, 2000);
+  projection.report({key: 15, value: 0, missing: true}, 1001);
+  assert.equal(point(projection)?.status, 'unknown');
+  assert.equal(projection.current.targets[0]?.rawMm.x.status, 'unknown');
+  projection.report({key: 15, value: -1560}, 1002);
+  assert.equal(point(projection)?.status, 'unknown', 'recovery needs fresh axes');
+  axes(1000, 2000);
+  assert.deepEqual(point(projection), known({x: 4, z: 2}));
+  axes(-6000, -1560);
+  assert.equal(point(projection)?.status, 'unknown', 'a collapsed mask excludes its exact point');
+  axes(1000, 2000);
+  projection.report({key: 13, value: -6001}, 1003);
+  axes(1000, 2000);
+  assert.equal(projection.current.targets[0]?.rawMm.x.status, 'unknown', 'invalid bounds suppress otherwise valid axes');
 });
 
 void test('missing calibration keeps only raw reports; changed placement recalculates with a new revision', () => {

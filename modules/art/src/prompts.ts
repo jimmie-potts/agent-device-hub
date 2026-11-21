@@ -61,7 +61,11 @@ export function variationIdea(source: string, text: string | null): string {
 }
 
 const COMPOSITION: Readonly<Record<ArtTarget, string>> = {
-  tidbyt: 'A bold subject on a plain ground, readable at a glance on a tiny wide panel. Few shapes and strong contrast.',
+  tidbyt: [
+    'Compose a close-up for a 64×32 LED panel. Show one subject doing one recognizable thing.',
+    'Fill two-thirds to three-quarters of the panel height with the subject. Make any object needed to read the action clear in silhouette.',
+    'Use large flat shapes, strong light-dark contrast and a quiet background. Keep the camera still and leave out fine textures and background activity.',
+  ].join(' '),
   pixoo: 'A square scene with a large central subject and few colors, readable on a tiny square panel.',
   ui: 'A rich, wide composition that still reads when cropped to a narrow card.',
 };

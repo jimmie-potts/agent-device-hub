@@ -5,7 +5,7 @@ import type {RuntimeData} from './runtime-feeds.ts';
 import {cardsFor, emptyLightingLayout, lightingDevices, selectionKey} from './lighting.ts';
 import {widgetCatalog, widgetDefinition, type WidgetSize} from './widgets.ts';
 import {moduleCard, moduleCardOwners} from './module-cards.ts';
-import {artFormatShapes, placementShape, shapeArtFormat, shapeStoredSize, type HomeShape} from './home-shapes.ts';
+import {placementShape, shapeStoredSize, type HomeShape} from './home-shapes.ts';
 
 type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; instance: string} | {kind: 'light'; selection: LightingSelection} | {kind: 'unavailable'};
 /**
@@ -16,18 +16,21 @@ type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; ins
 export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean; empty?: boolean; fallback?: boolean};
 
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
+/**
+ * The Hub mode and Art placements belong to Home's hero (#1930), which is fixed above the cards. A saved arrangement
+ * that lists them stays valid and keeps them, and the art placement still holds the art's pin and dismissal, but Home
+ * never draws them in its grid, offers them in its picker or reports them as unknown.
+ */
+export const heroPlacement = (widget: string): boolean => widget === 'hub-mode' || widget === 'art';
+/** Whether the art module serves its Gallery to a connected page, so Home offers its art chips. */
+export const artExposed = (runtime: RuntimeData, connected: boolean): boolean => connected
+  && runtime.modules?.some(module => module.name === 'art' && module.state === 'running' && module.pages.some(page => page.id === 'gallery')) === true;
 export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardDefinition[] {
   // Roborock and Volcano metadata describe each existing device placement, not a second default card.
-  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano').map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['art', 'wispr', 'duck-latest', 'reachy', 'timeline', 'music-visualizer'].includes(widget.id)}));
+  const result: HomeCardDefinition[] = widgetCatalog.filter(widget => widget.id !== 'roborock' && widget.id !== 'volcano' && !heroPlacement(widget.id)).map(widget => ({id: widget.id, name: widget.id === 'sessions' ? 'Agent status' : widget.name, category: 'Hub', sizes: widget.sizes, source: {kind: 'core'}, defaultSelected: !['wispr', 'duck-latest', 'reachy', 'timeline', 'music-visualizer'].includes(widget.id)}));
   // The visualizer stays addable while measurement is off; the placed card rests and says why.
   const visualizer = result.find(card => card.id === 'music-visualizer');
   if (visualizer !== undefined) visualizer.category = 'Audio';
-  const art = result.find(card => card.id === 'art');
-  if (art !== undefined) {
-    art.category = 'Art';
-    const exposed = runtime.modules?.some(module => module.name === 'art' && module.state === 'running' && module.pages.some(page => page.id === 'gallery')) === true;
-    if (!exposed || !connected) {art.source = {kind: 'unavailable'};art.reason = !exposed ? 'Art Gallery is unavailable.' : 'Art records are unavailable or stale.';}
-  }
   for (const id of ['duck-latest', 'reachy']) {
     const card = result.find(card => card.id === id);
     if (card === undefined) continue;
@@ -103,7 +106,7 @@ export function addHomeCard(layouts: HomeArrangements, breakpoint: keyof HomeArr
     const found = next[key].find(entry => entry.widget === card.id);
     if (found === undefined) {
       const shape = homeCardShapes(card).standard;
-      next[key].push({widget: card.id, size: shapeStoredSize[shape], hidden: false, shape, ...(card.id === 'art' ? {art: {format: shapeArtFormat[shape], pinned: true}} : {})});
+      next[key].push({widget: card.id, size: shapeStoredSize[shape], hidden: false, shape});
     }
     else if (key === breakpoint) found.hidden = false;
   }
@@ -161,15 +164,14 @@ function storedShapeOf(entry: HomePlacement, card: Pick<HomeCardDefinition, 'id'
 }
 /**
  * The layout an explicit save writes: every known placement in both arrangements carries the shape it shows and the
- * width that agrees with it, and art keeps a format an older dashboard understands. Loading never calls this.
+ * width that agrees with it. Placements this dashboard does not draw, such as the hero's, are kept as they are.
+ * Loading never calls this.
  */
 export function withShapes(layouts: HomeArrangements, catalog: readonly HomeCardDefinition[]): HomeArrangements {
   const next = structuredClone(layouts);
   for (const key of ['desktop', 'phone'] as const) for (const entry of next[key]) {
     const card = savedHomeCard(entry.widget, catalog);if (card === undefined) continue;
     const shape = storedShapeOf(entry, card);entry.shape = shape;entry.size = shapeStoredSize[shape];
-    // Art keeps its format while it agrees with the shape (auto stays auto), so a one-column format choice survives.
-    if (entry.art !== undefined && !artFormatShapes[entry.art.format].includes(shape)) entry.art = {...entry.art, format: shapeArtFormat[shape]};
   }
   return next;
 }

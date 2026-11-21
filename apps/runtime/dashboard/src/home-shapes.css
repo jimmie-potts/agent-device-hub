@@ -40,34 +40,6 @@
 .home-compact-state{margin:2px 0 0;color:var(--muted-dense);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .home-compact-open{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:var(--light-control-radius,12px);background:var(--inset);font-weight:500}
 
-/* Hub mode scales to its card (#1672): the current mode's artwork grows with the space and the three choices stretch to
-   fill theirs. One unit shows the choices as icons; Wide puts labelled choices beside the mode; Tall stacks them; Large
-   square sets them in one row of tall buttons. */
-.home-layout-card[data-home-shape] .widget>.hub-mode-card{flex:1 1 auto;min-height:0}
-.home-layout-card[data-home-shape] .hub-mode-card{display:flex;flex-direction:column;gap:var(--space-s)}
-.home-layout-card[data-home-shape] .hub-mode-card .hub-mode-hero{flex:1 1 0;min-height:44px;margin:0;gap:var(--space-m);align-items:center}
-.home-layout-card[data-home-shape] .hub-mode-card .hub-mode-art{flex:0 0 auto;height:100%;width:auto;aspect-ratio:1;max-width:60%;box-sizing:border-box;border-radius:22%;box-shadow:inset 0 0 0 4px var(--panel)}
-.home-layout-card[data-home-shape] .hub-mode-card .hub-mode-art svg{width:46%;height:46%}
-.home-layout-card[data-home-shape] .hub-mode-card .hub-mode-choice{font-size:clamp(1.2rem,2.4vw,2rem)}
-.home-layout-card[data-home-shape] .hub-mode-card .hub-mode-choices{flex:1 1 0;min-height:44px;grid-auto-rows:1fr}
-.home-layout-card[data-home-shape] .hub-mode-card .hub-mode-choices button{height:100%;min-height:44px;align-content:center;padding:var(--space-xs)}
-.home-layout-card[data-home-shape] .hub-mode-card .hub-mode-choices button svg{width:clamp(20px,30%,32px);height:auto}
-.home-layout-card.home-shape-square .hub-mode-card .hub-mode-choices button>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.home-layout-card.home-shape-square .hub-mode-card .hub-mode-choice{font-size:1.3rem}
-.home-layout-card.home-shape-tall .hub-mode-card .hub-mode-choices{grid-template-columns:minmax(0,1fr);flex-grow:1.6}
-.home-layout-card.home-shape-tall .hub-mode-card .hub-mode-art{max-width:50%}
-.home-layout-card[data-home-shape] .hub-mode-card .hub-mode-choice{white-space:nowrap;overflow-wrap:normal;min-width:0}
-.home-layout-card.home-shape-tall .hub-mode-card .hub-mode-choice{font-size:1.5rem}
-.home-layout-card.home-shape-tall .hub-mode-card .hub-mode-choices button{display:flex;align-items:center;justify-content:center;gap:var(--space-s)}
-.home-layout-card.home-shape-large-square .hub-mode-card .hub-mode-hero{flex-grow:1.2}
-.home-layout-card.home-shape-wide .hub-mode-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);grid-template-rows:auto minmax(0,1fr);gap:var(--space-s) var(--space-m)}
-.home-layout-card.home-shape-wide .hub-mode-card>header{grid-column:1/-1}
-.home-layout-card.home-shape-wide .hub-mode-card .hub-mode-hero{height:100%}
-.home-layout-card.home-shape-wide .hub-mode-card .hub-mode-choices{height:100%}
-.home-layout-card.home-shape-wide .hub-mode-card .hub-mode-choice{font-size:1.4rem}
-:is(.home-layout-card.home-shape-square,.home-layout-card.home-shape-wide) .hub-mode-card .hub-mode-exceptions{display:none}
-.home-hub-exceptions{font-size:var(--type-small)}
-
 /* Light, room and Nanoleaf cards fill their shape; the artwork takes the room the controls leave. */
 .home-layout-card[data-home-shape] .light-card{display:flex;flex-direction:column;padding:var(--space-m)}
 .home-layout-card[data-home-shape] .light-card .light-artwork{flex:1 1 auto;min-height:48px;height:auto;margin-block:var(--space-xs)}
@@ -190,18 +162,6 @@
 .home-layout-card[data-home-shape] .music-visualizer-card .music-note{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--type-small)}
 .home-layout-card[data-home-shape] .music-visualizer-card a{min-height:32px}
 
-/* Art fills its shape and is cropped to it; its placement controls stay in one row above it. */
-.home-art-shaped{position:relative;display:flex;flex-direction:column;height:100%;min-height:0}
-/* Over the image's top corner, below the card's heading, so they never cover the caption. */
-.home-art-shaped>.home-art-controls{position:absolute;right:var(--space-m);top:64px;z-index:1;flex-wrap:nowrap;gap:var(--space-xs)}
-.home-art-shaped>.home-art-controls button{min-height:36px;padding:4px 8px}
-.home-art-shaped .art-widget>header{margin-bottom:var(--space-xs)}
-.home-art-shaped>.home-art-content{flex:1 1 auto;min-height:0}
-.home-art-shaped .art-widget{height:100%;margin:0;padding:var(--space-s)}
-.home-art-shaped .art-image-frame{flex:1;min-height:0;aspect-ratio:auto}
-.home-art-shaped .art-image canvas,.home-art-shaped .art-image img{width:100%;height:100%;object-fit:cover}
-.home-art-shaped .art-image figcaption{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
 /* List cards calculate their rows (#1672): each size below is a constant in paging.ts listFit, the cards compute rows
    per page from it and the card's size on the grid, and tests/home-shapes.browser.ts checks each one against the
    rendered card. Rows keep their height and sit at the top; the pager sits at the card's bottom; a short or empty list
@@ -258,15 +218,13 @@
 .home-layout-card[data-home-shape] .paged-list[data-held=true]:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
 
 .light-empty{margin:0;padding:var(--space-m);text-align:center;color:var(--muted-dense);font-size:var(--type-small)}
-.home-art-slot-shaped{height:100%}
 /* In Edit Home the bar shows the card's name, so the card's own heading is hidden rather than cut in half: the header
    that opens the card's root element (directly, or inside its first wrapper or two), with its name, state line and
    badge. Headings inside the card and its rows stay, and so do the Timeline's period and refresh tools, which Tall
    shows below the bar. The generic face starts below the bar, so the bar never covers its icon. */
 .is-editing .home-layout-grid[data-packed=true] .home-card-content>*>header:first-child,
 .is-editing .home-layout-grid[data-packed=true] .home-card-content>*>:first-child>header:first-child,
-.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>:first-child>:first-child>header:first-child,
-.is-editing .home-layout-grid[data-packed=true] .home-art-shaped .art-widget>header{visibility:hidden}
+.is-editing .home-layout-grid[data-packed=true] .home-card-content>*>:first-child>:first-child>header:first-child{visibility:hidden}
 .is-editing .home-layout-grid[data-packed=true] .home-card-content header .timeline-tools{visibility:visible}
 .is-editing .home-layout-grid[data-packed=true] .home-compact-face{padding-top:56px}
 

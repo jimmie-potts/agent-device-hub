@@ -1,6 +1,6 @@
 import {artScheduleCopy} from './art-schedule-client.ts';
 import {HabitatPage} from './habitat.tsx';
-import {ArtPresentationProvider, ArtWidget, scheduledArtNotice} from '@jimmie-potts/art/frontend';
+import {ArtBackdropSource, ArtPresentationProvider, PresentedArtNotice, scheduledArtNotice} from '@jimmie-potts/art/frontend';
 import {ArtThemeProvider, ArtThemeSettings} from './art-theme.tsx';
 import {HomeLayout} from './home-layout.tsx';
 import type {HomeCardDefinition} from './home-catalog.ts';
@@ -27,6 +27,7 @@ import {createRoot} from 'react-dom/client';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {InboxItem, PowerLimitRecord, ModeState, OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {HubMode} from './hub-mode.tsx';
+import {HeroStatusChips} from './home-hero-chips.tsx';
 import {DeviceModesProvider} from './device-mode.tsx';
 import {DeviceCard} from './device-controls.tsx';
 import {WemoDeviceCard} from './wemo-device-card.tsx';
@@ -354,6 +355,9 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
             limit={{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}/>
           : <DeviceCard record={record} owner={copy.owner} live={state.feed === 'connected' && copy.synced && devices.filter(item => item.record.id === record.id).length === 1}
             control={runtime.control} operations={operations} operationsLive={operationsLive} refresh={connection.refreshDevices} now={now} {...(record.kind==='wemo'&&copy.owner==='bunny/modules/wemo'?{limit:{target:record.id,record:limits.find(value=>value.id===record.id),live:state.feed==='connected'&&limitsCopy?.synced===true&&copy.synced&&devices.filter(item=>item.record.id===record.id).length===1,control:runtime.control,operations,operationsLive,refresh:connection.refreshDevices}}:{})} compact={route.kind === 'home'}/>);
+  // The Home backdrop source follows the art module through the module frontend's scope condition.
+  const artRunning = runtime.modules?.some(module => module.name === 'art' && module.state === 'running') === true;
+  const artConnected = state.feed === 'connected' && !runtime.catalogFailed && artRunning;
   const place = (definition: HomeCardDefinition, placement: HomePlacement, selections: import('@jimmie-potts/event-contracts/v2/families').LightingSelection[]): React.ReactNode => {
     if (definition.source.kind === 'device') {
       const source = definition.source, device = devices.find(item => item.copy.owner === source.owner && item.record.id === source.instance);
@@ -364,9 +368,6 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     if (definition.source.kind === 'light') return <LightingWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSelection={definition.source.selection} homeSelections={selections}/>;
     if (definition.source.kind === 'music') return <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={{kind: 'home'}} homeSource={definition.source}/>;
 
-    if (placement.widget === 'art') return <ModuleFrontend module="art" connection={connection}
-      connected={state.feed === 'connected' && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'art' && module.state === 'running') === true}
-      control={runtime.control} operations={operations} operationsLive={operationsLive} Component={ArtWidget}/>;
     if (placement.widget === 'module:roborock') return <ModuleFrontend module="roborock" connection={connection}
       connected={state.feed === 'connected' && !runtime.catalogFailed}
       control={false} operations={[]} operationsLive={false} Component={RoborockWidget}/>;
@@ -379,9 +380,6 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     if (placement.widget === 'duck-latest' || placement.widget === 'reachy') return <ModuleFrontend key={placement.widget} module="companions" connection={connection}
       connected={state.feed === 'connected' && !runtime.catalogFailed && runtime.modules?.some(module => module.name === 'companions' && module.state === 'running') === true}
       control={runtime.control} operations={operations} operationsLive={operationsLive} Component={placement.widget === 'reachy' ? ReachyWidget : DuckWidget}/>;
-    if (placement.widget === 'hub-mode') return <Widget key="hub-mode" id="hub-mode" size={placement.size} showHeading={false}><HubMode record={mode} devices={modeDevices}
-      live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
-      items={inboxItems} inboxSynced={inboxLive} headingId="widget-hub-mode" onCheckInbox={id => {setInboxFocus(previous => ({id, serial: (previous?.serial ?? 0) + 1}));}}/></Widget>;
     if (placement.widget === 'music-visualizer') return <Widget key="music-visualizer" id="music-visualizer" size={placement.size}><MusicVisualizerCard connection={connection}
       connected={state.feed === 'connected'} coreLive={!runtime.catalogFailed && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true}/></Widget>;
     if (placement.widget === 'timeline') return <Widget key="timeline" id="timeline" size={placement.size} showHeading={false}><TimelinePanel headingId="widget-timeline" connected={state.feed === 'connected'}/></Widget>;
@@ -394,6 +392,14 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       synced={state.sessions.synced} live={live} control={state.runtime.control} now={now}/></Widget>;
     return null;
   };
+  // Home's hero (#1930): the Hub mode, then the light, plug and forecast chips and the art chips Home owns.
+  const hero = (artChips: React.ReactNode): React.ReactNode => <HubMode record={mode} devices={modeDevices}
+    live={state.feed === 'connected' && modeCopy?.synced === true} control={runtime.control} operations={operations} operationsSynced={operationsLive}
+    items={inboxItems} inboxSynced={inboxLive} onCheckInbox={id => {setInboxFocus(previous => ({id, serial: (previous?.serial ?? 0) + 1}));}}>
+    <HeroStatusChips runtime={runtime} connected={state.feed === 'connected'} now={now}/>
+    <PresentedArtNotice className="home-hero-chip" href="#/automation"/>
+    {artChips}
+  </HubMode>;
   const schedule = artScheduleCopy(runtime);
   const artNotice = scheduledArtNotice(schedule.record, state.feed === 'connected' && schedule.synced, operations, operationsLive, now);
   // An ended session expands the rail at every width, so "Sign in again" is never squeezed into the icon rail.
@@ -402,14 +408,14 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
     data-rail-wide={ended ? 'expanded' : railAttribute(rail.saved.wide)} data-rail-narrow={ended ? 'expanded' : railAttribute(rail.saved.narrow)}
     data-drawer={drawer ? 'open' : undefined} data-rail-short={railShort ? '' : undefined}>
     <a className="skip" href="#main" inert={drawer || jump} onClick={event => { event.preventDefault(); document.getElementById('main')?.focus(); }}>Skip to content</a>
-    <header className="phone-bar" inert={jump}>
+    <header className="phone-bar" inert={jump} data-glass-veil="edge">
       <button ref={menuButton} type="button" className="secondary rail-button" aria-label="Open navigation" aria-description={conversationWaiting ? 'A conversation needs your answer' : undefined}
         aria-expanded={drawer} aria-controls="rail" onClick={() => { setDrawer(open => !open); }}><RailIcon name="menu"/>{conversationWaiting && <span className="rail-attention"/>}</button>
       <span className="phone-brand">B.U.N.N.Y.</span>
       <button type="button" className="secondary rail-button phone-jump" aria-label="Jump to a page" aria-haspopup="dialog" onClick={openJump}><RailIcon name="search"/></button>
       {ended && <button type="button" className="phone-sign-in" inert={drawer} onClick={signInAgain}>Sign in again</button>}
     </header>
-    <aside id="rail" ref={railElement} inert={jump} onClick={event => {
+    <aside id="rail" ref={railElement} inert={jump} data-glass-veil="edge" onClick={event => {
       if (!drawer || !(event.target instanceof Element) || event.target.closest('a') === null) return;
       setDrawer(false);
       menuButton.current?.focus();
@@ -444,9 +450,11 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
       {!workspace && featureNavigation}
       {route.kind === 'connections' && <nav className="shell-breadcrumb" aria-label="Breadcrumb"><NavLink route={{kind: 'settings'}}>Back to Settings</NavLink></nav>}
       {route.kind === 'home' && <section aria-label="Home">
-        {notice !== undefined && <p role="alert" className="warning">{notice}</p>}
+        {/* Decodes the presented artwork for Home's backdrop while the art module runs; it draws nothing itself (#1928). */}
+        {artRunning && <ModuleFrontend module="art" connection={connection} connected={artConnected} control={false} operations={[]} operationsLive={false} Component={ArtBackdropSource}/>}
+        {notice !== undefined && <p role="alert" className="warning" data-glass-veil>{notice}</p>}
         <HomeLayout runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive}
-          attention={rows.some(row => row.attention.length > 0)} inbox={inboxItems.length > 0} renderCard={place}/>
+          attention={rows.some(row => row.attention.length > 0)} inbox={inboxItems.length > 0} renderCard={place} renderHero={hero}/>
       </section>}
       <DeviceDirectory runtime={runtime} connected={state.feed === 'connected'} active={route.kind === 'devices'}/>
       {route.kind === 'settings' && <section aria-label="Settings"><header className="page"><h1>Settings</h1></header>
@@ -483,7 +491,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         <h2>{route.kind === 'component' ? `No component named ${route.id}` : 'Nothing at this address'}</h2>
         <p>This address is not declared by the current runtime. <NavLink route={{kind: 'home'}}>Go to the home</NavLink>.</p>
       </div></section>}
-      {!workspace && <footer>B.U.N.N.Y. / Source observations and deliberate controls</footer>}
+      {!workspace && <footer data-glass-veil>B.U.N.N.Y. / Source observations and deliberate controls</footer>}
     </main>
   </div></PinTargetsProvider></DeviceModesProvider></ArtThemeProvider></ArtPresentationProvider>;
 }

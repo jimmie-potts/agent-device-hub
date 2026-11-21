@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/assistant-dispatch/2.2",
+  "description": "Forwards one approved Wemo power command bound to its owner and both device guards.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "family", "target", "owner", "data"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "family": {"const": "power-set"},
+    "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+    "owner": {"const": "bunny/modules/wemo"},
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["on", "expectedConfigurationRevision", "expectedGeneration"],
+      "properties": {
+        "on": {"type": "boolean"},
+        "expectedConfigurationRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+        "expectedGeneration": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ticket"}
+      }
+    }
+  }
+}

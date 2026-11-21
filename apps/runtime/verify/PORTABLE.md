@@ -64,13 +64,15 @@ validates only the fixed image build manifest from the owned created container.
 That readback is saved before startup. No native/image mismatch is ignored.
 
 The selected `mac-codex-local` capture invokes the real metadata-only hook against
-the synthetic core, observes Working and Finished in the browser, checks retained
+the synthetic core, observes Working, Waiting for approval, a subagent's own
+Working card and Finished in the browser, checks the approval's removal at its
+turn's Stop and the child's known parent, checks retained
 completion, content exclusion, source-bound ingest/read/control/admin refusals,
 Host/Origin admission, stalled/unavailable receivers and browser recovery. It
 uses no installed credential, Codex hook settings, history or personal store.
 It does not establish that an installed client emitted every supported hook.
 The recording labels its synthetic actions, scrolls the actual status badge
-into view and pauses on Working and Finished. Browser recovery uses visible
+into view and pauses on Working, Waiting for approval, the subagent and Finished. Browser recovery uses visible
 target/pointer/click cues that respect reduced motion. The final screenshot
 keeps the recorded viewport rather than resizing it; other capture steps retain
 their existing full-page default. After the restart, recovery must show the

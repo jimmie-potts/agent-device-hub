@@ -1,3 +1,8 @@
+import {createHash} from 'node:crypto';
+import sharp from 'sharp';
+import {artShowSurfaces, localGifReference} from '@jimmie-potts/event-contracts/v2/art-show';
+import {assistantInput, catalogFinished, catalogInput, enableAssistant} from './companions.js';
+import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {ArtJobSummary, ArtState, ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
@@ -5,7 +10,7 @@ import {TRONBYT_SIMULATED_SECTION, type TronbytState} from '@jimmie-potts/tidbyt
 import type {SharedArtFixture} from '../../fixtures/presentation.js';
 import {PIXOO_SECTION, pixooStatusBase} from './pixoo.js';
 import {PLAYBACK_SECTION} from './playback.js';
-import {StepFailure, act, answers, bodyOf, deviceState, expect, holds, recorded, refusedWith, running, type Harness, type Scenario} from '../framework.js';
+import {StepFailure, act, answers, bodyOf, deviceState, expect, holds, recorded, refusedWith, running, type Harness, type Step, type Scenario} from '../framework.js';
 
 const OWNER = 'bunny/modules/art';
 const state = (h: Harness): ArtState | undefined => h.reader.states<ArtState>('art', OWNER)[0]?.data;
@@ -30,7 +35,56 @@ const fixture = async (h: Harness): Promise<SharedArtFixture | undefined> => bod
 const sharedSyncs = new WeakMap<Harness, number>();
 const {nowPlaying: _unusedCard, ...sharedTidbyt} = TRONBYT_SIMULATED_SECTION;
 
+// The two fixtures have different frame counts so a leftover first animation cannot pass the second check.
+function localGifSteps(frames: number): Step[] {
+  const upload = `local-upload-${frames}`, show = `local-show-${frames}`;
+  const references = new WeakMap<Harness, string>();
+  return [
+    act(`upload the ${frames}-frame GIF`, async h => {
+      const size = 64 * 32 * 3;
+      const pixels = Buffer.concat(Array.from({length: frames}, (_, i) => Buffer.alloc(size, 50 + 70 * i)));
+      const bytes = await sharp(pixels, {raw: {width: 64, height: 32 * frames, pageHeight: 32, channels: 3}})
+        .gif({delay: Array<number>(frames).fill(200), keepDuplicateFrames: true}).toBuffer();
+      references.set(h, await localGifReference(upload, createHash('sha256').update(bytes).digest('hex')));
+      const url = '/api/v2/modules/art/upload?' + new URLSearchParams({family: 'art-upload-stage', target: 'art', requestId: upload, name: 'test.gif'}).toString();
+      const answer = await h.gateway({as: 'browser', method: 'POST', path: url, body: bytes});
+      if (answer.status !== 200) throw new StepFailure(`upload returned ${answer.status}: ${JSON.stringify(bodyOf(answer))}`);
+    }),
+    expect('the writer confirmed staging and has no moment installation', async h => {
+      if (deviceState<TronbytState>(h, 'tidbyt').installations.bunnymoment !== undefined) return 'staging interrupted rotation';
+      return recorded(h, upload, 'succeeded', 'observed');
+    }, 10_000),
+    act('show that temporary reference on the shelf display', async h => {
+      const answer = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/art-show',
+        body: {target: 'hub', requestId: show, data: {artworkId: references.get(h), targets: ['shelf-display']}}});
+      if (answer.status !== 200) throw new StepFailure(`show returned ${answer.status}`);
+    }),
+    expect(`the simulated display has the exact ${frames}-frame animation`, h => {
+      const animation = deviceState<TronbytState>(h, 'tidbyt').installations.bunnymoment?.animation;
+      return animation?.frames.length === frames && animation.delaysMs.every(delay => delay === 200) || 'animation not presented';
+    }, 30_000),
+    expect('the moment ends and releases the installation', async h => {
+      const [surface] = await artShowSurfaces(show, ['shelf-display']);
+      if (surface?.kind !== 'display') return 'display operation missing';
+      const server = deviceState<TronbytState>(h, 'tidbyt');
+      if (server.installations.bunnymoment !== undefined || server.pinnedApp !== null) return 'moment still held';
+      return recorded(h, surface.momentRequestId, 'succeeded', 'transmitted');
+    }, 45_000),
+  ];
+}
+
 export const scenarios: readonly Scenario[] = [{
+  id: 'art-local-gif', title: 'stage two temporary local GIFs and release each 30-second Tidbyt moment',
+  memoryTimeoutMs: 150_000,
+  seed: {modules: ['core', 'tidbyt', 'art'], sections: {art: {}}, config: {tidbyt: {...sharedTidbyt, id: 'shelf-display'}},
+    follows: [{owner: OWNER, families: ['art']}, {owner: 'bunny/core', families: ['operation']}, {owner: 'bunny/modules/tidbyt', families: ['device']}]},
+  steps: [
+    expect('Art has synchronized the configured display', h => h.reader.states<DeviceRecord>('device').some(record => record.data.id === 'shelf-display' && record.data.availability === 'available')
+      && h.logs().some(({record}) => record.event_name === 'runtime.sync.served' && record.attributes['bunny.participant'] === OWNER && record.attributes['bunny.pattern'] === 'sync device') || 'waiting for device sync', 8000),
+    ...localGifSteps(2), ...localGifSteps(3),
+    expect('temporary uploads never enter the library or call a provider', h => state(h)?.artworks.length === 0 && calls(h).imageCalls === 0 && calls(h).ideaCalls === 0 || 'unexpected catalog or provider activity'),
+  ],
+}, {
   id: 'shared-art', title: 'one saved idea selects the browser and gives exact displays independent tracked outcomes',
   memoryTimeoutMs: 60_000,
   seed: {modules: ['core', 'playback', 'pixoo', 'tidbyt', 'art', 'presentation-fixture'], sections: {art: {recentLimit: 1}},
@@ -100,10 +154,12 @@ export const scenarios: readonly Scenario[] = [{
 }, {
   id: 'art-show', title: 'the owner shows one saved artwork now on the simulated Pixoo, Tidbyt and browser with independent outcomes',
   memoryTimeoutMs: 90_000,
-  seed: {modules: ['core', 'playback', 'pixoo', 'tidbyt', 'art'], sections: {art: {recentLimit: 4}},
+  seed: {modules: ['core', 'playback', 'pixoo', 'tidbyt', 'art', 'companions'], sections: {
+    art: {recentLimit: 4}, companions: {assistant: {tools: ['read_saved_art', 'control_art_show', 'read_art_show_effects']}},
+  },
     config: {playback: PLAYBACK_SECTION, pixoo: {device: {...PIXOO_SECTION.device, id: 'desk-display'}}, tidbyt: {...sharedTidbyt, id: 'shelf-display'}},
     follows: [{owner: OWNER, families: ['art']}, {owner: 'bunny/core', families: ['operation']},
-      {owner: 'bunny/modules/pixoo', families: ['device']}, {owner: 'bunny/modules/tidbyt', families: ['device']}]},
+      {owner: 'bunny/modules/pixoo', families: ['device']}, {owner: 'bunny/modules/tidbyt', families: ['device']}, {owner: 'bunny/modules/companions', families: ['assistant-state']}]},
   steps: [
     expect('the producer and both configured display owners are ready', h => running(h, ['core', 'art', 'pixoo', 'tidbyt'])),
     ...pixooStatusBase('desk-display'),
@@ -123,11 +179,13 @@ export const scenarios: readonly Scenario[] = [{
       const response = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/art-show', body: {target: 'hub', requestId: 'art-show-unknown', data: {artworkId: 'never-saved', targets: ['browser']}}});
       return refusedWith(response, 404, 'not-found') === true && moments(h).length === 0 || `${String(response.status)} ${response.text.slice(0, 120)}`;
     }),
-    act('the owner shows the saved artwork now on every surface', async h => {
-      const response = await h.gateway({as: 'browser', method: 'POST', path: '/api/v2/commands/art-show',
-        body: {target: 'hub', requestId: 'art-show-now', data: {artworkId: created(h, 'art-show-seed'), targets: ['desk-display', 'shelf-display', 'browser']}}});
-      if (response.status !== 200) throw new StepFailure(`art-show returned ${String(response.status)} ${response.text.slice(0, 160)}`);
-    }),
+    act('enable Conversation', h => enableAssistant(h, 'art-conversation-enable')),
+    expect('Conversation is enabled', h => assistantState(h)?.enabled === true || 'assistant disabled'),
+    act('propose showing the saved artwork on both displays and the browser', h => catalogInput(h, 'art-conversation-propose', 'control_art_show', {
+      owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: created(h, 'art-show-seed'), targets: ['desk-display', 'shelf-display', 'browser']}),
+    })),
+    expect('the proposal waits with no moment operation', h => assistantState(h)?.tasks[0]?.status === 'waiting' && moments(h).length === 0 || 'art was presented before approval'),
+    act('approve the exact art show', h => assistantInput(h, 'art-conversation-approve', true, 'approve')),
     expect('each display gets its own preparation and moment operation', h => {
       const tracked = h.reader.states<OperationRecord>('operation', 'bunny/core').map(message => message.data);
       return tracked.filter(record => record.family === 'art-auto' && record.target === 'art' && record.result === 'succeeded').length >= 2
@@ -138,13 +196,52 @@ export const scenarios: readonly Scenario[] = [{
       return current !== undefined && 'selection' in current && current.selection?.artworkId === created(h, 'art-show-seed') || 'browser selection missing';
     }, 30_000),
     expect('the show completes as the core\'s observed handoff, never as display evidence', h => {
-      const show = h.reader.states<OperationRecord>('operation', 'bunny/core').map(message => message.data).find(record => record.requestId === 'art-show-now');
+      const show = h.reader.states<OperationRecord>('operation', 'bunny/core').map(message => message.data).find(record => record.family === 'art-show' && record.requestedBy === 'bunny/modules/companions');
       return show?.family === 'art-show' && show.status === 'completed' && show.result === 'succeeded' && show.evidence === 'observed' || `${String(show?.status)} ${String(show?.result)} ${String(show?.evidence)}`;
     }, 30_000),
     expect('the Tidbyt shows the exact animation in simulation and each moment keeps its own outcome', h => {
       const server = deviceState<TronbytState>(h, 'tidbyt');
       return server.installations.bunnymoment?.animation?.frames.length === 8 && moments(h).every(record => record.status === 'accepted' || record.status === 'completed') || 'Tidbyt animation or independent moment outcomes missing';
     }, 15_000),
+    act('ask about the independent display effects', h => {
+      const show = h.reader.states<OperationRecord>('operation', 'bunny/core').find(({data}) =>
+        data.family === 'art-show' && data.requestedBy === 'bunny/modules/companions');
+      if (show === undefined) throw new StepFailure('approved show request missing');
+      return catalogInput(h, 'art-conversation-effects', 'read_art_show_effects', {requestId: show.data.requestId});
+    }),
+    expect('the Conversation result covers both tracked displays and the browser', answers({
+      as: 'operator', method: 'GET', path: '/modules/companions/content/conversation?profile=bunny&view=recent',
+    }, answer => {
+      const wanted = JSON.stringify(bodyOf(answer));
+      return wanted.includes('preparation') && wanted.includes('presentation') && wanted.includes('desk-display') &&
+        wanted.includes('shelf-display') && wanted.includes('browser') || 'per-display evidence missing';
+    })),
+    expect('the effects read settles before the next request', h => catalogFinished(h) || 'read is still active'),
+    act('propose a second show with one unavailable target', h => catalogInput(h, 'art-conversation-partial', 'control_art_show', {
+      owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: created(h, 'art-show-seed'), targets: ['browser', 'unconfigured-display']}),
+    })),
+    expect('the partial show awaits explicit approval', h => assistantState(h)?.tasks[0]?.status === 'waiting' || 'partial proposal missing'),
+    act('approve the partially eligible show', h => assistantInput(h, 'art-conversation-partial-approve', true, 'approve')),
+    expect('the browser handoff survives the other target being skipped', h => {
+      const operations = h.reader.states<OperationRecord>('operation', 'bunny/core').map(({data}) => data);
+      return catalogFinished(h) && operations.filter(op => op.family === 'art-show' && op.requestedBy === 'bunny/modules/companions' &&
+        op.status === 'completed' && op.result === 'succeeded').length === 2 &&
+        operations.every(op => op.target !== 'unconfigured-display') || 'the skipped target produced work or the eligible show was lost';
+    }, 30_000),
+    act('read the partial show evidence from Conversation', h => {
+      const show = h.reader.states<OperationRecord>('operation', 'bunny/core').map(({data}) => data)
+        .filter(data => data.family === 'art-show' && data.requestedBy === 'bunny/modules/companions')
+        .sort((left, right) => right.sentAtMs - left.sentAtMs)[0];
+      if (show === undefined) throw new StepFailure('partial show request missing');
+      return catalogInput(h, 'art-conversation-partial-effects', 'read_art_show_effects', {requestId: show.requestId});
+    }),
+    expect('the evidence names the skipped target and the owning refusal', answers({
+      as: 'operator', method: 'GET', path: '/modules/companions/content/conversation?profile=bunny&view=recent',
+    }, answer => {
+      const output = JSON.stringify(bodyOf(answer));
+      return output.includes('unconfigured-display') && output.includes('skipped') && output.includes('not-found') ||
+        'Conversation omitted the target or its refusal';
+    })),
     holds('showing saved art makes no provider call', h => calls(h).imageCalls === 3 && calls(h).ideaCalls === 1 || 'Show now generated art', 250),
   ],
 }, {
@@ -255,3 +352,6 @@ export const scenarios: readonly Scenario[] = [{
     expect('restart retains spent usage and does not refund the ceiling', h => calls(h).imageCalls === 3 && job(h, 'art-spend-after-restart')?.targets[0]?.reason === 'monthly-ceiling' && state(h)?.providers[0]?.spentMicros === 10_500 || 'ledger was reset'),
   ],
 }];
+
+const assistantState = (h: Harness): AssistantState | undefined =>
+  h.reader.states<AssistantState>('assistant-state', 'bunny/modules/companions')[0]?.data;

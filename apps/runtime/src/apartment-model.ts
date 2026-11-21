@@ -159,6 +159,13 @@ function containsSegment(footprint: readonly ApartmentPoint[], start: ApartmentP
     && segmentIntervals(footprint,start,end).every(p => apartmentContains(footprint,p));
 }
 
+export function apartmentContainsShape(footprint: readonly ApartmentPoint[], shape: readonly ApartmentPoint[]): boolean {
+  return shape.length >= 3 && shape.every((start,index)=>{
+    const end=shape[(index+1)%shape.length];
+    return end!==undefined && containsSegment(footprint,start,end);
+  });
+}
+
 function polygonArea(points: readonly ApartmentPoint[]): number {
   return points.reduce((area,a,index) => {
     const b = points[(index+1)%points.length];

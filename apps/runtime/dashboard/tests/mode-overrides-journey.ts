@@ -29,7 +29,7 @@ export async function checkModeOverrides(browser: Browser, evidence?: string): P
       }
       assert.fail(`expected ${count} completed native requests`);
     };
-    const hub = page.locator('[data-widget="hub-mode"]');
+    const hub = page.locator('[data-hub-mode]');
     const wall = page.locator('[data-light-card="wall"]');
     const pixoo = page.getByRole('article', {name: 'Pixoo display', exact: true});
     const wallChoice = wall.locator('[data-mode-target="wall"]');
@@ -68,9 +68,9 @@ export async function checkModeOverrides(browser: Browser, evidence?: string): P
     await wallChoice.getByText('Quiet · individual exception', {exact: true}).waitFor(); assert.equal(commands(), beforeReload);
     await world.restart(); await page.reload(); await feed(page, 'connected'); await settled(6);
     await wallChoice.getByText('Quiet · individual exception', {exact: true}).waitFor(); assert.equal(commands(), beforeReload, 'restart/read never replay');
-    // On the wide grid a one-row Hub mode lists its exceptions on the Devices page (#1672).
+    // The hero above the cards (#1930) keeps its exceptions in the same disclosure at every width.
     await page.setViewportSize({width: 1440, height: 1000});
-    await page.locator('[data-home-card="hub-mode"] a.home-hub-exceptions').filter({hasText: /exception.*· Devices$/}).waitFor();
+    await details.locator('summary').filter({hasText: /exception/}).waitFor();
     for (const width of [560, 390, 320]) for (const colorScheme of ['light', 'dark'] as const) {
       await page.setViewportSize({width, height: 1000}); await page.emulateMedia({colorScheme});
       await details.locator('summary').click();

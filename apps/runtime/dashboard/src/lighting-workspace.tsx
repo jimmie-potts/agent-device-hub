@@ -120,9 +120,9 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
           const next = structuredClone(layout); next.assignments = next.assignments.filter(item => item.device !== device.record.id); if (event.target.value !== '') next.assignments.push({device: device.record.id, room: event.target.value}); save(next);
         }}><option value="">Unassigned</option>{layout.rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label>)}
       </div></details></div></header>}
-      {!layoutLive && <p role="status">Layout records are unavailable or stale. Arrangement is read-only.</p>}
-      {(layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status">Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
-      {message !== '' && <p role="status">{message}</p>}
+      {!layoutLive && <p role="status" data-glass-veil>Layout records are unavailable or stale. Arrangement is read-only.</p>}
+      {(layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status" data-glass-veil>Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
+      {message !== '' && <p role="status" data-glass-veil>{message}</p>}
       {roomView && <RoomModels connection={connection} connected={connected && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true} layout={layout} layoutLive={layoutLive} devices={devices} copies={runtime.copies}
         renderLight={(anchor, roomId, currentObservationsOnly = false) => {
           const bound = roomBinding(anchor, roomId, layout, devices, layoutLive);

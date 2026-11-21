@@ -1,8 +1,9 @@
 import {standaloneOwners,OWNERS} from './standalone.mjs';
 // Affected PR checks (Hub #1080). A small explicit mapping from changed paths to broad check groups, including the
 // groups of their known consumers. The Checks workflow's select job, its final gate, the delivery preflight and the
-// local `npm run ci:select` command all use it, so they agree on what a change runs. Anything shared, unknown or
-// uncertain selects every group; the mapping accepts extra work to stay simple.
+// local `npm run ci:select` command all use it, so they agree on what a change runs. After a push to main, the Runtime
+// dashboard browser suite workflow (runtime-browser.mjs, #1942) runs the full suite when it selects the runtime group.
+// Anything shared, unknown or uncertain selects every group; the mapping accepts extra work to stay simple.
 // This module has no dependencies, because the select and gate jobs run it without `npm ci`.
 
 /** Check groups, in the order reports list them. Each conditional step in checks.yml names exactly one. */

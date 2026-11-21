@@ -784,7 +784,11 @@ missing evidence.
 ### Integration, qualification and deployment
 
 Main records integrated source. Its Integration workflow runs cheap workflow and
-admission-regression checks on the exact merged revision. The separate Release
+admission-regression checks on the exact merged revision. When the merge selects
+the runtime group, the Runtime dashboard browser suite workflow also runs the full
+runtime dashboard browser suite on that revision. It gates no pull request,
+reports a failure in one tracking issue, and its jobs are part of main's
+applicable CI. The separate Release
 qualification workflow runs all applicable existing source, browser
 and packaged ARM64 coverage on a pinned integrated snapshot. One active run
 finishes while new arrivals replace the pending candidate. Omitted intermediate

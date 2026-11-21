@@ -19,13 +19,13 @@ The runtime copy includes:
   until the session record clears it;
 - general device cards and guarded controls, music, declared module pages and a running build readout;
 - the home that the owner-approved mockup lays out ("Recommended (d)", owner
-  decision 7, 2026-10-06), with panels for the Hub mode (#924) and the inbox
-  (#923).
+  decision 7, 2026-10-06), with the Hub mode (#924) as a hero above the cards
+  (#1930) and the inbox panel (#923).
 
 Nanoleaf's existing light card and Pixoo's Display face include Work, Free and
 Quiet choices. These save an individual exception; choosing the Hub's mode
-returns that device to the global choice. The Hub card keeps its artwork and
-three buttons, with a neutral collapsed summary when saved exceptions or fresh
+returns that device to the global choice. Home's hero keeps the mode word and
+three choices, with a neutral collapsed summary when saved exceptions or fresh
 native differences exist. Expanding it shows the choices, available device
 request evidence and links to device controls. It makes no physical-mode claim.
 Failures that open an Inbox item keep using Check Inbox; a mode change refused
@@ -236,12 +236,11 @@ column at content height with full content.
 
 In Edit Home on the grid, each card's bar shows its name and move handle; its
 Options button opens Earlier, Later, the shape choice, Hide and Remove below it.
-Lists calculate how many rows their card holds from its shape and the grid's cell size, with fixed row heights (`listFit` in `src/paging.ts`); rows sit at the top and the pager at the bottom, a short list leaves the rest of the card plain and an empty Inbox centres its message. No list measures itself. Hub mode's artwork and choices grow with its card. The built-in layout shows each card in its Standard shape; the Inbox's is Wide. A room or group with no lights says so where its artwork would be and offers Small square and Wide; a saved Tall or Large square shows as Wide until it has lights.
-Automatic art takes the empty cells after the last card, or a Wide row of its own.
+Lists calculate how many rows their card holds from its shape and the grid's cell size, with fixed row heights (`listFit` in `src/paging.ts`); rows sit at the top and the pager at the bottom, a short list leaves the rest of the card plain and an empty Inbox centres its message. No list measures itself. The built-in layout shows each card in its Standard shape; the Inbox's is Wide. A room or group with no lights says so where its artwork would be and offers Small square and Wide; a saved Tall or Large square shows as Wide until it has lights.
 
 Each card offers only shapes its content fits at the 220px unit (`widgets.ts`
 and `homeCardShapes` in `home-catalog.ts`); `tests/home-shapes.browser.ts`
-measures every card in every offered shape. Hub mode, Inbox, Agent sessions,
+measures every card in every offered shape. Inbox, Agent sessions,
 Timeline, light, room and Nanoleaf cards show compact content for their shape.
 Pixoo, Tidbyt and Wispr draw their own compact content in every shape: their
 module frontends read the optional `presentation` field (shape and card size)
@@ -255,9 +254,9 @@ cards show a generic face in
 one unit: the name, the current state and **Open**, which leads to the card's
 existing device, Music or module page.
 A placement saved before shapes shows Small as Small square or Tall, Standard as
-the card's Standard shape and Wide as Large square or Wide; art follows its
-saved format. Loading never writes; the next Done or art action stores a shape
-and an agreeing width for every placement.
+the card's Standard shape and Wide as Large square or Wide. Loading never
+writes; the next Done or art chip stores a shape and an agreeing width for every
+placement it draws.
 
 A release from before #1672 reads a stored layout with shapes but refuses every
 Home save from its dashboard (`invalid-request`, nothing changes), because its
@@ -273,7 +272,7 @@ one page of rows plus its heading and pager. **Previous**, **Next** and
 `src/paging.ts`: Inbox 5, Timeline 5 on Home and 20 on `#/timeline`, and Agent
 status two rows of tiles at the card's current column count. Paging covers only
 the records the page already holds and sends no request. The Inbox heading shows
-the total on every page, and **Check Inbox** on the Hub mode card shows the page
+the total on every page, and **Check Inbox** in the hero shows the page
 holding its item. On the unit grid, rows per page are calculated from the card's
 size and the fixed sizes in `src/paging.ts`, and an opened entry takes the page, with the pager hidden
 until it closes; elsewhere entries open in place. Dismissing the only item on the last
@@ -283,18 +282,40 @@ period returns to the first page. When focus is in a list and paging or a
 removed row would leave it on the page body, focus moves to a control in the
 list; focus that has left the list stays where it is.
 
-Art is an optional module card. On the unit grid, pinned art is a shaped card
-cropped to its shape, with **Unpin art** and **Dismiss** above it; unpinned art
-takes the largest shape that fits the empty cells after the last card, or is left
-out. In one column, **Add Art** reserves its own row; choose Auto, Banner, Square
-or Tall and pin it separately from a gallery favorite. **Unpin art** allows
-bounded placement in unused space after the functional cards. Automatic art does
-not repack those cards or save its chosen geometry. Active pointer and
-keyboard controls freeze automatic fitting. **Dismiss art widget** and
-**Restore art widget** persist placement without sending art feedback. Reset
-returns the selected breakpoint to its defaults, including automatic art. The art
-editor’s **Auto** action removes its explicit reservation and allows automatic
-placement; use Dismiss or Hide to keep it out of Home.
+### Home hero
+
+A fixed hero above the cards (#1930, owner decision 5 of epic #1927) shows the
+hub mode as a large word under a small "Hub mode" label, a Work, Free and Quiet
+switch and short chips. It replaces the Hub mode and Art cards: `heroPlacement()`
+in `src/home-catalog.ts` keeps their saved placements out of the grid, the picker
+and the built-in layout, and every save keeps them as they are, Reset included, so
+a layout that lists them stays valid and a dismissed art stays dismissed.
+
+`HubMode` (`src/hub-mode.tsx`) is the same adapter as the card's, so the switch
+sends the same guarded `mode-set` command with the current revision and shows
+Stale, Not observed, Read only, pending, Not applied, Result unknown, Check Inbox
+and the mode exceptions with their device links as before; nothing is sent again.
+`src/hub-mode-hero.tsx` draws it. The switch is one Tab stop: arrow keys, Home and
+End move between segments and Enter or Space selects, so moving sends nothing. The
+selected segment carries `data-glass-thumb`; the glass layer draws the thumb
+there. Without the layer the segment has its own fill. On the layer every
+segment's label takes the full text color, since the thumb marks the selection;
+the label and word, the switch and the status line are veils; the chips' own fills
+keep them readable, since every veil adds to each frame in software WebGL. The hero is inert while Home is
+edited.
+
+The chips, in order: lights on and plugs on from the observed device records the
+shell holds (`src/home-hero.ts`; a stale copy, an unavailable device, unobserved
+power or a plug reading older than its card's 15 seconds counts as unknown, never
+as off), each linking to Devices; the art's forecast notice, which the art
+module's `PresentedArtNotice` states in its widget's words for the artwork Home
+presents and clears when it expires, linking to Automation; and, while the art
+Gallery is served, **Open Gallery**, **Pin art** or **Unpin art**, and **Dismiss
+art**. The art chips change only the saved art placement of the shown arrangement
+through the revision-guarded save, as the Art card's controls did. Pin and Unpin
+keep the saved flag; with the art as the backdrop it changes nothing drawn on
+Home. Dismissed art leaves Home: the layer draws the Quiet glass wash and the hero
+offers **Restore art**. Art chips send no art feedback.
 
 The module-owned Art Gallery requests art for the visibly selected targets,
 favorites and varies saved work, records explicit feedback, and pages through
@@ -302,6 +323,12 @@ the shared collection. Revisit reads existing browser art without a display
 command. Provider allowance, job results and uncertain spending remain visible.
 The browser uses a completely decoded rich still before changing the canvas;
 failed/stale images remain labelled and controls lock without fresh authority.
+
+While the art module runs, Home mounts the art module's `ArtBackdropSource` once
+through the same module frontend scope. It decodes the presented artwork for
+Home's backdrop and draws nothing itself; the shell reads it with
+`useArtBackdrop` and reports what it drew with `useShowArtBackdrop`. A hidden
+`data-art-backdrop` element states its status and identity for browser checks.
 
 The versioned `home-layout` record lives in `modules/core.sqlite`, with IDs,
 sizes, shapes and flags only. Reload, another browser and restart read the same state;
@@ -949,6 +976,75 @@ pages without changing saved placement or acquiring another source. Music and
 Wemo fill their selected Home slot while keeping their feature-page width limits.
 Music omits the neutral initial command placeholder; its existing live feedback
 region still shows command progress, errors and results.
+
+### Glass layer
+
+Home draws on a glass layer (#1929, the Clear reference in
+`docs/design-references/home-clear/`): one WebGL 2 canvas fixed under the page
+draws the presented artwork unblurred, continuing behind the frosted rail, and
+flat, transparent glass under every Home card, with a thin bevel, a soft shadow,
+a rim and a lip of light past the far edge. Neighboring panels lean together.
+Card contents are unchanged.
+
+`GlassLayer` (`src/glass-layer.tsx`) is reusable. A page sets `data-glass` on its
+root to the state the layer reports through `onState` and renders the layer inside
+that root. Its options:
+
+- `backdrop`: the picture behind the page (`bitmap`, `width`, `height`, `id`), or
+  null for the Quiet glass wash. The caller keeps the bitmap open while it is the
+  current value; `onBackdrop` reports the id actually drawn, or null.
+- `fuse`: join neighboring panels with a smooth minimum (Home); without it they
+  stay apart.
+
+A switch's selected segment marked `data-glass-thumb` (Home's hero, #1930) is drawn
+as a glass capsule. It is not a panel: two capsules follow the segment along the
+switch at the reference's 30% and 12% per frame, converted to per-second rates in
+`src/glass-thumb.ts`, and the shader joins them with a smooth minimum (`k = 16`),
+so the thumb stretches while it travels. It travels only when another segment is
+marked (the attribute's value names the segment); a resting thumb whose segment
+moves, by a scroll, a resize or a repack, moves with it in the same frame. Reduced
+motion moves it at once. The
+canvas's `data-glass-capsules` holds the capsules last drawn.
+
+The scene (`src/glass-scene.ts`) is read from the page once per frame:
+`data-glass-panel="<id>"` marks an element whose box is a panel, with its corner
+radius from `--glass-radius`, and `data-glass-veil` marks text on the backdrop
+(the heading, the live notice, status lines, Edit Home's empty cells and the
+footer). Its veil fades out within 16px of the box; `data-glass-veil="edge"` stops
+at the box, for the frosted rail and phone bar. A veil that is hidden, such as the
+closed phone drawer, or outside the window draws nothing. Every text that can sit
+on the backdrop needs a veil or a fill of its own. Later stories add optional
+panel fields parsed from more attributes, one texel each in the renderer's panel
+table (`src/glass-renderer.ts`) and a term in the shader (`src/glass-shader.ts`).
+The layer draws only while something changes or settles: a box moved or resized
+(including by something added or resized above the page), a scroll, a window
+resize, a mark or skin change, a new backdrop, a thumb still travelling, or the 700
+ms first appearance. At
+rest it draws nothing. After a window resize it waits until two reads of the boxes
+agree, so it draws once, after the page has repacked. It caps the pixel ratio at
+2; where the browser renders WebGL in software (SwiftShader and similar, marked
+`data-glass-software` on the canvas), it draws at most about a million pixels and
+the browser scales them up, because the page's main thread waits for every
+software frame. It takes no pointer input, sends nothing, and loses its context when
+the page is left.
+
+`glass.css` keys everything on `data-glass="webgl"`: the outermost card surface
+in each panel turns transparent (a surface with a state meaning, such as an
+Inbox that needs attention, keeps its fill), the shell's background steps aside
+and the rail and phone bar are frosted. In the initial `quiet` state, without
+WebGL 2 or after a lost context, the page keeps its Quiet glass panels; the
+canvas's `data-glass-fallback` says why (`no-webgl2`, `program` or `lost`).
+
+Colors come from the skin: `--glass-veil` and `--glass-veil-deep` (over the
+artwork, deeper as the page scrolls in dark appearance), `--glass-tone`,
+`--glass-rim`, `--glass-shadow`, `--glass-edge`, `--glass-rail`, the hero's
+`--glass-chip`, `--glass-chip-edge`, `--glass-track` and `--glass-halo`, and the wash's
+`--bg`, `--shell-wash-start` and `--shell-wash-end`. A color's alpha is the amount
+the shader uses. An automatic veil inside panels and under veil marks mixes in
+just enough of the veil color to keep `--glass-ink` (the faintest text,
+`--muted-dense`) at 5:1. Home's backdrop is the art module's `useArtBackdrop`
+image (#1928); any state without an image, and dismissed art, draws the wash, and the rendition the
+layer has drawn, or null, goes back through `useShowArtBackdrop`.
 
 ## Build and checks
 

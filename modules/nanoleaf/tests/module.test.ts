@@ -64,6 +64,20 @@ suite('the device record', () => {
     world.verify();
   });
 
+  test('a guarded wall command cannot race a newer owner configuration', async context => {
+    const world = await ModuleWorld.open(context); await world.start();
+    await world.until(() => world.device_()?.availability === 'available', 10_000, 'the available owner');
+    const current = world.device_(); assert.ok(current);
+    const {family, type} = NANOLEAF_FAMILIES.wallEdit;
+    const {key, draft} = moduleCommand(family, type, {requestId: 'wall-edit-old',
+      edit: {kind: 'settings', settings: {rotation: 90}}, expectedConfigurationRevision: current.configurationRevision + 1_000_000,
+      expectedGeneration: current.generation});
+    const refused = await world.request(key, {...draft, dataschema: 'https://bunny.invalid/events/nanoleaf-wall-edit/2.1'});
+    assert.equal(refused.status === 'rejected' && refused.error.error.code, 'revision-conflict', JSON.stringify(refused));
+    assert.equal(world.outcomes('wall-edit-old').length, 0);
+    world.verifyMessages();
+  });
+
   test('an unsupported moment mood is refused before effects', async context => {
     const world = await ModuleWorld.open(context);
     await world.start();

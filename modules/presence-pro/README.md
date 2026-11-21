@@ -57,14 +57,26 @@ separately authorized pilot target. Do not guess a key or endpoint. The module
 verifies the configured MAC before subscribing and refuses missing, ambiguous or
 wrongly typed bindings with `unsupported-capability`.
 
-Binding types are fixed: occupancy, held, zones and Active use `BinarySensor`;
-X/Y use `Sensor`; detail uses `Select`; angle and range use `Number`; upside-down
-uses `Switch`; both exclusions use `Text`. Detail must report stock
+Binding types are fixed: occupancy, held, zones and Active use `BinarySensor`.
+X/Y use `Sensor`, detail uses `Select`, angle and range use `Number`, and
+upside-down uses `Switch`. Detail must report stock
 `Above + Targets active`, `Above + Distance and Angle` or
 `Above + Speed and Resolution`. Range is the stock **centimeter** setting.
-Empty exclusion text means no polygon; otherwise use the stock semicolon-separated
-integer millimeter `x:y` vertices (3–20). Invalid or missing settings inhibit the
-point. Exclusions are tested in published coordinates, after firmware angle/flip.
+
+Use the exclusion settings discovered on the device:
+
+- Polygon firmware takes two `Text` bindings as shown above. Empty text means no
+  polygon. The stock format is 3 to 20 semicolon-separated integer millimeter
+  `x:y` vertices.
+- Rectangular firmware takes two objects in `exclusions`, each with four
+  `Number` bindings such as `{"xStart":{"key":11},"xEnd":{"key":12},"yStart":{"key":13},"yEnd":{"key":14}}`.
+  Use a distinct Native API key for each bound. The bounds are inclusive and
+  the firmware accepts either corner order. Equal start and end bounds can
+  exclude a line or a single point.
+
+Missing or invalid exclusion settings suppress the point. Both kinds of
+exclusion are tested in published millimeters after the firmware applies angle
+and flip.
 
 `calibration` saves translation and yaw in apartment XZ meters/radians and the
 manually checked angle/flip/range settings. The firmware already applies angle
@@ -137,10 +149,11 @@ construction, supports existing passwords and returns protobuf scalar defaults.
 The earlier `esphome-client` 2.1.0 candidate lacks password support and permits
 opportunistic Noise-to-plaintext fallback, so it was not selected.
 
-Two narrow per-instance compatibility fixes in `src/native.ts` rely on this
-pinned client's internals: preserve modern switch `missing_state` field 4 before
-the older generated switch decoder discards it, and retain teardown error sinks
-while the client's bounded five-second request timers/Noise initialization settle.
+The per-connection compatibility code in `src/native.ts` relies on this pinned
+client's internals. It consumes firmware-update entity and state frames that the
+client cannot decode, so discovery and occupancy can continue. It also preserves
+switch `missing_state` field 4 and retains teardown error sinks while the client's
+bounded five-second request timers and Noise initialization settle.
 Recheck these regressions before upgrading the dependency. Network/protocol
 failure is `unavailable`, identity/explicit password or local key refusal is `forbidden`, and
 missing typed bindings are `unsupported-capability`; none means vacancy.

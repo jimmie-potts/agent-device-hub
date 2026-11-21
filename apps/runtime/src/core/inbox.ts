@@ -29,6 +29,9 @@ export function resendRefusal(operation: Operation, handler: string): ErrorBody 
   if (operation.command.startsWith('org.bunny.microduck.')) return errorBody('forbidden', {
     detail: 'MicroDuck requires a fresh explicit request from its dashboard controls',
   });
+  if (operation.family === 'nanoleaf-show-generate' || operation.family === 'nanoleaf-show-generate-cancel') {
+    return errorBody('forbidden', {detail: 'Use Saved shows to request a fresh draft or cancel the current generation'});
+  }
   if (operation.family === 'moment-play' && operation.data.art !== undefined) return errorBody('forbidden', {
     detail: 'a moment naming art needs a fresh request through the core\'s automation, which arbitrates it',
   });
@@ -40,7 +43,7 @@ export function resendRefusal(operation: Operation, handler: string): ErrorBody 
   if (MODE_FAMILIES.includes(operation.family) && operation.error?.code === 'revision-conflict' && operation.data.expectedRevision !== undefined) {
     return errorBody('revision-conflict', {detail: 'the saved mode revision is out of date, so sending it again would be refused; read the mode and choose again'});
   }
-  return requesterRefusal(operation.family, handler);
+  return requesterRefusal(operation.family, handler, operation.dataschema);
 }
 
 /**

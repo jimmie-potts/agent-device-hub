@@ -1,8 +1,10 @@
 // The tools a turn may call (Hub #46): the built-in owner question, the two first permitted tools and the synthetic
 // read fixture. The private section's allowlist selects the permitted ones; the engine checks membership again when a
 // call executes, so a changed section cannot widen an effect.
+import {ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER, type AssistantDeviceOwner} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import {catalogTools, isCatalogTool} from './catalog-tools.js';
 import {textBytes, TOOL_NAME, type ToolDefinition} from './provider.js';
 
 export const ASK_OWNER = 'ask_owner';
@@ -13,7 +15,16 @@ export const DELEGATE_CODING = 'delegate_coding';
 export const READ_LIFX = 'read_lifx';
 export const SET_LIFX_POWER = 'set_lifx_power';
 export const SET_LIFX_BRIGHTNESS = 'set_lifx_brightness';
-export const isLightTool = (name: string): boolean => name === READ_LIFX || name === SET_LIFX_POWER || name === SET_LIFX_BRIGHTNESS;
+export const READ_WEMO = 'read_wemo';
+export const SET_WEMO_POWER = 'set_wemo_power';
+export function deviceToolOwner(name: string): AssistantDeviceOwner | undefined {
+  switch (name) {
+    case READ_LIFX: case SET_LIFX_POWER: case SET_LIFX_BRIGHTNESS: return ASSISTANT_LIGHT_OWNER;
+    case READ_WEMO: case SET_WEMO_POWER: return ASSISTANT_WEMO_OWNER;
+    default: return undefined;
+  }
+}
+const plugName = {type: 'string' as const, description: 'The Wemo plug name from the owner or an exact plug ID from read_wemo.'};
 const deviceName = {type: 'string' as const, description: 'The light name from the owner or an exact device ID from read_lifx.'};
 /** A repository name the worker's private allowlist may carry, and the brief's bound; both are checked again by the contract. */
 export const REPOSITORY = /^[a-z0-9]+(?:[-._][a-z0-9]+)*$/;
@@ -36,6 +47,11 @@ export const TOOLS: readonly ToolDefinition[] = [
     input: {type: 'object', properties: {device: deviceName, on: {type: 'boolean', description: 'True to turn on, false to turn off.'}}, required: ['device', 'on'], additionalProperties: false}},
   {name: SET_LIFX_BRIGHTNESS, effect: 'command', description: 'Propose setting a LIFX light to a specific brightness from 0 to 100 percent. Requires owner approval.',
     input: {type: 'object', properties: {device: deviceName, percent: {type: 'integer', description: 'Brightness as a whole percentage from 0 to 100.'}}, required: ['device', 'percent'], additionalProperties: false}},
+  {name: READ_WEMO, effect: 'read', description: 'Read Wemo plug power observations and availability. Use an empty device name to list plugs.',
+    input: {type: 'object', properties: {device: plugName}, required: ['device'], additionalProperties: false}},
+  {name: SET_WEMO_POWER, effect: 'command', description: 'Propose switching one Wemo plug on or off. Requires owner approval and respects the plug hold and maximum-on policy.',
+    input: {type: 'object', properties: {device: plugName, on: {type: 'boolean', description: 'True to turn on, false to turn off.'}}, required: ['device', 'on'], additionalProperties: false}},
+  ...catalogTools,
   {name: READ_FIXTURE, effect: 'read', description: 'Read the immutable synthetic fixture. Only the synthetic provider sees this tool.',
     input: {type: 'object', properties: {}, required: [], additionalProperties: false}},
   {name: DELEGATE_CODING, effect: 'command', description: 'Propose handing one bounded coding task to the coding worker on the owner\'s computer: name an allowlisted repository and write a brief. The owner must approve the proposal; the worker then runs in a fresh worktree and its structured result arrives as this tool\'s result later. Never claim work was done before that result.',
@@ -44,7 +60,7 @@ export const TOOLS: readonly ToolDefinition[] = [
 ];
 /** The permitted tool definitions for one turn: the built-in question plus the allowlisted names, in catalog order. */
 export function permittedTools(allowed: readonly string[], synthetic: boolean, devices = true): ToolDefinition[] {
-  return TOOLS.filter(tool => tool.name === ASK_OWNER || (tool.name === READ_FIXTURE ? synthetic : allowed.includes(tool.name) && (devices || !isLightTool(tool.name))));
+  return TOOLS.filter(tool => tool.name === ASK_OWNER || (tool.name === READ_FIXTURE ? synthetic : allowed.includes(tool.name) && (devices || deviceToolOwner(tool.name) === undefined && !isCatalogTool(tool.name))));
 }
 /** Whether `name` is a tool name the private section may list: a permitted tool other than the built-in question and the synthetic fixture. */
 export const allowlistable = (name: unknown): name is string => typeof name === 'string' && TOOL_NAME.test(name) && TOOLS.some(tool => tool.name === name && tool.name !== ASK_OWNER && tool.name !== READ_FIXTURE);

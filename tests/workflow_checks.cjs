@@ -289,7 +289,9 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
   const checks = read('checks.yml'), workflowChecks = read('workflow.yml');
   // Hub #870: GitHub-hosted runners replaced Depot. The workflows use new paths, because GitHub keeps the
   // manually disabled state of the retired ci.yml and work-guide.yml copies.
-  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'codeql.yml', 'integration.yml', 'music-native.yml', 'release-qualification.yml', 'workflow.yml']);
+  // Hub #1942: runtime-dashboard-browser.yml runs the full runtime dashboard browser suite after merges to main;
+  // tests/runtime_browser_ci.test.mjs checks it.
+  assert.deepEqual(fs.readdirSync(path.join(root, '.github/workflows')).sort(), ['checks.yml', 'codeql.yml', 'integration.yml', 'music-native.yml', 'release-qualification.yml', 'runtime-dashboard-browser.yml', 'workflow.yml']);
   assert.equal(fs.existsSync(path.join(root, '.depot')), false, 'Depot workflows would run twice');
   // Workflow checks run in their own workflow so Markdown-only changes still run them (Hub #861).
   assert.equal(workflowChecks.name, 'Workflow');
@@ -416,13 +418,13 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
   assert.equal(builds, 7);
   // Hub #827: the old system's checks and the full dashboard browser suite leave CI but keep their scripts, which run
   // locally until #839 deletes that code. CI runs the dashboard's smoke check instead. The runtime's dashboard (#922)
-  // keeps its full browser suite local too.
+  // keeps its full browser suite out of pull request Checks too; it runs after merges to main in its own workflow (#1942).
   const { scripts } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   for (const name of ['test:hub:built', 'test:hub:package:built', 'test:hub:verify:built', 'test:agent-status:built', 'test:lifx:built',
     'test:tidbyt:built', 'test:tidbyt:python', 'test:local-controllers:built', 'test:contracts:python', 'test:package:built',
     'test:performance', 'test:dashboard:browser', 'test:runtime-dashboard:browser']) {
     assert.ok(scripts[name], `${name} stays available for local runs`);
-    assert.equal(runs.includes(`npm run ${name}`), false, `${name} runs locally, not in CI`);
+    assert.equal(runs.includes(`npm run ${name}`), false, `${name} runs outside pull request Checks`);
   }
   assert.equal(scripts['test:dashboard:smoke'], 'node apps/dashboard/tests/smoke.mjs');
   // Hub #1676: the two Runtime verification jobs split the suite as packaged qualification's lanes do
@@ -441,7 +443,8 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
   const others = fs.globSync(`${sources}/!(steps).test.ts`, { cwd: root }).map(file => path.basename(file)).sort();
   assert.ok(all.includes('steps.test.ts') && all.length > 1, 'the verification suite has its capture file and others');
   assert.deepEqual(others, all.filter(file => file !== 'steps.test.ts'));
-  // Hub #922: the runtime's dashboard follows the same pattern, a smoke check in CI and its full browser suite locally.
+  // Hub #922: the runtime's dashboard follows the same pattern, a smoke check in pull request CI; its full browser suite
+  // runs locally and after merges to main (#1942).
   assert.equal(scripts['test:runtime-dashboard:smoke'], 'node apps/runtime/dashboard/tests/smoke.ts');
 });
 
