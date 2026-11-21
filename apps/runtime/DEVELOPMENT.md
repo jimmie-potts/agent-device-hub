@@ -1026,7 +1026,8 @@ with `openAudio` and a page outside the hardware inventory with `jumpTo`.
 on the glass layer with SwiftShader, as `home-glass.browser.ts` does for Home:
 every card's glass follows its box at 1440, 390 and 320px and after scrolling,
 the card surfaces are clear, nothing draws at rest, a window resize draws one
-frame and software rendering stays under about a million pixels, the visible
+frame and software rendering stays under 250,000 pixels on these pages, a page
+that grows below the window draws no frame, the visible
 veils stay few, text over the layer keeps 4.5:1 at 1440, 390 and 320px in light
 and dark, the popout keeps its fill, the directory, Companions (also after a
 reload) and Home opened from the phone drawer look the same after a redraw from
@@ -1041,8 +1042,9 @@ fails the journey, naming the run, since its ink is too close to its ground to
 show (`apps/runtime/dashboard/tests/glyph-contrast.ts`, with a negative control in
 `apps/runtime/dashboard/tests/glyph-contrast.test.ts`). `devices-menu.browser.ts` also scrolls a glass page
 under the open popout in a short window and checks the popout stays whole and
-under the pointer. With `DASHBOARD_RECEIPTS` set it writes private
-screenshots.
+under the pointer, and `pixoo-player.browser.ts` checks that playback status
+ticks on the glass Player page draw no frame. With `DASHBOARD_RECEIPTS` set it
+writes private screenshots.
 
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`

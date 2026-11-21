@@ -175,6 +175,17 @@ try {
       }
       await page.setViewportSize({width: 1440, height: 900});
     }
+    // A page that grows below the window draws no frame (#1950): a Pixoo page's content changes size as its records
+    // arrive, and without a GPU each frame holds the main thread. Content added at the end of the page, out of view,
+    // changes no glass that can be seen.
+    await page.goto(`${world.url}/#/module/pixoo/playlists`);await feed(page, 'connected');await PAGES[3].ready(page).waitFor();
+    await page.setViewportSize({width: 1440, height: 500});
+    const grown = await rest(page);
+    await page.locator('#main [data-glass-panel]').last().evaluate(panel => {const filler = document.createElement('div');filler.style.blockSize = '400px';filler.dataset['filler'] = '';panel.append(filler);});
+    await page.waitForTimeout(1000);
+    assert.equal(await rest(page), grown, `${scheme}: a page that grows below the window draws no frame`);
+    await page.locator('[data-filler]').evaluate(node => {node.remove();});
+    await page.setViewportSize({width: 1440, height: 900});
     // Scrolling the directory moves the glass with the cards, then it rests again.
     await page.goto(`${world.url}/#/devices`);await feed(page, 'connected');await PAGES[0].ready(page).waitFor();
     await page.setViewportSize({width: 1024, height: 600});await page.mouse.wheel(0, 300);await followsBoxes(page, `${scheme}: scrolled`);
@@ -185,7 +196,8 @@ try {
       assert.equal(await frames(page) - settled, 1, `${scheme}: one window resize to ${String(width)}px draws one frame`);
     }
     const backing = await layer(page).evaluate(node => ({software: (node as HTMLCanvasElement).dataset['glassSoftware'] !== undefined, pixels: (node as HTMLCanvasElement).width * (node as HTMLCanvasElement).height}));
-    if (backing.software) assert.ok(backing.pixels <= 1_010_000, `software rendering draws at most a million pixels (${String(backing.pixels)})`);
+    // A page with only the wash behind it draws at most a quarter of Home's software pixels (glass-page.tsx).
+    if (backing.software) assert.ok(backing.pixels <= 252_000, `software rendering on a glass page draws at most 250,000 pixels (${String(backing.pixels)})`);
     report['software'] = backing.software;
     // The popout keeps its own fill over the glass; expanding a brand moves no panel.
     const menu = await openDeviceMenu(page);await menu.getByRole('menuitem', {name: 'Nanoleaf', exact: true}).click();

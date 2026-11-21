@@ -86,6 +86,19 @@ const sameLight = (a: GlassLight | undefined, b: GlassLight | undefined): boolea
   : a.level === b.level && a.pressed === b.pressed && Math.abs(a.lamp.x - b.lamp.x) < 0.25 && Math.abs(a.lamp.y - b.lamp.y) < 0.25
     && (a.color === null || b.color === null ? a.color === b.color : a.color.every((value, index) => value === b.color?.[index]));
 /** Whether two reads would draw the same picture, so a read that finds nothing new draws no frame. */
+/**
+ * The scene as far as it can be seen: each panel's and veil's box cut to the window and the reach of its shadow and
+ * lip. A panel taller than the window, such as a whole module page, that grows or shrinks below the window draws the
+ * same picture, so comparing these finds no change and the layer draws no frame (#1950).
+ */
+export function visibleScene(scene: GlassScene, viewport: {width: number; height: number}): GlassScene {
+  const cut = (rect: GlassRect): GlassRect => {
+    const x = Math.max(rect.x, -REACH), y = Math.max(rect.y, -REACH);
+    return {x, y, width: Math.max(0, Math.min(rect.x + rect.width, viewport.width + REACH) - x), height: Math.max(0, Math.min(rect.y + rect.height, viewport.height + REACH) - y)};
+  };
+  return {...scene, panels: scene.panels.map(panel => ({...panel, rect: cut(panel.rect)})), veils: scene.veils.map(veil => ({...veil, rect: cut(veil.rect)}))};
+}
+
 export function sameScene(a: GlassScene, b: GlassScene): boolean {
   return a.panels.length === b.panels.length && a.veils.length === b.veils.length
     && a.panels.every((panel, index) => {const other = b.panels[index];return other !== undefined && other.id === panel.id && other.radius === panel.radius && sameRect(panel.rect, other.rect) && sameLight(panel.light, other.light);})

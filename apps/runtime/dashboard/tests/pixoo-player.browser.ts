@@ -82,6 +82,17 @@ try {
     assert.equal(started.session.playlist.revision, saved.playlistRevision); assert.equal(sent.length, setupRequests + 1);
     await page.getByText(/^Estimated remaining: [0-9.]+ seconds$/).waitFor();
     await page.getByRole('img', {name: 'Effective preview', exact: true}).waitFor();
+    // The page is on the glass layer (#1950). Playback status that changes no box draws no glass frame: without a GPU
+    // every frame holds the page's main thread, and a frame per status tick starved this journey's clicks on slow hosts.
+    const glassFrames = (): Promise<number> => page.locator('#main > .glass-layer').evaluate(node => Number((node as HTMLElement).dataset['glassFrames'] ?? 0));
+    if (await page.locator('#main').getAttribute('data-glass') === 'webgl') {
+      let resting = await glassFrames();
+      for (let attempt = 0; attempt < 40; attempt++) { await delay(250); const now = await glassFrames(); if (now === resting) break; resting = now; }
+      const remaining = page.getByText(/^Estimated remaining: [0-9.]+ seconds$/), shown = await remaining.textContent();
+      await page.waitForFunction(text => [...document.querySelectorAll('p, span, div')].some(node => /^Estimated remaining: [0-9.]+ seconds$/.test(node.textContent ?? '') && node.textContent !== text), shown);
+      await delay(1500);
+      assert.equal(await glassFrames(), resting, 'playback status ticks draw no glass frame');
+    }
     const afterStart = world.pixooState().sent; assert.ok(afterStart > 0);
     await page.getByRole('button', {name: 'Pause playlist', exact: true}).click();
     await waitState('paused'); assert.equal(world.pixooState().sent, afterStart);
