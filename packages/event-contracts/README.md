@@ -952,6 +952,26 @@ copied or omitted shape and the format decides. The private
 core store needs no migration. A core older than 2.2 refuses saves whose entries
 carry `shape`; a width-only save is accepted and removes the shapes. The recovery steps are in the runtime dashboard guide and the runtime upgrade guide (Home arrangement state).
 
+### Lighting groups that hold plugs (`lighting-layout/2.1`)
+
+The core publishes `lighting-layout/2.1` (#1933): 2.0 plus an optional `plugs`
+on a group, `[{device, owner}]`. A group's `devices` still lists every member,
+lights and plugs alike, so membership uniqueness, overlap, the 2 to 64 bound and
+the Home selection checks are unchanged. `plugs` names the members that are plugs
+and the module that owns each (`bunny/modules/<name>`). Each entry must name one
+of its own group's `devices`, appear once and belong to a `home` group. Readers
+switch each plug with its own existing power command and never send it a
+lighting command; a lighting reader that does not know `plugs` finds a member
+that is not a light and refuses the whole card, sending nothing.
+`lighting-layout/2.0` is unchanged and rejects `plugs`. The existing
+`lighting-layout-set/2.0` command references the 2.1 layout and accepts it as an
+additive optional field. The record still sends no device command, and the core
+store needs no migration. A core older than 2.1 refuses every lighting save that
+still carries `plugs` and accepts one that removes the last plug group; an older
+dashboard's Ungroup of that group then places the plug as a light card, which a
+current release shows as unavailable until the plug is added again in Edit Home
+(see the runtime upgrade guide). Ungroup those groups before a planned downgrade.
+
 ### Selected microphone capture (`music-capture-*/2.1`)
 
 `registerMusicCaptureFamilies` registers unchanged 2.0 schemas and five additive

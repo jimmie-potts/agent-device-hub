@@ -279,7 +279,7 @@ it('Home card shapes load old records unchanged, keep a shape only while its wid
   } finally {await world.store.drain();}
 });
 
-it('lighting reconcile keeps the merged card shape and leaves new light cards to their Standard shape', async context => {
+it('lighting reconcile gives a new group the Wide shape and leaves new light cards to their Standard shape', async context => {
   const core = createCoreModule(), watcher = fixture('home-shape-light-watcher'), files = await edgeConfig(context, []);
   await run(context, {modules: [core, watcher], configFile: files.config});
   const entries = [{widget: 'light:device:lamp-a', size: 'small', hidden: false, shape: 'tall'}, {widget: 'light:device:lamp-b', size: 'medium', hidden: false, shape: 'wide'}];
@@ -292,7 +292,35 @@ it('lighting reconcile keeps the merged card shape and leaves new light cards to
   assert.equal(result.status, 'synced');if (result.status !== 'synced') throw new Error('shape-light-sync');
   await waitFor(() => result.copy.states()[0]?.data.layouts?.desktop[0]?.widget === 'light:group:pendants');
   const desktop = result.copy.states()[0]?.data.layouts?.desktop;await result.copy.close();
-  // Example 9: the group takes the first member's placement, shape included; a newly placed light or room card is Tall.
-  assert.deepEqual(desktop?.[0], {widget: 'light:group:pendants', size: 'small', hidden: false, shape: 'tall'});
+  // The group takes the first member's position in the Wide shape, the Clear group panel (#1933); a newly placed light
+  // or room card is Tall.
+  assert.deepEqual(desktop?.[0], {widget: 'light:group:pendants', size: 'medium', hidden: false, shape: 'wide'});
   assert.deepEqual(desktop?.find(value => value.widget === 'light:room:studio'), {widget: 'light:room:studio', size: 'small', hidden: false, shape: 'tall'});
+});
+
+it('a group that holds a plug folds the plug placement into the group and ungrouping restores each member as a Small square (#1933)', async context => {
+  const core = createCoreModule(), watcher = fixture('home-plug-group-watcher'), files = await edgeConfig(context, []);
+  await run(context, {modules: [core, watcher], configFile: files.config});
+  const plug = 'device:bunny/modules/wemo:plug-a';
+  const entries = [{widget: 'light:device:lamp-a', size: 'small', hidden: false, shape: 'square'}, {widget: 'hub-mode', size: 'medium', hidden: false}, {widget: plug, size: 'small', hidden: false, shape: 'square'}];
+  await core.operatorActions.dispatch(action('plug-home-setup', 0, {desktop: entries, phone: entries}));
+  const lighting = (requestId: string, expectedRevision: number, layout: object): Action => ({key: 'bunny.cmd.lighting-layout-set.lighting', requestedBy: 'bunny/parts/operator', requestId,
+    draft: {type: 'org.bunny.lighting-layout.set.requested', subject: 'lighting', dataschema: 'https://bunny.invalid/events/lighting-layout-set/2.0', data: {expectedRevision, layout}}});
+  const grouped = {rooms: [], assignments: [], home: [{kind: 'group', id: 'mix'}],
+    groups: [{id: 'mix', name: 'Light group', scope: 'home', devices: ['lamp-a', 'plug-a'], plugs: [{device: 'plug-a', owner: 'bunny/modules/wemo'}]}]};
+  assert.deepEqual(await core.operatorActions.dispatch(lighting('plug-group', 0, grouped)), {status: 'accepted', requestId: 'plug-group'});
+  const read = async <T extends object>(family: string): Promise<{data: T; dataschema: string}> => {
+    const result = await contextOf(watcher).sdk.sync<T>([family], () => {}, {timeoutMs: 2000, owner: 'bunny/core'});
+    assert.equal(result.status, 'synced');if (result.status !== 'synced') throw new Error(`${family}-sync`);
+    const state = result.copy.states()[0];await result.copy.close();assert.ok(state);return {data: state.data, dataschema: state.dataschema};
+  };
+  const light = await read<{revision: number; layout: {groups: unknown[]}}>('lighting-layout');
+  assert.equal(light.dataschema, 'https://bunny.invalid/events/lighting-layout/2.1');assert.deepEqual(light.data.layout.groups, grouped.groups);
+  const home = (await read<HomeLayoutRecord>('home-layout')).data.layouts;
+  for (const arrangement of [home?.desktop, home?.phone]) assert.deepEqual(arrangement, [{widget: 'light:group:mix', size: 'medium', hidden: false, shape: 'wide'}, entries[1]]);
+  const ungrouped = {...grouped, groups: [], home: [{kind: 'device', id: 'lamp-a'}]};
+  assert.deepEqual(await core.operatorActions.dispatch(lighting('plug-ungroup', light.data.revision, ungrouped)), {status: 'accepted', requestId: 'plug-ungroup'});
+  const restored = (await read<HomeLayoutRecord>('home-layout')).data.layouts;
+  for (const arrangement of [restored?.desktop, restored?.phone]) assert.deepEqual(arrangement, [
+    {widget: 'light:device:lamp-a', size: 'small', hidden: false, shape: 'square'}, {widget: plug, size: 'small', hidden: false, shape: 'square'}, entries[1]]);
 });

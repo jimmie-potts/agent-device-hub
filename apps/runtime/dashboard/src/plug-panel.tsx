@@ -14,6 +14,8 @@ export type PlugPanelProps = {
   result: string; routine: boolean;
   disabled: boolean; glow: Glow; open: string;
   onPower: (on: boolean) => void;
+  /** On Home (#1933): the drag handle at the top right and the options holding "Group with", beside Open. */
+  handle?: React.ReactNode; options?: React.ReactNode;
 };
 
 /**
@@ -22,7 +24,7 @@ export type PlugPanelProps = {
  * report, or else its observed power). It is disabled while that power is unknown or a guard blocks a change, so a
  * press never guesses. The icon is the panel's lamp for the glass layer and follows observed power only. The top right stays clear for the drag handle (#1933); Open leads to the plug's page with its full card.
  */
-export function PlugPanel({id, label, power, state, result, routine, disabled, glow, open, onPower}: PlugPanelProps): React.JSX.Element {
+export function PlugPanel({id, label, power, state, result, routine, disabled, glow, open, onPower, handle, options}: PlugPanelProps): React.JSX.Element {
   const [pressed, setPressed] = useState(false);
   const release = (): void => {setPressed(false);};
   return <article className="card plug-panel" aria-label={label} data-plug-panel={id}>
@@ -35,6 +37,8 @@ export function PlugPanel({id, label, power, state, result, routine, disabled, g
       <strong title={label}>{label}</strong><small title={state}>{state}</small>
     </button>
     <p role="status" className={routine ? 'vh' : 'plug-result'} title={result}>{result}</p>
+    {options !== undefined && <div className="plug-options">{options}</div>}
     <a className="plug-open" href={open} aria-label={`Open ${label}`}>Open</a>
+    {handle}
   </article>;
 }

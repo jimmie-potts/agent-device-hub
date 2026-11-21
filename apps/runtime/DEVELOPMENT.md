@@ -855,6 +855,20 @@ flight, refused, newer than the bulb's report or uncertain, and in a read-only
 session. The Wemo journey checks the plug press panel the same way by pointer,
 keyboard and touch, with a lost reply leaving it locked.
 
+The lighting journey's fuse part (#1933, `apps/runtime/dashboard/tests/fuse-journey.ts`,
+on a fresh world with simulated Wemo plugs) drags by the handle with the mouse
+(two lights, then a light with a plug) and by touch in a second browser (two
+plugs, checking that the page does not scroll), checks the target mark and that
+the card follows the pointer, that a drop elsewhere or on another kind of card
+returns the card and sends nothing, that the ring still dims, and that the
+keyboard path ("Group with", from a light and from a plug, and Ungroup) groups
+and ungroups the same units. A refused save shows "Not grouped" and leaves the
+lighting layout unchanged. All on with one plug refused at the gateway and one
+bulb's write held sends each member its own power command, switches the third
+and names the other two; All off then switches all three. The groups are there
+after a reload and in a second browser, and a read-only session sees no handle
+and disabled controls.
+
 The television journey (#1112) runs the existing shell at a 1,920 × 1,080
 viewport from the keyboard only, as a TV browser presents the D-pad. After the
 root build, run `node apps/runtime/dashboard/tests/tv.browser.ts`. It checks
@@ -1090,9 +1104,10 @@ private. The owner's view of the installed dashboard is separate.
 
 Reusable lighting (#1135) uses the existing event and core test discovery in CI.
 After the root build, run
-`node --test packages/event-contracts/tests/lighting-layout.test.mjs apps/runtime/dist/tests/lighting-layout.test.js`
-for bounded composition, authenticated admission, revision conflicts, durable
-restart and metadata-only effects. The shared dashboard model tests join
+`node --test packages/event-contracts/tests/lighting-layout.test.mjs apps/runtime/dist/tests/lighting-layout.test.js apps/runtime/dist/tests/home-layout.test.js`
+for bounded composition, plug members (`lighting-layout/2.1`), authenticated
+admission, revision conflicts, durable restart, Home placement reconciliation and
+metadata-only effects. The shared dashboard model tests join
 `test:runtime-dashboard:built`; the focused browser journey is
 `node apps/runtime/dashboard/tests/lighting.browser.ts` (also called by the
 controls browser suite). The `lighting-layout` catalog scenario runs in disposable verification. These tests use synthetic

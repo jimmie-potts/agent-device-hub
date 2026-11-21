@@ -463,7 +463,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         {artRunning && <ModuleFrontend module="art" connection={connection} connected={artConnected} control={false} operations={[]} operationsLive={false} Component={ArtBackdropSource}/>}
         {notice !== undefined && <p role="alert" className="warning" data-glass-veil>{notice}</p>}
         <HomeLayout runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive}
-          attention={rows.some(row => row.attention.length > 0)} inbox={inboxItems.length > 0} renderCard={place} renderHero={hero}/>
+          attention={rows.some(row => row.attention.length > 0)} inbox={inboxItems.length > 0} renderCard={place} renderHero={hero} refresh={connection.refreshDevices}/>
       </section>}
       <DeviceDirectory runtime={runtime} connected={state.feed === 'connected'} active={route.kind === 'devices'}/>
       {route.kind === 'settings' && <section aria-label="Settings"><header className="page"><h1>Settings</h1></header>

@@ -18,6 +18,11 @@ export type LightCardProps = {
   operations?: readonly OperationRecord[]; drag?: React.DragEventHandler<HTMLElement>; drop?: React.DragEventHandler<HTMLElement>;
   /** A status about the card's arrangement, such as stale layout records, shown inside the card on Home. */
   notice?: string;
+  /**
+   * On Home, the drag handle that groups this card with another light or plug (#1933), at its top right. An unfolded
+   * card shows none: it is grouped from its Small square or by "Group with".
+   */
+  handle?: React.ReactNode;
 };
 /** Where a card's own page is: a light's component page, the Rooms page for a room, a group's brand page. */
 function pageOf(card: LightingCard): string | undefined {
@@ -39,7 +44,7 @@ function Slider({label, value, min = 0, max = 100, unit = '%', disabled, commit}
 }
 function common<T>(values: readonly (T | undefined)[]): T | undefined { return values.length > 0 && values.every(value => value !== undefined && value === values[0]) ? values[0] : undefined; }
 /** Artwork and the menu remain mounted. Only the labelled control face changes on a tab switch. */
-export function LightCard({card, devices, capabilities: cap, artwork, modeChoice, options, status, act, currentObservationsOnly = false, operations = [], drag, drop, notice}: LightCardProps): React.JSX.Element {
+export function LightCard({card, devices, capabilities: cap, artwork, modeChoice, options, status, act, currentObservationsOnly = false, operations = [], drag, drop, notice, handle}: LightCardProps): React.JSX.Element {
   const id = useId(), shape = useHomeShape(), unfold = useHomeUnfold(), modeNote = useDeviceModeNote(card.selection.kind === 'device' ? card.selection.id : undefined);
   // Unfolding on Home (#1932): after the arrow or Escape, focus moves into the opened controls or back to the arrow.
   const arrow = useRef<HTMLButtonElement>(null), opened = useRef<HTMLDivElement>(null);
@@ -156,11 +161,12 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
       {notice !== undefined && <p className="light-card-notice" role="status" title={notice}>{notice}</p>}
       {attentionLine}
       <div className="light-dial-options">{options}</div>
+      {handle}
     </article>;
   }
   return <article className="light-card" aria-label={card.name} data-light-card={card.selection.id} onDragOver={allowDrop} onDrop={drop}>
     <header className="light-card-heading"><div><h3>{card.name}</h3><p title={compact || shape !== undefined ? `${card.selection.kind === 'device' ? 'Light' : `${String(card.members.length)} lights · ${card.selection.kind}`} · ${statusText}` : undefined}>{card.selection.kind === 'device' ? 'Light' : `${card.members.length} lights · ${card.selection.kind}`} · {statusText}</p></div>
-      {options}
+      {handle}{options}
     </header>
     {notice !== undefined && <p className="light-card-notice" role="status" title={notice}>{notice}</p>}
     {/* A room or group with no lights says so where its artwork would be, instead of a blank panel (#1672). */}

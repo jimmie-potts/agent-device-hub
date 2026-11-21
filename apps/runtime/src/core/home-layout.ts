@@ -1,7 +1,7 @@
 // Private presentation metadata; this part has no device dispatch path (Hub #366).
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {coreValidator, homeArtShapes, homeShapeSize, type HomeLayoutRecord, type HomeLayoutSetRequest, type HomePlacement, type HomeShape, type LightingLayout, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, homeArtShapes, homeShapeSize, type HomeLayoutRecord, type HomeLayoutSetRequest, type HomePlacement, type HomeShape, type LightingGroup, type LightingLayout, type LightingLayoutSetRequest} from '@jimmie-potts/event-contracts/v2/families';
 import {Outcome, fullDisk, type Command, type Reply, type StateDraft} from '@jimmie-potts/sdk';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreTransaction} from './store.js';
@@ -65,17 +65,22 @@ export class HomeLayoutPart implements CorePart {
     const homeGroups = (layout: LightingLayout): string => JSON.stringify(layout.groups.filter(group => group.scope === 'home').map(group => ({id: group.id, devices: group.devices})));
     const regrouping = homeGroups(before) !== homeGroups(after);
     const key = (value: {kind: string; id: string}): string => `light:${value.kind}:${value.id}`;
+    // A member's own Home placement: a light's light card, or a plug's device card under its owning module (#1933).
+    const memberKey = (group: LightingGroup, id: string): string => {const plug = group.plugs?.find(item => item.device === id);return plug === undefined ? key({kind: 'device', id}) : `device:${plug.owner}:${id}`;};
     for (const breakpoint of ['desktop', 'phone'] as const) {
+      // Ungrouping gives each member its own placement where the group was, as a Small square (a ring dial or a plug's
+      // press panel); the group's other options do not apply to a member.
       let entries = layouts[breakpoint].flatMap(entry => {
         const removed = before.groups.find(group => group.scope === 'home' && key({kind: 'group', id: group.id}) === entry.widget && !after.groups.some(next => next.id === group.id));
-        return removed === undefined ? [entry] : removed.devices.map(id => ({...entry, widget: key({kind: 'device', id})}));
+        return removed === undefined ? [entry] : removed.devices.map(id => ({widget: memberKey(removed, id), size: homeShapeSize.square, hidden: entry.hidden, shape: 'square' as const}));
       });
       for (const group of after.groups.filter(group => group.scope === 'home')) {
         if (before.groups.some(previous => previous.id === group.id && JSON.stringify(previous.devices) === JSON.stringify(group.devices))) continue;
-        const members = new Set(group.devices.map(id => key({kind: 'device', id}))), indexes = entries.flatMap((entry, index) => members.has(entry.widget) ? [index] : []);
+        const members = new Set(group.devices.map(id => memberKey(group, id))), indexes = entries.flatMap((entry, index) => members.has(entry.widget) ? [index] : []);
         const first = indexes[0];if (first === undefined) continue;
         const base = entries[first];if (base === undefined) continue;
-        const replacement = {...base, widget: key({kind: 'group', id: group.id}), hidden: indexes.every(index => entries[index]?.hidden === true)};
+        // The group panel spans two units (the Clear reference), so a new group takes the Wide shape at its first member's place.
+        const replacement: HomePlacement = {widget: key({kind: 'group', id: group.id}), size: homeShapeSize.wide, hidden: indexes.every(index => entries[index]?.hidden === true), shape: 'wide'};
         entries = entries.flatMap((entry, index) => index === first ? [replacement] : members.has(entry.widget) ? [] : [entry]);
       }
       if (after.home !== null) {

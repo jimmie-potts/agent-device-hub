@@ -8,7 +8,10 @@ import type {Route} from './routes.ts';
 import {useAttempt} from './command-control.tsx';
 import {LightCard} from './light-card.tsx';
 import {DeviceModeChoice} from './device-mode.tsx';
-import {brandName, cardsFor, emptyLightingLayout, groupCards, lightCapabilities, lightingDevices, prepareLighting, resolveCard, selectionKey, ungroupCard, type LightingCard, type LightingDevice, type LightingIntent} from './lighting.ts';
+import {brandName, cardsFor, emptyLightingLayout, groupCards, lightCapabilities, lightingDevices, plugDevices, prepareLighting, resolveCard, selectionKey, ungroupCard, unitKey, type LightingCard, type LightingDevice, type LightingIntent} from './lighting.ts';
+import {GroupWith, useFuse} from './fuse.tsx';
+import {GroupPanel} from './group-panel.tsx';
+import {useHomeShape} from './home-shape-context.ts';
 import './lighting.css';
 import {PinToggle} from './pins.tsx';
 import {RoomModels} from './room-models.tsx';
@@ -34,6 +37,8 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
   runtime: RuntimeData; connected: boolean; operations: readonly OperationRecord[]; operationsLive: boolean; connection: DashboardConnection; route: Route; homeSelection?: LightingSelection; homeSelections?: LightingSelection[];
 }): React.JSX.Element {
   const devices = lightingDevices(runtime.copies, connected);
+  // On Home (#1933) cards group by their drag handle and the "Group with" selector, with plugs as well as lights.
+  const fuse = useFuse(), shape = useHomeShape();
   const layoutCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'lighting-layout');
   const record = (layoutCopy?.records as readonly LightingLayoutRecord[] | undefined)?.find(item => item.id === 'lighting');
   const layout = record?.layout ?? emptyLightingLayout();
@@ -41,7 +46,10 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
   const bindings = useRef<Bindings>(new Map());
   const [, render] = useState(0);
   const changed = useMemo(() => () => { render(value => value + 1); }, []);
-  const [message, setMessage] = useState('');
+  const [message, setLocalMessage] = useState('');
+  // A Home card says what it refused on Home's one status line (#1933, fuse.tsx), never on the bare backdrop above it.
+  const onHomeLine = route.kind === 'home' && homeSelection !== undefined && fuse !== undefined;
+  const setMessage = (text: string): void => {if (onHomeLine) fuse.say(text);else setLocalMessage(text);};
   const scope = useMemo(() => connection.openModule('nanoleaf'), [connection]);
   useEffect(() => () => { void scope.close(); }, [scope]);
   const readWall = useMemo(() => (path: string): Promise<unknown> => scope.api.read(path), [scope]);
@@ -75,12 +83,14 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
     save(next);
   };
   const group = (first: LightingSelection, second: LightingSelection): void => { save(groupCards(layout, viewScope, first, second, devices, crypto.randomUUID(), homeSelections)); };
-  const options = (card: LightingCard, currentObservationsOnly = false): React.ReactNode => <details className="light-options"><summary aria-label={`Options for ${card.name}`}>⋯</summary><div className="light-options-body">
-    {card.selection.kind !== 'room' && <label>Group with<select aria-label={`Group ${card.name} with`} value="" disabled={!editable} onChange={event => {
+  // The group panel has Ungroup on its face (#1933), so its options leave it out.
+  const options = (card: LightingCard, currentObservationsOnly = false, ungroupInMenu = true): React.ReactNode => <details className="light-options"><summary aria-label={`Options for ${card.name}`}>⋯</summary><div className="light-options-body">
+    {card.selection.kind !== 'room' && (home && fuse !== undefined ? <GroupWith name={card.name} self={unitKey(card.selection)} fuse={fuse} group={target => {fuse.group(card.selection, target);}}/>
+      : <label>Group with<select aria-label={`Group ${card.name} with`} value="" disabled={!editable} onChange={event => {
       const target = cards.find(item => selectionKey(item.selection) === event.target.value); if (target !== undefined) group(card.selection, target.selection);
       event.currentTarget.closest('details')?.removeAttribute('open');
-    }}><option value="">Choose a card</option>{cards.filter(other => other.selection.kind !== 'room' && selectionKey(other.selection) !== selectionKey(card.selection)).map(other => <option key={selectionKey(other.selection)} value={selectionKey(other.selection)}>{other.name}</option>)}</select></label>}
-    {card.selection.kind === 'group' && <button type="button" disabled={!editable} onClick={() => { save(ungroupCard(layout, card.selection.id)); }}>Ungroup</button>}
+    }}><option value="">Choose a card</option>{cards.filter(other => other.selection.kind !== 'room' && selectionKey(other.selection) !== selectionKey(card.selection)).map(other => <option key={selectionKey(other.selection)} value={selectionKey(other.selection)}>{other.name}</option>)}</select></label>)}
+    {card.selection.kind === 'group' && ungroupInMenu && <button type="button" disabled={!editable} onClick={() => { save(ungroupCard(layout, card.selection.id)); }}>Ungroup</button>}
     {card.selection.kind !== 'device' && <form onSubmit={event => {
       event.preventDefault(); const field = new FormData(event.currentTarget).get('name'); const name = typeof field === 'string' ? field.trim() : ''; if (name === '') return;
       const next = structuredClone(layout); const item = card.selection.kind === 'room' ? next.rooms.find(item => item.id === card.selection.id) : next.groups.find(item => item.id === card.selection.id);
@@ -89,6 +99,11 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
     {card.selection.kind === 'room' && <button type="button" disabled={!editable} onClick={() => { toggleHome(card.selection, !selected.some(item => selectionKey(item) === selectionKey(card.selection))); }}>{selected.some(item => selectionKey(item) === selectionKey(card.selection)) ? 'Remove from Home' : 'Add to Home'}</button>}
     {home && homeSelection === undefined && card.selection.kind === 'device' && <button type="button" disabled={!editable} onClick={() => { toggleHome(card.selection, false); }}>Remove from Home</button>}
     <h4>Details</h4>{card.members.map(id => {
+      // A plug member's details and controls are on its own page.
+      if (card.plugs?.some(plug => plug.device === id) === true) {
+        const plug = plugDevices(runtime.copies, connected).find(item => item.record.id === id);
+        return <div key={id}><a href={`#/component/${encodeURIComponent(id)}`}>{plug?.record.label ?? id} · plug page</a></div>;
+      }
       const device = devices.find(item => item.record.id === id), command = bindings.current.get(id);
       const current = !currentObservationsOnly || device?.live === true && device.record.availability === 'available';
 
@@ -123,8 +138,9 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
       </div></details></div></header>}
       {/* A Home card shows this inside its own face (#1932), where it neither sits on the backdrop nor pushes the face down. */}
       {!layoutLive && homeSelection === undefined && <p role="status" data-glass-veil>{STALE_LAYOUT}</p>}
-      {(layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status" data-glass-veil>Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
-      {message !== '' && <p role="status" data-glass-veil>{message}</p>}
+      {/* A Home card leaves layout results to Home's own line (#1933, fuse.tsx). */}
+      {(homeSelection === undefined || fuse === undefined) && (layoutCommand.locked || /Refused|Not sent/i.test(layoutCommand.text)) && <p role="status" data-glass-veil>Layout: {layoutCommand.text.replace('The module observed the result.', 'The layout was saved.')} <button type="button" onClick={() => { void connection.refreshDevices(); }}>Refresh records</button></p>}
+      {message !== '' && !onHomeLine && <p role="status" data-glass-veil>{message}</p>}
       {roomView && <RoomModels connection={connection} connected={connected && runtime.modules?.some(module => module.name === 'core' && module.state === 'running') === true} layout={layout} layoutLive={layoutLive} devices={devices} copies={runtime.copies}
         renderLight={(anchor, roomId, currentObservationsOnly = false) => {
           const bound = roomBinding(anchor, roomId, layout, devices, layoutLive);
@@ -141,16 +157,24 @@ export function LightingWorkspace({runtime, connected, operations, operationsLiv
             artwork={<div className="lighting-image-group"><div>{device.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div></div>}/>;
         }}/>}
       {cards.length === 0 && <p>{roomView ? 'Create a room, then assign its lights in Manage rooms.' : 'No light cards here. Use Arrange to select Home cards.'}</p>}
-      <div className="lighting-grid">{displayedCards.map(card => <LightCard key={selectionKey(card.selection)} card={card} devices={devices} operations={operations} capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks(), card.brand)}
+      <div className="lighting-grid">{displayedCards.map(card => {
+        // On Home a group in the Wide shape, and a group that holds a plug in every shape, is the group panel (#1933).
+        const saved = card.selection.kind === 'group' ? layout.groups.find(item => item.id === card.selection.id) : undefined;
+        if (home && saved !== undefined && (shape === 'wide' || (saved.plugs?.length ?? 0) > 0)) return <GroupPanel key={selectionKey(card.selection)} id={saved.id} name={card.name} group={saved}
+          devices={devices} plugs={plugDevices(runtime.copies, connected)} control={runtime.control} operations={operations} operationsLive={operationsLive}
+          ungroup={editable ? () => {save(ungroupCard(layout, saved.id));} : undefined} handle={fuse?.handle(card.selection, card.name)} options={options(card, false, false)}
+          {...(!layoutLive ? {notice: STALE_LAYOUT} : {})}/>;
+        return <LightCard key={selectionKey(card.selection)} card={card} devices={devices} operations={operations} capabilities={lightCapabilities(card.members, devices, runtime.control, operationsLive, locks(), card.brand)}
         {...(!layoutLive && homeSelection !== undefined ? {notice: STALE_LAYOUT} : {})}
         act={intent => { act(card, intent); }} options={options(card)} modeChoice={card.selection.kind === 'device' ? <DeviceModeChoice target={card.selection.id}/> : undefined} status={card.members.map(id => ({name: devices.find(device => device.record.id === id)?.record.label ?? id, text: bindings.current.get(id)?.text ?? '', locked: bindings.current.get(id)?.locked ?? false}))}
         artwork={<div className="lighting-image-group">{card.members.map(id => {
           const device = devices.find(device => device.record.id === id);
           return <div key={id}>{device?.wall === undefined ? <Placeholder device={device}/> : <NanoleafLightVisual wall={device.wall} read={readWall}/>}</div>;
         })}</div>}
-        {...(editable && !roomView && card.selection.kind !== 'room' ? {drag: (event: React.DragEvent<HTMLElement>) => { event.dataTransfer.setData('application/x-bunny-light-card', selectionKey(card.selection)); event.dataTransfer.effectAllowed = 'move'; }, drop: (event: React.DragEvent<HTMLElement>) => {
+        {...(home && fuse !== undefined ? card.selection.kind === 'room' ? {} : {handle: fuse.handle(card.selection, card.name)} : editable && !roomView && card.selection.kind !== 'room' ? {drag: (event: React.DragEvent<HTMLElement>) => { event.dataTransfer.setData('application/x-bunny-light-card', selectionKey(card.selection)); event.dataTransfer.effectAllowed = 'move'; }, drop: (event: React.DragEvent<HTMLElement>) => {
           event.preventDefault(); const key = event.dataTransfer.getData('application/x-bunny-light-card'); const first = cards.find(item => selectionKey(item.selection) === key); if (first !== undefined) group(first.selection, card.selection);
-        }} : {})}/>)}</div>
+        }} : {})}/>;
+      })}</div>
     </section>}
   </>;
 }

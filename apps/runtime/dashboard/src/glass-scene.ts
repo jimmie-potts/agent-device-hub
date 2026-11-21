@@ -20,9 +20,13 @@
  *   it the light is the skin's warm white (`--glass-lamp`). `data-glass-pressed` marks a panel held down by the
  *   pointer: it brightens, its bevel widens and it spills white light.
  *
+ * - `data-glass-target` (#1933) on a panel that a dragged panel would group with if dropped now: it lights up, as a
+ *   pressed panel does. `data-glass-dragged` marks the dragged panel, which moves by a transform (the layer reads its
+ *   box), counts as animating so it turns liquid, and stays clear of the target's light where the two overlap.
+ *
  * Later stories extend `GlassPanel` with optional fields that `readScene` parses from more attributes (#1932 its liquid
- * state, #1933 a dragged panel and a drop target). The renderer packs each panel into one row of a data texture
- * (`PANEL_TEXELS` texels wide), so a new field is a new texel and a new shader term; nothing else changes shape.
+ * state). The renderer packs each panel into one row of a data texture (`PANEL_TEXELS` texels wide), so a new field is
+ * a new texel and a new shader term; nothing else changes shape.
  */
 
 /** A box in CSS pixels relative to the viewport. */
@@ -31,7 +35,7 @@ export type GlassRect = {x: number; y: number; width: number; height: number};
 export type GlassRgb = readonly [number, number, number];
 /** A panel's light (#1931): its color (null for the skin's warm white), level, lamp position and whether it is pressed. */
 export type GlassLight = {color: GlassRgb | null; level: number; lamp: {x: number; y: number}; pressed: boolean};
-export type GlassPanel = {id: string; rect: GlassRect; radius: number; light?: GlassLight};
+export type GlassPanel = {id: string; rect: GlassRect; radius: number; light?: GlassLight; target?: true; dragged?: true};
 export type GlassVeil = {rect: GlassRect; edge: boolean};
 /** A switch's selected segment, with its `data-glass-thumb` value, so the thumb knows when another segment is chosen. */
 export type GlassThumbMark = {rect: GlassRect; key: string};
@@ -64,7 +68,9 @@ export function readScene(root: ParentNode, veilScope: ParentNode, viewport: {wi
     if (panels.length >= MAX_PANELS) break;
     const rect = rectOf(element);if (!visible(rect, viewport.width, viewport.height)) continue;
     const radius = Number.parseFloat(getComputedStyle(element).getPropertyValue('--glass-radius')), light = lightOf(element);
-    panels.push({id: element.dataset['glassPanel'] ?? '', rect, radius: Math.min(Number.isFinite(radius) ? radius : DEFAULT_RADIUS, rect.width / 2, rect.height / 2), ...(light === undefined ? {} : {light})});
+    panels.push({id: element.dataset['glassPanel'] ?? '', rect, radius: Math.min(Number.isFinite(radius) ? radius : DEFAULT_RADIUS, rect.width / 2, rect.height / 2),
+      ...(light === undefined ? {} : {light}), ...(element.dataset['glassTarget'] === undefined ? {} : {target: true as const}),
+      ...(element.dataset['glassDragged'] === undefined ? {} : {dragged: true as const})});
   }
   const veils: GlassVeil[] = [];
   for (const element of veilScope.querySelectorAll<HTMLElement>('[data-glass-veil]')) {
@@ -101,7 +107,23 @@ export function visibleScene(scene: GlassScene, viewport: {width: number; height
 
 export function sameScene(a: GlassScene, b: GlassScene): boolean {
   return a.panels.length === b.panels.length && a.veils.length === b.veils.length
-    && a.panels.every((panel, index) => {const other = b.panels[index];return other !== undefined && other.id === panel.id && other.radius === panel.radius && sameRect(panel.rect, other.rect) && sameLight(panel.light, other.light);})
+    && a.panels.every((panel, index) => {const other = b.panels[index];return other !== undefined && other.id === panel.id && other.radius === panel.radius && other.target === panel.target && other.dragged === panel.dragged && sameRect(panel.rect, other.rect) && sameLight(panel.light, other.light);})
     && a.veils.every((veil, index) => {const other = b.veils[index];return other !== undefined && other.edge === veil.edge && sameRect(veil.rect, other.rect);})
     && (a.thumb === null ? b.thumb === null : b.thumb !== null && a.thumb.key === b.thumb.key && sameRect(a.thumb.rect, b.thumb.rect));
+}
+
+/** How long a drop target takes to light up fully, and to go out (#1933; the reference's 160 ms). */
+const TARGET_S = 0.16;
+/**
+ * Eases the drop target's light on a time base: toward 1 on the marked panel, toward 0 once none is marked. A new target
+ * starts from 0. Returns undefined once the light is out. With reduced motion it switches at once.
+ */
+export function easeTarget(current: {id: string; glow: number} | undefined, marked: string | undefined, seconds: number, still: boolean): {id: string; glow: number} | undefined {
+  if (marked !== undefined) {
+    const from = current?.id === marked ? current.glow : 0;
+    return {id: marked, glow: still ? 1 : Math.min(1, from + seconds / TARGET_S)};
+  }
+  if (current === undefined) return undefined;
+  const glow = still ? 0 : Math.max(0, current.glow - seconds / TARGET_S);
+  return glow <= 0 ? undefined : {id: current.id, glow};
 }

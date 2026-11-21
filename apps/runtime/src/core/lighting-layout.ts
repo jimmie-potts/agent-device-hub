@@ -9,7 +9,7 @@ import type {CompletedOutcome} from './tracker.js';
 
 const ID = 'lighting';
 const stateDraft = (record: LightingLayoutRecord): StateDraft => ({type: 'org.bunny.lighting-layout.updated', subject: ID,
-  dataschema: 'https://bunny.invalid/events/lighting-layout/2.0', data: record});
+  dataschema: 'https://bunny.invalid/events/lighting-layout/2.1', data: record});
 export type LightingLayoutAdmission = {
   admit(command: Command<LightingLayoutSetRequest>): boolean;
   complete(tx: CoreTransaction, command: Command<LightingLayoutSetRequest>, result: Omit<CompletedOutcome, 'requestId'>): () => void;

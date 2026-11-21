@@ -694,8 +694,10 @@ use their separate existing procedures.
 It receives a resolved target, capabilities, artwork, options and an action
 callback. Power, Color, Scenes and Timer tabs replace only the controls; the
 artwork stays mounted. Arrow keys, Home and End select tabs, and reduced motion
-removes the flip. Drag handles and the Group with selector perform the same
-layout edit. Each brand has its own grouping scope; Home permits mixed brands.
+removes the flip. On brand pages a drag handle and the Group with selector
+perform the same layout edit; Home uses the fuse drag instead (see
+[Fuse: grouping lights and plugs](#fuse-grouping-lights-and-plugs)). Each brand
+has its own grouping scope; Home permits mixed brands and plugs.
 
 `lighting.ts` resolves device, custom-group and current room membership and
 prepares guarded actions only after every member passes freshness, ownership,
@@ -1176,6 +1178,57 @@ A frame with a repeated timestamp keeps the state and measures the move on the
 next one. The canvas's
 `data-glass-liquid` lists the liquid panels it last drew, as `id:wob`, for
 checks.
+
+### Fuse: grouping lights and plugs
+
+On Home a light, plug or group panel has a drag handle at its top right
+(`src/fuse.tsx`, #1933). It starts a pointer drag by mouse, pen or touch and
+does not scroll the page or dim. The Home card follows the pointer by a
+transform; the glass layer reads the moved box, so the smooth-minimum join fuses
+it with the panels it nears. The card is marked `data-glass-dragged` while it
+follows the pointer and eases home, and the layer's `panelAnimating()` counts it
+as animating, so it turns liquid (#1932); the re-layout after a drop that groups
+is a jump of one frame. While a card is dragged no card unfolds, and the unfold's
+FLIP leaves the dragged card alone; an unfolded card shows no handle. The light, plug or group card under the pointer is
+the target: it is marked `data-fuse-target` (an outline in Quiet glass) and
+`data-glass-target`, which the layer lights up like a pressed panel, easing in
+and out over 160 ms on a time base (`easeTarget`; the canvas's
+`data-glass-target` reads `id:glow`). Rooms and other cards are never targets.
+A drop on the target groups the two with `groupCards` and saves the lighting
+layout through `lighting-layout-set`; a drop anywhere else, Escape or a
+cancelled pointer eases the card back over 340 ms and saves nothing, and so do
+a lost pointer capture and grouping becoming unavailable mid-drag. Near the
+window's top or bottom edge a drag scrolls the page, so a card below the fold
+can be reached by touch. A refused
+or failed save changes nothing and Home's line says "Not grouped" with the
+reason; every lighting save state on Home that needs attention (in flight, refused,
+expired, failed, uncertain or conflicting, the settled and locked ones with
+Refresh records) and every refusal a Home light card reports shows on that one
+line, never above a card. `src/home-line.ts` decides it: the newer of a card's
+note and the latest save's state, both stamped from one counter, except that
+a save left uncertain or conflicting always shows. A grouping keeps every
+other light card shown on Home, rooms included, in the lighting Home
+selection. The keyboard path is "Group with" in a card's options, which offers
+every other light, group and plug on Home. Light and plug cards have the handle
+and "Group with" in every shape, their full cards on a phone included. Read-only sessions, stale records,
+an unresolved save and Edit Home show no handle.
+
+A Home group may hold Wemo plugs (`lighting-layout/2.1`: the group's `devices`
+keeps every member and `plugs` names the plug members and their owner). The
+core folds the members' Home cards into one Wide group card at the first
+member's place and gives each member its own Small square back on Ungroup. A
+group in the Wide shape, and a group that holds a plug in every shape, is the
+group panel (`src/group-panel.tsx`): its name and member count, All on or All
+off, Ungroup and one switch per member, which shows that member's power as the
+ring dial does (a request that succeeded after its last report shows beside the
+observed power). Every
+switch and All on or All off sends each member its own existing power command
+under that member's own guards (`memberPower` in `src/lighting.ts`: a light
+through `prepareLighting`, a plug through the Wemo card's guards); there is no
+group command, and a plug never receives a lighting command. A member a guard
+blocks is not sent and says why while the others switch, and each member whose
+last command was refused, not sent, unanswered or uncertain is named under the
+switches.
 
 ## Build and checks
 
