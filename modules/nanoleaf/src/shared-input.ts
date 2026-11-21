@@ -163,8 +163,9 @@ export function validIdentity(value: unknown, fields: readonly string[] = IDENTI
   const keys = Object.keys(value);
   if (keys.length !== fields.length || !fields.every(field => Object.hasOwn(value, field))) return false;
   if (!fields.every(field => typeof value[field] === 'string' && ID.test(value[field]))) return false;
+  // The native B.U.N.N.Y. assistant (Hub #505) shows on the Lines once the owner qualifies its source in the configuration.
   return (value.provider === 'codex' && (value.client === 'cli' || value.client === 'desktop' || value.client === 'local'))
-    || (value.provider === 'claude' && value.client === 'code');
+    || (value.provider === 'claude' && value.client === 'code') || (value.provider === 'bunny' && value.client === 'assistant');
 }
 
 // Python's configuration also took `bindings`, which carried legacy tasks across a source switch; legacy input is

@@ -724,9 +724,9 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
   back to its class and never makes an opportunity match.
 - `src/v2/session.ts` (`./v2/session`) re-exports the view and adds
   `readSession(message)`, which validates a session state message and returns
-  its view, or undefined. It reads `session/3.0` only (`SESSION_SCHEMA`), so a
-  reader from an older release, which reads `session/2.x`, finds no record it
-  accepts until it is updated.
+  its view, or undefined. It reads `session/3.0` and, since Hub #505,
+  `session/3.1` (`READABLE_SESSION_SCHEMAS`), so a reader from an older release,
+  which reads `session/2.x`, finds no record it accepts until it is updated.
 - `fixtures/v2/session-cases.json` is the shared synthetic case set, and
   `loadSessionCases()` in `./v2/session-cases` expands it into messages, each
   expected record a `session/3.0` state built with `buildSession`, for the
@@ -735,6 +735,40 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
   helper's ranking against the 1.x helper, and `tests/session.test.mjs` covers
   the status function, the record builder, the policies and opportunity
   matching.
+
+### Native assistant task sessions (Hub #505)
+
+Each B.U.N.N.Y. assistant task is one root session of the native source. The
+OpenSpec change `gh-505-native-assistant-sessions` holds the design.
+
+- The source is `bunny` with client `assistant`. It maps no hook, so the hook
+  adapter never accepts it. `NATIVE_SOURCE` in `sources.ts` fixes its host
+  (`core`), its source and ordering authority (`companions`) and its one
+  producer, `bunny/modules/companions`. The session ID is the task ID. The
+  versions before the native source name the hook sources only
+  (`HOOK_PROVIDERS`, `HOOK_CLIENTS`), and `tests/sources.test.mjs` checks both
+  sets.
+- `session/3.1` is `session/3.0` with the identity widened to the native
+  source and an optional notice `result`: `succeeded`, `failed` or `cancelled`.
+  `lifecycle/2.2` is `lifecycle/2.0` with the widened identity and three
+  common inputs: `turn-waiting` (the turn's work stopped to wait for an answer
+  or delegated work, with no notice), `turn-uncertain` (the turn's work stopped
+  and the fate of its last effect is unknown) and `turn-ended` with a `result`.
+  `attention-raised`, `attention-cleared` and `turn-ended` 2.1 are their 2.0
+  forms with the widened identity. `session-ended`, `companion-opportunity`,
+  `lifecycle/2.0` and `2.1` are unchanged. `tests/native-sessions.test.mjs`
+  keeps each new schema equal to its predecessor apart from these members.
+- `sessionSchemaOf(record)` and `occurrenceSchemaOf(family, identity)` in
+  `session.ts` give the lowest version that expresses a record or an
+  occurrence: `session/3.1` and 2.1 for a native task, `session/3.0` and 2.0
+  for every other session. A reader of an earlier release therefore still
+  reads every Codex and Claude record and skips a native one.
+- `readSession` reads `session/3.0` and `3.1` (`READABLE_SESSION_SCHEMAS`).
+  Status rule 3 details `finished` by the result of the last counting notice
+  that has one, and by `turn-ended` otherwise, so a finished turn without a
+  result claims no success.
+- The case set holds native cases: an answer and resume, every outcome,
+  duplicate and late delivery, a restart and expiry with reappearance.
 
 ### How 1.x error codes merged
 

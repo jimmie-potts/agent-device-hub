@@ -24,7 +24,7 @@ import {createHash} from 'node:crypto';
 import {MessageValidator, type ErrorDetail, type Message, type PayloadCheck} from './index.js';
 import {defineFamily as define, registerFamilies, routedSubject, type PayloadFamily} from './registry.js';
 import {statusOf} from './session-view.js';
-import type {Client, Provider} from './sources.js';
+import type {Client, HookProvider, Provider} from './sources.js';
 
 export {FAMILY_VERSION, type PayloadFamily} from './registry.js';
 /** Core-derived optional maximum-on state, independent of observed device power and tracked operation outcomes. */
@@ -42,6 +42,8 @@ const STALE_AFTER_MS = 300_000;
 
 /** A session's native selector. Its provider and client come from the supported-source definition (`sources.ts`). */
 export type Identity = {provider: Provider; client: Client; hostId: string; sourceId: string; sessionId: string};
+/** A hook source's session selector, which the versions before the native source (Hub #505) and the 1.x packages name. */
+export type HookIdentity = Omit<Identity, 'provider' | 'client'> & {provider: HookProvider; client: Client<HookProvider>};
 export type KnownId = {status: 'unknown'} | {status: 'known'; id: string};
 export type Parent = {status: 'unknown'} | {status: 'top-level'} | {status: 'known'; identity: Identity};
 export type Ordering = {status: 'unknown'} | {status: 'known'; authority: string; epoch: string; sequence: number};
@@ -55,8 +57,10 @@ export type Unavailable = {
 export type Label = {value: string; origin: 'user' | 'agent'};
 export type Title = {value: string; source: 'provider' | 'user'};
 
-/** One turn-ended notice and the consumers that acknowledged it. */
-export type Notice = {id: string; kind: 'turn-ended'; turn: KnownId; acknowledgedBy: string[]};
+/** How a turn's task ended, when its producer knows (`session/3.1`, Hub #505). A notice without one proves nothing about success. */
+export type NoticeResult = 'succeeded' | 'failed' | 'cancelled';
+/** One turn-ended notice and the consumers that acknowledged it. Only `session/3.1` carries its `result`. */
+export type Notice = {id: string; kind: 'turn-ended'; turn: KnownId; acknowledgedBy: string[]; result?: NoticeResult};
 /** Explicit read provenance (`session/2.1`): the exact finished notice, when the receipt was observed, its source and the receipt. */
 export type ReadProvenance = {noticeId: string; observedAtMs: number; source: string; receipt: ReadReceipt};
 
@@ -107,9 +111,20 @@ export type Session30Record = {
   unavailable: Unavailable[]; ordering: Ordering; observedAtMs: number; lastEvidenceAtMs: number;
   label?: Label; title?: Title; project?: string; projectId?: string; hostSessionId?: string;
 };
+/**
+ * `org.bunny.session.updated` under `session/3.1` (Hub #505): `session/3.0` with the identity widened to the native
+ * assistant source and an optional notice `result`. A `session/3.0` record is one, so the type is the same.
+ */
+export type Session31Record = Session30Record;
 export type LifecycleEvent =
   | {kind: 'metadata-observed'; archived?: boolean}
   | {kind: 'session-started' | 'turn-started' | 'activity-observed' | 'turn-ended' | 'turn-interrupted' | 'runtime-ended'}
+  /**
+   * `lifecycle/2.2`'s common inputs (Hub #505): the turn's work stopped to wait for an answer or delegated work, with no
+   * notice; the turn's work stopped and the fate of its last effect is unknown; and a turn end that knows its task's result.
+   */
+  | {kind: 'turn-waiting' | 'turn-uncertain'}
+  | {kind: 'turn-ended'; result: NoticeResult}
   | {kind: 'question-continuing' | 'attention-input' | 'attention-approval' | 'attention-resolved'; attention: KnownId}
   | {kind: 'read-observed'; state: 'read' | 'unread'}
   | ({kind: 'evidence-unavailable'} & Unavailable);
@@ -326,7 +341,8 @@ const checkSession: PayloadCheck = message => {
     (repeated(record.unavailable.map(item => item.dimension)) ? 'payload /unavailable duplicate dimension' : undefined);
 };
 // session/3.0 keeps the record rules of 2.0 and 2.1, drops the freshness rule and adds the status rule (Hub #1865,
-// design decision 3): the published status is the status function of the record's claims.
+// design decision 3): the published status is the status function of the record's claims. session/3.1 (Hub #505) keeps
+// the same rules; its schema widens the identity and adds the notice result.
 const checkSession30: PayloadCheck = message => {
   const record = message.data as Session30Record;
   if (record.id !== sessionEntityId(record.identity)) return 'payload /id not the identity key';
@@ -435,6 +451,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession),
   define('session', 'state', 'org.bunny.session.updated', checkSession, '2.1'),
   define('session', 'state', 'org.bunny.session.updated', checkSession30, '3.0'),
+  define('session', 'state', 'org.bunny.session.updated', checkSession30, '3.1'),
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
   define('mode', 'state', 'org.bunny.mode.updated', message => checkEntity(message) ?? (normalizeModeState(message.data) === undefined ? 'payload mode choices are invalid' : undefined), '2.1'),
   define('automation-rule', 'state', 'org.bunny.automation-rule.updated', checkAutomationDefinition),
@@ -466,11 +483,15 @@ export const coreFamilies: readonly CoreFamily[] = [
       ? entity(message, record.id) : 'envelope art show effects belong to the core';
   }),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
+  define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle, '2.2'),
   define('desktop-metadata', 'occurrence', 'org.bunny.desktop-metadata.observed', checkDesktopMetadata),
   define('volcano-observation', 'occurrence', 'org.bunny.volcano-observation.observed', checkVolcanoObservation),
   define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised),
+  define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised, '2.1'),
   define('attention-cleared', 'occurrence', 'org.bunny.attention.cleared', checkOccurrence),
+  define('attention-cleared', 'occurrence', 'org.bunny.attention.cleared', checkOccurrence, '2.1'),
   define('turn-ended', 'occurrence', 'org.bunny.turn.ended', checkOccurrence),
+  define('turn-ended', 'occurrence', 'org.bunny.turn.ended', checkOccurrence, '2.1'),
   define('session-ended', 'occurrence', 'org.bunny.session.ended', checkOccurrence),
   define('moment-ended', 'occurrence', 'org.bunny.moment.ended'),
   define('outcome-recorded', 'occurrence', 'org.bunny.outcome.recorded', checkRecorded),

@@ -1,5 +1,5 @@
 import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
-import {CHIP_TEXT,clientName,sessionName} from '../sessions.ts';
+import {chipTextOf,clientName,sessionName} from '../sessions.ts';
 import {mountHabitat,type HabitatRenderer} from './renderer.js';
 import {assignSession,conversationFor,eligibleSessions,presentation,reconcileBindings,settingsFrom,type Binding} from './session.ts';
 const KEY='bunny.burrow.live-bindings.v2';
@@ -35,7 +35,7 @@ export function createHabitat(root:HTMLElement,unavailable:()=>void):HabitatCont
    else renderer.unassigned(id);
   }
   const binding=bindingFor(selected),record=binding===undefined?undefined:records.find(r=>r.id===binding.sessionId);
-  el('live-detail').textContent=mode==='demo'?'Simulated residents; live assignments are kept.':record===undefined?`Bunny ${selected+1} · ${binding===undefined?'No session assigned · resting.':'Waiting for current session evidence.'}`:`Bunny ${selected+1} · ${sessionName(record)} · ${presentation(record,synced).uncertain?'Evidence uncertain · last observed: ':''}${CHIP_TEXT[presentation(record,synced).state]}`;
+  el('live-detail').textContent=mode==='demo'?'Simulated residents; live assignments are kept.':record===undefined?`Bunny ${selected+1} · ${binding===undefined?'No session assigned · resting.':'Waiting for current session evidence.'}`:`Bunny ${selected+1} · ${sessionName(record)} · ${presentation(record,synced).uncertain?'Evidence uncertain · last observed: ':''}${chipTextOf(record,presentation(record,synced).state)}`;
   const waiting=eligible.filter(r=>!settings.bindings.some(b=>b.sessionId===r.id)).length;
   el('live-capacity').textContent=mode==='demo'?'Music remains simulated.':`${settings.bindings.length} assigned · ${10-settings.bindings.length} free spots · ${synced?`${waiting} waiting`:'waiting count unknown'}${settings.automatic?'':' · Automatic filling paused'}${storageFailed?' · Assignments available for this visit; browser storage is unavailable.':''}`;
   renderer.refresh();

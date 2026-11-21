@@ -52,7 +52,8 @@ const given = (value: string | undefined): value is string => value !== undefine
 /** The owner-resolved label, then the title, the project's display name and its legacy ID, then a neutral hashed ID. */
 function sessionLabel(session: SessionView, hash: string): string {
   const chosen = [session.label?.value, session.title?.value, session.project, session.projectId].find(given);
-  const shown = chosen ?? `${session.identity.provider === 'codex' ? 'X' : 'C'}-${hash.slice(0, 4)}`;
+  // X for Codex, C for Claude and B for the native B.U.N.N.Y. assistant (Hub #505).
+  const shown = chosen ?? `${session.identity.provider === 'codex' ? 'X' : session.identity.provider === 'bunny' ? 'B' : 'C'}-${hash.slice(0, 4)}`;
   return fontText(shown).slice(0, LABEL_CHARS);
 }
 

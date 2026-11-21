@@ -78,7 +78,11 @@ test('each family has one kind and one type, and its schema is built from the sh
       || (['moment-play', 'art-auto', 'art-dispatch', 'music-capture-control', 'music-capture-state', 'home-layout', 'assistant-dispatch'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`)
       || (['assistant-dispatch', 'moment-play'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.3`)
       // The session family's new major (Hub #1865), registered beside 2.0 and 2.1.
-      || (family === 'session' && dataschema === 'https://bunny.invalid/events/session/3.0'));
+      || (family === 'session' && dataschema === 'https://bunny.invalid/events/session/3.0')
+      // The native assistant source's versions (Hub #505).
+      || (family === 'session' && dataschema === 'https://bunny.invalid/events/session/3.1')
+      || (family === 'lifecycle' && dataschema === 'https://bunny.invalid/events/lifecycle/2.2')
+      || (['attention-raised', 'attention-cleared', 'turn-ended'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.1`));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
     for (const uri of refs(schema)) assert.ok(profile(uri) || coreFamilies.some(other => other.dataschema === uri), `${family}: ${uri}`);
     assert.ok(['state', 'occurrence', 'command'].includes(kind), family);

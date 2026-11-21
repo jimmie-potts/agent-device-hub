@@ -56,6 +56,20 @@ The session selector identifies the actual child when `agent_id` is present; the
 
 [Nanoleaf's existing source](https://github.com/jimmie-potts/codex-nanoleaf/blob/ea3b95661352f927aceaf92b62d74660978c201f/bridge/README.md#questions-blocks-and-read-status) distinguishes continuing questions and blocked waits, retains unread notices after runtime end and documents same-tool approval ambiguity. Its Desktop unread reconciliation is implementation-specific. This contract neither replaces it nor exports private metadata. `request_user_input_async` coverage in a particular provider version must be qualified; the legacy mapping alone does not establish shared support.
 
+## Native assistant tasks
+
+The native B.U.N.N.Y. assistant (`bunny`/`assistant`, [Hub #505](https://github.com/jimmie-potts/agent-device-hub/issues/505)) is not a hook provider. The companions module reports its own committed task state in `lifecycle/2.2`, in the transaction that changes the task, with known ordering per task; the core accepts the source from that module only. Its mapping is documented and implemented in source with synthetic tasks; installed qualification is [Hub #1869](https://github.com/jimmie-potts/agent-device-hub/issues/1869).
+
+| Task change | Observation | Limitation |
+| --- | --- | --- |
+| A start or resume (a new run) | `turn-started` on the run | A conversation opening is not work |
+| A saved clarification or approval | `attention-input` or `attention-approval` on the run | A delegation wait raises no attention |
+| An answer | `attention-resolved` for that question on its run | Resolves only that question |
+| The run stops at a question or delegation | `turn-waiting` | No notice |
+| The run is cut off (paused) | `turn-interrupted` | No running-work claim |
+| A call's fate is unknown (uncertain) | `turn-uncertain` | Not terminal |
+| Succeeded, failed or cancelled | `turn-ended` with `result` | A cancel's notice is acknowledged for every consumer |
+
 ## Codex Desktop read marker
 
 [Hub #191](https://github.com/jimmie-potts/agent-device-hub/issues/191) inspected the installed Windows Desktop state read-only from WSL on 2026-09-23. The Desktop version remains inaccessible, as recorded above.

@@ -8,7 +8,7 @@ import type {Notice} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
 import {
-  CHIP_TEXT, agentSummary, needsAttention, age, chipOf, clientName, faceText, finishedUnread, heardAge, matches, sessionName, sessionRow, uncertainOf,
+  CHIP_TEXT, agentSummary, needsAttention, age, chipOf, chipTextOf, clientName, faceText, finishedUnread, heardAge, matches, sessionName, sessionRow, uncertainOf,
 } from '../src/sessions.ts';
 
 const NOTICE = 'a'.repeat(64);
@@ -26,6 +26,21 @@ const view = (change: Partial<SessionFacts> = {}): SessionView => buildSession(r
 const finished = (acknowledgedBy: string[] = []): Notice[] => [{id: NOTICE, kind: 'turn-ended', turn: {status: 'known', id: 'turn-1'}, acknowledgedBy}];
 const question = {id: {status: 'known', id: 'question-1'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}} as const;
 const approval = {id: {status: 'known', id: 'approval-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}} as const;
+
+void test('a native task names its finished result, unread or retired, and a finished turn without a result names none (Hub #505)', () => {
+  const identity = {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId: 'synthetic-task'} as const;
+  const ended = (result: Notice['result'], acknowledgedBy: string[] = []): SessionView =>
+    view({identity, notices: finished(acknowledgedBy).map(notice => ({...notice, ...(result === undefined ? {} : {result})}))});
+  assert.equal(clientName(identity), 'B.U.N.N.Y. assistant');
+  assert.equal(sessionRow(ended('failed')).chipText, 'Failed · unread');
+  assert.equal(sessionRow(ended('succeeded')).chipText, 'Succeeded · unread');
+  const cancelled = ended('cancelled', ['dashboard', 'nanoleaf', 'pixoo']);
+  assert.equal(chipOf(cancelled), 'idle');
+  assert.equal(sessionRow(cancelled).chipText, 'Cancelled', 'an owner cancel is retired at once and still named');
+  assert.equal(sessionRow(cancelled).unread, false);
+  assert.equal(chipTextOf(ended(undefined)), CHIP_TEXT.finished, 'no result, no claim');
+  assert.equal(chipTextOf(view({identity, work: 'active'})), CHIP_TEXT.working);
+});
 
 void test('a session is named by its label, then its title, then its native ID, and placed by project and client', () => {
   assert.equal(sessionName(view({label: {value: 'Port the wall', origin: 'user'}, title: {value: 'A title', source: 'provider'}})), 'Port the wall');

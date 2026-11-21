@@ -37,7 +37,8 @@ export function CodingSuggestions({context, state, live}: {context: FrontendCont
     if (connected && synced) return;
     setAccepted(undefined); setDraft(blank()); setSelected(''); prior.current = undefined; setMessage('');
   }, [connected, synced]);
-  const sessions = context.core?.sessions ?? [];
+  // Coding suggestions target coding agent sessions, never the assistant's own tasks (Hub #505).
+  const sessions = (context.core?.sessions ?? []).filter(view => view.identity.provider !== 'bunny');
   const session = sessions.find(view => view.id === selected);
   useEffect(() => {
     setDraft(previous => ({...previous, checks: emptyChecks(), observed: ''}));

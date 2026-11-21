@@ -20,7 +20,7 @@ export const STATE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
   'automation-interrupt-set/2.0': [],
   'power-limit/2.0': ['/observedAtMs', '/updatedAtMs'],
   'playback/2.0': ['/observedAtMs'], 'playback/2.1': ['/observedAtMs'],
-  'session/2.0': [], 'session/2.1': [], 'session/3.0': [],
+  'session/2.0': [], 'session/2.1': [], 'session/3.0': [], 'session/3.1': [],
   'mode/2.0': [], 'mode/2.1': [],
   'inbox-item/2.0': [], 'inbox-item/2.1': [],
   'operation/2.0': [],

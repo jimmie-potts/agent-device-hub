@@ -4,6 +4,7 @@
 import {ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER, type AssistantDeviceOwner} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
+import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
 import {catalogTools, isCatalogTool} from './catalog-tools.js';
 import {textBytes, TOOL_NAME, type ToolDefinition} from './provider.js';
 
@@ -82,7 +83,8 @@ const age = (record: SessionView, now: number): string => {
  */
 export function summarizeSessions(copy: CoreCopy, now: number): string {
   if (!copy.synced) return 'The session list is not synced with the core right now; what the agents are doing is unknown.';
-  const records = [...copy.sessions].sort((a, b) => b.lastEvidenceAtMs - a.lastEvidenceAtMs);
+  // Coding agent sessions only: the assistant's own tasks are not listed, so a task never describes itself (Hub #505).
+  const records = copy.sessions.filter(record => record.identity.provider !== NATIVE_SOURCE.provider).sort((a, b) => b.lastEvidenceAtMs - a.lastEvidenceAtMs);
   if (records.length === 0) return 'No coding agent session is known to the core right now.';
   const lines = records.slice(0, MAX_SESSIONS).map(record => {
     const attention = record.attention.items.map(item => item.kind);
