@@ -218,11 +218,13 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
 export function GlassLayer({onState, backdrop = null, onBackdrop, fuse = false, appear = true}: GlassLayerProps): React.JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null), probe = useRef<HTMLDivElement>(null), glass = useRef<Glass | null>(null);
   const callbacks = useRef({state: onState, backdrop: onBackdrop});
+  // Whether the glass eases in is read once, when the layer starts.
+  const start = useRef({appear});
   callbacks.current = {state: onState, backdrop: onBackdrop};
   useLayoutEffect(() => {
     const element = canvas.current, owner = element?.parentElement?.closest<HTMLElement>('[data-glass]') ?? null, tokens = probe.current;
     if (element === null || owner === null || tokens === null) return;
-    const started = startGlass(element, owner, tokens, {state: value => {callbacks.current.state(value);}, backdrop: id => {callbacks.current.backdrop?.(id);}}, {appear});
+    const started = startGlass(element, owner, tokens, {state: value => {callbacks.current.state(value);}, backdrop: id => {callbacks.current.backdrop?.(id);}}, start.current);
     glass.current = started;
     return () => {glass.current = null;started.dispose();callbacks.current.state('quiet');callbacks.current.backdrop?.(null);};
   }, []);
