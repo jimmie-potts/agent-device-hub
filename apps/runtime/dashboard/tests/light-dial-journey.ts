@@ -49,12 +49,16 @@ async function settled(dial: Dial): Promise<void> {
  * dial reads its guards when the press lands, so a press that lands in the instant the dial is blocked again (a request
  * still finishing, or the light's records changing) does nothing, as a disabled control should. The journey then waits
  * and does it again, at most three times, rather than reading a press the dial never took as a missing result. A
- * press that sent a command is never repeated.
+ * press that sent a command is never repeated. What re-blocks the dial in that instant is not known yet (#2020), so
+ * every retry prints one line with the dial's state, for the hosted logs to show how often it happens.
  */
 async function taken(dial: Dial, sent: readonly unknown[], act: () => Promise<void>, label: string): Promise<void> {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await settled(dial);const before = sent.length;await act();
     try {await expect.poll(() => sent.length, {timeout: 2000}).toBeGreaterThan(before);return;} catch { /* The press landed while the dial was blocked. */ }
+    const state = await dial.state.innerText().catch(() => 'unreadable'), disabled = await dial.power.isDisabled().catch(() => undefined);
+    const busy = await dial.card.getAttribute('data-command-busy').catch(() => null) !== null;
+    console.log(JSON.stringify({dialRetry: label, attempt, state, switchDisabled: disabled, commandBusy: busy, issue: 2020}));
   }
   throw new Error(`${label}: the dial never took it`);
 }

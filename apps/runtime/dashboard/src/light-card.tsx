@@ -74,8 +74,8 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
   const colorSaturation = common(colors.map(member => member?.color?.observed.status === 'known' ? member.color.observed.saturation : undefined));
   useEffect(() => { if (!paletteDirty) { setHue(colorHue ?? 210); setSaturation(colorSaturation ?? 75); } }, [colorHue, colorSaturation, paletteDirty]);
   const attention = status.filter(item => item.locked || /Refused|Not sent|failed|uncertain|Conflicting/i.test(item.text));
-  // While a request from this card is still in progress (sent, accepted or awaiting its reply) the card says so, for
-  // checks that must not press before it has finished.
+  // While a request from this card is in progress or unresolved (sent, accepted, awaiting its reply, uncertain or
+  // conflicting) the card says so, for checks that must not press before it has finished.
   const busy = status.some(item => item.locked) ? '' : undefined;
   const statusText = cap.blocked ?? (observedPower === undefined ? power === undefined ? 'Mixed / unknown' : `Requested ${power ? 'on' : 'off'}` : observedPower ? 'On · observed' : 'Off · observed');
   // The light this card gives Home's glass layer (#1931): observed state only, from the same members.
