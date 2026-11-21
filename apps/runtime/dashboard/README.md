@@ -1133,7 +1133,8 @@ brightness, as a faint inner arc (`src/requested.ts`; a write of another kind
 never revives an old power request). The switch shows that newest power and a
 press switches away from it. A drag or key starts from the newest brightness, an
 off light's stored one included, and a value that ends where it started is not
-sent. The options menu sits bottom right; the top left holds the unfold arrow
+sent. While a request from the card is still in progress (sent, accepted or
+awaiting its reply) the card carries `data-command-busy`, for checks. The options menu sits bottom right; the top left holds the unfold arrow
 (#1932) and the top right stays clear for the drag handle (#1933). On Home a
 stale lighting layout's notice sits inside the card, one line under the state
 with the full text in its title, rather than above the card.

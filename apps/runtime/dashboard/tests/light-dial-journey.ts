@@ -39,9 +39,24 @@ const dialOf = (page: Page, id: string): Dial => {
   return {card, ring: card.locator('.light-dial'), slider: card.getByRole('slider', {name: `${id} brightness`, exact: true}),
     power: card.getByRole('switch', {name: `${id} power`, exact: true}), state: card.locator('.light-dial-state'), result: card.locator('.light-attention-line')};
 };
-/** Waits until the light's controls are usable again. */
+/** Waits until the light's controls are usable again and none of its requests is still in progress. */
 async function settled(dial: Dial): Promise<void> {
+  await expect(dial.card).not.toHaveAttribute('data-command-busy');
   await expect(dial.power).toBeEnabled();await expect(dial.slider).toHaveAttribute('aria-disabled', 'false');
+}
+/**
+ * Presses, drags or keys the dial (`act`) once it is settled and checks that the dial took it: a command was sent. The
+ * dial reads its guards when the press lands, so a press that lands in the instant the dial is blocked again (a request
+ * still finishing, or the light's records changing) does nothing, as a disabled control should. The journey then waits
+ * and does it again, at most three times, rather than reading a press the dial never took as a missing result. A
+ * press that sent a command is never repeated.
+ */
+async function taken(dial: Dial, sent: readonly unknown[], act: () => Promise<void>, label: string): Promise<void> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await settled(dial);const before = sent.length;await act();
+    try {await expect.poll(() => sent.length, {timeout: 2000}).toBeGreaterThan(before);return;} catch { /* The press landed while the dial was blocked. */ }
+  }
+  throw new Error(`${label}: the dial never took it`);
 }
 /** What the dial shows from observation: the ring's power and value and the light it gives the glass layer. */
 async function observed(dial: Dial): Promise<{on: boolean; value: string | null; lamp: string | null}> {
@@ -91,14 +106,14 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
   const b = dialOf(page, 'lamp-b');await settled(b);
   const before = await observed(b), point = await onTrack(b.ring);
   assert.ok(Number(before.lamp) > 0 === before.on && await switchedOn(b) === before.on, `the glow and the switch follow the observed power: ${JSON.stringify(before)}`);
-  await page.mouse.click(point.x, point.y);
+  await taken(b, sent, () => page.mouse.click(point.x, point.y), 'a pointer press on the ring');
   await same(cardPower, !before.on, 'a pointer press on the ring');await settled(b);
   await expect(b.state).toHaveText(`Requested ${word(!before.on)} · observed ${word(before.on)}`);
   assert.deepEqual(await observed(b), before, 'the ring and the glow still show the observed state');
   // While the request is newer than the bulb's report, the switch shows the request, which is what a press acts on.
   assert.equal(await switchedOn(b), !before.on, 'the switch agrees with what a press does');
   await expect(b.power).toHaveAccessibleDescription(`Requested ${word(!before.on)} · observed ${word(before.on)}`);
-  await page.mouse.click(point.x, point.y);
+  await taken(b, sent, () => page.mouse.click(point.x, point.y), 'a second press');
   await same(cardPower, before.on, 'a second press');await settled(b);
   await expect(b.state).toHaveText(before.on ? /^On · \d+% · observed$/ : 'Off · observed');
   assert.equal(await switchedOn(b), before.on);
@@ -106,11 +121,13 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
   // A drag dims from where the ring is, and sends once, on release.
   const box = await b.ring.boundingBox();assert.ok(box !== null);
   const from = Number(before.value), target = Math.min(100, from + 20);
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);await page.mouse.down();
-  for (let step = 1; step <= 5; step += 1) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - step * 5);
-  await expect(b.slider).toHaveAttribute('aria-valuetext', `${String(target)}%, release to set`);
-  assert.equal(sent.length, 0, 'a drag sends nothing until it is released');
-  await page.mouse.up();
+  await taken(b, sent, async () => {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);await page.mouse.down();
+    for (let step = 1; step <= 5; step += 1) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - step * 5);
+    await expect(b.slider).toHaveAttribute('aria-valuetext', `${String(target)}%, release to set`);
+    assert.equal(sent.length, 0, 'a drag sends nothing until it is released');
+    await page.mouse.up();
+  }, 'a pointer drag');
   await same(cardBrightness, target, 'a pointer drag');await settled(b);
   assert.equal(sent.length, 0, 'a drag is not a press as well');
   assert.deepEqual(await observed(b), before, 'the ring and the glow wait for the light to report the new brightness');
@@ -121,7 +138,7 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
 
   // In flight: the request is sent and the dial locks; it still shows the observed state.
   world.holdDeviceWrites(true);
-  await page.mouse.click(point.x, point.y);
+  await taken(b, sent, () => page.mouse.click(point.x, point.y), 'a press while writes are held');
   await expect(b.result).toHaveText(/Requested|Accepted|Waiting/);await expect(b.result).toBeVisible();
   await same(cardPower, !before.on, 'a press while writes are held');
   await expect(b.power).toBeDisabled();await expect(b.slider).toHaveAttribute('aria-disabled', 'true');
@@ -132,13 +149,13 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
 
   // Refused: the result shows on the face and the dial keeps the observed state.
   await page.route('**/api/v2/commands/power-set', route => route.fulfill({status: 403, contentType: 'application/json', body: JSON.stringify({error: {code: 'forbidden', retryable: false}})}));
-  await page.mouse.click(point.x, point.y);
+  await taken(b, sent, () => page.mouse.click(point.x, point.y), 'a refused press');
   await expect(b.result).toHaveText(/Refused/);await expect(b.result).toBeVisible();
   assert.deepEqual(await observed(b), before);
   await page.unroute('**/api/v2/commands/power-set');sent.splice(0);await settled(b);
 
   // Keyboard: the ring is a slider (one request when the key is released) and its center a switch.
-  await b.slider.focus();await page.keyboard.press('Home');
+  await taken(b, sent, async () => {await b.slider.focus();await page.keyboard.press('Home');}, 'Home');
   await same(cardBrightness, 0, 'Home');await settled(b);
   // A key or a drag that leaves the value where it started sends nothing.
   await b.slider.focus();await page.keyboard.press('Home');await page.keyboard.press('PageDown');
@@ -146,20 +163,22 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
   await page.mouse.move(still.x + still.width / 2, still.y + still.height / 2);await page.mouse.down();
   await page.mouse.move(still.x + still.width / 2, still.y + still.height / 2 - 20);await page.mouse.move(still.x + still.width / 2, still.y + still.height / 2);await page.mouse.up();
   await page.waitForTimeout(300);assert.deepEqual(sent, [], 'an unchanged value is not sent, and a drag is not a press');
-  await b.slider.focus();await page.keyboard.down('ArrowUp');
-  await expect(b.slider).toHaveAttribute('aria-valuetext', '5%, release to set');assert.equal(sent.length, 0, 'holding a key sends nothing');
-  await page.keyboard.up('ArrowUp');
+  await taken(b, sent, async () => {
+    await b.slider.focus();await page.keyboard.down('ArrowUp');
+    await expect(b.slider).toHaveAttribute('aria-valuetext', '5%, release to set');assert.equal(sent.length, 0, 'holding a key sends nothing');
+    await page.keyboard.up('ArrowUp');
+  }, 'Arrow Up');
   await same(cardBrightness, 5, 'Arrow Up');await settled(b);
-  await b.slider.focus();await page.keyboard.press('End');
+  await taken(b, sent, async () => {await b.slider.focus();await page.keyboard.press('End');}, 'End');
   await same(cardBrightness, 100, 'End');await settled(b);
   // A brightness write reads the bulb first, so the observed power may have caught up; a press switches away from the
   // newest of the request and the observation.
   const wanted = await switchedOn(b);
-  await b.power.focus();await page.keyboard.press('Space');
+  await taken(b, sent, async () => {await b.power.focus();await page.keyboard.press('Space');}, 'Space on the switch');
   await same(cardPower, !wanted, 'Space on the switch');await settled(b);
-  await b.power.focus();await page.keyboard.press('Enter');
+  await taken(b, sent, async () => {await b.power.focus();await page.keyboard.press('Enter');}, 'Enter on the switch');
   await same(cardPower, wanted, 'Enter on the switch');await settled(b);
-  if (!wanted) {await b.power.focus();await page.keyboard.press('Space');await same(cardPower, true, 'Space again');await settled(b);}
+  if (!wanted) {await taken(b, sent, async () => {await b.power.focus();await page.keyboard.press('Space');}, 'Space again');await same(cardPower, true, 'Space again');await settled(b);}
   const now = await observed(b);
   assert.ok(Number(now.lamp) > 0 === now.on, `the glow follows the observed power: ${JSON.stringify(now)}`);
   await expect(b.state).toHaveText(/^Requested on · observed (on|off)$|^On · \d+% · observed$|^Requested 100% · observed \d+%$/);
@@ -167,7 +186,7 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
   // Unanswered: the uncertain result locks the dial and nothing is resent.
   const c = dialOf(page, 'lamp-c');await settled(c);
   const cPoint = await onTrack(c.ring);
-  world.loseDeviceReply();await page.mouse.click(cPoint.x, cPoint.y);
+  world.loseDeviceReply();await taken(c, sent, () => page.mouse.click(cPoint.x, cPoint.y), 'a press whose reply is lost');
   await expect(c.result).toHaveText(/Uncertain/);world.restoreDeviceReply();
   await expect(c.power).toBeDisabled();await expect(c.slider).toHaveAttribute('aria-disabled', 'true');
   await page.mouse.click(cPoint.x, cPoint.y);await page.waitForTimeout(300);
@@ -184,19 +203,21 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
   const wallSent = async (value: unknown, family: Sent | undefined, label: string): Promise<void> => {
     await expect.poll(() => sent.length, {message: label}).toBe(1);assert.deepEqual(sent.shift(), {...family, target: 'wall', value}, label);await settled(wall);
   };
-  await page.mouse.click(...wallPoint);await wallSent(false, cardPower, 'the dial switches the Nanoleaf light off');
+  await taken(wall, sent, () => page.mouse.click(...wallPoint), 'a press off');await wallSent(false, cardPower, 'the dial switches the Nanoleaf light off');
   await expect(wall.state).toHaveText('Off · observed');
-  await page.mouse.click(...wallPoint);await wallSent(true, cardPower, 'and on');
+  await taken(wall, sent, () => page.mouse.click(...wallPoint), 'a press on');await wallSent(true, cardPower, 'and on');
   await expect(wall.state).toHaveText(/^On · \d+% · observed$/);
   world.nanoleafPower(false);await expect(wall.state).toHaveText('Off · observed');
   // An off light's ring reads nothing, but its keys start from its stored brightness, never from 0.
-  await wall.slider.focus();await page.keyboard.down('ArrowDown');
-  await expect(wall.slider).toHaveAttribute('aria-valuetext', `${String(stored - 5)}%, release to set`);await page.keyboard.up('ArrowDown');
+  await taken(wall, sent, async () => {
+    await wall.slider.focus();await page.keyboard.down('ArrowDown');
+    await expect(wall.slider).toHaveAttribute('aria-valuetext', `${String(stored - 5)}%, release to set`);await page.keyboard.up('ArrowDown');
+  }, 'Arrow Down on an off light');
   await wallSent(stored - 5, cardBrightness, 'an off light dims from its stored brightness');
   const after = await observed(wall);
   assert.equal(await switchedOn(wall), after.on, 'after a brightness write the switch follows the light, not an old power request');
   await expect(wall.state).not.toHaveText(/^Requested/);
-  await page.mouse.click(...wallPoint);await wallSent(!after.on, cardPower, 'a press switches away from what the light reports');
+  await taken(wall, sent, () => page.mouse.click(...wallPoint), 'a press after a brightness write');await wallSent(!after.on, cardPower, 'a press switches away from what the light reports');
   assert.deepEqual(errors, []);
   await context.close();
 
@@ -214,19 +235,21 @@ export async function dialJourney(browser: Browser, world: World): Promise<Recor
   // short window is scrolled to the ring first.
   await t.ring.scrollIntoViewIfNeeded();
   const tap = await onTrack(t.ring);
-  await phone.touchscreen.tap(tap.x, tap.y);
+  await taken(t, touchSent, () => phone.touchscreen.tap(tap.x, tap.y), 'a tap');
   await expect.poll(() => touchSent.length).toBe(1);
   assert.deepEqual(touchSent.shift(), {...cardPower, target: 'lamp-b', value: false}, 'a tap on the ring sends the current card\'s command');
   await settled(t);await expect(t.state).toHaveText('Requested off · observed on');
-  await phone.touchscreen.tap(tap.x, tap.y);
+  await taken(t, touchSent, () => phone.touchscreen.tap(tap.x, tap.y), 'a second tap');
   await expect.poll(() => touchSent.length).toBe(1);assert.deepEqual(touchSent.shift(), {...cardPower, target: 'lamp-b', value: true}, 'a second tap');await settled(t);
   const scroller = (): Promise<{top: number; height: number}> => phone.evaluate(() => {const element = document.scrollingElement ?? document.documentElement;return {top: element.scrollTop, height: element.scrollHeight - innerHeight};});
   const scroll = await scroller();assert.ok(scroll.height > 0, 'the page can scroll');
   const ring = await t.ring.boundingBox();assert.ok(ring !== null);
   const cdp = await touch.newCDPSession(phone), x = ring.x + ring.width / 2, y = ring.y + ring.height / 2;
-  await cdp.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [{x, y}]});
-  for (let step = 1; step <= 5; step += 1) await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x, y: y + step * 5}]});
-  await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+  await taken(t, touchSent, async () => {
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [{x, y}]});
+    for (let step = 1; step <= 5; step += 1) await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x, y: y + step * 5}]});
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+  }, 'a touch drag');
   await expect.poll(() => touchSent.length).toBe(1);
   assert.deepEqual(touchSent.shift(), {...cardBrightness, target: 'lamp-b', value: 80}, 'a touch drag down dims from where the ring is');
   assert.equal((await scroller()).top, scroll.top, 'a drag on the ring does not scroll the page');

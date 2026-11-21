@@ -853,7 +853,7 @@ and Enter on the switch) with the commands the Wide card sends, and checks that
 the ring, the switch and the glow keep observed state while a request is in
 flight, refused, newer than the bulb's report or uncertain, and in a read-only
 session. The Wemo journey checks the plug press panel the same way by pointer,
-keyboard and touch, with a lost reply leaving it locked.
+keyboard and touch, with a lost reply leaving it locked. Each press, drag or key that should send waits until the dial is settled (enabled, with no request in progress, `data-command-busy` absent) and checks that a command was sent; one that landed while the dial was blocked again is done again, at most three times, and a press that sent is never repeated.
 
 The lighting journey's fuse part (#1933, `apps/runtime/dashboard/tests/fuse-journey.ts`,
 on a fresh world with simulated Wemo plugs) drags by the handle with the mouse
