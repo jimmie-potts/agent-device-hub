@@ -81,6 +81,17 @@ void test('every observation is a valid lifecycle/2.2 message of the native sour
   }
 });
 
+void test('a baseline that cannot be written leaves no table, so the next start writes it whole', () => {
+  const database = new DatabaseSync(':memory:');
+  const store = new AssistantStore(database);
+  store.save(store.newTask('bunny', 'synthetic prompt'));
+  database.exec("DROP TABLE assistant_reports; UPDATE assistant_tasks SET record='not json'");
+  assert.throws(() => new AssistantStore(database), SyntaxError);
+  assert.equal(database.isTransaction, false, 'the savepoint is gone');
+  assert.equal(database.prepare("SELECT 1 FROM sqlite_master WHERE name='assistant_reports'").get(), undefined, 'and so is the table');
+  database.close();
+});
+
 void test('the release that reports tasks records saved tasks as reported and reports none of them', () => {
   const database = new DatabaseSync(':memory:');
   const store = new AssistantStore(database);
@@ -135,7 +146,8 @@ async function world(context: TestContext, options: CompanionsOptions) {
     core, seen, module: () => module, tick: (ms: number) => {now += ms;},
     /** Resolves once the bus has carried `count` observations in all. */
     observed: (count: number) => seen.length >= count ? Promise.resolve() : new Promise<void>(resolve => {waiters.push({count, resolve});}),
-    restart: async () => {await host.stop(); ({module, host} = make()); await host.start();},
+    /** Stops the module, lets `between` change its database file as an earlier release or a crash left it, and starts it again. */
+    restart: async (between?: (file: string) => void) => {await host.stop(); between?.(join(dir, 'companions.sqlite')); ({module, host} = make()); await host.start();},
     store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')),
   };
 }
@@ -223,4 +235,72 @@ void test('tasks of the demo profiles report too, each its own session', {timeou
   const [started] = w.seen;
   assert.equal(started?.data.title?.value, 'Reachy');
   assert.equal(started?.data.event.kind, 'turn-started');
+});
+
+/** Saves the first task as a crash left it: running, with its question answered, and optionally without the report table. */
+function crashedRunning(file: string, upgrade: boolean): void {
+  const database = new DatabaseSync(file);
+  const row = database.prepare('SELECT id, record FROM assistant_tasks ORDER BY seq LIMIT 1').get() as {id: string; record: string};
+  const saved = JSON.parse(row.record) as {status: string; question: {answer: string | null} | null};
+  saved.status = 'running';
+  if (saved.question !== null) saved.question.answer = 'synthetic answer';
+  database.prepare('UPDATE assistant_tasks SET status=?, record=? WHERE id=?').run('running', JSON.stringify(saved), row.id);
+  if (upgrade) database.exec('DROP TABLE assistant_reports');
+  database.close();
+}
+
+void test('a task the startup recovers as paused reports its answered question and its interrupted run, once', {timeout: 20_000}, async context => {
+  const w = await world(context, {provider: scripted([ask('Synthetic question?')])});
+  await control(w, 'enable');
+  await input(w, 'synthetic request');
+  await w.observed(3);
+  await w.restart(file => {crashedRunning(file, false);});
+  await w.observed(5);
+  assert.equal(w.module().inspectAssistant()?.tasks[0]?.status, 'paused');
+  assert.deepEqual(summary(w).slice(3).map(line => line.replace(/ on .*/, '')), ['attention-resolved', 'turn-interrupted'].map((kind, index) =>
+    index === 0 ? `${kind} ${String(w.module().inspectAssistant()?.tasks[0]?.questionId)}` : kind));
+});
+
+void test('a task running when this release first starts reports only its recovered state, from the baseline', {timeout: 20_000}, async context => {
+  const w = await world(context, {provider: scripted([ask('Synthetic question?')])});
+  await control(w, 'enable');
+  await input(w, 'synthetic request');
+  await w.observed(3);
+  const before = w.seen.length;
+  await w.restart(file => {crashedRunning(file, true);});
+  await w.observed(before + 1);
+  const taskId = w.module().inspectAssistant()?.tasks[0]?.taskId ?? assert.fail('a task');
+  assert.deepEqual(w.seen.slice(before).map(({data}) => [data.event.kind, data.ordering.status === 'known' ? data.ordering.sequence : null]), [['turn-interrupted', 1]],
+    'the baseline is the running task, so its first report is how the start recovered it');
+  assert.equal(w.store().report(taskId).sequence, 1);
+});
+
+void test('a task waiting on delegated work raises no attention and makes no running-work claim', {timeout: 20_000}, async context => {
+  const delegate = (call: {requestId: string}) => Promise.resolve({status: 'accepted' as const, requestId: call.requestId, reply: {} as never});
+  const w = await world(context, {provider: scripted([{text: null, calls: [{id: 'call-delegate', name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: 'Add a synthetic test.'}}], stop: 'tool', units: 10}]),
+    tools: ['delegate_coding'], coding: () => ({available: true, endpointId: 'synthetic-worker', revision: 1}), delegate});
+  await control(w, 'enable');
+  await input(w, 'synthetic delegation');
+  await w.observed(3);
+  await input(w, 'approve', true);
+  await w.observed(6);
+  assert.equal(w.module().inspectAssistant()?.tasks[0]?.status, 'waiting');
+  assert.deepEqual(summary(w).map(line => line.replace(/ on .*/, '').replace(/ \S+-q1$/, ' q')),
+    ['turn-started', 'attention-approval q', 'turn-waiting', 'attention-resolved q', 'turn-started', 'turn-waiting'],
+    'the approval is attention; the wait on the worker is not');
+});
+
+void test('a task change that rolls back reports nothing: a third question fails the task with only its end', {timeout: 20_000}, async context => {
+  const w = await world(context, {provider: scripted([ask('First?'), ask('Second?'), ask('Third?')])});
+  await control(w, 'enable');
+  await input(w, 'synthetic request');
+  await w.observed(3);
+  await input(w, 'first answer', true);
+  await w.observed(7);
+  await input(w, 'second answer', true);
+  await w.observed(10);
+  assert.equal(w.module().inspectAssistant()?.tasks[0]?.status, 'failed');
+  const kinds = summary(w).map(line => line.replace(/ on .*/, '').replace(/ \S+-q(\d)$/, ' q$1'));
+  assert.deepEqual(kinds.slice(7), ['attention-resolved q2', 'turn-started', 'turn-ended failed'], 'the refused third question left no raise');
+  assert.equal(kinds.filter(kind => kind.startsWith('attention-input')).length, 2);
 });

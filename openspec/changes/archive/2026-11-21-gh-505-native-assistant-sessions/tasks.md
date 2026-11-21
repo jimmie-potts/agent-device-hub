@@ -17,7 +17,7 @@
 
 ## 4. Producer
 
-- [x] 4.1 Red: engine tests with fake tasks and the injected clock for each task change in all three profiles, the delegation wait, restart recovery, outbox republication, the baseline of saved tasks and the same-transaction commit fail. Evidence: `test:companions:built` fails on them.
+- [x] 4.1 Red: engine tests with fake tasks and the injected clock for each task change in all three profiles, the delegation wait, a startup that recovers a task as paused or uncertain, a task running at the first start of this release, the baseline of saved tasks and a failed baseline, and a task change that rolls back and reports nothing. Outbox republication is the SDK outbox's own tested behavior; the restart tests show that no report is repeated. Evidence: `test:companions:built` fails on them (the delegation, pause, first-start, failed-baseline and rollback tests were added in review round 1 on PR 2012).
 - [x] 4.2 Implement the projection, `assistant_reports` and the observations in `#publish`. Evidence: `test:companions:built` passes.
 
 ## 5. Readers
@@ -26,6 +26,6 @@
 
 ## 6. Documentation, acceptance and archive
 
-- [x] 6.1 Update the contracts README and MAPPING, the companions README, the runtime README and the provider-qualification notes. Evidence: readback.
+- [x] 6.1 Update the contracts README and MAPPING, the companions README, the runtime README and UPGRADE.md, the `core_sessions` tool description and the provider-qualification notes. Evidence: readback (the MAPPING, runtime README and tool description passages were completed in review round 1 on PR 2012).
 - [x] 6.2 Previous-release reader: the read function built from `e72f33fd` reads every Codex and Claude record the case set expects the core to publish and skips every native `session/3.1` record. Evidence: recorded in the PR. The disposable runtime exercise (a synthetic task through each state on the dashboard, and a previous-release read helper process with a native task present) belongs to the independent acceptance review.
 - [x] 6.3 Sync the deltas and archive the change on the branch. Evidence: `npm run check:workflow` and `npm run test:workflow` pass after the archive.

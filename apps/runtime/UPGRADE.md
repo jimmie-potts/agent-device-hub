@@ -260,15 +260,46 @@ host release keep working. A native task's record is `session/3.1` and its
 occurrences are 2.1; those helpers skip it.
 
 The companions module's first start adds the `assistant_reports` table and
-records every saved task as already reported, publishing nothing. A task first
-appears on the devices at its next change.
+records every saved task as already reported. A task that was waiting or had
+ended reports nothing and first appears on the devices at its next change. A
+task that was running when the runtime stopped is recovered by that same start
+as paused or uncertain, and that recovery is its first report: one
+`turn-interrupted` or `turn-uncertain` observation, so it appears at once as
+quiet or unknown.
 
-Returning below this release while the core holds a native session rests on a
-code reading, not a test. That release cannot publish a native record: a change
-to one, including the start transaction's restart marking of a running task,
-would be refused, and every reader skips the native records it serves. Prefer
-fixing forward. Before such a return, end or cancel the unfinished task and let
-the native sessions expire, a day after their last change.
+### No return below this release while a native session is stored
+
+A release before this one cannot publish a native session's record. It labels
+every stored record `session/3.0`, whose schema names no native source, and its
+validator refuses the record (`invalid-message`, `payload /identity/client`).
+At its first start, the start transaction republishes the stored records, so
+the refusal rolls the whole transaction back. Until every native session has
+gone a day without evidence and expired, that core then refuses every agent's
+lifecycle observation, Claude's and Codex's included, with `storage-failed`,
+and answers every core sync with `unavailable`, for every family. This holds
+whether or not a native task was running or had a result. It was tested on the
+review of the #505 pull request with an `e72f33fd` build and five stored native
+sessions, none running: the core still refused at 86,000 s after the last
+native change and recovered at 86,410 s, when the sessions had expired.
+`037b327a` has the same code.
+
+Prefer fixing forward. A return below this release needs, as a precondition,
+that the core holds no native session:
+
+1. End or cancel the unfinished assistant task in Conversation, then disable
+   the conversation, which Conversation refuses while a task is unfinished. No new
+   task can then start.
+2. Wait a full day after the last native task change. Expiry removes each
+   native session a day after its last evidence.
+3. Check that none is left: the `core_sessions` MCP tool with
+   `{"provider": "bunny"}` returns an empty `sessions` list, as does the
+   dashboard's session list filtered to the `bunny` provider. Only then stop
+   the runtime and return.
+
+No change in this release can make an older release accept a native record.
+A later option, not built: an operator command in this release that retires
+every native session at once through the ordinary retirement path, so that
+step 2 needs no day's wait.
 
 ## Retired settings replication metadata
 

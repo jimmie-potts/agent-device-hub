@@ -83,7 +83,8 @@ export class AssistantStore {
         }
         database.exec('RELEASE assistant_reports_baseline');
       } catch (error) {
-        database.exec('ROLLBACK TO assistant_reports_baseline; RELEASE assistant_reports_baseline');
+        // SQLite may already have rolled the whole transaction back, as on a full disk; the original error is what counts.
+        if (database.isTransaction) database.exec('ROLLBACK TO assistant_reports_baseline; RELEASE assistant_reports_baseline');
         throw error;
       }
     }

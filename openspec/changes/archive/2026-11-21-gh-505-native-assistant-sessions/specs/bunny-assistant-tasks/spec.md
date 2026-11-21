@@ -9,13 +9,13 @@ The companions module SHALL report each assistant task as one root session of th
 - **THEN** the session needs the owner with detail `input` on turn R, then Q alone is resolved on turn R and the session works on turn R2
 
 #### Scenario: Outcomes
-- **WHEN** synthetic tasks end succeeded, failed and cancelled, one is paused by a shutdown and one is left uncertain by an unanswered call
+- **WHEN** synthetic tasks end succeeded, failed and cancelled, one is recovered as paused at a start and one is left uncertain by an unanswered call
 - **THEN** their statuses are `finished` with details `succeeded`, `failed` and `cancelled`, `quiet` with detail `interrupted`, and `unknown` with detail `lost`
 - **AND** the dashboard names each result, the succeeded and failed tasks show unread, and the cancelled task shows unread to no reader
 
 #### Scenario: Delegation wait
-- **WHEN** a synthetic task hands work to a fake coding worker and waits for its word
-- **THEN** the session is `quiet` with detail `idle`, has no attention item, and works again on a new turn when the worker's word resumes the task
+- **WHEN** a synthetic task's approved delegation is handed to a fake coding worker and the task waits for its word
+- **THEN** the session is `quiet` with detail `idle` and has no attention item, while the approval before it was attention
 
 #### Scenario: The assistant's own reads
 - **WHEN** a running task calls `read_sessions` while a Claude session and the task's own native session are synced
