@@ -22,8 +22,8 @@ The companions module SHALL report each assistant task as one root session of th
 - **THEN** the result lists the Claude session only
 
 #### Scenario: Restart without replay
-- **WHEN** the runtime restarts with one task waiting on its question and one running
-- **THEN** the waiting task reports nothing, the running task reports its recovered state once, and no run, speech, dispatch or model call starts
+- **WHEN** the runtime restarts while a task waits on its question, and again while a task's model call is unanswered
+- **THEN** the waiting task reports nothing, the other reports itself uncertain once, and no run, speech, dispatch or model call starts
 
 #### Scenario: Tasks saved before this release
 - **WHEN** this release first starts with saved tasks

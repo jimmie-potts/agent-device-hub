@@ -543,6 +543,44 @@ evidence but cannot continue the graph or undo cancellation. If SQLite cannot
 save the fence, cancellation is refused. A successful command receipt means
 that local control was saved; task completion is reported separately.
 
+### Tasks on the status devices
+
+Each task, in every profile, is also one session in the hub's shared session
+model (Hub #505), so the status devices, Habitat, the dashboard and automations
+show it beside Codex and Claude sessions. Conversation stays the place to
+answer and approve.
+
+| Task | Session status |
+| --- | --- |
+| Running | Working |
+| Waiting on a clarification or an approval | Needs the owner (input or approval) |
+| Waiting on the coding worker | Quiet, idle: no owner attention and no running-work claim |
+| Paused | Quiet, interrupted |
+| Uncertain | Unknown |
+| Succeeded, failed or cancelled | Finished, detailed by the result |
+
+The session ID is the task ID, a turn is one run, and an attention item is the
+saved question's ID. The source is `bunny`/`assistant` on the core host, titled
+by the persona: `B.U.N.N.Y.`, `Reachy` or `MicroDuck`. Every transaction that
+changes a task also adds the `lifecycle/2.2` observations that move its session
+there, from the module's own source and with the task's own ordering sequence,
+and records the last state it reported in `assistant_reports`. Nothing else
+reports: a page or history read, an enable, a spoken reply, a startup
+reconciliation that keeps a task's state, and outbox republication report
+nothing new. The first start of this release records each saved task as already
+reported, so an old task appears only when it next changes.
+
+A failure stays unread on the devices until it is acknowledged. A task the
+owner cancels shows its result but leaves no unread notice: its notice is
+acknowledged for every consumer at once. Detail-aware surfaces name the
+result, such as `Failed · unread` on the dashboard. A session expires a day
+after its task's last change, as every session does; the task and its question
+stay here, and the next change shows the session again. Native tasks count
+toward the hub's limit of 128 sessions, and at the limit a new one may be left
+off the devices until there is room. No Reachy or MicroDuck card is raised for
+a task, and `read_sessions` and coding suggestions list coding agent sessions
+only. Native worker reporting is not part of this.
+
 ### LIFX status and controls
 
 Allow `read_lifx`, `set_lifx_power`, or `set_lifx_brightness` in the private

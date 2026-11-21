@@ -39,7 +39,7 @@ it('only the companions module names the native source, it names no other, only 
   assert.equal(at(claude('c'), 'bunny/parts/hook', `${BASE}lifecycle/2.0`), undefined);
   assert.equal(at(task('t'), 'bunny/modules/companions', NATIVE, {kind: 'runtime-ended'}), 'invalid-request');
   const edge = (dataschema: string) => checkNativeIdentity({specversion: '1.0', bunnyprofile: '2.0', id: 'm', source: 'bunny/parts/hub-0', type: 'org.bunny.lifecycle.observed',
-    subject: 's', time: new Date(0).toISOString(), kind: 'occurrence', datacontenttype: 'application/json', dataschema, traceparent: TRACE, data: {}} as Message);
+    subject: 's', time: new Date(0).toISOString(), kind: 'occurrence', datacontenttype: 'application/json', dataschema, traceparent: TRACE, data: {}});
   assert.equal(edge(NATIVE)?.error.code, 'forbidden', 'the gateway refuses every lifecycle/2.2 from an edge credential');
   assert.equal(edge(`${BASE}lifecycle/2.0`), undefined);
 });

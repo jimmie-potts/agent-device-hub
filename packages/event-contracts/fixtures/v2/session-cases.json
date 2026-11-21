@@ -8,7 +8,7 @@
   "codex": {"identity": {"provider": "codex", "client": "local", "hostId": "synthetic-host", "sourceId": "codex-hooks", "sessionId": "synthetic-codex"}, "parent": "unknown"},
   "codex-agent": {"identity": {"provider": "codex", "client": "local", "hostId": "synthetic-host", "sourceId": "codex-hooks", "sessionId": "synthetic-codex-agent"}, "parent": "codex"},
   "desktop": {"identity": {"provider": "codex", "client": "desktop", "hostId": "synthetic-host", "sourceId": "codex-desktop", "sessionId": "synthetic-desktop"}, "parent": "top-level"},
-  "task": {"identity": {"provider": "bunny", "client": "assistant", "hostId": "core", "sourceId": "companions", "sessionId": "synthetic-task"}, "parent": "top-level"},
+  "task": {"identity": {"provider": "bunny", "client": "assistant", "hostId": "core", "sourceId": "companions", "sessionId": "synthetic-task-a"}, "parent": "top-level"},
   "task-b": {"identity": {"provider": "bunny", "client": "assistant", "hostId": "core", "sourceId": "companions", "sessionId": "synthetic-task-b"}, "parent": "top-level"},
   "task-c": {"identity": {"provider": "bunny", "client": "assistant", "hostId": "core", "sourceId": "companions", "sessionId": "synthetic-task-c"}, "parent": "top-level"},
   "task-d": {"identity": {"provider": "bunny", "client": "assistant", "hostId": "core", "sourceId": "companions", "sessionId": "synthetic-task-d"}, "parent": "top-level"}
@@ -745,17 +745,17 @@
    "covers": "Hub #505 decisions 3 and 4: a task is a root, a run a turn and a clarification blocking input; the answer resolves only its question; a result names the finished detail",
    "since": "now",
    "steps": [
-    {"atMs": 0, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task", "sequence": 1}, "nativeEventId": "1"}},
-    {"atMs": 1000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task", "sequence": 2}, "nativeEventId": "2"}},
-    {"atMs": 2000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-task", "sequence": 3}, "nativeEventId": "3"}},
-    {"atMs": 4000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-resolved", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task", "sequence": 4}, "nativeEventId": "4"}},
-    {"atMs": 5000, "observe": {"session": "task", "turn": "t2", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task", "sequence": 5}, "nativeEventId": "5"}},
-    {"atMs": 7000, "observe": {"session": "task", "turn": "t2", "event": {"kind": "turn-ended", "result": "succeeded"}, "ordering": {"epoch": "synthetic-task", "sequence": 6}, "nativeEventId": "6"}}
+    {"atMs": 0, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task-a", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 2000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 3}, "nativeEventId": "3"}},
+    {"atMs": 4000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-resolved", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task-a", "sequence": 4}, "nativeEventId": "4"}},
+    {"atMs": 5000, "observe": {"session": "task", "turn": "t2", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 5}, "nativeEventId": "5"}},
+    {"atMs": 7000, "observe": {"session": "task", "turn": "t2", "event": {"kind": "turn-ended", "result": "succeeded"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 6}, "nativeEventId": "6"}}
    ],
    "checks": [
     {"after": 3, "atMs": 3000,
      "records": [
-      {"session": "task", "revision": 3, "generation": 1, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-task", "sequence": 3}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "attention": [{"kind": "input", "id": "q1", "turn": "t1"}]}
+      {"session": "task", "revision": 3, "generation": 1, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-task-a", "sequence": 3}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "attention": [{"kind": "input", "id": "q1", "turn": "t1"}]}
      ],
      "occurrences": [{"kind": "attention-raised", "session": "task", "attention": {"kind": "input", "id": "q1", "turn": "t1"}}],
      "readers": {
@@ -763,7 +763,7 @@
      }},
     {"after": 5, "atMs": 6000,
      "records": [
-      {"session": "task", "revision": 5, "generation": 1, "turn": "t2", "work": "active", "ordering": {"epoch": "synthetic-task", "sequence": 5}, "observedAtMs": 5000, "lastEvidenceAtMs": 5000}
+      {"session": "task", "revision": 5, "generation": 1, "turn": "t2", "work": "active", "ordering": {"epoch": "synthetic-task-a", "sequence": 5}, "observedAtMs": 5000, "lastEvidenceAtMs": 5000}
      ],
      "occurrences": [{"kind": "attention-cleared", "session": "task", "attention": {"kind": "input", "id": "q1", "turn": "t1"}, "cause": "resolved"}],
      "readers": {
@@ -771,7 +771,7 @@
      }},
     {"after": 6, "atMs": 8000,
      "records": [
-      {"session": "task", "revision": 6, "generation": 1, "turn": "t2", "work": "idle", "ordering": {"epoch": "synthetic-task", "sequence": 6}, "observedAtMs": 7000, "lastEvidenceAtMs": 7000, "notices": [{"turn": "t2", "acknowledgedBy": [], "result": "succeeded"}]}
+      {"session": "task", "revision": 6, "generation": 1, "turn": "t2", "work": "idle", "ordering": {"epoch": "synthetic-task-a", "sequence": 6}, "observedAtMs": 7000, "lastEvidenceAtMs": 7000, "notices": [{"turn": "t2", "acknowledgedBy": [], "result": "succeeded"}]}
      ],
      "occurrences": [{"kind": "turn-ended", "session": "task", "notice": "t2"}],
      "readers": {
@@ -785,13 +785,13 @@
    "covers": "Hub #505 decision 4 and owner decision 1: a failure stays unread, an owner cancel ends the task with its notice acknowledged for every consumer and clears its approval, a paused task makes no running-work claim, and an uncertain one is unknown",
    "since": "now",
    "steps": [
-    {"atMs": 0, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 0, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 1}, "nativeEventId": "1"}},
     {"atMs": 0, "observe": {"session": "task-b", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-b", "sequence": 1}, "nativeEventId": "1"}},
     {"atMs": 0, "observe": {"session": "task-c", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-c", "sequence": 1}, "nativeEventId": "1"}},
     {"atMs": 0, "observe": {"session": "task-d", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-d", "sequence": 1}, "nativeEventId": "1"}},
     {"atMs": 1000, "observe": {"session": "task-b", "turn": "t1", "event": {"kind": "attention-approval", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task-b", "sequence": 2}, "nativeEventId": "2"}},
     {"atMs": 1000, "observe": {"session": "task-b", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-task-b", "sequence": 3}, "nativeEventId": "3"}},
-    {"atMs": 2000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-ended", "result": "failed"}, "ordering": {"epoch": "synthetic-task", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 2000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-ended", "result": "failed"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 2}, "nativeEventId": "2"}},
     {"atMs": 2000, "observe": {"session": "task-b", "turn": "t1", "event": {"kind": "turn-ended", "result": "cancelled"}, "ordering": {"epoch": "synthetic-task-b", "sequence": 4}, "nativeEventId": "4"}},
     {"atMs": 2000, "observe": {"session": "task-c", "turn": "t1", "event": {"kind": "turn-interrupted"}, "ordering": {"epoch": "synthetic-task-c", "sequence": 2}, "nativeEventId": "2"}},
     {"atMs": 2000, "observe": {"session": "task-d", "turn": "t1", "event": {"kind": "turn-uncertain"}, "ordering": {"epoch": "synthetic-task-d", "sequence": 2}, "nativeEventId": "2"}}
@@ -799,7 +799,7 @@
    "checks": [
     {"after": 10, "atMs": 3000,
      "records": [
-      {"session": "task", "revision": 7, "generation": 1, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-task", "sequence": 2}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "notices": [{"turn": "t1", "acknowledgedBy": [], "result": "failed"}]},
+      {"session": "task", "revision": 7, "generation": 1, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-task-a", "sequence": 2}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "notices": [{"turn": "t1", "acknowledgedBy": [], "result": "failed"}]},
       {"session": "task-b", "revision": 8, "generation": 2, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-task-b", "sequence": 4}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "notices": [{"turn": "t1", "acknowledgedBy": ["dashboard", "nanoleaf", "pixoo"], "result": "cancelled"}]},
       {"session": "task-c", "revision": 9, "generation": 3, "turn": "t1", "work": "interrupted", "ordering": {"epoch": "synthetic-task-c", "sequence": 2}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000},
       {"session": "task-d", "revision": 10, "generation": 4, "turn": "t1", "work": "unknown", "ordering": {"epoch": "synthetic-task-d", "sequence": 2}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "unavailable": [["activity", "lost"]]}
@@ -816,17 +816,17 @@
    "covers": "Hub #505 decision 7: known ordering makes a late raise or a late stop of an earlier run stale, and a transport repeat is a duplicate",
    "since": "now",
    "steps": [
-    {"atMs": 0, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task", "sequence": 1}, "nativeEventId": "1"}},
-    {"atMs": 1000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-resolved", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task", "sequence": 4}, "nativeEventId": "4"}},
-    {"atMs": 2000, "observe": {"session": "task", "turn": "t2", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task", "sequence": 5}, "nativeEventId": "5"}},
+    {"atMs": 0, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-resolved", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task-a", "sequence": 4}, "nativeEventId": "4"}},
+    {"atMs": 2000, "observe": {"session": "task", "turn": "t2", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 5}, "nativeEventId": "5"}},
     {"atMs": 3000, "again": 0},
-    {"atMs": 3000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task", "sequence": 2}, "nativeEventId": "2"}},
-    {"atMs": 3000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-task", "sequence": 3}, "nativeEventId": "3"}}
+    {"atMs": 3000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task-a", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 3000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 3}, "nativeEventId": "3"}}
    ],
    "checks": [
     {"after": 6, "atMs": 4000,
      "records": [
-      {"session": "task", "revision": 3, "generation": 1, "turn": "t2", "work": "active", "ordering": {"epoch": "synthetic-task", "sequence": 5}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000}
+      {"session": "task", "revision": 3, "generation": 1, "turn": "t2", "work": "active", "ordering": {"epoch": "synthetic-task-a", "sequence": 5}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000}
      ],
      "readers": {
       "status": {"task": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"task": false}, "nanoleaf": {"tasks": {"task": "working"}, "steady": []}, "dashboard": {"task": "working"}
@@ -839,17 +839,17 @@
    "covers": "Hub #505 decision 7: a restart makes the running task's work unconfirmed and keeps the waiting task's question; the engine's recovery then reports the task paused",
    "since": "step 8",
    "steps": [
-    {"atMs": 0, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 0, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 1}, "nativeEventId": "1"}},
     {"atMs": 0, "observe": {"session": "task-b", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-b", "sequence": 1}, "nativeEventId": "1"}},
     {"atMs": 1000, "observe": {"session": "task-b", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task-b", "sequence": 2}, "nativeEventId": "2"}},
     {"atMs": 1000, "observe": {"session": "task-b", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-task-b", "sequence": 3}, "nativeEventId": "3"}},
     {"atMs": 2000, "restart": true},
-    {"atMs": 4000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-interrupted"}, "ordering": {"epoch": "synthetic-task", "sequence": 2}, "nativeEventId": "2"}}
+    {"atMs": 4000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-interrupted"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 2}, "nativeEventId": "2"}}
    ],
    "checks": [
     {"after": 5, "atMs": 3000,
      "records": [
-      {"session": "task", "revision": 5, "generation": 1, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-task", "sequence": 1}, "observedAtMs": 0, "lastEvidenceAtMs": 0, "unconfirmed": "restart"},
+      {"session": "task", "revision": 5, "generation": 1, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-task-a", "sequence": 1}, "observedAtMs": 0, "lastEvidenceAtMs": 0, "unconfirmed": "restart"},
       {"session": "task-b", "revision": 4, "generation": 2, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-task-b", "sequence": 3}, "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "attention": [{"kind": "input", "id": "q1", "turn": "t1"}]}
      ],
      "occurrences": [{"kind": "attention-raised", "session": "task-b", "attention": {"kind": "input", "id": "q1", "turn": "t1"}}],
@@ -858,7 +858,7 @@
      }},
     {"after": 6, "atMs": 5000,
      "records": [
-      {"session": "task", "revision": 6, "generation": 1, "turn": "t1", "work": "interrupted", "ordering": {"epoch": "synthetic-task", "sequence": 2}, "observedAtMs": 4000, "lastEvidenceAtMs": 4000},
+      {"session": "task", "revision": 6, "generation": 1, "turn": "t1", "work": "interrupted", "ordering": {"epoch": "synthetic-task-a", "sequence": 2}, "observedAtMs": 4000, "lastEvidenceAtMs": 4000},
       {"session": "task-b", "revision": 4, "generation": 2, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-task-b", "sequence": 3}, "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "attention": [{"kind": "input", "id": "q1", "turn": "t1"}]}
      ],
      "readers": {
@@ -872,12 +872,12 @@
    "covers": "Hub #505 decision 8: expiry removes the monitoring record only, and the task's next change creates a new session with a new generation",
    "since": "now",
    "steps": [
-    {"atMs": 0, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task", "sequence": 1}, "nativeEventId": "1"}},
-    {"atMs": 1000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task", "sequence": 2}, "nativeEventId": "2"}},
-    {"atMs": 1000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-task", "sequence": 3}, "nativeEventId": "3"}},
+    {"atMs": 0, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task-a", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 1000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 3}, "nativeEventId": "3"}},
     {"atMs": 86401000, "advance": true},
-    {"atMs": 86500000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-resolved", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task", "sequence": 4}, "nativeEventId": "4"}},
-    {"atMs": 86500000, "observe": {"session": "task", "turn": "t2", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task", "sequence": 5}, "nativeEventId": "5"}}
+    {"atMs": 86500000, "observe": {"session": "task", "turn": "t1", "event": {"kind": "attention-resolved", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-task-a", "sequence": 4}, "nativeEventId": "4"}},
+    {"atMs": 86500000, "observe": {"session": "task", "turn": "t2", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-task-a", "sequence": 5}, "nativeEventId": "5"}}
    ],
    "checks": [
     {"after": 4, "atMs": 86401000,
@@ -889,7 +889,7 @@
      }},
     {"after": 6, "atMs": 86501000,
      "records": [
-      {"session": "task", "revision": 6, "generation": 5, "turn": "t2", "work": "active", "ordering": {"epoch": "synthetic-task", "sequence": 5}, "observedAtMs": 86500000, "lastEvidenceAtMs": 86500000}
+      {"session": "task", "revision": 6, "generation": 5, "turn": "t2", "work": "active", "ordering": {"epoch": "synthetic-task-a", "sequence": 5}, "observedAtMs": 86500000, "lastEvidenceAtMs": 86500000}
      ],
      "readers": {
       "status": {"task": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"task": false}, "nanoleaf": {"tasks": {"task": "working"}, "steady": []}, "dashboard": {"task": "working"}

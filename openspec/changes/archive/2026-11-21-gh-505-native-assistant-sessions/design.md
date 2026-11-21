@@ -1,6 +1,6 @@
 ## Context
 
-Source references are to main `5a3a72c5`. The implementing pull request rechecks them, and rebases this design onto #1947's amended `session/3.0` if #1947 merges first.
+Source references are to main `5a3a72c5`, where the design was written; decision 15 records what changed on `e72f33fd`, where the implementation starts after #1947.
 
 The companions engine owns assistant tasks (`modules/companions/src/assistant/engine.ts`). A task has a stable ID, its profile's conversation ID, a status (`running`, `waiting`, `paused`, `succeeded`, `failed`, `cancelled` or `uncertain`), the current run ID and at most one saved question (`store.ts:16-20`). Each explicit activation creates a new run (`engine.ts:162-172`). A question is a clarification, an approval or a delegation (`history-contract.ts`). Every task change commits through the module's SDK outbox together with its `assistant-state` publication (`engine.ts:137-142`, `:173-189`, `:600-612`). One task is unfinished at a time across the three profiles (`engine.ts:254`).
 
@@ -176,6 +176,18 @@ This slice raises no Reachy or MicroDuck opportunity for a native task (owner de
 - Native attention items carry known question IDs on known run turns, and native notices carry known turns, so an opportunity can bind to them exactly.
 
 That later change needs only the minor version, the companion part's predicate, and Reachy and MicroDuck adoption of the version.
+
+### 15. Implementation on main after #1947
+
+The implementation starts from `e72f33fd`, which holds #1947, and settles these points:
+
+- **`session/3.1` copies the amended `session/3.0`.** Its work reasons keep `deadline` accepted and never emitted, as 3.0 does, so one rule covers both and the schema-equality test holds. The native identity in 3.1 also fixes `hostId` `core` and `sourceId` `companions` for the provider `bunny`, so the schema refuses another native host.
+- **Earlier versions name hook sources only.** `sources.ts` exports `HOOK_PROVIDERS` and `HOOK_CLIENTS`, the providers and clients the versions before 3.1 name, and `NATIVE_SOURCE`, the native source's fixed identity members and producer. `HookIdentity` types the hook adapter's and the retained 1.x packages' identities.
+- **Evidence resolution and history.** A native record follows the same meaning rule as every record, `SESSION_LIMITS.evidenceResolutionMs` included, and history's `SESSION_EVIDENCE_INSTANTS` applies to it unchanged: both are rules of the session family, not of a version, and `session/3.1` has the same five instants. Every native observation moves the ordering cursor, which is part of a record's meaning, so each one publishes; the resolution rule never decides a native publication, and no confirmation row hides a native change. This is deliberate: a native session needs no second rule.
+- **The start transaction.** It removes the fields #1947 retired from every stored session and marks running work unconfirmed, native tasks included. Native sessions store no field of their own.
+- **The installed core.** The Mac runs `037b327a` (#1865 step 9), whose store holds `session/3.0` records. Upgrading loads them unchanged: the store keeps no version per record and builds the message version from the record (`sessionSchemaOf`), so every existing record is served and published as 3.0 again. No reset, migration or history change follows. The companions module's first start adds `assistant_reports` with a baseline (decision 5). A return below this release while a native session is stored is described in `apps/runtime/UPGRADE.md`: prefer fixing forward.
+- **The binding.** `nativeBinding` in `core.ts` refuses at intake, before the store, and `checkNativeIdentity` refuses any `lifecycle/2.2` from an edge credential. The core also refuses a native `runtime-ended` with `invalid-request`, because a native task is durable and `session-ended` stays 2.0.
+- **Pixoo.** Its Monitor shows native rows through the shared view. Its session filter and the label and dismiss operations of the frozen `pixoo-integration/1.0` name hook sources only, so they cannot select or dismiss a native row; the dashboard's notice clear acknowledges for every consumer, Pixoo included. Widening them would need a new Pixoo contract version and is left out.
 
 ## Decisions on the open questions
 

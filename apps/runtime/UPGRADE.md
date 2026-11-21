@@ -250,6 +250,26 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Native assistant task sessions (#505)
+
+The #505 release reports each B.U.N.N.Y. assistant task as a session of the
+native source. It changes no core table. Records the store holds stay
+`session/3.0`, and the core keeps publishing every Codex and Claude record as
+`session/3.0` with 2.0 occurrences, so read-receipt helpers from an earlier
+host release keep working. A native task's record is `session/3.1` and its
+occurrences are 2.1; those helpers skip it.
+
+The companions module's first start adds the `assistant_reports` table and
+records every saved task as already reported, publishing nothing. A task first
+appears on the devices at its next change.
+
+Returning below this release while the core holds a native session rests on a
+code reading, not a test. That release cannot publish a native record: a change
+to one, including the start transaction's restart marking of a running task,
+would be refused, and every reader skips the native records it serves. Prefer
+fixing forward. Before such a return, end or cancel the unfinished task and let
+the native sessions expire, a day after their last change.
+
 ## Retired settings replication metadata
 
 The runtime leaves existing history rows and the former settings metadata

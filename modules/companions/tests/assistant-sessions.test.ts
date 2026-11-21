@@ -11,7 +11,7 @@ import {test, type TestContext} from 'node:test';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator, sessionEntityId, type LifecycleObservation} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
-import {InProcessBus, type Participant} from '@jimmie-potts/sdk';
+import {InProcessBus} from '@jimmie-potts/sdk';
 import {RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore} from '../src/assistant/store.js';

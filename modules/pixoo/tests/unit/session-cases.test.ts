@@ -15,10 +15,10 @@ it('marks each root row of every shared case as the case expects', () => {
       const views = Object.entries(check.views);
       const state = monitorView({state: check.synced ? 'current' : 'stale', revision: 1, sessions: views.map(([, view]) => view)});
       const rows = Object.fromEntries(views.filter(([, view]) => view.parent.status !== 'known').map(([name, view]) => {
-        // The filter names hook sources only (Hub #505), so a native row is found by its identity among every row.
+        // The session filter names hook sources only (Hub #505), so a native row is found by its session ID's search.
         const {provider, client} = view.identity;
         const [row] = provider === 'bunny' || client === 'assistant'
-          ? new DashboardPager().layout(state, 0).rows.filter(candidate => JSON.stringify(candidate.identity) === JSON.stringify(view.identity))
+          ? new DashboardPager().layout(state, 0, {q: view.identity.sessionId}).rows.filter(candidate => JSON.stringify(candidate.identity) === JSON.stringify(view.identity))
           : new DashboardPager().layout(state, 0, {session: {...view.identity, provider, client}}).rows;
         expect(row, `${where}: ${name}`).toBeDefined();
         return [name, row];
