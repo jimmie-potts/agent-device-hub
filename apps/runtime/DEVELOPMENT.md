@@ -936,8 +936,9 @@ test container when the rail's text or sizes change, because the container's
 fonts are wider than a Mac's.
 `conversation-workspace.browser.ts` now also checks the one header row, the
 920px measure with the composer's width at 1024px, 1280px and 1440px, a
-profile chosen in the rail with its own history and draft, and the companion
-pages in the Devices menu. Journeys choose a profile with `chooseConversation`
+profile chosen in the rail with its own history and draft, that the Devices
+menu lists no companion page, and a companion profile opened from the
+Companions overview. Journeys choose a profile with `chooseConversation`
 in `apps/runtime/dashboard/tests/navigation-helpers.ts`.
 
 The Devices menu and the pinned pages (#1889) add two unit files and one
@@ -968,6 +969,46 @@ while the menu and the pins are used. The hosted smoke and full browser entries
 include it. The menu slides in, so the journey measures its box after its
 animation has finished. Devices is not a link, so journeys open the directory
 through `openDirectory` in `apps/runtime/dashboard/tests/navigation-helpers.ts`.
+
+The hardware-only Devices, the Companions destination and the display views
+(#1950) add four unit files: `directory.test.ts` (hardware only, categories,
+brands with their lights, a module that is down), `device-names.test.ts`
+(published label, Nanoleaf kind, readable ID, telling names apart),
+`companions-overview.test.ts` and `feature-navigation.test.ts` (Pixoo's views,
+Tidbyt's one view, existing addresses). `devices-menu.browser.ts` also checks
+that the menu lists hardware only with one entry each for Pixoo and Tidbyt,
+that Nanoleaf and LIFX start collapsed, expand to their lights and overview by
+pointer and keys, skip their collapsed lights with the arrow keys, open again
+for the current light and send nothing; that each light opens its own page and
+leads back to its brand; that the directory shows the same lights; Tidbyt's
+Status and Content, Pixoo's Display, Device settings, Agent status, Media and
+Playlists, an old Player bookmark and the palette's Monitor entry; the
+Companions overview, an old Habitat bookmark and the conversations; and at
+phone width that "All devices" stays in view with both brands open and that
+Escape closes the menu before the drawer with focus handed back each time.
+Journeys reach a task page with `deviceTab`, Habitat with `openHabitat`, Audio
+with `openAudio` and a page outside the hardware inventory with `jumpTo`.
+`node apps/runtime/dashboard/tests/devices-glass.browser.ts` checks those pages
+on the glass layer with SwiftShader, as `home-glass.browser.ts` does for Home:
+every card's glass follows its box at 1440, 390 and 320px and after scrolling,
+the card surfaces are clear, nothing draws at rest, a window resize draws one
+frame and software rendering stays under about a million pixels, the visible
+veils stay few, text over the layer keeps 4.5:1 at 1440, 390 and 320px in light
+and dark, the popout keeps its fill, the directory, Companions (also after a
+reload) and Home opened from the phone drawer look the same after a redraw from
+scratch at rest, leaving releases the layer, and with WebGL 2 missing or a lost
+context the Quiet glass panels stay and the menu, directory, display tabs and
+Companions links work, sending no command. Its contrast samples only glyph
+pixels: the page is captured with its text and again with the text transparent,
+and a pixel counts where the two differ, measured against the capture without
+text, so an empty line-box row over something else, such as an artwork's
+shadow, is not taken for text. A run wholly in the window with no glyph pixel
+fails the journey, naming the run, since its ink is too close to its ground to
+show (`apps/runtime/dashboard/tests/glyph-contrast.ts`, with a negative control in
+`apps/runtime/dashboard/tests/glyph-contrast.test.ts`). `devices-menu.browser.ts` also scrolls a glass page
+under the open popout in a short window and checks the popout stays whole and
+under the pointer. With `DASHBOARD_RECEIPTS` set it writes private
+screenshots.
 
 Reusable Music cards (#1164) use existing event/core/dashboard test discovery.
 After the root build, run `node --test packages/event-contracts/tests/playback-layout.test.mjs apps/runtime/dist/tests/playback-layout.test.js`

@@ -1,5 +1,7 @@
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {directoryEntries, moduleLabel} from './directory.ts';
+import {deviceName} from './device-names.ts';
+import {destinations} from './destinations.ts';
+import {moduleLabel} from './directory.ts';
 import type {RuntimeData} from './runtime-feeds.ts';
 import {parseRoute, routeHash, type Route} from './routes.ts';
 
@@ -88,10 +90,10 @@ export const pinName = (target: Pick<PinTarget, 'name' | 'group'> & {note?: stri
   `${target.group === '' ? target.name : `${target.group} · ${target.name}`}${target.note === undefined || target.note === '' ? '' : ` · ${target.note}`}`;
 
 /**
- * Every page that can be pinned now, by address: each page the Devices directory lists, and each device's own page,
- * which for a light is reached from its brand page and not from the directory. It is a projection of the catalog and
- * the device records the page already holds. A saved pin with no entry here is not shown. A page of a module that is
- * not running is still a page, and carries that module's state so that its row never looks available.
+ * Every page that can be pinned now, by address: each page the catalog and the device records declare, the hardware
+ * and the rest (Hub #1950), and the Audio page, which is always there. It is a projection of what the page already
+ * holds. A saved pin with no entry here is not shown. A page of a module that is not running is still a page, and
+ * carries that module's state so that its row never looks available.
  */
 export function pinTargets(runtime: RuntimeData): ReadonlyMap<string, PinTarget> {
   const targets = new Map<string, PinTarget>();
@@ -99,18 +101,17 @@ export function pinTargets(runtime: RuntimeData): ReadonlyMap<string, PinTarget>
     const hash = routeHash(route);
     if (pinnableRoute(route) && !targets.has(hash)) targets.set(hash, {hash, route, name, group, mono: monogram(name, group), note: state === 'running' ? '' : state});
   };
-  for (const entry of directoryEntries(runtime)) {
-    for (const link of entry.links) {
-      const one = entry.links.length === 1 || link.label.toLowerCase() === entry.label.toLowerCase();
-      add(link.route, one ? entry.label : link.label, one ? '' : entry.label, entry.state);
-    }
+  if (runtime.modules === undefined) return targets;
+  for (const destination of destinations(runtime)) {
+    add(destination.route, destination.alone ? destination.module : destination.name, destination.alone ? '' : destination.module, destination.state);
   }
+  add({kind: 'audio'}, 'Audio', '', 'running');
   for (const copy of runtime.copies) {
     if (copy.family !== 'device') continue;
     const module = copy.owner.slice(copy.owner.lastIndexOf('/') + 1);
     // A device whose owner the catalog does not list has no module state to show.
-    const state = runtime.modules?.find(entry => entry.name === module)?.state ?? 'running';
-    for (const device of copy.records as readonly DeviceRecord[]) add({kind: 'component', id: device.id}, device.label ?? device.id, moduleLabel(module), state);
+    const state = runtime.modules.find(entry => entry.name === module)?.state ?? 'running';
+    for (const device of copy.records as readonly DeviceRecord[]) add({kind: 'component', id: device.id}, deviceName(device), moduleLabel(module), state);
   }
   return targets;
 }

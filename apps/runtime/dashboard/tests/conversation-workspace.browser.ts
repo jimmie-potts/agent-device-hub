@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
 import {feed, startWorld} from './harness.ts';
-import {chooseConversation, conversationLink, destinationNames, openDeviceMenu, openDirectory, showRail} from './navigation-helpers.ts';
+import {chooseConversation, conversationLink, destinationLink, destinationNames, openDeviceMenu, showRail} from './navigation-helpers.ts';
 
 export async function conversationWorkspaceJourney(browser: Browser): Promise<void> {
   const world = await startWorld({companions: true, speech: true});
@@ -84,7 +84,7 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     const navigation = page.getByRole('navigation', {name: 'Main navigation'});
     // At this width the rail is a drawer (Hub #1887), so the destinations and the conversations are checked with it open.
     await showRail(page);
-    assert.deepEqual(await destinationNames(page), ['Home', 'Habitat', 'Rooms', 'Devices', 'Automation']);
+    assert.deepEqual(await destinationNames(page), ['Home', 'Companions', 'Rooms', 'Devices', 'Automation']);
     assert.deepEqual(await conversations.getByRole('link').evaluateAll(links => links.map(link => [...link.querySelectorAll('.rail-text > *')].map(part => part.textContent).join(' '))),
       ['B.U.N.N.Y.', 'Reachy Demo', 'MicroDuck Demo'], 'both demos are labelled before they are chosen');
     const labelLines = await navigation.locator('a, button').evaluateAll(links => links.map(link => {
@@ -112,13 +112,12 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
       const path = new URL(request.url()).pathname;
       if (/^\/api\/sdk\/v1\/(request|respond|sync|upload|publish)$/.test(path)) posts.push(path);
     });
-    // The other companion pages are reached from the Devices menu (Hub #1889); the page has no disclosure of its own.
+    // The other companion pages are reached from Companions (Hub #1950), not the Devices menu, which lists hardware
+    // only; the page has no disclosure of its own.
     assert.equal(await page.getByText('Companion pages', {exact: true}).count(), 0);
     assert.equal(await page.getByRole('navigation', {name: 'companions pages', exact: true}).count(), 0);
     const menu = await openDeviceMenu(page);
-    assert.equal(await menu.getByRole('menuitem', {name: 'Conversation', exact: true}).getAttribute('aria-current'), 'page');
-    assert.equal(await menu.getByRole('menuitem', {name: 'Reachy', exact: true}).getAttribute('href'), '#/module/companions/reachy');
-    assert.equal(await menu.getByRole('menuitem', {name: 'MicroDuck', exact: true}).getAttribute('href'), '#/module/companions/microduck');
+    assert.equal(await menu.locator('a[href^="#/module/companions/"]').count(), 0, 'the Devices menu lists no companion page');
     await page.keyboard.press('Escape');
     await menu.waitFor({state: 'detached'});
     await page.keyboard.press('Escape');
@@ -175,20 +174,22 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await details.waitFor({state: 'hidden'});
     await page.setViewportSize({width: 1440, height: 1000});
     assert.deepEqual(posts, [], 'layout, the Devices menu, choosing a profile in the rail, Details and the jump palette send no command, sync or endpoint registration');
-    // On the Conversation page the rail boxes the open conversation, and Devices is marked lightly above it.
-    const devicesRow = navigation.getByRole('button', {name: 'Devices', exact: true});
-    assert.equal(await devicesRow.getAttribute('aria-current'), 'page');
-    assert.equal(await devicesRow.getAttribute('data-ancestor'), '', 'the Devices row leaves the box to the open conversation');
+    // On the Conversation page the rail boxes the open conversation, and Companions is marked lightly above it.
+    const companionsRow = navigation.getByRole('link', {name: 'Companions', exact: true});
+    assert.equal(await companionsRow.getAttribute('aria-current'), 'page');
+    assert.equal(await companionsRow.getAttribute('data-ancestor'), '', 'the Companions row leaves the box to the open conversation');
+    assert.equal(await navigation.getByRole('button', {name: 'Devices', exact: true}).getAttribute('aria-current'), null, 'the Conversation page is not under Devices');
 
     await navigation.getByRole('link', {name: 'Home', exact: true}).click();
     await page.getByRole('region', {name: 'Home', exact: true}).waitFor();
     assert.equal(await conversations.locator('[aria-current]').count(), 0, 'no conversation is marked open on another page');
-    await openDirectory(page);
-    await page.getByRole('button', {name: 'Other', exact: true}).click();
-    await page.getByRole('link', {name: 'Conversation', exact: true}).click();
+    await (await conversationLink(page, 'bunny')).click();
     await assistant.waitFor();
-    await (await openDeviceMenu(page)).getByRole('menuitem', {name: 'Reachy', exact: true}).click();
+    // A companion profile opens from the Companions overview, and the page shows Companions as its parent.
+    await (await destinationLink(page, 'Companions')).click();
+    await page.getByRole('region', {name: 'Companions', exact: true}).getByRole('link', {name: 'Reachy', exact: true}).click();
     await page.getByRole('heading', {name: 'Reachy', exact: true, level: 1}).waitFor();
+    assert.equal(await page.getByRole('navigation', {name: 'Breadcrumb', exact: true}).getByRole('link').textContent(), 'Companions');
     assert.equal(await page.getByRole('navigation', {name: 'companions pages', exact: true}).getByRole('link', {name: 'Reachy', exact: true}).getAttribute('aria-current'), 'page');
     await page.getByRole('link', {name: 'Settings', exact: true}).click();
     await page.getByRole('heading', {name: 'Settings', exact: true}).waitFor();

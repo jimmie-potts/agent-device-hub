@@ -1,4 +1,4 @@
-import {directoryEntries} from './directory.ts';
+import {destinations, fullName} from './destinations.ts';
 import type {RuntimeData} from './runtime-feeds.ts';
 import {routeHash, type Route} from './routes.ts';
 
@@ -6,16 +6,18 @@ import {routeHash, type Route} from './routes.ts';
  * What the jump palette (Hub #1888) can open. The list is a projection of the shell's own destinations and the
  * current catalog's declared pages; it reads nothing new and sends nothing. Choosing an entry only navigates.
  */
-export type JumpGroup = 'Recent' | 'Hub' | 'Device pages';
+export type JumpGroup = 'Recent' | 'Hub' | 'Device pages' | 'Pages';
 export type JumpEntry = {group: JumpGroup; label: string; hint: string; route: Route};
 
 const HUB: readonly Omit<JumpEntry, 'group'>[] = [
   {label: 'Home', hint: '', route: {kind: 'home'}},
-  {label: 'Habitat', hint: '', route: {kind: 'habitat'}},
+  {label: 'Companions', hint: '', route: {kind: 'companions'}},
   {label: 'Rooms', hint: '', route: {kind: 'rooms'}},
   {label: 'Devices', hint: '', route: {kind: 'devices'}},
   {label: 'Automation', hint: '', route: {kind: 'automation'}},
   {label: 'Timeline', hint: 'Home', route: {kind: 'timeline'}},
+  {label: 'Audio', hint: 'Home', route: {kind: 'audio'}},
+  {label: 'Habitat', hint: 'Companions', route: {kind: 'habitat'}},
   {label: 'Settings', hint: '', route: {kind: 'settings'}},
   {label: 'Connections', hint: 'Settings', route: {kind: 'connections'}},
 ];
@@ -24,21 +26,20 @@ export const JUMP_RECENTS = 3;
 
 /**
  * Every place the palette offers: the pages visited most recently in this page session, the hub's own destinations,
- * then each page the Devices directory lists for a running module. A module that is not running is left out, as are
- * addresses the catalog no longer declares. Like the directory, it does not ask whether a listed page can be shown
- * right now: a framed page still opens as unavailable while the feed is down.
+ * then each page a running module declares: hardware first, with each device's own page, then the rest, so pages
+ * that the Devices inventory leaves out stay one search away (Hub #1950). A module that is not running is left out,
+ * as are addresses the catalog no longer declares. It does not ask whether a listed page can be shown right now: a
+ * framed page still opens as unavailable while the feed is down.
  */
 export function jumpEntries(runtime: RuntimeData, recents: readonly Route[], current: Route): JumpEntry[] {
   const places: JumpEntry[] = HUB.map(place => ({group: 'Hub', ...place}));
   const seen = new Set(places.map(place => routeHash(place.route)));
-  for (const entry of directoryEntries(runtime)) {
-    if (entry.state !== 'running') continue;
-    for (const link of entry.links) {
-      const hash = routeHash(link.route);
-      if (seen.has(hash)) continue;
-      seen.add(hash);
-      places.push({group: 'Device pages', label: link.label.toLowerCase() === entry.label.toLowerCase() ? entry.label : `${entry.label} · ${link.label}`, hint: entry.category, route: link.route});
-    }
+  const declared = destinations(runtime).filter(destination => destination.state === 'running');
+  for (const destination of [...declared.filter(item => item.hardware), ...declared.filter(item => !item.hardware)]) {
+    const hash = routeHash(destination.route);
+    if (seen.has(hash)) continue;
+    seen.add(hash);
+    places.push({group: destination.hardware ? 'Device pages' : 'Pages', label: fullName(destination), hint: destination.hint, route: destination.route});
   }
   const here = routeHash(current), recent: JumpEntry[] = [];
   for (const route of recents) {

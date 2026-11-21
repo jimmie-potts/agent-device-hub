@@ -52,6 +52,10 @@
 .shell>aside nav{display:grid;gap:var(--space-xs)}
 .shell>aside nav a{position:relative;justify-content:flex-start;gap:10px;min-block-size:44px;padding:0 12px;font-size:var(--type-body);white-space:nowrap}
 .shell>aside nav a[aria-current]{box-shadow:var(--shell-shadow);border-color:var(--edge-strong)}
+/* A destination over a page that has its own row in the rail (#1950), such as Companions on the Conversation page, is
+   marked lightly, as the Devices row is, so the rail boxes one row. */
+.shell>aside nav a[data-ancestor]{border-color:transparent;background:transparent;box-shadow:none}
+.shell>aside nav a[data-ancestor]:hover{background:var(--raised)}
 /* Devices (#1889) is a button that opens the menu of every device page, and looks like the links beside it. On a
    page that has its own row among the pinned pages it is marked lightly, so the rail boxes one row. */
 .shell>aside nav .rail-devices{position:relative;display:flex;align-items:center;justify-content:flex-start;gap:10px;inline-size:100%;min-block-size:44px;padding:0 12px;border:1px solid transparent;border-radius:var(--radius);background:transparent;color:var(--muted-dense);font-size:var(--type-body);font-weight:500;text-align:start;white-space:nowrap}
@@ -88,22 +92,40 @@
 /* The Devices menu opens beside the rail, over the page. It is fixed to the window, so it is whole even where a
    short window lets the rail scroll away with the page. A focused row keeps its ring inside the row, where the
    menu's own scrolling cannot cut it. */
-.device-menu{position:fixed;inset-block-start:8px;inset-inline-start:192px;z-index:30;inline-size:min(468px,calc(100vw - 200px));max-block-size:calc(100dvh - 16px);padding:6px;border:1px solid var(--edge-dense);border-radius:16px;background:var(--panel);box-shadow:var(--shell-drawer-shadow);overflow:auto;overscroll-behavior:contain;transform-origin:left 294px;animation:device-menu-in 160ms cubic-bezier(.23,1,.32,1)}
+/* The Devices menu (#1889) follows the owner's selected device-only prototype (#1950): a head with its close button,
+   the lists in two columns that scroll, and "All devices" kept at the foot, so the directory is in reach with every
+   brand open. It is fixed to the window: the shell draws it outside the rail, whose backdrop filter over the glass
+   layer would otherwise hold it and scroll it away. Beside the rail it opens level with the Devices row and moves up
+   to fit, no closer than 8px to the window's top (device-menu.tsx places it). */
+.device-menu{position:fixed;inset-block-start:8px;inset-inline-start:192px;z-index:30;display:flex;flex-direction:column;inline-size:min(404px,calc(100vw - 200px));max-block-size:calc(100dvh - 16px);padding:6px;border:1px solid var(--edge-dense);border-radius:16px;background:var(--panel);box-shadow:var(--shell-drawer-shadow);overflow:hidden;transform-origin:left 24px;animation:device-menu-in 160ms cubic-bezier(.23,1,.32,1)}
 @keyframes device-menu-in{from{opacity:0;transform:translateX(-6px) scale(.98)}}
 @keyframes device-menu-over{from{opacity:0;transform:translateX(12px)}}
-.device-menu-head{display:none}
-.device-menu-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-xs);padding-block-end:6px}
+/* Where the shell draws the menu: right after the rail, with no box of its own in the shell's grid. */
+.device-menu-host{display:contents}
+.device-menu-head{display:flex;flex:none;align-items:center;justify-content:space-between;padding:2px 2px 2px 10px}
+.device-menu>[role=menu]{display:flex;flex:1 1 auto;flex-direction:column;min-block-size:0}
+.device-menu-scroll{flex:0 1 auto;min-block-size:0;overflow:auto;overscroll-behavior:contain}
+.device-menu-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding-block-end:6px}
 .device-menu-category{margin:0;padding:8px 10px 4px;color:var(--muted-dense);font-size:var(--type-label);font-weight:600;letter-spacing:.12em;text-transform:uppercase}
 .device-menu-module,.device-menu-note{margin:0;padding:8px 10px 2px;color:var(--muted-dense);font-size:var(--type-small)}
-.device-menu .device-menu-item{display:flex;align-items:center;justify-content:flex-start;gap:10px;min-block-size:36px;padding:0 10px;border-radius:10px;color:var(--text);font-weight:400;text-decoration:none;white-space:nowrap;outline-offset:-3px}
-.device-menu .device-menu-item.nested{padding-inline-start:22px}
+.device-menu .device-menu-item{display:flex;align-items:center;justify-content:flex-start;gap:10px;inline-size:100%;min-block-size:36px;padding:0 10px;border-radius:10px;color:var(--text);font-weight:500;text-decoration:none;white-space:nowrap;outline-offset:-3px}
+.device-menu .device-menu-item.nested{padding-inline-start:22px;font-size:var(--type-small);font-weight:400}
 .device-menu .device-menu-item[aria-current]{font-weight:600}
 .device-menu .device-menu-item:focus-visible{background:var(--raised)}
 @media(hover:hover) and (pointer:fine){.device-menu .device-menu-item:hover{background:var(--raised)}}
 .device-menu-name{overflow:hidden;text-overflow:ellipsis}
 .device-menu-mark{display:inline-grid;flex:none;margin-inline-start:auto;color:var(--muted-dense)}
 .device-menu-mark+.device-menu-mark{margin-inline-start:0}
-.device-menu .device-menu-all{justify-content:space-between;min-block-size:40px;border-block-start:1px solid var(--edge-faint);border-radius:0 0 10px 10px;color:var(--link);font-weight:500}
+.device-menu .device-menu-all{flex:none;justify-content:space-between;min-block-size:40px;border-block-start:1px solid var(--edge-faint);border-radius:0 0 10px 10px;color:var(--link);font-weight:500}
+/* A lighting brand is a disclosure: its name with a chevron that turns, over its lights and then its overview. */
+.device-menu .device-menu-toggle{border:0;background:transparent;text-align:start;cursor:pointer}
+.device-menu .device-menu-toggle:hover:not(:disabled){background:var(--raised)}
+.device-menu .device-menu-toggle small{color:var(--muted-dense);font-weight:400}
+.device-menu-chevron{display:inline-grid;flex:none;margin-inline-start:auto;color:var(--muted-dense);transition:transform 160ms cubic-bezier(.23,1,.32,1)}
+.device-menu-toggle[aria-expanded=true] .device-menu-chevron{transform:rotate(90deg)}
+.device-menu-lights{margin-inline-start:14px;padding-inline-start:6px;border-inline-start:1px solid var(--edge-faint)}
+.device-menu .device-menu-light{font-size:var(--type-small);font-weight:400}
+.device-menu .device-menu-overview{color:var(--link)}
 /* Conversations (#1890). The companions frontend renders the group and the rail draws it: a heading and one link
    for each chat profile, with a tile, the name and the Demo label. The dot on a tile says the conversation needs
    the owner's answer. The words are part of the link's name, and the icon rail shows them beside the tile on hover
@@ -167,7 +189,7 @@
   .shell:not([data-rail-narrow=expanded])>aside :is(.rail-go,.rail-pin-name,.rail-pin-group,.rail-pin-button){display:none}
   .shell:not([data-rail-narrow=expanded]) .rail-label{block-size:1px;margin:6px 10px;overflow:hidden;background:var(--edge-faint);font-size:0}
   .shell:not([data-rail-narrow=expanded])>aside .rail-pin.visiting a{padding:0}
-  .shell:not([data-rail-narrow=expanded]) .device-menu{inset-inline-start:72px;inline-size:min(468px,calc(100vw - 80px))}
+  .shell:not([data-rail-narrow=expanded]) .device-menu{inset-inline-start:72px;inline-size:min(404px,calc(100vw - 80px))}
   .shell:not([data-rail-narrow=expanded])>aside nav .rail-devices[aria-haspopup][aria-expanded=true] .rail-text{opacity:0;transition:none}
   .shell:not([data-rail-narrow=expanded]) .rail-jump{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
   .shell:not([data-rail-narrow=expanded]) .rail-jump kbd{display:none}
@@ -192,7 +214,7 @@
   .shell[data-rail-wide=collapsed]>aside :is(.rail-go,.rail-pin-name,.rail-pin-group,.rail-pin-button){display:none}
   .shell[data-rail-wide=collapsed] .rail-label{block-size:1px;margin:6px 10px;overflow:hidden;background:var(--edge-faint);font-size:0}
   .shell[data-rail-wide=collapsed]>aside .rail-pin.visiting a{padding:0}
-  .shell[data-rail-wide=collapsed] .device-menu{inset-inline-start:72px;inline-size:min(468px,calc(100vw - 80px))}
+  .shell[data-rail-wide=collapsed] .device-menu{inset-inline-start:72px;inline-size:min(404px,calc(100vw - 80px))}
   .shell[data-rail-wide=collapsed]>aside nav .rail-devices[aria-haspopup][aria-expanded=true] .rail-text{opacity:0;transition:none}
   .shell[data-rail-wide=collapsed] .rail-jump{justify-content:center;inline-size:44px;padding:0;margin-inline:auto}
   .shell[data-rail-wide=collapsed] .rail-jump kbd{display:none}
@@ -216,11 +238,19 @@
 .shell input,.shell select{min-height:44px}
 .shell .home-columns{gap:var(--space-l)}
 .shell .home-wide,.shell .home-narrow{gap:var(--space-l)}
-.shell-breadcrumb{display:flex;flex-wrap:wrap;gap:var(--space-s);font-size:var(--type-small);margin-bottom:var(--space-s)}
+.shell-breadcrumb{display:flex;flex-wrap:wrap;gap:var(--space-s);inline-size:fit-content;font-size:var(--type-small);margin-bottom:var(--space-s)}
 .shell-breadcrumb a{padding:var(--space-s) 0;min-height:44px}
+/* The parent link reads as a way back, as the prototype's does (#1950). */
+.shell-breadcrumb a{justify-content:flex-start;gap:6px;color:var(--link)}
+.shell-back{display:inline-grid;transform:rotate(180deg)}
+.feature-links{display:flex;flex-wrap:wrap;gap:var(--space-xs);margin:0 0 var(--space-m)}
+.feature-links a{min-block-size:44px;gap:var(--space-s);background:var(--inset);color:var(--text);font-size:var(--type-small)}
 .feature-navigation{display:flex;flex-wrap:wrap;gap:var(--space-xs);padding:var(--space-xs);margin:var(--space-s) 0 var(--space-m);background:var(--inset);border-radius:var(--radius);width:fit-content;max-width:100%}
 .feature-navigation a{min-height:44px}
 .feature-navigation a[aria-current]{box-shadow:none}
+/* A display view's own pages (#1950), such as Display's Advanced playback and Device settings, sit under its tab. */
+.feature-navigation:has(+.feature-pages){margin-block-end:var(--space-xs)}
+.feature-navigation.feature-pages{margin-block-start:0;background:transparent;padding-inline:0;font-size:var(--type-small)}
 .directory-categories{display:flex;flex-wrap:wrap;gap:var(--space-xs);padding:var(--space-xs);background:var(--inset);border-radius:var(--radius);width:fit-content;max-width:100%;margin-bottom:var(--space-l)}
 .directory-categories button{border-color:transparent;color:var(--muted-dense);background:transparent}
 .directory-categories button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
@@ -228,6 +258,33 @@
 .directory-grid,.settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:var(--space-l);align-items:start}
 .directory-card header h2{margin-bottom:var(--space-m)}
 .directory-card nav a{min-height:44px;background:var(--inset);color:var(--text)}
+/* All devices (#1950) follows the owner's selected device-only prototype: a section for each category, a card for
+   each module, and a brand's lights directly under its overview. */
+.inventory{display:grid;gap:var(--space-l);max-inline-size:880px}
+.inventory-section{padding:0}
+.inventory-section h2{margin:0 0 var(--space-s);font-size:var(--type-heading);font-weight:500}
+.inventory-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.shell .inventory-card{display:flex;align-items:center;justify-content:flex-start;gap:12px;padding:15px;border:1px solid transparent;border-radius:18px;color:var(--text);text-decoration:none}
+.shell a.inventory-card:hover{background:var(--raised)}
+.shell a.inventory-card>.rail-icon:last-child{margin-inline-start:auto;color:var(--muted-dense)}
+.inventory-icon{display:grid;flex:none;place-items:center;inline-size:38px;block-size:38px;border-radius:12px;background:var(--inset);color:var(--link)}
+.inventory-name{flex:1;min-inline-size:0}
+.inventory-name strong,.inventory-name small{display:block}
+.inventory-name small,.inventory-state{color:var(--muted-dense);font-size:var(--type-label)}
+.inventory-state{display:flex;flex:none;align-items:center;gap:6px;text-align:end}
+.inventory-dot{inline-size:6px;block-size:6px;border-radius:50%;background:var(--link)}
+.inventory-dot[data-off]{background:var(--muted-dense)}
+.shell .inventory-group{padding:0 12px 12px;border-radius:18px}
+.shell .inventory-group .inventory-card{padding:12px 3px}
+.shell .inventory-group .warning{margin:0 3px var(--space-s)}
+.inventory-links{display:grid;gap:var(--space-xs)}
+/* A card's panel on the glass layer (#1950) holds the card, which fills it, with the prototype's card corners. */
+.inventory-panel{display:grid;--glass-radius:18px}
+/* Off Home the glass keeps the cards' own frame (#1950): a panel's corners are the card radius the skin gives. The
+   value is resolved on the section, above the panel, where the card radius is still the skin's. */
+main[data-glass] section{--glass-radius:var(--light-radius)}
+.companions-panel{display:grid}
+.inventory-links a{min-block-size:40px;padding-block:5px;background:var(--inset);color:var(--text)}
 .settings-grid .places-group{border:0;padding:0}
 .settings-grid .nav-label{margin:0 0 var(--space-m);color:var(--text);font-size:var(--type-heading);letter-spacing:0;font-family:var(--font)}
 .settings-grid .actions{margin-top:var(--space-m)}
@@ -259,13 +316,14 @@
   .shell .rail-pin-button{inset-inline-end:0;inline-size:44px;block-size:44px;margin-block-start:-22px;border-radius:12px;background:transparent}
   .shell>aside .rail-pin.visiting a{padding-inline-end:44px}
   .shell>aside .rail-conversations nav a{min-block-size:44px}
-  .device-menu{inset:8px auto 8px 8px;inline-size:calc(min(82vw,300px) - 16px);max-block-size:none;animation-name:device-menu-over}
-  .device-menu-head{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 2px 10px}
+  .device-menu{inset:8px auto 8px 8px;z-index:31;inline-size:calc(min(82vw,300px) - 16px);max-block-size:none;animation-name:device-menu-over}
+  .device-menu-scroll{flex:1 1 auto}
   .device-menu-columns{grid-template-columns:minmax(0,1fr)}
   .device-menu .device-menu-item{min-block-size:44px}
   .shell>main{padding:0 var(--space-m)}
   .shell .card,.shell .widget,.directory-card{padding:var(--space-m)}
-  .directory-grid,.settings-grid{grid-template-columns:minmax(0,1fr)}
+  .directory-grid,.settings-grid,.inventory-grid{grid-template-columns:minmax(0,1fr)}
+  .feature-navigation a{padding-inline:10px}
   .directory-categories{width:100%}
   .directory-categories button{flex:1;padding:var(--space-s);font-size:var(--type-small)}
 }

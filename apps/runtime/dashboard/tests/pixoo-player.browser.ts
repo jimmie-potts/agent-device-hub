@@ -17,15 +17,21 @@ try {
     const page = await context.newPage(); page.setDefaultTimeout(8000);
     const sent = changes(page);
     const requestCount = (): number => sent.length;
+    // The Player is Advanced playback, linked from Pixoo's Display view (Hub #1950).
+    const openPlayer = async (): Promise<void> => {
+      await page.getByRole('navigation', {name: 'pixoo pages', exact: true}).getByRole('link', {name: 'Display', exact: true}).click();
+      await page.getByRole('navigation', {name: 'Display links', exact: true}).getByRole('link', {name: 'Advanced playback', exact: true}).click();
+    };
     await page.goto(`${world.url}/#/module/pixoo/playlists`); await feed(page, 'connected');
-    await page.getByRole('link', {name: 'Player', exact: true}).click();
+    await openPlayer();
     await page.getByText('Advanced player', {exact: true}).click();
     await page.getByRole('heading', {name: 'Player', exact: true, level: 2}).waitFor();
     await page.getByText('No active session.', {exact: true}).waitFor();
     assert.equal(sent.length, 0, 'opening and reading the player sends nothing');
     assert.equal(world.pixooState().sent, 0);
     await world.createPlaylist('Synthetic player');
-    await page.getByRole('link', {name: 'Library', exact: true}).click();
+    // Library is under Pixoo's Media view (Hub #1950).
+    await page.getByRole('navigation', {name: 'pixoo pages', exact: true}).getByRole('link', {name: 'Media', exact: true}).click();
     const png = await sharp({create: {width: 64, height: 64, channels: 3, background: {r: 45, g: 120, b: 70}}}).png().toBuffer();
     await page.getByLabel('Media file', {exact: true}).setInputFiles({name: 'Player still.png', mimeType: 'image/png', buffer: png});
     await page.getByRole('button', {name: 'Add media', exact: true}).click();
@@ -63,7 +69,7 @@ try {
       for (let attempt = 0; reading.state.state !== state && attempt < 100; attempt++) { await delay(20); reading = await readPlayer(); }
       assert.equal(reading.state.state, state); return reading;
     };
-    await page.getByRole('link', {name: 'Player', exact: true}).click();
+    await openPlayer();
     await page.getByText('Advanced player', {exact: true}).click();
     await page.getByRole('combobox', {name: 'Playlist to play', exact: true}).selectOption(saved.id);
     assert.equal(sent.length, setupRequests, 'player selection sends no command');
