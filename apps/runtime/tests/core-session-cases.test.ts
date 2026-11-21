@@ -160,7 +160,7 @@ it('a check of a full core fails fast with a short report, and orders a fill ste
 });
 
 it('the core runs every case of the set, step 8\'s restart, root starts and capacity among them', () => {
-  assert.deepEqual(cases.cases.filter(item => item.since === 'step 8').map(item => item.id).sort(), ['capacity', 'child-only', 'clear-resume', 'launch', 'restart']);
+  assert.deepEqual(cases.cases.filter(item => item.since === 'step 8').map(item => item.id).sort(), ['capacity', 'child-only', 'clear-resume', 'launch', 'native-restart', 'restart']);
   assert.ok(cases.cases.some(item => item.since === 'step 7' && item.id === 'reset'));
   assert.deepEqual([...new Set(cases.cases.map(item => item.since))].sort(), ['now', 'step 7', 'step 8']);
 });

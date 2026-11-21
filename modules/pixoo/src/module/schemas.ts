@@ -157,7 +157,12 @@ export const pixooSchemas: Readonly<Record<string, object>> = {...deviceSchemas,
 
 type Guards = {expectedConfigurationRevision?: number; expectedGeneration?: {epoch: string; sequence: number}};
 export type Policy = {mode: 'duration'; durationMs: number} | {mode: 'plays'; totalPlays: number};
-export type Filter = {q?: string | undefined; provider?: 'codex' | 'claude' | undefined; projectId?: string | undefined; session?: Identity | undefined};
+/**
+ * A hook session's identity, which the filter names. The native assistant source (Hub #505) reaches the Monitor's rows
+ * through the shared session view, but the filter, like the frozen `pixoo-integration/1.0` operations, names hook sources only.
+ */
+export type HookIdentity = Omit<Identity, 'provider' | 'client'> & {provider: 'codex' | 'claude'; client: 'cli' | 'desktop' | 'code' | 'local'};
+export type Filter = {q?: string | undefined; provider?: 'codex' | 'claude' | undefined; projectId?: string | undefined; session?: HookIdentity | undefined};
 export type DisplayRecord = {
   id: string; revision: number; mode: HubMode; pendingMode: HubMode | null; base: 'status' | 'playback'; participating: boolean;
   showing: 'dashboard' | 'card' | 'moment' | 'none';

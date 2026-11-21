@@ -177,7 +177,8 @@ function withMetadata(observation: LifecycleObservation, metadata: {title?: Titl
  */
 export async function enrichHook(raw: unknown, configuration: unknown, hook: string, observedAtMs: number, options: EnrichOptions): Promise<LifecycleObservation | null> {
   const observation = normalizeHook(raw, configuration, hook, observedAtMs);
-  if (observation === null || observation.parent.status === 'known') return observation;
+  // A hook never names the native assistant source (Hub #505): its definition maps no hook.
+  if (observation === null || observation.parent.status === 'known' || observation.identity.provider === 'bunny') return observation;
   const record = plain(raw);
   if (!record) return observation;
   const hostSessionId = options.lifecycleVersion === '1.2' && observation.identity.provider === 'claude'

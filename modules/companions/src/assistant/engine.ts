@@ -17,6 +17,7 @@ import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions} from './catalog-actions.js';
 import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
 import {SyntheticProvider} from './synthetic.js';
+import {eventsOf, observationDraft, observationOf, projectionOf} from './sessions.js';
 import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices} from './devices.js';
 import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
 
@@ -140,6 +141,27 @@ export class AssistantEngine {
   #task(id: string): Task {return this.store.task(id) ?? fail('not-found');}
   #publish(add: AddMessage, parent?: TraceContext): void {
     this.store.bump(); add('bunny.state.assistant-state.assistant', assistantStateDraft(this.inspect()), parent === undefined ? {} : {parent});
+    this.#report(add, parent);
+  }
+  /**
+   * Reports each task's change to the shared session model in the same transaction (Hub #505): the lifecycle observations
+   * that move its session from the projection last reported to its projection now, at its next ordering sequences. Only
+   * the latest task of a profile can change, so only those are compared.
+   */
+  #report(add: AddMessage, parent?: TraceContext): void {
+    for (const task of this.store.latest()) {
+      const after = projectionOf(task);
+      if (after === undefined) continue;
+      const {sequence, projection: before} = this.store.report(task.id);
+      if (before !== undefined && JSON.stringify(before) === JSON.stringify(after)) continue;
+      let next = sequence;
+      for (const reported of eventsOf(before, after)) {
+        next += 1;
+        const {key, draft} = observationDraft(observationOf(task, reported, next, this.context.clock.now()));
+        add(key, draft, parent === undefined ? {} : {parent});
+      }
+      this.store.saveReport(task.id, next, after);
+    }
   }
   #change(id: string, change: (task: Task) => void, parent?: TraceContext): Promise<void> {
     return this.outbox.transaction(add => {const task = this.#task(id); change(task); this.store.save(task); this.#publish(add, parent);});

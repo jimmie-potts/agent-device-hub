@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/session/3.1",
+  "description": "State: the full record of one agent session (Hub #1865), version 3.1 (Hub #505): session/3.0 with the identity widened to the native B.U.N.N.Y. assistant source and an optional notice `result`. The core publishes a record as 3.1 only when 3.0 cannot express it: a native identity or a notice with a result. As in 3.0: It replaces session/2.0's freshness and restart uncertainty with a hub-computed status and separately evidenced work, attention, outcome and relationship claims. `status` is a closed class with an open kebab-case detail, and the validator refuses a status that is not statusOf(claims) (session.ts). Silence makes only active work unconfirmed. The owner publishes a new revision when the public meaning changes. `id` is sessionEntityId(identity). The validator also refuses a generation after the revision, cross-source parentage, a self parent, ordering under another authority, repeated notices or unavailable dimensions, and read provenance that does not name the current finished turn (families.ts). Display precedence: the label, then the title, then the consumer's neutral fallback.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "generation", "identity", "parent", "turn", "status", "work", "attention", "outcome", "relationships",
+    "unavailable", "ordering", "observedAtMs", "lastEvidenceAtMs"],
+  "properties": {
+    "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "generation": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "identity": {"$ref": "#/$defs/identity"},
+    "parent": {"$ref": "#/$defs/parent"},
+    "turn": {"$ref": "#/$defs/knownId"},
+    "status": {"$ref": "#/$defs/status"},
+    "work": {"$ref": "#/$defs/work"},
+    "attention": {"$ref": "#/$defs/attentionClaim"},
+    "outcome": {"$ref": "#/$defs/outcome"},
+    "relationships": {"$ref": "#/$defs/relationships"},
+    "unavailable": {"type": "array", "maxItems": 6, "items": {"$ref": "#/$defs/unavailable"}},
+    "ordering": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ordering"},
+    "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "lastEvidenceAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+    "label": {"$ref": "#/$defs/label"},
+    "title": {"$ref": "#/$defs/title"},
+    "project": {"$ref": "#/$defs/project"},
+    "projectId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "hostSessionId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+  },
+  "allOf": [
+    {"$ref": "#/$defs/readProvenance"},
+    {"$ref": "#/$defs/hostSessionOnlyAtRoot"}
+  ],
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "confidence": {"enum": ["confirmed", "unconfirmed"]},
+    "identity": {
+      "description": "The native session selector. Its providers and clients come from the supported-source definition (sources.ts): Codex uses cli, desktop or shared local (surface unspecified); Claude uses code; the native B.U.N.N.Y. assistant (Hub #505) uses assistant, on the core host and the companions source, with the task ID as its session ID.",
+      "type": "object", "additionalProperties": false, "required": ["provider", "client", "hostId", "sourceId", "sessionId"],
+      "properties": {
+        "provider": {"enum": ["codex", "claude", "bunny"]},
+        "client": {"enum": ["cli", "desktop", "code", "local", "assistant"]},
+        "hostId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+        "sourceId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+        "sessionId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+      },
+      "allOf": [
+        {"if": {"properties": {"provider": {"const": "codex"}}}, "then": {"properties": {"client": {"enum": ["cli", "desktop", "local"]}}}},
+        {"if": {"properties": {"provider": {"const": "claude"}}}, "then": {"properties": {"client": {"const": "code"}}}},
+        {"if": {"properties": {"provider": {"const": "bunny"}}},
+          "then": {"properties": {"client": {"const": "assistant"}, "hostId": {"const": "core"}, "sourceId": {"const": "companions"}}}}
+      ]
+    },
+    "knownId": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status", "id"],
+        "properties": {"status": {"const": "known"}, "id": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}}}
+    ]},
+    "parent": {"oneOf": [
+      {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/unknown"},
+      {"type": "object", "additionalProperties": false, "required": ["status"], "properties": {"status": {"const": "top-level"}}},
+      {"type": "object", "additionalProperties": false, "required": ["status", "identity"],
+        "properties": {"status": {"const": "known"}, "identity": {"$ref": "#/$defs/identity"}}}
+    ]},
+    "status": {
+      "description": "The hub-computed status: a closed class and an open kebab-case detail. A reader switches on the class and falls back to it for a detail it does not know.",
+      "type": "object", "additionalProperties": false, "required": ["class", "detail"],
+      "properties": {
+        "class": {"enum": ["needs-owner", "working", "finished", "quiet", "unknown"]},
+        "detail": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/enumValue"}
+      }
+    },
+    "work": {
+      "description": "The work claim. `reasons` says why it is unconfirmed: a core restart, or ambiguous or lost activity evidence. Silence alone never makes it unconfirmed (Hub #1947): `deadline`, the passed work deadline of a release before #1947, stays accepted so records and messages that release stored still read, and is never emitted. Confirmed work has no reason, and unconfirmed work at least one.",
+      "type": "object", "additionalProperties": false, "required": ["state", "confidence", "evidenceAtMs", "reasons"],
+      "properties": {
+        "state": {"enum": ["active", "idle", "interrupted", "unknown"]},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidenceAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+        "reasons": {"type": "array", "uniqueItems": true, "maxItems": 4, "items": {"enum": ["deadline", "restart", "ambiguous", "lost"]}}
+      },
+      "if": {"properties": {"confidence": {"const": "confirmed"}}},
+      "then": {"properties": {"reasons": {"type": "array", "maxItems": 0}}},
+      "else": {"properties": {"reasons": {"type": "array", "minItems": 1}}}
+    },
+    "attentionKind": {"enum": ["question", "input", "approval"]},
+    "attention": {"description": "One attention item. `turn` is the turn the item was raised on, which an occurrence's own `turn` may have left behind.",
+      "type": "object", "additionalProperties": false, "required": ["id", "kind", "turn"],
+      "properties": {"id": {"$ref": "#/$defs/knownId"}, "kind": {"$ref": "#/$defs/attentionKind"}, "turn": {"$ref": "#/$defs/knownId"}}},
+    "attentionClaim": {
+      "description": "The attention claim: the items that need the owner. Silence never changes it.",
+      "type": "object", "additionalProperties": false, "required": ["items", "confidence", "evidenceAtMs"],
+      "properties": {
+        "items": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/attention"}},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidenceAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"}
+      }
+    },
+    "hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "notice": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "turn", "acknowledgedBy"],
+      "properties": {
+        "id": {"$ref": "#/$defs/hash"},
+        "kind": {"const": "turn-ended"},
+        "turn": {"$ref": "#/$defs/knownId"},
+        "acknowledgedBy": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}},
+        "result": {"$ref": "#/$defs/result"}
+      }},
+    "result": {
+      "description": "How the turn's task ended, when its producer knows (Hub #505): succeeded, failed or cancelled. A notice without a result proves nothing about success.",
+      "enum": ["succeeded", "failed", "cancelled"]
+    },
+    "providerRevision": {
+      "description": "Opaque provider token, including native initial:<thread-id> revisions. Never parse it as an ordering value.",
+      "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,128}$"
+    },
+    "readReceipt": {
+      "description": "Explicit read provenance (session/2.1): the exact finished notice, the receipt's observation time, its authenticated source and the receipt. No content or credential travels here.",
+      "type": "object", "additionalProperties": false, "required": ["noticeId", "observedAtMs", "source", "receipt"],
+      "properties": {
+        "noticeId": {"$ref": "#/$defs/hash"},
+        "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+        "source": {"type": "string", "pattern": "^bunny(/[a-z0-9][a-z0-9-]*)+$", "maxLength": 256},
+        "receipt": {"oneOf": [
+          {"type": "object", "additionalProperties": false, "required": ["kind", "client", "seenRevision", "acceptedRevision"],
+            "properties": {"kind": {"const": "provider-client"}, "client": {"const": "desktop"},
+              "seenRevision": {"$ref": "#/$defs/providerRevision"}, "acceptedRevision": {"$ref": "#/$defs/providerRevision"}}},
+          {"type": "object", "additionalProperties": false, "required": ["kind", "viewRevision"],
+            "properties": {"kind": {"const": "owned-ui"}, "viewRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}}}
+        ]}
+      }
+    },
+    "outcome": {
+      "description": "The outcome claim: the turn-ended notices with their per-consumer acknowledgments, read evidence and its receipt provenance. Silence never changes it.",
+      "type": "object", "additionalProperties": false, "required": ["notices", "read", "confidence", "evidenceAtMs"],
+      "properties": {
+        "notices": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/notice"}},
+        "read": {"enum": ["unknown", "read", "unread"]},
+        "readReceipt": {"$ref": "#/$defs/readReceipt"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidenceAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"}
+      }
+    },
+    "relationships": {
+      "description": "The relationship claim. A child counts as working only while its own work is active and confirmed; activity it cannot attribute counts as unconfirmed.",
+      "type": "object", "additionalProperties": false, "required": ["children", "confidence"],
+      "properties": {
+        "children": {"type": "object", "additionalProperties": false, "required": ["working", "unconfirmed"],
+          "properties": {"working": {"$ref": "#/$defs/count"}, "unconfirmed": {"$ref": "#/$defs/count"}}},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "unavailable": {"type": "object", "additionalProperties": false, "required": ["dimension", "reason"],
+      "properties": {
+        "dimension": {"enum": ["activity", "attention", "turn", "parent", "read", "ordering"]},
+        "reason": {"enum": ["unsupported", "inaccessible", "missing", "ambiguous", "lost"]}
+      }},
+    "displayText": {
+      "description": "1 to 160 Unicode scalar values with no control characters and no recognizable credential.",
+      "type": "string", "minLength": 1, "maxLength": 160,
+      "pattern": "^(?![\\s\\S]*(?:[Bb][Ee][Aa][Rr][Ee][Rr] +[A-Za-z0-9._~+/-]{12,}|(?:sk-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{16,}|AKIA[A-Z0-9]{16}|-----BEGIN [A-Z ]*PRIVATE KEY|(?:[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])\\s*[:=]\\s*\\S+))[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "label": {"type": "object", "additionalProperties": false, "required": ["value", "origin"],
+      "properties": {"value": {"type": "string", "$ref": "#/$defs/displayText", "maxLength": 80}, "origin": {"enum": ["user", "agent"]}}},
+    "title": {"type": "object", "additionalProperties": false, "required": ["value", "source"],
+      "properties": {"value": {"$ref": "#/$defs/displayText"}, "source": {"enum": ["provider", "user"]}}},
+    "project": {"type": "string", "$ref": "#/$defs/displayText", "maxLength": 80},
+    "readProvenance": {
+      "description": "Read evidence is Codex Desktop's own, or comes with explicit provenance. Provenance makes the outcome read and belongs only to an idle or interrupted root session's known turn.",
+      "type": "object",
+      "if": {"properties": {"outcome": {"type": "object", "required": ["readReceipt"], "properties": {"readReceipt": {"type": "object"}}}}},
+      "then": {"properties": {
+        "parent": {"type": "object", "properties": {"status": {"enum": ["unknown", "top-level"]}}},
+        "turn": {"type": "object", "properties": {"status": {"const": "known"}}},
+        "work": {"type": "object", "properties": {"state": {"enum": ["idle", "interrupted"]}}},
+        "outcome": {"type": "object", "properties": {"read": {"const": "read"}}}
+      }},
+      "else": {
+        "if": {"properties": {"identity": {"type": "object", "not": {"type": "object", "properties": {"provider": {"const": "codex"}, "client": {"const": "desktop"}}}}}},
+        "then": {"properties": {"outcome": {"type": "object", "properties": {"read": {"const": "unknown"}}}}}
+      }
+    },
+    "occurrence": {
+      "description": "What every agent occurrence of version 2.1 carries (Hub #505): session/2.0's occurrence with this version's identity.",
+      "type": "object",
+      "required": ["session", "identity", "turn", "observedAtMs", "ordering", "revision"],
+      "properties": {
+        "session": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+        "identity": {"$ref": "#/$defs/identity"},
+        "turn": {"$ref": "#/$defs/knownId"},
+        "observedAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+        "occurredAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
+        "ordering": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ordering"},
+        "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"}
+      }
+    },
+    "hostSessionOnlyAtRoot": {
+      "description": "A record whose parent is known never carries a host session ID.",
+      "type": "object",
+      "if": {"properties": {"parent": {"type": "object", "properties": {"status": {"const": "known"}}}}},
+      "then": {"properties": {"hostSessionId": false}}
+    }
+  }
+}

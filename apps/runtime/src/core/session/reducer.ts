@@ -3,7 +3,9 @@
 // are unchanged: semantic duplicates and collisions, ordering watermarks and epochs, turn selection and retirement,
 // approvals without a request ID, notices and the consumers a new turn acknowledges for. Semantic keys hash the
 // observation's canonical content; no 1.x key form is kept, since the step that moved here dropped the old session data.
-// One rule changed on purpose (#1865 step 8, design decision 6, #397): a root start claims no work.
+// One rule changed on purpose (#1865 step 8, design decision 6, #397): a root start claims no work. Hub #505 adds the
+// common inputs of `lifecycle/2.2` (`turn-waiting`, `turn-uncertain` and a turn end's result) and lets an ordered,
+// newer turn start recover the turn and activity evidence, as a best-effort start already does.
 import {createHash} from 'node:crypto';
 import type {Attention, KnownId, LifecycleObservation, Unavailable} from '@jimmie-potts/event-contracts/v2/families';
 import {SESSION_LIMITS, entityOf, sameId, sameTurn, type Consumer, type StoredSession} from './model.js';
@@ -205,7 +207,9 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
     const comparable = order.status === 'known' && prior.status === 'known' && order.epoch === prior.epoch;
     if (comparable && prior.status === 'known' && order.sequence <= prior.sequence) return {outcome: 'stale', fresh: false};
     if (comparable) {
-      selectTurn(session, turn, consumers);
+      // An ordered, newer start is as good evidence of the new turn as a best-effort one (Hub #505). No producer sent
+      // known ordering before the native assistant source, so only its sessions take this path today.
+      selectTurn(session, turn, consumers, event.kind === 'turn-started');
     } else {
       // Only an eligible start can select by receipt order. Other conflicts stay unknown.
       if (bestEffort) retire(session, session.turn);
@@ -251,9 +255,25 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
       forgetAnsweredApprovals(session, turn);
       const material = turn.status === 'known' ? [identityKey(observation.identity), turn.id, 'turn-ended'] : [identityKey(observation.identity), key];
       const noticeId = sha256(JSON.stringify(material));
-      if (!session.notices.some(notice => notice.id === noticeId)) session.notices.push({id: noticeId, kind: 'turn-ended', turn: structuredClone(turn), acknowledgedBy: []});
+      const result = 'result' in event ? event.result : undefined;
+      if (!session.notices.some(notice => notice.id === noticeId)) {
+        // An owner's cancel is the owner's own acknowledgment (Hub #505, owner decision 1): its notice leaves no reader unread.
+        const acknowledgedBy = result === 'cancelled' ? consumers.map(consumer => consumer.id) : [];
+        session.notices.push({id: noticeId, kind: 'turn-ended', turn: structuredClone(turn), acknowledgedBy, ...(result === undefined ? {} : {result})});
+      }
+      // A task that ended waits for no one: its turn's attention clears with it (Hub #505).
+      if (result !== undefined && turn.status === 'known') session.attention = session.attention.filter(item => !sameTurn(item.turn, turn));
       break;
     }
+    case 'turn-waiting':
+      // The turn's work stopped to wait for an answer or delegated work; it holds no notice (Hub #505).
+      session.activity = 'idle';
+      break;
+    case 'turn-uncertain':
+      // The turn's work stopped and the fate of its last effect is unknown (Hub #505).
+      session.activity = 'unknown';
+      unavailable(session, 'activity', 'lost');
+      break;
     case 'turn-interrupted':
       session.activity = 'interrupted';
       break;

@@ -13,7 +13,9 @@ import {forConsumer, highestStatus, opportunityMatches, readSession, sessionStat
 const set = loadSessionCases();
 const DESIGN_CASES = ['launch', 'clear-resume', 'compaction', 'approval', 'question-silent', 'working-silent', 'restart', 'stale-start',
   'parent-child', 'child-only', 'duplicates', 'out-of-order', 'ambiguous', 'capacity', 'expiry', 'runtime-end', 'acknowledgment',
-  'unknown-detail', 'lost-prompt', 'stop-without-turn', 'unknown-turn-notice', 'superseded-notice', 'activity-lost', 'unsynced', 'reset'];
+  'unknown-detail', 'lost-prompt', 'stop-without-turn', 'unknown-turn-notice', 'superseded-notice', 'activity-lost', 'unsynced', 'reset',
+  // Native assistant tasks (Hub #505).
+  'native-answer', 'native-outcomes', 'native-delay', 'native-restart', 'native-expiry'];
 const every = function* () {
   for (const item of set.cases) for (const [index, check] of item.checks.entries()) yield {item, index, check, where: `${item.id} check ${index}`};
 };
@@ -102,11 +104,13 @@ test('the case set holds every case design decision 10 lists, each with valid me
 });
 
 test('the case set is synthetic: no session, host or title other than its own named ones', () => {
+  // A native assistant task's host is the core, which its contract fixes (Hub #505); every other host is the synthetic one.
+  const host = identity => identity.hostId === (identity.provider === 'bunny' ? 'core' : 'synthetic-host');
   const identities = Object.values(set.sessions).map(({identity}) => identity);
-  assert.ok(identities.every(identity => identity.hostId === 'synthetic-host' && identity.sessionId.startsWith('synthetic-')));
+  assert.ok(identities.every(identity => host(identity) && identity.sessionId.startsWith('synthetic-')));
   for (const {check} of every()) {
     for (const {data} of check.messages) {
-      assert.ok(data.identity.sessionId.startsWith('synthetic-') && data.identity.hostId === 'synthetic-host');
+      assert.ok(data.identity.sessionId.startsWith('synthetic-') && host(data.identity));
       assert.equal(data.title ?? data.label ?? data.project ?? data.hostSessionId, undefined);
     }
   }

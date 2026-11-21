@@ -24,7 +24,7 @@ import {compareDelivery, errorBody, type Message} from '@jimmie-potts/event-cont
 import {
   coreValidator, sessionEntityId, type Identity, type LifecycleObservation, type Session30Record, type Title,
 } from '@jimmie-potts/event-contracts/v2/families';
-import {SESSION_SCHEMA} from '@jimmie-potts/event-contracts/v2/session';
+import {occurrenceSchemaOf, sessionSchemaOf} from '@jimmie-potts/event-contracts/v2/session';
 import {
   fullDisk, Outbox, recordLog, SdkError, type AddMessage, type Clock, type Draft, type LogFields, type Logger, type OutboxOptions, type Sdk, type SpanRecorder,
 } from '@jimmie-potts/sdk';
@@ -830,7 +830,8 @@ function prepare(db: DatabaseSync): Statements {
 const familyOf = (draft: Draft<object>): string => draft.dataschema.slice('https://bunny.invalid/events/'.length).split('/')[0] ?? '';
 
 function stateDraft(record: Session30Record): Draft<Session30Record> {
-  return {kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: SESSION_SCHEMA, data: record};
+  // The lowest version that expresses the record (Hub #505): native records are session/3.1, every other one 3.0.
+  return {kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchemaOf(record), data: record};
 }
 
 /** Each agent occurrence family's message type. */
@@ -839,6 +840,7 @@ const OCCURRENCE_TYPES: Record<Occurrence['family'], string> = {
   'session-ended': 'org.bunny.session.ended',
 };
 
-function occurrence<T extends object>(family: Occurrence['family'], data: T & {session: string}): Draft<T> & {subject: string} {
-  return {kind: 'occurrence', type: OCCURRENCE_TYPES[family], subject: data.session, dataschema: `https://bunny.invalid/events/${family}/2.0`, data};
+function occurrence<T extends object>(family: Occurrence['family'], data: T & {session: string; identity: Identity}): Draft<T> & {subject: string} {
+  // A native session's occurrences are 2.1, every other one's 2.0 (Hub #505).
+  return {kind: 'occurrence', type: OCCURRENCE_TYPES[family], subject: data.session, dataschema: occurrenceSchemaOf(family, data.identity), data};
 }
