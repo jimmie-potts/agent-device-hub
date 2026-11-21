@@ -15,8 +15,8 @@
 //
 // History keeps changes, and repeated readings as spans (#1772, ADR 0012's amendment of 2026-11-12). A state whose
 // record holds the same state as the record of its entity's last row, as `sameState` decides with the family's
-// bookkeeping members (#1771), is a confirmation: it writes no row and updates the entity's open span in
-// `core_history_span`, beside the log. A state that differs writes a change row against the last row's record, with
+// bookkeeping members (#1771) and, for an agent session, its evidence instants (Hub #1947), is a confirmation: it
+// writes no row and updates the entity's open span in `core_history_span`, beside the log. A state that differs writes a change row against the last row's record, with
 // the span it closes. For a family a module publishes on a poll, a confirmation after a silence longer than the gap
 // writes one gap row. The span table is never part of the log: `after` reads rows only, and rows are never updated.
 import {randomUUID} from 'node:crypto';
@@ -58,6 +58,18 @@ export type HistoryRules = {readonly bookkeeping: Bookkeeping; readonly polling:
 
 /** The contracts package's bookkeeping members and no polled family: the core's own families publish on events. */
 export const DEFAULT_HISTORY_RULES: HistoryRules = Object.freeze({bookkeeping: contractBookkeeping, polling: Object.freeze({})});
+/**
+ * History's own rule for agent sessions (Hub #1947, owner decision of 2026-11-21 revising #1768 decision 6 for session
+ * evidence instants only): a `session` state whose only changes are its instants, the record's `observedAtMs` and
+ * `lastEvidenceAtMs` and its claims' `evidenceAtMs`, confirms the entity's open span and writes no row, as a bookkeeping
+ * member would. It is not a bookkeeping declaration: the family still declares none, since `session/2.0` and `2.1` have no
+ * claims to point into, and nothing outside history reads it. A row that follows carries the moved instants.
+ */
+export const SESSION_EVIDENCE_INSTANTS: readonly string[] = Object.freeze(['/observedAtMs', '/lastEvidenceAtMs', '/work/evidenceAtMs',
+  '/attention/evidenceAtMs', '/outcome/evidenceAtMs']);
+/** The members history sets aside to tell a confirmation from a change: the family's bookkeeping and, for sessions, their instants. */
+const confirmationPointers = (rules: HistoryRules, family: string): readonly string[] =>
+  [...(rules.bookkeeping[family] ?? []), ...(family === 'session' ? SESSION_EVIDENCE_INSTANTS : [])];
 /** The shortest silence that makes a gap, whatever the polling interval (#1768, decision 4). */
 export const MIN_GAP_MS = 120_000;
 /** A gap is a silence longer than this many polling intervals (#1768, decision 4). */
@@ -419,7 +431,7 @@ export class History {
     const span = latest === undefined || held === null ? undefined : this.#span(message.source, family, id, latest.revision);
     // Older than the last confirmation: nothing new.
     if (span !== undefined && span.confirmedAtMs !== null && entityRevision < span.seenRevision) return;
-    const same = held !== null && span !== undefined && sameState(held, record, this.#rules.bookkeeping[family] ?? []);
+    const same = held !== null && span !== undefined && sameState(held, record, confirmationPointers(this.#rules, family));
     // That confirmation sent again: nothing new. A message under its ID whose state differs is not a resend, and is a change.
     if (same && span?.confirmedAtMs !== null && message.id === span?.seenMessageId) return;
     if (same && span !== undefined) {

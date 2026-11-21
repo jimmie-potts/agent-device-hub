@@ -11,9 +11,11 @@ Every task names its evidence. Reviews and CI receipts go in the pull request.
 - [x] 2.2 Approval recovery follows the restart marking only. Evidence: `core.test.ts` and `core-store.test.ts` refuse recovery after five silent minutes and accept it after a restart.
 - [x] 2.3 Publish the evidence time at `SESSION_LIMITS.evidenceResolutionMs` and measure revisions and history rows per busy session-hour. Evidence: the measurement test in `core-session-progress.test.ts` and its diagnostic line.
 
+- [x] 2.4 Keep evidence-only session publications out of history's rows: they confirm the open span (owner decision of 2026-11-21). Evidence: `core-session-progress.test.ts` (span confirmations, rebuild, change and removal closing), `history-spans.test.ts`, and a negative control where three progress tests fail without the rule.
+
 ## 3. Readers
 
-- [x] 3.1 Show the evidence age on the dashboard's session card. Evidence: `sessions.test.ts` (`heardAge`), the browser journeys' card text.
+- [x] 3.1 Show the evidence age on the dashboard's session card, and a busy session as one Timeline entry with its span's last reading. Evidence: `sessions.test.ts` (`heardAge`), `timeline.test.ts`, the browser journeys' card text.
 - [x] 3.2 Update the dashboard, Nanoleaf, Tidbyt, Codex Desktop and companions tests and fixtures that created deadline cases, keeping restart coverage. Evidence: their suites pass.
 
 ## 4. Docs and specs

@@ -984,7 +984,12 @@ The decisions:
    (Recommendation accepted at 15:48:22Z.)
 6. **Agent session times stay as rows.** The session record's `observedAtMs`
    and `lastEvidenceAtMs` are not bookkeeping for now. (Recommendation accepted
-   at 15:48:22Z.)
+   at 15:48:22Z.) Revised for session evidence instants only on 2026-11-21
+   ([#1947](https://github.com/jimmie-potts/agent-device-hub/issues/1947),
+   owner decision): a session state whose only changes are its
+   `observedAtMs`, `lastEvidenceAtMs` and its claims' `evidenceAtMs` writes no
+   row and confirms the entity's open span, by history's own rule. The family
+   still declares no bookkeeping member.
 7. **A noisy-device alarm, not a cap.** When one entity writes more than a set
    number of history rows in an hour, the core is to raise a diagnostic and the
    dashboard to show it. Nothing is capped, folded or deleted. The alarm is not

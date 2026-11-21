@@ -2,9 +2,10 @@
 // them): silence changes no claim, and only a core restart leaves running work unconfirmed. A record's evidence time is
 // part of its meaning at `SESSION_LIMITS.evidenceResolutionMs`: a work observation that changes no other public member
 // writes the session row and publishes nothing until the evidence time is that far past the published one, which then
-// publishes at a new revision that history keeps. A busy session therefore publishes for its evidence at most once per
-// resolution and an idle one never; the last test measures that. Everything runs on the runtime's manual clock, with no
-// real wait.
+// publishes at a new revision. History keeps such an evidence-only publication as a confirmation of the session's open
+// span, with no row (owner decision of 2026-11-21 on #1947). A busy session therefore publishes for its evidence at most
+// once per resolution and an idle one never; the measurement test counts that. Everything runs on the runtime's manual
+// clock, with no real wait.
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
@@ -50,6 +51,29 @@ const status = (item: Session30Record): string => `${item.status.class}/${item.s
 const states = (w: World, from: number): string[] =>
   w.since(from).filter(message => message.type === 'org.bunny.session.updated').map(message => (message.data as Session30Record).identity.sessionId);
 const historyRows = (w: World): number => (w.rows('SELECT seq FROM core_history WHERE type = \'org.bunny.session.updated\'') as unknown[]).length;
+type Span = {sinceAtMs: number | null; confirmedAtMs: number | null; confirmations: number; seenRevision: number};
+/** The session's open span in history, which evidence-only publications confirm. */
+const spanOf = (w: World, id: string): Span | undefined => w.rows(`SELECT since_at_ms AS sinceAtMs, confirmed_at_ms AS confirmedAtMs, confirmations,
+  seen_revision AS seenRevision FROM core_history_span WHERE family = 'session' AND id = '${id}'`)[0] as Span | undefined;
+type Event = {revision: number; previous: number | null; changed: Record<string, unknown>; removed: string[]; span?: object; closedBy?: string};
+/** The session's change rows, oldest first. */
+const changeRows = (w: World, id: string): Event[] =>
+  (w.rows(`SELECT record FROM core_history WHERE kind = 'change' AND subject = '${id}' ORDER BY seq`) as {record: string}[]).map(row => JSON.parse(row.record) as Event);
+/** The record the rows give at their last row: each row's changed members over the last, its removed ones dropped. */
+function rebuilt(id: string, events: readonly Event[]): Record<string, unknown> {
+  const record: Record<string, unknown> = {id};
+  for (const event of events) {
+    Object.assign(record, structuredClone(event.changed), {revision: event.revision});
+    for (const name of event.removed) delete record[name];
+  }
+  return record;
+}
+/** A record without its instants: the members an evidence-only publication moves. */
+const withoutInstants = (record: Record<string, unknown>): unknown => {
+  const {revision: _revision, observedAtMs: _observed, lastEvidenceAtMs: _evidence, ...rest} = structuredClone(record) as Record<string, Record<string, unknown>>;
+  for (const claim of ['work', 'attention', 'outcome']) if (rest[claim] !== undefined) delete rest[claim].evidenceAtMs;
+  return rest;
+};
 /** Moves the manual clock and runs what fell due, as the core's timer does. */
 async function advance(w: World, ms: number): Promise<void> {
   w.clock.advance(ms);
@@ -89,7 +113,8 @@ it('progress within the evidence resolution publishes nothing; evidence a resolu
   assert.equal(heard.lastEvidenceAtMs, first.lastEvidenceAtMs + RESOLUTION_MS);
   assert.ok(heard.revision > first.revision);
   assert.equal(status(heard), 'working/confirmed');
-  assert.equal(historyRows(w), rows + 1, 'history keeps it');
+  assert.equal(historyRows(w), rows, 'history writes no row for it: it confirms the session\'s open span');
+  assert.deepEqual(spanOf(w, first.id), {sinceAtMs: first.lastEvidenceAtMs, confirmedAtMs: heard.lastEvidenceAtMs, confirmations: 2, seenRevision: heard.revision});
 
   // An hour of silence publishes nothing and leaves the work confirmed.
   await advance(w, HOUR_MS);
@@ -159,16 +184,72 @@ it('a root with one confirmed and one unconfirmed child is working through its s
   assert.deepEqual([status(record(w, first)), status(record(w, second))], ['working/confirmed', 'working/unconfirmed']);
 });
 
-// Hub #1947's open design point: how many revisions and history rows the evidence time adds. One session works for an
-// hour at each evidence cadence, on the manual clock; the counts are the publications of evidence alone, since nothing
-// else changes. Each is at most one per resolution, and a silent session adds none.
-it('a busy session publishes its evidence time at most once a minute: revisions and history rows per hour by cadence', async context => {
+// Hub #1947: what history keeps of evidence-only publications (owner decision of 2026-11-21, revising #1768 decision 6 for
+// session evidence instants). They confirm the open span and write no row. At a confirmation the record rebuilt from the
+// rows equals the published one but for its revision and instants; the span names the publication's revision and its
+// instant, which for an evidence-only publication is the record's `lastEvidenceAtMs`. The next change row carries the moved
+// instants and closes the span, so the rebuild equals the published record there, and a removal closes a span with
+// confirmations beyond its row first, as for any family.
+it('evidence-only publications confirm the session\'s open span; the next change and a removal close it', async context => {
+  const w = await open(context);
+  assert.equal(await take(w, ROOT, started), 'applied');
+  await w.store.drain();
+  const id = record(w, ROOT).id, opened = record(w, ROOT);
+  const publications: Session30Record[] = [];
+  for (let minute = 1; minute <= 3; minute++) {
+    w.clock.advance(RESOLUTION_MS);
+    assert.equal(await take(w, ROOT, progress), 'applied');
+    await w.store.drain();
+    publications.push(record(w, ROOT));
+  }
+  assert.deepEqual(new Set(publications.map(item => item.revision)).size, 3, 'three evidence-only publications');
+  assert.equal(changeRows(w, id).length, 1, 'only the start wrote a row');
+  const last = publications.at(-1);
+  assert.ok(last);
+  assert.deepEqual(spanOf(w, id), {sinceAtMs: opened.lastEvidenceAtMs, confirmedAtMs: last.lastEvidenceAtMs, confirmations: 4, seenRevision: last.revision});
+  assert.deepEqual(withoutInstants(rebuilt(id, changeRows(w, id))), withoutInstants(last), 'the rebuild equals the published record but for its instants');
+  assert.equal(rebuilt(id, changeRows(w, id)).lastEvidenceAtMs, opened.lastEvidenceAtMs, 'it keeps the last row\'s instants');
+
+  // A change of meaning writes one row with the moved instants and the span it closes.
+  w.clock.advance(10_000);
+  assert.equal(await take(w, ROOT, ended), 'applied');
+  await w.store.drain();
+  const finished = record(w, ROOT), rows = changeRows(w, id), closing = rows.at(-1);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(closing?.span, {sinceAtMs: opened.lastEvidenceAtMs, lastConfirmedAtMs: last.lastEvidenceAtMs, confirmations: 4});
+  assert.equal(closing?.previous, opened.revision);
+  assert.ok(Object.hasOwn(closing?.changed ?? {}, 'lastEvidenceAtMs') && Object.hasOwn(closing?.changed ?? {}, 'observedAtMs'));
+  assert.deepEqual(rebuilt(id, rows), {...finished}, 'the rebuild equals the published record at the change row');
+
+  // A new turn, two evidence-only publications, then the session's expiry: a closing row comes before the removal.
+  assert.equal(await take(w, ROOT, started, 'turn-2'), 'applied');
+  const turn = record(w, ROOT);
+  for (let minute = 1; minute <= 2; minute++) {
+    w.clock.advance(RESOLUTION_MS);
+    assert.equal(await take(w, ROOT, progress, 'turn-2'), 'applied');
+  }
+  await w.store.drain();
+  const before = changeRows(w, id).length;
+  await advance(w, 86_400_000);
+  const after = changeRows(w, id);
+  assert.equal(after.length, before + 1);
+  assert.deepEqual(after.at(-1), {family: 'session', id, revision: turn.revision, previous: turn.revision, changed: {}, removed: [],
+    span: {sinceAtMs: turn.lastEvidenceAtMs, lastConfirmedAtMs: turn.lastEvidenceAtMs + 2 * RESOLUTION_MS, confirmations: 3}, closedBy: 'removal'});
+  assert.deepEqual(rebuilt(id, after), {...turn}, 'the rebuild at the closing row equals the record published at its revision');
+  assert.equal((w.rows(`SELECT seq FROM core_history WHERE kind = 'removal' AND subject = '${id}'`) as unknown[]).length, 1);
+});
+
+// Hub #1947's open design point, as the owner decided it: how many revisions, history rows and span confirmations the
+// evidence time adds. One session works for an hour at each evidence cadence, on the manual clock; the counts are the
+// publications of evidence alone, since nothing else changes. Each is at most one per resolution, each confirms the
+// session's open span with no history row, and a silent session adds nothing.
+it('a busy session publishes its evidence time at most once a minute: revisions, history rows and span confirmations per hour by cadence', async context => {
   const measured: string[] = [];
   for (const everyMs of [1000, 5000, 30_000, 59_000, 61_000, 90_000, 300_000]) {
     const w = await open(context);
     assert.equal(await take(w, ROOT, started), 'applied');
     await w.store.drain();
-    const revision = w.store.revision, rows = historyRows(w), from = w.published.length;
+    const revision = w.store.revision, rows = historyRows(w), from = w.published.length, id = record(w, ROOT).id;
     const end = w.clock.now() + HOUR_MS;
     let observations = 0;
     while (w.clock.now() + everyMs <= end) {
@@ -177,15 +258,16 @@ it('a busy session publishes its evidence time at most once a minute: revisions 
       observations++;
     }
     await w.store.drain();
-    const published = states(w, from).length, added = historyRows(w) - rows;
+    const published = states(w, from).length, added = historyRows(w) - rows, confirmed = (spanOf(w, id)?.confirmations ?? 0) - 1;
     // The published evidence time steps whenever it falls a resolution behind: every ceil(resolution / cadence) observations.
     const expected = Math.floor(observations / Math.ceil(RESOLUTION_MS / everyMs));
     assert.equal(published, expected, `every ${String(everyMs)} ms`);
-    assert.equal(added, published, 'each publication adds one history row');
+    assert.equal(added, 0, 'no publication adds a history row');
+    assert.equal(confirmed, published, 'each confirms the open span');
     assert.equal(w.store.revision - revision, published, 'and one revision');
     assert.ok(published <= HOUR_MS / RESOLUTION_MS, 'at most one per resolution');
     assert.ok(w.clock.now() - record(w, ROOT).lastEvidenceAtMs < RESOLUTION_MS, 'the published evidence time lags the last evidence by less than the resolution');
-    measured.push(`every ${String(everyMs / 1000)} s: ${String(observations)} observations, ${String(published)} revisions, ${String(added)} history rows`);
+    measured.push(`every ${String(everyMs / 1000)} s: ${String(observations)} observations, ${String(published)} revisions, ${String(added)} history rows, ${String(confirmed)} span confirmations`);
   }
   // A silent session: an hour publishes nothing.
   const w = await open(context);
@@ -193,8 +275,8 @@ it('a busy session publishes its evidence time at most once a minute: revisions 
   await w.store.drain();
   const rows = historyRows(w), from = w.published.length;
   await advance(w, HOUR_MS);
-  assert.deepEqual([states(w, from).length, historyRows(w) - rows], [0, 0]);
-  measured.push('silent: 0 revisions, 0 history rows');
+  assert.deepEqual([states(w, from).length, historyRows(w) - rows, spanOf(w, record(w, ROOT).id)?.confirmations], [0, 0, 1]);
+  measured.push('silent: 0 revisions, 0 history rows, 0 span confirmations');
   context.diagnostic(`per session-hour at a ${String(RESOLUTION_MS / 1000)} s resolution: ${measured.join('; ')}`);
 });
 

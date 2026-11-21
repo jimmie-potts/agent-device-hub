@@ -621,7 +621,7 @@ register.
 | `device` | `/observed/observedAtMs`, `/lastTransmission/transmittedAtMs`, `/externalControl/observedAtMs` | Reading, paint and evidence times move with every poll, probe or paint; the paint time by owner decision 3 on #1768 |
 | `power-limit` | `/observedAtMs`, `/updatedAtMs` | The core copies the device's reading time and stamps each view with its clock |
 | `playback` | `/observedAtMs` | The source's reading time |
-| `session` and every other state family | none | Agent session times stay rows (decision 6 on #1768) |
+| `session` and every other state family | none | `session` declares none; history's own rule confirms a session state whose only changes are its evidence instants (Hub #1947, revising decision 6 on #1768 for those instants only), since `session/2.x` have no claims to point into |
 | `pixoo-display` (module) | `/monitor/page` | The status picture's page turn (decision 3) |
 | `roborock-vacuum` (module) | `/observedAtMs/value` | The status reading time; whether a reading exists still counts |
 | `lifx-light` (module) | `/observed/observedAtMs` | The color reading time |

@@ -32,7 +32,9 @@ export const bookkeeping: Bookkeeping = freeze({
   'power-limit': ['/observedAtMs', '/updatedAtMs'],
   // The source's reading time; the playback module already publishes no new revision for it alone.
   'playback': ['/observedAtMs'],
-  // Agent session times stay rows (owner decision 6 on #1768, 2026-11-12), and freshness is real state.
+  // Agent sessions declare none (owner decision 6 on #1768, 2026-11-12). History confirms a session state whose only
+  // changes are its evidence instants by its own rule (Hub #1947, owner decision of 2026-11-21), since `session/2.x` have
+  // no claims for such pointers to name.
   'session': [],
   'mode': [],
   'inbox-item': [],

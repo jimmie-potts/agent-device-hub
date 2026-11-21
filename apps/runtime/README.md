@@ -443,7 +443,15 @@ and exits 1, and the service manager restarts it whole.
   and count. That table sits outside the rows and holds one row per entity:
   when the stretch started, when it was last confirmed, how many readings
   history took in it, the last revision, message ID and type a reading
-  carried, and the revision of the last row. A state that differs writes a change row against the last row's
+  carried, and the revision of the last row. An agent session's evidence
+  instants (its `observedAtMs` and `lastEvidenceAtMs` and its claims'
+  `evidenceAtMs`) count the same way by history's own rule
+  (`SESSION_EVIDENCE_INSTANTS`, Hub #1947; the family still declares no
+  bookkeeping member): a busy session's once-a-minute evidence publication
+  confirms its span and writes no row, so the Timeline shows it as one entry
+  whose span gives its last reading. At such a confirmation the record rebuilt
+  from the rows equals the published one but for its revision and those
+  instants. A state that differs writes a change row against the last row's
   record with every member that differs, bookkeeping values included, and,
   when the stretch held more than its own row's reading, the span it closes
   (`span`: `sinceAtMs`, `lastConfirmedAtMs`, `confirmations`). A family that a

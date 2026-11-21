@@ -12,7 +12,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {SCHEMA_BASE, type Message} from '@jimmie-potts/event-contracts/v2';
 import {bookkeeping, familyOfSchema, leafMutations} from '@jimmie-potts/event-contracts/v2/bookkeeping';
 import {openModuleDatabaseFile, type ModuleRegistration} from '@jimmie-potts/sdk';
-import {DEFAULT_HISTORY_RULES, History, MIN_GAP_MS, gapOf, type ChangeEvent, type HistoryRules} from '../src/core/history.js';
+import {DEFAULT_HISTORY_RULES, History, MIN_GAP_MS, SESSION_EVIDENCE_INSTANTS, gapOf, type ChangeEvent, type HistoryRules} from '../src/core/history.js';
 import {MAX_POLLING_MS, historyRules, modulePolling, registrations, shippedList} from '../src/index.js';
 import {World} from './fixtures/store-world.js';
 import {RECORDS} from './fixtures/module-state-records.js';
@@ -267,6 +267,7 @@ it('a power-limit record whose only change is its reading and update times write
 });
 
 it('through the core store\'s intake, every leaf that is not bookkeeping changed alone writes a row, and a bookkeeping value alone writes none', async context => {
+  // A session's evidence instants count as bookkeeping for history alone (Hub #1947), not in the family's declaration.
   const rules = historyRules(registrations);
   const world = await World.open(context, {watch: {history: rules}});
   const read = (name: string): Record<string, Message<Record<string, unknown>>> =>
@@ -276,7 +277,8 @@ it('through the core store\'s intake, every leaf that is not bookkeeping changed
   const covered = new Set<string>();
   let entity = 0;
   for (const [name, fixture] of fixtures) {
-    const family = familyOfSchema(fixture.dataschema) as string, pointers = rules.bookkeeping[family] ?? [];
+    const family = familyOfSchema(fixture.dataschema) as string;
+    const pointers = [...(rules.bookkeeping[family] ?? []), ...(family === 'session' ? SESSION_EVIDENCE_INSTANTS : [])];
     covered.add(family);
     // Each fixture under its own entity, so its readings never meet another fixture's.
     const id = `entity-${++entity}`;

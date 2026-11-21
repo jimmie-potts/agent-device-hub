@@ -279,7 +279,10 @@ The owner-selected rule, for core history:
   #1768, safety members are never bookkeeping, and story
   [#1771](https://github.com/jimmie-potts/agent-device-hub/issues/1771) is to
   refuse them. The session record's times stay rows for now (decision 6, answered at
-  15:48:22Z).
+  15:48:22Z). Since 2026-11-21 ([#1947](https://github.com/jimmie-potts/agent-device-hub/issues/1947),
+  owner decision), a session state whose only changes are its evidence instants
+  confirms the entity's span instead: the span keeps its last confirmation and
+  count, and the next change row keeps the moved instants.
 
 [ADR 0012's amendment of 2026-11-12](0012-bunny-event-platform.md#amendment-2026-11-12)
 records the rule and the other decisions. The rule applies once
