@@ -305,21 +305,28 @@ function confirm(previous: StoredSession | undefined, session: StoredSession, ob
   else if (starts) session.restartUnconfirmed = true;
 }
 
+/** Stored fields of the work deadline a release before Hub #1947 kept: its marking and the private progress time. */
+export const RETIRED_FIELDS: readonly string[] = Object.freeze(['deadlineUnconfirmed', 'progressAtMs']);
+
 /**
  * The core's start (design decision 4): every stored session whose work is running becomes unconfirmed, in one change
  * that publishes the changed records and no occurrence. Questions, outcomes and read evidence stay as stored. A session
  * already due to expire is left to the expiry that follows. A marking on work that is not running, which only a release
- * that does not keep the marking can leave behind, is cleared in the same change.
+ * that does not keep the marking can leave behind, is cleared in the same change. So are the work-deadline fields a
+ * release before Hub #1947 stored (`RETIRED_FIELDS`): running work that release left unconfirmed for its deadline is
+ * unconfirmed for the restart instead, until qualifying evidence confirms it, and its record publishes that once.
  */
 function start(state: SessionState, now: number): TransitionResult {
   const changed: StoredSession[] = [];
   for (const session of state.sessions.values()) {
     if (session.lastEvidenceAtMs <= now - SESSION_LIMITS.sessionAgeMs) continue;
     const running = session.activity === 'active';
-    if (running === (session.restartUnconfirmed === true)) continue;
+    const retired = RETIRED_FIELDS.some(field => Object.hasOwn(session, field));
+    if (running === (session.restartUnconfirmed === true) && !retired) continue;
     const next = structuredClone(session);
     if (running) next.restartUnconfirmed = true;
     else delete next.restartUnconfirmed;
+    for (const field of RETIRED_FIELDS) Reflect.deleteProperty(next, field);
     changed.push(next);
   }
   if (changed.length === 0) return empty(state, 'duplicate');

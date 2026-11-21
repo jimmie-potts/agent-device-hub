@@ -21,17 +21,19 @@ Non-goals: an operator command to forget a session; recovery without the unconfi
 | Relationships | follow each child's work claim | follow each child's work claim |
 | Whole session | removed as `expired` after 24 hours without lifecycle evidence | kept |
 
-`workDeadlineMs`, the stored `deadlineUnconfirmed` and `progressAtMs`, the `deadline` transition input, `workDeadlineOf`/`deadlineOf` and the store's due-deadline commit go. The transition's next-due instant is the next expiry (`expiryOf`), renamed `dueMs`. `confirm` keeps only the restart marking. A store written by a source build between #1865 step 9 and this change may hold the two removed private fields; the core no longer reads them and drops them the next time it writes that session. No installed store holds them, because the `session/3.0` switch (`0aca95af`) is not installed (#1869 is open).
+`workDeadlineMs`, the stored `deadlineUnconfirmed` and `progressAtMs`, the `deadline` transition input, `workDeadlineOf`/`deadlineOf` and the store's due-deadline commit go. The transition's next-due instant is the next expiry (`expiryOf`), renamed `dueMs`. `confirm` keeps only the restart marking. The installed store of `037b327a` holds the two removed private fields. The start transaction removes them from every stored session (`RETIRED_FIELDS`), so no stored session keeps them. Running work that release left unconfirmed for its deadline is marked unconfirmed for the restart instead, as all running work is at a start, and its record publishes that once. Qualifying evidence then confirms it as after any restart, so it never stays unconfirmed. `core-session-progress.test.ts` upgrades a store rewritten in that release's shape.
 
-### 2. The `deadline` enum value is removed
+### 2. The `deadline` enum value stays accepted and is never emitted
 
-The issue's rule: remove the value unless a released package or an installed consumer pins it. Evidence, read on 2026-11-19:
+The issue's rule: remove the value unless a released package or an installed consumer pins it. The first reading (2026-11-19) found neither and removed it. That changed on 2026-11-20: the Mac deployment now runs `037b327a`, which contains #1865 step 9 (#1869 comment of 2026-11-20T15:30:42Z). Its core publishes `session/3.0` with the reason `deadline`, so the installed store can hold published records, outbox messages awaiting a resend after a crash, and history rows with it.
 
-- `@jimmie-potts/event-contracts` is `private: true` at version `1.0.0` and has never been released: no tag or GitHub release names it. The newest release tags are from 2026-10-02 (`controller-contracts-v1.2.0`, `bunny-observability-v1.0.0`), before `session/3.0` existed (added by `6adad7e7`, #1865 group 1). Every dependent is a workspace of this repository at the same unpublished `1.0.0`.
-- No installed producer emits `session/3.0`. The core switched to it at `0aca95af` (#1865 group 9), which is not installed; #1869 is open and blocked. The installed `3f847cc1` batch carries readers that accept `session/3.0` with the old enum, so the narrower schema stays readable by them.
-- Host-installed read helpers were not repointed (#1869 comment of 2026-11-19), so no installed helper reads `session/3.0`.
+What validates stored data against the schema:
 
-So the enum drops `deadline` and `maxItems` goes from 4 to 3. A record carrying it is refused; the contracts suite pins that.
+- Loading the store (`core_records`, `core_sessions`, the history tables) and serving syncs validate nothing; the start transaction commits before the first sync serves records (`core.ts`, `#refresh` before `#serve`).
+- History reads, the fact log and a record rebuilt from rows read JSON without validation.
+- The outbox validates a message when it is added, not when it resends a stored one after a crash. Every in-process and remote reader then validates it with `readSession` and would read a resent `deadline` record as nothing. A remote part installed from this release while the core is not yet upgraded would read every running-work record of the old core as nothing.
+
+So the schema keeps `deadline` in the enum (`maxItems` 4), and its description says it is accepted, never emitted. `WorkReason` keeps it for readers. `buildSession` emits only `restart` without evidence, whatever its caller passes. The contracts suite pins both: a `deadline` record validates and reads as working with unconfirmed work, and the builder given `deadline` emits no reason.
 
 ### 3. Approval recovery
 
@@ -69,7 +71,7 @@ The row already carries `lastEvidenceAtMs`. The card face shows "Heard {age} ago
 
 History's `#change` compares a state with the record of its entity's last row by `sameState`, setting aside the family's bookkeeping members. For `session` it also sets aside `SESSION_EVIDENCE_INSTANTS`: `/observedAtMs`, `/lastEvidenceAtMs`, `/work/evidenceAtMs`, `/attention/evidenceAtMs` and `/outcome/evidenceAtMs`. This is a history-internal rule (option B2), not a bookkeeping declaration (B1). B1 would break the message profile's bookkeeping requirement: a pointer must hold a number in every registered version of the family, and `session/2.0` and `2.1` have no claims, and that requirement says `session` declares none.
 
-- An evidence-only publication writes no row and confirms the span: the span holds the published revision, message ID and type, and the commit's instant, which for such a publication equals the record's `lastEvidenceAtMs`.
+- An evidence-only publication writes no row and confirms the span: the span holds the published revision, message ID and type, and the commit's instant on the core's clock (`store.ts` stamps history with the clock, the record with the session change's instant, which never goes back), so the two match unless the clock stepped back.
 - At a confirmation the record rebuilt from the rows equals the published record but for its revision and those instants, which keep the last row's values. The next change row carries every instant that moved and the span it closes, so the rebuild equals the published record there.
 - A removal closes a span with confirmations beyond its row first, as for any family; the closing row carries the last row's revision, so the rebuild at it equals the record published at that revision.
 - The rows stay append-only and the fact log gapless; nothing is updated or deleted.

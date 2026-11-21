@@ -2,7 +2,7 @@ Every task names its evidence. Reviews and CI receipts go in the pull request.
 
 ## 1. Contract
 
-- [x] 1.1 Drop `deadline` from the `session/3.0` work reasons (schema, `WorkReason`, `SessionFacts.unconfirmed`, the case loader's types) and update the `approval-recover` description. Evidence: `session.test.mjs` refuses a record with reason `deadline`; `npm run test:events:built` passes.
+- [x] 1.1 Stop emitting `deadline` (`SessionFacts.unconfirmed`, `buildSession`, the case loader's types) while the schema and `WorkReason` keep accepting it, and update the `approval-recover` description. Evidence: `session.test.mjs` reads a stored `deadline` record and shows the builder never emits it; `npm run test:events:built` passes.
 - [x] 1.2 Rewrite the case set's deadline cases: `question-silent` and `working-silent` publish nothing, `child-only` reaches its unconfirmed child by a restart (`since` step 8), and `expiry` keeps its running session confirmed. Evidence: the contracts suite and every reader's case-set test pass.
 
 ## 2. Core
@@ -12,6 +12,7 @@ Every task names its evidence. Reviews and CI receipts go in the pull request.
 - [x] 2.3 Publish the evidence time at `SESSION_LIMITS.evidenceResolutionMs` and measure revisions and history rows per busy session-hour. Evidence: the measurement test in `core-session-progress.test.ts` and its diagnostic line.
 
 - [x] 2.4 Keep evidence-only session publications out of history's rows: they confirm the open span (owner decision of 2026-11-21). Evidence: `core-session-progress.test.ts` (span confirmations, rebuild, change and removal closing), `history-spans.test.ts`, and a negative control where three progress tests fail without the rule.
+- [x] 2.5 Upgrade the installed `037b327a` store: the start transaction drops the retired fields and turns deadline-unconfirmed work restart-unconfirmed, publishing once. Evidence: the upgrade test in `core-session-progress.test.ts`; `apps/runtime/UPGRADE.md` notes it.
 
 ## 3. Readers
 

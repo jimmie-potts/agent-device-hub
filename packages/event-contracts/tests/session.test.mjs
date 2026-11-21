@@ -165,11 +165,17 @@ test('a working session stays working and confirmed however long it is silent', 
   assert.deepEqual(quiet.work, {state: 'active', confidence: 'confirmed', evidenceAtMs: AT - HOUR, reasons: []}, 'its evidence time shows the silence');
 });
 
-test('the work deadline\'s reason is gone from session/3.0', () => {
+test('a record a release before #1947 published with reason deadline still reads, and the builder never emits it', () => {
   const value = message({work: 'active', unconfirmed: 'restart'});
   value.data.work.reasons = ['deadline'];
-  assert.equal(coreValidator().validate(value).ok, false, 'reason deadline is refused');
-  assert.equal(readSession(value), undefined);
+  assert.equal(coreValidator().validate(value).ok, true, 'reason deadline stays accepted');
+  const view = readSession(value);
+  assert.ok(view);
+  assert.deepEqual([status(view), view.work.reasons], ['working/unconfirmed', ['deadline']]);
+  const built = buildSession({id: value.data.id, revision: 5, generation: 2, identity: value.data.identity, parent: {status: 'top-level'}, turn: known('turn-1'),
+    work: 'active', unconfirmed: 'deadline', attention: [], notices: [], read: 'unknown', unavailable: [], ordering: {status: 'unknown'},
+    observedAtMs: AT, lastEvidenceAtMs: AT, children: {working: 0, unconfirmed: 0}});
+  assert.deepEqual([built.work.confidence, built.work.reasons], ['confirmed', []], 'the builder never emits deadline');
 });
 
 test('a restart makes only running work unconfirmed', () => {

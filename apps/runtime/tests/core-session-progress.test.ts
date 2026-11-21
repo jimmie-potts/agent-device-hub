@@ -9,7 +9,8 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import type {TestContext} from 'node:test';
-import {sessionEntityId, type Identity, type LifecycleEvent, type LifecycleObservation, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, sessionEntityId, type Identity, type LifecycleEvent, type LifecycleObservation, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {readSession} from '@jimmie-potts/event-contracts/v2/session';
 import {SESSION_LIMITS} from '../src/core/session/model.js';
 import {CoreStore} from '../src/core/store.js';
 import {World, commandMessage, lifecycleMessage} from './fixtures/store-world.js';
@@ -186,8 +187,9 @@ it('a root with one confirmed and one unconfirmed child is working through its s
 
 // Hub #1947: what history keeps of evidence-only publications (owner decision of 2026-11-21, revising #1768 decision 6 for
 // session evidence instants). They confirm the open span and write no row. At a confirmation the record rebuilt from the
-// rows equals the published one but for its revision and instants; the span names the publication's revision and its
-// instant, which for an evidence-only publication is the record's `lastEvidenceAtMs`. The next change row carries the moved
+// rows equals the published one but for its revision and instants; the span names the publication's revision and the
+// commit's instant on the core's clock, which matches the record's `lastEvidenceAtMs` here because the manual clock never
+// steps back (after a backward step the record keeps its later instant). The next change row carries the moved
 // instants and closes the span, so the rebuild equals the published record there, and a removal closes a span with
 // confirmations beyond its row first, as for any family.
 it('evidence-only publications confirm the session\'s open span; the next change and a removal close it', async context => {
@@ -278,6 +280,88 @@ it('a busy session publishes its evidence time at most once a minute: revisions,
   assert.deepEqual([states(w, from).length, historyRows(w) - rows, spanOf(w, record(w, ROOT).id)?.confirmations], [0, 0, 1]);
   measured.push('silent: 0 revisions, 0 history rows, 0 span confirmations');
   context.diagnostic(`per session-hour at a ${String(RESOLUTION_MS / 1000)} s resolution: ${measured.join('; ')}`);
+});
+
+/**
+ * Rewrites one running session as the release before Hub #1947 (037b327a, #1865 step 9) left it once its work deadline
+ * passed: the stored session keeps the deadline marking and its private progress time, and its published record and
+ * latest history row carry the work reason `deadline`. Without `marked`, only the progress time is stored, as for running
+ * work still within its deadline.
+ */
+function asDeadlineRelease(w: World, who: typeof ROOT, marked: boolean): void {
+  const id = sessionEntityId(who.identity);
+  const row = w.rows(`SELECT session FROM core_sessions WHERE id = '${id}'`)[0] as {session: string} | undefined;
+  assert.ok(row);
+  const session = JSON.parse(row.session) as {lastEvidenceAtMs: number};
+  w.db.prepare('UPDATE core_sessions SET session = ? WHERE id = ?').run(JSON.stringify({...session, progressAtMs: session.lastEvidenceAtMs,
+    ...(marked ? {deadlineUnconfirmed: true} : {})}), id);
+  if (!marked) return;
+  const published = record(w, who);
+  const old = {...published, work: {...published.work, confidence: 'unconfirmed', reasons: ['deadline']},
+    status: published.status.class === 'working' ? {class: 'working', detail: 'unconfirmed'} : published.status};
+  w.db.prepare('UPDATE core_records SET record = ? WHERE family = \'session\' AND id = ?').run(JSON.stringify(old), id);
+  w.db.prepare('UPDATE core_history_latest SET record = ? WHERE family = \'session\' AND id = ?').run(JSON.stringify(old), id);
+}
+
+// Hub #1947, the upgrade from the installed release (037b327a): its store may hold running work its deadline left
+// unconfirmed, the deadline marking and progress time on stored sessions, and published records with reason `deadline`.
+// The start transaction drops the two fields from every stored session, marks running work unconfirmed for the restart
+// instead, and publishes each changed record once; qualifying evidence then confirms the work as for any restart.
+it('a store the release before #1947 wrote upgrades at the first start: deadline work turns restart-unconfirmed once, and the fields go', async context => {
+  const w = await open(context);
+  const BUSY = identity('progress-busy');
+  assert.equal(await take(w, ROOT, started), 'applied');
+  assert.equal(await take(w, WAITING, started), 'applied');
+  assert.equal(await take(w, WAITING, question('q1')), 'applied');
+  assert.equal(await take(w, BUSY, started), 'applied');
+  await w.store.drain();
+  w.clock.advance(6 * 60_000);
+  asDeadlineRelease(w, ROOT, true);
+  asDeadlineRelease(w, WAITING, true);
+  asDeadlineRelease(w, BUSY, false);
+  // That release also committed a state message with reason deadline that a crash kept from going out.
+  const last = [...w.since(0)].reverse().find(message => message.subject === sessionEntityId(ROOT.identity) && message.type === 'org.bunny.session.updated');
+  assert.ok(last);
+  const kept = (w.rows(`SELECT record FROM core_records WHERE family = 'session' AND id = '${last.subject}'`)[0] as {record: string}).record;
+  const pending = {...last, id: 'pending-deadline-state', data: JSON.parse(kept) as Session30Record};
+  assert.deepEqual(pending.data.work.reasons, ['deadline']);
+  w.db.prepare('INSERT INTO bunny_outbox (id, kind, routing_key, message) VALUES (?, ?, ?, ?)').run(pending.id, 'state', `bunny.state.session.${last.subject}`,
+    JSON.stringify(pending));
+  const from = w.published.length, rows = historyRows(w);
+  w.clock.advance(1000);
+  await w.crashAndRestart();
+  await w.store.refresh();
+  await w.store.drain();
+  const stored = (w.rows('SELECT session FROM core_sessions') as {session: string}[]).map(row => JSON.parse(row.session) as Record<string, unknown>);
+  assert.equal(stored.length, 3);
+  assert.ok(stored.every(session => !Object.hasOwn(session, 'deadlineUnconfirmed') && !Object.hasOwn(session, 'progressAtMs')), 'the retired fields are gone');
+  // The resent message goes out unchanged, validates and reads, as `deadline` stays accepted and never emitted; the start's
+  // newer revision supersedes it in every copy that keeps the highest revision.
+  const resent = w.since(from).find(message => message.id === pending.id);
+  assert.ok(resent);
+  assert.equal(coreValidator().validate(resent).ok, true, 'the resent deadline record validates');
+  assert.deepEqual(readSession(resent)?.work.reasons, ['deadline']);
+  const sent = w.since(from).filter(message => message.type === 'org.bunny.session.updated' && message.id !== pending.id);
+  assert.deepEqual(sent.map(message => (message.data as Session30Record).identity.sessionId).sort(), ['progress-busy', 'progress-root', 'progress-waiting'],
+    'each session publishes once');
+  assert.ok(sent.every(message => coreValidator().validate(message).ok));
+  assert.deepEqual([status(record(w, ROOT)), record(w, ROOT).work.reasons], ['working/unconfirmed', ['restart']]);
+  assert.ok(record(w, ROOT).revision > (resent.data as Session30Record).revision);
+  assert.deepEqual([status(record(w, WAITING)), record(w, WAITING).work.reasons], ['needs-owner/question', ['restart']]);
+  assert.deepEqual(record(w, BUSY).work.reasons, ['restart']);
+  assert.equal(historyRows(w), rows + 3, 'history keeps each as a change against the last row');
+  // Qualifying evidence on the current turn confirms the work again, as after any restart.
+  w.clock.advance(1000);
+  assert.equal(await take(w, ROOT, progress), 'applied');
+  assert.deepEqual([status(record(w, ROOT)), record(w, ROOT).work.reasons], ['working/confirmed', []]);
+  // A second start finds nothing left to drop.
+  const again = w.published.length;
+  w.clock.advance(1000);
+  await w.crashAndRestart();
+  await w.store.refresh();
+  await w.store.drain();
+  assert.deepEqual(w.since(again).filter(message => message.type === 'org.bunny.session.updated').map(message => (message.data as Session30Record).identity.sessionId),
+    ['progress-root'], 'only the confirmed work is marked again');
 });
 
 /** Rewrites each published record and its latest history row in the session/2.0 shape, as a step-8 release left them. */

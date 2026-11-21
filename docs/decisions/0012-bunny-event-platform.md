@@ -212,7 +212,8 @@ State events and telemetry are not tracked.
   dashboard timeline and a read API. Viewing history never triggers devices or
   automation. The [2026-11-12 amendment](#amendment-2026-11-12) sets what
   history keeps: changes, and each stretch of repeated readings that differ
-  only in declared bookkeeping members as a span, with its first confirmation,
+  only in declared bookkeeping members, or for an agent session only in its
+  evidence instants (since 2026-11-21, Hub #1947), as a span, with its first confirmation,
   its last confirmation and a count, and a gap row when a polled record falls
   silent for too long. These rules apply once
   [#1772](https://github.com/jimmie-potts/agent-device-hub/issues/1772) is

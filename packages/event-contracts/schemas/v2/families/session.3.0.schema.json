@@ -69,13 +69,13 @@
       }
     },
     "work": {
-      "description": "The work claim. `reasons` says why it is unconfirmed: a core restart, or ambiguous or lost activity evidence. Silence alone never makes it unconfirmed (Hub #1947). Confirmed work has no reason, and unconfirmed work at least one.",
+      "description": "The work claim. `reasons` says why it is unconfirmed: a core restart, or ambiguous or lost activity evidence. Silence alone never makes it unconfirmed (Hub #1947): `deadline`, the passed work deadline of a release before #1947, stays accepted so records and messages that release stored still read, and is never emitted. Confirmed work has no reason, and unconfirmed work at least one.",
       "type": "object", "additionalProperties": false, "required": ["state", "confidence", "evidenceAtMs", "reasons"],
       "properties": {
         "state": {"enum": ["active", "idle", "interrupted", "unknown"]},
         "confidence": {"$ref": "#/$defs/confidence"},
         "evidenceAtMs": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"},
-        "reasons": {"type": "array", "uniqueItems": true, "maxItems": 3, "items": {"enum": ["restart", "ambiguous", "lost"]}}
+        "reasons": {"type": "array", "uniqueItems": true, "maxItems": 4, "items": {"enum": ["deadline", "restart", "ambiguous", "lost"]}}
       },
       "if": {"properties": {"confidence": {"const": "confirmed"}}},
       "then": {"properties": {"reasons": {"type": "array", "maxItems": 0}}},

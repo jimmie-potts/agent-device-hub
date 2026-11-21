@@ -133,9 +133,8 @@ The `session` family SHALL also register `session/3.0`, its current major, under
 
 ### Requirement: Full-record state families
 
-Each state event SHALL carry the complete current record of one entity, and its envelope `subject` SHALL be the entity's `id`. A `session/3.0` record SHALL carry its identity and parent, its turn, its status as a closed class (`needs-owner`, `working`, `finished`, `quiet` or `unknown`) with an open kebab-case detail, its work, attention, outcome and relationship claims, each with its evidence time and confidence, the work claim's reasons being only `restart`, `ambiguous` or `lost` (Hub #1947 removed `deadline`), its unavailable evidence, ordering, evidence instants, its generation, and any label, title, project, project ID and host session ID. It SHALL carry no freshness and no restart uncertainty. A session's `id` SHALL be the lowercase hex SHA-256 of its identity as compact JSON with sorted keys, in UTF-8. The owner SHALL publish a new revision when a session's public meaning or the playback availability changes; a session's evidence time is part of its meaning at the core's one-minute resolution. A session record SHALL be refused when:
+Each state event SHALL carry the complete current record of one entity, and its envelope `subject` SHALL be the entity's `id`. A `session/3.0` record SHALL carry its identity and parent, its turn, its status as a closed class (`needs-owner`, `working`, `finished`, `quiet` or `unknown`) with an open kebab-case detail, its work, attention, outcome and relationship claims, each with its evidence time and confidence, the work claim's reasons being `restart`, `ambiguous` or `lost`, or `deadline`, which only a release before Hub #1947 emits and which stays accepted so its stored records and messages still read and is never emitted, its unavailable evidence, ordering, evidence instants, its generation, and any label, title, project, project ID and host session ID. It SHALL carry no freshness and no restart uncertainty. A session's `id` SHALL be the lowercase hex SHA-256 of its identity as compact JSON with sorted keys, in UTF-8. The owner SHALL publish a new revision when a session's public meaning or the playback availability changes; a session's evidence time is part of its meaning at the core's one-minute resolution. A session record SHALL be refused when:
 - its status differs from the status function of its claims;
-- its work claim names a reason other than `restart`, `ambiguous` or `lost`;
 - its read evidence or receipt provenance does not match the current finished turn of an idle or interrupted root;
 - it carries a host session ID below a known parent;
 - its generation is after its revision;
@@ -161,8 +160,8 @@ An inbox item SHALL be a failed or uncertain operation, which MAY carry its outc
 - **THEN** it is refused with `invalid-message`, and the fixtures hold failed and uncertain operations only
 
 #### Scenario: The retired work reason
-- **WHEN** a `session/3.0` record whose running work is unconfirmed carries the reason `deadline`
-- **THEN** it is refused with `invalid-message`, and the shared read function reads it as nothing
+- **WHEN** a `session/3.0` record that a release before Hub #1947 published, whose running work is unconfirmed with the reason `deadline`, is validated and read, and the record builder is given that reason
+- **THEN** the record is accepted and reads as working with unconfirmed work, and the builder emits no `deadline` reason
 
 ### Requirement: Lifecycle evidence is preserved
 

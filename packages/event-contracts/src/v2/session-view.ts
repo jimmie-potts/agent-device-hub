@@ -95,7 +95,8 @@ export function buildSession(facts: SessionFacts): Session30Record {
   const {lastEvidenceAtMs: evidenceAtMs, unavailable} = facts;
   const evidence = unavailable.flatMap(({dimension, reason}): WorkReason[] =>
     dimension === 'activity' && (reason === 'ambiguous' || reason === 'lost') ? [reason] : []);
-  const reasons: WorkReason[] = facts.work === 'active' ? [...(facts.unconfirmed === undefined ? [] : [facts.unconfirmed]), ...evidence] : [];
+  // Only a restart is a reason without evidence; `deadline`, which a record of a release before Hub #1947 may hold, is never built.
+  const reasons: WorkReason[] = facts.work === 'active' ? [...((facts.unconfirmed as string | undefined) === 'restart' ? ['restart' as const] : []), ...evidence] : [];
   const claims: SessionClaims = {
     turn: facts.turn,
     work: {state: facts.work, confidence: reasons.length > 0 ? 'unconfirmed' : 'confirmed', evidenceAtMs, reasons},
