@@ -44,6 +44,9 @@ try {
   try {
     const errors: string[] = []; fallback.on('weberror', error => { errors.push(`${error.error().name}: ${error.error().message}`); });
     const page = await fallback.newPage(); page.setDefaultTimeout(12_000);
+    // Playwright's page clock does not drive Web Animations, so pause the page's animation timeline instead. The assembly
+    // then cannot finish on its own however slow the host is, and navigation always meets it running (Hub #1970).
+    await (await fallback.newCDPSession(page)).send('Animation.setPlaybackRate', {playbackRate: 0});
     const sent = changes(page);
     await page.route('**/modules/nanoleaf/content/editor-layout?device=wall', route => route.fulfill({status: 503,
       contentType: 'application/json', body: '{"error":{"code":"unavailable","retryable":true}}'}));
@@ -54,14 +57,23 @@ try {
     try {
       assert.ok(await animations.evaluate(items => items.length >= 3 && items.some(animation => animation.playState === 'running')),
         'normal-motion fallback assembly is visible and still running before navigation');
+      const held = await animations.evaluate(async items => {
+        const before = items.map(animation => animation.currentTime);
+        await new Promise<void>(resolve => { requestAnimationFrame(() => { requestAnimationFrame(() => { resolve(); }); }); });
+        return items.every((animation, index) => animation.playState === 'running' && animation.currentTime === before[index]);
+      });
+      assert.ok(held, 'the paused timeline holds every assembly animation in place across rendered frames');
       const completion = animations.evaluate(async items => (await Promise.allSettled(items.map(animation => animation.finished))).map(result => result.status));
+      // A failed check below closes the context, which rejects this evaluation; that must not hide the assertion.
+      completion.catch(() => {});
       await (await destinationLink(page, /^Home/)).click();
       await page.locator('.nanoleaf-wall').waitFor({state: 'detached'});
       const states = await animations.evaluate(items => items.map(animation => animation.playState));
+      // On the paused timeline only a cancelled animation settles, so check cancellation before waiting for the promises.
+      assert.ok(states.every(state => state === 'idle'), `page exit cancels every running fallback animation: ${JSON.stringify(states)}`);
       const finished = await completion;
       await page.evaluate(() => new Promise<void>(resolve => { setTimeout(resolve, 0); }));
       process.stdout.write(`${JSON.stringify({checkpoint: 'normal-motion-fallback-exit', states, finished, errors, requests: sent.length})}\n`);
-      assert.ok(states.every(state => state === 'idle'), 'page exit cancels every running fallback animation');
       assert.ok(finished.every(state => state === 'rejected'), 'cancelled animation promises settle without restarting the removed wall');
       assert.deepEqual(errors, []);
       assert.equal(sent.length, 0, 'fallback assembly and navigation send no command');
