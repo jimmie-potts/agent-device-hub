@@ -1,4 +1,4 @@
-import {destinationLink, openConnections} from './navigation-helpers.ts';
+import {destinationLink, openConnections, openHabitat} from './navigation-helpers.ts';
 // One focused confirmed Connections journey against the built synthetic runtime; no installed services or devices.
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
@@ -111,7 +111,7 @@ try {
     await page.getByLabel('Session', {exact: true}).selectOption({label: 'Port the wall'});
     assert.equal(await page.getByRole('button', {name: 'Clear this notice on every device', exact: true}).isEnabled(), true,
       'the override stays available for a finished session silent for ten minutes');
-    await page.getByRole('link', {name: 'Habitat', exact: true}).click(); await page.locator('#habitat[data-ready=true]').waitFor();
+    await openHabitat(page); await page.locator('#habitat[data-ready=true]').waitFor();
     await page.locator('.habitat-root .agent[data-assigned=true]').nth(3).waitFor();
     assert.equal(await page.locator('.habitat-root .agent[data-uncertain=true]').count(), 0, 'Habitat marks no resident from silence');
     assert.deepEqual(sent, [], 'reading the silent sessions sends nothing');

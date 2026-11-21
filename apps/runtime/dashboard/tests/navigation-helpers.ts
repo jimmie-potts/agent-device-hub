@@ -23,12 +23,12 @@ export async function openConnections(page: Page): Promise<void> {
   await page.getByRole('link', {name: 'Connections', exact: true}).click();
 }
 
-/** The five destinations' names in order: four links and the Devices button (Hub #1889). */
+/** The five destinations' names in order: four links and the Devices button (Hub #1889, #1950). */
 export function destinationNames(page: Page): Promise<string[]> {
   return page.getByRole('navigation', {name: 'Main navigation'}).locator('a, button').allTextContents();
 }
 
-/** The Devices row opens the menu of every device page (Hub #1889). */
+/** The Devices row opens the menu of the configured hardware (Hub #1889, #1950). */
 export async function openDeviceMenu(page: Page): Promise<Locator> {
   await showRail(page);
   const row = page.getByRole('navigation', {name: 'Main navigation'}).getByRole('button', {name: 'Devices', exact: true});
@@ -85,12 +85,43 @@ export async function routeCatalog(page: Page): Promise<(change?: (module: Catal
   return change => {current = change;};
 }
 
+/** A link in one category's section of the Devices directory (Hub #1950): Displays, Lighting or Appliances. */
 export async function directoryLink(page: Page, category: string, name: string): Promise<Locator> {
   await openDirectory(page);
-  await page.getByRole('group', {name: 'Device categories'}).getByRole('button', {name: category, exact: true}).click();
-  return page.getByRole('link', {name, exact: true});
+  return page.getByRole('region', {name: category, exact: true}).getByRole('link', {name, exact: true});
 }
 
+/** Audio is under Home (Hub #1950): Home's heading links it. */
 export async function openAudio(page: Page): Promise<void> {
-  await (await directoryLink(page, 'Audio', 'Audio')).click();
+  await (await destinationLink(page, 'Home')).click();
+  await page.locator('.home-layout-heading').getByRole('link', {name: 'Audio', exact: true}).click();
+}
+
+/** Habitat is under Companions (Hub #1950): the Companions overview links it. */
+export async function openHabitat(page: Page): Promise<void> {
+  await (await destinationLink(page, 'Companions')).click();
+  await page.getByRole('region', {name: 'Companions', exact: true}).getByRole('link', {name: 'Open Habitat', exact: true}).click();
+}
+
+/**
+ * Opens a page from the jump palette (Hub #1888), the way to reach a page that no menu lists, such as a module page
+ * that is not hardware. `query` narrows the list; the row named `label` is chosen.
+ */
+export async function jumpTo(page: Page, query: string, label: string): Promise<void> {
+  await page.getByRole('button', {name: 'Jump to a page', exact: true}).filter({visible: true}).first().click();
+  const palette = page.getByRole('dialog', {name: 'Jump to a page', exact: true});
+  await palette.getByRole('combobox').fill(query);
+  await palette.getByRole('option').filter({has: page.getByText(label, {exact: true})}).first().click();
+  await palette.waitFor({state: 'detached'});
+}
+
+/**
+ * A task page's tab, reached as the owner reaches it (Hub #1950): the device's card in the directory, then the tab over
+ * its page. `device` is the card's link name, such as "Pixoo" or "Nanoleaf overview".
+ */
+export async function deviceTab(page: Page, category: string, device: string, tab: string): Promise<Locator> {
+  await (await directoryLink(page, category, device)).click();
+  const link = page.locator('nav.feature-navigation').getByRole('link', {name: tab, exact: true});
+  await link.waitFor();
+  return link;
 }

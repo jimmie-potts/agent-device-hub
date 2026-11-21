@@ -44,8 +44,8 @@ async function journey(): Promise<void> {
     assert.deepEqual(sent, [], 'opening Home and a tab sends no command');
 
     await page.goto(`${world.url}/#/devices`); await feed(page, 'connected');
-    await page.getByRole('button', {name: 'Other', exact: true}).click();
-    await page.getByRole('link', {name: 'Volcano', exact: true}).first().click();
+    // The Volcano is one card in the directory's Appliances section (Hub #1950).
+    await page.getByRole('region', {name: 'Appliances', exact: true}).getByRole('link', {name: 'Volcano', exact: true}).click();
     await card.waitFor();
     assert.equal(await card.count(), 1, 'the selected device uses the same card');
     assert.match(new URL(page.url()).hash, /component\/volcano/u);

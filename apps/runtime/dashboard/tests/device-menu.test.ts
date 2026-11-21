@@ -1,59 +1,54 @@
-// The Devices menu's model (Hub #1889): a projection of the Devices directory, with no reads or commands of its own.
+// The Devices menu's model (Hub #1889, #1950): a projection of the hardware inventory, with no reads or commands of its own.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {DEVICE_MENU_COLUMNS, deviceMenu, menuStep, type DeviceMenuCategory} from '../src/device-menu.ts';
+import {DEVICE_MENU_COLUMNS, deviceMenu, menuStep, openGroup, type DeviceMenuCategory} from '../src/device-menu.ts';
 import type {RuntimeData} from '../src/runtime-feeds.ts';
 import {routeHash} from '../src/routes.ts';
+import {hardwareRuntime} from './hardware-fixture.ts';
 
-const runtime: RuntimeData = {control: true, catalogFailed: false, modules: [
-  {name: 'lifx', state: 'running', serves: ['device'], pages: []},
-  {name: 'nanoleaf', state: 'running', serves: ['device'], pages: [{id: 'wall', title: 'Wall', path: '/modules/nanoleaf/wall', presentation: 'react'}]},
-  {name: 'tidbyt', state: 'running', serves: ['device'], pages: []},
-  {name: 'playback', state: 'running', serves: ['playback'], pages: []},
-  {name: 'speaker', state: 'running', serves: ['playback'], pages: []},
-  {name: 'companions', state: 'running', serves: [], pages: [
-    {id: 'assistant', title: 'Conversation', path: '/modules/companions/assistant', presentation: 'react'},
-    {id: 'preferences', title: 'Preferences', path: '/modules/companions/preferences', presentation: 'react'},
-  ]},
-  {name: 'wispr', state: 'failed', serves: [], pages: [{id: 'analytics', title: 'Analytics', path: '/modules/wispr/analytics', presentation: 'react'}]},
-  {name: 'roborock', state: 'running', serves: ['device'], pages: []},
-], copies: [
-  {owner: 'bunny/modules/tidbyt', family: 'device', synced: false, records: [{id: 'tidbyt', kind: 'tidbyt', label: 'Tidbyt'}]},
-  {owner: 'bunny/modules/roborock', family: 'device', synced: true, records: [{id: 'vacuum', kind: 'roborock', label: 'Downstairs vacuum'}]},
-] as unknown as RuntimeData['copies']};
+const runtime = hardwareRuntime;
 const lines = (menu: DeviceMenuCategory[][]): string[][] => menu.map(column => column.flatMap(group => [group.category.toUpperCase(), ...group.modules.flatMap(module => [
-  ...(module.heading ? [`${module.label}${module.note === '' ? '' : ` · ${module.note}`}`] : []), ...module.items.map(item => `${module.heading ? '  ' : ''}${item.label} -> ${routeHash(item.route)}`)])]));
+  ...(module.heading || module.expandable ? [`${module.expandable ? '> ' : ''}${module.label}${module.note === '' ? '' : ` · ${module.note}`}`] : []),
+  ...module.items.map(item => `${module.heading || module.expandable ? '  ' : ''}${item.label} -> ${routeHash(item.route)}`)])]));
 
-void test('the menu lists every page the directory lists, in two columns, with each address once', () => {
+void test('the menu lists the configured hardware in two columns, with each lighting brand over its overview and lights', () => {
   const before = JSON.stringify(runtime);
   assert.deepEqual(lines(deviceMenu(runtime)), [[
-    'LIGHTING', 'LIFX -> #/lights/lifx', 'Nanoleaf', '  Overview -> #/lights/nanoleaf', '  Wall -> #/module/nanoleaf/wall',
-    'DISPLAYS', 'Tidbyt · stale', '  Overview -> #/component/tidbyt',
-    'AUDIO', 'Music -> #/audio',
+    'DISPLAYS', 'Pixoo -> #/component/pixoo-1', 'Tidbyt · stale', '  Tidbyt -> #/component/tidbyt',
   ], [
-    'OTHER', 'Companions', '  Conversation -> #/module/companions/assistant', '  Preferences -> #/module/companions/preferences',
-    'Wispr · failed', 'Roborock -> #/component/vacuum',
-  ]]);
+    'LIGHTING', '> LIFX', '  Pendant 1 -> #/component/pendant-1', '  Shelf strip -> #/component/strip', '  LIFX overview -> #/lights/lifx',
+    '> Nanoleaf', '  Lines -> #/component/wall', '  Panels -> #/component/nl22', '  Nanoleaf overview -> #/lights/nanoleaf',
+    'APPLIANCES', 'Wemo', '  Desk Plug -> #/component/desk-plug', '  Shelf plug -> #/component/shelf-plug', 'MicroDuck -> #/module/microduck/controls',
+  ]], 'Pixoo and Tidbyt have one entry each, and no companion, art, Wispr or Music page is listed');
   assert.equal(JSON.stringify(runtime), before, 'the projection does not change the runtime copies');
-  assert.deepEqual(DEVICE_MENU_COLUMNS, [['Lighting', 'Displays', 'Audio'], ['Other']]);
+  assert.deepEqual(DEVICE_MENU_COLUMNS, [['Displays'], ['Lighting', 'Appliances']], 'the prototype\'s columns');
 });
 
-void test('a module that is not running is named with its state and offers no page', () => {
-  const failed = deviceMenu(runtime)[1]?.[0]?.modules.find(module => module.id === 'wispr');
-  assert.deepEqual(failed, {id: 'wispr', label: 'Wispr', note: 'failed', heading: true, items: []});
-  const stopped = deviceMenu({...runtime, modules: runtime.modules?.map(module => module.name === 'lifx' ? {...module, state: 'stopped'} : module)});
-  assert.deepEqual(stopped[0]?.[0]?.modules[0], {id: 'lifx', label: 'LIFX', note: 'stopped', heading: true, items: []}, 'a stopped module keeps its place and loses its link');
+void test('a module that is not running is named with its state and offers no item', () => {
+  const stopped = deviceMenu({...runtime, modules: runtime.modules?.map(module => module.name === 'lifx' || module.name === 'pixoo' ? {...module, state: 'stopped'} : module)});
+  assert.deepEqual(stopped[1]?.[0]?.modules[0], {id: 'lifx', label: 'LIFX', note: 'stopped', heading: true, expandable: false, items: []}, 'a stopped brand keeps its place, cannot be expanded and has no link');
+  assert.deepEqual(stopped[0]?.[0]?.modules[0], {id: 'pixoo', label: 'Pixoo', note: 'stopped', heading: true, expandable: false, items: []});
 });
 
-void test('a running module with stale observations keeps its pages and says so', () => {
-  const stale = deviceMenu(runtime)[0]?.find(group => group.category === 'Displays')?.modules[0];
-  assert.deepEqual(stale, {id: 'tidbyt', label: 'Tidbyt', note: 'stale', heading: true, items: [{label: 'Overview', route: {kind: 'component', id: 'tidbyt'}}]});
+void test('a running module with stale observations keeps its items and says so', () => {
+  const stale = deviceMenu(runtime)[0]?.find(group => group.category === 'Displays')?.modules[1];
+  assert.deepEqual(stale, {id: 'tidbyt', label: 'Tidbyt', note: 'stale', heading: true, expandable: false, items: [{label: 'Tidbyt', route: {kind: 'component', id: 'tidbyt'}}]});
+  const brand = deviceMenu({...runtime, copies: runtime.copies.map(copy => copy.owner === 'bunny/modules/lifx' ? {...copy, synced: false} : copy)})[1]?.[0]?.modules[0];
+  assert.deepEqual([brand?.note, brand?.expandable, brand?.items.length], ['stale', true, 3], 'a brand with stale observations still expands to its lights');
+});
+
+void test('the brand that holds the open page starts expanded', () => {
+  const menu = deviceMenu(runtime);
+  assert.equal(openGroup(menu, {kind: 'component', id: 'nl22'}), 'nanoleaf');
+  assert.equal(openGroup(menu, {kind: 'lighting-brand', brand: 'lifx'}), 'lifx');
+  assert.equal(openGroup(menu, {kind: 'component', id: 'pixoo-1'}), undefined, 'a page outside the brands opens none');
+  assert.equal(openGroup(menu, {kind: 'module', module: 'nanoleaf', page: 'wall'}), undefined, 'a brand\'s task page is not one of its entries');
 });
 
 void test('a category with nothing to show is left out, and so is a column', () => {
-  const only: RuntimeData = {control: true, catalogFailed: false, copies: [], modules: [{name: 'wispr', state: 'running', serves: [],
-    pages: [{id: 'analytics', title: 'Analytics', path: '/modules/wispr/analytics', presentation: 'react'}]}]};
-  assert.deepEqual(lines(deviceMenu(only)), [['OTHER', 'Wispr -> #/module/wispr/analytics']], 'a module with one page is that page, under the module\'s name');
+  const only: RuntimeData = {control: true, catalogFailed: false, copies: [], modules: [{name: 'wemo', state: 'running', serves: ['device'], pages: []}]};
+  assert.deepEqual(lines(deviceMenu({...only, copies: [{owner: 'bunny/modules/wemo', family: 'device', synced: true, records: [{id: 'desk-plug', kind: 'wemo'}]}] as unknown as RuntimeData['copies']})),
+    [['APPLIANCES', 'Wemo -> #/component/desk-plug']], 'a module with one device is that device, under the module\'s name');
   assert.deepEqual(deviceMenu({...only, modules: undefined}), [], 'nothing is listed until the catalog is read');
   assert.deepEqual(deviceMenu({...only, modules: undefined, catalogFailed: true}), [], 'a failed catalog invents no page');
 });

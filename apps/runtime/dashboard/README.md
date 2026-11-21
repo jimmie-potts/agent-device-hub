@@ -65,8 +65,13 @@ Actual phone/certificate verification is separate from desktop browser tests.
 
 ## Pages, routes and widgets
 
-The rail has **Home, Habitat, Rooms, Devices and Automation**, each with an icon.
+The rail has **Home, Companions, Rooms, Devices and Automation**, each with an icon.
 Four are links; Devices is a button that opens the Devices menu (#1889).
+Companions (#1950) takes Habitat's place: `#/companions` is an overview that links
+Habitat, the companion profiles, Preferences and Companion knowledge
+(`companions-overview.ts`, `companions-page.tsx`). `#/habitat` and the companion
+pages keep their addresses, select Companions and show it as their parent. The
+conversations stay in the rail.
 Settings, the feed indicator and the control mode sit at the bottom of the rail
 (#1887). Settings and the indicator share one row there in the full rail and
 the drawer, and the indicator sits under Settings in the icon rail (#1890): it
@@ -84,11 +89,27 @@ and still offers **Sign in again** globally, in the phone bar when the rail is a
 drawer. A window too short for the rail lets it scroll with the page, with its
 parts kept together at the top of the page; the shell
 measures whether the rail fits, because fonts wrap its text differently from
-one computer to the next. Home links Timeline. The Devices directory groups catalog-derived Lighting,
-Displays, Audio and Other destinations; module pages keep their sibling links
-locally. The category choice survives navigation within the open page without
-being saved as a new preference. Unknown modules use Other, and unavailable
-catalog or observation evidence stays explicit. Browsing sends no device command.
+one computer to the next. Home links Timeline and Audio, and both select Home.
+The Devices directory (`#/devices`, #1950) lists the configured hardware only, in
+Displays, Lighting and Appliances sections laid out as the owner's selected
+device-only prototype has them: a card for each module, and for a lighting brand
+a card that opens its overview with its lights directly under it. A module is
+hardware when it serves or holds device records or is a known hardware module,
+so a module that is down keeps its card and its state. Companion features,
+Audio, art, Wispr and test fixtures are not listed; the jump palette and the
+pins still reach them, and the page of a module that is not hardware selects
+Home, whose cards reach it, and names Home as its parent. Task pages stay inside the device pages as tabs. Devices
+are named by the label their record publishes, then by the Nanoleaf kind (Lines
+or Panels) the module observes, then by their ID read as words
+(`device-names.ts`). Unavailable catalog or observation evidence stays explicit.
+Browsing sends no device command.
+
+Displays have views of their own (`feature-navigation.ts`). Tidbyt opens its
+Status and Content card with no page tabs. Pixoo opens **Display**, its device
+page, which links **Advanced playback** (Player) and **Device settings**
+(Settings), beside **Media** (Library and Playlists) and **Agent status**
+(Monitor). Every existing address opens its view, and a linked page that is open
+is a tab of its own. A light's page leads back to its brand.
 
 The jump palette (#1888) opens any page from the keyboard. **Command and K** or
 **Control and K** opens it from anywhere, and so does a **slash** typed outside
@@ -97,8 +118,9 @@ is not a text field. On a Mac, Control and K
 in a text field keeps its meaning there, deleting to the end of the line. The
 rail's **Jump to…** field and the phone bar's search button open it as well. It
 lists up to three pages visited most recently in this page session, the hub's
-destinations with Timeline, Settings and Connections, and every page the device
-directory lists for a running module. Typing narrows the list to names and
+destinations with Timeline, Audio, Habitat, Settings and Connections, every
+hardware page of a running module, each light's own page included, and then
+every other page a running module declares (`destinations.ts`). Typing narrows the list to names and
 hints that contain every typed word, the arrow keys move the choice and bring
 it into view, Enter opens the page at its top, and Escape, the same key again or a
 click outside closes it and returns focus to where it was. The page behind it
@@ -112,23 +134,30 @@ in storage. Its keys do nothing while a modal dialog is open or an element is
 shown full screen, since it could only open out of sight. A key pressed inside a framed module page does not reach
 the shell, so there the field and the button are the way in.
 
-The Devices row (#1889) opens a menu of every page the Devices directory lists,
-grouped as the directory groups them: Lighting, Displays and Audio in one
-column and Other in the second. A module with several pages is a heading over
-them, and a module with one page is that page under the module's name. A
+The Devices row (#1889) opens a menu of the hardware the directory lists
+(#1950): Displays in one column, Lighting and Appliances in the second, under a
+head with its own close button, with **All devices** kept at its foot while the
+lists scroll. Beside the rail it opens level with the Devices row and moves up,
+no closer than 8px to the window's top, when it would not fit under it. Pixoo and
+Tidbyt have one entry each. Nanoleaf and LIFX are disclosures over their lights
+and their overview; they start collapsed, and the one that holds the open page
+starts expanded. A module with several devices is a heading over them, and one
+with a single destination is that destination under the module's name. A
 module that is not running is named with its state and offers no page there,
 and one whose observations are stale says so; the directory keeps the full
 warnings. **All devices** opens the directory, which keeps its address. The
 menu opens with focus on the open page's entry. The arrow keys, Home and End
-move through it, Escape closes it with focus on the row, and a press outside
+move through the shown entries, skipping a collapsed brand's lights; Enter,
+Space and the right arrow expand a brand and the left arrow collapses it.
+Escape closes it with focus on the row, and a press outside
 it, a chosen page or focus moving elsewhere closes it too; a press inside a
 framed module page counts as outside. A page change under the open menu closes
 it and hands its focus to the row. A chosen page opens
 at its top with focus on the page. At phone width the menu covers the drawer as
 one scrolling column with its own close button, which leaves the drawer open.
-The row stays marked as the containing destination on every page under
-Devices; its box moves to the page's own row when the page has one among the
-pinned pages or the conversations.
+A destination stays marked on every page under it; its box moves to the
+page's own row when the page has one among the pinned pages or the
+conversations, as Companions does on the Conversation page.
 
 Device, lighting-brand, Audio and module pages have a **Pin to rail** toggle in
 their header; the Conversation page does not. Pinned pages are listed in the
@@ -171,7 +200,8 @@ conversations the full rail needs about 710px to stay in view on a Mac and
 about 730px with the Linux test container's fonts.
 
 `navigation.tsx` shares native anchor navigation and containing-destination
-selection. `directory.ts` projects the existing copies without acquiring state.
+selection. `directory.ts` projects the hardware inventory and `destinations.ts`
+every declared page from the existing copies, without acquiring state.
 `rail.tsx` owns the rail's collapse state, its icons and the measurement of whether it fits the window. `jump.ts` projects the palette's list and holds its key rules; `jump-palette.tsx` is the list. `device-menu.ts` projects the Devices menu and holds its key steps; `device-menu.tsx` is the menu. `pins.ts` holds the pinned list and the pages it can name; `pins.tsx` is the rail's list and the header toggle. `skins/quiet-glass.css` supplies light/dark semantic values over the retained
 fixed attention/art tokens; `shell.css` owns shared responsive geometry. The
 legacy dashboard and documentation keep their own skins. Settings can follow
@@ -1027,6 +1057,15 @@ agree, so it draws once, after the page has repacked. It caps the pixel ratio at
 the browser scales them up, because the page's main thread waits for every
 software frame. It takes no pointer input, sends nothing, and loses its context when
 the page is left.
+
+The Devices directory, the Companions overview and the Pixoo and Tidbyt pages
+(#1950) draw on the same layer through `useGlassPage` (`src/glass-page.tsx`),
+which mounts it on the page's `main` while one of them is open: the Quiet glass
+wash with no `backdrop` and no `fuse`. Each directory or overview card is
+wrapped in a `data-glass-panel` element, a display's device card and a
+display's module page are one panel each, and the heading, section headings,
+notices, the breadcrumb and the view pages under the tabs carry veils. The
+Devices popout keeps its own fill over the layer.
 
 `glass.css` keys everything on `data-glass="webgl"`: the outermost card surface
 in each panel turns transparent (a surface with a state meaning, such as an

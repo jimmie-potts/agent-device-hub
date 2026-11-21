@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
 import {changes,feed,startWorld,holdDashboardStream} from './harness.ts';
+import {openHabitat} from './navigation-helpers.ts';
 import {IDENTITY} from '../../dist/tests/fixtures/agents.js';
 const world=await startWorld(),browser=await chromium.launch({headless:true});
 const output=process.env.DASHBOARD_RECEIPTS;if(output!==undefined)await mkdir(output,{recursive:true});
@@ -12,7 +13,7 @@ try{
  const context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await context.newPage();page.setDefaultTimeout(12000);
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));const sent=changes(page);let streams=0;page.on('request',request=>{if(request.url().endsWith('/api/sdk/v1/stream'))streams++;});
  await page.goto(world.url);await feed(page,'connected');const before=streams;
- await page.getByRole('link',{name:'Habitat',exact:true}).click();await page.locator('#habitat[data-ready=true]').waitFor();
+ await openHabitat(page);await page.locator('#habitat[data-ready=true]').waitFor();
  await page.getByText('10 assigned · 0 free spots · 2 waiting',{exact:true}).waitFor();assert.equal(streams,before,'the habitat reuses the shell connection');
  assert.equal(await page.locator('.habitat-root .agent[data-assigned=true]').count(),10);
  assert.equal(await page.locator('#all-work').isDisabled(),true);
@@ -56,7 +57,7 @@ try{
  const hiddenFrames=await page.locator('#habitat').getAttribute('data-frames');await page.waitForTimeout(200);assert.equal(await page.locator('#habitat').getAttribute('data-frames'),hiddenFrames,'hidden documents do not redraw');
  await page.evaluate(()=>{Reflect.deleteProperty(document,'hidden');document.dispatchEvent(new Event('visibilitychange'));});
  const oldCanvas=await page.locator('#habitat').elementHandle();assert.ok(oldCanvas!==null);await page.getByRole('link',{name:'Home',exact:true}).click();await page.waitForTimeout(100);const stopped=await oldCanvas.getAttribute('data-frames');await page.waitForTimeout(200);assert.equal(await oldCanvas.getAttribute('data-frames'),stopped,'unmounted renderer stops drawing');
- await page.getByRole('link',{name:'Habitat',exact:true}).click();await page.locator('#habitat[data-ready=true]').waitFor();assert.equal(await page.locator('.habitat-root .agent').count(),10);assert.deepEqual(sent,[]);assert.deepEqual(errors,[]);
+ await openHabitat(page);await page.locator('#habitat[data-ready=true]').waitFor();assert.equal(await page.locator('.habitat-root .agent').count(),10);assert.deepEqual(sent,[]);assert.deepEqual(errors,[]);
  const fallback=await context.newPage();await fallback.addInitScript(()=>{HTMLCanvasElement.prototype.getContext=()=>null;});await fallback.goto(world.url+'/#/habitat');await feed(fallback,'connected');await fallback.getByRole('region',{name:'Habitat session list'}).waitFor();await fallback.waitForFunction(()=>document.querySelector('[aria-label="Habitat session list"]')?.querySelectorAll('li').length===12);await fallback.close();
  const failedArt=await context.newPage();await failedArt.route('**/habitat/habitat-desk-entry.webp',route=>route.abort());await failedArt.goto(world.url+'/#/habitat');await failedArt.getByRole('region',{name:'Habitat session list'}).waitFor();await failedArt.close();
  // A pending local file read must not write preferences after leaving this page.

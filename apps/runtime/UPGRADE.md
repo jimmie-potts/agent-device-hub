@@ -244,8 +244,9 @@ accepted, never emitted, so they still read. From this release on, a session
 publication whose only changes are its evidence instants writes no history row
 and confirms the session's span (see [Core history spans](#core-history-spans)).
 
-Returning to `037b327a` on a store this release opened works from the code and
-focused tests: that release finds no deadline fields, starts the work deadline
+Returning to `037b327a` on a store this release opened rests on a code reading
+of `037b327a`, not on a test that opens such a store with that code: that
+release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 

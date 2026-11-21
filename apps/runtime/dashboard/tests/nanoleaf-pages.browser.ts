@@ -1,4 +1,4 @@
-import {destinationLink, directoryLink} from './navigation-helpers.ts';
+import {destinationLink, deviceTab} from './navigation-helpers.ts';
 // Retained wall controls through the real gateway/core/module and a fresh simulated controller (Hub #934).
 import assert from 'node:assert/strict';
 import {mkdir, readFile} from 'node:fs/promises';
@@ -8,6 +8,7 @@ import type {Identity} from '@jimmie-potts/event-contracts/v2/families';
 import {LINES_ADDRESS} from '@jimmie-potts/nanoleaf';
 import {REQUEST_HEADER} from '@jimmie-potts/sdk/remote';
 import {chromium, type Browser} from 'playwright';
+import {expect} from 'playwright/test';
 import {IDENTITY, sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {changes, feed, startWorld} from './harness.ts';
 import {showEditorJourney} from './show-editor-journey.ts';
@@ -125,7 +126,9 @@ try {
     assert.deepEqual(await scene(), beforeScene, 'opening and local controls preserve the saved scene');
     assert.deepEqual(effect(), beforeEffect, 'opening and local controls have no device effect');
 
-    // Hold only the HTTP answer after the real command is admitted, to observe the shared in-flight lock.
+    // Hold only the HTTP answer after the real command is admitted, to observe the shared in-flight lock. The owner's
+    // streamed completion arrives while the answer is held, and the lock outlasts it until the answer.
+    const swap = wall.getByRole('button', {name: 'Swap halves', exact: true});
     let releaseReply: (() => void) | undefined;
     const heldReply = new Promise<void>(resolve => { releaseReply = resolve; });
     let admitted: (() => void) | undefined;
@@ -136,16 +139,22 @@ try {
       admitted?.(); await heldReply; await route.fulfill({response});
     }, {times: 1});
     try {
+      await expect(wall.locator('#project')).toBeEnabled({timeout: 12_000});
       await wall.locator('#project').focus(); await wall.locator('#project').press('Enter');
       await Promise.race([admission, delay(12_000).then(() => { throw new Error('the explicit Project edit was not admitted'); })]);
       assert.equal(await wall.locator('#project').isDisabled(), true, 'the tracked command locks repeated mutation');
+      await waitWall(value => value.settings.style === 'project', 'the owner confirms Project layout');
+      await page.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
+      assert.equal(sent.length, 1);
+      await page.keyboard.press('Escape');
+      await line.focus(); await line.press('Enter');
+      assert.equal(await swap.isDisabled(), true, 'a streamed completion keeps wall edits locked until the command answer');
+      // Focus and a key press do not wait for an enabled control: pressed while locked, Enter stays on the Line (Hub #1892).
+      await swap.focus(); await swap.press('Enter');
+      assert.equal(await line.evaluate(element => element === document.activeElement), true, 'a locked Swap halves cannot take focus');
+      assert.equal(sent.length, 1, 'Enter on the locked Swap halves sends nothing');
     } finally { releaseReply?.(); }
-    await waitWall(value => value.settings.style === 'project', 'the owner confirms Project layout');
-    await page.getByRole('status').filter({hasText: 'Completed: succeeded.'}).waitFor();
-    assert.equal(sent.length, 1);
-    await page.keyboard.press('Escape');
-    await line.focus(); await line.press('Enter');
-    const swap = wall.getByRole('button', {name: 'Swap halves', exact: true});
+    await expect(swap).toBeEnabled({timeout: 12_000});
     await swap.focus(); await swap.press('Enter');
     await waitWall(value => value.elements.find(element => element.id === first.id)?.signature === 1 - first.signature,
       'the real owner confirms the selected Line signature change');
@@ -159,7 +168,7 @@ try {
     assert.equal(sent.length, 2, 'reload never repeats a wall edit');
     await (await destinationLink(page, /^Home/)).click();
     assert.equal(await wall.count(), 0, 'leaving disposes the wall mount');
-    await (await directoryLink(page, 'Lighting', 'Wall')).click(); await drawing.waitFor();
+    await (await deviceTab(page, 'Lighting', 'Nanoleaf overview', 'Wall')).click(); await drawing.waitFor();
     assert.equal(sent.length, 2, 're-entry sends no command');
     await line.focus(); await line.press('Enter'); await swap.click();
     await waitWall(value => value.elements.find(element => element.id === first.id)?.signature === first.signature,
@@ -193,7 +202,7 @@ try {
       assert.equal(world.nanoleafState().devices[LINES_ADDRESS]?.on, on, 'the Home card matches the actual simulated observation');
     }
     assert.equal(sent.length, 3, 'observing physical-switch simulation sends no dashboard command');
-    await (await directoryLink(page, 'Lighting', 'Wall')).click(); await drawing.waitFor();
+    await (await deviceTab(page, 'Lighting', 'Nanoleaf overview', 'Wall')).click(); await drawing.waitFor();
 
     await world.observe(sessionStarted, {identity: IDENTITY, title: {value: maliciousTitle, source: 'provider'}});
     await world.observe(turnStarted, {identity: IDENTITY});

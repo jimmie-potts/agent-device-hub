@@ -129,6 +129,15 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   view.addEventListener('scroll', boxes, {signal, passive: true, capture: true});
   doc.addEventListener('visibilitychange', () => {if (!doc.hidden) {force = true;skin();}}, {signal});
   doc.fonts.addEventListener('loadingdone', boxes, {signal});
+  // A transition or an animation can move a mark without resizing anything the layer observes, such as the phone
+  // drawer, a veil, sliding shut and then hiding (#1950). When one ends on a mark, or on an element that holds one,
+  // the scene is read again; a read that finds nothing new draws nothing.
+  const MARKS = '[data-glass-veil],[data-glass-panel]';
+  const settled = (event: Event): void => {
+    const target = event.target;
+    if (target instanceof Element && (target.matches(MARKS) || target.querySelector(MARKS) !== null)) boxes();
+  };
+  for (const type of ['transitionend', 'transitioncancel', 'animationend', 'animationcancel']) doc.addEventListener(type, settled, {signal, capture: true});
   view.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', skin, {signal});
   // Each panel's size is observed; the set is renewed only when the marked elements change.
   const sizes = new ResizeObserver(boxes);let observed: readonly Element[] = [];

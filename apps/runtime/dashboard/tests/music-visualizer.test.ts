@@ -374,6 +374,6 @@ void test('closing the shared scope leaves no clock recheck behind', async () =>
 void test('the full view has its own address under Audio', () => {
   assert.deepEqual(parseRoute('#/audio/visualizer'), {kind: 'visualizer'});
   assert.equal(routeHash({kind: 'visualizer'}), '#/audio/visualizer');
-  assert.equal(navigationDestination({kind: 'visualizer'}), 'devices');
+  assert.equal(navigationDestination({kind: 'visualizer'}), 'home', 'Audio is under Home (Hub #1950)');
   assert.deepEqual(parseRoute('#/audio'), {kind: 'audio'});
 });
