@@ -170,6 +170,7 @@ void test('a change beyond the window and its shadow is no visible change, so it
   assert.equal(sameScene(seen(page(900, -60)), seen(page(900, -60))), true);
   assert.deepEqual(seen(page(2000)).panels[0]?.rect, {x: 216, y: 120, width: 1000, height: 844}, 'the box is cut 64px past the window, past its shadow and lip');
   assert.equal(sameScene(page(2000), page(2400)), false, 'the full scene still records the new box');
+});
 
 void test('a drop target is read from its mark and its light eases in and out on a time base (#1933)', () => {
   const root = page([{...element('target', 0, 0), dataset: {glassPanel: 'target', glassTarget: ''}}, element('other', 300, 0)]);
