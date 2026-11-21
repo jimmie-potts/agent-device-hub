@@ -1004,8 +1004,8 @@ and a pixel counts where the two differ, measured against the capture without
 text, so an empty line-box row over something else, such as an artwork's
 shadow, is not taken for text. A run wholly in the window with no glyph pixel
 fails the journey, naming the run, since its ink is too close to its ground to
-show (`tests/glyph-contrast.ts`, with a negative control in
-`glyph-contrast.test.ts`). `devices-menu.browser.ts` also scrolls a glass page
+show (`apps/runtime/dashboard/tests/glyph-contrast.ts`, with a negative control in
+`apps/runtime/dashboard/tests/glyph-contrast.test.ts`). `devices-menu.browser.ts` also scrolls a glass page
 under the open popout in a short window and checks the popout stays whole and
 under the pointer. With `DASHBOARD_RECEIPTS` set it writes private
 screenshots.
