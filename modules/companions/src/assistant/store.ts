@@ -68,15 +68,23 @@ export class AssistantStore {
       CREATE TABLE IF NOT EXISTS assistant_controls (request_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistant_art_attachments (message_id TEXT PRIMARY KEY REFERENCES assistant_messages(id) ON DELETE CASCADE, request_id TEXT NOT NULL UNIQUE, description TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_message_page ON assistant_messages(conversation_id,seq);
-      CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);
-      CREATE TABLE IF NOT EXISTS assistant_reports (task_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL, projection TEXT);`);
+      CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);`);
     // The release that reports tasks to the shared session model (Hub #505) starts from what each saved task is now and
-    // reports only its next change: a baseline row per task, at sequence zero, that reports nothing.
+    // reports only its next change: a baseline row per task, at sequence zero, that reports nothing. The table and its
+    // baseline commit together, so a start that stops part way leaves neither.
     if (!reported) {
-      const baseline = database.prepare('INSERT OR IGNORE INTO assistant_reports VALUES (?,0,?)');
-      for (const row of database.prepare('SELECT record FROM assistant_tasks').all() as RecordRow[]) {
-        const task = JSON.parse(row.record) as Task, projection = projectionOf(task);
-        baseline.run(task.id, projection === undefined ? null : JSON.stringify(projection));
+      database.exec('SAVEPOINT assistant_reports_baseline');
+      try {
+        database.exec('CREATE TABLE assistant_reports (task_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL, projection TEXT)');
+        const baseline = database.prepare('INSERT INTO assistant_reports VALUES (?,0,?)');
+        for (const row of database.prepare('SELECT record FROM assistant_tasks').all() as RecordRow[]) {
+          const task = JSON.parse(row.record) as Task, projection = projectionOf(task);
+          baseline.run(task.id, projection === undefined ? null : JSON.stringify(projection));
+        }
+        database.exec('RELEASE assistant_reports_baseline');
+      } catch (error) {
+        database.exec('ROLLBACK TO assistant_reports_baseline; RELEASE assistant_reports_baseline');
+        throw error;
       }
     }
     initializeRevision(database, this.meta().revision);

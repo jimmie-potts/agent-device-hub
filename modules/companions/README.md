@@ -702,7 +702,9 @@ Run the root build and `npm run test:companions:built` for abrupt process exits,
 pending-write fidelity, unknown-call recovery, cancellation, budgets, full disk,
 outbox replay and private pagination, plus `assistant.test.js` (approval,
 decline, stale approval, uncertain dispatch, allowlist refusal, refusal,
-truncation and fault codes, profile isolation), `anthropic.test.js` (the request
+truncation and fault codes, profile isolation), `assistant-sessions.test.js`
+(each task change's shared-session observations, restart and baseline, Hub
+#505), `anthropic.test.js` (the request
 shape, tool-use parsing, usage, error mapping and abort against a fake
 transport) and `configure.test.js` (the section and a keyed provider through
 the harness's secret). `node --test apps/runtime/dist/tests/assistant-dispatch.test.js`
