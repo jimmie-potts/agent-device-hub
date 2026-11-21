@@ -2,7 +2,7 @@
 // The drawing itself is checked in a browser by home-glass.browser.ts.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {MAX_PANELS, readScene, sameScene, visibleScene, type GlassScene} from '../src/glass-scene.ts';
+import {MAX_PANELS, easeTarget, readScene, sameScene, visibleScene, type GlassScene} from '../src/glass-scene.ts';
 import {luminance, parseColor} from '../src/glass-renderer.ts';
 import {FRAGMENT} from '../src/glass-shader.ts';
 import {MAX_LIGHTS} from '../src/glass-light.ts';
@@ -170,4 +170,17 @@ void test('a change beyond the window and its shadow is no visible change, so it
   assert.equal(sameScene(seen(page(900, -60)), seen(page(900, -60))), true);
   assert.deepEqual(seen(page(2000)).panels[0]?.rect, {x: 216, y: 120, width: 1000, height: 844}, 'the box is cut 64px past the window, past its shadow and lip');
   assert.equal(sameScene(page(2000), page(2400)), false, 'the full scene still records the new box');
+
+void test('a drop target is read from its mark and its light eases in and out on a time base (#1933)', () => {
+  const root = page([{...element('target', 0, 0), dataset: {glassPanel: 'target', glassTarget: ''}}, element('other', 300, 0)]);
+  const [target, other] = readScene(root, root, viewport).panels;
+  assert.equal(target?.target, true);assert.equal(other?.target, undefined);
+  const plain = readScene(page([element('target', 0, 0), element('other', 300, 0)]), page([]), viewport);
+  assert.equal(sameScene(readScene(root, root, viewport), plain), false, 'marking a target draws a frame');
+  assert.deepEqual(easeTarget(undefined, 'target', 0.08, false), {id: 'target', glow: 0.5}, 'half way after 80 ms');
+  assert.deepEqual(easeTarget({id: 'target', glow: 0.5}, 'target', 0.2, false), {id: 'target', glow: 1}, 'and no further than full');
+  assert.deepEqual(easeTarget({id: 'target', glow: 1}, 'other', 0.04, false), {id: 'other', glow: 0.25}, 'a new target starts from nothing');
+  assert.deepEqual(easeTarget({id: 'other', glow: 0.5}, undefined, 0.04, false), {id: 'other', glow: 0.25}, 'with no mark it goes out');
+  assert.equal(easeTarget({id: 'other', glow: 0.25}, undefined, 0.04, false), undefined, 'and is gone once out');
+  assert.deepEqual(easeTarget(undefined, 'target', 0, true), {id: 'target', glow: 1}, 'reduced motion switches at once');
 });

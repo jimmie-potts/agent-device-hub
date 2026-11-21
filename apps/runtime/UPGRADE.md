@@ -1166,6 +1166,20 @@ conflicting saves and reopening the production store on restart. This is forward
 persistence evidence, not qualification of an older reader on latest state;
 recovery eligibility remains separately stated by the upgrade plan.
 
+Since #1933 a Home group may hold Wemo plugs. The core publishes
+`lighting-layout/2.1`, whose groups carry an optional `plugs` list; the stored
+row keeps its shape and needs no migration. An older release serves such a row
+unchanged and shows a group that holds a plug with its controls blocked; it sends
+no command to that group. It refuses, changing nothing, every lighting save that
+still carries `plugs`, but accepts one that removes the last group holding a
+plug. Its Ungroup of that group returns the plug to the lighting Home selection
+as if it were a light: its core places a `light:device:<plug>` card in the
+group's Wide shape and drops the plug's own `device:bunny/modules/wemo:<plug>`
+card. No command is sent and no data is lost. Recovery is forward: reinstall the
+release that knows plug groups; Home then shows that card as unavailable, so
+remove it and add the plug again in Edit Home. Before a planned downgrade,
+ungroup the groups that hold plugs in the current release.
+
 ## Music card placement state
 
 `playback_layout` adds one private core row of bounded logical playback/room IDs.

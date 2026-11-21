@@ -4,16 +4,18 @@ import './wemo.css';
 
 export type WemoCardProps={id:string;label:string;power:boolean|undefined;status:string;disabled:boolean;onPower:(on:boolean)=>void;powerControls:React.ReactNode;limit:React.ReactNode;evidence:React.ReactNode;
   /** The light the plug gives Home's glass layer, from observed power (#1931). */
-  glow?:Glow};
+  glow?:Glow;
+  /** On Home (#1933): the options holding "Group with" and the drag handle, at the heading's end. */
+  fuse?:React.ReactNode};
 
 /** Presentation only. Its caller owns observations, commands and limit saves. */
-export function WemoCard({id,label,power,status,disabled,onPower,powerControls,limit,evidence,glow}:WemoCardProps):React.JSX.Element{
+export function WemoCard({id,label,power,status,disabled,onPower,powerControls,limit,evidence,glow,fuse}:WemoCardProps):React.JSX.Element{
   const [tab,setTab]=useState<'power'|'limit'>('power');
   const uid=useId();
   const switchTab=(next:'power'|'limit'):void=>{setTab(next);};
   return <div className="wemo-module">
     <article className="wemo-card" data-device={id} aria-label={label}>
-      <header className="wemo-heading"><span>Wemo Mini</span><span className="warning" role="status">{status!==''&&<><span aria-hidden="true">! </span>{status}</>}</span></header>
+      <header className="wemo-heading"><span>Wemo Mini</span><span className="warning" role="status">{status!==''&&<><span aria-hidden="true">! </span>{status}</>}</span>{fuse!==undefined&&<span className="wemo-fuse">{fuse}</span>}</header>
       <div className="wemo-art" role="img" aria-label="Desk lamp illustration with a smaller Wemo plug" data-on={power===true&&status===''} {...(glow===undefined?{}:lampAttributes(glow))}>
         <div className="wemo-glow"/>
         <div className="wemo-scene" aria-hidden="true">

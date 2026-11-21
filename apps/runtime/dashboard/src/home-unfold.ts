@@ -29,6 +29,8 @@ export function cardBoxes(grid: HTMLElement | null): Map<string, Box> {
  */
 export function easeCards(grid: HTMLElement | null, before: ReadonlyMap<string, Box>): void {
   for (const card of grid?.querySelectorAll<HTMLElement>(':scope > [data-home-card]') ?? []) {
+    // A card that follows the pointer to be grouped, or is easing home from a drop (#1933), moves by its own transform.
+    if (card.dataset['glassDragged'] !== undefined) continue;
     for (const animation of card.getAnimations()) if (animation.id === FLIP) animation.cancel();
     const was = before.get(card.dataset['homeCard'] ?? ''), now = card.getBoundingClientRect();
     if (was === undefined || now.width === 0 || now.height === 0) continue;

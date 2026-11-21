@@ -20,8 +20,8 @@ precision highp float;
 precision highp sampler2D;
 uniform sampler2D uArt, uPanels;
 uniform vec2 uRes, uArtSize;
-uniform float uDpr, uHasArt, uDark, uAppear, uDepth, uMerge, uInk, uContrast, uClock;
-uniform int uCount, uVeilCount, uLights;
+uniform float uDpr, uHasArt, uDark, uAppear, uDepth, uMerge, uInk, uContrast, uClock, uTargetGlow;
+uniform int uCount, uVeilCount, uLights, uTarget, uDragged;
 // The rows of the lit or pressed panels (#1931), uLights of them.
 uniform int uLightIndex[${String(MAX_LIGHTS)}];
 uniform vec4 uVeils[${String(MAX_VEILS)}];
@@ -118,7 +118,7 @@ vec3 spill(vec2 p, float d, vec2 g){
 // A slab of flat glass: a thin bevel that bends and splits the view, a slightly tinted edge with a faint dark band,
 // a soft reflection, a rim of light facing the upper left. A lit panel takes up to half its color from its light,
 // brightest near the lamp, a pressed one brightens with a wider, stronger bevel, and bevels facing a lamp catch its
-// light (#1931); lamps is false for the switch thumb, which takes no panel's light. Inside, the automatic veil keeps
+// light (#1931), and so does a drop target, like a pressed panel (#1933); lamps is false for the switch thumb, which takes no panel's light. Inside, the automatic veil keeps
 // the panel's text readable.
 vec3 glass(vec2 p, float d, vec2 g, vec3 behind, bool lamps){
   vec3 tint = vec3(0.), others = vec3(0.); float lit = 0., press = 0., core = 0.;
@@ -130,6 +130,12 @@ vec3 glass(vec2 p, float d, vec2 g, vec3 behind, bool lamps){
       tint += light.rgb * w; lit += light.a * w; press += lamp.z * w; total += w;
       core += exp(-dot(r, r) / 9000.) * w; others += light.rgb * light.a * max(dot(g, normalize(-r + 1e-4)), 0.) / (1. + dot(r, r) / 16000.); }
     total = max(total, 1.);tint /= total; lit /= total; press /= total; core /= total; }
+  // A drop target (#1933) lights up as a pressed panel does: brighter, with a wider and stronger bevel; the dragged
+  // panel stays clear of it where they overlap, so it reads as the one on top. Two distance evaluations, and only while
+  // a drag has a target.
+  if (lamps && uTarget >= 0 && uTargetGlow > 0.){ float w = exp(-max(panel(p, uTarget), 0.) * .3) * uTargetGlow;
+    if (uDragged >= 0) w *= smoothstep(-2., 4., panel(p, uDragged));
+    press = max(press, w); core = max(core, w * .5); }
   float u = 1. - clamp(-d / (12. + 4. * press), 0., 1.), slope = min(u / sqrt(max(1. - u * u, .02)), 3.) / 3.;
   vec2 off = -g * slope * (10.2 + 7.8 * press) * mix(2.6, 1., uAppear);
   vec3 a = length(off) < .25 ? art(p, 4.6) : vec3(art(p + off * 1.2, 4.6).r, art(p + off, 4.6).g, art(p + off * .8, 4.6).b);

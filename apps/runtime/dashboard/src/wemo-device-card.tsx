@@ -11,11 +11,12 @@ import {useHomeShape} from './home-shape-context.ts';
 import {NO_GLOW, PLUG_LEVEL} from './glass-light.ts';
 import {PlugPanel} from './plug-panel.tsx';
 import {newerRequest} from './requested.ts';
+import {GroupWith,useFuse} from './fuse.tsx';
 
 export function WemoDeviceCard({record,owner,live,control,operations,operationsLive,refresh,limit,now}: {
   record:DeviceRecord;owner:string;live:boolean;control:boolean;operations:readonly OperationRecord[];operationsLive:boolean;refresh:()=>Promise<void>;limit:PowerLimitProps;now:number;
 }):React.JSX.Element{
-  const action=useAttempt(record.id,operations,operationsLive),shape=useHomeShape();
+  const action=useAttempt(record.id,operations,operationsLive),shape=useHomeShape(),fuse=useFuse();
   const props={record,live,control,operationsLive,now};
   const latest=useRef(props);latest.current=props;
   const view=wemoCardState(record,live,control,operationsLive,action.locked,now);
@@ -29,14 +30,20 @@ export function WemoDeviceCard({record,owner,live,control,operations,operationsL
   // On Home's unit grid the plug is a press panel (#1931); its full card stays on its page and in one column. A plug
   // reports on its next poll, so its latest power request, when it succeeded after its last report, shows beside the observed power,
   // and the panel's pressed state and its press follow that request, as the ring dial's switch does.
+  // On Home a plug groups with lights and other plugs (#1933): by its handle, or by "Group with" in its options, in its
+  // one-unit panel and in its full card (one-column Home and the Phone arrangement) alike.
+  const label=record.label??record.id,unit={kind:'plug' as const,id:record.id,owner};
+  const options=fuse===undefined?undefined:<details className="light-options"><summary aria-label={`Options for ${label}`}>⋯</summary><div className="light-options-body">
+    <GroupWith name={label} self={`device:${owner}:${record.id}`} fuse={fuse} group={target=>{fuse.group(unit,target);}}/></div></details>;
   if(shape==='square'){
     const requested=newerRequest(record,operations,'power-set')&&record.desired.power.status==='known'?record.desired.power.value:undefined;
     const switched=requested??view.power,word=(value:boolean|undefined):string=>value===undefined?'unknown':value?'on':'off';
     const state=view.status!==''?view.status:requested!==undefined&&requested!==view.power?`Requested ${word(requested)} · observed ${word(view.power)}`:view.power===true?'On · observed':'Off · observed';
-    return <PlugPanel id={record.id} label={record.label??record.id} power={switched} glow={glow} disabled={view.disabled} onPower={power}
+    return <PlugPanel id={record.id} label={label} power={switched} glow={glow} disabled={view.disabled} onPower={power} handle={fuse?.handle(unit,label)} options={options}
       state={state} result={action.text} routine={routine} open={`#/component/${encodeURIComponent(record.id)}`}/>;
   }
-  return <WemoCard id={record.id} label={record.label??record.id} power={view.power} status={view.status} disabled={view.disabled} glow={glow}
+  return <WemoCard id={record.id} label={label} power={view.power} status={view.status} disabled={view.disabled} glow={glow}
+    {...(fuse===undefined?{}:{fuse:<>{options}{fuse.handle(unit,label)}</>})}
     onPower={power}
     powerControls={<>
       {view.reason!==undefined&&!action.locked&&held===undefined&&<p className="wemo-note">{view.reason}</p>}

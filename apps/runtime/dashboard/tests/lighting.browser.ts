@@ -5,6 +5,7 @@ import {chromium} from 'playwright';
 import {changes, feed, startWorld, holdDashboardStream} from './harness.ts';
 import {cardOptions} from './home-editor.ts';
 import {dialJourney} from './light-dial-journey.ts';
+import {fuseJourney} from './fuse-journey.ts';
 const world = await startWorld({lighting: true, nanoleaf: true});
 const browser = await chromium.launch({headless: true});
 try {
@@ -29,8 +30,12 @@ try {
   assert.equal(await a.evaluate(node => (node as HTMLElement).offsetHeight), cardHeight, 'control faces keep a stable card height');
   assert.equal(sent.length, 0, 'tab clicks and keys send nothing');
   await a.evaluate(node => { node.scrollIntoView({block: 'start'}); });
-  await a.getByRole('button', {name: 'Drag lamp-a to group', exact: true}).dragTo(lights.locator('[data-light-card="lamp-b"]'), {targetPosition: {x: 100, y: 30}});
-  const group = lights.locator('.light-card').filter({has: page.getByRole('heading', {name: 'Light group', exact: true})});
+  // On Home the handle groups by pointer drag (#1933, fuse-journey.ts covers it in full).
+  const grip = await a.locator('[data-fuse-handle]').boundingBox(), onto = await lights.locator('[data-light-card="lamp-b"]').boundingBox(); assert.ok(grip !== null && onto !== null);
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2); await page.mouse.down();
+  await page.mouse.move(onto.x + 100, onto.y + 60, {steps: 8}); await page.mouse.up();
+  // A group is a light card until the core gives it the Wide group panel once Home has a saved layout.
+  const group = lights.locator('.light-card, .group-panel').filter({has: page.getByRole('heading', {name: 'Light group', exact: true})});
   await group.waitFor();
   assert.equal(await a.count(), 0, 'group replaces individual controls');
   assert.equal(sent.filter(value => !value.includes('lighting-layout-set')).length, 0, 'group save sends only metadata');
@@ -45,22 +50,23 @@ try {
   await page.getByRole('button', {name: 'Done', exact: true}).click();
   await page.getByRole('button', {name: 'Edit Home', exact: true}).waitFor();
   await a.getByLabel('Options for lamp-a', {exact: true}).click();
-  await a.getByLabel('Group lamp-a with', {exact: true}).selectOption('device:lamp-b');
+  await a.getByLabel('Group lamp-a with', {exact: true}).selectOption('light:device:lamp-b');
   await group.waitFor();
   assert.equal(await a.count(), 0, 'regrouping previously hidden members succeeds');
   await group.getByLabel('Options for Light group', {exact: true}).click();
-  await group.getByLabel('Group Light group with', {exact: true}).selectOption('device:lamp-c');
-  await group.getByText('3 lights · group', {exact: false}).waitFor();
-  const groupId = await group.getAttribute('data-light-card'); assert.ok(groupId !== null && groupId !== '');
-  await page.waitForFunction(id => document.querySelector<HTMLButtonElement>(`[data-light-card="${id}"] .light-power button`)?.disabled === false, groupId);
+  await group.getByLabel('Group Light group with', {exact: true}).selectOption('light:device:lamp-c');
+  // The regrouped card is the Wide group panel: All on or All off sends each member its own guarded command.
+  await group.getByText('3 lights', {exact: true}).waitFor();
+  const groupId = await group.getAttribute('data-group-panel'); assert.ok(groupId !== null && groupId !== '');
+  await page.waitForFunction(id => Array.from(document.querySelectorAll<HTMLButtonElement>(`[data-group-panel="${id}"] .group-member`)).every(button => !button.disabled), groupId);
   const before = sent.length;
   world.holdDeviceWrites(true);
-  await group.getByRole('button', {name: 'Off', exact: true}).click();
-  await group.locator('.light-attention').waitFor();
+  await group.getByRole('button', {name: 'All off', exact: true}).click();
+  await group.locator('.group-panel-result p').first().waitFor();
   assert.equal(sent.length - before, 3, 'one guarded request per group member');
-  assert.equal(await group.getByRole('button', {name: 'On', exact: true}).isDisabled(), true);
+  assert.equal(await group.getByRole('button', {name: 'lamp-a power', exact: true}).isDisabled(), true);
   world.holdDeviceWrites(false);
-  await page.waitForFunction(() => !Array.from(document.querySelectorAll('.light-attention')).some(node => /Waiting/.test(node.textContent ?? '')));
+  await page.waitForFunction(() => !Array.from(document.querySelectorAll('.group-panel-result')).some(node => /Waiting/.test(node.textContent ?? '')));
   assert.ok(['192.0.2.42', '192.0.2.43', '192.0.2.44'].every(address => world.lifxState().bulbs[address]?.power === false), 'all three actual simulated bulbs applied the group command');
   assert.equal(world.lifxState().packets.some(packet => packet.address === '192.0.2.41'), false, 'the unqualified Beam receives no packet');
   await (await directoryLink(page, 'Lighting', 'LIFX overview')).click();
@@ -118,9 +124,18 @@ try {
   await world.restart(); await page.reload(); await feed(page, 'connected'); await studio.getByText('1 lights · room', {exact: false}).waitFor();
   await (await destinationLink(page, /^Home/)).click();
   await lights.getByRole('heading', {name: 'Studio', exact: true}).waitFor();
-  const restored = lights.locator(`[data-light-card="${groupId}"]`); await restored.waitFor();
-  await restored.getByLabel('Options for Light group', {exact: true}).click(); await restored.getByRole('button', {name: 'Ungroup', exact: true}).click();
-  await a.waitFor(); await a.getByRole('tab', {name: 'Color', exact: true}).click();
+  const restored = lights.locator(`[data-group-panel="${groupId}"]`); await restored.waitFor();
+  await restored.getByRole('button', {name: 'Ungroup', exact: true}).click();
+  // Ungrouping gives each light a Small square; lamp-a takes Tall again for its full controls.
+  await a.waitFor(); await page.locator('[data-home-card="light:device:lamp-a"]').getByRole('switch', {name: 'lamp-a power', exact: true}).waitFor();
+  assert.equal(await page.evaluate(async () => {
+    const record = (await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': {revision: number; layouts: {desktop: {widget: string; size: string; shape?: string}[]; phone: {widget: string; size: string; shape?: string}[]}}[]}}).records['home-layout'][0];
+    if (record === undefined) return 0;
+    for (const entry of [...record.layouts.desktop, ...record.layouts.phone]) if (entry.widget === 'light:device:lamp-a') {entry.shape = 'tall'; entry.size = 'small';}
+    return (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+      body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record.revision, layouts: record.layouts}})})).status;
+  }), 200);
+  await a.getByRole('tab', {name: 'Color', exact: true}).click();
   await a.getByLabel('Hue', {exact: true}).fill('120'); await a.getByLabel('Saturation', {exact: true}).fill('70');
   await a.getByRole('button', {name: 'Apply color', exact: true}).click();
   await page.waitForFunction(() => !Array.from(document.querySelectorAll('[data-light-card="lamp-a"] .light-attention')).some(node => /Waiting/.test(node.textContent ?? '')));
@@ -187,4 +202,9 @@ try {
 const dialWorld = await startWorld({lighting: true, nanoleaf: true});
 try {
   console.log(JSON.stringify({journey: 'light-dial', ...await dialJourney(browser, dialWorld), physical: false}));
-} finally { await browser.close(); await dialWorld.close(); }
+} catch (error) { await browser.close(); throw error; } finally { await dialWorld.close(); }
+// Fuse (#1933): grouping lights and plugs by the handle, on a fresh world with simulated Wemo plugs.
+const fuseWorld = await startWorld({lighting: true, wemo: true});
+try {
+  console.log(JSON.stringify({journey: 'fuse', ...await fuseJourney(browser, fuseWorld), physical: false}));
+} finally { await browser.close(); await fuseWorld.close(); }

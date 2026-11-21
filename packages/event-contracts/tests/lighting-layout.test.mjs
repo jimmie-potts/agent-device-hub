@@ -49,3 +49,33 @@ test('a device can belong to different view groups while Home cannot duplicate i
   const message = envelope(true);message.data.layout.groups.push({id: 'brand-pair', name: 'Brand pair', scope: 'brand-lifx', devices: ['lamp-a', 'lamp-b']});
   assert.equal(validator().validate(message).ok, true);
 });
+
+// Hub #1933: a Home group may hold plugs. `devices` keeps every member; `plugs` names the plug members and their owner.
+const withPlugs = (message, version = '2.1') => {
+  message.data.layout.groups[0].devices.push('plug-a');
+  message.data.layout.groups[0].plugs = [{device: 'plug-a', owner: 'bunny/modules/wemo'}];
+  if (message.kind === 'state') message.dataschema = `https://bunny.invalid/events/lighting-layout/${version}`;
+  return message;
+};
+
+test('lighting-layout 2.1 and its set command accept a Home group that holds plugs; 2.0 does not', () => {
+  const v = validator();
+  for (const command of [false, true]) {const result = v.validate(withPlugs(envelope(command)));assert.equal(result.ok, true, JSON.stringify(result));}
+  const plain = envelope();plain.dataschema = 'https://bunny.invalid/events/lighting-layout/2.1';
+  assert.equal(v.validate(plain).ok, true, 'a record without plugs is valid 2.1');
+  assert.equal(v.validate(withPlugs(envelope(), '2.0')).ok, false, 'the 2.0 schema keeps rejecting plugs');
+});
+
+test('a group lists each plug once, among its own members, with a module owner, and only on Home', () => {
+  const v = validator();
+  for (const mutate of [
+    data => {data.layout.groups[0].plugs.push({device: 'plug-a', owner: 'bunny/modules/wemo'});},
+    data => {data.layout.groups[0].plugs[0].device = 'plug-b';},
+    data => {data.layout.groups[0].plugs[0].owner = 'bunny/core';},
+    data => {data.layout.groups[0].plugs[0].owner = 'wemo';},
+    data => {data.layout.groups[0].plugs[0].address = '192.0.2.10';},
+    data => {data.layout.groups[0].scope = 'brand-lifx';data.layout.home = null;},
+  ]) {
+    const message = withPlugs(envelope(true));mutate(message.data);assert.equal(v.validate(message).ok, false, String(mutate));
+  }
+});

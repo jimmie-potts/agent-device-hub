@@ -159,3 +159,18 @@ void test('a Volcano is one device placement at the card sizes, and a saved one 
   assert.equal(homeCatalog(runtime, true).some(value => value.id.includes('volcano')), false);
   assert.deepEqual(savedHomeCard('device:bunny/modules/volcano:volcano', homeCatalog(runtime, true))?.source, {kind: 'device', owner: 'bunny/modules/volcano', instance: 'volcano'});
 });
+
+// #1933: a Home group that holds a plug is the Wide group panel, and its plugs are not placed on their own by default.
+void test('a group that holds a plug offers only Wide and keeps its plugs out of the built-in layout', () => {
+  const plug = {...deviceRecord(emptyStatus('desk')), id: 'desk', kind: 'wemo' as const, label: 'Desk'};
+  const lighting = {id: 'lighting', revision: 1, layout: {rooms: [], assignments: [], home: null,
+    groups: [{id: 'mix', name: 'Group', scope: 'home', devices: ['lamp', 'desk'], plugs: [{device: 'desk', owner: 'bunny/modules/wemo'}]}]}};
+  const data: RuntimeData = {...runtime, copies: [{owner: 'bunny/core', family: 'lighting-layout', synced: true, records: [lighting]} as unknown as RuntimeData['copies'][number],
+    {owner: 'bunny/modules/wemo', family: 'device', synced: true, records: [plug, {...plug, id: 'shelf', label: 'Shelf'}]}]};
+  const catalog = homeCatalog(data, true), group = catalog.find(card => card.id === 'light:group:mix');
+  assert.ok(group !== undefined);assert.equal(group.plugs, true);
+  assert.deepEqual(homeCardShapes(group), {shapes: ['wide'], standard: 'wide', generic: []});
+  assert.equal(shapeOf({widget: group.id, size: 'small', hidden: false, shape: 'square'}, group), 'wide');
+  assert.equal(catalog.find(card => card.id === 'device:bunny/modules/wemo:desk')?.defaultSelected, false, 'a grouped plug shows in its group');
+  assert.equal(catalog.find(card => card.id === 'device:bunny/modules/wemo:shelf')?.defaultSelected, true);
+});

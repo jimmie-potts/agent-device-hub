@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {device} from './devices.test.ts';
-import {cardsFor, groupCards, ungroupCard, lightCapabilities, prepareLighting, lightingDevices, emptyLightingLayout} from '../src/lighting.ts';
-import type {LightingDevice} from '../src/lighting.ts';
+import {cardsFor, groupCards, groupPower, ungroupCard, lightCapabilities, prepareLighting, lightingDevices, emptyLightingLayout} from '../src/lighting.ts';
+import type {LightingDevice, PlugDevice} from '../src/lighting.ts';
 const lamp = (id: string): LightingDevice => ({record: {...device, id, kind: 'lifx'}, owner: 'bunny/modules/lifx', live: true});
 void test('a room resolves current assignments and keeps missing references visible', () => {
   const layout = {...emptyLightingLayout(), rooms: [{id: 'studio', name: 'Studio'}], assignments: [{device: 'a', room: 'studio'}, {device: 'missing', room: 'studio'}], home: [{kind: 'room' as const, id: 'studio'}]};
@@ -84,4 +84,60 @@ void test('persisted brand groups require current brand membership before render
   assert.equal(lightCapabilities(card.members, devices, true, true, new Set(), card.brand).power, false);
   assert.equal(typeof prepareLighting(card.members, devices, {family: 'power-set', data: {on: false}}, true, true, new Set(), () => 'must-not-send', card.brand), 'string');
   assert.equal(typeof prepareLighting(card.members, devices, {family: 'power-set', data: {on: false}}, true, true, new Set(), () => 'home-allowed'), 'object', 'Home and rooms still allow cross-brand control');
+});
+
+// Hub #1933: lights and plugs group on Home. A plug member stays in the group's devices and is named in its plugs.
+const WEMO = 'bunny/modules/wemo';
+const plug = (id: string, rest: Partial<PlugDevice> = {}): PlugDevice => ({record: {...device, id, kind: 'wemo',
+  capabilities: {...device.capabilities, brightness: {supported: false}, scenes: {supported: false}},
+  observed: {status: 'known', observedAtMs: 1_000, power: {status: 'known', value: true}, brightness: {status: 'unknown'}}}, owner: WEMO, live: true, ...rest});
+const plugUnit = (id: string) => ({kind: 'plug' as const, id, owner: WEMO});
+void test('a light and a plug, or two plugs, group on Home with the plug members named', () => {
+  const lights = [lamp('a'), lamp('b')], plugs = [plug('p1'), plug('p2')];
+  const shown = [{kind: 'device' as const, id: 'a'}, {kind: 'device' as const, id: 'b'}];
+  const mixed = groupCards(emptyLightingLayout(), 'home', {kind: 'device', id: 'a'}, plugUnit('p1'), lights, 'mix', shown, plugs);
+  assert.equal(typeof mixed, 'object');if (typeof mixed === 'string') return;
+  assert.deepEqual(mixed.groups, [{id: 'mix', name: 'Group', scope: 'home', devices: ['a', 'p1'], plugs: [{device: 'p1', owner: WEMO}]}]);
+  assert.deepEqual(mixed.home, [{kind: 'group', id: 'mix'}, {kind: 'device', id: 'b'}]);
+  const pair = groupCards(emptyLightingLayout(), 'home', plugUnit('p1'), plugUnit('p2'), lights, 'pair', shown, plugs);
+  assert.equal(typeof pair, 'object');if (typeof pair === 'string') return;
+  assert.deepEqual(pair.groups, [{id: 'pair', name: 'Plug group', scope: 'home', devices: ['p1', 'p2'], plugs: [{device: 'p1', owner: WEMO}, {device: 'p2', owner: WEMO}]}]);
+  assert.deepEqual(pair.home, [...shown, {kind: 'group', id: 'pair'}]);
+  // A plug joins an existing group: the group's members come first and its plugs are kept.
+  const grown = groupCards(mixed, 'home', {kind: 'group', id: 'mix'}, plugUnit('p2'), lights, 'grown', [{kind: 'group', id: 'mix'}, {kind: 'device', id: 'b'}], plugs);
+  assert.equal(typeof grown, 'object');if (typeof grown === 'string') return;
+  assert.deepEqual(grown.groups, [{id: 'grown', name: 'Group', scope: 'home', devices: ['a', 'p1', 'p2'], plugs: [{device: 'p1', owner: WEMO}, {device: 'p2', owner: WEMO}]}]);
+  // Ungrouping returns only the lights to the lighting Home selection; each plug keeps its own Home card.
+  assert.deepEqual(ungroupCard(grown, 'grown').home, [{kind: 'device', id: 'a'}, {kind: 'device', id: 'b'}]);
+  assert.equal(ungroupCard(grown, 'grown').groups.length, 0);
+});
+void test('a plug groups only on Home and only when it is shown there', () => {
+  const lights = [lamp('a')], plugs = [plug('p1')];
+  assert.equal(typeof groupCards(emptyLightingLayout(), 'brand-lifx', {kind: 'device', id: 'a'}, plugUnit('p1'), lights, 'x', undefined, plugs), 'string');
+  assert.equal(typeof groupCards(emptyLightingLayout(), 'home', {kind: 'device', id: 'a'}, plugUnit('p9'), lights, 'x', [{kind: 'device', id: 'a'}], plugs), 'string');
+  assert.equal(typeof groupCards(emptyLightingLayout(), 'home', plugUnit('p1'), plugUnit('p1'), lights, 'x', [], plugs), 'string');
+});
+void test('a lighting command is never built for a plug member: the card is refused whole, as in a release that knows no plugs', () => {
+  const result = prepareLighting(['a', 'p1'], [lamp('a')], {family: 'power-set', data: {on: false}}, true, true, new Set(), () => 'never');
+  assert.equal(typeof result, 'string');if (typeof result === 'string') assert.match(result, /unavailable/);
+});
+void test('All on or All off gives each member its own existing power command with its own guards', () => {
+  const lights = [lamp('a'), {...lamp('b'), live: false}], plugs = [plug('p1'), plug('p2', {record: {...plug('p2').record, held: {requestId: 'old'}} as PlugDevice['record']})];
+  const group = {devices: ['a', 'b', 'p1', 'p2'], plugs: [{device: 'p1', owner: WEMO}, {device: 'p2', owner: WEMO}]};
+  let next = 0;
+  const result = groupPower(group, lights, plugs, false, {control: true, operationsLive: true, locks: new Set(), now: 2_000}, () => `r${++next}`);
+  assert.deepEqual(result.map(item => [item.target, typeof item.action === 'string' ? 'refused' : item.action.family]), [['a', 'power-set'], ['b', 'refused'], ['p1', 'power-set'], ['p2', 'refused']]);
+  const sent = result[2]?.action;assert.ok(typeof sent === 'object');
+  assert.deepEqual(sent, {family: 'power-set', target: 'p1', requestId: 'r2', data: {on: false, expectedConfigurationRevision: 3, expectedGeneration: device.generation}});
+  for (const item of groupPower(group, lights, plugs, true, {control: false, operationsLive: true, locks: new Set(), now: 2_000}, () => 'never')) assert.equal(typeof item.action, 'string');
+});
+void test('grouping on Home keeps every other Home selection, rooms included (#1972 review)', () => {
+  const lights = [lamp('a'), lamp('b')], plugs = [plug('p1')];
+  const layout = {...emptyLightingLayout(), rooms: [{id: 'studio', name: 'Studio'}]};
+  const shown = [{kind: 'device' as const, id: 'a'}, {kind: 'room' as const, id: 'studio'}, {kind: 'device' as const, id: 'b'}];
+  for (const [first, second] of [[{kind: 'device', id: 'b'}, {kind: 'device', id: 'a'}], [plugUnit('p1'), {kind: 'device', id: 'b'}]] as const) {
+    const next = groupCards(layout, 'home', first, second, lights, 'g', shown, plugs);
+    assert.equal(typeof next, 'object');if (typeof next === 'string') return;
+    assert.equal(next.home?.some(item => item.kind === 'room' && item.id === 'studio'), true, `the room stays after grouping ${first.id} with ${second.id}`);
+  }
 });

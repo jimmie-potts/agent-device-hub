@@ -44,6 +44,8 @@ export type GlassFrame = {
   liquid: ReadonlyMap<string, number>;
   /** Seconds on a steady clock; the liquid edge flows with it. */
   clock: number;
+  /** The drop target that lights up while a panel is dragged (#1933): its panel id and eased amount from 0 to 1. */
+  target?: {id: string; glow: number};
 };
 /** The backdrop texture's source: a decoded picture the caller owns and keeps open while it is current. */
 export type GlassPicture = {bitmap: ImageBitmap; width: number; height: number};
@@ -128,6 +130,8 @@ export function createGlassRenderer(gl: WebGL2RenderingContext): GlassRenderer {
       gl.uniform2f(at('uArtSize'), size?.[0] ?? 1, size?.[1] ?? 1);gl.uniform1f(at('uHasArt'), size === null ? 0 : 1);
       gl.uniform1f(at('uDark'), tokens.dark ? 1 : 0);gl.uniform1f(at('uInk'), tokens.ink);gl.uniform1f(at('uContrast'), CONTRAST);
       gl.uniform1f(at('uAppear'), frame.appear);gl.uniform1f(at('uDepth'), frame.depth);gl.uniform1f(at('uMerge'), frame.merge);gl.uniform1f(at('uClock'), frame.clock);
+      const target = frame.target === undefined ? -1 : scene.panels.slice(0, count).findIndex(panel => panel.id === frame.target?.id);
+      gl.uniform1i(at('uTarget'), target);gl.uniform1i(at('uDragged'), scene.panels.slice(0, count).findIndex(panel => panel.dragged === true));gl.uniform1f(at('uTargetGlow'), target < 0 ? 0 : frame.target?.glow ?? 0);
       gl.uniform1i(at('uCount'), count);gl.uniform1i(at('uLights'), lit.length);gl.uniform1iv(at('uLightIndex'), lightIndex);gl.uniform1i(at('uVeilCount'), Math.min(scene.veils.length, MAX_VEILS));gl.uniform4fv(at('uVeils'), veils);gl.uniform1fv(at('uVeilEdges'), edges);
       color4('uVeil', tokens.veil);color4('uVeilDeep', tokens.veilDeep);color4('uTone', tokens.tone);color4('uRim', tokens.rim);color4('uShadow', tokens.shadow);
       color4('uWashStart', tokens.washStart);color4('uWashEnd', tokens.washEnd);gl.uniform4f(at('uWashBox'), ...frame.washBox);

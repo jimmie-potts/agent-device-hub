@@ -1,0 +1,42 @@
+/* Fuse (#1933, fuse.tsx and group-panel.tsx). The drag handle sits at a light or plug panel's top right (the dial and
+   the plug panel keep that corner clear). A dragged card rises above its neighbors and follows the pointer by a
+   transform; the card it would group with lights up: on the glass through data-glass-target, and in Quiet glass with
+   an outline here. */
+.fuse-handle{position:absolute;inset-block-start:var(--space-xs);inset-inline-end:var(--space-xs);z-index:2;display:grid;place-items:center;inline-size:44px;block-size:44px;min-height:0;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted-dense);cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none}
+.shell .fuse-handle:is(:hover,:active):not(:disabled){background:var(--light-inset);color:var(--text)}
+.light-card-heading .fuse-handle,.wemo-fuse .fuse-handle{position:static;flex:none}
+.wemo-fuse{display:flex;align-items:center;gap:var(--space-xs);margin-inline-start:auto}
+.wemo-fuse .light-options{position:relative;z-index:3}.wemo-fuse .light-options-body{top:calc(100% + var(--space-xs));right:0;width:min(310px,calc(100vw - 100px));text-align:start}
+.home-layout-card[data-fuse-dragging]{position:relative;z-index:6;cursor:grabbing}
+.home-layout-card[data-fuse-dragging] .fuse-handle{cursor:grabbing}
+.home-layout-card[data-fuse-target]{outline:2px solid var(--focus);outline-offset:3px;border-radius:var(--light-radius)}
+.fuse-status{margin-block:0 var(--space-m);font-size:var(--type-small)}
+
+/* The group panel: its name and count, All on or All off and Ungroup, then one switch per member. */
+.card.group-panel{position:relative;display:flex;flex-direction:column;align-self:stretch;gap:var(--space-s);min-width:0;padding:var(--space-m)}
+.group-panel-heading{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-s);min-width:0;padding-inline-end:44px}
+.group-panel-title{display:grid;flex:1 1 120px;min-width:0}
+.group-panel-title>h3{margin:0;font-size:var(--type-heading);font-weight:600}
+.group-panel-title>:is(h3,small){overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.group-panel-title>small{font-size:var(--type-small);color:var(--muted-dense)}
+.group-panel-action{flex:none;min-height:36px;padding:0 var(--space-m);border-radius:999px;font-size:var(--type-small);font-weight:600}
+.group-panel .light-options-body{top:calc(100% + var(--space-xs))}
+.group-members{display:grid;flex:1;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:var(--space-s);min-height:0}
+.group-member{display:flex;align-items:center;gap:var(--space-s);min-width:0;min-height:52px;padding:0 var(--space-s);border:0;border-radius:var(--light-control-radius);background:var(--light-inset);color:var(--text);font:inherit;text-align:start;cursor:pointer}
+.group-member[aria-pressed=true]{background:var(--light-selected)}
+.shell .group-member:hover:not(:disabled){background:var(--light-selected);color:var(--text)}
+.group-member:disabled{cursor:default;color:var(--muted-dense)}
+.group-member:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.group-member-icon{display:grid;flex:none;place-items:center;inline-size:36px;block-size:36px;border-radius:50%;background:var(--light-inset)}
+.group-member[aria-pressed=true] .group-member-icon{background:var(--plug-on-surface);color:var(--plug-on-ink)}
+.group-member-text{display:grid;min-width:0}
+.group-member-text>:is(strong,small){overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.group-member-text>small{font-size:var(--type-small);color:var(--muted-dense)}
+.group-panel-result:empty{display:none}
+.group-panel-result>p{margin:0;font-size:var(--type-small);color:var(--pending-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* In one-column layouts the members wrap instead of squeezing. */
+.home-layout-grid:not([data-packed=true]) .group-members{grid-auto-flow:row;grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
+/* A plug panel's options sit at its top, beside the handle, clear of its name and state. */
+.plug-options{position:absolute;inset-block-start:var(--space-xs);inset-inline-end:calc(var(--space-xs) + 44px);z-index:2}
+.plug-options .light-options-body{top:calc(100% + var(--space-xs));right:0;text-align:start}
+@media(prefers-reduced-motion:no-preference){.group-member{transition:background-color .2s ease-out}}

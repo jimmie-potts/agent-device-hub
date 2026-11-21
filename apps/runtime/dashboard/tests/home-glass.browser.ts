@@ -483,6 +483,22 @@ try {
   await lit.page.mouse.up();
   await eases(lit, litPress, 0, 'the released press eases back to 0');
   const pressed = await rest(lit.page);await lit.page.waitForTimeout(1000);assert.equal(await frames(lit.page), pressed, 'nothing draws at rest after a press');
+  // #1933: a card dragged by its handle is drawn at its moved box and the card it would group with lights up; Escape
+  // returns it, the target's light eases out and the layer rests. Nothing is saved.
+  const boxOf = async (widget: string): Promise<number[] | undefined> => (await layer(lit.page).getAttribute('data-glass-boxes') ?? '').split('|')
+    .find(entry => entry.startsWith(`${widget}:`))?.slice(widget.length + 1).split(',').map(Number);
+  const homeB = await boxOf('light:device:lamp-b'), grip = await lit.page.locator('[data-home-card="light:device:lamp-b"] [data-fuse-handle]').boundingBox();
+  const ontoA = await lit.page.locator('[data-home-card="light:device:lamp-a"]').boundingBox();assert.ok(homeB !== undefined && grip !== null && ontoA !== null);
+  const layoutSaves = lit.sent.length;
+  await lit.page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);await lit.page.mouse.down();
+  await lit.page.mouse.move(ontoA.x + ontoA.width / 2, ontoA.y + ontoA.height / 2, {steps: 8});
+  await expect(layer(lit.page)).toHaveAttribute('data-glass-target', 'light:device:lamp-a:1.000');
+  const movedB = await boxOf('light:device:lamp-b');assert.ok(movedB !== undefined && Math.abs((movedB[0] ?? 0) - (homeB[0] ?? 0)) > 50, 'the dragged panel is drawn where the card is');
+  await lit.page.keyboard.press('Escape');await lit.page.mouse.up();
+  await expect(layer(lit.page)).toHaveAttribute('data-glass-target', '');
+  await expect.poll(() => boxOf('light:device:lamp-b')).toEqual(homeB);
+  const dropped = await rest(lit.page);await lit.page.waitForTimeout(1000);assert.equal(await frames(lit.page), dropped, 'nothing draws at rest after a drag');
+  assert.equal(lit.sent.length, layoutSaves, 'a cancelled drag sends nothing');
   // Frames that repeat the last timestamp (a zero-length easing step, seen on hosted runners) must not stall the
   // easing short of its target (#1966 review, F8): every other animation frame here repeats the one before it.
   const stutter = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark'});
@@ -582,7 +598,7 @@ try {
     }
   }
   assert.deepEqual(lit.errors, []);await room.close();
-  report['litRoom'] = {lifxColor: true, warmWhite: true, plug: true, lamp: 'ring center', press: true, restAfterEasing: true, allOffDrawsNothing: true, quiet: true};
+  report['litRoom'] = {lifxColor: true, warmWhite: true, plug: true, lamp: 'ring center', press: true, dragTarget: true, restAfterEasing: true, allOffDrawsNothing: true, quiet: true};
 
   // #1932: unfold a light in place. A touch-capable window, so the same page is used by pointer, touch and keyboard.
   const unfoldContext = await browser.newContext({viewport: {width: 1440, height: 900}, deviceScaleFactor: 1, reducedMotion: 'no-preference', colorScheme: 'dark', hasTouch: true});

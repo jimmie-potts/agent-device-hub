@@ -13,7 +13,9 @@ type CardSource = {kind: 'core'} | {kind: 'device' | 'music'; owner: string; ins
  * card whose module cannot draw its own compact content now (the module does not serve its card, or its source is
  * unavailable): it shows the generic face in one unit, and a save keeps its stored shape for when the module is back.
  */
-export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean; empty?: boolean; fallback?: boolean};
+export type HomeCardDefinition = {id: string; name: string; category: string; sizes: readonly WidgetSize[]; source: CardSource; reason?: string; defaultSelected: boolean; empty?: boolean; fallback?: boolean;
+  /** A group that holds a plug (#1933): it is the group panel, in the Wide shape only. */
+  plugs?: boolean};
 
 const ordinarySizes: readonly WidgetSize[] = ['medium', 'large'];
 /**
@@ -50,23 +52,26 @@ export function homeCatalog(runtime: RuntimeData, connected: boolean): HomeCardD
   const layoutCopy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'lighting-layout');
   const lighting = (layoutCopy?.records as readonly LightingLayoutRecord[] | undefined)?.find(record => record.id === 'lighting')?.layout ?? emptyLightingLayout();
   const selected = new Set(cardsFor('home', lighting, devices).map(card => selectionKey(card.selection)));
-  const lightCards: {selection: LightingSelection; name: string; empty: boolean}[] = [...lighting.rooms.map(room => ({selection: {kind: 'room' as const, id: room.id}, name: room.name, empty: !lighting.assignments.some(item => item.room === room.id)})),
+  const lightCards: {selection: LightingSelection; name: string; empty: boolean; plugs?: boolean}[] = [...lighting.rooms.map(room => ({selection: {kind: 'room' as const, id: room.id}, name: room.name, empty: !lighting.assignments.some(item => item.room === room.id)})),
     ...devices.map(device => ({selection: {kind: 'device' as const, id: device.record.id}, name: device.record.label ?? device.record.id, empty: false})),
-    ...lighting.groups.filter(group => group.scope === 'home').map(group => ({selection: {kind: 'group' as const, id: group.id}, name: group.name, empty: group.devices.length === 0}))];
+    ...lighting.groups.filter(group => group.scope === 'home').map(group => ({selection: {kind: 'group' as const, id: group.id}, name: group.name, empty: group.devices.length === 0,
+      ...((group.plugs?.length ?? 0) > 0 ? {plugs: true} : {})}))];
   for (const card of lightCards) {
     const id = `light:${selectionKey(card.selection)}`;
     if (result.some(value => value.id === id)) continue;
     result.push({id, name: card.name, category: card.selection.kind === 'room' ? 'Rooms' : 'Lights', sizes: ordinarySizes,
-      source: {kind: 'light', selection: card.selection}, defaultSelected: selected.has(selectionKey(card.selection)), ...(card.empty ? {empty: true} : {}),
+      source: {kind: 'light', selection: card.selection}, defaultSelected: selected.has(selectionKey(card.selection)), ...(card.empty ? {empty: true} : {}), ...(card.plugs === true ? {plugs: true} : {}),
       ...(layoutCopy?.synced !== true ? {reason: 'Lighting composition is unavailable or stale.'} : {})});
   }
+  const grouped = new Set(lighting.groups.filter(group => group.scope === 'home').flatMap(group => (group.plugs ?? []).map(plug => `device:${plug.owner}:${plug.device}`)));
   for (const copy of runtime.copies) {
     if (copy.family === 'device') for (const device of copy.records as readonly DeviceRecord[]) {
       if (device.kind === 'lifx' || device.kind === 'nanoleaf') continue;
       result.push({id: `device:${copy.owner}:${device.id}`, name: device.label ?? device.id,
         category: device.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' ? 'Cleaning' : device.kind === 'wemo' ? 'Plugs' : device.kind === 'pixoo' || device.kind === 'tidbyt' ? 'Displays' : 'Devices',
         sizes: device.kind === 'roborock' && copy.owner === 'bunny/modules/roborock' ? widgetDefinition('roborock')?.sizes ?? ordinarySizes : device.kind === 'volcano' && copy.owner === 'bunny/modules/volcano' ? widgetDefinition('volcano')?.sizes ?? ordinarySizes : ordinarySizes,
-        source: {kind: 'device', owner: copy.owner, instance: device.id}, defaultSelected: true, ...(!connected || !copy.synced ? {reason: 'Device records are unavailable or stale.'} : {}),
+        // A plug in a Home group shows in the group's panel, not on its own (#1933).
+        source: {kind: 'device', owner: copy.owner, instance: device.id}, defaultSelected: !grouped.has(`device:${copy.owner}:${device.id}`), ...(!connected || !copy.synced ? {reason: 'Device records are unavailable or stale.'} : {}),
         // main.tsx mounts the module's own card by the same rule; without it Home shows the generic face.
         ...(moduleCardOwners[copy.owner] !== undefined && moduleCard(runtime.modules, copy.owner, device.kind) === undefined ? {fallback: true} : {})});
     }
@@ -132,14 +137,16 @@ export type HomeCardShapes = {
  * unit, since their full content fits no shape at the 220px unit; Open leads to their existing device or Music page. A module card that cannot draw its compact
  * content now (`fallback`) shows the generic face in one unit too.
  */
-export function homeCardShapes(card: Pick<HomeCardDefinition, 'id' | 'source' | 'empty' | 'fallback'>): HomeCardShapes {
+export function homeCardShapes(card: Pick<HomeCardDefinition, 'id' | 'source' | 'empty' | 'fallback' | 'plugs'>): HomeCardShapes {
   const widget = widgetDefinition(card.id === 'module:roborock' ? 'roborock' : card.id);
   const generic = {shapes: ['square'], standard: 'square', generic: ['square']} as const;
   const page = widget?.open ?? (card.source.kind === 'device' ? `#/component/${encodeURIComponent(card.source.instance)}` : undefined);
   if (card.fallback === true) return {...generic, ...(page === undefined ? {} : {open: page})};
   if (widget !== undefined) return {shapes: widget.shapes, standard: widget.standard, generic: widget.generic ?? [], ...(widget.open === undefined ? {} : {open: widget.open})};
   // A room or group with no lights has only its name, state and a short note to show, so it offers one-row shapes.
-  if (card.source.kind === 'light') return card.empty === true ? {shapes: ['square', 'wide'], standard: 'wide', generic: []} : {shapes: allShapes, standard: 'tall', generic: []};
+  // A group that holds a plug is the group panel (#1933), two units wide.
+  if (card.source.kind === 'light') return card.plugs === true ? {shapes: ['wide'], standard: 'wide', generic: []}
+    : card.empty === true ? {shapes: ['square', 'wide'], standard: 'wide', generic: []} : {shapes: allShapes, standard: 'tall', generic: []};
   if (card.source.kind === 'device' && moduleCardOwners[card.source.owner] !== undefined) return {shapes: allShapes, standard: 'square', generic: [], ...(page === undefined ? {} : {open: page})};
   // A Wemo plug is a press panel in one unit (#1931); its full card stays on its page.
   if (card.source.kind === 'device' && card.source.owner === 'bunny/modules/wemo') return {shapes: ['square'], standard: 'square', generic: [], open: `#/component/${encodeURIComponent(card.source.instance)}`};
@@ -152,7 +159,7 @@ export function homeCardShapes(card: Pick<HomeCardDefinition, 'id' | 'source' | 
  * The shape a saved placement shows now: its saved shape, or the conversion of a width-only placement. A room or group
  * with no lights shows a saved two-row shape as Wide, and keeps the saved shape for when it has lights again.
  */
-export function shapeOf(entry: HomePlacement, card: Pick<HomeCardDefinition, 'id' | 'source' | 'empty' | 'fallback'>): HomeShape {
+export function shapeOf(entry: HomePlacement, card: Pick<HomeCardDefinition, 'id' | 'source' | 'empty' | 'fallback' | 'plugs'>): HomeShape {
   if (card.empty === true) {const shape = storedShapeOf(entry, card);return shape === 'tall' || shape === 'large-square' ? 'wide' : shape;}
   const {shapes, standard} = homeCardShapes(card);return placementShape(entry, shapes, standard);
 }
@@ -160,9 +167,9 @@ export function shapeOf(entry: HomePlacement, card: Pick<HomeCardDefinition, 'id
  * The shape a save stores: as shapeOf, but a card with no lights keeps the shape it offers once it has some, and a
  * module card shown as the generic face or an unavailable saved card keeps its stored shape for when it is back.
  */
-function storedShapeOf(entry: HomePlacement, card: Pick<HomeCardDefinition, 'id' | 'source' | 'empty' | 'fallback'>): HomeShape {
+function storedShapeOf(entry: HomePlacement, card: Pick<HomeCardDefinition, 'id' | 'source' | 'empty' | 'fallback' | 'plugs'>): HomeShape {
   if ((card.fallback === true || card.source.kind === 'unavailable') && entry.shape !== undefined) return entry.shape;
-  const {shapes, standard} = homeCardShapes({id: card.id, source: card.source});return placementShape(entry, shapes, standard);
+  const {shapes, standard} = homeCardShapes({id: card.id, source: card.source, ...(card.plugs === true ? {plugs: true} : {})});return placementShape(entry, shapes, standard);
 }
 /**
  * The layout an explicit save writes: every known placement in both arrangements carries the shape it shows and the

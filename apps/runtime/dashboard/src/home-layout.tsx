@@ -7,6 +7,8 @@ import {addHomeCard, artExposed, defaultHomeArrangements, heroPlacement, homeCar
 import {HOME_GAP, HOME_UNIT, homeColumns, packShapes, shapeName, shapeSpan, type HomeShape, type ShapePlacement} from './home-shapes.ts';
 import {HomeShapeContext, type HomeCardBox} from './home-shape-context.ts';
 import {cardBoxes, easeCards, HomeUnfoldContext, type HomeUnfold} from './home-unfold.ts';
+import {FuseProvider} from './fuse.tsx';
+import type {GroupUnit} from './lighting.ts';
 import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
 import {GlassLayer, type GlassBackdrop, type GlassState} from './glass-layer.tsx';
@@ -40,10 +42,12 @@ function CompactFace({card, state, open}: {card: HomeCardDefinition; state: stri
  * once the art is dismissed. The hero replaces the Hub mode and Art cards, so their saved placements are kept in the
  * arrangement but never drawn in the grid, offered in the picker or reported as unknown.
  */
-export function HomeLayout({runtime, connected, operations, operationsLive, attention, inbox, renderCard, renderHero}: {
+export function HomeLayout({runtime, connected, operations, operationsLive, attention, inbox, renderCard, renderHero, refresh = () => Promise.resolve()}: {
   runtime: RuntimeData; connected: boolean; operations: readonly OperationRecord[]; operationsLive: boolean;
   attention: boolean; inbox: boolean; renderCard: (card: HomeCardDefinition, placement: HomePlacement, selections: LightingSelection[]) => React.ReactNode;
   renderHero: (artChips: React.ReactNode) => React.ReactNode;
+  /** Reads current records again, for a lighting save whose result needs attention (#1933). */
+  refresh?: () => Promise<void>;
 }): React.JSX.Element {
   const catalog = useMemo(() => homeCatalog(runtime, connected), [runtime, connected]);
   const copy = runtime.copies.find(copy => copy.owner === 'bunny/core' && copy.family === 'home-layout');
@@ -168,11 +172,18 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const query = search.trim().toLocaleLowerCase();
   const matches = catalog.filter(card => (category === 'All' || card.category === category) && `${card.name} ${card.category}`.toLocaleLowerCase().includes(query));
   const lights = shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];});
+  // What can be grouped on Home (#1933): the light, group and plug cards shown, in Home order.
+  const units = shown.flatMap((value): GroupUnit[] => {
+    const source = savedHomeCard(value.widget, catalog)?.source;
+    if (source?.kind === 'light') return source.selection.kind === 'room' ? [] : [source.selection];
+    return source?.kind === 'device' && source.owner === 'bunny/modules/wemo' ? [{kind: 'plug', id: source.instance, owner: source.owner}] : [];
+  });
   // A placed card's outer size follows from the grid alone: its cells plus the gaps between them (#1672).
   const boxOf = (place: ShapePlacement, shape: HomeShape): HomeCardBox => ({shape, width: place.columns * cell + (place.columns - 1) * HOME_GAP, height: place.rows * cell + (place.rows - 1) * HOME_GAP});
   // Opening or closing a light records every card's box first, so the cards that move ease from there (home-unfold.ts).
+  // A card being dragged to group (#1933) keeps the grid still: nothing opens or closes until the drag ends.
   const unfold = (id: string | undefined, focus: 'controls' | 'arrow' | undefined): void => {
-    if (id === open) return;
+    if (id === open || (grid.current?.querySelector('[data-fuse-dragging]') ?? null) !== null) return;
     unfoldFrom.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? undefined : cardBoxes(grid.current);
     const target = id ?? open;
     setUnfolded(id);setUnfoldFocus(focus === undefined || target === undefined ? undefined : {id: target, target: focus});
@@ -218,6 +229,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
         const existing = entries.find(entry => entry.widget === card.id);
         return <div key={card.id} role="listitem"><HomeCardIcon card={card}/><span><strong>{card.name}</strong><small>{card.reason ?? card.category}</small></span><button type="button" className="secondary" aria-label={`${existing?.hidden === false ? 'Added' : existing?.hidden === true ? 'Show' : 'Add'} ${card.name}`} disabled={locked || card.reason !== undefined || existing?.hidden === false || (['desktop', 'phone'] as const).some(key => layouts[key].length >= 128 && !layouts[key].some(entry => entry.widget === card.id))} onClick={() => {change(addHomeCard(layouts, breakpoint, card));setMessage(`${card.name} added.`);}}>{existing?.hidden === false ? 'Added' : existing?.hidden === true ? 'Show' : 'Add'}</button></div>;
       })}</div></section>}
+    <FuseProvider runtime={runtime} connected={connected} operations={operations} operationsLive={operationsLive} units={units} selections={lights} enabled={!editing && pending === undefined} refresh={refresh}>
     <div className="home-layout-grid" ref={grid} data-packed={packed !== undefined} data-columns={packed === undefined ? 1 : columns}
       style={packed === undefined ? undefined : {gridTemplateColumns: `repeat(${String(columns)}, minmax(0, 1fr))`, gridAutoRows: `${String(cell)}px`}}>{shown.map((entry, index) => {
       const definition = savedHomeCard(entry.widget, catalog);if (definition === undefined) return null;
@@ -261,6 +273,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
     })}
       {editing && packed?.holes.map(hole => <div key={`${String(hole.row)}:${String(hole.column)}`} className="home-hole" aria-hidden="true" data-glass-veil style={{gridColumn: String(hole.column), gridRow: String(hole.row)}}><span>Empty</span></div>)}
     </div>
+    </FuseProvider>
     {shown.length === 0 && <p data-glass-veil>No cards here. Choose Edit Home to add one.</p>}
     {editing && entries.some(entry => entry.hidden && !heroPlacement(entry.widget)) && <div className="home-hidden" data-glass-veil><span>Hidden</span>{entries.filter(entry => entry.hidden && !heroPlacement(entry.widget)).map(entry => {
       const card = savedHomeCard(entry.widget, catalog);return card === undefined ? null : <button type="button" key={entry.widget} className="secondary" disabled={locked || card.reason !== undefined} onClick={() => {change(addHomeCard(layouts, breakpoint, card));}}>Show {card.name}</button>;
