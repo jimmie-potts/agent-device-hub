@@ -275,22 +275,45 @@ validator refuses a native record (`invalid-message`, `payload /identity/client`
 That release republishes a stored record when its start or its first refresh
 changes it: the start transaction marks running work unconfirmed, and the
 record it rebuilds drops a notice's `result`. A stored native session with
-running work or a notice result is therefore republished, and the refusal rolls
-the whole commit back. Until every such session has gone a day without
-evidence and expired, that core then refuses every agent's lifecycle
-observation, Claude's and Codex's included, as `bunny.code` `unavailable` (the
-store's own outcome is `storage-failed`), and answers every core sync with
-`unavailable`, for every family. A store that holds only native sessions with
-neither, such as a task waiting on its question, opens cleanly, but any later
+running work or a notice result is therefore republished in every commit that
+publishes, and the refusal rolls each such commit back. Until every such
+session has gone a day without evidence and expired, the operator sees:
+
+- at start, an `operation.failed` record (WARN) with `bunny.operation`
+  `storage` and `bunny.code` `unavailable`;
+- for every agent's lifecycle observation, Claude's and Codex's included, a
+  `message.received` record with `bunny.outcome` `rejected` and
+  `bunny.code` `unavailable` (WARN) while the start transaction has work to
+  commit, which any running session gives it, or `bunny.code` `internal`
+  (ERROR) when it has none and the observation's own commit fails (the store's
+  internal outcome is `storage-failed` in both);
+- for every core sync, any family, the reply `unavailable` with the detail
+  "the core cannot bring its sessions up to date now".
+
+A store that holds only native sessions with neither running work nor a
+result, such as a task waiting on its question, opens cleanly, but any later
 change to such a session would be refused the same way.
 
-This was tested on the review of the #505 pull request with an `e72f33fd`
-build. Stores holding ended and running native tasks beside a running Claude
-session were refused at 86,000 s after the last native change and recovered at
-86,410 s, when the native sessions had expired. A store holding one succeeded
-and one needs-owner native session was also refused, and a store holding only
-a waiting native task opened cleanly and accepted a Claude observation.
-`037b327a` has the same code.
+The reviews of the #505 pull request ran these probes with an `e72f33fd`
+build; `037b327a` has the same code:
+
+- A store holding a succeeded native task was refused at 86,000 s after the
+  last native change and recovered at 86,410 s, when that session had expired.
+- A store holding a running native task was refused at 5 s and recovered after
+  two days.
+- A store holding a failed native task, a needs-owner native task and a running
+  Claude session was refused.
+- A store holding one succeeded and one needs-owner native session was refused
+  at start and at 86,000 s, and recovered at 86,430 s.
+- A store holding only a waiting native task opened cleanly and accepted a
+  Claude observation.
+
+A separate probe on 2026-11-21 let an `e72f33fd` build open stores this release
+wrote with a succeeded native task. Beside a running Claude session, three
+Claude observations were each refused `unavailable` (WARN). Beside a Claude
+session whose turn had ended, the same three were each refused `internal`
+(ERROR). In both, the start logged `operation.failed` `storage` `unavailable`,
+and a session sync was answered `unavailable`.
 
 Prefer fixing forward. A return below this release needs, as a precondition,
 that the core holds no native session:
