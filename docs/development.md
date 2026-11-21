@@ -1934,13 +1934,13 @@ comparison (`compare/<before>...<after>`) and runs the suite only when the
 affected-check selector maps it to the runtime group. A first push, a force push
 or an unreadable or 300-file comparison also runs it.
 Since [#2015](https://github.com/jimmie-potts/agent-device-hub/issues/2015) the
-suite is a fixed set of journey groups,
-`npm run test:runtime-dashboard:browser:<group>`, and the suite script runs the
+suite is a fixed set of journey groups, the package scripts
+`test:runtime-dashboard:browser:1` to `:3`, and the suite script runs the
 groups in order. Each journey belongs to exactly one group. The workflow runs
 each group in its own parallel job, named `Runtime dashboard browser suite
 (group <group>) on ubuntu-latest`, and a failing group does not cancel the
-others. Group 1 holds `browser.ts`, the Home journeys it used to import, and
-`trusted.ts` and `controls.browser.ts`. Group 2 holds `home-idle.browser.ts`,
+others. Group 1 holds `browser.ts`, the journeys it used to import except
+`home-idle.browser.ts`, and `trusted.ts` and `controls.browser.ts`. Group 2 holds `home-idle.browser.ts`,
 about 11 minutes on a hosted runner. Group 3 holds the rest. Hosted journey
 times set the balance. To add a journey, add it to one group's script; to add a
 group, also add it to the workflow's matrix and job outputs.
@@ -1951,8 +1951,9 @@ stop at the first failure.
 A failed run on main comments on the open issue titled "Runtime dashboard browser
 suite fails on main", or opens it. The report job runs once after every group
 has finished. Its comment or issue names only the commit, the run link and each
-failing group's journey, or that a group failed outside a journey. Only the
-report job has `issues: write`.
+failing group's journey, that a group failed outside a journey, or that a
+group's select step did not run the suite. Only the report job has
+`issues: write`.
 The workflow is not a required check and adds nothing to the Selected checks
 gate, so it blocks no pull request. All its jobs run for every push to main,
 so the delivery preflight reads them with main's other jobs before closure. A

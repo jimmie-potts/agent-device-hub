@@ -102,6 +102,16 @@ test('the select step writes its decision and a summary without the token', asyn
   // A pull request does not read its event file or the comparison.
   assert.equal((await runSelect({ env: env({ GITHUB_EVENT_NAME: 'pull_request', ...files, GITHUB_EVENT_PATH: path.join(folder, 'missing.json') }), fetch: noRead })).run, true);
   assert.deepEqual(readOutputs(files.GITHUB_OUTPUT), { run: 'true' });
+  // In a group's job, a decision not to run also records that the group was not selected; a decision to run does not.
+  fs.rmSync(files.GITHUB_OUTPUT);
+  assert.equal((await runSelect({ env: env({ GITHUB_EVENT_NAME: 'push', SUITE_GROUP: '2', ...files }), fetch: compare(['README.md']) })).run, false);
+  assert.deepEqual(readOutputs(files.GITHUB_OUTPUT), { run: 'false', skipped_2: 'true' });
+  fs.rmSync(files.GITHUB_OUTPUT);
+  assert.equal((await runSelect({ env: env({ GITHUB_EVENT_NAME: 'workflow_dispatch', SUITE_GROUP: '2', ...files }), fetch: noRead })).run, true);
+  assert.deepEqual(readOutputs(files.GITHUB_OUTPUT), { run: 'true' });
+  for (const group of ['', '0', 'a', '1 2', '100']) {
+    await assert.rejects(runSelect({ env: env({ GITHUB_EVENT_NAME: 'workflow_dispatch', SUITE_GROUP: group, ...files }), fetch: noRead }), /is not a group number/, group);
+  }
 });
 
 test('the runner reads every journey of the package scripts, in order, and refuses any other shell form', () => {
@@ -259,7 +269,7 @@ test('a same-title issue opened by anyone else is ignored, so the workflow opens
   assert.equal(`${requests.at(-1).method} ${requests.at(-1).url}`, `POST https://api.github.com/repos/${REPO}/issues`);
 });
 
-test('the report names every group\'s failing journey, and records none for a group that failed outside a journey', async () => {
+test('the report names every group\'s failing journey, a group that was not selected, and one that failed outside a journey', async () => {
   for (const [label, values, lines] of [
     ['two groups failed', { journey_1: 'a.ts', passed_2: 'true', journey_3: 'e.ts' }, ['- Failing journey in group 1: `a.ts`', '- Failing journey in group 3: `e.ts`']],
     ['a group with no record', { passed_1: 'true', journey_2: 'c.ts' }, ['- Failing journey in group 2: `c.ts`', `- Failing journey in group 3: ${NONE}`]],
@@ -267,6 +277,10 @@ test('the report names every group\'s failing journey, and records none for a gr
     ['every group passed', { passed_1: 'true', passed_2: 'true', passed_3: 'true' }, ['- Failing journey: none recorded (every group recorded a pass)']],
     ['another group\'s journey', { passed_1: 'true', journey_2: 'a.ts', passed_3: 'true' }, [`- Failing journey in group 2: ${NONE}`]],
     ['a pass that is not true', { passed_1: 'yes', passed_2: 'true', passed_3: 'true' }, [`- Failing journey in group 1: ${NONE}`]],
+    // One group's comparison read failed, so it ran and failed; the others selected no runtime path and ran nothing.
+    ['groups not selected', { skipped_1: 'true', journey_2: 'c.ts', skipped_3: 'true' },
+      ['- Group 1: not selected (its select step did not run the suite)', '- Failing journey in group 2: `c.ts`', '- Group 3: not selected (its select step did not run the suite)']],
+    ['a skip that is not true', { skipped_1: 'yes', passed_2: 'true', passed_3: 'true' }, [`- Failing journey in group 1: ${NONE}`]],
   ]) {
     const { fetch, requests } = github([[]]);
     await filed({ env: failed({ SUITE_RESULT: 'cancelled', SUITE_OUTPUTS: outputs(values) }), fetch });
@@ -275,12 +289,12 @@ test('the report names every group\'s failing journey, and records none for a gr
   for (const journey of [undefined, '', 'two words', '`x`', 'a\nb', '-flag', 'x'.repeat(121), 7]) {
     const { fetch, requests } = github([[]]);
     await filed({ env: failed({ SUITE_OUTPUTS: outputs({ passed_1: 'true', journey_2: journey, passed_3: 'true' }) }), fetch });
-    assert.match(requests.at(-1).body.body, new RegExp(`- Failing journey in group 2: ${NONE.replace(/[()]/g, '\\$&')}\n$`), JSON.stringify(journey));
+    assert.ok(requests.at(-1).body.body.endsWith(`- Failing journey in group 2: ${NONE}\n`), JSON.stringify(journey));
   }
   for (const text of [undefined, '', 'not json', '[]', 'null', '"x"']) {
     const { fetch, requests } = github([[]]);
     await filed({ env: failed({ SUITE_OUTPUTS: text }), fetch });
-    assert.match(requests.at(-1).body.body, new RegExp(`- Failing journey in group 3: ${NONE.replace(/[()]/g, '\\$&')}\n$`), JSON.stringify(text));
+    assert.ok(requests.at(-1).body.body.endsWith(`- Failing journey in group 3: ${NONE}\n`), JSON.stringify(text));
   }
 });
 
@@ -300,7 +314,8 @@ test('negative control: a failing journey in one group is reported by name while
   assert.deepEqual(ran, ['a.ts', 'test:b:browser', 'c.ts', 'd.ts', 'e.ts'], 'groups 1 and 3 run every journey');
   assert.deepEqual(merged, { passed_1: 'true', journey_2: 'c.ts', passed_3: 'true' });
   assert.deepEqual(groupResults(groups(CHAIN), suiteOutputs(JSON.stringify(merged))), [
-    { name: '1', passed: true, journey: null }, { name: '2', passed: false, journey: 'c.ts' }, { name: '3', passed: true, journey: null }]);
+    { name: '1', passed: true, skipped: false, journey: null }, { name: '2', passed: false, skipped: false, journey: 'c.ts' },
+    { name: '3', passed: true, skipped: false, journey: null }]);
   const { fetch, requests } = github([[]]);
   assert.deepEqual(await filed({ env: failed({ SUITE_OUTPUTS: JSON.stringify(merged) }), fetch }), { action: 'opened', number: 4242 });
   assert.ok(requests.at(-1).body.body.endsWith(facts('- Failing journey in group 2: `c.ts`')));
@@ -379,7 +394,8 @@ test('the suite job runs every group in parallel, each under a finite limit and 
   // One job per group of the package scripts, and a failing group does not cancel the others.
   const names = groups(scripts).map(group => group.name);
   assert.deepEqual(job.strategy, { 'fail-fast': false, matrix: { group: names } });
-  assert.deepEqual(job.outputs, Object.fromEntries(names.flatMap(name => ['passed', 'journey'].map(key => [`${key}_${name}`, `\${{ steps.suite.outputs.${key}_${name} }}`]))));
+  assert.deepEqual(job.outputs, Object.fromEntries(names.flatMap(name => [['skipped', 'select'], ['passed', 'suite'], ['journey', 'suite']]
+    .map(([key, step]) => [`${key}_${name}`, `\${{ steps.${step}.outputs.${key}_${name} }}`]))));
   assert.deepEqual(job.env, { XDG_RUNTIME_DIR: '', DBUS_SESSION_BUS_ADDRESS: '' });
   const selected = "steps.select.outputs.run == 'true'";
   assert.deepEqual(job.steps.filter(step => step.run).map(step => [step.if ?? null, step.run]), [
@@ -390,7 +406,7 @@ test('the suite job runs every group in parallel, each under a finite limit and 
     [selected, 'node scripts/ci-selection/runtime-browser.mjs run "$SUITE_GROUP"'],
   ]);
   assert.deepEqual(job.steps.find(step => step.id === 'suite').env, { SUITE_GROUP: '${{ matrix.group }}' });
-  assert.deepEqual(job.steps.find(step => step.id === 'select').env, { GITHUB_TOKEN: '${{ github.token }}' });
+  assert.deepEqual(job.steps.find(step => step.id === 'select').env, { GITHUB_TOKEN: '${{ github.token }}', SUITE_GROUP: '${{ matrix.group }}' });
   assert.equal(job.steps.find(step => /playwright install/.test(step.run ?? ''))['timeout-minutes'], 20);
   assert.equal(job.steps.filter(step => step['timeout-minutes'] !== undefined).length, 1, 'only the Chromium install has a step limit');
   assert.equal(job.steps.find(step => step.id === 'suite').if, selected);

@@ -3,7 +3,8 @@
 // each push to main whose changes the affected-check selector maps to the runtime group, and keeps one open issue for
 // its failures. It gates no pull request and is not a required check. Since #2015 the suite is a fixed set of journey
 // groups, `test:runtime-dashboard:browser:<group>`, and each group runs in its own parallel job.
-//   node scripts/ci-selection/runtime-browser.mjs select         decide whether this run runs the suite: writes run=true|false
+//   node scripts/ci-selection/runtime-browser.mjs select         decide whether this run runs the suite: writes run=true|false,
+//                                                                and skipped_<group>=true for SUITE_GROUP when it does not
 //   node scripts/ci-selection/runtime-browser.mjs run [group]    run one group's journeys in order, or every group's: writes
 //                                                                passed_<group>=true, or journey_<group>=<name> when one fails
 //   node scripts/ci-selection/runtime-browser.mjs report         after a failed push to main, comment on the open issue or open it
@@ -26,7 +27,8 @@ const SHA = /^[0-9a-f]{40}$/;
 const NO_REVISION = '0'.repeat(40);
 const JOURNEY = /^[A-Za-z0-9][\w.:-]{0,119}$/;
 // A group's name is its number, which also names its job and its outputs.
-const GROUP_ENTRY = new RegExp(`^npm run ${SUITE}:([1-9][0-9]?)$`);
+const GROUP_NAME = '[1-9][0-9]?';
+const GROUP_ENTRY = new RegExp(`^npm run ${SUITE}:(${GROUP_NAME})$`);
 // The login of issues the workflow's GITHUB_TOKEN opens. Anyone can open an issue with the same title in this public
 // repository, so only the workflow's own issue collects the comments.
 export const ISSUE_AUTHOR = 'github-actions[bot]';
@@ -81,12 +83,17 @@ export async function decideRun({ event, payload, env, fetch }) {
     : { run: false, reason: `the pushed changes do not select the runtime group (${selected})` };
 }
 
-/** The select step: write run=true|false and a one-line job summary. */
+/**
+ * The select step: write run=true|false and a one-line job summary. In a group's job (SUITE_GROUP), a decision not to
+ * run also writes skipped_<group>=true, so the report tells a group that was not selected from one that failed.
+ */
 export async function runSelect({ env = process.env, fetch = globalThis.fetch } = {}) {
+  const group = env.SUITE_GROUP;
+  if (group !== undefined && !new RegExp(`^${GROUP_NAME}$`).test(group)) throw new Error(`SUITE_GROUP ${JSON.stringify(group)} is not a group number`);
   const event = env.GITHUB_EVENT_NAME;
   const payload = event === 'push' ? JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')) : null;
   const decision = await decideRun({ event, payload, env, fetch });
-  appendFileSync(env.GITHUB_OUTPUT, `run=${decision.run}\n`);
+  appendFileSync(env.GITHUB_OUTPUT, `run=${decision.run}\n${!decision.run && group !== undefined ? `skipped_${group}=true\n` : ''}`);
   if (env.GITHUB_STEP_SUMMARY) {
     appendFileSync(env.GITHUB_STEP_SUMMARY, `### Runtime dashboard browser suite: ${decision.run ? 'runs' : 'not run'}\n\n${decision.reason}.\n`);
   }
@@ -176,21 +183,27 @@ export function suiteOutputs(text) {
 }
 
 /**
- * What each group recorded: [{name, passed, journey}], where journey is the failing journey's name when the group
- * recorded one of its own journeys, otherwise null.
+ * What each group recorded: [{name, passed, skipped, journey}], where skipped means its select step chose not to run
+ * the suite, and journey is the failing journey's name when the group recorded one of its own journeys, otherwise null.
  */
 export function groupResults(list, outputs) {
   return list.map(group => {
     const journey = outputs[`journey_${group.name}`];
     const known = typeof journey === 'string' && JOURNEY.test(journey) && group.journeys.some(item => item.name === journey);
-    return { name: group.name, passed: outputs[`passed_${group.name}`] === 'true', journey: known ? journey : null };
+    return { name: group.name, passed: outputs[`passed_${group.name}`] === 'true', skipped: outputs[`skipped_${group.name}`] === 'true',
+      journey: known ? journey : null };
   });
 }
 
-/** One line per group that did not record a pass: its failing journey, or that it recorded none. */
+/**
+ * One line per group that did not record a pass: its failing journey, that it was not selected, or that it ran and
+ * recorded nothing.
+ */
 function failures(results) {
-  const lines = results.filter(result => !result.passed).map(result => `- Failing journey in group ${result.name}: `
-    + (result.journey ? `\`${result.journey}\`` : 'none recorded (the group failed outside a journey or reached its time limit)'));
+  const lines = results.filter(result => !result.passed).map(result => (result.skipped && !result.journey
+    ? `- Group ${result.name}: not selected (its select step did not run the suite)`
+    : `- Failing journey in group ${result.name}: `
+      + (result.journey ? `\`${result.journey}\`` : 'none recorded (the group failed outside a journey or reached its time limit)')));
   return lines.length ? lines : ['- Failing journey: none recorded (every group recorded a pass)'];
 }
 
@@ -264,7 +277,7 @@ async function main(argv) {
   if (command === 'report') {
     // Every run logs what each group recorded, as evidence that the groups' outputs reached this job.
     const results = groupResults(groups(packageScripts()), suiteOutputs(process.env.SUITE_OUTPUTS));
-    console.log(`Group results: ${results.map(result => `${result.name} ${result.passed ? 'passed' : result.journey ? `failed in ${result.journey}` : 'recorded nothing'}`).join('; ')}`);
+    console.log(`Group results: ${results.map(result => `${result.name} ${result.passed ? 'passed' : result.journey ? `failed in ${result.journey}` : result.skipped ? 'not selected' : 'recorded nothing'}`).join('; ')}`);
     const outcome = await report();
     console.log(outcome.action === 'none' ? `No issue: ${outcome.reason}` : `${outcome.action === 'opened' ? 'Opened' : 'Commented on'} issue #${outcome.number}`);
     return 0;

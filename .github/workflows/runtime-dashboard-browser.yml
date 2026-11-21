@@ -39,10 +39,13 @@ jobs:
     timeout-minutes: 60
     # Each group sets only its own outputs, so the report job reads every group's result (a matrix job's outputs merge).
     outputs:
+      skipped_1: ${{ steps.select.outputs.skipped_1 }}
       passed_1: ${{ steps.suite.outputs.passed_1 }}
       journey_1: ${{ steps.suite.outputs.journey_1 }}
+      skipped_2: ${{ steps.select.outputs.skipped_2 }}
       passed_2: ${{ steps.suite.outputs.passed_2 }}
       journey_2: ${{ steps.suite.outputs.journey_2 }}
+      skipped_3: ${{ steps.select.outputs.skipped_3 }}
       passed_3: ${{ steps.suite.outputs.passed_3 }}
       journey_3: ${{ steps.suite.outputs.journey_3 }}
     # The same environment as App verification, where the smoke check and seven of these journeys already run (#873).
@@ -60,6 +63,7 @@ jobs:
       - id: select
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          SUITE_GROUP: ${{ matrix.group }}
         run: node scripts/ci-selection/runtime-browser.mjs select
       - if: steps.select.outputs.run == 'true'
         run: npm ci
