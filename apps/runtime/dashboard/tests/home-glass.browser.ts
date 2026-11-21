@@ -491,13 +491,18 @@ try {
   const ontoA = await lit.page.locator('[data-home-card="light:device:lamp-a"]').boundingBox();assert.ok(homeB !== undefined && grip !== null && ontoA !== null);
   const layoutSaves = lit.sent.length;
   await lit.page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);await lit.page.mouse.down();
+  const liquidB = (): Promise<boolean> => layer(lit.page).getAttribute('data-glass-liquid').then(value => (value ?? '').split('|').some(entry => entry.startsWith('light:device:lamp-b:')));
   await lit.page.mouse.move(ontoA.x + ontoA.width / 2, ontoA.y + ontoA.height / 2, {steps: 8});
+  // The dragged card counts as animating (#1932's gate), so it turns liquid as it moves.
+  assert.equal(await liquidB() || await (async () => {await lit.page.mouse.move(ontoA.x + ontoA.width / 2 + 30, ontoA.y + ontoA.height / 2, {steps: 4});return liquidB();})(), true, 'the dragged panel turns liquid');
+  await lit.page.mouse.move(ontoA.x + ontoA.width / 2, ontoA.y + ontoA.height / 2, {steps: 2});
   await expect(layer(lit.page)).toHaveAttribute('data-glass-target', 'light:device:lamp-a:1.000');
   const movedB = await boxOf('light:device:lamp-b');assert.ok(movedB !== undefined && Math.abs((movedB[0] ?? 0) - (homeB[0] ?? 0)) > 50, 'the dragged panel is drawn where the card is');
   await lit.page.keyboard.press('Escape');await lit.page.mouse.up();
   await expect(layer(lit.page)).toHaveAttribute('data-glass-target', '');
   await expect.poll(() => boxOf('light:device:lamp-b')).toEqual(homeB);
   const dropped = await rest(lit.page);await lit.page.waitForTimeout(1000);assert.equal(await frames(lit.page), dropped, 'nothing draws at rest after a drag');
+  assert.equal(await liquidB(), false, 'the panel is still again once home');
   assert.equal(lit.sent.length, layoutSaves, 'a cancelled drag sends nothing');
   // Frames that repeat the last timestamp (a zero-length easing step, seen on hosted runners) must not stall the
   // easing short of its target (#1966 review, F8): every other animation frame here repeats the one before it.

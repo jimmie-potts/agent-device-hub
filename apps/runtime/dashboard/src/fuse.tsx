@@ -46,7 +46,7 @@ const RETURN_MS = 340;
 const EDGE = 56, SCROLL = 14;
 
 /** A drag: where it started (pointer and page scroll), the pointer now, its target and its auto-scroll frame. */
-type Drag = {pointer: number; unit: GroupUnit; panel: HTMLElement; x: number; y: number; px: number; py: number; sx: number; sy: number; moved: boolean; target: HTMLElement | null; scroll: number};
+type Drag = {pointer: number; unit: GroupUnit; panel: HTMLElement; x: number; y: number; px: number; py: number; sx: number; sy: number; moved: boolean; target: HTMLElement | null; scroll: number; armed: boolean};
 
 function mark(element: HTMLElement | null, on: boolean): void {
   if (element === null) return;
@@ -136,6 +136,10 @@ export function FuseProvider({runtime, connected, operations, operationsLive, un
   // Near the window's top or bottom edge the page scrolls under the dragged card, so a card below the fold, or above
   // it, can be reached by touch, where the handle keeps the page from scrolling itself.
   const autoScroll = useRef((current: Drag): void => {
+    // A drag that starts near an edge scrolls nothing until the pointer has been away from the edges once.
+    const inZone = current.py < EDGE || current.py > innerHeight - EDGE;
+    if (!inZone) current.armed = true;
+    if (!current.armed) return;
     const speed = (): number => current.py < EDGE ? -SCROLL * (EDGE - current.py) / EDGE : current.py > innerHeight - EDGE ? SCROLL * (current.py - innerHeight + EDGE) / EDGE : 0;
     if (current.scroll !== 0 || speed() === 0) return;
     const tick = (): void => {
@@ -165,7 +169,7 @@ export function FuseProvider({runtime, connected, operations, operationsLive, un
         if (event.button > 0 || drag.current !== null || !latest.current.editable) return;
         const panel = event.currentTarget.closest<HTMLElement>('[data-home-card]');if (panel === null) return;
         event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);
-        drag.current = {pointer: event.pointerId, unit, panel, x: event.clientX, y: event.clientY, px: event.clientX, py: event.clientY, sx: scrollX, sy: scrollY, moved: false, target: null, scroll: 0};
+        drag.current = {pointer: event.pointerId, unit, panel, x: event.clientX, y: event.clientY, px: event.clientX, py: event.clientY, sx: scrollX, sy: scrollY, moved: false, target: null, scroll: 0, armed: false};
       }}
       onPointerMove={event => {
         const current = drag.current;if (current?.pointer !== event.pointerId) return;
