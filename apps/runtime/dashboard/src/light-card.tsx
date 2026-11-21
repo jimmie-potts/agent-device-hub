@@ -74,6 +74,9 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
   const colorSaturation = common(colors.map(member => member?.color?.observed.status === 'known' ? member.color.observed.saturation : undefined));
   useEffect(() => { if (!paletteDirty) { setHue(colorHue ?? 210); setSaturation(colorSaturation ?? 75); } }, [colorHue, colorSaturation, paletteDirty]);
   const attention = status.filter(item => item.locked || /Refused|Not sent|failed|uncertain|Conflicting/i.test(item.text));
+  // While a request from this card is in progress or unresolved (sent, accepted, awaiting its reply, uncertain or
+  // conflicting) the card says so, for checks that must not press before it has finished.
+  const busy = status.some(item => item.locked) ? '' : undefined;
   const statusText = cap.blocked ?? (observedPower === undefined ? power === undefined ? 'Mixed / unknown' : `Requested ${power ? 'on' : 'off'}` : observedPower ? 'On · observed' : 'Off · observed');
   // The light this card gives Home's glass layer (#1931): observed state only, from the same members.
   const glow = currentObservationsOnly ? NO_GLOW : glowOf(card.members, devices);
@@ -146,7 +149,7 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
       {...(unfold.open ? {'aria-controls': `${id}-unfolded`} : {})} onClick={unfold.toggle}>
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="m9.5 6 6 6-6 6" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/></svg></button>;
     const page = pageOf(card);
-    if (unfold?.open === true) return <article className="light-card light-dial-card light-unfolded" aria-label={card.name} data-light-card={card.selection.id} onDragOver={allowDrop} onDrop={drop}>
+    if (unfold?.open === true) return <article className="light-card light-dial-card light-unfolded" aria-label={card.name} data-light-card={card.selection.id} data-command-busy={busy} onDragOver={allowDrop} onDrop={drop}>
       {toggle}
       <div className="light-unfolded-head">{dial}<div className="light-unfolded-lines">{lines}{page !== undefined && <a href={page}>Open page</a>}</div>
         <div className="light-dial-options">{options}</div></div>
@@ -154,7 +157,7 @@ export function LightCard({card, devices, capabilities: cap, artwork, modeChoice
       <div className="light-unfolded-controls" id={`${id}-unfolded`} ref={opened}>{controls}</div>
       {attentionLine}
     </article>;
-    return <article className="light-card light-dial-card" aria-label={card.name} data-light-card={card.selection.id} onDragOver={allowDrop} onDrop={drop}>
+    return <article className="light-card light-dial-card" aria-label={card.name} data-light-card={card.selection.id} data-command-busy={busy} onDragOver={allowDrop} onDrop={drop}>
       {toggle}
       {dial}
       {lines}
