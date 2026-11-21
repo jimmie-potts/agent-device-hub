@@ -3,6 +3,7 @@ import {readScene, sameScene, visibleScene, type GlassScene} from './glass-scene
 import {lightFrame, RESTING, type EasedLight, type LightClock} from './glass-light.ts';
 import {createGlassRenderer, lightColor, luminance, parseColor, type GlassColor, type GlassPicture, type GlassRenderer, type GlassTokens} from './glass-renderer.ts';
 import {advanceThumb, type GlassThumb} from './glass-thumb.ts';
+import {liquidFrame, SETTLED, type LiquidClock} from './glass-liquid.ts';
 import './glass.css';
 
 /**
@@ -23,9 +24,15 @@ import './glass.css';
  * the page's marks on a time base (glass-light.ts), so a light that switches on or off or a panel that is pressed
  * draws frames until it settles, and none after.
  *
+ * A panel that moves or changes size turns liquid (#1932, glass-liquid.ts): its corners round off, its edge wobbles
+ * and its join to neighbors widens, by how fast its box changes, then it settles in about a second. A panel element
+ * with a running animation (such as the unfold's FLIP) is read every frame while it runs. A window resize, a scroll or
+ * reduced motion stirs nothing.
+ *
  * The canvas takes no pointer input and the layer sends nothing. It draws only while something changes or eases: a box
  * moved or resized, the page scrolled, the window resized, the skin or appearance changed, the backdrop changed, a
- * switch's thumb is still travelling (glass-thumb.ts), or the first appearance (700 ms) is still running. Boxes are read at most once per frame. Leaving the page releases the
+ * switch's thumb is still travelling (glass-thumb.ts), a panel animating or settling, or the first appearance (700 ms)
+ * is still running. Boxes are read at most once per frame. Leaving the page releases the
  * context, the observers and the listeners.
  */
 export type GlassState = 'webgl' | 'quiet';
@@ -73,6 +80,8 @@ const lightsOf = (scene: GlassScene, lights: ReadonlyMap<string, EasedLight>, to
   const eased = lights.get(panel.id);if (panel.light === undefined || eased === undefined || eased.level + eased.press <= 0) return [];
   return [`${panel.id}:${[...lightColor(panel.light.color, tokens), eased.level, eased.press].map(value => value.toFixed(3)).join(',')},${panel.light.lamp.x.toFixed(1)},${panel.light.lamp.y.toFixed(1)}`];
 }).join('|');
+/** The liquid panels last drawn, as `id:wob`, for checks and diagnosis. Empty when every panel is at rest. */
+const liquidOf = (wobs: ReadonlyMap<string, number>): string => [...wobs].map(([id, value]) => `${id}:${value.toFixed(3)}`).join('|');
 const boxesOf = (scene: GlassScene): string => scene.panels.map(panel => `${panel.id}:${[panel.rect.x, panel.rect.y, panel.rect.width, panel.rect.height].map(value => value.toFixed(1)).join(',')}`).join('|');
 
 type Glass = {backdrop: (picture: GlassBackdrop | null) => void; fuse: (value: boolean) => void; dispose: () => void};
@@ -90,6 +99,9 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
   // The lights' eased values and when they last stepped (glass-light.ts), and whether the first appearance's final,
   // settled picture has been drawn.
   let clock: LightClock = RESTING, appeared = false;
+  // The panels' liquid state on its own frame clock with the same rules (glass-liquid.ts). A rebased read (after a
+  // window resize) stirs nothing.
+  let liquid: LiquidClock = SETTLED, wobs: ReadonlyMap<string, number> = new Map(), rebase = false;
   // What the next frame must look at. A frame that finds nothing new draws nothing.
   let readBoxes = true, readSkin = true, force = true, resizing = false, settling: GlassScene | undefined, settleFrames = 0, state: GlassState = 'quiet';
   const setState = (next: GlassState): void => {if (next !== state) {state = next;callbacks.state(next);}};
@@ -119,7 +131,7 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
     if (resizing) {
       const next = readScene(root, doc, {width, height});
       if ((settling === undefined || !sameScene(settling, next)) && (settleFrames += 1) < 10) {settling = next;schedule();return;}
-      resizing = false;settling = undefined;settleFrames = 0;readBoxes = true;
+      resizing = false;settling = undefined;settleFrames = 0;readBoxes = true;rebase = true;
     }
     const ratio = Math.min(view.devicePixelRatio > 0 ? view.devicePixelRatio : 1, 2), dpr = software ? Math.min(ratio, Math.sqrt(SOFTWARE_PIXELS / (width * height))) : ratio;
     const backing = `${String(Math.round(width * dpr))}x${String(Math.round(height * dpr))}`;
@@ -140,23 +152,36 @@ function startGlass(canvas: HTMLCanvasElement, root: HTMLElement, probe: HTMLEle
     // The appearance ends with one frame drawn at its settled value, not the last eased one before it.
     if (!appearing && !appeared) {appeared = true;changed = true;}
     const lit = lightFrame(clock, scene.panels, now, still.matches);clock = lit.clock;if (lit.changed) changed = true;
-    // A frame that moves nothing draws nothing, but a thumb still on its way or a light still easing asks for the next
-    // frame: a frame can repeat the last timestamp (a zero-length step), and stopping there would leave them short of
-    // their targets with no frame to come.
-    const moving = travelling || lit.again;
+    // A panel that is animating moves without a resize or a mutation; it is read again next frame until it stops.
+    const animating = panelAnimating(), origin = root.getBoundingClientRect();
+    // A liquid panel's change counts on its own (fluid.changed), not through visibleScene. The scene's 64 px reach still
+    // covers it: the edge moves at most 17 px, so a panel beyond the reach casts at most a pixel of a fading shadow.
+    const fluid = liquidFrame(liquid, scene.panels, {x: origin.left, y: origin.top}, now, {still: still.matches, rebase, animating});
+    liquid = fluid.clock;wobs = fluid.wobs;rebase = false;if (fluid.changed) changed = true;if (animating) readBoxes = true;
+    // A frame that moves nothing draws nothing, but a thumb still on its way, a light still easing or a panel still
+    // liquid or animating asks for the next frame: a frame can repeat the last timestamp (a zero-length step), and
+    // stopping there would leave them short of their targets with no frame to come.
+    const moving = travelling || lit.again || fluid.again;
     if (!changed && !appearing) {if (moving) schedule();return;}
     const lights = clock.lights;
     const t = Math.min(1, Math.max(0, (now - born) / APPEAR_MS)), scroll = doc.scrollingElement ?? doc.documentElement;
     renderer.draw({scene, tokens, width, height, dpr, appear: 1 - (1 - t) ** 3, depth: Math.min(1, scroll.scrollTop / (height * 0.4)), merge, thumb, lights,
-      washBox: [-scroll.scrollLeft, -scroll.scrollTop, scroll.clientWidth, Math.max(scroll.scrollHeight, height)]});
+      liquid: wobs, clock: now / 1000 % 1000, washBox: [-scroll.scrollLeft, -scroll.scrollTop, scroll.clientWidth, Math.max(scroll.scrollHeight, height)]});
     // The boxes this frame drew, as far as they can be seen, for checks: the boxes last read are in glassBoxes.
     frames += 1;canvas.dataset['glassFrames'] = String(frames);canvas.dataset['glassBoxes'] = boxesOf(scene);canvas.dataset['glassDrawn'] = boxesOf(visibleScene(scene, {width, height}));
     canvas.dataset['glassBackdrop'] = picture?.id ?? '';
-    canvas.dataset['glassCapsules'] = thumbOf(thumb);canvas.dataset['glassLights'] = lightsOf(scene, lights, tokens);
+    canvas.dataset['glassCapsules'] = thumbOf(thumb);canvas.dataset['glassLights'] = lightsOf(scene, lights, tokens);canvas.dataset['glassLiquid'] = liquidOf(wobs);
     setState('webgl');report(picture?.id ?? null);
     if (appearing || moving) schedule();
   };
   function schedule(): void {if (raf === 0 && !disposed) raf = view.requestAnimationFrame(frame);}
+  /** Whether a panel element itself is running an animation, such as the unfold's FLIP (#1932). */
+  function panelAnimating(): boolean {
+    return doc.getAnimations().some(animation => {
+      const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+      return animation.playState === 'running' && target !== null && target.hasAttribute('data-glass-panel') && root.contains(target);
+    });
+  }
   const boxes = (): void => {readBoxes = true;schedule();};
   const skin = (): void => {readSkin = true;readBoxes = true;schedule();};
 

@@ -811,7 +811,18 @@ values; once it has fallen back to Quiet glass or lost its context, it asserts
 the Quiet glass panels and usable lit-room controls instead. The exact easing is
 also covered by `glass-light.test.ts`. A failed lit-room check prints the
 layer's state, a one-second timeline of `data-glass-frames` and
-`data-glass-lights`, and the page and console errors. With `DASHBOARD_RECEIPTS`
+`data-glass-lights`, and the page and console errors. For the unfold (#1932), in a touch-capable window, it opens a light with its arrow by
+pointer, touch and Enter and closes it with the arrow and Escape, checking the
+Large square shape, focus on the first control tab and back on the arrow, that
+opening a second light closes the first, that the cards it moves turn liquid and
+the layer then draws nothing, that the opened controls fit with nothing scrolled,
+that a window resize and reduced motion turn nothing liquid (reduced motion also
+runs no move animation), that the page does not scroll sideways at 1440, 1024,
+390 and 320 px with a light open (one column closes it), that Edit Home and a
+reload show none open, that the saved layout is unchanged and no command was
+sent, that the opened panel's text keeps 4.5:1, that a stale lighting layout's
+notice sits inside the dial and the opened panel without moving the dial, and
+that the arrow and the opened controls work without WebGL 2. With `DASHBOARD_RECEIPTS`
 set it saves private screenshots.
 
 Home's hero (#1930) follows the glass journey in the same chain. After the root

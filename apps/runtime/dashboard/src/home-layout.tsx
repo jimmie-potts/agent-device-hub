@@ -6,6 +6,7 @@ import {NavLink} from './navigation.tsx';
 import {addHomeCard, artExposed, defaultHomeArrangements, heroPlacement, homeCardShapes, homeCardState, homeCatalog, savedHomeCard, shapeOf, withShapes, type HomeCardDefinition} from './home-catalog.ts';
 import {HOME_GAP, HOME_UNIT, homeColumns, packShapes, shapeName, shapeSpan, type HomeShape, type ShapePlacement} from './home-shapes.ts';
 import {HomeShapeContext, type HomeCardBox} from './home-shape-context.ts';
+import {cardBoxes, easeCards, HomeUnfoldContext, type HomeUnfold} from './home-unfold.ts';
 import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
 import {GlassLayer, type GlassBackdrop, type GlassState} from './glass-layer.tsx';
@@ -58,6 +59,9 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const [pending, setPending] = useState<{id: string; base: number; layouts: HomeArrangements}>();
   const drag = useRef<string | undefined>(undefined), host = useRef<HTMLDivElement>(null), editButton = useRef<HTMLButtonElement>(null);
   const [focusId, setFocusId] = useState<string>(), [optionsFor, setOptionsFor] = useState<string>();
+  // The one light card unfolded in place (#1932), in this page's memory only, and where focus goes after a change.
+  const [unfolded, setUnfolded] = useState<string>(), [unfoldFocus, setUnfoldFocus] = useState<{id: string; target: 'controls' | 'arrow'}>();
+  const unfoldFrom = useRef<ReturnType<typeof cardBoxes> | undefined>(undefined);
   // The grid's width decides its columns (#1672); measured before paint and on every resize.
   const grid = useRef<HTMLDivElement>(null), [width, setWidth] = useState(0);
   // Home draws on the glass layer (#1929): the presented artwork behind the page and every card on clear glass. Until
@@ -152,7 +156,12 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   // order; the Phone arrangement and narrow screens stack every card at its content height with its full content.
   const narrow = breakpoint === 'phone' || width > 0 && width < 2 * HOME_UNIT + HOME_GAP;
   const columns = homeColumns(width), cell = (width - HOME_GAP * (columns - 1)) / columns;
-  const shapes = new Map(shown.flatMap(entry => {const definition = savedHomeCard(entry.widget, catalog);return definition === undefined ? [] : [[entry.widget, shapeOf(entry, definition)] as const];}));
+  const saved = new Map(shown.flatMap(entry => {const definition = savedHomeCard(entry.widget, catalog);return definition === undefined ? [] : [[entry.widget, shapeOf(entry, definition)] as const];}));
+  // A light card in Small square can unfold on the grid outside Edit Home (#1932); the open one packs as Large square
+  // with the same first-fit packing. Its saved shape is unchanged.
+  const unfoldable = (id: string): boolean => !editing && !narrow && width > 0 && saved.get(id) === 'square' && savedHomeCard(id, catalog)?.source.kind === 'light';
+  const open = unfolded !== undefined && unfoldable(unfolded) ? unfolded : undefined;
+  const shapes = open === undefined ? saved : new Map([...saved, [open, 'large-square' as const]]);
   const packed = narrow || width === 0 ? undefined : packShapes(shown.flatMap(entry => {const shape = shapes.get(entry.widget);return shape === undefined ? [] : [{id: entry.widget, shape}];}), columns);
   const area = (place: ShapePlacement): React.CSSProperties => ({gridColumn: `${String(place.column)} / span ${String(place.columns)}`, gridRow: `${String(place.row)} / span ${String(place.rows)}`});
   const categories = ['All', ...new Set(catalog.map(card => card.category))];
@@ -161,6 +170,28 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
   const lights = shown.flatMap(value => {const card = savedHomeCard(value.widget, catalog);return card?.source.kind === 'light' ? [card.source.selection] : [];});
   // A placed card's outer size follows from the grid alone: its cells plus the gaps between them (#1672).
   const boxOf = (place: ShapePlacement, shape: HomeShape): HomeCardBox => ({shape, width: place.columns * cell + (place.columns - 1) * HOME_GAP, height: place.rows * cell + (place.rows - 1) * HOME_GAP});
+  // Opening or closing a light records every card's box first, so the cards that move ease from there (home-unfold.ts).
+  const unfold = (id: string | undefined, focus: 'controls' | 'arrow' | undefined): void => {
+    if (id === open) return;
+    unfoldFrom.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? undefined : cardBoxes(grid.current);
+    const target = id ?? open;
+    setUnfolded(id);setUnfoldFocus(focus === undefined || target === undefined ? undefined : {id: target, target: focus});
+  };
+  const unfoldOf = (id: string): HomeUnfold => ({open: open === id, focus: unfoldFocus?.id === id ? unfoldFocus.target : undefined, focused: () => {setUnfoldFocus(undefined);},
+    toggle: () => {unfold(open === id ? undefined : id, open === id ? 'arrow' : 'controls');}});
+  // Edit Home, a narrow screen or the Phone arrangement close the open card, so it does not open again later.
+  useEffect(() => {if (unfolded !== undefined && open === undefined && width > 0) setUnfolded(undefined);}, [unfolded, open, width]);
+  useLayoutEffect(() => {const from = unfoldFrom.current;unfoldFrom.current = undefined;if (from !== undefined) easeCards(grid.current, from);}, [open]);
+  // Escape closes the open card; focus returns to its arrow when it was inside the card.
+  useEffect(() => {
+    if (open === undefined) return;
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const card = host.current?.querySelector(`[data-home-card="${CSS.escape(open)}"]`), active = document.activeElement;
+      event.preventDefault();unfold(undefined, active === null || active === document.body || card?.contains(active) === true ? 'arrow' : undefined);
+    };
+    document.addEventListener('keydown', escape);return () => {document.removeEventListener('keydown', escape);};
+  });
   return <div className={`home-layout${editing ? ' is-editing' : ''}${breakpoint === 'phone' ? ' home-phone' : ''}`} ref={host} data-glass={glass}>
     <GlassLayer onState={setGlass} backdrop={backdrop} onBackdrop={onBackdrop} fuse/>
     <header className="page home-layout-heading"><h1 data-glass-veil>Home</h1><div className="actions" data-glass-veil><NavLink route={{kind: 'audio'}}>Audio</NavLink><NavLink route={{kind: 'timeline'}}>Timeline</NavLink>{!editing && <button type="button" className="secondary" ref={editButton} disabled={!editable} onClick={() => {
@@ -196,7 +227,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
       const offered = homeCardShapes(definition), generic = shape !== undefined && offered.generic.includes(shape);
       const content = generic ? <CompactFace card={definition} state={homeCardState(definition, runtime, connected)} open={offered.open}/>
         : definition.source.kind === 'unavailable' ? <article className="card"><h2>{definition.name}</h2><p>{definition.reason}</p></article> : renderCard(definition, entry, lights);
-      return <div key={entry.widget} className={`home-layout-card${shape === undefined ? '' : ` home-shape-${shape}`}`} data-home-card={entry.widget} data-glass-panel={entry.widget} data-home-shape={shape} data-home-offers={offered.shapes.join(' ')}
+      return <div key={entry.widget} className={`home-layout-card${shape === undefined ? '' : ` home-shape-${shape}`}`} data-home-card={entry.widget} data-glass-panel={entry.widget} data-home-shape={shape} data-home-offers={offered.shapes.join(' ')} data-home-unfolded={open === entry.widget ? '' : undefined}
         style={place === undefined ? undefined : area(place)} onDragOver={event => {if (editing && drag.current !== undefined) event.preventDefault();}} onDrop={event => {
         if (!editing || drag.current === undefined) return;event.preventDefault();event.stopPropagation();const source = drag.current;drag.current = undefined;move(source, entry.widget);
       }}>
@@ -224,7 +255,8 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
           {required && <small>{reason}</small>}
           </div>}
         </div>}
-        <div className="home-card-content" inert={editing}><HomeShapeContext.Provider value={generic || shape === undefined || place === undefined ? undefined : boxOf(place, shape)}>{content}</HomeShapeContext.Provider></div>
+        <div className="home-card-content" inert={editing}><HomeShapeContext.Provider value={generic || shape === undefined || place === undefined ? undefined : boxOf(place, shape)}>
+          <HomeUnfoldContext.Provider value={unfoldable(entry.widget) ? unfoldOf(entry.widget) : undefined}>{content}</HomeUnfoldContext.Provider></HomeShapeContext.Provider></div>
       </div>;
     })}
       {editing && packed?.holes.map(hole => <div key={`${String(hole.row)}:${String(hole.column)}`} className="home-hole" aria-hidden="true" data-glass-veil style={{gridColumn: String(hole.column), gridRow: String(hole.row)}}><span>Empty</span></div>)}
