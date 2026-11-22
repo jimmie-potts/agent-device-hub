@@ -21,6 +21,9 @@ void test('the section accepts the synthetic default and a keyed hosted provider
   assert.deepEqual(configured({assistant: {tools: ['set_mode', 'read_sessions']}}), {assistant: {provider: 'synthetic', tools: ['set_mode', 'read_sessions']}});
   assert.deepEqual(configured({assistant: {provider: 'anthropic', tools: ['read_sessions'], prices: PRICES}, secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/anthropic-api-key'}}),
     {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: ['read_sessions'], prices: PRICES}});
+  // An unpriced title model is accepted, as an unpriced turn model is (Hub #2024): the ledger refuses its calls instead (Hub #2025).
+  assert.deepEqual(configured({assistant: {provider: 'anthropic', prices: {'claude-opus-5-5': PRICES['claude-opus-5-5']}}, secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/k'}}),
+    {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: [], prices: {'claude-opus-5-5': PRICES['claude-opus-5-5']}}});
   assert.deepEqual(configured({assistant: {provider: 'anthropic', model: 'claude-sonnet-5-5', effort: 'low', titleModel: 'claude-sonnet-5-5', prices: PRICES}, secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/k'}}),
     {assistant: {provider: 'anthropic', model: 'claude-sonnet-5-5', effort: 'low', titleModel: 'claude-sonnet-5-5', tools: [], prices: PRICES}}, 'the title model is configurable (Hub #2025)');
   const key = {[API_KEY_SECRET]: '/run/secrets/bunny/k'}, opus = PRICES['claude-opus-5-5'];
@@ -46,8 +49,6 @@ void test('the section accepts the synthetic default and a keyed hosted provider
     {assistant: {prices: PRICES}},
     {assistant: {provider: 'anthropic', titleModel: 'Bad Model', prices: PRICES}, secrets: key}, {assistant: {provider: 'anthropic', titleModel: 5, prices: PRICES}, secrets: key},
     {assistant: {titleModel: 'claude-haiku-5-5'}},
-    // The title model is priced too (Hub #2025).
-    {assistant: {provider: 'anthropic', prices: {'claude-opus-5-5': opus}}, secrets: key},
   ]) assert.equal(configured(section), 'invalid-request', JSON.stringify(section));
 });
 

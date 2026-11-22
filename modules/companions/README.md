@@ -690,16 +690,23 @@ list coding agent sessions only. Native worker reporting is not part of this.
 
 ### Conversation titles
 
-Each conversation gets a short title that a model writes, led by the GitHub
-issue it is about, such as `#1896 Session tracking` or `pixoo#14 Boot
-channel` for an issue in another repository (Hub #2025). The title is the
-session title on the status devices, the dashboard and Habitat. Until a title
-exists, the persona name stands.
+Each conversation gets a short title that a title model writes, led by the
+GitHub issue it is about, such as `#1896 Session tracking` or `pixoo#14 Boot
+channel` for an issue in another repository (Hub #2025). Until a title exists,
+the persona name stands.
+
+Only a profile with a real title model gets titles: B.U.N.N.Y. on the
+Anthropic provider, with `assistant.titleModel`. Reachy and MicroDuck, and
+B.U.N.N.Y. on the synthetic provider, make no title call and keep their
+persona names until the owner renames them. When a profile gets a real model
+(Hub #2026), it gets titles by the same rule. A test or harness can inject
+`SyntheticTitleProvider`, which writes the fixed title `Synthetic conversation`.
 
 - **When.** A title is written after the first message of a session
-  appearance, again at the third task of that appearance, and after the first
-  message when the session reappears after a day without lifecycle evidence.
-  The title call runs beside the task, after its admission, and never delays,
+  appearance, again at the third task of that appearance, after the first
+  message when the session reappears after a day without lifecycle evidence,
+  and when a coding hand-off is accepted, so an issue named only in the brief
+  can lead the title. The title call runs beside the task and never delays,
   fails or rolls back it.
 - **What the model sees.** The fixed title instruction as the system prompt
   and the conversation's last eight owner and assistant messages, escaped and
@@ -707,15 +714,31 @@ exists, the persona name stands.
 - **What is kept.** After the issue reference, the description is cut to 40
   characters at a word boundary. Quotes, markdown, a `Title:` label and
   trailing punctuation are removed. An answer that is empty, a placeholder such
-  as `Title`, only a repeat of an owner message, or not session display text
-  (a control character or a recognizable credential) is no title. A failed,
-  refused or invalid first title leaves the persona name; a failed refresh
-  keeps the earlier title. Nothing is retried.
-- **Where it goes.** The title is stored on the conversation with its source,
-  generated or the owner's. It is published at once as display metadata in
-  `lifecycle/2.3`, which changes only the session's title and keeps no
-  expiring session alive, and on every later lifecycle observation. A
-  generated title has source `provider` and the owner's has source `user`.
+  as `Title`, or not session display text (a control character or a
+  recognizable credential) is no title. So is an echo: before the description
+  is cut, the whole answer is compared with every owner and assistant message
+  in the prompt, ignoring case, spacing, surrounding quotes and trailing
+  punctuation, and a cut title that is the start of such a message is refused
+  too. The guard catches verbatim repeats only; a paraphrase or a reordered or
+  partly repeated message is not detected. A failed, refused or invalid first
+  title leaves the persona name; a failed refresh keeps the earlier title.
+  Nothing is retried.
+- **Where it goes.** The conversation's recent messages go to Anthropic's
+  title model, as the turns' messages go to the turn model. The title is
+  stored on the conversation with its source, generated or the owner's, and
+  published at once as display metadata in `lifecycle/2.3`, which changes only
+  the session's title and keeps no expiring session alive, and on every later
+  lifecycle observation. A generated title has source `provider` and the
+  owner's has source `user`. From the session it reaches the status devices,
+  the dashboard and Habitat, the core's session history and read tools such as
+  the `core_sessions` MCP tool, Tidbyt's cloud rendering of the status tile,
+  and, once it exists, the decision maker's Decisions input, which
+  [ADR 0011](../../docs/decisions/0011-private-personal-data-retention.md)
+  allows to receive session titles. The assistant's own `read_sessions` leaves
+  native sessions out.
+- **Diagnosis.** Each title call's record keeps the model's raw answer, at
+  most 1 KiB, privately in `assistant_title_calls`, so an invalid outcome can
+  be explained. It reaches no log, trace, diagnostic or published record.
 - **Rename.** Open **Details**, then **Conversation settings**, and enter a
   name under **Rename conversation** (at most 80 characters). The page sends
   the `rename` action of `assistant-control/2.1`. The owner's name replaces any
@@ -727,12 +750,10 @@ exists, the persona name stands.
   reported usage replaces the reservation; a lost or failed answer keeps the
   reservation counting. A call that the spend limits or a missing price
   refuse is not sent, and the persona or earlier title stays. Title calls
-  count toward the shared spend limits and toward no task's limits.
-  `assistant.prices` needs an entry for the title model. Each call is also
-  recorded on its conversation in `assistant_title_calls` with its model,
-  status, outcome and reported usage. The synthetic provider writes the fixed
-  title `Synthetic conversation`, which never repeats the conversation and
-  costs nothing.
+  count toward the shared spend limits and toward no task's limits. Without
+  a price for the title model in `assistant.prices`, every title call is
+  refused this way. Each call is also recorded on its conversation in
+  `assistant_title_calls` with its model, status, outcome and reported usage.
 
 The title instruction, prompt and normalization are adapted from OpenAI Codex
 (Apache License 2.0) and T3 Code (MIT License); see

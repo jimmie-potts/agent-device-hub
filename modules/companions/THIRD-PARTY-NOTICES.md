@@ -9,7 +9,7 @@ licenses and notices below apply to those parts.
 
 | Source | Revision | Use |
 | --- | --- | --- |
-| [`codex-rs/tui/src/app/thread_title.rs`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/tui/src/app/thread_title.rs) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | Title instruction (lines 336-346), recent-conversation prompt and normalization (lines 512-537), translated to TypeScript and modified |
+| [`codex-rs/tui/src/app/thread_title.rs`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/tui/src/app/thread_title.rs) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | `THREAD_TITLE_RECENT_MESSAGES` (line 37), `thread_title_instructions` (lines 336-346), `recent_conversation_messages` (lines 406-491), `recent_conversation_thread_title_prompt` (lines 493-510) and `parse_thread_title` (lines 512-537), translated to TypeScript and modified |
 
 Modifications: the instruction leads with the GitHub issue reference, describes
 the conversation instead of starting with a verb, and bounds the description at

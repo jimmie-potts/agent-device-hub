@@ -1,19 +1,21 @@
-// Model-written conversation titles (Hub #2025). After the first owner message of a session appearance, and once more at
-// its third task, a small model call writes the conversation's title, such as "#1896 Session tracking": the GitHub issue
-// the conversation is about, then a short sentence-case description. The title is stored on the conversation with its
+// Model-written conversation titles (Hub #2025). After the first owner message of a session appearance, at its third
+// task and when a coding hand-off is accepted, a small model call writes the conversation's title, such as "#1896 Session
+// tracking": the GitHub issue the conversation is about, then a short sentence-case description. Only a profile with a
+// real title model makes the call; the others keep their persona names. The title is stored on the conversation with its
 // source, generated or the owner's, and published as the session title; until one exists the persona name stands. The
 // owner's rename always wins: it advances the conversation's title generation, so a generation in flight is dropped when
 // it lands, and no generated title replaces it. A failed, refused or invalid title leaves the earlier title, or the
 // persona, and never touches a task. Each paid title call reserves its most expensive cost in the shared spend ledger
 // (Hub #2024) before it is sent, as a conversation-level call outside every task's limits, and settles it with the
 // reported usage; a call the spend limits refuse is never sent. Each call is also recorded on the conversation with its
-// outcome. Nothing is retried (ADR 0012).
+// outcome and the model's raw answer, kept privately for diagnosis. Nothing is retried (ADR 0012).
 //
 // Third-party sources (see ../../THIRD-PARTY-NOTICES.md), adapted and modified here:
 // - OpenAI Codex, codex-rs/tui/src/app/thread_title.rs at a0436d69ffd9a6d943d9b56175ba2968c5e698af, Apache License 2.0,
-//   Copyright 2025 OpenAI: the title instruction (`thread_title_instructions`), the recent-conversation prompt
-//   (`recent_conversation_thread_title_prompt`, `recent_conversation_messages`) and the normalization
-//   (`parse_thread_title`), translated to TypeScript. Modified: the instruction leads with the issue reference, describes
+//   Copyright 2025 OpenAI: `THREAD_TITLE_RECENT_MESSAGES` (line 37), the title instruction (`thread_title_instructions`,
+//   lines 336-346), the recent-conversation prompt (`recent_conversation_messages`, lines 406-491, and
+//   `recent_conversation_thread_title_prompt`, lines 493-510) and the normalization (`parse_thread_title`, lines
+//   512-537), translated to TypeScript. Modified: the instruction leads with the issue reference, describes
 //   instead of starting with a verb and bounds the description at 40 characters; the prompt names the owner and the
 //   assistant and has its own bound; normalization takes plain text, strips a markdown heading, emphasis or a "Title:"
 //   label, canonicalizes the issue reference and truncates the description only, at a word boundary.
@@ -43,6 +45,8 @@ export const TITLE_RECENT_MESSAGES = 8;
 export const TITLE_REFRESH_TURN = 3;
 /** How long a title call may take before it is abandoned as uncertain. */
 export const TITLE_DEADLINE_MS = 30_000;
+/** The bound on the raw answer a title call record keeps, in UTF-8 bytes. */
+export const TITLE_ANSWER_BYTES = 1024;
 /** The cap on one title answer's thinking and text, in tokens. */
 export const TITLE_MAX_TOKENS = 1024;
 /** The core removes a session that has had no lifecycle evidence for a day; the next one is a new appearance. */
@@ -75,8 +79,8 @@ const PREFIX = 'Prioritize the current task and latest substantive owner request
 /** One saved message the prompt may carry. Tool results are not conversation messages. */
 export type TitleMessage = {role: 'owner' | 'assistant'; text: string};
 const escape = (text: string): string => text.trim().replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-/** The longest prefix of `text` within `bytes` UTF-8 bytes that splits neither a character nor an escaped entity. */
-function within(text: string, bytes: number): string {
+/** The longest prefix of `text` within `bytes` UTF-8 bytes that splits no character, and with `entities` no escaped entity. */
+function within(text: string, bytes: number, entities = true): string {
   let kept = '', used = 0;
   for (const character of text) {
     const size = textBytes(character);
@@ -84,7 +88,7 @@ function within(text: string, bytes: number): string {
     kept += character; used += size;
   }
   const entity = kept.lastIndexOf('&');
-  return entity >= 0 && !kept.slice(entity).includes(';') ? kept.slice(0, entity) : kept;
+  return entities && entity >= 0 && !kept.slice(entity).includes(';') ? kept.slice(0, entity) : kept;
 }
 
 /**
@@ -121,14 +125,18 @@ function bounded(description: string): string {
   const kept = chars.slice(0, TITLE_DESCRIPTION_CHARS).join(''), space = kept.lastIndexOf(' ');
   return /\s/u.test(chars[TITLE_DESCRIPTION_CHARS] ?? '') || space <= 0 ? kept : kept.slice(0, space);
 }
+/** A normalized answer: the title, the same title before its description was cut, and whether it was cut. */
+type TitleParts = {title: string; full: string; cut: boolean};
 /**
  * A model's answer as a title, or undefined when it is no usable title. T3 Code's unwrap of a JSON `{"title": ...}`
  * answer and its first-line rule; Codex's trim of quote characters, whitespace collapse and trailing `.`, `?` and `!`;
  * then a markdown heading or emphasis and a "Title:" label go. A leading issue reference is kept, with this repository's
- * name dropped, and only the description after it is cut to 40 characters, at a word boundary where it has one. An empty or placeholder description, or a
- * title that is not session display text (a control character or a recognizable credential), is refused.
+ * name dropped, and only the description after it is cut to 40 characters, at a word boundary where it has one. An
+ * empty or placeholder description, or a title that is not session display text (a control character or a recognizable
+ * credential), is refused.
  */
-export function normalizeTitle(response: string): string | undefined {
+export function normalizeTitle(response: string): string | undefined {return titleParts(response)?.title;}
+function titleParts(response: string): TitleParts | undefined {
   let raw = response;
   try {
     const value: unknown = JSON.parse(response.trim());
@@ -146,17 +154,29 @@ export function normalizeTitle(response: string): string | undefined {
     reference = repository === undefined || repository.toLowerCase() === HOME_REPOSITORY ? `#${String(number)}` : `${repository}#${String(number)}`;
     description = rest ?? '';
   }
-  description = trimQuotes(bounded(description)).trimEnd().replace(/[.?!,;:]+$/u, '').trimEnd();
+  const kept = bounded(description), cut = kept !== description;
+  description = trimQuotes(kept).trimEnd().replace(/[.?!,;:]+$/u, '').trimEnd();
   if (description === '' || PLACEHOLDER.test(description)) return undefined;
   const title = reference === '' ? description : `${reference} ${description}`;
-  return displayable(title) ? title : undefined;
+  const full = match === null ? text : `${reference} ${match[3] ?? ''}`;
+  return displayable(title) ? {title, full, cut} : undefined;
 }
 
-const comparable = (value: string): string => collapse(value).replace(/[.?!]+$/u, '').toLocaleLowerCase();
-/** A generated title, or undefined when the answer is no title or only repeats an owner message: raw prompt text is never published. */
-export function generatedTitle(response: string | null, ownerTexts: readonly string[]): string | undefined {
-  const title = response === null ? undefined : normalizeTitle(response);
-  return title === undefined || ownerTexts.some(text => comparable(text) === comparable(title)) ? undefined : title;
+/** A text in the form the echo guard compares: whitespace collapsed, no trailing `.?!`, this repository's references short, lower case. */
+const comparable = (value: string): string => collapse(trimQuotes(collapse(value))).replace(/[.?!]+$/u, '')
+  .replace(new RegExp(`\\b${HOME_REPOSITORY}#`, 'giu'), '#').toLocaleLowerCase();
+/**
+ * A generated title, or undefined when the answer is no title or repeats a message the prompt carried, so raw
+ * conversation text is never published as a title. Before the description is cut, the whole normalized answer is
+ * compared with every owner and assistant message; a cut title is also refused when it is the start of one of them.
+ * The guard catches verbatim repeats only: a paraphrase, a reordered or a partly repeated message passes.
+ */
+export function generatedTitle(response: string | null, messages: readonly string[]): string | undefined {
+  const parts = response === null ? undefined : titleParts(response);
+  if (parts === undefined) return undefined;
+  const title = comparable(parts.title), full = comparable(parts.full);
+  const echoes = messages.map(comparable).some(text => text === full || text === title || (parts.cut && text.startsWith(title)));
+  return echoes ? undefined : parts.title;
 }
 /** The owner's title with its whitespace collapsed, or undefined when it is not session display text of at most 80 characters. */
 export function ownerTitle(value: string): string | undefined {
@@ -237,7 +257,9 @@ export type TitleRecord = {version: 1; title: {value: string; source: 'generated
  */
 export type TitleCall = {version: 1; id: string; conversationId: string; provider: AssistantProvider; model: string; generation: number;
   startedAtMs: number; endedAtMs: number | null; status: 'admitted' | 'succeeded' | 'failed' | 'uncertain'; code?: ErrorCode;
-  outcome: 'applied' | 'unchanged' | 'invalid' | 'dropped' | null; usage: TokenUsage | null; maxTokens: number};
+  outcome: 'applied' | 'unchanged' | 'invalid' | 'dropped' | null; usage: TokenUsage | null; maxTokens: number;
+  /** The model's raw answer, at most 1 KiB, kept privately for diagnosis; absent before the answer or without text. */
+  answer?: string | null};
 
 /** The engine's seams: the outbox, the clock and scheduler, the spend ledger, the profile's provider and what the conversation has saved and reported. */
 export type TitleDependencies = {
@@ -246,7 +268,8 @@ export type TitleDependencies = {
   spend: Pick<SpendLedger, 'reserve' | 'settle'>;
   now: () => number;
   after: (delayMs: number, callback: () => void) => Cancel;
-  provider: (profile: AssistantProfile) => TitleProvider;
+  /** The profile's title provider, or undefined when it has no real model to write titles: it keeps its persona name. */
+  provider: (profile: AssistantProfile) => TitleProvider | undefined;
   /** The conversation's saved owner and assistant messages, oldest first. */
   messages: (conversationId: string) => TitleMessage[];
   /** Whether the conversation has reported lifecycle evidence, so the core may hold its session. */
@@ -334,7 +357,7 @@ export class ConversationTitles {
    * transaction. Every failure is absorbed: a title never fails, delays or rolls back a task.
    */
   generate(conversationId: string, profile: AssistantProfile): Promise<void> {
-    if (this.#closed) return Promise.resolve();
+    if (this.#closed || this.deps.provider(profile) === undefined) return Promise.resolve();
     this.drop(conversationId);
     const controller = new AbortController();
     const work = this.#generate(conversationId, profile, controller).catch(() => { /* The admitted call keeps the evidence. */ }).finally(() => {
@@ -345,14 +368,16 @@ export class ConversationTitles {
   }
   async #generate(conversationId: string, profile: AssistantProfile, controller: AbortController): Promise<void> {
     const provider = this.deps.provider(profile);
-    let call: TitleCall | undefined, prompt: string | undefined, owners: string[] = [];
+    if (provider === undefined) return;
+    let call: TitleCall | undefined, prompt: string | undefined, texts: string[] = [];
     await this.deps.outbox.transaction(() => {
       const record = this.record(conversationId) ?? this.#fresh();
       if (record.title?.source === 'owner' || controller.signal.aborted) return;
       const messages = this.deps.messages(conversationId);
       prompt = titlePrompt(messages);
       if (prompt === undefined) return;
-      owners = messages.filter(message => message.role === 'owner').map(message => message.text);
+      // The echo guard compares the answer with every message the prompt carried, the owner's and the assistant's.
+      texts = messages.map(message => message.text);
       const admitted: TitleCall = {version: 1, id: randomUUID(), conversationId, provider: provider.name, model: provider.model, generation: record.generation,
         startedAtMs: this.deps.now(), endedAtMs: null, status: 'admitted', outcome: null, usage: null, maxTokens: TITLE_MAX_TOKENS};
       // A paid call reserves its most expensive cost with its receipt, as a conversation-level call; the synthetic one is free.
@@ -392,7 +417,10 @@ export class ConversationTitles {
         return;
       }
       saved.status = 'succeeded'; saved.usage = reply.usage;
-      const record = this.record(conversationId) ?? this.#fresh(), title = generatedTitle(reply.text, owners);
+      // The model's own answer, bounded, so an invalid or refused outcome can be diagnosed from the private record; it
+      // reaches no log, trace, diagnostic or published record (ADR 0011 allows private retention).
+      saved.answer = reply.text === null ? null : within(reply.text, TITLE_ANSWER_BYTES, false);
+      const record = this.record(conversationId) ?? this.#fresh(), title = generatedTitle(reply.text, texts);
       if (record.generation !== saved.generation || record.title?.source === 'owner') saved.outcome = 'dropped';
       else if (title === undefined) saved.outcome = 'invalid';
       else if (record.title?.value === title) saved.outcome = 'unchanged';

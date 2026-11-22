@@ -17,7 +17,7 @@ import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {ANTHROPIC_URL, ANTHROPIC_VERSION, type Transport} from '../src/assistant/anthropic.js';
 import {ProviderFault, type ModelProvider, type TurnReply} from '../src/assistant/provider.js';
 import {
-  AnthropicTitleProvider, ConversationTitles, DEFAULT_TITLE_MODEL, generatedTitle, normalizeTitle, ownerTitle, SESSION_AGE_MS, SYNTHETIC_TITLE, TITLE_DEADLINE_MS,
+  AnthropicTitleProvider, ConversationTitles, SyntheticTitleProvider, DEFAULT_TITLE_MODEL, generatedTitle, normalizeTitle, ownerTitle, SESSION_AGE_MS, SYNTHETIC_TITLE, TITLE_DEADLINE_MS,
   TITLE_INSTRUCTIONS, TITLE_MAX_TOKENS, TITLE_PROMPT_BYTES, titlePrompt, type TitleProvider, type TitleReply,
 } from '../src/assistant/titles.js';
 
@@ -44,10 +44,21 @@ void test('normalization keeps one plain title: the issue reference, then at mos
   assert.equal(normalizeTitle(`${'x'.repeat(39)} words`), 'x'.repeat(39), 'a cut word goes');
 });
 
-void test('a generated title never only repeats an owner message, and the owner\'s title is bounded display text', () => {
+void test('a generated title never repeats a message the prompt carried, whole or as its cut start, and the owner\'s title is bounded display text', () => {
   assert.equal(generatedTitle('Turn on the lamp.', ['turn on   the lamp']), undefined, 'raw prompt text is not a title');
   assert.equal(generatedTitle('Lamp control', ['turn on the lamp']), 'Lamp control');
   assert.equal(generatedTitle(null, []), undefined);
+  // A long owner message repeated whole is compared before the description is cut, so its 40-character cut is no title either.
+  const long = 'Please check why the kitchen lamp schedule skipped this morning and fix the timer';
+  assert.equal(generatedTitle(long, [long]), undefined, 'a long owner message repeated whole');
+  assert.equal(generatedTitle(`"${long}."`, [long]), undefined, 'with quotes and punctuation');
+  // An answer that repeats only the start of a message is cut to a title that is that message's start.
+  assert.equal(generatedTitle('Please check why the kitchen lamp schedule skipped', [long]), undefined, 'a cut title that is a message\'s start');
+  assert.equal(generatedTitle('agent-device-hub#12 Please check why the kitchen lamp schedule skipped', [`#12 ${long}`]), undefined, 'with the reference written either way');
+  // The assistant's own messages are prompt text too.
+  assert.equal(generatedTitle('Synthetic answer about the lamp', ['Lamp please', 'Synthetic answer about the lamp.']), undefined, 'an assistant message repeated');
+  assert.equal(generatedTitle('Kitchen lamp schedule', [long]), 'Kitchen lamp schedule', 'a summary is a title');
+  assert.equal(generatedTitle('Please check why', [long]), 'Please check why', 'an uncut title may share a message\'s first words');
   assert.equal(ownerTitle('  My   kitchen  chat '), 'My kitchen chat');
   assert.equal(ownerTitle('🐰'.repeat(80)), '🐰'.repeat(80));
   for (const bad of ['🐰'.repeat(81), '   ', 'token=synthetic-secret', 'two\u0007bells']) assert.equal(ownerTitle(bad), undefined, JSON.stringify(bad));
@@ -145,12 +156,23 @@ async function world(context: TestContext, options: CompanionsOptions, synthetic
   const w = {
     core, seen, titles, module, host, deadlines, tick: (ms: number) => {now += ms;},
     observed: (count: number) => until(() => seen.length >= count),
+    until,
     titled: (count: number) => until(() => titles.length >= count),
     store: () => new ConversationTitles(host.moduleDatabase() ?? assert.fail('open database'), {} as ConstructorParameters<typeof ConversationTitles>[1]),
     async control(action: string, data: Record<string, unknown> = {}): Promise<RequestResult> {
       const requestId = randomUUID(), schema = action === 'rename' ? '2.1' : '2.0';
       return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
         dataschema: `https://bunny.invalid/events/assistant-control/${schema}`, data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...data}}, {requestId, timeoutMs: 5000});
+    },
+    /** Starts a task in `profile` without waiting for it. */
+    async start(text: string, profile = 'bunny'): Promise<void> {
+      const requestId = randomUUID(), state = module.inspectAssistant();
+      const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+        bytes: Buffer.from(JSON.stringify({action: 'start', profile, expectedRevision: state?.revision, text}))});
+      assert.ok(staged !== undefined && !('error' in staged), JSON.stringify(staged));
+      const reply = await core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+        dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+      assert.equal(reply.status, 'accepted', JSON.stringify(reply));
     },
     /** Starts a task in `profile` and waits until it ended, by its turn end. */
     async ask(text: string, profile = 'bunny'): Promise<void> {
@@ -304,18 +326,87 @@ void test('a failed, refused, invalid or late title leaves the persona, never to
     ['failed', 'capacity', null], ['succeeded', null, 'invalid'], ['succeeded', null, 'invalid'], ['succeeded', null, 'invalid'], ['uncertain', null, null],
   ]);
   assert.equal(provider.prompts.length, 5, 'one call each, no retry');
+  assert.deepEqual(w.store().calls().map(call => call.answer ?? null), [null, null, 'Title', 'token=synthetic-secret-1234', null],
+    'the raw answer is kept privately for diagnosis');
+  assert.equal(JSON.stringify(w.host.logs).includes('synthetic-secret-1234'), false, 'and reaches no log');
   assert.deepEqual(w.spent().map(row => row.cost === null ? 'reserved' : 'reported'), ['reserved', 'reserved', 'reported', 'reported', 'reserved'],
     'a failed, unreported or lost call keeps counting its reservation; a reported one counts its usage');
 });
 
-void test('the synthetic provider writes its fixed title, which never echoes the conversation, for every profile', {timeout: 20_000}, async context => {
+void test('a profile without a real title model makes no title call and keeps its persona name', {timeout: 20_000}, async context => {
+  // The synthetic B.U.N.N.Y. provider, and Reachy and MicroDuck, have no title model.
   const w = await world(context, {provider: model()}, true);
+  await w.ask('SYNTHETIC-PRIVATE-REQUEST');
+  for (const profile of ['reachy', 'microduck']) {
+    // The demo profiles' synthetic provider asks its fixed question first; the owner cancels it.
+    await w.start('SYNTHETIC-PRIVATE-REQUEST', profile);
+    await w.until(() => w.module.inspectAssistant()?.tasks.find(task => task.profile === profile)?.status === 'waiting');
+    assert.equal((await w.control('cancel', {taskId: w.module.inspectAssistant()?.tasks.find(task => task.profile === profile)?.taskId})).status, 'accepted');
+  }
+  await w.control('enable');
+  assert.deepEqual(w.store().calls(), [], 'no title call is made');
+  assert.equal(w.titles.length, 0);
+  assert.deepEqual([...new Set(w.seen.map(message => titleOf(message)?.value))].sort(), ['B.U.N.N.Y.', 'MicroDuck', 'Reachy'], 'each keeps its persona name');
+});
+
+void test('a harness that injects the fixed synthetic title provider gets its fixed title, which never echoes the conversation', {timeout: 20_000}, async context => {
+  const w = await world(context, {provider: model(), syntheticTitleProvider: new SyntheticTitleProvider()}, true);
   await w.ask('SYNTHETIC-PRIVATE-REQUEST');
   await w.titled(1);
   assert.deepEqual(titleOf(w.titles[0]), {value: SYNTHETIC_TITLE, source: 'provider'});
   assert.equal(w.store().calls()[0]?.usage?.input, 0, 'it costs nothing');
   assert.deepEqual(w.spent(), [], 'and reserves no spend');
   assert.equal(JSON.stringify(w.titles).includes('SYNTHETIC-PRIVATE-REQUEST'), false);
+});
+
+void test('an accepted coding hand-off refreshes the title from its brief, unless the owner renamed the conversation', {timeout: 20_000}, async context => {
+  let turn = 0;
+  // Each task's first call proposes the hand-off; a later call in the task answers.
+  const turns: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: input => {
+    turn += 1;
+    return Promise.resolve(input.transcript.every(item => item.role === 'owner')
+      ? {text: null, calls: [{id: `call-${String(turn)}`, name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: 'Fix the flaky timer test from issue #2041.'}}], stop: 'tool', units: 10}
+      : done('Handed off.'));
+  }};
+  const delegated: string[] = [];
+  const provider = titler([titled('Timer question'), titled('#2041 Flaky timer test')]);
+  const w = await world(context, {provider: turns, titleProvider: provider, tools: ['delegate_coding'],
+    coding: () => ({available: true, endpointId: 'worker', revision: 1}),
+    delegate: data => {delegated.push(data.brief); return Promise.resolve({status: 'accepted', requestId: data.requestId} as unknown as RequestResult);}});
+  const approve = async (): Promise<void> => {
+    const state = w.module.inspectAssistant(), task = state?.tasks.find(item => item.profile === 'bunny');
+    const requestId = randomUUID();
+    const staged = await w.module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({action: 'answer', profile: 'bunny', expectedRevision: state?.revision, text: 'approve', taskId: task?.taskId, questionId: task?.questionId}))});
+    assert.ok(staged !== undefined && !('error' in staged));
+    const reply = await w.core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+    assert.equal(reply.status, 'accepted');
+  };
+  const status = () => w.module.inspectAssistant()?.tasks.find(task => task.profile === 'bunny');
+  const awaitingApproval = () => w.until(() => status()?.status === 'waiting' && status()?.questionId !== null && status()?.hasAnswer === false);
+  await w.start('Can the worker look at the flaky timer test?');
+  await w.titled(1);
+  await awaitingApproval();
+  await approve();
+  await w.until(() => delegated.length === 1 && status()?.status === 'waiting');
+  await provider.called(2);
+  await w.titled(2);
+  assert.equal(delegated.length, 1);
+  assert.match(provider.prompts[1] ?? '', /Delegated to the coding worker in agent-device-hub: Fix the flaky timer test from issue #2041\./, 'the brief is in the prompt');
+  assert.deepEqual(titleOf(w.titles[1]), {value: '#2041 Flaky timer test', source: 'provider'});
+  // After a rename, a later hand-off leaves the owner's name.
+  assert.equal((await w.control('rename', {profile: 'bunny', title: 'Timer work'})).status, 'accepted');
+  const cancelled = await w.control('cancel', {taskId: status()?.taskId});
+  assert.equal(cancelled.status, 'accepted', JSON.stringify(cancelled));
+  await w.until(() => status()?.status === 'cancelled');
+  await w.start('And the other timer test?');
+  await awaitingApproval();
+  await approve();
+  await w.until(() => delegated.length === 2);
+  await w.control('enable');
+  assert.equal(provider.prompts.length, 2, 'no title call after the rename');
+  assert.deepEqual(w.titles.map(message => titleOf(message)?.value), ['Timer question', '#2041 Flaky timer test', 'Timer work']);
 });
 
 void test('a title call the spend limits refuse is never sent and leaves the persona; a missing title price refuses it too', {timeout: 20_000}, async context => {

@@ -187,7 +187,11 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     assert.equal(await settings.getByRole('link', {name: 'Preferences', exact: true}).getAttribute('href'), '#/module/companions/preferences');
     assert.equal(await settings.getByRole('link', {name: 'Companion knowledge', exact: true}).getAttribute('href'), '#/module/companions/knowledge');
     // The model-written session title, and the owner's rename through assistant-control (Hub #2025).
-    await fact(settings, 'Session title', '#2025 Conversation titles (written by the model)');
+    // This fixture's profile runs the synthetic provider, which has no title model: a title on it is a test's fixed title.
+    await fact(settings, 'Session title', '#2025 Conversation titles (fixed synthetic title)');
+    await page.evaluate("window.conversationFixture.title('B.U.N.N.Y.', 'provider')");
+    await fact(settings, 'Session title', 'B.U.N.N.Y. (persona name; this profile has no title model)');
+    await settings.getByText('This profile has no title model, so it keeps its persona name until you rename it.', {exact: true}).waitFor();
     const renameInput = settings.getByLabel('Rename conversation', {exact: true});
     const renameButton = settings.getByRole('button', {name: 'Rename', exact: true});
     assert.equal(await renameButton.isDisabled(), true, 'an empty name cannot be sent');
@@ -213,6 +217,9 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Reserved usage', '16384 / 1000000 tokens');
     await fact(usage, 'Paid cost', 'Unknown (provider billing)');
     await fact(usage, 'Prices', 'Configured for claude-example-hosted-model');
+    // With a hosted provider the title model writes the title (Hub #2025).
+    await page.evaluate("window.conversationFixture.title('#2025 Conversation titles', 'provider')");
+    await fact(settings, 'Session title', '#2025 Conversation titles (written by the model)');
     assert.equal(await page.getByText(/spend limit .* is reached/).count(), 0, 'below the limit the composer shows no spend notice');
     await page.evaluate("window.conversationFixture.update('unpriced')");
     await fact(usage, 'Prices', 'Missing for claude-example-hosted-model; paid messages are refused');

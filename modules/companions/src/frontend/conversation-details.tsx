@@ -39,6 +39,17 @@ function toolList(names: readonly string[] | undefined): string {
   return names.length === 0 ? 'None' : names.join(', ');
 }
 
+/**
+ * Where a session title came from (Hub #2025): the owner's name, the persona name, which stands until a title model
+ * writes one and always for a profile without a title model, or a model's title. A synthetic profile has no title model,
+ * so a title on it is a test's fixed title.
+ */
+function titleOrigin(title: ConversationTitle, profileName: string, synthetic: boolean): string {
+  if (title.source === 'user') return 'your name';
+  if (title.value === profileName) return synthetic ? 'persona name; this profile has no title model' : 'persona name until a title is written';
+  return synthetic ? 'fixed synthetic title' : 'written by the model';
+}
+
 export function ConversationDetails({
   id, open, overlay, onClose, stopSpeaking,
   Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, setEnabled, title, rename,
@@ -157,7 +168,7 @@ export function ConversationDetails({
           {enabled && unfinished && <p>Finish or cancel the unfinished task before disabling the conversation.</p>}
         </>}
         <Facts items={[['Session title', title === undefined ? 'Not shown on the status devices now'
-          : `${title.value} (${title.source === 'user' ? 'your name' : title.value === profileName ? 'persona name until a title is written' : 'written by the model'})`]]}/>
+          : `${title.value} (${titleOrigin(title, profileName, synthetic)})`]]}/>
         <form className="conversation-rename" onSubmit={event => {
           event.preventDefault();
           if (!canRename) return;
@@ -169,7 +180,8 @@ export function ConversationDetails({
             onChange={event => {setDraftTitle(event.target.value);}}/>
           <button type="submit" className="secondary" disabled={!canRename}>Rename</button>
         </form>
-        <p>The model writes a short title after the first message and again a few messages later. Your name replaces it, and the model does not change it again.</p>
+        <p>{synthetic ? 'This profile has no title model, so it keeps its persona name until you rename it.'
+          : 'The title model writes a short title after the first message, again a few messages later and after a coding hand-off. Your name replaces it, and the model does not change it again.'}</p>
         <p>Submitted messages and answers are saved in private Conversation history and passed to this profile's selected model. The Demo profiles run locally and make no paid calls.</p>
         <p>Unsent drafts stay in this page until reload. Submitted drafts also stay in the composer. Review saved history before sending the same text again.</p>
         <ul className="conversation-settings-links">

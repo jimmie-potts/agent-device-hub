@@ -4,12 +4,12 @@ Native B.U.N.N.Y. conversation sessions are titled by persona, so every conversa
 
 ## What Changes
 
-- After the first message of a session appearance, at its third task, and when the session reappears after a day without evidence, a small model call writes the conversation's title. The default title model is `claude-haiku-5-5`, configurable as `assistant.titleModel` in the private companions section.
+- After the first message of a session appearance, at its third task, when the session reappears after a day without evidence, and when a coding hand-off is accepted, a small model call writes the conversation's title. Only a profile with a real title model makes the call; Reachy, MicroDuck and the synthetic provider keep their persona names. The default title model is `claude-haiku-5-5`, configurable as `assistant.titleModel` in the private companions section.
 - The title instruction and normalization are adapted from OpenAI Codex (Apache-2.0) and T3 Code (MIT), with their license and notice text in `modules/companions/THIRD-PARTY-NOTICES.md`.
 - The title is stored on the conversation with its source and published as the session title. Until one exists the persona name stands. A failed, refused or invalid title never fails or rolls back a task.
 - The owner renames a conversation from Conversation details through the additive `assistant-control/2.1` action `rename`. A generated title never overwrites it, and a title call in flight is dropped when it lands.
 - `lifecycle/2.3` allows the native producer's `metadata-observed`, so a title change reaches the devices at once without waiting for other activity. The core accepts it from the companions module only.
-- Each paid title call reserves and settles its cost in the shared spend ledger of [#2024](https://github.com/jimmie-potts/agent-device-hub/issues/2024) as a conversation-level call, outside every task's limits; a call the spend limits refuse is not sent. The title model needs its own price entry.
+- Each paid title call reserves and settles its cost in the shared spend ledger of [#2024](https://github.com/jimmie-potts/agent-device-hub/issues/2024) as a conversation-level call, outside every task's limits; a call the spend limits refuse is not sent. Without a price for the title model, the ledger refuses its calls and the persona stays.
 
 ## Capabilities
 

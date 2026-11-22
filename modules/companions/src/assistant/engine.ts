@@ -19,7 +19,7 @@ import {ConversationActions} from './catalog-actions.js';
 import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
-import {ConversationTitles, ownerTitle, SyntheticTitleProvider, type TitleProvider} from './titles.js';
+import {ConversationTitles, ownerTitle, type TitleProvider} from './titles.js';
 import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices} from './devices.js';
 import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
 
@@ -52,9 +52,12 @@ export type AssistantOptions = {
   prices?: PriceTable;
   /** The time zone whose local day and month the spend limits use: the runtime host's own unless a test names one. */
   timeZone?: string;
-  /** The `bunny` profile's title provider (Hub #2025), synthetic without one; Reachy and MicroDuck always use the synthetic one. */
+  /**
+   * The `bunny` profile's title provider (Hub #2025): the configured hosted model's. A profile without one, Reachy and
+   * MicroDuck, and B.U.N.N.Y. on the synthetic provider, makes no title call and keeps its persona name.
+   */
   titleProvider?: TitleProvider;
-  /** A test's stand-in for the synthetic title provider, which otherwise writes its fixed title. */
+  /** A test's or harness's title provider for every profile that has none, such as the fixed `SyntheticTitleProvider`. */
   syntheticTitleProvider?: TitleProvider;
 };
 /** An approved delegation as the module dispatches it, bound to the coding state revision the proposal saw. */
@@ -104,14 +107,12 @@ export class AssistantEngine {
   #closed = false;
   #recoveryUnavailable = false;
   readonly #synthetic = new SyntheticProvider();
-  readonly #syntheticTitles: TitleProvider;
   readonly #allowed: readonly string[];
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly options: AssistantOptions = {}) {
     this.store = new AssistantStore(context.database());
     this.spend = new SpendLedger(context.database(), options.prices ?? {}, () => context.clock.now(), options.timeZone);
-    this.#syntheticTitles = options.syntheticTitleProvider ?? new SyntheticTitleProvider();
     this.titles = new ConversationTitles(context.database(), {outbox, spend: this.spend, now: () => context.clock.now(), after: (ms, callback) => context.scheduler.after(ms, callback),
-      provider: profile => profile === 'bunny' ? options.titleProvider ?? this.#syntheticTitles : this.#syntheticTitles,
+      provider: profile => (profile === 'bunny' ? options.titleProvider : undefined) ?? options.syntheticTitleProvider,
       messages: conversationId => this.store.titleMessages(conversationId), reported: conversationId => this.store.report(conversationId).sequence > 0,
       metadata: (conversationId, title, observedAtMs) => observationDraft(titleObservationOf(conversationId, title, observedAtMs))});
     this.#allowed = [...(options.tools ?? [])];
@@ -710,12 +711,19 @@ export class AssistantEngine {
         .then(answer => settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)));
     }
     const accepted = result.startsWith('accepted');
+    let handedOff = false;
     await this.#append(state.taskId, {role: 'tool', call: question.call, name, result, ok: accepted, effect: id}, active.span.context, current => {
       if (delegation === undefined) return;
       // The conversation says "delegated" only once the core accepted the hand-off; a refused one has no worker's word to wait for, so the answered approval stands again.
-      if (accepted) this.store.message(current, delegation.id, 'assistant', delegation.text, this.context.clock.now());
+      if (accepted) {this.store.message(current, delegation.id, 'assistant', delegation.text, this.context.clock.now()); handedOff = true;}
       else if (current.question?.kind === 'delegation') current.question = question;
     });
+    // An accepted coding hand-off refreshes the conversation's title (Hub #2025), so an issue named only in its brief leads
+    // it; a conversation the owner renamed keeps its name. The call runs beside the task and never delays it.
+    if (handedOff && !this.#closed && !this.context.signal.aborted) {
+      const current = this.#task(state.taskId);
+      void this.titles.generate(current.conversationId, current.profile);
+    }
     return {step: state.step + 1, next: proposal.family === 'coding-dispatch' && accepted ? 'await' : 'turn'};
   }
   #await(state: GraphState): Partial<GraphState> {

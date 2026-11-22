@@ -253,11 +253,12 @@ history row for each session publication again. Prefer fixing forward.
 ## Conversation titles (#2025)
 
 The #2025 release gives each assistant conversation a model-written title and
-lets the owner rename it. Before the upgrade, when the companions provider is
-`anthropic`, add a price entry for the title model to `assistant.prices`: the
-default `claude-haiku-5-5`, or the model named by the optional
-`assistant.titleModel`. Without it the module refuses the section and does not
-start. The synthetic provider needs no change.
+lets the owner rename it. When the companions provider is `anthropic`, add a
+price entry to `assistant.prices` for the title model: the default
+`claude-haiku-5-5`, or the model named by the optional `assistant.titleModel`.
+The section and the module start without it, but the spend ledger then
+refuses every title call, so conversations keep their persona names. The
+synthetic provider needs no change and makes no title call.
 
 The companions module's first start adds the empty `assistant_titles` and
 `assistant_title_calls` tables. Each conversation is titled after its next
