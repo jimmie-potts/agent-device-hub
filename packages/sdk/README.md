@@ -491,7 +491,7 @@ export const sign: BunnyModule<SignConfig> = {
     characters; the module validates its own fields. Earlier versions refuse
     queries. Reads change no owner state. The gateway serves images, plain text and
     JSON of at most 16 MiB.
-  - `upload` (1.3): one `{family, maxBytes, stage}` declaration, with a limit
+  - `upload` and optional `additionalUploads` (1.3): distinct `{family, maxBytes, stage}` declarations, each with a limit
     from 1 byte through `MAX_UPLOAD_BYTES` (10 MiB). The gateway requires
     control authority and passes `{target, requestId, name, bytes, signal}` to
     `stage`, without a credential or caller-selected path. It returns a safe

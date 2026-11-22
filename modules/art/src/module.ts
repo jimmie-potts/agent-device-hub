@@ -4,10 +4,11 @@
 // Results appear in `art` state. Restart never re-runs generation or preparation.
 import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
-import {localGifComposition, localGifReference} from '@jimmie-potts/event-contracts/v2/art-show';
+import {ART_ATTACHMENT_FAMILY, MAX_ART_ATTACHMENT_BYTES, isUploadArtworkId, uploadArtworkId, localGifComposition, localGifReference} from '@jimmie-potts/event-contracts/v2/art-show';
+import {ArtAttachments, ATTACHMENT_LIFETIME_MS} from './attachment.js';
 import {LocalGifUpload, LOCAL_GIF_LIFETIME_MS} from './local-gif.js';
 import {CONVERSATION_ART_SCHEMA, type ArtAmbientSelect, type ArtAuto22, type ArtAutoStart, type ArtCancel, type ArtPrepare, type ArtPresent, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
-import {ART_ID, ART_STATE_KEY, ART_STATE_21_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtUploadStage, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState21, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import {ART_ID, ART_STATE_KEY, ART_STATE_21_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtAttachmentEdit, type ArtUploadStage, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState21, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {Outbox, Outcome, childOf, fullDisk, recordLog, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type Reply, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {AnthropicIdeas} from './anthropic.js';
 import {ANTHROPIC_KEY, OPENAI_KEY, configureArt, type ArtConfig} from './configuration.js';
@@ -68,6 +69,9 @@ export function createArtModule(options: ArtModuleOptions = {}): BunnyModule<Art
   return {
     manifest: {name: 'art', apiVersion: '1.3', configure: configureArt, content: (ref, request) => owner?.content(ref, request),
       upload: {family: 'art-upload-stage', maxBytes: MAX_DISPLAY_BYTES, stage: input => owner?.upload(input) ?? errorBody('unavailable')},
+      additionalUploads: [
+        {family: ART_ATTACHMENT_FAMILY, maxBytes: MAX_ART_ATTACHMENT_BYTES, stage: input => owner?.uploadAttachment(input) ?? errorBody('unavailable')},
+      ],
       pages: [{id: 'gallery', title: 'Art Gallery', presentation: 'react'}]},
     start: async context => {owner = new ArtOwner(context, options); await owner.start();},
     stop: async () => {await owner?.stop();},
@@ -86,6 +90,7 @@ class ArtOwner {
   readonly #store: ArtStore;
   readonly #ledger: Ledger;
   readonly #localUpload: LocalGifUpload;
+  readonly #attachments: ArtAttachments;
   readonly #validator: MessageValidator = artValidator();
   readonly #outbox: Outbox;
   readonly #dispatch: ArtDispatchSeam;
@@ -104,6 +109,7 @@ class ArtOwner {
   constructor(context: ModuleContext<ArtConfig>, options: ArtModuleOptions) {
     if (context.config === undefined) throw new Error('art needs its section');
     this.#localUpload = new LocalGifUpload(context.scheduler);
+    this.#attachments = new ArtAttachments(context.scheduler, () => context.clock.now());
     this.#context = context; this.#options = options; this.#config = context.config;
     this.#store = new ArtStore(context.database());
     this.#ledger = new Ledger(this.#store, this.#config.limits);
@@ -127,6 +133,7 @@ class ArtOwner {
       owner: command => this.#owner(command),
       automatic: command => this.#automatic(command),
       upload: command => this.#stageUpload(command),
+      attachment: command => this.#admit(command, ART_ATTACHMENT_FAMILY, 'owner', () => this.#attachment(command.data)),
       catalog: command => this.#admit(command, 'art-catalog-edit', 'owner', () => this.#catalog(command)),
     }));
     this.#scheduleMidnight();
@@ -134,6 +141,34 @@ class ArtOwner {
   }
   upload(input: Parameters<LocalGifUpload['stage']>[0]): ReturnType<LocalGifUpload['stage']> {
     return this.#closed ? Promise.resolve(errorBody('unavailable')) : this.#localUpload.stage(input);
+  }
+
+  uploadAttachment(input: Parameters<ArtAttachments['stage']>[0]): ReturnType<ArtAttachments['stage']> {
+    return this.#closed ? Promise.resolve(errorBody('unavailable')) : this.#attachments.stage(input);
+  }
+
+  #temporary(artworkId: string) {
+    const entry = this.#attachments.get(artworkId);
+    return entry === undefined || this.#store.receipt(entry.artwork.requestId) === undefined ? undefined : entry;
+  }
+
+  #attachment(data: ArtAttachmentEdit): (() => void) | undefined {
+    if (data.action === 'stage') {
+      const input = this.#attachments.pending, prepared = input?.data;
+      if (input?.requestId !== data.requestId || prepared === undefined || prepared.digest !== data.sha256) {
+        return refuse('not-found', 'the matching attachment upload is unavailable');
+      }
+      this.#attachments.admit(prepared);
+      return undefined;
+    }
+    const {artworkId} = data, saved = this.#store.artwork(artworkId);
+    if (saved?.deletedAtMs === null) return undefined;
+    const prepared = this.#temporary(artworkId);
+    if (saved !== undefined || prepared === undefined) return refuse('not-found', 'the attachment is unavailable or expired');
+    for (const [id, blob] of prepared.blobs) this.#store.saveBlob(id, blob.type, blob.bytes);
+    this.#store.saveArtwork(prepared.artwork);
+    for (const composition of prepared.compositions) this.#store.saveComposition(artworkId, composition);
+    return () => {this.#attachments.discard(artworkId);};
   }
 
   async #stageUpload(command: Command<ArtUploadStage>): Promise<Reply> {
@@ -228,7 +263,7 @@ class ArtOwner {
     }
   }
   /** Admission is atomic. Preparation and ambient selection wait for their tracked children before completing. */
-  async #admit<T extends object>(command: Command<T>, family: 'art-request' | 'art-auto' | 'art-catalog-edit' | 'art-upload-stage', admittedBy: 'owner' | 'automatic', apply: () => (() => void) | undefined, pending = false): Promise<Reply> {
+  async #admit<T extends object>(command: Command<T>, family: 'art-request' | 'art-auto' | 'art-catalog-edit' | 'art-upload-stage' | typeof ART_ATTACHMENT_FAMILY, admittedBy: 'owner' | 'automatic', apply: () => (() => void) | undefined, pending = false): Promise<Reply> {
     if (this.#closed || this.#context.signal.aborted) return errorBody('unavailable');
     const checked = this.#validator.validate(command, {nowMs: this.#context.clock.now()});
     if (!checked.ok) return {error: checked.error};
@@ -304,16 +339,22 @@ class ArtOwner {
     this.#store.select({artworkId: data.artworkId, compositionId: data.compositionId});
   }
   #prepare(data: ArtPrepare | ArtAmbientSelect, parent: TraceContext): () => void {
-    const composition = this.#savedComposition(data.artworkId, data.compositionId), target = composition.target;
-    const rendered = composition.renditions[0], blob = rendered === undefined ? undefined : this.#store.blob(rendered.renditionId);
-    if (!isDisplay(target) || rendered === undefined || rendered.format !== 'gif' || blob === undefined) return refuse('invalid-state', 'that composition is not a saved display animation');
-    if (data.action === 'ambient' && target !== 'tidbyt') return refuse('invalid-state', 'ambient art requires a saved Tidbyt composition');
+    const temporary = data.action === 'prepare' ? this.#temporary(data.artworkId) : undefined;
+    const composition = temporary?.compositions.find(item => item.compositionId === data.compositionId)
+      ?? this.#savedComposition(data.artworkId, data.compositionId);
+    const target = composition.target, rendered = composition.renditions[0];
+    const blob = rendered === undefined ? undefined : temporary?.blobs.get(rendered.renditionId) ?? this.#store.blob(rendered.renditionId);
+    if (!isDisplay(target) || rendered === undefined || rendered.format === 'webp' || blob === undefined) {
+      return refuse('invalid-state', 'that composition has no display rendition');
+    }
+    const lifetimeMs = temporary === undefined ? STAGE_LIFETIME_MS : ATTACHMENT_LIFETIME_MS;
+    if (data.action === 'ambient' && (target !== 'tidbyt' || isUploadArtworkId(data.artworkId))) return refuse('invalid-state', 'ambient art requires a saved Tidbyt composition');
     if (this.#store.pendingPreparations().length >= MAX_PENDING) return refuse('capacity', 'too many art preparations are waiting');
     const requestId = `stage-${randomUUID()}`, now = this.#context.clock.now();
-    this.#store.saveStage({requestId, artworkId: data.artworkId, compositionId: data.compositionId, target, targetId: data.target, status: 'pending', expiresAtMs: now + STAGE_LIFETIME_MS, ambient: data.action === 'ambient'});
+    this.#store.saveStage({requestId, artworkId: data.artworkId, compositionId: data.compositionId, target, targetId: data.target, status: 'pending', expiresAtMs: now + lifetimeMs, ambient: data.action === 'ambient'});
     this.#store.savePreparation({requestId: data.requestId, stageRequestId: requestId, status: 'pending', traceparent: parent.traceparent, createdAtMs: now, ...(data.action === 'ambient' ? {kind: 'ambient' as const} : {})});
     const request: ArtStageRequest = {requestId, compositionId: data.compositionId, target, expectedTargetId: data.target, format: rendered.format, width: rendered.width, height: rendered.height,
-      frames: rendered.frames, durationMs: rendered.durationMs, sha256: rendered.renditionId, bytes: blob.bytes, lifetimeMs: STAGE_LIFETIME_MS};
+      frames: rendered.frames, durationMs: rendered.durationMs, sha256: rendered.renditionId, bytes: blob.bytes, lifetimeMs};
     return () => {
       if (data.action === 'ambient') this.#ambientGrants.set(requestId, data.authorization);
       void this.#dispatchPreparation(request, parent);
@@ -823,17 +864,17 @@ class ArtOwner {
     const limits = this.#config.limits[provider], totals = this.#ledger.totals(provider, now);
     return {provider, available: this.#providers[provider] !== undefined, ceilingMicros: limits.ceilingMicros, paceMicros: limits.paceMicros, ...totals};
   }
-  #summary(artwork: Artwork): ArtworkSummary {
+  #summary(artwork: Artwork, compositions = this.#store.compositions(artwork.artworkId)): ArtworkSummary {
     return {artworkId: artwork.artworkId, createdAtMs: artwork.createdAtMs, favorite: artwork.favorite, feedback: artwork.feedback, variationOf: artwork.variationOf, palette: artwork.palette,
       provenance: {generatedBy: artwork.generatedBy, factual: false},
-      compositions: this.#store.compositions(artwork.artworkId).map(entry => ({target: entry.target, compositionId: entry.compositionId, outcome: entry.outcome, motion: entry.motion, renditions: entry.renditions}))};
+      compositions: compositions.map(entry => ({target: entry.target, compositionId: entry.compositionId, outcome: entry.outcome, motion: entry.motion, renditions: entry.renditions}))};
   }
   /** Saved art a device holds. Explicit feedback shapes the order, deletion and dislike remove it, and silence changes nothing. */
   #candidates(now: number): ArtCandidate[] {
     const seen = new Set<string>(), rows: (ArtCandidate & {more: boolean})[] = [];
     for (const stage of this.#store.liveStages(now)) {
       const key = `${stage.compositionId}/${stage.target}`, artwork = this.#store.artwork(stage.artworkId);
-      if (seen.has(key) || artwork === undefined || artwork.deletedAtMs !== null || artwork.feedback === 'less' || artwork.feedback === 'dismiss') continue;
+      if (isUploadArtworkId(stage.artworkId) || seen.has(key) || artwork === undefined || artwork.deletedAtMs !== null || artwork.feedback === 'less' || artwork.feedback === 'dismiss') continue;
       seen.add(key);
       rows.push({artworkId: stage.artworkId, target: stage.target, compositionId: stage.compositionId, favorite: artwork.favorite, stagedUntilMs: stage.expiresAtMs ?? now, more: artwork.feedback === 'more'});
     }
@@ -871,12 +912,32 @@ class ArtOwner {
         const page = this.#store.artworks(after, limit);
         return jsonBody({artworks: page.artworks.map(artwork => this.#summary(artwork)), nextAfter: page.nextAfter});
       }
+      if (ref.startsWith('attachment-summary.')) {
+        const id = ref.slice('attachment-summary.'.length);
+        if (!isUploadArtworkId(id)) return undefined;
+        const saved = this.#store.artwork(id);
+        if (saved?.deletedAtMs === null) return jsonBody(this.#summary(saved));
+        const temporary = this.#temporary(id);
+        return temporary === undefined ? undefined : jsonBody(this.#summary(temporary.artwork, temporary.compositions));
+      }
       if (ref.startsWith('artwork.')) {
         const result = this.#result(ref.slice('artwork.'.length));
         return result === undefined ? undefined : jsonBody(result);
       }
       if (ref.startsWith('conversation.')) {
-        const job = this.#store.job(ref.slice('conversation.'.length));
+        const requestId = ref.slice('conversation.'.length), uploadId = uploadArtworkId(requestId);
+        if (isUploadArtworkId(uploadId)) {
+          const temporary = this.#temporary(uploadId), saved = this.#store.artwork(uploadId);
+          const compositions = temporary?.compositions ?? (saved?.deletedAtMs === null ? this.#store.compositions(uploadId) : []);
+          const id = compositions.find(item => item.target === 'ui')?.originalId;
+          const original = id === undefined || id === null ? undefined : temporary?.blobs.get(id) ?? this.#store.blob(id);
+          if (id !== undefined && id !== null && original !== undefined) {
+            return jsonBody({status: 'ready', artworkId: uploadId,
+              displayFormat: compositions.find(item => item.target === 'pixoo')?.renditions[0]?.format,
+              rendition: {format: original.type.slice('image/'.length), bytes: original.bytes.byteLength, renditionId: id}});
+          }
+        }
+        const job = this.#store.job(requestId);
         if (job?.conversation !== true) return undefined;
         if (job.status !== 'finished') return jsonBody({status: 'pending'});
         const target = job.targets[0];
@@ -892,7 +953,8 @@ class ArtOwner {
         return jsonBody({status: 'ready', artworkId: artwork.artworkId, rendition});
       }
       if (ref.startsWith('rendition.')) {
-        const blob = this.#store.blob(ref.slice('rendition.'.length));
+        const id = ref.slice('rendition.'.length);
+        const blob = this.#store.blob(id) ?? this.#attachments.blob(id, requestId => this.#store.receipt(requestId) !== undefined);
         return blob === undefined ? undefined : {type: blob.type, bytes: blob.bytes};
       }
       return undefined;

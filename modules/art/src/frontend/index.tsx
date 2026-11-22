@@ -1,6 +1,7 @@
 export {scheduledArtNotice} from './notice.js';
 import React, {useEffect, useId, useRef, useState} from 'react';
-import type {ArtState, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import {type ArtState, type ArtTarget, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import {isUploadArtworkId} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {FrontendCommand, FrontendContext, FrontendContribution} from '@jimmie-potts/sdk/frontend';
 import {ArtImage} from './image.js';
 import {useArt, useGalleryPage, useShowSurfaces, useShowTargets, useWidgetArtwork, type SentShow} from './hooks.js';
@@ -72,6 +73,19 @@ function ShowResults({context, show, sent, targets}: {context: FrontendContext; 
   </li>)}</ul>;
 }
 
+function SavedAnimation({art}: {art: ArtworkSummary | undefined}): React.JSX.Element | null {
+  const [playing, setPlaying] = useState(false);
+  const gif = art?.compositions.find(composition => composition.target === 'pixoo')?.renditions
+    .find(rendition => rendition.format === 'gif' && rendition.frames > 1);
+  if (gif === undefined) return null;
+  return <div>
+    <button type="button" className="secondary" onClick={() => {setPlaying(value => !value);}}>
+      {playing ? 'Stop saved animation' : 'Play saved animation'}
+    </button>
+    {playing && <img className="art-saved-animation" src={`/modules/art/content/${gif.ref}`} alt="Saved animation"/>}
+  </div>;
+}
+
 function GalleryBody({context, state, live, command, show}: {context: FrontendContext; state: ArtState | undefined; live: boolean; command: FrontendCommand; show: FrontendCommand}): React.JSX.Element {
   const selectedPanel = useRef<HTMLElement>(null);
   const [cursors, setCursors] = useState<number[]>([0]), [selected, setSelected] = useState<ArtworkSummary>(), [variation, setVariation] = useState<ArtworkSummary>();
@@ -99,6 +113,7 @@ function GalleryBody({context, state, live, command, show}: {context: FrontendCo
   };
   return <><div className="art-gallery-top"><section ref={selectedPanel} tabIndex={-1} className="card art-selected" aria-label="Selected artwork"><h2>Selected artwork</h2>
       <ArtImage api={context.api} artwork={current} live={live} presented/>
+      {current !== undefined && isUploadArtworkId(current.artworkId) && <SavedAnimation key={current.artworkId} art={current}/>}
       {current?.variationOf !== null && current?.variationOf !== undefined && <p className="hint">Variation of saved art.</p>}
       <section className="art-show" aria-label="Show now"><h3>Show now</h3>
         <fieldset disabled={showDisabled}><legend>Show on</legend><div className="art-targets">{surfaces.map(target => <label key={target}><input type="checkbox" aria-label={`Show on ${surfaceLabel(target, targets)}`} checked={picked.includes(target)} onChange={event => {

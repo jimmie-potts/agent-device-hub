@@ -1,7 +1,8 @@
 import {ArtNotice} from './notice-label.js';
 import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
-import type {ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import {type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import {isUploadArtworkId} from '@jimmie-potts/event-contracts/v2/art-show';
 import {useBrowserArt} from './hooks.js';
 import {usePresentArt, type PresentedArt} from './presentation.js';
 import {loadBrowserArt} from './rendition.js';
@@ -31,7 +32,7 @@ export function ArtImage({api, artwork, live, compact = false, presented = false
     setStatus('loading');
     void loadBrowserArt(api, selected, () => !disposed).then(loaded => {
       if (loaded === undefined) return;
-      const next: Decoded = {...loaded, label: `Generated art by ${selected.artwork.provenance.generatedBy === 'openai' ? 'OpenAI' : 'local rendering'}. Fictional composition.`};
+      const next: Decoded = {...loaded, label: isUploadArtworkId(selected.artwork.artworkId) ? 'Uploaded artwork.' : `Generated art by ${selected.artwork.provenance.generatedBy === 'openai' ? 'OpenAI' : 'local rendering'}. Fictional composition.`};
       kept.current?.bitmap.close();kept.current = next;setDecoded(next);setStatus('ready');
     }).catch(() => {if (!disposed) setStatus('unavailable');});
     return () => {disposed = true;};

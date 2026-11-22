@@ -67,6 +67,21 @@ Generic provider refusals do not identify a preview-access problem; the result r
 Sunburst is permitted for owner requests but is not selected by this implementation.
 Procedural art is available only as a failed display call's free fallback.
 
+## Conversation attachments
+
+Conversation uses the Art binary upload with family `art-attachment-edit`.
+It accepts one PNG, JPEG, or GIF up to 4 MiB, with at most 20 frames, 2048
+pixels on either axis, and 8 Mi decoded pixels in total. The authenticated
+preview reads the exact original. Art prepares native 64 by 64 Pixoo and 64 by
+32 Tidbyt renditions. Device GIFs use a uniform 200 ms frame delay. The
+original keeps its timing.
+
+A validated attachment is temporary for ten minutes. Save adds one favorite
+to the gallery in a single transaction. Display uses the existing tracked
+Show command and the device's own evidence. Temporary bytes are released on
+expiry or restart, and saving preserves the original privately. Uploaded art
+requires explicit Show and stays out of automatic display selection.
+
 ## Stage a temporary Tidbyt GIF
 
 Send a control-authenticated binary request to

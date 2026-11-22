@@ -8,9 +8,9 @@ import type {RemoteEndpointOptions, RequestResult, SyncHandler, SyncResult} from
 import type {TraceContext} from './sdk.js';
 
 /** An explicit command; acceptance is separate from the operation's completed or uncertain outcome. */
-export type FrontendAction = {family: string; target: string; data: object; requestId: string};
+export type FrontendAction = {family: string; target: string; data: object; requestId: string; parent?: TraceContext};
 /** A file remains in this page's memory; only its request identity is retained for reload recovery. */
-export type FrontendUpload = {family: string; target: string; requestId: string; upload: {name: string; file: Blob}};
+export type FrontendUpload = {family: string; target: string; requestId: string; upload: {name: string; file: Blob}; parent?: TraceContext};
 export type FrontendActionReply = {status: 'accepted'; requestId: string} | ErrorBody;
 export type FrontendCommand = {
   readonly text: string;
