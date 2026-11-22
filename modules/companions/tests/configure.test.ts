@@ -169,7 +169,7 @@ void test('an Anthropic spend-limit refusal ends the turn capacity, names the mo
     const task = await w.settled();
     assert.deepEqual([task?.status, task?.code, w.sent()], ['failed', 'capacity', 1], 'one turn request, no retry');
     assert.ok(w.titleCalls() <= 1, 'at most one title request, which keeps the persona');
-    assert.ok((await w.said()).at(-1)?.endsWith(SPEND_LIMIT_REACHED), 'the closing reply names the monthly limit');
+    assert.ok((await w.said()).at(-1)?.endsWith(SPEND_LIMIT_REACHED) === true, 'the closing reply names the monthly limit');
   }
   // Another 400 or 429 keeps its own code and adds no spend-limit message.
   for (const [answer, code] of [

@@ -227,7 +227,7 @@ void test('a provider spend-limit refusal ends the turn capacity with its messag
   await until(() => task(w)?.status === 'failed');
   assert.deepEqual([task(w)?.code, task(w)?.modelCalls, task(w)?.toolCalls, provider.calls()], ['capacity', 2, 1, 2], 'no retry and no further call');
   // The turn's closing reply ends with the provider's reason (Hub #2046).
-  assert.ok((await messages(w)).at(-1)?.endsWith(SPEND_LIMIT_REACHED), (await messages(w)).at(-1));
+  assert.ok((await messages(w)).at(-1)?.endsWith(SPEND_LIMIT_REACHED) === true, (await messages(w)).at(-1));
   // The refused call reported no usage, so its reservation keeps counting in the local estimate.
   assert.equal((await spend(w)).day.unreported, 1);
 });
