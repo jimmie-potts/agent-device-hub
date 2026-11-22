@@ -15,7 +15,7 @@ import {buildSession, type SessionView} from '@jimmie-potts/event-contracts/v2/s
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
-import {AssistantStore} from '../src/assistant/store.js';
+import {AssistantStore, LIMITS} from '../src/assistant/store.js';
 import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
 import {changesOf, eventsOf, observationDraft, observationOf, projectionOf, waitsOnOwner, type ProjectedTask, type Projection} from '../src/assistant/sessions.js';
 import {summarizeSessions} from '../src/assistant/tools.js';
@@ -389,18 +389,22 @@ void test('a task waiting on delegated work raises no attention and makes no run
     'the approval is attention; the wait on the worker is not');
 });
 
-void test('a task change that rolls back reports nothing: a third question fails the task with only its end', {timeout: 20_000}, async context => {
-  const w = await world(context, {provider: scripted([ask('First?'), ask('Second?'), ask('Third?')])});
+void test('a task change that rolls back reports nothing: a question past the limit fails the task with only its end', {timeout: 20_000}, async context => {
+  const w = await world(context, {provider: scripted(Array.from({length: LIMITS.questions + 1}, (_, index) => ask(`Question ${String(index + 1)}?`)))});
   await control(w, 'enable');
   await input(w, 'synthetic request');
   await w.observed(3);
-  await input(w, 'first answer', true);
-  await w.observed(7);
-  await input(w, 'second answer', true);
-  await w.observed(10);
+  // Each answer resolves one question, observes the work and raises the next: four observations.
+  for (let answered = 1; answered < LIMITS.questions; answered += 1) {
+    await input(w, `answer ${String(answered)}`, true);
+    await w.observed(3 + 4 * answered);
+  }
+  const before = w.seen.length;
+  await input(w, 'last answer', true);
+  await w.observed(before + 3);
   assert.equal(w.module().inspectAssistant()?.tasks[0]?.status, 'failed');
   const kinds = kindsSince(w);
-  assert.deepEqual(kinds.slice(7), ['attention-resolved q2', 'activity-observed', 'turn-ended failed'], 'the refused third question left no raise');
-  assert.equal(kinds.filter(kind => kind.startsWith('attention-input')).length, 2);
+  assert.deepEqual(kinds.slice(before), [`attention-resolved q${String(LIMITS.questions)}`, 'activity-observed', 'turn-ended failed'], 'the refused question left no raise');
+  assert.equal(kinds.filter(kind => kind.startsWith('attention-input')).length, LIMITS.questions);
   assert.equal(kinds.filter(kind => kind === 'turn-started').length, 1, 'the task is one turn');
 });
