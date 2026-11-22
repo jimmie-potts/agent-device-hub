@@ -4,12 +4,12 @@
 // Results appear in `art` state. Restart never re-runs generation or preparation.
 import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
-import {ART_ATTACHMENT_FAMILY, MAX_ART_ATTACHMENT_BYTES, isUploadArtworkId, uploadArtworkId, localGifComposition, localGifReference, usableArtComposition} from '@jimmie-potts/event-contracts/v2/art-show';
-import {ArtAttachments, ATTACHMENT_LIFETIME_MS} from './attachment.js';
+import {ART_ATTACHMENT_FAMILY, MAX_ART_ATTACHMENT_BYTES, isUploadArtworkId, uploadArtworkId, localGifComposition, localGifReference} from '@jimmie-potts/event-contracts/v2/art-show';
+import {ArtAttachments, ATTACHMENT_LIFETIME_MS, prepareArtMedia} from './attachment.js';
 import {LocalGifUpload, LOCAL_GIF_LIFETIME_MS} from './local-gif.js';
 import {CONVERSATION_ART_SCHEMA, type ArtAmbientSelect, type ArtAuto22, type ArtAutoStart, type ArtCancel, type ArtPrepare, type ArtPresent, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {ART_ID, ART_STATE_KEY, ART_STATE_21_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtAttachmentEdit, type ArtUploadStage, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState21, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
-import {Outbox, Outcome, childOf, fullDisk, recordLog, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type Reply, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
+import {Outbox, Outcome, usableArtComposition, childOf, fullDisk, recordLog, type AddMessage, type BunnyModule, type Cancel, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type Reply, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {AnthropicIdeas} from './anthropic.js';
 import {ANTHROPIC_KEY, OPENAI_KEY, configureArt, type ArtConfig} from './configuration.js';
 import {artValidator} from './families.js';
@@ -573,6 +573,10 @@ class ArtOwner {
     const {composition, blobs, palette} = composed, display = composition.renditions[0];
     if (isDisplay(target) && display !== undefined && display.bytes > MAX_DISPLAY_BYTES) return this.#settleTarget(requestId, target, {outcome: Outcome.failed, code: 'too-large', reason: 'invalid-output'});
     const stored: StoredComposition = {...composition, promptHash};
+    const savedJob = this.#job(requestId);
+    const original = savedJob.conversation === true ? blobs.find(blob => blob.id === stored.originalId) : undefined;
+    // A local conversion failure leaves the primary reply playable. Only stored compositions become eligible.
+    const media = original === undefined ? undefined : await prepareArtMedia(original.bytes, savedJob.artworkId).catch(() => undefined);
     let artworkId = '', ambient = false, parent: TraceContext | undefined;
     await this.#settleTarget(requestId, target, {outcome: Outcome.succeeded, code: null, reason}, job => {
       artworkId = job.artworkId;
@@ -580,6 +584,15 @@ class ArtOwner {
       if (job.conversation !== true) parent = {traceparent: job.traceparent};
       for (const blob of blobs) this.#store.saveBlob(blob.id, blob.type, blob.bytes);
       this.#store.saveComposition(job.artworkId, stored);
+      if (media !== undefined && !('error' in media)) {
+        for (const derived of media.compositions.filter(item => item.target !== target)) {
+          this.#store.saveComposition(job.artworkId, derived);
+          for (const rendition of derived.renditions) {
+            const blob = media.blobs.get(rendition.renditionId);
+            if (blob !== undefined) this.#store.saveBlob(rendition.renditionId, blob.type, blob.bytes);
+          }
+        }
+      }
       const artwork = this.#store.artwork(job.artworkId) ?? {artworkId: job.artworkId, requestId, createdAtMs: this.#context.clock.now(), favorite: false, feedback: null, variationOf: job.variationOf, palette: [], generatedBy, deletedAtMs: null};
       // Mixed art names the provider that drew any of it, and the browser still sets the theme's palette.
       this.#store.saveArtwork({...artwork, palette: target === 'ui' || artwork.palette.length === 0 ? palette : artwork.palette, generatedBy: generatedBy === 'openai' ? 'openai' : artwork.generatedBy});
@@ -958,7 +971,11 @@ class ArtOwner {
         }
         const summary = this.#summary(artwork);
         const usableKinds = (['ui', 'pixoo', 'tidbyt'] as const).filter(kind => usableArtComposition(summary, kind) !== undefined);
-        return jsonBody({status: 'ready', artworkId: artwork.artworkId, rendition, usableKinds});
+        const displayRenditions = (['pixoo', 'tidbyt'] as const).flatMap(kind => {
+          const primary = usableArtComposition(summary, kind)?.renditions[0];
+          return primary === undefined ? [] : [{kind, format: primary.format, bytes: primary.bytes}];
+        });
+        return jsonBody({status: 'ready', artworkId: artwork.artworkId, rendition, usableKinds, displayRenditions});
       }
       if (ref.startsWith('rendition.')) {
         const id = ref.slice('rendition.'.length);

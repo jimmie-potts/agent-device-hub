@@ -8,13 +8,12 @@ import type {AddressInfo} from 'node:net';
 import {MUSIC_PRODUCER_SOURCE} from '@jimmie-potts/event-contracts/v2/music-capture';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {recordLog, MODULE_API_VERSION, edgeValidator, type BunnyModule, type Clock, type RemoteEdge, type Scheduler, Outcome} from '@jimmie-potts/sdk';
-import {isCompanionsModule} from '@jimmie-potts/companions';
 import {isWisprModule} from '@jimmie-potts/wispr';
 import {admitBoundCoreOwnership, isCoreModule} from './core/core.js';
 import {modeParticipants} from './core/mode-participants.js';
 import {historyDevices} from './core/history-alarm.js';
 import {automationDevices} from './core/automation-devices.js';
-import {hostedArtCatalog} from './core/art-catalog.js';
+import {bindHostedArtCatalog} from './core/art-catalog.js';
 import {readEdgeCredentials} from './credentials.js';
 import {Gateway, readableFamilies} from './gateway/gateway.js';
 import {GatewayRefusals, methodOf} from './gateway/refusals.js';
@@ -357,9 +356,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {
     core?.setModeParticipants(modeParticipants(hosted));
     await core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
-    const artCatalog = hostedArtCatalog(host, scheduler);
-    core?.setArtCatalog(artCatalog);
-    modules.find(isCompanionsModule)?.setArtCatalog(artCatalog);
+    bindHostedArtCatalog(core, modules, host, scheduler);
   }
   if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && edgeOptions !== undefined) {
     // The gateway's action routes call the core's dispatcher (#782), when the runtime hosts the core.

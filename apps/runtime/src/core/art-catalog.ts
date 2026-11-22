@@ -6,7 +6,8 @@
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {artContentRef, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {isUploadArtworkId} from '@jimmie-potts/event-contracts/v2/art-show';
-import type {ModuleContent, ModuleManifest, ModuleScheduler} from '@jimmie-potts/sdk';
+import {isCompanionsModule} from '@jimmie-potts/companions';
+import type {BunnyModule, ModuleContent, ModuleManifest, ModuleScheduler} from '@jimmie-potts/sdk';
 
 /**
  * One retained artwork's summary, `undefined` when the art owner retains no such artwork, or why it could not be read
@@ -18,6 +19,14 @@ export type ArtCatalogHost = {
   modules(): readonly {readonly name: string; readonly admitted: boolean; readonly manifest: Pick<ModuleManifest, 'apiVersion' | 'content'>}[];
   invoke<T>(name: string, call: () => T | Promise<T>): Promise<T>;
 };
+
+/** Built-in readers that already consume the public Art catalog share one bounded host adapter. */
+export function bindHostedArtCatalog(core: {setArtCatalog(read: ArtCatalogRead): void} | undefined,
+  modules: readonly BunnyModule[], host: ArtCatalogHost, scheduler: ModuleScheduler): void {
+  const read = hostedArtCatalog(host, scheduler);
+  core?.setArtCatalog(read);
+  modules.find(isCompanionsModule)?.setArtCatalog(read);
+}
 
 /** The art owner's module name: the same owner whose `art` record the core follows. */
 const ART_MODULE = 'art';

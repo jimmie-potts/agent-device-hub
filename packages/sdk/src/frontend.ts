@@ -1,4 +1,5 @@
 // Type-only browser entry for fixed, shipped React contributions (Hub #932). Import no Node module implementation.
+export {usableArtComposition} from './art.js';
 import type {ComponentType, ReactNode} from 'react';
 import type {ErrorBody} from '@jimmie-potts/event-contracts/v2/errors';
 import type {HomeShape, Mode, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';

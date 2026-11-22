@@ -1,11 +1,17 @@
+import type {ArtFormat} from './art.js';
 import type {ErrorCode} from './errors.js';
-import type {ArtDisplayTarget, ArtTarget, ArtworkSummary} from './art-state.js';
+import type {ArtDisplayTarget} from './art-state.js';
 import type {DeviceRecord} from './devices.js';
 
 export type ConfiguredArtTarget = {target: string; kind: ArtDisplayTarget};
 export type ArtTargets = {id: 'art'; revision: number; targets: ConfiguredArtTarget[]};
 export type ArtShowGuard = ConfiguredArtTarget & {configurationRevision: number; epoch: string};
-export type ArtDestination = ConfiguredArtTarget & {label?: string; guard?: ArtShowGuard};
+export type ArtDestination = ConfiguredArtTarget & {label?: string; guard?: ArtShowGuard; formats?: ArtFormat[]; maxBytes?: number};
+
+export function acceptsArtRendition(destination: Pick<ArtDestination, 'formats' | 'maxBytes'>, rendition: {format: string; bytes: number} | undefined): boolean {
+  return rendition !== undefined && (rendition.format === 'gif' || rendition.format === 'png') &&
+    destination.formats?.includes(rendition.format) === true && destination.maxBytes !== undefined && rendition.bytes <= destination.maxBytes;
+}
 
 export function isArtShowGuard(value: unknown): value is ArtShowGuard {
   if (typeof value !== 'object' || value === null) return false;
@@ -13,21 +19,17 @@ export function isArtShowGuard(value: unknown): value is ArtShowGuard {
     /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.target) && value.target !== 'browser' &&
     'kind' in value && (value.kind === 'pixoo' || value.kind === 'tidbyt') &&
     'configurationRevision' in value && typeof value.configurationRevision === 'number' && Number.isSafeInteger(value.configurationRevision) && value.configurationRevision >= 0 &&
-    'epoch' in value && typeof value.epoch === 'string' && value.epoch.length > 0 && value.epoch.length <= 128;
+    'epoch' in value && typeof value.epoch === 'string' && /^[A-Za-z0-9_.-]{1,128}$/.test(value.epoch);
 }
 
 export function artDestination(display: ConfiguredArtTarget, device?: DeviceRecord): ArtDestination {
   if (device === undefined || device.id !== display.target || device.kind !== display.kind) return display;
   const label = device.label;
-  const eligible = device.availability === 'available' && device.held === undefined && device.capabilities.moments.supported &&
-    device.capabilities.moments.art !== undefined && !(device.externalControl.status === 'known' && device.externalControl.owner === 'external');
-  return {...display, ...(label === undefined ? {} : {label}), ...(eligible ? {guard: {...display,
+  const art = device.capabilities.moments.supported ? device.capabilities.moments.art : undefined;
+  const eligible = device.availability === 'available' && device.held === undefined && art !== undefined &&
+    !(device.externalControl.status === 'known' && device.externalControl.owner === 'external');
+  return {...display, ...(label === undefined ? {} : {label}), ...(eligible ? {formats: art.formats, maxBytes: art.maxBytes, guard: {...display,
     configurationRevision: device.configurationRevision, epoch: device.generation.epoch}} : {})};
-}
-
-export function usableArtComposition(artwork: Pick<ArtworkSummary, 'compositions'>, kind: ArtTarget): string | undefined {
-  return artwork.compositions.find(item => item.target === kind && item.outcome === 'succeeded' &&
-    item.compositionId !== null && item.renditions.length > 0)?.compositionId ?? undefined;
 }
 
 export function sameArtShowGuard(expected: ArtShowGuard, current: ArtShowGuard | undefined): boolean {

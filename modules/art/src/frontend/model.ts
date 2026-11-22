@@ -1,5 +1,6 @@
 import type {ArtComposition, ArtOutcome, ArtRendition, ArtSelection, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
-import {usableArtComposition, type ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
+import {usableArtComposition} from '@jimmie-potts/sdk/frontend';
+import type {ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 
 export const CATALOG_PAGE_SIZE = 6;

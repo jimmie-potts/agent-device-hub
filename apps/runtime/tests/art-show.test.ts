@@ -160,6 +160,19 @@ it('refusals send nothing: unknown art, no composition, a concurrent show and an
   assert.equal(w.handle.operation('show-second')?.status, 'rejected');
 });
 
+it('a guarded show refuses a retained rendition over the selected display byte limit before preparing it', async t => {
+  const oversize = artwork('retained-large', ['pixoo']);
+  const rendition = oversize.compositions[0]?.renditions[0];
+  assert.ok(rendition);
+  rendition.bytes = 163_841;
+  const w = await world(t, {}, pagedCatalog([[oversize]]));
+  const guard = {target: 'desk-display', kind: 'pixoo' as const, configurationRevision: 1, epoch: 'pixoo-1'};
+  const result = await w.show('too-large-for-display', {artworkId: oversize.artworkId, targets: [guard.target], guards: [guard]});
+  assert.ok('error' in result);
+  assert.equal(result.error.code, 'unsupported-capability');
+  assert.equal(w.prepares().length + w.moments.length, 0);
+});
+
 it('a changed display identity skips that display while the approved browser still presents the same artwork', async t => {
   const w = await world(t);
   const guard = {target: 'desk-display', kind: 'pixoo' as const, configurationRevision: 1, epoch: 'retired-epoch'};

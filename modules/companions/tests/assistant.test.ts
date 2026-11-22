@@ -931,14 +931,14 @@ void test('a worker result that comes back before the hand-off is recorded still
 
 void test('an ambiguous display kind needs an exact choice and the approved generation retains that choice after restart', async context => {
   const provider = counted((_input, turn) => turn <= 2 ? call('create_artwork', {
-    format: 'gif', description: 'Synthetic flag', showTargets: [turn === 1 ? 'pixoo' : 'second-panel'],
+    format: 'gif', description: 'Synthetic flag', showTargets: [turn === 1 ? 'pixoo' : 'id:pixoo'],
   }) : reply('Generation accepted.'));
   const requests: AssistantDispatch[] = [];
   const w = await world(context, {provider, tools: ['create_artwork'], dispatch: data => {
     requests.push(data);
     return Promise.resolve(accepted(data.requestId));
   }});
-  const targets = ['first-panel', 'second-panel'].map(target => ({target, kind: 'pixoo'}));
+  const targets = ['pixoo', 'second-panel'].map(target => ({target, kind: 'pixoo'}));
   await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
     type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
     data: {id: 'art', revision: 1, targets},
@@ -956,10 +956,10 @@ void test('an ambiguous display kind needs an exact choice and the approved gene
   await until(() => status(w) === 'waiting');
   const question = (await page(w)).currentTask?.question;
   assert.equal(question?.kind, 'clarification');
-  assert.match(JSON.stringify(question), /first-panel/);
+  assert.match(JSON.stringify(question), /id:pixoo/);
   assert.match(JSON.stringify(question), /second-panel/);
   assert.equal(requests.length, 0);
-  await input(w.core, w.module(), 'second-panel', true);
+  await input(w.core, w.module(), 'id:pixoo', true);
   await until(() => status(w) === 'waiting' && task(w)?.questions === 2);
   assert.equal((await page(w)).currentTask?.question?.kind, 'approval');
   assert.equal(requests.length, 0);
@@ -970,8 +970,35 @@ void test('an ambiguous display kind needs an exact choice and the approved gene
   if (typeof history === 'string') assert.fail(history);
   assert.deepEqual(requests.map(request => request.family === 'catalog-action' ? request.command : request.family), ['art-request']);
   assert.deepEqual(history.messages.flatMap(message => message.attachment ?? []), [
-    {kind: 'artwork', description: 'Synthetic flag', requestId: requests[0]?.requestId, admission: 'accepted', showTargets: ['second-panel']},
+    {kind: 'artwork', description: 'Synthetic flag', requestId: requests[0]?.requestId, admission: 'accepted', showTargets: ['pixoo']},
   ]);
+});
+
+void test('an exact saved artwork outside the recent SDK state is read from the retained catalog for approval', async context => {
+  const artworkId = 'retained-flag';
+  const reads: string[] = [];
+  const provider = counted(() => call('control_art_show', {owner: 'bunny/core', target: 'hub',
+    arguments: JSON.stringify({artworkId, targets: ['browser']})}));
+  const w = await world(context, {provider, tools: ['control_art_show'], retainedArtwork: id => {
+    reads.push(id);
+    return Promise.resolve({artworkId, createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
+      outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
+        frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
+      favorite: true, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false}});
+  }, dispatch: () => assert.fail('approval is still pending')});
+  const art = w.bus.connect('bunny/modules/art');
+  context.after(() => art.close());
+  await art.serveSync(['art'], () => ({revision: 1, states: [{
+    type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0',
+    data: {id: 'art', revision: 1, jobs: [], artworks: []},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Show my retained flag');
+  await until(() => status(w) === 'waiting');
+  assert.deepEqual(reads, [artworkId]);
+  const question = (await page(w)).currentTask?.question;
+  assert.equal(question?.kind, 'approval');
+  assert.match(JSON.stringify(question?.proposal), /retained-flag/);
 });
 
 for (const artworkId of ['missing-art', 'incompatible-art']) {

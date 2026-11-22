@@ -1,12 +1,13 @@
 import React, {useEffect, useState} from 'react';
-import {ART_SHOW_BROWSER, artShowSurfaces, isArtShowGuard, type ArtShowEffects, type ArtShowGuard, type ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
+import {ART_SHOW_BROWSER, acceptsArtRendition, artShowSurfaces, isArtShowGuard, type ArtShowEffects, type ArtShowGuard, type ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtTarget} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {followCopy} from '@jimmie-potts/sdk/remote';
 import type {ConversationAttachment} from '../assistant/history-contract.js';
 
-type Destination = {id: string; kind: ArtTarget; label: string; guard?: ArtShowGuard};
+export type DisplayRendition = {kind: 'pixoo' | 'tidbyt'; format: 'png' | 'gif'; bytes: number};
+type Destination = {id: string; kind: ArtTarget; label: string; guard?: ArtShowGuard; formats?: DisplayRendition['format'][]; maxBytes?: number};
 type Sent = {requestId: string; targets: Destination[]};
 const browser: Destination = {id: ART_SHOW_BROWSER, kind: 'ui', label: 'Browser'};
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -17,8 +18,12 @@ function destinations(value: unknown): Destination[] {
     if (!object(row) || typeof row.target !== 'string' || (row.kind !== 'pixoo' && row.kind !== 'tidbyt')) throw new Error('invalid-target');
     const guard = row.guard;
     if (guard !== undefined && (!isArtShowGuard(guard) || guard.target !== row.target || guard.kind !== row.kind)) throw new Error('invalid-guard');
+    const {formats, maxBytes} = row;
+    if (formats !== undefined && (!Array.isArray(formats) || !formats.every((format): format is DisplayRendition['format'] => format === 'gif' || format === 'png'))) throw new Error('invalid-formats');
+    if (maxBytes !== undefined && (typeof maxBytes !== 'number' || !Number.isSafeInteger(maxBytes) || maxBytes < 0)) throw new Error('invalid-byte-limit');
     const label = typeof row.label === 'string' && row.label.trim().length > 0 ? row.label : row.kind === 'pixoo' ? 'Pixoo' : 'Tidbyt';
-    return {id: row.target, kind: row.kind, label: label === row.target ? label : `${label} (${row.target})`, ...(guard === undefined ? {} : {guard})};
+    return {id: row.target, kind: row.kind, label: label === row.target ? label : `${label} (${row.target})`, ...(guard === undefined ? {} : {guard}),
+      ...(formats === undefined ? {} : {formats}), ...(maxBytes === undefined ? {} : {maxBytes})};
   })];
 }
 
@@ -60,9 +65,9 @@ function DisplayResults({context, sent}: {context: FrontendContext; sent: Sent})
   })}</ul>;
 }
 
-type Props = {context: FrontendContext; artworkId: string; usableKinds: ArtTarget[]; attachment: ConversationAttachment};
+type Props = {context: FrontendContext; artworkId: string; usableKinds: ArtTarget[]; displayRenditions: DisplayRendition[]; attachment: ConversationAttachment};
 
-function DisplayForm({context, artworkId, usableKinds, attachment, command}: Props & {command: FrontendCommand}): React.JSX.Element {
+function DisplayForm({context, artworkId, usableKinds, displayRenditions, attachment, command}: Props & {command: FrontendCommand}): React.JSX.Element {
   const intent = attachment.showTargets;
   const decisionKey = `bunny.art-show.choice.${attachment.requestId}`;
   const [open, setOpen] = useState(() => {
@@ -88,7 +93,8 @@ function DisplayForm({context, artworkId, usableKinds, attachment, command}: Pro
   };
   const unavailable = (row: Destination): string | undefined =>
     !usableKinds.includes(row.kind) ? 'This artwork has no compatible rendition.' :
-    row.kind !== 'ui' && row.guard === undefined ? 'The display identity is unavailable.' : undefined;
+    row.kind !== 'ui' && row.guard === undefined ? 'The display identity is unavailable.' :
+    row.kind !== 'ui' && !acceptsArtRendition(row, displayRenditions.find(item => item.kind === row.kind)) ? 'Unsupported format or file size for this display.' : undefined;
   const chosen = (available ?? []).filter(row => picked.includes(row.id) && unavailable(row) === undefined);
   const canSend = !locked && chosen.length > 0 && chosen.length === picked.length && chosen.filter(row => row.kind !== 'ui').length <= 2;
   const approve = (): void => {

@@ -4,7 +4,7 @@ import type {ArtRecord, ArtTarget} from '@jimmie-potts/event-contracts/v2/art-st
 import type {FrontendApi, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {followCopy} from '@jimmie-potts/sdk/remote';
 import type {ConversationAttachment} from '../assistant/history-contract.js';
-import {AttachmentDisplay} from './attachment-display.js';
+import {AttachmentDisplay, type DisplayRendition} from './attachment-display.js';
 
 export function useConversationArt(api: FrontendApi, live: boolean): ArtRecord | undefined {
   const [art, setArt] = useState<ArtRecord>();
@@ -23,7 +23,8 @@ export function useConversationArt(api: FrontendApi, live: boolean): ArtRecord |
 }
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-export type Media = {status: 'ready'; path: string; bytes: number; format: 'webp' | 'gif' | 'png' | 'jpeg'; artworkId: string; usableKinds: ArtTarget[]; displayFormat: 'png' | 'gif'};
+export type Media = {status: 'ready'; path: string; bytes: number; format: 'webp' | 'gif' | 'png' | 'jpeg'; artworkId: string;
+  usableKinds: ArtTarget[]; displayRenditions: DisplayRendition[]; displayFormat: 'png' | 'gif'};
 type Result = Media | {status: 'loading' | 'pending' | 'unavailable'} | {status: 'finished'; text: string};
 function resultOf(value: unknown): Result {
   if (!record(value)) return {status: 'unavailable'};
@@ -40,7 +41,11 @@ function resultOf(value: unknown): Result {
   if (typeof value.artworkId !== 'string') return {status: 'unavailable'};
   const kinds = value.usableKinds;
   const usableKinds = Array.isArray(kinds) && kinds.every((kind): kind is ArtTarget => kind === 'ui' || kind === 'pixoo' || kind === 'tidbyt') ? kinds : [];
-  return {status: 'ready', path: `/modules/art/content/rendition.${rendition.renditionId}`, bytes: rendition.bytes, format: rendition.format, artworkId: value.artworkId, usableKinds, displayFormat: value.displayFormat === 'gif' ? 'gif' : 'png'};
+  const displayRenditions = Array.isArray(value.displayRenditions) ? value.displayRenditions.filter((item: unknown): item is DisplayRendition =>
+    record(item) && (item.kind === 'pixoo' || item.kind === 'tidbyt') && (item.format === 'gif' || item.format === 'png') &&
+    typeof item.bytes === 'number' && Number.isSafeInteger(item.bytes) && item.bytes > 0) : [];
+  return {status: 'ready', path: `/modules/art/content/rendition.${rendition.renditionId}`, bytes: rendition.bytes, format: rendition.format,
+    artworkId: value.artworkId, usableKinds, displayRenditions, displayFormat: value.displayFormat === 'gif' ? 'gif' : 'png'};
 }
 
 export async function readConversationArtwork(api: FrontendApi, attachment: Pick<ConversationAttachment, 'requestId'>): Promise<Result> {
@@ -104,7 +109,8 @@ export function ArtworkAttachment({context, connected, allowShow, attachment, ar
   if (!connected || result.status === 'unavailable') return <p role="status">Artwork attachment is unavailable.</p>;
   if (result.status === 'ready') return <>
     <ConversationImage key={result.path} api={api} media={result} description={description}/>
-    {allowShow && <AttachmentDisplay context={context} artworkId={result.artworkId} usableKinds={result.usableKinds} attachment={attachment}/>}
+    {allowShow && <AttachmentDisplay context={context} artworkId={result.artworkId} usableKinds={result.usableKinds}
+      displayRenditions={result.displayRenditions} attachment={attachment}/>}
   </>;
   return <p role="status">{result.status === 'finished' ? result.text : 'Waiting for artwork…'}</p>;
 }

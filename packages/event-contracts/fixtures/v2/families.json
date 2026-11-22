@@ -3943,6 +3943,20 @@
  },
  "invalid": [
   {
+   "name": "each physical display needs its approved identity",
+   "base": "art-show-guarded",
+   "set": {"/data/guards": []},
+   "expect": "invalid-message",
+   "detail": "every selected display needs one identity guard"
+  },
+  {
+   "name": "an identity guard cannot select a different display",
+   "base": "art-show-guarded",
+   "set": {"/data/guards/0/target": "other-display"},
+   "expect": "invalid-message",
+   "detail": "every selected display needs one identity guard"
+  },
+  {
    "name": "a mode owner identifier that is not a routing token",
    "base": "mode",
    "set": {

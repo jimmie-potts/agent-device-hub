@@ -13,8 +13,6 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
-import {hostedArtCatalog} from '../../src/core/art-catalog.js';
-import {isCompanionsModule} from '@jimmie-potts/companions';
 import {createWisprModule, isWisprModule} from '@jimmie-potts/wispr';
 import {
   connectRemote, type BunnyModule, type CommandDraft, type DeviceSimulation, type Diagnostic, type ModuleRegistration, type Participant,
@@ -23,7 +21,7 @@ import {readEdgeCredentials, type EdgeCredential} from '../../src/credentials.js
 import {Gateway, readableFamilies} from '../../src/gateway/gateway.js';
 import {ModuleHost} from '../../src/host.js';
 import {historyDevices} from '../../src/core/history-alarm.js';
-import {isCoreModule, registrations as REGISTERED, type LogRecord, type ModuleHealth} from '../../src/index.js';
+import {bindHostedArtCatalog, isCoreModule, registrations as REGISTERED, type LogRecord, type ModuleHealth} from '../../src/index.js';
 import {modeParticipants} from '../../src/core/mode-participants.js';
 import {automationDevices} from '../../src/core/automation-devices.js';
 import {INSTANCE_ID, LogWriter} from '../../src/log.js';
@@ -473,9 +471,7 @@ class Memory implements MemoryHarness {
     const hosted = host.modules();
     if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {
       core?.setModeParticipants(modeParticipants(hosted));await core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
-      const artCatalog = hostedArtCatalog(host, this.#clock.scheduler);
-      core?.setArtCatalog(artCatalog);
-      modules.find(isCompanionsModule)?.setArtCatalog(artCatalog);
+      bindHostedArtCatalog(core, modules, host, this.#clock.scheduler);
     }
     const actions = core?.actions, operatorActions = core?.operatorActions;
     const gateway = new Gateway({

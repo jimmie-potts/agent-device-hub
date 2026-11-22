@@ -81,6 +81,22 @@ export async function conversationArtJourney(browser: Browser): Promise<void> {
     assert.equal(await conversation.getByRole('img', {name: 'Moon above a blue garden', exact: true}).count(), 1);
     await conversation.getByText(/Synthetic result: Keep this response/).waitFor();
     const oldGif = conversation.getByRole('article', {name: 'assistant message'}).filter({has: page.getByRole('img', {name: 'Moving moon above a blue garden'})});
+    for (const limits of [{formats: ['png'], maxBytes: 1_000_000}, {formats: ['gif'], maxBytes: 1}]) {
+      await page.route('**/api/v2/automation/art/targets?view=approval', async route => {
+        const response = await route.fetch();
+        const body: unknown = await response.json();
+        assert.ok(typeof body === 'object' && body !== null && 'targets' in body && Array.isArray(body.targets));
+        const targets = body.targets.map((row: unknown) => {
+          assert.ok(typeof row === 'object' && row !== null && 'target' in row);
+          return row.target === 'pixoo-1' ? {...row, ...limits} : row;
+        });
+        await route.fulfill({response, json: {...body, targets}});
+      }, {times: 1});
+      await oldGif.getByRole('button', {name: 'Show on…', exact: true}).click();
+      await expect(oldGif.getByRole('checkbox', {name: /pixoo-1/i})).toBeDisabled();
+      await expect(oldGif.getByText(/unsupported format or file size/i)).toBeVisible();
+      await oldGif.getByRole('button', {name: 'Cancel', exact: true}).click();
+    }
     await oldGif.getByRole('button', {name: 'Show on…', exact: true}).click();
     await oldGif.getByRole('button', {name: 'Cancel', exact: true}).click();
     assert.equal(shows.length, 0, 'Opening and dismissing the saved attachment makes no display request');
@@ -101,6 +117,7 @@ export async function conversationArtJourney(browser: Browser): Promise<void> {
     assert.ok(attachment);
     const mediaResult = await page.evaluate(async (id): Promise<unknown> => (await fetch('/modules/art/content/conversation.' + id)).json(), attachment.requestId);
     assert.ok(typeof mediaResult === 'object' && mediaResult !== null && 'artworkId' in mediaResult && typeof mediaResult.artworkId === 'string');
+    assert.partialDeepStrictEqual(mediaResult, {usableKinds: ['ui', 'pixoo', 'tidbyt']}, 'one generated GIF can be prepared for each configured kind without another provider call');
     assert.equal(shows.length, 0, 'Generating artwork and preparing the proposal sends no show');
     const [showResponse] = await Promise.all([page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v2/commands/art-show'),
       pennant.getByRole('button', {name: 'Approve display', exact: true}).click()]);
