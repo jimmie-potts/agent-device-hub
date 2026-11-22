@@ -205,6 +205,18 @@ export async function conversationUploadJourney(browser: Browser): Promise<void>
     assert.match(retriedDisplay ?? '', /^pixoo/);
     assert.equal(saves().length, 3);
     assert.equal((await catalog()).length, 3);
+
+    await remove();
+    await drop(gif, 'image/gif', 'partial.gif');
+    await expect(preview).toBeVisible();
+    await attachment.getByRole('checkbox', {name: 'Tidbyt', exact: true}).check();
+    await attachment.getByRole('button', {name: 'Display now', exact: true}).click();
+    await admittedMoment(5);
+    tronbyt.answerNextPatch(400);
+    await clock.advance(ART_SHOW_LEAD_MS + 3500);
+    await expect(attachment.getByText('Media was sent to the display.', {exact: false})).toBeVisible();
+    await expect(attachment.getByRole('button', {name: 'Retry display on Tidbyt', exact: true})).toHaveCount(0);
+    assert.equal((await catalog()).length, 3);
     assert.equal(world.art.state().imageCalls, 0);
     assert.deepEqual(errors, []);
     console.log('Conversation uploads passed with simulated Pixoo and Tidbyt display evidence.');

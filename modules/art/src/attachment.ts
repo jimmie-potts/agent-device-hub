@@ -2,7 +2,7 @@ import sharp from 'sharp';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {artContentRef, type ArtRendition} from '@jimmie-potts/event-contracts/v2/art-state';
 import {isUploadArtworkId, MAX_ART_ATTACHMENT_BYTES, uploadArtworkId} from '@jimmie-potts/event-contracts/v2/art-show';
-import {Outcome, type ModuleScheduler, type ModuleStagedUpload, type ModuleUploadRequest} from '@jimmie-potts/sdk';
+import {Outcome, type Cancel, type ModuleScheduler, type ModuleStagedUpload, type ModuleUploadRequest} from '@jimmie-potts/sdk';
 import {FRAME_DELAY_MS, MAX_DISPLAY_BYTES, firstFrame, paletteOf, reduceGif, sha256} from './media.js';
 import type {Artwork, StoredComposition} from './store.js';
 
@@ -65,7 +65,7 @@ async function prepare(bytes: Uint8Array, requestId: string, now: number): Promi
 
 /** Holds validated bytes until their tracked command admits them, then until expiry or durable save. */
 export class ArtAttachments {
-  readonly #ready = new Map<string, PreparedAttachment>();
+  readonly #ready = new Map<string, {data: PreparedAttachment; cancel: Cancel}>();
   #pending: {requestId: string; data?: PreparedAttachment} | undefined;
 
   constructor(private readonly scheduler: ModuleScheduler, private readonly now: () => number) {}
@@ -94,15 +94,23 @@ export class ArtAttachments {
   }
 
   get pending(): Readonly<{requestId: string; data?: PreparedAttachment}> | undefined {return this.#pending;}
-  get(id: string): PreparedAttachment | undefined {return this.#ready.get(id);}
+  get(id: string): PreparedAttachment | undefined {return this.#ready.get(id)?.data;}
   admit(data: PreparedAttachment): void {
     const id = data.artwork.artworkId;
-    this.#ready.set(id, data);
-    this.scheduler.after(ATTACHMENT_LIFETIME_MS, () => {if (this.#ready.get(id) === data) this.#ready.delete(id);});
+    this.discard(id);
+    const cancel = this.scheduler.after(ATTACHMENT_LIFETIME_MS, () => {this.#ready.delete(id);});
+    this.#ready.set(id, {data, cancel});
   }
-  discard(id: string): void {this.#ready.delete(id);}
+  discard(id: string): void {
+    this.#ready.get(id)?.cancel();
+    this.#ready.delete(id);
+  }
+  close(): void {
+    for (const id of this.#ready.keys()) this.discard(id);
+    this.#pending = undefined;
+  }
   blob(id: string, admitted: (requestId: string) => boolean): Blob | undefined {
-    for (const entry of this.#ready.values()) {
+    for (const {data: entry} of this.#ready.values()) {
       const found = entry.blobs.get(id);
       if (found !== undefined && admitted(entry.artwork.requestId)) return found;
     }

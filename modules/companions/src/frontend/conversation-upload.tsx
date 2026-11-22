@@ -6,7 +6,8 @@ import {childOf, followCopy} from '@jimmie-potts/sdk/remote';
 import {ConversationImage, readConversationArtwork, type Media} from './conversation-art.js';
 
 type Attempt = {id: string; error?: ErrorCode};
-type Result = {kind: 'pending' | 'succeeded' | 'failed' | 'uncertain'; code?: ErrorCode};
+type Result = {kind: 'pending' | 'succeeded' | 'failed' | 'uncertain' | 'partial'; code?: ErrorCode;
+  evidence?: 'transmitted' | 'observed'};
 type Target = {id: string; label: string; formats: readonly string[]; unavailable?: ErrorCode};
 type Shows = {attempt: Attempt; surfaces: ArtShowSurface[]};
 type Operation = FrontendContext['operations'][number];
@@ -26,10 +27,14 @@ function parseTargets(value: unknown): Target[] {
 function outcome(operation: Operation | undefined, error?: ErrorCode): Result {
   const code = operation?.error?.code ?? error;
   if (operation?.status === 'completed' && operation.result === 'succeeded') return {kind: 'succeeded'};
-  if (operation?.status === 'rejected' || operation?.status === 'expired' || (operation?.status === 'completed' && operation.result === 'failed')) {
-    return {kind: 'failed', ...(code === undefined ? {} : {code})};
+  const evidence = operation?.evidence === 'observed' || operation?.evidence === 'transmitted' ? operation.evidence : undefined;
+  if (operation?.status === 'uncertain' || operation?.status === 'conflict' || operation?.result === 'uncertain' || code === 'uncertain-result') {
+    return {kind: 'uncertain', ...(evidence === undefined ? {} : {evidence})};
   }
-  if (operation?.status === 'uncertain' || operation?.status === 'conflict' || code === 'uncertain-result') return {kind: 'uncertain'};
+  if (operation?.status === 'rejected' || operation?.status === 'expired' || (operation?.status === 'completed' && operation.result === 'failed')) {
+    const failure = code === undefined ? {} : {code};
+    return evidence === undefined ? {kind: 'failed', ...failure} : {kind: 'partial', evidence, ...failure};
+  }
   if (error !== undefined) return {kind: 'failed', code: error};
   return {kind: 'pending'};
 }
@@ -37,7 +42,10 @@ function outcome(operation: Operation | undefined, error?: ErrorCode): Result {
 function text(result: Result, success: string): string {
   if (result.kind === 'succeeded') return success;
   if (result.kind === 'pending') return 'In progress';
-  if (result.kind === 'uncertain') return 'Outcome uncertain. The request was not sent again.';
+  const evidence = result.evidence === 'observed' ? ' The display reported an effect.'
+    : result.evidence === 'transmitted' ? ' Media was sent to the display.' : '';
+  if (result.kind === 'uncertain') return `Outcome uncertain. The request was not sent again.${evidence}`;
+  if (result.kind === 'partial') return `Display did not complete${result.code === undefined ? '' : ` (${result.code})`}.${evidence}`;
   if (result.code === 'too-large') return 'The attachment exceeds the byte, pixel or frame limit.';
   if (result.code === 'invalid-request' || result.code === 'unsupported-capability') return 'This image or animation could not be used.';
   return result.code === undefined ? 'Failed' : `Failed (${result.code})`;

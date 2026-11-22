@@ -180,7 +180,7 @@ class ArtOwner {
       const target = this.#dispatch.tidbytTarget();
       if (typeof target !== 'string') return refuse(target.error.code);
       const now = this.#context.clock.now(), compositionId = localGifComposition(reference) ?? refuse('internal');
-      if (this.#store.pendingPreparations().length >= MAX_PENDING || !this.#store.reserveLocalStage(now)) return refuse('capacity');
+      if (this.#store.pendingPreparations().length >= MAX_PENDING || !this.#store.reserveTemporaryStage(now, 'localgif')) return refuse('capacity');
       this.#store.saveStage({requestId: reference, artworkId: reference, compositionId, target: 'tidbyt', targetId: target, status: 'pending', expiresAtMs: now + LOCAL_GIF_LIFETIME_MS, ambient: false});
       this.#store.savePreparation({kind: 'upload', requestId, stageRequestId: reference, status: 'pending', createdAtMs: now, traceparent: command.traceparent});
       return () => {
@@ -194,6 +194,7 @@ class ArtOwner {
   async stop(): Promise<void> {
     this.#closed = true;
     this.#ambientGrants.clear();
+    this.#attachments.close();
     this.#ambientTimer?.();
     for (const cancel of this.#timers) cancel();
     this.#timers = [];
@@ -347,10 +348,13 @@ class ArtOwner {
     if (!isDisplay(target) || rendered === undefined || rendered.format === 'webp' || blob === undefined) {
       return refuse('invalid-state', 'that composition has no display rendition');
     }
-    const lifetimeMs = temporary === undefined ? STAGE_LIFETIME_MS : ATTACHMENT_LIFETIME_MS;
+    const upload = isUploadArtworkId(data.artworkId);
+    const lifetimeMs = upload ? ATTACHMENT_LIFETIME_MS : STAGE_LIFETIME_MS;
     if (data.action === 'ambient' && (target !== 'tidbyt' || isUploadArtworkId(data.artworkId))) return refuse('invalid-state', 'ambient art requires a saved Tidbyt composition');
     if (this.#store.pendingPreparations().length >= MAX_PENDING) return refuse('capacity', 'too many art preparations are waiting');
-    const requestId = `stage-${randomUUID()}`, now = this.#context.clock.now();
+    const now = this.#context.clock.now();
+    if (upload && !this.#store.reserveTemporaryStage(now, 'upload-stage')) return refuse('capacity', 'too many temporary display copies');
+    const requestId = `${upload ? 'upload-stage' : 'stage'}-${randomUUID()}`;
     this.#store.saveStage({requestId, artworkId: data.artworkId, compositionId: data.compositionId, target, targetId: data.target, status: 'pending', expiresAtMs: now + lifetimeMs, ambient: data.action === 'ambient'});
     this.#store.savePreparation({requestId: data.requestId, stageRequestId: requestId, status: 'pending', traceparent: parent.traceparent, createdAtMs: now, ...(data.action === 'ambient' ? {kind: 'ambient' as const} : {})});
     const request: ArtStageRequest = {requestId, compositionId: data.compositionId, target, expectedTargetId: data.target, format: rendered.format, width: rendered.width, height: rendered.height,
@@ -891,7 +895,9 @@ class ArtOwner {
       retention: {recentLimit: this.#config.recentLimit, recent: counts.recent, favorites: counts.favorites, retained}};
   }
   #result(artworkId: string): object | undefined {
-    const job = this.#store.jobOfArtwork(artworkId), artwork = this.#store.artwork(artworkId);
+    const artwork = this.#store.artwork(artworkId);
+    if (isUploadArtworkId(artworkId)) return artwork?.deletedAtMs === null ? this.#summary(artwork) : undefined;
+    const job = this.#store.jobOfArtwork(artworkId);
     if (job === undefined || artwork?.deletedAtMs !== undefined && artwork.deletedAtMs !== null) return undefined;
     const compositions = this.#store.compositions(artworkId);
     return {artworkId, createdAtMs: job.createdAtMs, requestId: job.requestId, purpose: job.purpose, admittedBy: job.admittedBy, outcome: job.outcome, palette: artwork?.palette ?? [], favorite: artwork?.favorite ?? false, feedback: artwork?.feedback ?? null, variationOf: job.variationOf,
