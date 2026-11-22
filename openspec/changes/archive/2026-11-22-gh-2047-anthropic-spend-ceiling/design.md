@@ -22,7 +22,7 @@ A price change needs a release or a configured price. The price list is not an A
 
 ### 2. Price lookup
 
-The ledger uses the configured entry, else the built-in entry, else the dearest known rate. The dearest rate is each class's highest price across the configured table and every built-in tier. Lookups use own entries only, so `constructor` and similar names find nothing inherited. `source(model)` reports `configured`, `built-in` or `dearest` for display. No model is unpriced any more, so the #2024 missing-price refusal is gone.
+The ledger uses the configured entry, else the built-in entry, else the dearest known rate. The dearest rate is each class's highest price across the configured table and every built-in tier. Lookups use own entries only, so `constructor` and similar names find nothing inherited. `source(model)` reports `configured`, `built-in` or `dearest` for display. No model is unpriced any more, so the #2024 missing-price refusal is gone. Its scenario is renamed "No configured prices" (review round 1 on PR 2049).
 
 ### 3. Haiku tiers
 

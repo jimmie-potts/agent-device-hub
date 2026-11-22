@@ -103,9 +103,12 @@ async function hosted(context: TestContext, assistant: Record<string, unknown>, 
     assert.ok(content !== undefined && !('error' in content));
     return JSON.parse(Buffer.from(content.bytes).toString()) as unknown;
   };
+  // Waits for the task's own messages to settle it; the bound only turns a missing settlement into a clear failure.
   const settled = async () => {
     for (let n = 0; n < 100 && !['succeeded', 'failed'].includes(module.inspectAssistant()?.tasks[0]?.status ?? ''); n += 1) await new Promise(resolve => setTimeout(resolve, 10));
-    return module.inspectAssistant()?.tasks[0];
+    const task = module.inspectAssistant()?.tasks[0];
+    if (task === undefined || !['succeeded', 'failed'].includes(task.status)) assert.fail(`the hosted task did not settle: ${task?.status ?? 'no task'}`);
+    return task;
   };
   return {module, sent: () => sent, start, settled,
     spend: async () => await read('spend', {}) as {day: {spentMicros: number}; paid: unknown},

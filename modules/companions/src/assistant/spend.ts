@@ -117,8 +117,6 @@ export class SpendLedger {
     const prices = this.#prices(row.model, usage.input + usage.cacheWrite + usage.cacheRead);
     this.database.prepare('UPDATE assistant_spend SET cost_micros=?,usage=? WHERE id=?').run(usageCost(prices, usage), JSON.stringify(usage), id);
   }
-  /** Whether a model has a configured or built-in price; any other model is priced at the dearest known rate. */
-  priced(model: string): boolean {return this.source(model) !== 'dearest';}
   /** Where a model's prices come from: a configured price overrides the built-in table. */
   source(model: string): PriceSource {
     return own(this.prices, model) !== undefined ? 'configured' : own(BUILT_IN_PRICES, model) !== undefined ? 'built-in' : 'dearest';
