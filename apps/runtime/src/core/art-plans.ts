@@ -174,6 +174,12 @@ export function createArtPlans(options: Options) {
   };
   return {
     targets: (): readonly ArtPlanTarget[] => options.targets().map(target => ({...target})),
+    targetAvailability: () => options.targets().map(target => {
+      const current = targetRecord(target.target);
+      if ('error' in current) return {...target, formats: [], unavailable: current.error.code};
+      const moments = current.record.capabilities.moments;
+      return {...target, formats: moments.supported ? moments.art?.formats ?? [] : []};
+    }),
     present: async (input: ArtPlan, permit: ArtPermit, parent?: TraceContext): Promise<ArtPlanResult | ErrorBody> => {
       const plan = structuredClone(input), now = options.clock();
       if (!active()) return errorBody('unavailable');

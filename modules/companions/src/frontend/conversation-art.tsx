@@ -22,7 +22,7 @@ export function useConversationArt(api: FrontendApi, live: boolean): ArtRecord |
 }
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-type Media = {status: 'ready'; path: string; bytes: number; format: 'webp' | 'gif'};
+export type Media = {status: 'ready'; path: string; bytes: number; format: 'webp' | 'gif' | 'png' | 'jpeg'; displayFormat: 'png' | 'gif'};
 type Result = Media | {status: 'loading' | 'pending' | 'unavailable'} | {status: 'finished'; text: string};
 function resultOf(value: unknown): Result {
   if (!record(value)) return {status: 'unavailable'};
@@ -33,16 +33,21 @@ function resultOf(value: unknown): Result {
     return {status: 'finished', text: isErrorCode(value.code) ? `${outcome} (${value.code}).` : `${outcome}.`};
   }
   const rendition = value.rendition;
-  if (value.status !== 'ready' || !record(rendition) || (rendition.format !== 'gif' && rendition.format !== 'webp') ||
+  if (value.status !== 'ready' || !record(rendition) || (rendition.format !== 'gif' && rendition.format !== 'webp' && rendition.format !== 'png' && rendition.format !== 'jpeg') ||
     typeof rendition.renditionId !== 'string' || !/^[a-f0-9]{64}$/.test(rendition.renditionId) ||
     typeof rendition.bytes !== 'number' || !Number.isSafeInteger(rendition.bytes) || rendition.bytes < 1) return {status: 'unavailable'};
-  return {status: 'ready', path: `/modules/art/content/rendition.${rendition.renditionId}`, bytes: rendition.bytes, format: rendition.format};
+  return {status: 'ready', path: `/modules/art/content/rendition.${rendition.renditionId}`, bytes: rendition.bytes, format: rendition.format, displayFormat: value.displayFormat === 'gif' ? 'gif' : 'png'};
 }
 
-function ConversationImage({api, media, description}: {api: FrontendApi; media: Media; description: string}): React.JSX.Element {
+export async function readConversationArtwork(api: FrontendApi, attachment: Pick<ConversationAttachment, 'requestId'>): Promise<Result> {
+  return resultOf(await api.read(`/modules/art/content/conversation.${attachment.requestId}`));
+}
+
+export function ConversationImage({api, media, description, onReady}: {api: FrontendApi; media: Media; description: string; onReady?: (ready: boolean) => void}): React.JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [loaded, setLoaded] = useState(false), [failed, setFailed] = useState(false), [playing, setPlaying] = useState(false);
   const {path, format, bytes} = media;
+  useEffect(() => {onReady?.(loaded && !failed);}, [failed, loaded, onReady]);
   useEffect(() => {
     let live = true;
     void api.image(path).then(blob => {
@@ -83,8 +88,8 @@ export function ArtworkAttachment({api, connected, attachment, artRevision}: {
   useEffect(() => {
     if (!connected || admission === 'refused') return;
     let current = true;
-    void api.read(`/modules/art/content/conversation.${requestId}`).then(value => {
-      if (current) setResult(resultOf(value));
+    void readConversationArtwork(api, {requestId}).then(value => {
+      if (current) setResult(value);
     }).catch(() => {if (current) setResult({status: 'unavailable'});});
     return () => {current = false;};
   }, [api, requestId, connected, admission, pendingRevision]);

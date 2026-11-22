@@ -468,3 +468,18 @@ The companions module SHALL bound the spend of every profile's paid model calls 
 #### Scenario: Day and month boundaries
 - **WHEN** a call is reserved at 23:59:59 local time and settles after midnight, and later the month turns over
 - **THEN** the call counts on the earlier day and in its month, the new day starts at zero, and the new month starts at zero
+
+### Requirement: Preview an owner attachment in Conversation
+
+Conversation SHALL accept one supported still or GIF from either a drop on the message field or the keyboard-operated Attach control. It SHALL show the same artwork to preview, replace or remove before the owner confirms a save or display.
+
+#### Scenario: Select, replace or remove an attachment
+
+- **WHEN** the owner selects or drops an image, replaces it, or removes it
+- **THEN** Conversation shows the selected media or a visible validation error and issues zero display commands
+
+#### Scenario: Save and display a single upload
+
+- **WHEN** the owner confirms both actions
+- **THEN** Conversation reports the library outcome and each selected display outcome independently
+- **AND** a definitive failure can be retried without repeating a successful action, while an uncertain outcome stays visible without replay
