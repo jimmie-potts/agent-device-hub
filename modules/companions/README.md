@@ -293,6 +293,7 @@ Questions, approvals, worker waits and task controls appear above the composer.
 A successful task leaves a short **Task completed** cue by the composer.
 Open **Details** to inspect the task. Failed, cancelled, paused and uncertain
 outcomes remain visible by the relevant controls.
+When a turn fails or ends with an uncertain call, the transcript saves a closing reply from the turn’s approved requests, dispatch receipts and recorded results. It can report a known limit even when the model has no calls left. The fallback stays on the page and says when the cause is unknown. Opening the conversation again shows the same reply.
 An approval shows the full scope and the revision it applies to. A command
 receipt reports what happened to the request separately from task completion.
 Disconnected or stale copies retain loaded history and lock mutations.
@@ -601,8 +602,8 @@ Coding-worker runs use the coding worker's own sign-in and are not counted.
   reservation would pass the daily or the monthly limit, the call is refused
   with `capacity` and nothing is sent. The conversation then shows the
   limit, for example "The daily spend limit of $20.00 would be passed: $19.80
-  is counted today and this model call could cost up to $0.42. Nothing was
-  sent."
+  is counted today and this model call could cost up to $0.42. The next model call was
+  not sent."
 - **Reported usage.** The answer's reported tokens, priced by class from
   `assistant.prices`, replace the reservation in the same transaction that
   saves the answer. An answer that arrives after the call's deadline, while
@@ -811,6 +812,8 @@ or verbose flags make the executor unavailable, preventing implicit content
 export. Reachy's fixed-text policy remains independent.
 
 ### Checks
+
+After the root build, run `node apps/runtime/dashboard/tests/failed-turn.browser.ts` for the scripted clarification, failure and reload journey.
 
 Run the root build and `npm run test:companions:built` for abrupt process exits,
 pending-write fidelity, unknown-call recovery, cancellation, budgets, full disk,

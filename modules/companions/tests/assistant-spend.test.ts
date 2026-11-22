@@ -151,7 +151,7 @@ void test('a model call that could pass the daily limit is refused before it is 
   await until(() => task(w)?.status === 'failed');
   assert.deepEqual([task(w)?.code, task(w)?.modelCalls, task(w)?.toolCalls, provider.calls()], ['capacity', 1, 1, 1], 'the sent call finished and its tool ran; the next call was never sent');
   const said = await messages(w);
-  assert.match(said.at(-1) ?? '', /^The daily spend limit of \$20\.00 would be passed: \$19\.80 is counted today and this model call could cost up to \$0\.\d\d\. Nothing was sent\.$/);
+  assert.match(said.at(-1) ?? '', /^The daily spend limit of \$20\.00 would be passed: \$19\.80 is counted today and this model call could cost up to \$0\.\d\d\. The next model call was not sent\.$/);
   assert.equal((await spend(w)).day.unreported, 0, 'the refused call reserved nothing');
 });
 
@@ -169,7 +169,7 @@ void test('a turn that reaches a per-turn limit ends capacity with a conversatio
     assert.equal((await input(w.core, w.module(), 'Synthetic answer', {action: 'answer'})).status, 'accepted');
     await until(() => task(w)?.status === 'failed');
     assert.equal(task(w)?.code, 'capacity');
-    assert.equal((await messages(w)).at(-1), expected);
+    assert.equal((await messages(w)).at(-1), 'I received your answer, but could not finish the request. ' + expected);
     assert.deepEqual((await spend(w)).day, {...(await spend(w)).day, spentMicros: 0, unreported: 0}, 'synthetic calls record no spend');
   }
 });
@@ -196,7 +196,7 @@ void test('a turn at its question limit ends capacity with a message naming the 
   assert.equal((await input(w.core, w.module(), 'Synthetic answer', {action: 'answer'})).status, 'accepted');
   await until(() => task(w)?.status === 'failed');
   assert.deepEqual([task(w)?.code, task(w)?.questions], ['capacity', LIMITS.questions]);
-  assert.equal((await messages(w)).at(-1), 'This turn reached its limit of 10 questions.');
+  assert.equal((await messages(w)).at(-1), 'I received your answer, but could not finish the request. This turn reached its limit of 10 questions.');
 });
 
 void test('a new paid turn is refused when what remains of the day is below the smallest first call', async context => {
@@ -232,10 +232,33 @@ void test('without a price for the paid model the module still starts, refuses n
   await until(() => task(w)?.status === 'failed');
   assert.deepEqual([task(w)?.code, provider.calls()], ['capacity', 1]);
   const message = 'No price is configured for the model model-a, so its spend cannot be counted. Nothing was sent.';
-  assert.equal((await messages(w)).at(-1), message);
+  assert.equal((await messages(w)).at(-1), 'I received your answer, but could not finish the request. No price is configured for the model model-a, so its spend cannot be counted. The next model call was not sent.');
   // A new paid turn is refused at once with the same reason; the synthetic demo still starts.
   const refused = await input(w.core, w.module(), 'Again');
   assert.ok(refused.status === 'rejected');
   assert.deepEqual([refused.error.error.code, refused.error.error.detail], ['capacity', message]);
   assert.equal((await input(w.core, w.module(), 'Synthetic demo', {profile: 'reachy'})).status, 'accepted');
+});
+
+void test('a spend limit after dispatch preserves the approved action and names the unsent model call once', async context => {
+  const provider = paid(() => ({...answer('', used(1, 1)), text: null, stop: 'tool', calls: [{id: 'mode', name: 'set_mode', input: {mode: 'free'}}]}));
+  let sends = 0;
+  const w = await world(context, {provider, tools: ['set_mode'], core: () => ({synced: true, sessions: [],
+    mode: {id: 'hub', revision: 2, mode: 'work', selectedAtMs: 0}}),
+    dispatch: data => {sends += 1; return Promise.resolve({status: 'accepted', requestId: data.requestId, reply: {} as never});}});
+  await enable(w.core, w.module());
+  await input(w.core, w.module(), 'Set the synthetic scene to free.');
+  await until(() => task(w)?.status === 'waiting');
+  const ledger = w.ledger();
+  assert.equal(ledger.reserve({id: 'synthetic-title', purpose: 'conversation', owner: 'conversation-1', model: 'model-a', inputUnits: 1, outputUnits: 0}), undefined);
+  ledger.settle('synthetic-title', used(4_950_000, 0));
+  await input(w.core, w.module(), 'approve', {action: 'answer'});
+  await until(() => task(w)?.status === 'failed');
+  const history = await messages(w);
+  assert.match(history.at(-1) ?? '', /approved.*free.*request was accepted.*daily spend limit.*next model call was not sent/i);
+  assert.equal(history.filter(text => text.includes('daily spend limit')).length, 1);
+  assert.equal(sends, 1);
+  assert.equal(provider.calls(), 1);
+  await w.restart();
+  assert.deepEqual(await messages(w), history);
 });

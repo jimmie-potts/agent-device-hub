@@ -1,3 +1,4 @@
+import {operationOutcome, type ActionEvidence} from './closing-reply.js';
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {ART_SHOW_EFFECTS_FAMILY, acceptsArtRendition, artDestination, artShowSurfaces, type ArtDestination, type ArtShowEffects, type ArtShowGuard, type ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtRecord, ArtworkSummary, CatalogArtwork} from '@jimmie-potts/event-contracts/v2/art-state';
@@ -7,7 +8,7 @@ import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts
 import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
 import type {ShowCatalog} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
 import {draftProblem} from '@jimmie-potts/event-contracts/v2/nanoleaf-shows';
-import {usableArtComposition, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
+import {Outcome, usableArtComposition, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
 import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS} from './devices.js';
 import {ShowDrafts} from './show-drafts.js';
 import {textBytes, type ToolCall} from './provider.js';
@@ -296,7 +297,7 @@ export class ConversationActions {
     }
   }
 
-  async read(call: ToolCall, parent: TraceContext): Promise<string | undefined> {
+  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void): Promise<string | undefined> {
     const input = call.input;
     switch (call.name) {
       case CREATE_SHOW: case EDIT_SHOW: case PREVIEW_SHOW: {
@@ -309,6 +310,15 @@ export class ConversationActions {
       case READ_ART: {
         const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
         if (art === undefined) return 'Saved art unavailable.';
+        for (const job of art.jobs) {
+          if (job.status !== 'finished') continue;
+          const saved = art.artworks.find(item => item.artworkId === job.artworkId);
+          if (saved?.compositions.some(item => item.outcome === Outcome.succeeded && item.renditions.length > 0) === true) {
+            observe({requestId: job.requestId, source: 'effect', text: 'the artwork was saved'});
+          } else if (job.outcome === Outcome.failed || job.outcome === Outcome.rejected || job.outcome === 'cancelled') {
+            observe({requestId: job.requestId, source: 'effect', text: `art generation ended with status ${job.outcome}`});
+          }
+        }
         const destinations = await this.#artDestinations(parent);
         return textResult({displays: destinations?.map(({target, kind, label, guard, formats, maxBytes}) => ({routingId: target, kind, label, available: guard !== undefined, formats, maxBytes})) ?? null,
           artworks: art.artworks.map(item => ({artworkId: item.artworkId, createdAtMs: item.createdAtMs, favorite: item.favorite,
@@ -322,8 +332,12 @@ export class ConversationActions {
         ['id', 'observedAtMs', 'availability', 'activity', 'status'], parent);
       case READ_VOLCANO: return this.#status('bunny/modules/volcano', 'volcano-status',
         ['id', 'observedAtMs', 'availability', 'link', 'heater', 'pump', 'currentDeciC', 'targetDeciC', 'gapMinutes'], parent);
-      case READ_OPERATION: return textResult(await this.#operation(input.requestId, parent) ?? 'Operation unavailable.');
-      case READ_ART_EFFECTS: return this.#artEffects(input.requestId, parent);
+      case READ_OPERATION: {
+        const operation = await this.#operation(input.requestId, parent);
+        if (operation !== undefined) observe({requestId: operation.requestId, source: 'operation', revision: operation.revision, text: operationOutcome(operation)});
+        return textResult(operation ?? 'Operation unavailable.');
+      }
+      case READ_ART_EFFECTS: return this.#artEffects(input.requestId, parent, observe);
       default: return undefined;
     }
   }
@@ -396,7 +410,7 @@ export class ConversationActions {
     return textResult({devices, unreadable});
   }
 
-  async #artEffects(requestId: unknown, parent: TraceContext): Promise<string> {
+  async #artEffects(requestId: unknown, parent: TraceContext, observe: (evidence: ActionEvidence) => void): Promise<string> {
     if (typeof requestId !== 'string') return 'refused: invalid-request';
     const db = this.context.database();
     db.exec('CREATE TABLE IF NOT EXISTS assistant_art_shows (request_id TEXT PRIMARY KEY, targets TEXT NOT NULL)');
@@ -406,16 +420,29 @@ export class ConversationActions {
     if (!idList(list)) return 'Show targets unavailable.';
     const [operations, skips] = await Promise.all([this.#snapshot<OperationRecord>(CORE, 'operation', parent),
       this.#snapshot<ArtShowEffects>(CORE, ART_SHOW_EFFECTS_FAMILY, parent)]);
-    const skipped = skips?.find(show => show.requestId === requestId)?.skipped ?? [];
-    const result = (id: string, target?: string, phase?: 'prepare' | 'present') => {
-      const skip = skipped.find(entry => entry.target === target && entry.phase === phase);
-      if (skip !== undefined) return {status: 'skipped', code: skip.code};
-      const record = operations?.find(operation => operation.requestId === id);
-      return record === undefined ? {status: 'evidence unavailable'} : {status: record.status, result: record.result, evidence: record.evidence, code: record.error?.code};
-    };
+    const show = skips?.find(row => row.requestId === requestId);
+    const skipped = show?.skipped ?? [];
+    const result = (id: string) => operations?.find(operation => operation.requestId === id);
+    const summary = (record: OperationRecord | undefined) => record === undefined ? {status: 'evidence unavailable'}
+      : {status: record.status, result: record.result, evidence: record.evidence, code: record.error?.code};
     const effects = await artShowSurfaces(requestId, list);
-    return textResult({show: result(requestId), effects: effects.map(surface => surface.kind === 'browser'
-      ? {target: surface.target, presentation: result(surface.presentRequestId, surface.target, 'present')}
-      : {target: surface.target, preparation: result(surface.prepareRequestId, surface.target, 'prepare'), presentation: result(surface.momentRequestId, surface.target, 'present')})});
+    const phaseResult = (id: string, target: string, phase: 'prepare' | 'present') => {
+      const skip = skipped.find(entry => entry.target === target && entry.phase === phase);
+      const label = phase === 'prepare' ? 'preparation' : 'presentation';
+      if (skip !== undefined) {
+        observe({requestId, source: 'phase', phaseId: id, revision: show?.revision ?? 0, text: `${label} on ${target} was skipped`});
+        return {status: 'skipped', code: skip.code};
+      }
+      const operation = result(id);
+      observe({requestId, source: 'phase', phaseId: id, revision: operation?.revision ?? -1,
+        text: operation === undefined ? `${label} on ${target} is unconfirmed` : `for ${label} on ${target}, ${operationOutcome(operation)}`});
+      return summary(operation);
+    };
+    const perDisplay = effects.map(surface => surface.kind === 'browser'
+      ? {target: surface.target, presentation: phaseResult(surface.presentRequestId, surface.target, 'present')}
+      : {target: surface.target, preparation: phaseResult(surface.prepareRequestId, surface.target, 'prepare'), presentation: phaseResult(surface.momentRequestId, surface.target, 'present')});
+    const operation = result(requestId);
+    if (operation !== undefined) observe({requestId, source: 'operation', revision: operation.revision, text: operationOutcome(operation)});
+    return textResult({show: summary(operation), effects: perDisplay});
   }
 }

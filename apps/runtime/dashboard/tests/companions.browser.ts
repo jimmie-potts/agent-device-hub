@@ -1,4 +1,5 @@
 import {showConversationJourney} from './show-conversation.browser.ts';
+import {failedTurnJourney} from './failed-turn.browser.ts';
 import {conversationArtJourney} from './conversation-art.browser.ts';
 import {conversationUploadJourney} from './conversation-upload.browser.ts';
 import {conversationWorkspaceJourney} from './conversation-workspace.browser.ts';
@@ -34,6 +35,7 @@ try {
   await conversationArtJourney(browser);
   await conversationUploadJourney(browser);
   await conversationStateJourney(browser);
+  await failedTurnJourney(browser);
   await companionCardsCheck(browser);
   await speechJourney(browser);
   await spokenRepliesJourney(browser);

@@ -64,7 +64,7 @@ export type ModelProvider = {
  * A definitive answer, such as a refusal or an error status, fails the call and the task with the code.
  */
 export class ProviderFault extends Error {
-  constructor(readonly code: ErrorCode, readonly uncertain = false) {super(`provider ${code}`);}
+  constructor(readonly code: ErrorCode, readonly uncertain = false, readonly sizeLimit?: 'request' | 'response') {super(`provider ${code}`);}
 }
 export const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
 export const textBytes = (value: string): number => Buffer.byteLength(value, 'utf8');

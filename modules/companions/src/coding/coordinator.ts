@@ -1,3 +1,4 @@
+import type {ActionEvidence} from '../assistant/closing-reply.js';
 // One coding worker endpoint, one operation at a time (Hub #502). The core's tracked dispatcher hands the module a
 // `coding-run`; the module saves responsibility, sends one `coding-work` start to the worker's connection-bound
 // endpoint and reports the tracked outcome when the worker reports it started. The worker's later progress settles the
@@ -14,7 +15,7 @@ import {CodingStore, type CodingResponsibility} from './store.js';
 export const codingStateDraft = (data: CodingState) => ({kind: 'state' as const, type: 'org.bunny.coding-state.updated', subject: 'coding',
   dataschema: 'https://bunny.invalid/events/coding-state/2.1', data: {...data, readiness: data.readiness ?? null}});
 /** Delivers the worker's final word to the task that waits for it; the engine turns it into the delegation tool's result. */
-export type Delivery = (taskId: string, text: string, parent: TraceContext) => Promise<void>;
+export type Delivery = (taskId: string, text: string, parent: TraceContext, evidence: ActionEvidence) => Promise<void>;
 type Active = CodingResponsibility & {wallClockMs: number; cancel: Cancel; settling: boolean};
 const noop = (): void => {};
 /**
@@ -185,7 +186,8 @@ export class CodingCoordinator {
       });
     } catch (error) {this.#storageFailure(error, record);}
     if (active !== undefined) {this.#active = undefined; this.#state.active = null; this.#changed();}
-    try {await this.deliver(record.taskId, describeResult(status, result, reason), {traceparent: record.traceparent});}
+    try {await this.deliver(record.taskId, describeResult(status, result, reason), {traceparent: record.traceparent},
+      {requestId: record.operationId, source: 'effect', text: status === 'uncertain' ? 'the coding worker outcome is unknown' : `the coding worker reported that the task ${status}`});}
     catch (error) {this.#storageFailure(error, record);}
   }
   #outcome(record: CodingResponsibility, outcome: {result: 'succeeded' | 'failed' | 'uncertain'; code?: string}, evidence: 'observed' | 'none'): Promise<void> {

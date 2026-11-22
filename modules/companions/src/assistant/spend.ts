@@ -33,7 +33,7 @@ export {dollars};
  * encodes, plus the provider's own framing. Pass the whole request the provider renders, such as a turn's `TurnInput`.
  */
 export const inputBound = (request: unknown): number => Buffer.byteLength(JSON.stringify(request), 'utf8') + LIMITS.overheadUnits;
-const unpriced = (model: string): string => `No price is configured for the model ${model}, so its spend cannot be counted. Nothing was sent.`;
+const unpriced = (model: string): string => `No price is configured for the model ${model}, so its spend cannot be counted.`;
 type Sum = {spent: number | null; unreported: number; unreportedMicros: number | null};
 const SUMS = {
   day: 'SELECT SUM(COALESCE(cost_micros,reserved_micros)) AS spent, COUNT(*) FILTER (WHERE cost_micros IS NULL) AS unreported, SUM(reserved_micros) FILTER (WHERE cost_micros IS NULL) AS unreportedMicros FROM assistant_spend WHERE day=?',
@@ -62,7 +62,7 @@ export class SpendLedger {
    */
   reached(model?: string): string | undefined {
     const floor = model === undefined ? 0 : this.minimum(model);
-    if (model !== undefined && floor === undefined) return unpriced(model);
+    if (model !== undefined && floor === undefined) return unpriced(model) + ' Nothing was sent.';
     const {day, month} = this.totals(), least = floor ?? 0;
     const after = {day: 'A new message can start after midnight, the runtime host\'s local time.', month: 'A new message can start when the next month begins.'};
     if (day.spentMicros >= day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} is reached: ${dollars(day.spentMicros)} is counted today. ${after.day}`;
@@ -86,10 +86,10 @@ export class SpendLedger {
    */
   reserve(call: SpendCall): string | undefined {
     const prices = this.#price(call.model);
-    if (prices === undefined) return unpriced(call.model);
+    if (prices === undefined) return unpriced(call.model) + ' The next model call was not sent.';
     const reserved = reservationCost(prices, call.inputUnits, call.outputUnits), {day, month} = this.totals();
-    if (day.spentMicros + reserved > day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} would be passed: ${dollars(day.spentMicros)} is counted today and this model call could cost up to ${dollars(reserved)}. Nothing was sent.`;
-    if (month.spentMicros + reserved > month.limitMicros) return `The monthly spend limit of ${dollars(month.limitMicros)} would be passed: ${dollars(month.spentMicros)} is counted this month and this model call could cost up to ${dollars(reserved)}. Nothing was sent.`;
+    if (day.spentMicros + reserved > day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} would be passed: ${dollars(day.spentMicros)} is counted today and this model call could cost up to ${dollars(reserved)}. The next model call was not sent.`;
+    if (month.spentMicros + reserved > month.limitMicros) return `The monthly spend limit of ${dollars(month.limitMicros)} would be passed: ${dollars(month.spentMicros)} is counted this month and this model call could cost up to ${dollars(reserved)}. The next model call was not sent.`;
     this.database.prepare('INSERT INTO assistant_spend(id,purpose,owner,model,day,month,at_ms,reserved_micros) VALUES (?,?,?,?,?,?,?,?)')
       .run(call.id, call.purpose, call.owner, call.model, day.period, month.period, this.now(), reserved);
     return undefined;
