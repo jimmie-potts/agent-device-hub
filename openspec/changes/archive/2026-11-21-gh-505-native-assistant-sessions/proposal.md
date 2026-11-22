@@ -6,7 +6,7 @@ Native B.U.N.N.Y. assistant tasks are visible only on the Conversation page. Sta
 
 - Add the native source `bunny`/`assistant` to the supported-source definition, with the companions module as its only producer.
 - Add `session/3.1`, `lifecycle/2.2` and version 2.1 of `attention-raised`, `attention-cleared` and `turn-ended`. Each widens the identity to the native source. `lifecycle/2.2` adds the common inputs `turn-waiting` and `turn-uncertain` and an optional `result` on `turn-ended`. `session/3.1` keeps that result on the notice. The core publishes each record and occurrence in the lowest version that expresses it, so Codex and Claude output stays `session/3.0` and 2.0.
-- Map each assistant task to one root session, each explicit activation (run) to a turn, and each saved owner question or approval to one attention item. The companions engine publishes the observations through its existing SDK outbox, in the transaction that commits the task change.
+- Map each profile's conversation to one root session, each task in it (one owner message and everything it causes) to a turn, and each saved owner question or approval to one attention item, as the owner chose on 2026-11-21 (design decision 16). The companions engine publishes the observations through its existing SDK outbox, in the transaction that commits the task change.
 - Bind the native source to the companions module in the core, and refuse it from every other producer.
 - Move the status function's `finished` detail to the notice's result, so a finished task never claims success unless it succeeded.
 - Adopt the new versions in every current reader through the shared read function, and adjust the readers that name providers.
@@ -20,7 +20,7 @@ None.
 
 ### Modified Capabilities
 
-- `bunny-assistant-tasks`: assistant tasks are reported as shared monitoring sessions.
+- `bunny-assistant-tasks`: assistant conversations are reported as shared monitoring sessions, one turn per task.
 - `bunny-message-profile`: native source entry, `session/3.1`, `lifecycle/2.2` and the 2.1 occurrence versions; the read function reads `session/3.0` and `3.1`.
 - `bunny-runtime`: the core takes native observations under source binding, applies the new inputs, selects the published version per record and states native tasks under the session limit.
 

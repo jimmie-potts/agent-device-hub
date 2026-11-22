@@ -736,15 +736,17 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
   the status function, the record builder, the policies and opportunity
   matching.
 
-### Native assistant task sessions (Hub #505)
+### Native assistant conversation sessions (Hub #505)
 
-Each B.U.N.N.Y. assistant task is one root session of the native source. The
-OpenSpec change `gh-505-native-assistant-sessions` holds the design.
+Each B.U.N.N.Y. assistant profile's conversation is one root session of the
+native source, and each task in it is one turn. The OpenSpec change
+`gh-505-native-assistant-sessions` holds the design.
 
 - The source is `bunny` with client `assistant`. It maps no hook, so the hook
   adapter never accepts it. `NATIVE_SOURCE` in `sources.ts` fixes its host
   (`core`), its source and ordering authority (`companions`) and its one
-  producer, `bunny/modules/companions`. The session ID is the task ID. The
+  producer, `bunny/modules/companions`. The session ID and the ordering epoch
+  are the conversation ID, and the turn ID is the task ID. The
   versions before the native source name the hook sources only
   (`HOOK_PROVIDERS`, `HOOK_CLIENTS`), and `tests/sources.test.mjs` checks both
   sets.
@@ -760,15 +762,17 @@ OpenSpec change `gh-505-native-assistant-sessions` holds the design.
   keeps each new schema equal to its predecessor apart from these members.
 - `sessionSchemaOf(record)` and `occurrenceSchemaOf(family, identity)` in
   `session.ts` give the lowest version that expresses a record or an
-  occurrence: `session/3.1` and 2.1 for a native task, `session/3.0` and 2.0
+  occurrence: `session/3.1` and 2.1 for a native session, `session/3.0` and 2.0
   for every other session. A reader of an earlier release therefore still
   reads every Codex and Claude record and skips a native one.
 - `readSession` reads `session/3.0` and `3.1` (`READABLE_SESSION_SCHEMAS`).
   Status rule 3 details `finished` by the result of the last counting notice
   that has one, and by `turn-ended` otherwise, so a finished turn without a
   result claims no success.
-- The case set holds native cases: an answer and resume, every outcome,
-  duplicate and late delivery, a restart and expiry with reappearance.
+- The case set holds native cases: a conversation's tasks as turns with an
+  answer in its turn, every outcome, a resume after an uncertain call and a
+  pause, duplicate and late delivery, a restart, and expiry with reappearance
+  on one ordering sequence.
 
 ### How 1.x error codes merged
 

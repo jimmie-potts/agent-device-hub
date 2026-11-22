@@ -250,22 +250,27 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
-## Native assistant task sessions (#505)
+## Native assistant conversation sessions (#505)
 
-The #505 release reports each B.U.N.N.Y. assistant task as a session of the
-native source. It changes no core table. Records the store holds stay
-`session/3.0`, and the core keeps publishing every Codex and Claude record as
-`session/3.0` with 2.0 occurrences, so read-receipt helpers from an earlier
-host release keep working. A native task's record is `session/3.1` and its
-occurrences are 2.1; those helpers skip it.
+The #505 release reports each B.U.N.N.Y. assistant profile's conversation as
+one session of the native source, with one turn per task. It changes no core
+table. Records the store holds stay `session/3.0`, and the core keeps
+publishing every Codex and Claude record as `session/3.0` with 2.0
+occurrences, so read-receipt helpers from an earlier host release keep
+working. A native conversation's record is `session/3.1` and its occurrences
+are 2.1; those helpers skip it.
 
-The companions module's first start adds the `assistant_reports` table and
-records every saved task as already reported. A task that was waiting or had
-ended reports nothing and first appears on the devices at its next change. A
-task that was running when the runtime stopped is recovered by that same start
-as paused or uncertain, and that recovery is its first report: one
-`turn-interrupted` or `turn-uncertain` observation, so it appears at once as
-quiet or unknown.
+The companions module's first start adds the `assistant_reports` table, one
+row per conversation, and records each conversation's latest task as already
+reported. A latest task that had ended, or that waits on delegated work,
+reports nothing and first appears on the devices when its conversation next
+changes. A latest task that waits on the owner's answer or approval is
+reported by that same start: its turn start, its question and its wait, so it
+appears at once as needing the owner. A task that was running when the runtime
+stopped is recovered by that same start as paused or uncertain, and that
+recovery is its first report: one `turn-interrupted` or `turn-uncertain`
+observation, so it appears at once as quiet or unknown (or as needing the
+owner, when the recovery leaves it waiting on its question).
 
 ### No return below this release while a native session is stored
 
@@ -291,11 +296,19 @@ session has gone a day without evidence and expired, the operator sees:
   "the core cannot bring its sessions up to date now".
 
 A store that holds only native sessions with neither running work nor a
-result, such as a task waiting on its question, opens cleanly, but any later
-change to such a session would be refused the same way.
+result opens cleanly, but any later change to such a session would be refused
+the same way. A conversation's session keeps the result of every task it
+reported since it last expired, so that holds only for a conversation whose
+reported tasks have none, such as one whose only reported task waits on its
+question, as the first start of this release leaves a waiting task.
 
 The reviews of the #505 pull request ran these probes with an `e72f33fd`
-build; `037b327a` has the same code:
+build; `037b327a` has the same code. They ran before the mapping moved from one
+session per task to one session per conversation and were not rerun after it.
+The refusal depends only on what a stored native record holds, its native
+identity, running work and notice results, and a conversation's record holds
+the same members, so the probes still describe it; read each "native task"
+below as a native session holding that task's state:
 
 - A store holding a succeeded native task was refused at 86,000 s after the
   last native change and recovered at 86,410 s, when that session had expired.
@@ -321,8 +334,8 @@ that the core holds no native session:
 1. End or cancel the unfinished assistant task in Conversation, then disable
    the conversation, which Conversation refuses while a task is unfinished. No new
    task can then start.
-2. Wait a full day after the last native task change. Expiry removes each
-   native session a day after its last evidence.
+2. Wait a full day after the last task change in any profile's conversation.
+   Expiry removes each native session a day after its last evidence.
 3. Check that none is left: the `core_sessions` MCP tool with
    `{"provider": "bunny"}` returns an empty `sessions` list, as does the
    dashboard's session list filtered to the `bunny` provider. Only then stop

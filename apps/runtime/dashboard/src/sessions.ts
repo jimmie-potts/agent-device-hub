@@ -106,7 +106,7 @@ export function chipOf(view: SessionView): SessionChip {
 const RESULT_TEXT: Readonly<Record<string, string>> = {succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled'};
 
 /**
- * The chip's words for a session: the chip's own, except that a task whose finished turn records its result names it
+ * The chip's words for a session: the chip's own, except that a finished turn that records its task's result names it
  * (Hub #505): `Failed · unread` while it counts as finished, and `Failed` once the dashboard's policy retired it. A
  * finished turn without a result never names one, so the dashboard never claims success it has no evidence of.
  */

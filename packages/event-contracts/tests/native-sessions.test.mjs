@@ -19,9 +19,9 @@ const hash = text => createHash('sha256').update(text).digest('hex');
 const known = id => ({status: 'known', id});
 const schemaOf = id => coreFamilies.find(family => family.dataschema === `${BASE}${id}`)?.schema;
 const {producer: _producer, ...nativeSource} = NATIVE_SOURCE;
-const native = (sessionId = 'synthetic-task') => ({...nativeSource, sessionId});
+const native = (sessionId = 'synthetic-conversation') => ({...nativeSource, sessionId});
 const claude = {provider: 'claude', client: 'code', hostId: 'synthetic-host', sourceId: 'claude-hooks', sessionId: 'synthetic-claude'};
-const notice = (result, acknowledgedBy = []) => ({id: hash(`notice-${String(result)}`), kind: 'turn-ended', turn: known('run-1'), acknowledgedBy,
+const notice = (result, acknowledgedBy = []) => ({id: hash(`notice-${String(result)}`), kind: 'turn-ended', turn: known('task-1'), acknowledgedBy,
   ...(result === undefined ? {} : {result})});
 const CONSUMERS = ['dashboard', 'nanoleaf', 'pixoo'];
 
@@ -29,7 +29,7 @@ const CONSUMERS = ['dashboard', 'nanoleaf', 'pixoo'];
 function record(overrides = {}, dataschema) {
   const who = overrides.identity ?? native();
   const data = buildSession({
-    id: sessionEntityId(who), revision: 4, generation: 2, identity: who, parent: {status: 'top-level'}, turn: known('run-1'),
+    id: sessionEntityId(who), revision: 4, generation: 2, identity: who, parent: {status: 'top-level'}, turn: known('task-1'),
     work: 'idle', attention: [], notices: [], read: 'unknown', unavailable: [],
     ordering: who.provider === 'bunny' ? {status: 'known', authority: 'companions', epoch: who.sessionId, sequence: 3} : {status: 'unknown'},
     observedAtMs: AT - 1000, lastEvidenceAtMs: AT - 1000, children: {working: 0, unconfirmed: 0}, title: {value: 'B.U.N.N.Y.', source: 'provider'}, ...overrides,
@@ -40,12 +40,12 @@ function record(overrides = {}, dataschema) {
     traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data,
   };
 }
-/** A lifecycle observation of a native task, as the companions module publishes it. */
+/** A lifecycle observation of a native conversation's task, as the companions module publishes it. */
 function observation(event, {dataschema = `${BASE}lifecycle/2.2`, identity = native(), source = NATIVE_SOURCE.producer} = {}) {
   return {
     specversion: '1.0', bunnyprofile: '2.0', id: 'observation-1', source, type: 'org.bunny.lifecycle.observed', subject: sessionEntityId(identity),
     time: TIME, kind: 'occurrence', datacontenttype: 'application/json', dataschema, traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
-    data: {identity, turn: known('run-1'), parent: {status: 'top-level'}, nativeEventId: '3', event, observedAtMs: AT,
+    data: {identity, turn: known('task-1'), parent: {status: 'top-level'}, nativeEventId: '3', event, observedAtMs: AT,
       ordering: {status: 'known', authority: identity.sourceId, epoch: identity.sessionId, sequence: 3}},
   };
 }
@@ -110,15 +110,15 @@ test('the occurrences of a native session are 2.1, every other one 2.0, and a se
   const raised = {
     specversion: '1.0', bunnyprofile: '2.0', id: 'raised-1', source: 'bunny/core', type: 'org.bunny.attention.raised', subject: sessionEntityId(native()),
     time: TIME, kind: 'occurrence', datacontenttype: 'application/json', dataschema: `${BASE}attention-raised/2.1`, traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
-    data: {session: sessionEntityId(native()), identity: native(), turn: known('run-1'), observedAtMs: AT, ordering: {status: 'known', authority: 'companions', epoch: 'synthetic-task', sequence: 2},
-      revision: 5, attention: {id: known('task-q1'), kind: 'input', turn: known('run-1')}},
+    data: {session: sessionEntityId(native()), identity: native(), turn: known('task-1'), observedAtMs: AT, ordering: {status: 'known', authority: 'companions', epoch: 'synthetic-conversation', sequence: 2},
+      revision: 5, attention: {id: known('task-q1'), kind: 'input', turn: known('task-1')}},
   };
   assert.equal(valid(raised), true);
   assert.equal(valid({...raised, dataschema: `${BASE}attention-raised/2.0`}), false);
 });
 
 test('lifecycle/2.2 carries the common inputs, and only it names the native source', () => {
-  for (const event of [{kind: 'turn-started'}, {kind: 'turn-waiting'}, {kind: 'turn-uncertain'}, {kind: 'turn-interrupted'},
+  for (const event of [{kind: 'turn-started'}, {kind: 'activity-observed'}, {kind: 'turn-waiting'}, {kind: 'turn-uncertain'}, {kind: 'turn-interrupted'},
     {kind: 'turn-ended', result: 'succeeded'}, {kind: 'turn-ended', result: 'cancelled'}, {kind: 'turn-ended'},
     {kind: 'attention-input', attention: known('task-q1')}, {kind: 'attention-approval', attention: known('task-q2')}, {kind: 'attention-resolved', attention: known('task-q1')}]) {
     assert.equal(valid(observation(event)), true, JSON.stringify(event));
@@ -131,7 +131,7 @@ test('lifecycle/2.2 carries the common inputs, and only it names the native sour
 
 test('a finished task names its result, never success without one, and an owner cancel leaves no reader unread', () => {
   const outcome = notices => ({notices, read: 'unknown', confidence: 'confirmed', evidenceAtMs: AT});
-  const claims = notices => ({turn: known('run-1'), work: {state: 'idle', confidence: 'confirmed', evidenceAtMs: AT, reasons: []},
+  const claims = notices => ({turn: known('task-1'), work: {state: 'idle', confidence: 'confirmed', evidenceAtMs: AT, reasons: []},
     attention: {items: [], confidence: 'confirmed', evidenceAtMs: AT}, outcome: outcome(notices),
     relationships: {children: {working: 0, unconfirmed: 0}, confidence: 'confirmed'}, unavailable: []});
   for (const result of ['succeeded', 'failed', 'cancelled']) {

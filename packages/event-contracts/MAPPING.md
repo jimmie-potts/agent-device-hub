@@ -76,7 +76,7 @@ notice acknowledgment, attention nor lifecycle freshness.
 Since [Hub #1865](https://github.com/jimmie-potts/agent-device-hub/issues/1865)
 step 9 the core publishes `session/3.0`. Since
 [Hub #505](https://github.com/jimmie-potts/agent-device-hub/issues/505) it
-publishes a native assistant task's record as `session/3.1`, which adds the
+publishes a native assistant conversation's record as `session/3.1`, which adds the
 native identity and a notice `result`, and every other record as `session/3.0`.
 The shared read function `readSession` reads those two versions. Nothing converts `session/2.x` records
 at runtime: `session/2.0` and `2.1` stay registered for retained documents, and

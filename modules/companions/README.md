@@ -543,14 +543,15 @@ evidence but cannot continue the graph or undo cancellation. If SQLite cannot
 save the fence, cancellation is refused. A successful command receipt means
 that local control was saved; task completion is reported separately.
 
-### Tasks on the status devices
+### Conversations on the status devices
 
-Each task, in every profile, is also one session in the hub's shared session
+Each profile's conversation is also one session in the hub's shared session
 model (Hub #505), so the status devices, Habitat, the dashboard and automations
-show it beside Codex and Claude sessions. Conversation stays the place to
-answer and approve.
+show it beside Codex and Claude sessions. Each task in the conversation, one
+owner message and everything it causes, is one turn of that session.
+Conversation stays the place to answer and approve.
 
-| Task | Session status |
+| Latest task | Session status |
 | --- | --- |
 | Running | Working |
 | Waiting on a clarification or an approval | Needs the owner (input or approval) |
@@ -559,27 +560,42 @@ answer and approve.
 | Uncertain | Unknown |
 | Succeeded, failed or cancelled | Finished, detailed by the result |
 
-The session ID is the task ID, a turn is one run, and an attention item is the
-saved question's ID. The source is `bunny`/`assistant` on the core host, titled
-by the persona: `B.U.N.N.Y.`, `Reachy` or `MicroDuck`. Every transaction that
-changes a task also adds the `lifecycle/2.2` observations that move its session
-there, from the module's own source and with the task's own ordering sequence,
-and records the last state it reported in `assistant_reports`. Nothing else
+The session ID and the ordering epoch are the conversation ID, a turn is one
+task by its task ID, and an attention item is the saved question's ID. An
+answered question, a resume and the new run either starts stay in the task's
+turn; only the next task starts a new turn, which supersedes the earlier task's
+notice as a new Claude prompt does. The source is `bunny`/`assistant` on the
+core host, titled by the persona: `B.U.N.N.Y.`, `Reachy` or `MicroDuck`. Every
+transaction that changes a task also adds the `lifecycle/2.2` observations that
+move its conversation's session there, from the module's own source and on the
+conversation's one ordering sequence, and records the last state it reported
+in `assistant_reports`, one row per conversation. When one transaction ends a
+task and starts the next, the earlier task's turn end comes first. Nothing else
 reports: a page or history read, an enable, a spoken reply, a startup
 reconciliation that keeps a task's state, and outbox republication report
-nothing new. The first start of this release records each saved task as already
-reported, so an old task appears only when it next changes.
+nothing new. The first start of this release records each conversation's
+latest task as already reported, so an ended task appears only when the
+conversation next changes, except a task that waits on the owner's answer or
+approval: that start reports it at once, so it shows on the devices as needing
+the owner.
 
 A failure stays unread on the devices until it is acknowledged. A task the
 owner cancels shows its result but leaves no unread notice: its notice is
 acknowledged for every consumer at once. Detail-aware surfaces name the
-result, such as `Failed · unread` on the dashboard. A session expires a day
-after its task's last change, as every session does; the task and its question
-stay here, and the next change shows the session again. Native tasks count
-toward the hub's limit of 128 sessions, and at the limit a new one may be left
-off the devices until there is room. No Reachy or MicroDuck card is raised for
-a task, and `read_sessions` and coding suggestions list coding agent sessions
-only. Native worker reporting is not part of this.
+result, such as `Failed · unread` on the dashboard. After a task ends, the
+session reads as a Claude session does after its turn ends, finished until it
+is acknowledged or the next task starts, and the session itself never ends. It
+expires a day after its conversation's last change, as every session does;
+the conversation, its tasks and their questions stay here, and the next change
+shows the session again on the same ordering sequence. Each conversation
+counts once toward the hub's limit of 128 sessions, and at the limit it may be
+left off the devices until there is room. A session holds at most 128 notices,
+one per ended task, and 256 ordering watermarks, one per question and one for
+the work, so a conversation of about 128 tasks without a day's break stops
+updating on the devices until it expires; the core refuses its further
+observations with `capacity`. No Reachy or MicroDuck
+card is raised for a conversation, and `read_sessions` and coding suggestions
+list coding agent sessions only. Native worker reporting is not part of this.
 
 ### LIFX status and controls
 
@@ -703,8 +719,8 @@ pending-write fidelity, unknown-call recovery, cancellation, budgets, full disk,
 outbox replay and private pagination, plus `assistant.test.js` (approval,
 decline, stale approval, uncertain dispatch, allowlist refusal, refusal,
 truncation and fault codes, profile isolation), `assistant-sessions.test.js`
-(each task change's shared-session observations, restart and baseline, Hub
-#505), `anthropic.test.js` (the request
+(each conversation's shared-session observations across its tasks, restart and
+baseline, Hub #505), `anthropic.test.js` (the request
 shape, tool-use parsing, usage, error mapping and abort against a fake
 transport) and `configure.test.js` (the section and a keyed provider through
 the harness's secret). `node --test apps/runtime/dist/tests/assistant-dispatch.test.js`

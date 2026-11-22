@@ -56,15 +56,16 @@ The session selector identifies the actual child when `agent_id` is present; the
 
 [Nanoleaf's existing source](https://github.com/jimmie-potts/codex-nanoleaf/blob/ea3b95661352f927aceaf92b62d74660978c201f/bridge/README.md#questions-blocks-and-read-status) distinguishes continuing questions and blocked waits, retains unread notices after runtime end and documents same-tool approval ambiguity. Its Desktop unread reconciliation is implementation-specific. This contract neither replaces it nor exports private metadata. `request_user_input_async` coverage in a particular provider version must be qualified; the legacy mapping alone does not establish shared support.
 
-## Native assistant tasks
+## Native assistant conversations
 
-The native B.U.N.N.Y. assistant (`bunny`/`assistant`, [Hub #505](https://github.com/jimmie-potts/agent-device-hub/issues/505)) is not a hook provider. The companions module reports its own committed task state in `lifecycle/2.2`, in the transaction that changes the task, with known ordering per task; the core accepts the source from that module only. Its mapping is documented and implemented in source with synthetic tasks; installed qualification is [Hub #1869](https://github.com/jimmie-potts/agent-device-hub/issues/1869).
+The native B.U.N.N.Y. assistant (`bunny`/`assistant`, [Hub #505](https://github.com/jimmie-potts/agent-device-hub/issues/505)) is not a hook provider. Each profile's conversation is one session, and each task in it, one owner message and everything it causes, is one turn named by the task ID. The companions module reports its own committed task state in `lifecycle/2.2`, in the transaction that changes the task, with one known ordering sequence per conversation; the core accepts the source from that module only. Its mapping is documented and implemented in source with synthetic tasks; installed qualification is [Hub #1869](https://github.com/jimmie-potts/agent-device-hub/issues/1869).
 
 | Task change | Observation | Limitation |
 | --- | --- | --- |
-| A start or resume (a new run) | `turn-started` on the run | A conversation opening is not work |
-| A saved clarification or approval | `attention-input` or `attention-approval` on the run | A delegation wait raises no attention |
-| An answer | `attention-resolved` for that question on its run | Resolves only that question |
+| A new task starts | `turn-started` on the task's turn | A conversation opening is not work; a later task's start supersedes the earlier task's notice |
+| A saved clarification or approval | `attention-input` or `attention-approval` on the turn | A delegation wait raises no attention |
+| An answer | `attention-resolved` for that question, then `activity-observed`, on the same turn | Resolves only that question; no new turn |
+| A resume of a paused or uncertain task | `activity-observed` on the same turn | No new turn |
 | The run stops at a question or delegation | `turn-waiting` | No notice |
 | The run is cut off (paused) | `turn-interrupted` | No running-work claim |
 | A call's fate is unknown (uncertain) | `turn-uncertain` | Not terminal |

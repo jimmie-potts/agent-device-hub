@@ -27,8 +27,8 @@ const finished = (acknowledgedBy: string[] = []): Notice[] => [{id: NOTICE, kind
 const question = {id: {status: 'known', id: 'question-1'}, kind: 'question', turn: {status: 'known', id: 'turn-1'}} as const;
 const approval = {id: {status: 'known', id: 'approval-1'}, kind: 'approval', turn: {status: 'known', id: 'turn-1'}} as const;
 
-void test('a native task names its finished result, unread or retired, and a finished turn without a result names none (Hub #505)', () => {
-  const identity = {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId: 'synthetic-task'} as const;
+void test('a native conversation names the finished result of its task, unread or retired, and a finished turn without a result names none (Hub #505)', () => {
+  const identity = {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId: 'synthetic-conversation'} as const;
   const ended = (result: Notice['result'], acknowledgedBy: string[] = []): SessionView =>
     view({identity, notices: finished(acknowledgedBy).map(notice => ({...notice, ...(result === undefined ? {} : {result})}))});
   assert.equal(clientName(identity), 'B.U.N.N.Y. assistant');

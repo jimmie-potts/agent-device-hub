@@ -111,8 +111,9 @@ export class CompanionPart implements CorePart {
     await Promise.all(['attention-raised', 'turn-ended'].map(family => core.sdk.subscribe<AgentOccurrence>(`bunny.event.${family}.*`, async message => {
       if (this.#closed || message.source !== core.sdk.source || !this.#eligibility.take(message.id)) return;
       const data = message.data, record = this.#sessions.get(data.session);
-      // No coding opportunity for a native assistant task in this slice (Hub #505, owner decision 4): Conversation speaks its
-      // own question and result. This predicate is the whole exclusion, so a later companion-opportunity version can lift it.
+      // No coding opportunity for a native assistant conversation in this slice (Hub #505, owner decision 4): Conversation
+      // speaks its own question and result. This predicate is the whole exclusion, so a later companion-opportunity
+      // version can lift it.
       if (data.identity.provider === NATIVE_SOURCE.provider) return;
       const occurredAtMs = data.occurredAtMs ?? null;
       const at = Math.min(data.observedAtMs, occurredAtMs ?? data.observedAtMs);

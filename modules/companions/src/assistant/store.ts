@@ -7,7 +7,7 @@ import type {AssistantProfile, AssistantStatus, AssistantTaskSummary} from '@jim
 
 import type {TranscriptItem} from './provider.js';
 import {HISTORY_ROWS, historyCursor, readHistoryCursor, type ConversationMessage, type RecentConversationPage, type SavedQuestion} from './history-contract.js';
-import {projectionOf, type Projection} from './sessions.js';
+import {projectionOf, waitsOnOwner, type Reported} from './sessions.js';
 
 /** The conversation graph of Hub #46. Tasks saved by the fixed synthetic graph (`synthetic-1`) stay readable and refuse resume. */
 export const GRAPH_VERSION = 'conversation-1';
@@ -69,17 +69,19 @@ export class AssistantStore {
       CREATE TABLE IF NOT EXISTS assistant_art_attachments (message_id TEXT PRIMARY KEY REFERENCES assistant_messages(id) ON DELETE CASCADE, request_id TEXT NOT NULL UNIQUE, description TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_message_page ON assistant_messages(conversation_id,seq);
       CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);`);
-    // The release that reports tasks to the shared session model (Hub #505) starts from what each saved task is now and
-    // reports only its next change: a baseline row per task, at sequence zero, that reports nothing. The table and its
-    // baseline commit together, so a start that stops part way leaves neither.
+    // The release that reports conversations to the shared session model (Hub #505) starts from what each conversation's
+    // latest task is now and reports only its next change: a baseline row per conversation, at sequence zero, that reports
+    // nothing. A task that waits on its owner gets no baseline projection instead, so its first report, at the startup's
+    // reconciliation, states it whole and it shows on the devices at once. The table and its baseline commit together, so
+    // a start that stops part way leaves neither.
     if (!reported) {
       database.exec('SAVEPOINT assistant_reports_baseline');
       try {
-        database.exec('CREATE TABLE assistant_reports (task_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL, projection TEXT)');
+        database.exec('CREATE TABLE assistant_reports (conversation_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL, projection TEXT)');
         const baseline = database.prepare('INSERT INTO assistant_reports VALUES (?,0,?)');
-        for (const row of database.prepare('SELECT record FROM assistant_tasks').all() as RecordRow[]) {
-          const task = JSON.parse(row.record) as Task, projection = projectionOf(task);
-          baseline.run(task.id, projection === undefined ? null : JSON.stringify(projection));
+        for (const task of this.latest()) {
+          const projection = waitsOnOwner(task) ? undefined : projectionOf(task);
+          baseline.run(task.conversationId, projection === undefined ? null : JSON.stringify(projection));
         }
         database.exec('RELEASE assistant_reports_baseline');
       } catch (error) {
@@ -139,14 +141,14 @@ export class AssistantStore {
   expireStages(now: number): void {this.database.prepare("DELETE FROM assistant_inputs WHERE json_extract(record,'$.expires')<=?").run(now);}
   stagedCount(): number {return (this.database.prepare('SELECT COUNT(*) AS count FROM assistant_inputs').get() as {count: number}).count;}
   receipt(requestId: string): string | undefined {return (this.database.prepare('SELECT fingerprint FROM assistant_controls WHERE request_id=?').get(requestId) as {fingerprint: string} | undefined)?.fingerprint;}
-  /** The projection last reported for a task and its last ordering sequence (Hub #505); none before its first report. */
-  report(taskId: string): {sequence: number; projection: Projection | undefined} {
-    const row = this.database.prepare('SELECT sequence,projection FROM assistant_reports WHERE task_id=?').get(taskId) as {sequence: number; projection: string | null} | undefined;
-    return {sequence: row?.sequence ?? 0, projection: row?.projection === null || row?.projection === undefined ? undefined : JSON.parse(row.projection) as Projection};
+  /** What a conversation last reported and its last ordering sequence (Hub #505); nothing before its first report. */
+  report(conversationId: string): Reported {
+    const row = this.database.prepare('SELECT sequence,projection FROM assistant_reports WHERE conversation_id=?').get(conversationId) as {sequence: number; projection: string | null} | undefined;
+    return {sequence: row?.sequence ?? 0, projection: row?.projection === null || row?.projection === undefined ? undefined : JSON.parse(row.projection) as Reported['projection']};
   }
-  saveReport(taskId: string, sequence: number, projection: Projection): void {
-    this.database.prepare('INSERT INTO assistant_reports VALUES (?,?,?) ON CONFLICT(task_id) DO UPDATE SET sequence=excluded.sequence,projection=excluded.projection')
-      .run(taskId, sequence, JSON.stringify(projection));
+  saveReport(conversationId: string, reported: Reported): void {
+    this.database.prepare('INSERT INTO assistant_reports VALUES (?,?,?) ON CONFLICT(conversation_id) DO UPDATE SET sequence=excluded.sequence,projection=excluded.projection')
+      .run(conversationId, reported.sequence, reported.projection === undefined ? null : JSON.stringify(reported.projection));
   }
   remember(requestId: string, fingerprint: string): void {this.database.prepare('INSERT INTO assistant_controls VALUES (?,?)').run(requestId, fingerprint);}
   summary(task: Task): AssistantTaskSummary {
