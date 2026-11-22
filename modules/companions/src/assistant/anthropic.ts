@@ -84,7 +84,7 @@ function usageOf(usage: Record<string, unknown>): TokenUsage | null {
 const stopOf = (reason: unknown, calls: number): TurnStop => reason === 'refusal' ? 'refusal' : reason === 'max_tokens' ? 'truncated' : calls > 0 ? 'tool' : 'end';
 export const codeOfStatus = (status: number): ProviderFault => new ProviderFault(
   status === 401 ? 'unauthenticated' : status === 403 ? 'forbidden' : status === 404 ? 'not-found' : status === 429 ? 'capacity'
-    : status === 400 || status === 422 ? 'invalid-request' : status === 413 ? 'too-large' : 'unavailable');
+    : status === 400 || status === 422 ? 'invalid-request' : status === 413 ? 'too-large' : 'unavailable', false, status === 413 ? 'request' : undefined);
 
 export class AnthropicProvider implements ModelProvider {
   readonly name = 'anthropic' as const;
@@ -117,10 +117,10 @@ export class AnthropicProvider implements ModelProvider {
     }
     if (!response.ok) throw codeOfStatus(response.status);
     const length = Number(response.headers.get('content-length') ?? '0');
-    if (Number.isSafeInteger(length) && length > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large');
+    if (Number.isSafeInteger(length) && length > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large', false, 'response');
     let text: string;
     try {text = await response.text();} catch {throw new ProviderFault('unavailable', true);}
-    if (textBytes(text) > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large');
+    if (textBytes(text) > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large', false, 'response');
     let parsed: unknown;
     try {parsed = JSON.parse(text);} catch {throw new ProviderFault('invalid-message');}
     return this.#reply(parsed, input.tools.slice(STRICT_TOOL_LIMIT));

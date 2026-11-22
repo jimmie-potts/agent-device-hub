@@ -74,6 +74,13 @@ void test('a generated title never repeats text the prompt carried, and the owne
   // The shape the instruction asks for: an issue reference, then six or more words verbatim from wherever the reference was.
   const titleBrief = 'Fix the stale session title shown on the hallway Tidbyt after a rename (#2025).';
   assert.equal(generatedTitle('#2025 Fix the stale session title shown on the hallway Tidbyt after a rename', [handOff(titleBrief)]), undefined, '#N and a hand-off brief');
+  // The approval question words the hand-off as "Delegate to"; a declined or refused hand-off is checked the same way.
+  assert.equal(generatedTitle('#2025 Fix the stale session title shown on the hallway Tidbyt after a rename',
+    [assistant(`Delegate to the coding worker in agent-device-hub: ${titleBrief}`)]), undefined, '#N and an approval\'s brief');
+  // A cut answer inside a reply, behind a new issue reference.
+  const lamp = assistant('Done: I turned off the bedroom lamp and set the alarm for six tomorrow. Sleep well.');
+  assert.equal(generatedTitle('#7 I turned off the bedroom lamp and set the alarm for six tomorrow', [lamp]), undefined, '#N and a reply excerpt');
+  assert.equal(generatedTitle('Bedroom lamp and alarm setup', [lamp]), 'Bedroom lamp and alarm setup', 'a reply\'s topic as a summary');
   const night = 'My brother keeps waking me up at 3am every single night, see #1896';
   assert.equal(generatedTitle('#1896 My brother keeps waking me up at 3am', owner(night)), undefined, '#N and an owner excerpt');
   assert.equal(generatedTitle('pixoo#14 The boot channel resets to the cloud clock face', owner('After a power cut the boot channel resets to the cloud clock face again (pixoo#14).')), undefined,
@@ -333,6 +340,28 @@ void test('compare-before-write: an answer settled after a rename advanced the g
   assert.deepEqual(added, [{key: 'title', draft: {value: 'Owner title', source: 'user'}}], 'only the rename is announced');
   assert.equal(titles.started('conversation-1'), false, 'and an owner title earns no generated one');
   database.close();
+});
+
+void test('a failed turn\'s closing reply is saved but never reaches the title prompt, and the title flow continues around it', {timeout: 20_000}, async context => {
+  let turns = 0;
+  const failing: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: () => {
+    turns += 1;
+    return turns === 2 ? Promise.reject(new ProviderFault('invalid-message')) : Promise.resolve(done('Synthetic answer.'));
+  }};
+  const provider = titler([titled('Lamp schedule'), titled('#88 Lamp schedule fix')]);
+  const w = await world(context, {provider: failing, titleProvider: provider});
+  await w.ask('When does the lamp turn on?');
+  await w.titled(1);
+  await w.ask('Move it to seven.');
+  assert.equal(w.module.inspectAssistant()?.tasks[0]?.status, 'failed');
+  const history = await w.module.manifest.content?.('conversation', {query: {profile: 'bunny', view: 'recent'}, signal: new AbortController().signal});
+  assert.ok(history !== undefined && !('error' in history));
+  assert.match(Buffer.from(history.bytes).toString(), /The provider returned an invalid response\./, 'the closing reply is saved in the conversation');
+  await w.ask('That is issue #88.');
+  await w.titled(2);
+  assert.equal(provider.prompts.length, 2, 'the third task refreshes the title as before');
+  assert.match(provider.prompts[1] ?? '', /Move it to seven\..*That is issue #88\./s);
+  assert.doesNotMatch(provider.prompts[1] ?? '', /invalid response|The turn stopped/, 'the closing reply is not in the title prompt');
 });
 
 void test('a failed, refused, invalid or late title leaves the persona, never touches the task, and is not retried', {timeout: 20_000}, async context => {

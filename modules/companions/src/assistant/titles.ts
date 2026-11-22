@@ -169,8 +169,11 @@ function titleParts(response: string): TitleParts | undefined {
 /** A text in the form the echo guard compares: whitespace collapsed, no trailing `.?!`, this repository's references short, lower case. */
 const comparable = (value: string): string => collapse(trimQuotes(collapse(value))).replace(/[.?!]+$/u, '')
   .replace(new RegExp(`\\b${HOME_REPOSITORY}#`, 'giu'), '#').toLocaleLowerCase();
-/** A saved coding hand-off message's fixed wrapper (the engine's delegation text), so an echo of the brief alone is caught. */
-const HANDED_OFF = /^Delegated to the coding worker in [^:\s]+: /u;
+/**
+ * A saved coding hand-off message's fixed wrapper, so an echo of the brief alone is caught: the approval question
+ * ("Delegate to the coding worker in <repo>: <brief>") and the accepted hand-off ("Delegated to ..."), as the engine words them.
+ */
+const HANDED_OFF = /^Delegated? to the coding worker in [^:\s]+: /u;
 /** The answer with the prompt's entity escapes undone, so an echo the model copied in escaped form is caught too. */
 const unescaped = (value: string): string => value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
 /** The words of a text as the echo guard reads them: entity escapes undone, lower case, letters and digits only. */
@@ -189,10 +192,11 @@ function runs(tokens: readonly string[]): string[] {
  * - with each owner message and coding hand-off brief (its fixed wrapper stripped): the description after any issue
  *   reference, whole or as the title keeps it, may not share a run of `ECHO_RUN_WORDS` consecutive words with it, which
  *   catches a longer echo wherever the text named its issue;
- * - with each other assistant reply: an answer long enough to be cut may not appear inside it. Replies naturally reuse
- *   the topic's words, so they get no word-run check.
- * Verbatim text only: a paraphrase, a reordered or reworded message or a shorter shared run passes, an echo of a reply
- * behind a new issue reference passes, and an owner message that is exactly the right title is refused.
+ * - with each other assistant reply: an answer long enough to be cut may not appear inside it, whole or as its whole
+ *   description after any issue reference. Replies naturally reuse the topic's words, so they get no word-run check.
+ * Verbatim text only: a paraphrase, a reordered or reworded message or a shorter shared run passes, a short answer that
+ * repeats part of a reply behind a new issue reference passes, and an owner message that is exactly the right title is
+ * refused.
  */
 export function generatedTitle(response: string | null, messages: readonly TitleMessage[]): string | undefined {
   const parts = response === null ? undefined : titleParts(response);
@@ -202,7 +206,9 @@ export function generatedTitle(response: string | null, messages: readonly Title
   const said = [...messages.filter(message => message.role === 'owner').map(message => message.text), ...briefs];
   const replies = messages.filter(message => message.role === 'assistant' && !HANDED_OFF.test(message.text)).map(message => comparable(message.text));
   if ([...messages.map(message => message.text), ...briefs].some(text => answers.includes(comparable(text)))) return undefined;
-  if (parts.cut && replies.some(reply => answers.some(answer => reply.includes(answer)))) return undefined;
+  // A cut answer inside a reply, also by its whole description alone, without the issue reference the model put in front.
+  const inside = parts.cut ? [...answers, ...[parts.description, unescaped(parts.description)].map(comparable)] : [];
+  if (replies.some(reply => inside.some(answer => answer !== '' && reply.includes(answer)))) return undefined;
   const runsSaid = new Set(said.flatMap(text => runs(words(text))));
   const echoes = [parts.description, parts.kept].some(description => runs(words(description)).some(run => runsSaid.has(run)));
   return echoes ? undefined : parts.title;

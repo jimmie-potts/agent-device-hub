@@ -58,7 +58,7 @@ void test('a reservation that could pass the daily or monthly limit is refused w
   const big = (id: string, worth: number) => call(id, worth * 200_000, 0);
   assert.equal(spend.reserve(big('a', 19)), undefined);
   const refused = spend.reserve(big('b', 2));
-  assert.equal(refused, 'The daily spend limit of $20.00 would be passed: $19.00 is counted today and this model call could cost up to $2.00. Nothing was sent.');
+  assert.equal(refused, 'The daily spend limit of $20.00 would be passed: $19.00 is counted today and this model call could cost up to $2.00. The next model call was not sent.');
   assert.equal(spend.totals().day.unreported, 1, 'the refused call left no row');
   assert.equal(spend.reached(), undefined, 'below the limit a new turn may start');
   spend.settle('a', {input: 5_000_000, output: 0, cacheWrite: 0, cacheRead: 0});
@@ -70,7 +70,7 @@ void test('a reservation that could pass the daily or monthly limit is refused w
   }
   set('2026-11-28T18:00:00Z');
   assert.equal(spend.reserve(big('f', 15)), undefined);
-  assert.equal(spend.reserve(big('g', 2)), 'The monthly spend limit of $150.00 would be passed: $149.00 is counted this month and this model call could cost up to $2.00. Nothing was sent.');
+  assert.equal(spend.reserve(big('g', 2)), 'The monthly spend limit of $150.00 would be passed: $149.00 is counted this month and this model call could cost up to $2.00. The next model call was not sent.');
   spend.settle('f', {input: 4_000_000, output: 0, cacheWrite: 0, cacheRead: 0});
   set('2026-11-29T18:00:00Z');
   assert.match(spend.reached() ?? '', /^The monthly spend limit of \$150\.00 is reached: \$150\.00 is counted this month\./);
@@ -78,16 +78,16 @@ void test('a reservation that could pass the daily or monthly limit is refused w
 
 void test('a model without a configured price is refused before anything is recorded', () => {
   const {spend} = ledger();
-  const message = 'No price is configured for the model model-b, so its spend cannot be counted. Nothing was sent.';
-  assert.equal(spend.reserve({...call('x'), model: 'model-b'}), message);
-  assert.equal(spend.reached('model-b'), message, 'a new turn of an unpriced model is refused the same way');
+  const message = 'No price is configured for the model model-b, so its spend cannot be counted.';
+  assert.equal(spend.reserve({...call('x'), model: 'model-b'}), message + ' The next model call was not sent.');
+  assert.equal(spend.reached('model-b'), message + ' Nothing was sent.');
   assert.equal(spend.minimum('model-b'), undefined);
   assert.equal(spend.totals().day.spentMicros, 0);
   // A model named after an inherited member is unpriced too, not a lookup of the prototype.
-  const inherited = 'No price is configured for the model constructor, so its spend cannot be counted. Nothing was sent.';
+  const inherited = 'No price is configured for the model constructor, so its spend cannot be counted.';
   assert.equal(spend.minimum('constructor'), undefined);
-  assert.equal(spend.reached('constructor'), inherited);
-  assert.equal(spend.reserve({...call('y'), model: 'constructor'}), inherited);
+  assert.equal(spend.reached('constructor'), inherited + ' Nothing was sent.');
+  assert.equal(spend.reserve({...call('y'), model: 'constructor'}), inherited + ' The next model call was not sent.');
   assert.equal(spend.priced('constructor'), false);
 });
 

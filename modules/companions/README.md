@@ -293,6 +293,7 @@ Questions, approvals, worker waits and task controls appear above the composer.
 A successful task leaves a short **Task completed** cue by the composer.
 Open **Details** to inspect the task. Failed, cancelled, paused and uncertain
 outcomes remain visible by the relevant controls.
+When a turn fails or ends with an uncertain call, the transcript saves a closing reply from the turn’s approved requests, dispatch receipts and recorded results. It can report a known limit even when the model has no calls left. The fallback stays on the page and says when the cause is unknown. Opening the conversation again shows the same reply.
 An approval shows the full scope and the revision it applies to. A command
 receipt reports what happened to the request separately from task completion.
 Disconnected or stale copies retain loaded history and lock mutations.
@@ -606,8 +607,8 @@ Coding-worker runs use the coding worker's own sign-in and are not counted.
   reservation would pass the daily or the monthly limit, the call is refused
   with `capacity` and nothing is sent. The conversation then shows the
   limit, for example "The daily spend limit of $20.00 would be passed: $19.80
-  is counted today and this model call could cost up to $0.42. Nothing was
-  sent."
+  is counted today and this model call could cost up to $0.42. The next model call was
+  not sent."
 - **Reported usage.** The answer's reported tokens, priced by class from
   `assistant.prices`, replace the reservation in the same transaction that
   saves the answer. An answer that arrives after the call's deadline, while
@@ -724,7 +725,9 @@ persona names until the owner renames them. When a profile gets a real model
   fails or rolls back it.
 - **What the model sees.** The fixed title instruction as the system prompt
   and the conversation's last eight owner and assistant messages, escaped and
-  cut to 2 KiB. No tool result, preference or knowledge entry is sent.
+  cut to 2 KiB. No tool result, preference or knowledge entry is sent, and no
+  failed turn's closing reply, which is the module's own status text about the
+  turn.
 - **What is kept.** After the issue reference, the description is cut to 40
   characters at a word boundary. Quotes, markdown, a `Title:` label and
   trailing punctuation are removed. An answer that is empty, a placeholder such
@@ -739,13 +742,15 @@ persona names until the owner renames them. When a profile gets a real model
     issue reference may not share a run of 6 consecutive words
     (`ECHO_RUN_WORDS`), wherever the message named its issue.
   - Against B.U.N.N.Y.'s other replies, which naturally reuse the topic's
-    words, only an answer long enough to be cut that appears inside a reply is
-    refused.
+    words, only an answer long enough to be cut that appears inside a reply,
+    whole or as its description after any issue reference, is refused.
 
-  The guard catches verbatim text only. A paraphrase, a reordered or reworded
-  message, a shorter shared run, or a reply's words behind a new issue
-  reference is not detected, and a message of yours that is already exactly
-  the right title is refused. A failed, refused or invalid first
+  A hand-off brief is found in both the approval question ("Delegate to the
+  coding worker in …") and the accepted hand-off ("Delegated to …"). The guard
+  catches verbatim text only. A paraphrase, a reordered or reworded message, a
+  shorter shared run, or a short title repeating part of a reply behind a new
+  issue reference is not detected, and a message of yours that is already
+  exactly the right title is refused. A failed, refused or invalid first
   title leaves the persona name; a failed refresh keeps the earlier title.
   Nothing is retried.
 - **Where it goes.** The conversation's recent messages go to Anthropic's
@@ -900,6 +905,8 @@ or verbose flags make the executor unavailable, preventing implicit content
 export. Reachy's fixed-text policy remains independent.
 
 ### Checks
+
+After the root build, run `node apps/runtime/dashboard/tests/failed-turn.browser.ts` for the scripted clarification, failure and reload journey.
 
 Run the root build and `npm run test:companions:built` for abrupt process exits,
 pending-write fidelity, unknown-call recovery, cancellation, budgets, full disk,
