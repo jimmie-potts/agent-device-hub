@@ -2,6 +2,7 @@
 // handoff families are `v2/art`; this adds only the owner's catalog command, which they do not carry. The record carries references and amounts only: prompts, keys,
 // locations and image bytes stay in the module, and bytes are read through its authenticated content route.
 import {SCHEMA_BASE, type ErrorCode, type MessageValidator} from './index.js';
+import {ART_ATTACHMENT_FAMILY} from './art-show.js';
 import {defineFamily, registerFamilies, type PayloadFamily} from './registry.js';
 
 export const ART_ID = 'art';
@@ -86,8 +87,14 @@ export type ArtUploadStage = {requestId: string; sha256: string};
 export const ART_UPLOAD_STAGE_TYPE = 'org.bunny.art-upload.stage.requested';
 export const ART_UPLOAD_STAGE_SCHEMA = `${SCHEMA_BASE}art-upload-stage/2.0`;
 
+export type ArtAttachmentEdit = {requestId: string} & (
+  | {action: 'stage'; sha256: string}
+  | {action: 'save'; artworkId: string}
+);
+
 const onArt = (message: {subject: string}): string | undefined => message.subject === ART_ID ? undefined : 'envelope /subject must be art';
-const families = [defineFamily('art', 'state', ART_STATE_TYPE, onArt), defineFamily('art', 'state', ART_STATE_TYPE, onArt, '2.1'), defineFamily('art-catalog-edit', 'command', ART_CATALOG_EDIT_TYPE, onArt), defineFamily('art-upload-stage', 'command', ART_UPLOAD_STAGE_TYPE, onArt)];
+const families = [defineFamily('art', 'state', ART_STATE_TYPE, onArt), defineFamily('art', 'state', ART_STATE_TYPE, onArt, '2.1'), defineFamily('art-catalog-edit', 'command', ART_CATALOG_EDIT_TYPE, onArt), defineFamily('art-upload-stage', 'command', ART_UPLOAD_STAGE_TYPE, onArt),
+  defineFamily(ART_ATTACHMENT_FAMILY, 'command', 'org.bunny.art-attachment.edit.requested', onArt)];
 /** The art state and catalog families, which the art module registers (Hub #680). */
 export const artStateFamilies: readonly PayloadFamily[] = families;
 export const artSchemas: Readonly<Record<string, object>> = Object.fromEntries(families.map(family => [family.dataschema, family.schema]));

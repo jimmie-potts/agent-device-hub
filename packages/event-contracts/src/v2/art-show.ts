@@ -84,3 +84,8 @@ export async function artShowSurfaces(requestId: string, targets: readonly strin
     ? {target, kind: 'browser', presentRequestId: await artPlanPhaseId(planId, 'browser', 'art')}
     : {target, kind: 'display', prepareRequestId: await artPlanPhaseId(planId, 'prepare', target), momentRequestId: await artPlanPhaseId(planId, 'moment', target)}));
 }
+
+export const ART_ATTACHMENT_FAMILY = 'art-attachment-edit';
+export const MAX_ART_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+export const uploadArtworkId = (requestId: string): string => `upload-${requestId}`;
+export const isUploadArtworkId = (id: string): boolean => /^upload-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);

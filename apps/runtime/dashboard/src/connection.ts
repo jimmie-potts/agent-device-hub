@@ -294,7 +294,8 @@ export class DashboardConnection {
         upload: async action => {
           if (!active()) return unavailable().body;
           if (!this.#state.runtime.control) return errorBody('forbidden', {detail: 'the page has read-only access'});
-          return sendUpload(name, action);
+          const owner = name === 'companions' && action.family === 'art-attachment-edit' && action.target === 'art' ? 'art' : name;
+          return sendUpload(owner, action);
         },
         sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>, options?: {onRestarted?: () => void}): Promise<SyncResult<T>> => {
           const participant = this.#participant;

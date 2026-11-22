@@ -521,3 +521,24 @@
 .conversation-art-display fieldset{display:flex;flex-wrap:wrap;gap:.5rem;min-inline-size:0}
 .conversation-art-display label{flex-basis:100%;overflow-wrap:anywhere}
 .conversation-art-display input{margin-inline-end:.4rem}
+
+.conversation-upload {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-s);
+  min-inline-size: 0;
+  padding-block-start: var(--space-s);
+  border-block-start: 1px solid var(--edge-dense);
+}
+
+.conversation-upload .conversation-artwork :is(canvas, img) {
+  max-block-size: 12rem;
+}
+
+.conversation-upload fieldset {
+  display: grid;
+  gap: var(--space-xs);
+  min-inline-size: 0;
+  border: 0;
+  padding: 0;
+}

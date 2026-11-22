@@ -11,6 +11,7 @@ import type {SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
 import {ConversationDetails, useDetailsOverlay} from './conversation-details.js';
 import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
+import {ConversationUpload} from './conversation-upload.js';
 import {ConversationTranscript} from './conversation-transcript.js';
 import {conversationRail, profiles} from './conversation-rail.js';
 import './conversation.css';
@@ -100,7 +101,7 @@ function TaskControls({context, command, state, profile, live, question, drafts,
         <button type="button" className="secondary" onClick={() => {control('cancel', task.taskId);}}>Cancel task</button>
       </div>}
     </fieldset>
-    <div className="conversation-input-surface">
+    <ConversationUpload key={draftKey} context={context} locked={locked || !showInput}>{attach => <>
       {showInput && <form id={formId} onSubmit={event => {event.preventDefault(); submit();}}>
         <label className="vh" htmlFor="assistant-input">{pending ? 'Answer' : 'Message'}</label>
         <textarea id="assistant-input" rows={2} value={draft} aria-describedby="assistant-input-help"
@@ -118,9 +119,10 @@ function TaskControls({context, command, state, profile, live, question, drafts,
       </form>}
       <div className="conversation-composer-actions">
         {voice}
+        {showInput && attach}
         {showInput && <button type="submit" form={formId} disabled={!canSubmit}>{pending ? 'Answer' : 'Send'}</button>}
       </div>
-    </div>
+    </>}</ConversationUpload>
     {showInput && <div id="assistant-input-help" className="conversation-input-help">
       <p>Enter to {pending ? 'answer' : 'send'}. Shift+Enter for a new line.</p>
       <p>Saved privately. Sent to the selected model.</p>

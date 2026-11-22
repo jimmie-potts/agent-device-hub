@@ -83,17 +83,25 @@ const isObjectSchema = (value: unknown): value is JsonObjectSchema =>
  * or `assets`; editor script/style links resolve declared assets. Checks invoke no renderer or asset reader.
  */
 export function checkContributions(manifest: ModuleManifest): ManifestProblem | undefined {
-  const {pages, content, tools, settings, assets, upload} = manifest;
-  if (pages === undefined && content === undefined && tools === undefined && settings === undefined && assets === undefined && upload === undefined) return undefined;
+  const {pages, content, tools, settings, assets, upload, additionalUploads} = manifest;
+  if (pages === undefined && content === undefined && tools === undefined && settings === undefined && assets === undefined && upload === undefined && additionalUploads === undefined) return undefined;
   const frontendVersion = checkApiVersion(FRONTEND_VERSION, manifest.apiVersion) === undefined;
   if (assets !== undefined && !frontendVersion) return contributionProblem(`frontend pages and assets need module API ${FRONTEND_VERSION}`);
-  if (upload !== undefined) {
+  if (upload !== undefined || additionalUploads !== undefined) {
     if (!frontendVersion) return contributionProblem(`uploads need module API ${FRONTEND_VERSION}`);
-    if (!isObject(upload) || typeof upload.family !== 'string' || upload.family.length > 64
-      || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(upload.family)
-      || !Number.isSafeInteger(upload.maxBytes) || upload.maxBytes < 1 || upload.maxBytes > MAX_UPLOAD_BYTES
-      || typeof upload.stage !== 'function' || Object.keys(upload).some(key => !['family', 'maxBytes', 'stage'].includes(key))) {
-      return contributionProblem('an upload needs a command family, a byte limit within 10 MiB and a stage callback');
+    if (additionalUploads !== undefined && (!Array.isArray(additionalUploads) || additionalUploads.length > 8)) {
+      return contributionProblem('additional uploads must be a list of at most eight entries');
+    }
+    const extra: readonly unknown[] = additionalUploads ?? [];
+    const families = new Set<string>();
+    for (const entry of upload === undefined ? extra : [upload, ...extra]) {
+      if (!isObject(entry) || typeof entry.family !== 'string' || entry.family.length > 64
+        || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(entry.family) || families.has(entry.family)
+        || typeof entry.maxBytes !== 'number' || !Number.isSafeInteger(entry.maxBytes) || entry.maxBytes < 1 || entry.maxBytes > MAX_UPLOAD_BYTES
+        || typeof entry.stage !== 'function' || Object.keys(entry).some(key => !['family', 'maxBytes', 'stage'].includes(key))) {
+        return contributionProblem('an upload needs a distinct command family, a byte limit within 10 MiB and a stage callback');
+      }
+      families.add(entry.family);
     }
   }
   // The module must be written for 1.2 or a later minor version of the same major.
@@ -337,6 +345,7 @@ export type ModuleManifest<Config = unknown> = {
   readonly content?: (ref: string, request?: ModuleContentRequest) => ModuleContent | ErrorBody | undefined | Promise<ModuleContent | ErrorBody | undefined>;
   /** One bounded binary preparation for an existing tracked command (module API 1.3). */
   readonly upload?: ModuleUpload;
+  readonly additionalUploads?: readonly ModuleUpload[];
   /** Its read tools, at most `MAX_TOOLS` (module API 1.2). */
   readonly tools?: readonly ModuleTool[];
   /** What the gateway shows of its configuration (module API 1.2). */
