@@ -17,7 +17,7 @@ import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {ANTHROPIC_URL, ANTHROPIC_VERSION, type Transport} from '../src/assistant/anthropic.js';
 import {ProviderFault, type ModelProvider, type TurnReply} from '../src/assistant/provider.js';
 import {
-  AnthropicTitleProvider, ConversationTitles, SyntheticTitleProvider, DEFAULT_TITLE_MODEL, generatedTitle, normalizeTitle, ownerTitle, SESSION_AGE_MS, SYNTHETIC_TITLE, TITLE_DEADLINE_MS,
+  AnthropicTitleProvider, ConversationTitles, ECHO_RUN_WORDS, SyntheticTitleProvider, DEFAULT_TITLE_MODEL, generatedTitle, normalizeTitle, ownerTitle, SESSION_AGE_MS, SYNTHETIC_TITLE, TITLE_DEADLINE_MS,
   TITLE_INSTRUCTIONS, TITLE_MAX_TOKENS, TITLE_PROMPT_BYTES, titlePrompt, type TitleProvider, type TitleReply,
 } from '../src/assistant/titles.js';
 
@@ -68,8 +68,22 @@ void test('a generated title never repeats a message the prompt carried, whole o
   assert.equal(generatedTitle('Check why &lt;kitchen&gt; lamp schedule skipped this morning', [`Please check why <kitchen> lamp schedule skipped this morning and more`]), undefined,
     'an entity-escaped mid-message excerpt');
   assert.equal(generatedTitle('Kitchen lamp schedule', [long]), 'Kitchen lamp schedule', 'a summary is a title');
-  assert.equal(generatedTitle('#2041 Flaky timer test in the kitchen lamp schedule module', [brief, long]), '#2041 Flaky timer test in the kitchen lamp',
-    'a long summary that no message contains is a title');
+  assert.equal(generatedTitle('#2041 Flaky timer test in the lamp scheduler code paths', [brief, long]), '#2041 Flaky timer test in the lamp scheduler',
+    'a long summary that shares fewer than five consecutive words with any message is a title');
+  // The shape the instruction asks for: an issue reference, then verbatim text from wherever the reference was.
+  const handOff = 'Delegated to the coding worker in agent-device-hub: Fix the stale session title shown on the hallway Tidbyt after a rename (#2025).';
+  assert.equal(generatedTitle('#2025 Fix the stale session title shown on the hallway Tidbyt after a rename', [handOff]), undefined, '#N and a hand-off brief');
+  const night = 'My brother keeps waking me up at 3am every single night, see #1896';
+  assert.equal(generatedTitle('#1896 My brother keeps waking me up at 3am', [night]), undefined, '#N and an owner excerpt');
+  assert.equal(generatedTitle('pixoo#14 The boot channel resets to the cloud clock face', ['After a power cut the boot channel resets to the cloud clock face again (pixoo#14).']), undefined,
+    'repo#N and an excerpt');
+  assert.equal(ECHO_RUN_WORDS, 5);
+  // Reordered or reworded titles are kept, whatever the conversation says.
+  const conversation = [night, handOff, long, brief, 'Where does session tracking stand for #1896? The native session titles are not published yet, and Tidbyt shows a stale title after a rename.',
+    'Pixoo boots to the cloud face after a power cut, see pixoo#14.'];
+  for (const title of ['#1896 Session tracking status', '#2025 Stale title after rename', 'pixoo#14 Boot channel', '#1896 Native session title publication and', 'Kitchen lamp schedule']) {
+    assert.equal(generatedTitle(title, conversation), title, title);
+  }
   assert.equal(generatedTitle('Please check why', [long]), 'Please check why', 'an uncut title may share a message\'s first words');
   assert.equal(ownerTitle('  My   kitchen  chat '), 'My kitchen chat');
   assert.equal(ownerTitle('🐰'.repeat(80)), '🐰'.repeat(80));

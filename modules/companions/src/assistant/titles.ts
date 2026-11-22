@@ -45,6 +45,8 @@ export const TITLE_RECENT_MESSAGES = 8;
 export const TITLE_REFRESH_TURN = 3;
 /** How long a title call may take before it is abandoned as uncertain. */
 export const TITLE_DEADLINE_MS = 30_000;
+/** A title whose description shares this many consecutive words with a prompt message is an echo of it. */
+export const ECHO_RUN_WORDS = 5;
 /** The bound on the raw answer a title call record keeps, in UTF-8 bytes. */
 export const TITLE_ANSWER_BYTES = 1024;
 /** The cap on one title answer's thinking and text, in tokens. */
@@ -126,7 +128,9 @@ function bounded(description: string): string {
   return /\s/u.test(chars[TITLE_DESCRIPTION_CHARS] ?? '') || space <= 0 ? kept : kept.slice(0, space);
 }
 /** A normalized answer: the title, the same title before its description was cut, and whether it was cut. */
-type TitleParts = {title: string; full: string; cut: boolean};
+type TitleParts = {title: string; full: string; cut: boolean;
+  /** The description after any issue reference: whole, before the cut, and as the title keeps it. */
+  description: string; kept: string};
 /**
  * A model's answer as a title, or undefined when it is no usable title. T3 Code's unwrap of a JSON `{"title": ...}`
  * answer and its first-line rule; Codex's trim of quote characters, whitespace collapse and trailing `.`, `?` and `!`;
@@ -159,7 +163,7 @@ function titleParts(response: string): TitleParts | undefined {
   if (description === '' || PLACEHOLDER.test(description)) return undefined;
   const title = reference === '' ? description : `${reference} ${description}`;
   const full = match === null ? text : `${reference} ${match[3] ?? ''}`;
-  return displayable(title) ? {title, full, cut} : undefined;
+  return displayable(title) ? {title, full, cut, description: match === null ? text : match[3] ?? '', kept: description} : undefined;
 }
 
 /** A text in the form the echo guard compares: whitespace collapsed, no trailing `.?!`, this repository's references short, lower case. */
@@ -169,20 +173,33 @@ const comparable = (value: string): string => collapse(trimQuotes(collapse(value
 const HANDED_OFF = /^Delegated to the coding worker in [^:\s]+: /u;
 /** The answer with the prompt's entity escapes undone, so an echo the model copied in escaped form is caught too. */
 const unescaped = (value: string): string => value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
+/** The words of a text as the echo guard reads them: entity escapes undone, lower case, letters and digits only. */
+const words = (value: string): string[] => unescaped(value).toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+/** Each run of `ECHO_RUN_WORDS` consecutive words of a text. */
+function runs(tokens: readonly string[]): string[] {
+  const found: string[] = [];
+  for (let start = 0; start + ECHO_RUN_WORDS <= tokens.length; start += 1) found.push(tokens.slice(start, start + ECHO_RUN_WORDS).join(' '));
+  return found;
+}
 /**
  * A generated title, or undefined when the answer is no title or repeats a message the prompt carried, so raw
- * conversation text is never published as a title. The whole normalized answer, before its description is cut, and
- * the title are compared, also with the prompt's entity escapes undone, with every owner and assistant message and with
- * a coding hand-off's brief on its own. An answer equal to one is refused; an answer long enough to be cut is also
- * refused when its title or its whole text appears anywhere inside one. The guard catches verbatim text only: a
- * paraphrase or a reordered or reworded message passes, and an owner message that is exactly the right title is refused.
+ * conversation text is never published as a title. Two rules, over every owner and assistant message and each coding
+ * hand-off's brief without its fixed wrapper:
+ * - the whole normalized answer, or the title, also with the prompt's entity escapes undone, may not equal a message
+ *   (ignoring case, spacing, surrounding quotes and trailing punctuation), which catches a short echo;
+ * - the description after any issue reference, whole or as the title keeps it, may not share a run of
+ *   `ECHO_RUN_WORDS` consecutive words with a message, which catches a longer echo wherever its reference was.
+ * Verbatim text only: a paraphrase or a reordered or reworded message passes, a shorter shared run passes, and an owner
+ * message that is exactly the right title is refused.
  */
 export function generatedTitle(response: string | null, messages: readonly string[]): string | undefined {
   const parts = response === null ? undefined : titleParts(response);
   if (parts === undefined) return undefined;
-  const answers = [...new Set([parts.title, parts.full, unescaped(parts.title), unescaped(parts.full)].map(comparable))];
-  const texts = messages.flatMap(text => [text, text.replace(HANDED_OFF, '')]).map(comparable);
-  const echoes = texts.some(text => answers.some(answer => text === answer || (parts.cut && text.includes(answer))));
+  const texts = messages.flatMap(text => [text, text.replace(HANDED_OFF, '')]);
+  const answers = new Set([parts.title, parts.full, unescaped(parts.title), unescaped(parts.full)].map(comparable));
+  if (texts.some(text => answers.has(comparable(text)))) return undefined;
+  const said = new Set(texts.flatMap(text => runs(words(text))));
+  const echoes = [parts.description, parts.kept].some(description => runs(words(description)).some(run => said.has(run)));
   return echoes ? undefined : parts.title;
 }
 /** The owner's title with its whitespace collapsed, or undefined when it is not session display text of at most 80 characters. */
