@@ -934,6 +934,138 @@ void test('a worker result that comes back before the hand-off is recorded still
   assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
 });
 
+void test('an ambiguous display kind needs an exact choice and the approved generation retains that choice after restart', async context => {
+  const provider = counted((_input, turn) => turn <= 2 ? call('create_artwork', {
+    format: 'gif', description: 'Synthetic flag', showTargets: [turn === 1 ? 'pixoo' : 'id:pixoo'],
+  }) : reply('Generation accepted.'));
+  const requests: AssistantDispatch[] = [];
+  const w = await world(context, {provider, tools: ['create_artwork'], dispatch: data => {
+    requests.push(data);
+    return Promise.resolve(accepted(data.requestId));
+  }});
+  const targets = ['pixoo', 'second-panel'].map(target => ({target, kind: 'pixoo'}));
+  await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
+    type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
+    data: {id: 'art', revision: 1, targets},
+  }]}));
+  const pixoo = w.bus.connect('bunny/modules/pixoo');
+  context.after(() => pixoo.close());
+  await pixoo.serveSync(['device'], () => ({revision: 1, states: targets.map(({target, kind}) => {
+    const device = light(target, 'Hall panel');
+    return {type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
+      data: {...device, kind, capabilities: {...device.capabilities, moments: {supported: true, moods: ['celebrate'],
+        maxDurationMs: 10000, coversStatus: true, art: {formats: ['gif'], maxBytes: 65536}}}}};
+  })}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Create a flag and show it on Pixoo');
+  await until(() => status(w) === 'waiting');
+  const question = (await page(w)).currentTask?.question;
+  assert.equal(question?.kind, 'clarification');
+  assert.match(JSON.stringify(question), /id:pixoo/);
+  assert.match(JSON.stringify(question), /second-panel/);
+  assert.equal(requests.length, 0);
+  await input(w.core, w.module(), 'id:pixoo', true);
+  await until(() => status(w) === 'waiting' && task(w)?.questions === 2);
+  const approval = (await page(w)).currentTask?.question;
+  assert.equal(approval?.kind, 'approval');
+  assert.match(JSON.stringify(approval), /Hall panel \(pixoo\)/);
+  assert.equal(requests.length, 0);
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'succeeded');
+  await w.restart();
+  const history = w.store().recentPage('bunny', undefined);
+  if (typeof history === 'string') assert.fail(history);
+  assert.deepEqual(requests.map(request => request.family === 'catalog-action' ? request.command : request.family), ['art-request']);
+  assert.deepEqual(history.messages.flatMap(message => message.attachment ?? []), [
+    {kind: 'artwork', description: 'Synthetic flag', requestId: requests[0]?.requestId, admission: 'accepted', showTargets: ['pixoo']},
+  ]);
+});
+
+void test('the exact configured display ui stays independent of the reserved browser surface', async context => {
+  const provider = counted(() => call('create_artwork', {format: 'gif', description: 'Synthetic signal',
+    showTargets: ['ui', 'browser']}));
+  const w = await world(context, {provider, tools: ['create_artwork'], dispatch: () => assert.fail('no effect before approval')});
+  const targets = ['ui', 'browser'].map(target => ({target, kind: 'pixoo'}));
+  await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
+    type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
+    data: {id: 'art', revision: 1, targets},
+  }]}));
+  const pixoo = w.bus.connect('bunny/modules/pixoo');
+  context.after(() => pixoo.close());
+  await pixoo.serveSync(['device'], () => ({revision: 1, states: targets.map(({target, kind}) => {
+    const device = light(target, 'Library panel');
+    return {type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
+      data: {...device, kind, capabilities: {...device.capabilities, moments: {supported: true, moods: ['celebrate'],
+        maxDurationMs: 10000, coversStatus: true, art: {formats: ['gif'], maxBytes: 65536}}}}};
+  })}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Make a signal for the library and browser');
+  await until(() => status(w) === 'waiting');
+  const question = (await page(w)).currentTask?.question;
+  assert.equal(question?.kind, 'approval');
+  assert.match(JSON.stringify(question), /Library panel \(ui\), Browser/);
+  assert.partialDeepStrictEqual(question?.proposal, {data: {showTargets: ['ui', 'browser']}});
+});
+
+void test('an exact saved artwork outside the recent SDK state is read from the retained catalog for approval', async context => {
+  const artworkId = 'retained-flag';
+  const reads: string[] = [];
+  const provider = counted(() => call('control_art_show', {owner: 'bunny/core', target: 'hub',
+    arguments: JSON.stringify({artworkId, targets: ['browser']})}));
+  const w = await world(context, {provider, tools: ['control_art_show'], retainedArtwork: id => {
+    reads.push(id);
+    return Promise.resolve({artworkId, sourceRequestId: 'flag-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
+      outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
+        frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
+      favorite: true, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false}});
+  }, dispatch: () => assert.fail('approval is still pending')});
+  const store = w.store();
+  const original = store.newTask('bunny', 'Draw a striped pennant');
+  original.status = 'succeeded'; store.save(original);
+  store.artReply(original, 'flag-generation', 'Striped pennant animation', 1);
+  const art = w.bus.connect('bunny/modules/art');
+  context.after(() => art.close());
+  await art.serveSync(['art'], () => ({revision: 1, states: [{
+    type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0',
+    data: {id: 'art', revision: 1, jobs: [], artworks: []},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Show my retained flag');
+  await until(() => status(w) === 'waiting');
+  assert.deepEqual(reads, [artworkId]);
+  const question = (await page(w)).currentTask?.question;
+  assert.equal(question?.kind, 'approval');
+  assert.match(JSON.stringify(question?.proposal), /retained-flag/);
+  assert.match(JSON.stringify(question), /Show Striped pennant animation on Browser/);
+});
+
+for (const artworkId of ['missing-art', 'incompatible-art']) {
+  void test('a display request for ' + artworkId + ' sends no command', async context => {
+    const provider = counted((_input, turn) => turn === 1 ? call('control_art_show', {
+      owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId, targets: ['browser']}),
+    }) : reply('Stopped.'));
+    const w = await world(context, {provider, tools: ['control_art_show'], dispatch: () => assert.fail('no show was approved')});
+    const art = w.bus.connect('bunny/modules/art');
+    context.after(() => art.close());
+    await art.serveSync(['art'], () => ({revision: 1, states: [{
+      type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0',
+      data: {id: 'art', revision: 1, jobs: [], artworks: [{artworkId: 'incompatible-art', compositions: []}]},
+    }]}));
+    await control(w.core, w.module(), 'enable');
+    await input(w.core, w.module(), 'Show the saved artwork in the browser');
+    if (artworkId === 'missing-art') {
+      await until(() => status(w) === 'succeeded');
+      assert.ok((await page(w)).messages.some(message => message.text.includes('not-found')));
+    } else {
+      await until(() => status(w) === 'waiting');
+      const clarification = (await page(w)).currentTask?.question;
+      assert.equal(clarification?.kind, 'clarification');
+      assert.match(JSON.stringify(clarification), /no browser rendition/);
+      assert.equal(clarification?.proposal, null);
+    }
+  });
+}
+
 void test('an approved art request keeps its reply reference when admission is uncertain', async context => {
   const requests: AssistantDispatch[] = [];
   const w = await world(context, {tools: ['create_artwork'], dispatch: data => {
@@ -1113,6 +1245,28 @@ void test('a failed turn closes after clarification without another model call',
   assert.deepEqual((await page(w)).messages, messages);
 });
 
+async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<typeof world>>, generated?: () => string | undefined): Promise<void> {
+  const target = 'display-blue';
+  await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
+    type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
+    data: {id: 'art', revision: 1, targets: [{target, kind: 'pixoo'}]},
+  }]}));
+  const pixoo = w.bus.connect('bunny/modules/pixoo'), art = w.bus.connect('bunny/modules/art');
+  context.after(async () => {await pixoo.close(); await art.close();});
+  const device = light(target, 'Blue panel');
+  await pixoo.serveSync(['device'], () => ({revision: 1, states: [{
+    type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
+    data: {...device, kind: 'pixoo', capabilities: {...device.capabilities, moments: {supported: true,
+      moods: ['celebrate'], maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png'], maxBytes: 65536}}}},
+  }]}));
+  await art.serveSync(['art'], () => ({revision: 1, states: [{
+    type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0', data: {id: 'art', revision: 1,
+      jobs: generated === undefined ? [] : [{requestId: generated(), artworkId: 'kite', status: 'finished', outcome: 'succeeded'}],
+      artworks: [{artworkId: 'kite', compositions: [{target: 'pixoo', compositionId: 'a'.repeat(64), outcome: 'succeeded',
+        renditions: [{format: 'png', bytes: 128}]}]}]},
+  }]}));
+}
+
 void test('a failed compound turn reports the saved artwork and exact rejected display action', async context => {
   const requests: AssistantDispatch[] = [];
   const provider = counted((_input, turn) => {
@@ -1125,13 +1279,7 @@ void test('a failed compound turn reports the saved artwork and exact rejected d
     requests.push(data);
     return Promise.resolve(requests.length === 1 ? accepted(data.requestId) : {status: 'rejected', requestId: data.requestId, error: errorBody('not-found')});
   }});
-  const art = w.bus.connect('bunny/modules/art');
-  context.after(() => art.close());
-  await art.serveSync(['art'], () => ({revision: 1, states: [{
-    type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0', data: {id: 'art', revision: 1,
-      jobs: [{requestId: requests[0]?.requestId, artworkId: 'kite', status: 'finished', outcome: 'succeeded'}],
-      artworks: [{artworkId: 'kite', compositions: [{target: 'ui', outcome: 'succeeded', renditions: [{format: 'webp'}]}]}]},
-  }]}));
+  await serveKiteDisplay(context, w, () => requests[0]?.requestId);
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'Create and show the synthetic poster.');
   await until(() => status(w) === 'waiting');
@@ -1140,7 +1288,7 @@ void test('a failed compound turn reports the saved artwork and exact rejected d
   await input(w.core, w.module(), 'approve', true);
   await until(() => status(w) === 'failed');
   const messages = (await page(w)).messages;
-  assert.match(messages.at(-1)?.text ?? '', /paper kite.*artwork was saved.*display-blue.*request was refused/i);
+  assert.match(messages.at(-1)?.text ?? '', /paper kite.*artwork was saved.*Show Synthetic paper kite on Blue panel \(display-blue\).*request was refused/i);
   assert.equal(requests.length, 2);
   assert.equal(provider.calls(), 4);
   await w.restart();
@@ -1200,6 +1348,7 @@ for (const rejected of [true, false]) {
       prepareId = surface.prepareRequestId;
       return rejected ? {status: 'rejected', requestId, error: errorBody('not-found')} : accepted(requestId);
     }});
+    await serveKiteDisplay(context, w);
     await w.core.serveSync(['operation'], () => ({revision: ++reads, states: !rejected && reads === 1 ? [{
       type: 'org.bunny.operation.updated', subject: 'prep', dataschema: 'https://bunny.invalid/events/operation/2.0',
       data: {id: 'prep', requestId: prepareId, status: 'completed', result: 'succeeded', evidence: 'observed', revision: 1},

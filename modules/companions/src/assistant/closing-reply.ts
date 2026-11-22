@@ -9,7 +9,7 @@ type Phase = {phaseId: string; revision: number; text: string};
 export type ActionEvidence = {requestId: string} & (Summary | ({source: 'phase'} & Phase));
 export type ApprovedAction = {questionId: string; description: string; observed?: Summary; phases?: Phase[]};
 
-export function actionDescription(proposal: Proposal): string {
+export function actionDescription(proposal: Proposal, approvalText: string): string {
   switch (proposal.family) {
     case 'mode-set': return `Set the Hub mode to ${proposal.data.mode}`;
     case 'coding-dispatch': return `Delegate to the coding worker in ${proposal.data.repository}`;
@@ -18,7 +18,10 @@ export function actionDescription(proposal: Proposal): string {
     case 'catalog-action': {
       const {command, data, target} = proposal;
       if (command === 'art-request') return `Create the ${data.format === 'gif' ? 'animation' : 'image'} “${String(data.description)}”`;
-      if (command === 'art-show' && Array.isArray(data.targets)) return `Show the selected artwork on ${data.targets.join(', ')}`;
+      if (command === 'art-show' && Array.isArray(data.targets)) {
+        if (Array.isArray(data.guards)) return approvalText.replace(/\?$/, '');
+        return `Show the selected artwork on ${data.targets.join(', ')}`;
+      }
       if (command === 'brightness-set') return `Set ${target} brightness to ${String(data.percent)}%`;
       return `${command.replaceAll('-', ' ')} on ${target}`;
     }
@@ -57,7 +60,7 @@ export function closingReply(task: Task, calls: readonly Call[], cause?: string)
   const question = task.question;
   if (question?.kind === 'approval' && question.answer === 'approve' && question.proposal !== null &&
       !actions.some(call => call.action.questionId === question.id)) {
-    sentences.push(`You approved “${actionDescription(question.proposal)}”. ${task.tracksApprovals === true ? 'The request stopped before dispatch.' : 'I have no confirmed dispatch for that approval.'}`);
+    sentences.push(`You approved “${actionDescription(question.proposal, question.text)}”. ${task.tracksApprovals === true ? 'The request stopped before dispatch.' : 'I have no confirmed dispatch for that approval.'}`);
   } else if (question?.kind === 'clarification' && question.answer !== null && actions.length === 0) {
     sentences.push('I received your answer, but could not finish the request.');
   }

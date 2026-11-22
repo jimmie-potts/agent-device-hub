@@ -39,8 +39,8 @@ export const assistantRoutes = {
   'wemo-hold-release': {binding: 'device', owners: [wemo], fields: 'heldRequestId'},
   'playback-control': {binding: 'record', owner: 'bunny/modules/playback', record: 'playback', fields: 'action'},
   'volcano-session-gap': {binding: 'record', owner: volcano, record: 'volcano-status', fields: 'gapMinutes'},
-  'art-request': {binding: 'fixed', owner: 'bunny/modules/art', target: 'art', fields: 'format description'},
-  'art-show': {binding: 'fixed', owner: 'bunny/core', target: 'hub', fields: 'artworkId targets coversStatus'},
+  'art-request': {binding: 'fixed', owner: 'bunny/modules/art', target: 'art', fields: 'format description showTargets'},
+  'art-show': {binding: 'fixed', owner: 'bunny/core', target: 'hub', fields: 'artworkId targets coversStatus guards'},
   'nanoleaf-show-save': {binding: 'fixed', owner: nanoleaf, target: 'shows', fields: 'showId expectedVersion name versionName timeline'},
   'music-lighting-control': {binding: 'record', owner: 'bunny/core', record: 'music-lighting-state', fields: 'action showId version positionMs startDelayMs generation'},
 } as const satisfies Readonly<Record<string, Route>>;

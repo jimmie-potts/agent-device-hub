@@ -47,10 +47,12 @@ export async function automationRoute(controls: AutomationControls, request: Aut
     return answer(status, await work());
   };
   try {
-    // The configured art displays and their current published eligibility (Hub #1986).
-    if(path==='art/targets' || path==='art/display-availability') {
-      noQuery();const art=controls.art;if(art===undefined)throw new AutomationError('unavailable',503);
-      return method==='GET'?answer(200,{targets:path==='art/targets' ? art.targets() : art.targetAvailability?.() ?? []}):undefined;
+    if (path === 'art/targets' || path === 'art/display-availability') {
+      const approval = path === 'art/targets' && url.searchParams.get('view') === 'approval' && url.searchParams.size === 1;
+      if (!approval) noQuery();
+      const art = controls.art;
+      if (art === undefined) throw new AutomationError('unavailable', 503);
+      return method === 'GET' ? answer(200, {targets: path === 'art/targets' ? art.targets(approval) : art.targetAvailability?.() ?? []}) : undefined;
     }
     if(path==='art') {
       noQuery();const schedule=controls.artSchedule;if(schedule===undefined)throw new AutomationError('unavailable',503);

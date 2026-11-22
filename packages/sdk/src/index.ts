@@ -1,3 +1,4 @@
+export {usableArtComposition} from './art.js';
 export {InProcessBus, type BusOptions, type ErrorScope} from './in-process.js';
 export {DeviceAvailability, SUMMARY_MS, type AvailabilityOptions} from './availability.js';
 export {

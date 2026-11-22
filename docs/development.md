@@ -122,6 +122,12 @@ on Linux, or natively on macOS with
 `node scripts/native-test.mjs test:runtime:scenarios:built -- --test-name-pattern=art-show`. None of these checks
 contacts a provider, an installed runtime or a physical display.
 
+Conversation's generated-art display approval (#2041) uses these same CI groups plus
+`npm run test:companions:built`. The synthetic browser journey runs with
+`node apps/runtime/dashboard/tests/conversation-art.browser.ts` after the dashboard build.
+It checks a routing ID that differs from the rendition kind, per-target evidence
+and a lost reply after approval.
+
 Art-derived decoration (#683) uses `npm run test:art-theme:browser` after the
 root build, in the existing App verification runtime group and full local
 dashboard browser suite. Bounded palette and preference cases are discovered

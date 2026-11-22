@@ -30,16 +30,18 @@ export type ConversationPage = {version: 1; conversationId: string | null; messa
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = TranscriptItem & {effect: string};
 type RecordRow = {record: string};
-type MessageRow = Omit<ConversationMessage, 'attachment'> & {artRequestId: string | null; artDescription: string | null;
+type MessageRow = Omit<ConversationMessage, 'attachment'> & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
   artStatus: Call['status'] | null; artResult: string | null};
 const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg.role,msg.text,msg.at_ms AS atMs,
-  art.request_id AS artRequestId,art.description AS artDescription,json_extract(call.record, '$.status') AS artStatus,
+  art.request_id AS artRequestId,art.description AS artDescription,intent.targets AS artTargets,json_extract(call.record, '$.status') AS artStatus,
   json_extract(call.record, '$.result') AS artResult
   FROM assistant_messages msg LEFT JOIN assistant_art_attachments art ON art.message_id=msg.id
+  LEFT JOIN assistant_art_intents intent ON intent.request_id=art.request_id
   LEFT JOIN assistant_calls call ON call.id=art.request_id`;
-function messageOf({artRequestId, artDescription, artStatus, artResult, ...message}: MessageRow): ConversationMessage {
+function messageOf({artRequestId, artDescription, artTargets, artStatus, artResult, ...message}: MessageRow): ConversationMessage {
   if (artRequestId === null || artDescription === null) return message;
-  const receipt = {kind: 'artwork' as const, requestId: artRequestId, description: artDescription};
+  const receipt = {kind: 'artwork' as const, requestId: artRequestId, description: artDescription,
+    ...(artTargets === null ? {} : {showTargets: JSON.parse(artTargets) as string[]})};
   // A local receipt write can fail after the Art owner admitted the job.
   // Only an actual dispatch refusal proves that the job was not admitted.
   const refusal = artStatus === 'succeeded' && artResult?.startsWith('refused: ') === true ? artResult.slice(9) : undefined;
@@ -68,6 +70,7 @@ export class AssistantStore {
       CREATE TABLE IF NOT EXISTS assistant_inputs (ref TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, record TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistant_controls (request_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistant_art_attachments (message_id TEXT PRIMARY KEY REFERENCES assistant_messages(id) ON DELETE CASCADE, request_id TEXT NOT NULL UNIQUE, description TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS assistant_art_intents (request_id TEXT PRIMARY KEY REFERENCES assistant_art_attachments(request_id) ON DELETE CASCADE, targets TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_message_page ON assistant_messages(conversation_id,seq);
       CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);`);
     // The release that reports conversations to the shared session model (Hub #505) starts from what each conversation's
@@ -117,11 +120,13 @@ export class AssistantStore {
     this.database.prepare('INSERT OR IGNORE INTO assistant_messages(id,conversation_id,task_id,role,text,at_ms) VALUES (?,?,?,?,?,?)').run(id, task.conversationId, task.id, role, text, atMs);
     this.messages.capture(task, id, role, text, atMs);
   }
-  artReply(task: Task, requestId: string, description: string, atMs: number): void {
+  artReply(task: Task, requestId: string, description: string, atMs: number, showTargets?: readonly string[]): void {
     const id = `${task.id}-artwork`;
     this.message(task, id, 'assistant', 'Artwork for this conversation.', atMs);
     this.database.prepare('INSERT OR IGNORE INTO assistant_art_attachments SELECT ?,?,? WHERE EXISTS (SELECT 1 FROM assistant_messages WHERE id=?)')
       .run(id, requestId, description, id);
+    if (showTargets !== undefined && showTargets.length > 0) this.database.prepare('INSERT OR IGNORE INTO assistant_art_intents SELECT ?,? WHERE EXISTS (SELECT 1 FROM assistant_art_attachments WHERE request_id=?)')
+      .run(requestId, JSON.stringify(showTargets), requestId);
   }
   hasArtReply(taskId: string): boolean {
     return this.database.prepare('SELECT 1 FROM assistant_art_attachments WHERE message_id=?').get(`${taskId}-artwork`) !== undefined;
