@@ -83,6 +83,12 @@ void test('a model without a configured price is refused before anything is reco
   assert.equal(spend.reached('model-b'), message, 'a new turn of an unpriced model is refused the same way');
   assert.equal(spend.minimum('model-b'), undefined);
   assert.equal(spend.totals().day.spentMicros, 0);
+  // A model named after an inherited member is unpriced too, not a lookup of the prototype.
+  const inherited = 'No price is configured for the model constructor, so its spend cannot be counted. Nothing was sent.';
+  assert.equal(spend.minimum('constructor'), undefined);
+  assert.equal(spend.reached('constructor'), inherited);
+  assert.equal(spend.reserve({...call('y'), model: 'constructor'}), inherited);
+  assert.equal(spend.priced('constructor'), false);
 });
 
 void test('a new turn is refused when what remains of a limit is below the smallest first call', () => {

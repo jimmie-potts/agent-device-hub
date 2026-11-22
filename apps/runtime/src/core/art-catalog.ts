@@ -5,6 +5,7 @@
 // wait the caller bounds inside the command's reply deadline. It never repeats to watch for state, and it never retries.
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {artContentRef, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import {isUploadArtworkId} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ModuleContent, ModuleManifest, ModuleScheduler} from '@jimmie-potts/sdk';
 
 /**
@@ -56,6 +57,13 @@ export function hostedArtCatalog(host: ArtCatalogHost, scheduler: ModuleSchedule
     let cancel = (): void => {};
     const late = new Promise<ErrorBody>(resolve => {cancel = scheduler.after(timeoutMs, () => {controller.abort(); resolve(unavailable);});});
     const scan = async (): Promise<ArtworkSummary | undefined | ErrorBody> => {
+      if (isUploadArtworkId(artworkId)) {
+        const result = await host.invoke(ART_MODULE, () => content(`attachment-summary.${artworkId}`, {query: {}, signal: controller.signal}));
+        if (controller.signal.aborted) return unavailable;
+        if (result === undefined || 'error' in result) return result;
+        const summary = summaryOf(JSON.parse(new TextDecoder().decode(result.bytes)));
+        return summary?.artworkId === artworkId ? summary : unavailable;
+      }
       let after = 0;
       for (;;) {
         const query = Object.freeze({after: String(after), limit: String(PAGE)});

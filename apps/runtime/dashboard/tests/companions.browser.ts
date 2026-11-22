@@ -1,5 +1,6 @@
 import {showConversationJourney} from './show-conversation.browser.ts';
 import {conversationArtJourney} from './conversation-art.browser.ts';
+import {conversationUploadJourney} from './conversation-upload.browser.ts';
 import {conversationWorkspaceJourney} from './conversation-workspace.browser.ts';
 import {conversationRailJourney} from './conversation-rail.browser.ts';
 import {conversationStateJourney} from './conversation-state.browser.ts';
@@ -31,6 +32,7 @@ try {
   await wemoConversationJourney(browser);
   await showConversationJourney(browser);
   await conversationArtJourney(browser);
+  await conversationUploadJourney(browser);
   await conversationStateJourney(browser);
   await companionCardsCheck(browser);
   await speechJourney(browser);

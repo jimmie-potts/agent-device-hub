@@ -13,6 +13,11 @@ export const SESSION_LIMITS = Object.freeze({
   sessions: 128,
   /** Retirement guards it keeps. */
   retirements: 128,
+  /**
+   * Per session. Retry keys and retired turns keep the newest; past its notice or watermark limit a session retires
+   * superseded notices and drops answered attention's watermarks below a floor (Hub #2021, `reducer.ts`), and is
+   * refused with `capacity` only when what it must keep passes the limit.
+   */
   attention: 64, notices: 128, retiredTurns: 256, seen: 256, watermarks: 256,
   /** A session without lifecycle evidence for a day is removed as expired; a guard is kept for a day. */
   sessionAgeMs: 86_400_000,

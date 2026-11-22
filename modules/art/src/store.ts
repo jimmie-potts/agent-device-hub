@@ -158,11 +158,12 @@ export class ArtStore {
   addFeedback(artworkId: string, signal: ArtFeedback, atMs: number): void {this.db.prepare('INSERT INTO art_feedback(artwork_id,signal,at_ms) VALUES(?,?,?)').run(artworkId, signal, atMs);}
 
   /** Temporary upload rows have no catalog owner to prune them. Bound the receipts kept beside live copies. */
-  reserveLocalStage(nowMs: number): boolean {
-    const expired = "SELECT request_id FROM art_stages WHERE request_id GLOB 'localgif-*' AND expires_at_ms<=?";
-    this.db.prepare('DELETE FROM art_stage_targets WHERE request_id IN (' + expired + ')').run(nowMs);
-    this.db.prepare('DELETE FROM art_stages WHERE request_id IN (' + expired + ')').run(nowMs);
-    const row = this.db.prepare("SELECT count(*) AS count FROM art_stages WHERE request_id GLOB 'localgif-*'").get();
+  reserveTemporaryStage(nowMs: number, kind: 'localgif' | 'upload-stage'): boolean {
+    const pattern = `${kind}-*`;
+    const expired = 'SELECT request_id FROM art_stages WHERE request_id GLOB ? AND expires_at_ms<=?';
+    this.db.prepare('DELETE FROM art_stage_targets WHERE request_id IN (' + expired + ')').run(pattern, nowMs);
+    this.db.prepare('DELETE FROM art_stages WHERE request_id IN (' + expired + ')').run(pattern, nowMs);
+    const row = this.db.prepare('SELECT count(*) AS count FROM art_stages WHERE request_id GLOB ?').get(pattern);
     return Number(row?.count) < 64;
   }
   stage(requestId: string): StageRow | undefined {

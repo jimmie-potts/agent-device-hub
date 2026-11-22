@@ -1,9 +1,10 @@
+import {ART_ATTACHMENT_FAMILY} from '@jimmie-potts/event-contracts/v2/art-show';
 // The boundaries the module reaches other owners through, on the real families: `v2/art` for jobs and the handoff, the
 // module's own `art-catalog-edit`, and #1418's `weather-state`. A module imports only the SDK and the contracts, so the
 // weather family is read here by its name and fields. Tests pass fakes for `dispatch` and `weather`.
 import {errorBody, type ErrorBody, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {ART_SUBJECT, EXTENDED_ART_DISPATCH_SCHEMA, LEGACY_ART_STAGE_MAX_FRAMES, artCommandRefusal, type ArtAuto22, type ArtDispatch21, type ArtFormat, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
-import {ART_CATALOG_EDIT_KEY, type ArtUploadStage, type ArtCatalogEdit, type ArtDisplayTarget} from '@jimmie-potts/event-contracts/v2/art-state';
+import {ART_CATALOG_EDIT_KEY, type ArtAttachmentEdit, type ArtUploadStage, type ArtCatalogEdit, type ArtDisplayTarget} from '@jimmie-potts/event-contracts/v2/art-state';
 import {artStageSupported, extendedArtStageSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {CORE_SOURCE, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {Outcome, type Cancel, type Command, type ModuleContext, type Reply, type RequestResult, type Sdk, type Subscription, type SyncedCopy, type TraceContext} from '@jimmie-potts/sdk';
@@ -15,6 +16,7 @@ export type ArtCommandHandlers = {
   readonly automatic: (command: Command<ArtAuto22>) => Promise<Reply>;
   /** `bunny.cmd.art-catalog-edit.art`: the owner's change to saved art. */
   readonly upload: (command: Command<ArtUploadStage>) => Promise<Reply>;
+  readonly attachment: (command: Command<ArtAttachmentEdit>) => Promise<Reply>;
   readonly catalog: (command: Command<ArtCatalogEdit>) => Promise<Reply>;
 };
 /** Every sender but the core is refused before its command is read. The gateway and tracker refuse them earlier too. */
@@ -25,6 +27,7 @@ export async function serveCommands(sdk: Sdk, handlers: ArtCommandHandlers): Pro
     await sdk.respond<ArtRequest>(`bunny.cmd.art-request.${ART_SUBJECT}`, fromCore(handlers.owner)),
     await sdk.respond<ArtAuto22>(`bunny.cmd.art-auto.${ART_SUBJECT}`, fromCore(handlers.automatic)),
     await sdk.respond<ArtUploadStage>('bunny.cmd.art-upload-stage.art', fromCore(handlers.upload)),
+    await sdk.respond<ArtAttachmentEdit>(`bunny.cmd.${ART_ATTACHMENT_FAMILY}.art`, fromCore(handlers.attachment)),
     await sdk.respond<ArtCatalogEdit>(ART_CATALOG_EDIT_KEY, fromCore(handlers.catalog)),
   ];
 }

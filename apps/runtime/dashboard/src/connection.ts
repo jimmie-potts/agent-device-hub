@@ -294,12 +294,15 @@ export class DashboardConnection {
         upload: async action => {
           if (!active()) return unavailable().body;
           if (!this.#state.runtime.control) return errorBody('forbidden', {detail: 'the page has read-only access'});
-          return sendUpload(name, action);
+          const owner = name === 'companions' && action.family === 'art-attachment-edit' && action.target === 'art' ? 'art' : name;
+          return sendUpload(owner, action);
         },
         sync: async <T extends object>(families: readonly string[], changed: (change: SyncChange<T>) => void | Promise<void>, options?: {onRestarted?: () => void}): Promise<SyncResult<T>> => {
           const participant = this.#participant;
           if (!active() || participant === undefined) return rejected<T>();
-          const owner = name === 'companions' && families.length === 1 && families[0] === 'art' ? 'art' : name;
+          const family = families.length === 1 ? families[0] : undefined;
+          const owner = name === 'companions' && family === 'art' ? 'art'
+            : name === 'companions' && family === 'art-show-effects' ? 'core' : name;
           const module = this.#state.runtime.modules?.find(candidate => candidate.name === owner);
           if (module === undefined || families.some(family => !module.serves.includes(family))) {
             return {status: 'rejected', requestId: 'not-sent', error: errorBody('invalid-request', {detail: 'the module does not serve these families'})};
