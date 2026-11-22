@@ -4,8 +4,10 @@ import type {Proposal} from './history-contract.js';
 import type {Call, Task} from './store.js';
 
 /** Private, already-observed evidence. A later read can describe only an action admitted by this task. */
-export type ActionEvidence = {requestId: string; text: string; source: 'operation' | 'effect'};
-export type ApprovedAction = {questionId: string; description: string; observed?: Pick<ActionEvidence, 'source' | 'text'>};
+type Summary = {source: 'operation'; revision: number; text: string} | {source: 'effect'; text: string};
+type Phase = {phaseId: string; revision: number; text: string};
+export type ActionEvidence = {requestId: string} & (Summary | ({source: 'phase'} & Phase));
+export type ApprovedAction = {questionId: string; description: string; observed?: Summary; phases?: Phase[]};
 
 export function actionDescription(proposal: Proposal): string {
   switch (proposal.family) {
@@ -39,16 +41,19 @@ export function operationOutcome(operation: Pick<OperationRecord, 'status' | 're
   }
 }
 
-function admission(call: Call): string {
-  if (call.action?.observed !== undefined) return call.action.observed.text;
-  if (call.status === 'succeeded' && call.result?.startsWith('refused: ') === true) return 'the request was refused';
-  if (call.status === 'succeeded' && call.result?.startsWith('accepted: ') === true) return 'the request was accepted. Its final outcome is unconfirmed';
-  return 'I cannot confirm whether the request took effect';
+function actionOutcome(call: Call & {action: ApprovedAction}): string {
+  if (call.status === 'succeeded' && call.result?.startsWith('refused: ') === true) return 'The request was refused.';
+  const phases = call.action.phases ?? [];
+  const accepted = call.status === 'succeeded' && call.result?.startsWith('accepted: ') === true;
+  const summary = call.action.observed?.text ?? (accepted
+    ? phases.length > 0 ? 'the request was accepted' : 'the request was accepted. Its final outcome is unconfirmed'
+    : 'I cannot confirm whether the request took effect');
+  return [summary, ...phases.map(phase => phase.text)].map(text => text.charAt(0).toUpperCase() + text.slice(1) + '.').join(' ');
 }
 
 export function closingReply(task: Task, calls: readonly Call[], cause?: string): string {
   const actions = calls.filter((call): call is Call & {action: ApprovedAction} => call.action !== undefined).sort((a, b) => a.ordinal - b.ordinal);
-  const sentences = actions.map(call => `You approved “${call.action.description}”. ${admission(call).replace(/^./, first => first.toUpperCase())}.`);
+  const sentences = actions.map(call => `You approved “${call.action.description}”. ${actionOutcome(call)}`);
   const question = task.question;
   if (question?.kind === 'approval' && question.answer === 'approve' && question.proposal !== null &&
       !actions.some(call => call.action.questionId === question.id)) {
@@ -60,6 +65,7 @@ export function closingReply(task: Task, calls: readonly Call[], cause?: string)
     task.code === 'unauthenticated' ? 'The service could not authenticate the request.' :
     task.code === 'unavailable' ? 'A required service was unavailable.' : undefined);
   if (reason !== undefined) sentences.push(reason);
-  if (sentences.length === 0) sentences.push('I could not finish checking your request.');
+  else if (task.status === 'uncertain') sentences.push('The turn stopped before I could confirm the outcome.');
+  else sentences.push('The turn stopped before I could finish. The cause is unknown.');
   return sentences.join(' ');
 }

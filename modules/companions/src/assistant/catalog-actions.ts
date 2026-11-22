@@ -260,7 +260,7 @@ export class ConversationActions {
         ['id', 'observedAtMs', 'availability', 'link', 'heater', 'pump', 'currentDeciC', 'targetDeciC', 'gapMinutes'], parent);
       case READ_OPERATION: {
         const operation = await this.#operation(input.requestId, parent);
-        if (operation !== undefined) observe({requestId: operation.requestId, source: 'operation', text: operationOutcome(operation)});
+        if (operation !== undefined) observe({requestId: operation.requestId, source: 'operation', revision: operation.revision, text: operationOutcome(operation)});
         return textResult(operation ?? 'Operation unavailable.');
       }
       case READ_ART_EFFECTS: return this.#artEffects(input.requestId, parent, observe);
@@ -346,26 +346,29 @@ export class ConversationActions {
     if (!idList(list)) return 'Show targets unavailable.';
     const [operations, skips] = await Promise.all([this.#snapshot<OperationRecord>(CORE, 'operation', parent),
       this.#snapshot<ArtShowEffects>(CORE, ART_SHOW_EFFECTS_FAMILY, parent)]);
-    const skipped = skips?.find(show => show.requestId === requestId)?.skipped ?? [];
+    const show = skips?.find(row => row.requestId === requestId);
+    const skipped = show?.skipped ?? [];
     const result = (id: string) => operations?.find(operation => operation.requestId === id);
     const summary = (record: OperationRecord | undefined) => record === undefined ? {status: 'evidence unavailable'}
       : {status: record.status, result: record.result, evidence: record.evidence, code: record.error?.code};
-    const effects = await artShowSurfaces(requestId, list), observed: string[] = [];
+    const effects = await artShowSurfaces(requestId, list);
     const phaseResult = (id: string, target: string, phase: 'prepare' | 'present') => {
       const skip = skipped.find(entry => entry.target === target && entry.phase === phase);
       const label = phase === 'prepare' ? 'preparation' : 'presentation';
       if (skip !== undefined) {
-        observed.push(`${label} on ${target} was skipped`);
+        observe({requestId, source: 'phase', phaseId: id, revision: show?.revision ?? 0, text: `${label} on ${target} was skipped`});
         return {status: 'skipped', code: skip.code};
       }
       const operation = result(id);
-      observed.push(operation === undefined ? `${label} on ${target} is unconfirmed` : `for ${label} on ${target}, ${operationOutcome(operation)}`);
+      observe({requestId, source: 'phase', phaseId: id, revision: operation?.revision ?? -1,
+        text: operation === undefined ? `${label} on ${target} is unconfirmed` : `for ${label} on ${target}, ${operationOutcome(operation)}`});
       return summary(operation);
     };
     const perDisplay = effects.map(surface => surface.kind === 'browser'
       ? {target: surface.target, presentation: phaseResult(surface.presentRequestId, surface.target, 'present')}
       : {target: surface.target, preparation: phaseResult(surface.prepareRequestId, surface.target, 'prepare'), presentation: phaseResult(surface.momentRequestId, surface.target, 'present')});
-    observe({requestId, source: 'effect', text: observed.join('. ')});
-    return textResult({show: summary(result(requestId)), effects: perDisplay});
+    const operation = result(requestId);
+    if (operation !== undefined) observe({requestId, source: 'operation', revision: operation.revision, text: operationOutcome(operation)});
+    return textResult({show: summary(operation), effects: perDisplay});
   }
 }

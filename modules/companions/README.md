@@ -293,7 +293,7 @@ Questions, approvals, worker waits and task controls appear above the composer.
 A successful task leaves a short **Task completed** cue by the composer.
 Open **Details** to inspect the task. Failed, cancelled, paused and uncertain
 outcomes remain visible by the relevant controls.
-When a turn fails or ends with an uncertain call, the transcript saves a closing reply from the turn’s approved requests, dispatch receipts and recorded results. It can report a known limit even when the model has no calls left. Opening the conversation again shows the same reply.
+When a turn fails or ends with an uncertain call, the transcript saves a closing reply from the turn’s approved requests, dispatch receipts and recorded results. It can report a known limit even when the model has no calls left. The fallback stays on the page and says when the cause is unknown. Opening the conversation again shows the same reply.
 An approval shows the full scope and the revision it applies to. A command
 receipt reports what happened to the request separately from task completion.
 Disconnected or stale copies retain loaded history and lock mutations.

@@ -399,11 +399,11 @@ export class AssistantEngine {
           task.status = unknown ? 'uncertain' : code === 'cancelled' ? 'paused' : 'failed';
           task.code = unknown ? 'uncertain-result' : code; this.#settle(task, active);
         }, active.span.context, error instanceof Fault ? error.closingReason : undefined);
-        // Keep existing spoken refusals and limit explanations. Recovery and a generic fallback only save text.
-        if (error instanceof Fault && error.closingReason !== undefined) {
+        // Only these two intentional replies had speech before failure settlement. The generated summary has no output effects.
+        if (error instanceof Fault && (error.closingReason === REFUSED || error.closingReason === CONTEXT_TOO_LARGE)) {
           const task = this.#task(active.taskId), id = `${task.id}-closing-${String(task.generation)}`;
           const saved = this.store.savedMessage(task.id, id);
-          if (saved !== undefined) this.#speak(task.id, id, saved.text, active.span.context);
+          if (saved !== undefined) this.#speak(task.id, id, error.closingReason, active.span.context);
         }
       } catch { /* Failed durability is not reported as saved; startup reconciles checkpoints and receipts. */ }
     } finally {

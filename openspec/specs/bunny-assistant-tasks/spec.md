@@ -430,12 +430,12 @@ The companions module SHALL report each profile's conversation as one root sessi
 
 ### Requirement: Closing reply when a turn fails
 
-An admitted turn that settles failed or uncertain SHALL save a single private closing reply explaining the known outcomes of its approved actions and the supported reason the turn stopped. The runtime SHALL use the records of that turn, preserve a provider's existing closing answer, and issue no model call, device command or retry to produce the reply. Pending questions and paused tasks SHALL retain their controls.
+An admitted turn that settles failed or uncertain SHALL save a single private closing reply explaining the known outcomes of its approved actions and the supported reason the turn stopped. The runtime SHALL use the records of that turn, preserve a provider's existing closing answer, and issue no model call, device command or retry to produce or deliver the fallback. If the cause is unknown, the fallback SHALL say so. Pending questions and paused tasks SHALL retain their controls.
 
 #### Scenario: A failed command follows a successful step
 
 - **WHEN** a turn has saved action evidence and a later approved action is refused, then the model cannot finish the turn
-- **THEN** the closing reply describes both outcomes using the strongest recorded evidence and remains readable after reload
+- **THEN** the closing reply describes both outcomes using the strongest recorded evidence, preserves confirmed phases across later reads with missing records, and remains readable after reload
 
 #### Scenario: Recovery finds an uncertain call
 

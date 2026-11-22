@@ -136,8 +136,22 @@ export class AssistantStore {
   observeAction(taskId: string, evidence: ActionEvidence): void {
     const call = this.call(evidence.requestId);
     if (call?.action === undefined || call.taskId !== taskId) return;
-    if (call.action.observed?.source === 'effect' && evidence.source === 'operation') return;
-    call.action.observed = {source: evidence.source, text: evidence.text};
+    if (call.result?.startsWith('refused: ') === true) return;
+    if (evidence.source === 'phase') {
+      const phases = call.action.phases ??= [];
+      const previous = phases.find(phase => phase.phaseId === evidence.phaseId);
+      if (previous === undefined) phases.push({phaseId: evidence.phaseId, revision: evidence.revision, text: evidence.text});
+      else if (evidence.revision > previous.revision) {
+        previous.revision = evidence.revision;
+        previous.text = evidence.text;
+      } else return;
+    } else if (evidence.source === 'operation') {
+      const previous = call.action.observed;
+      if (previous?.source === 'effect' || previous?.source === 'operation' && previous.revision >= evidence.revision) return;
+      call.action.observed = {source: 'operation', revision: evidence.revision, text: evidence.text};
+    } else {
+      call.action.observed = {source: 'effect', text: evidence.text};
+    }
     this.saveCall(call);
   }
   run(id: string): Run | undefined {return parsed<Run>(this.database.prepare('SELECT record FROM assistant_runs WHERE id=?').get(id) as RecordRow | undefined);}

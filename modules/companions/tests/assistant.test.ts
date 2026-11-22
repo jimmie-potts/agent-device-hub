@@ -1,3 +1,4 @@
+import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -1144,10 +1145,12 @@ void test('a failed compound turn reports the saved artwork and exact rejected d
 
 void test('the exhausted model budget saves a single read-only closing reply with no extra call', async context => {
   const provider = counted(() => call('ask_owner', {text: 'Which fixture?'}));
-  const w = await world(context, {provider});
+  const offers: SpokenReply[] = [];
+  const w = await world(context, {provider, speak: reply => {offers.push(reply);}});
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'Synthetic request with an exhausted budget.');
   await until(() => status(w) === 'waiting');
+  assert.equal(offers.length, 1, 'the speaker received the clarification');
   const saved = w.store().task(task(w)?.taskId ?? '') ?? assert.fail('saved task');
   saved.modelCalls = LIMITS.modelCalls;
   w.store().save(saved);
@@ -1157,6 +1160,7 @@ void test('the exhausted model budget saves a single read-only closing reply wit
   assert.match(messages.at(-1)?.text ?? '', /received your answer.*model call/i);
   assert.equal(messages.filter(item => item.text.includes('model call')).length, 1);
   assert.equal(provider.calls(), 1);
+  assert.equal(offers.length, 1, 'the fallback is written only');
   assert.equal(task(w)?.toolCalls, 0);
 });
 
@@ -1174,4 +1178,52 @@ void test('an approval that runs out of tool calls before dispatch closes withou
   await until(() => status(w) === 'failed');
   assert.match((await page(w)).messages.at(-1)?.text ?? '', /Set the Hub mode to quiet.*stopped before dispatch.*tool call/i);
   assert.equal(provider.calls(), 1);
+});
+
+for (const rejected of [true, false]) {
+  void test(`a later empty art effects read preserves ${rejected ? 'dispatch rejection' : 'observed preparation'} in the closing reply`, async context => {
+    let requestId = '', prepareId = '', reads = 0;
+    const provider = counted((_input, turn) => {
+      if (turn === 1) return call('control_art_show', {owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: 'kite', targets: ['display-blue']})});
+      if (turn <= 3) return call('read_art_show_effects', {requestId}, `effects-${turn}`);
+      throw new ProviderFault('unavailable');
+    });
+    const w = await world(context, {provider, tools: ['control_art_show', 'read_art_show_effects'], dispatch: async data => {
+      requestId = data.requestId;
+      const [surface] = await artShowSurfaces(requestId, ['display-blue']);
+      assert.ok(surface?.kind === 'display');
+      prepareId = surface.prepareRequestId;
+      return rejected ? {status: 'rejected', requestId, error: errorBody('not-found')} : accepted(requestId);
+    }});
+    await w.core.serveSync(['operation'], () => ({revision: ++reads, states: !rejected && reads === 1 ? [{
+      type: 'org.bunny.operation.updated', subject: 'prep', dataschema: 'https://bunny.invalid/events/operation/2.0',
+      data: {id: 'prep', requestId: prepareId, status: 'completed', result: 'succeeded', evidence: 'observed', revision: 1},
+    }, {
+      type: 'org.bunny.operation.updated', subject: 'show', dataschema: 'https://bunny.invalid/events/operation/2.0',
+      data: {id: 'show', requestId, status: 'completed', result: 'succeeded', evidence: 'transmitted', revision: 1},
+    }] : []}));
+    await w.core.serveSync(['art-show-effects'], () => ({revision: 1, states: []}));
+    await control(w.core, w.module(), 'enable');
+    await input(w.core, w.module(), 'Show the synthetic kite.');
+    await until(() => status(w) === 'waiting');
+    await input(w.core, w.module(), 'approve', true);
+    await until(() => status(w) === 'failed');
+    assert.equal(reads, 2);
+    const closing = (await page(w)).messages.at(-1)?.text ?? '';
+    assert.match(closing, rejected ? /request was refused/i : /command was transmitted.*preparation on display-blue.*observed a successful outcome.*presentation on display-blue is unconfirmed/i);
+  });
+}
+
+void test('an unclassified failure after a recorded action explains that the turn stopped', async context => {
+  const w = await world(context, {tools: ['set_mode'], core: () => ({synced: true, sessions: [], mode: hub(1)}),
+    provider: counted((_input, turn) => {
+      if (turn === 1) return call('set_mode', {mode: 'free'});
+      throw new ProviderFault('internal');
+    }), dispatch: data => Promise.resolve(accepted(data.requestId))});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic mode change followed by a question.');
+  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'failed');
+  assert.match((await page(w)).messages.at(-1)?.text ?? '', /request was accepted.*turn stopped.*cause is unknown/i);
 });
