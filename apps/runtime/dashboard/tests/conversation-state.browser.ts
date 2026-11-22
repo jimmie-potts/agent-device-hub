@@ -27,7 +27,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     const fixture = window.conversationFixture = {commands: [], reads: 0, spendReads: 0};
     // The shared spend route's answer: synthetic amounts in millionths of a dollar (Hub #2024).
     let spend = {version: 1, day: {period: '2026-11-21', spentMicros: 1234567, limitMicros: 20000000, unreported: 1, unreportedMicros: 340000},
-      month: {period: '2026-11', spentMicros: 12500000, limitMicros: 150000000, unreported: 0, unreportedMicros: 0}};
+      month: {period: '2026-11', spentMicros: 12500000, limitMicros: 150000000, unreported: 0, unreportedMicros: 0}, paid: null};
     const toolText = ${JSON.stringify(toolText)};
     const replyText = ${JSON.stringify(replyText)};
     const coding = {id: 'coding', revision: 1, availability: 'available', endpointId: 'worker', active: null};
@@ -50,7 +50,8 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
       if (variant === 'missing-proposal') question = {...approval, proposal: null};
       if (variant === 'mismatched') question = {id: 'other-question', text: 'Unrelated question', answer: null, kind: 'clarification', proposal: null};
       if (variant === 'paused') task = {...task, status: 'paused'};
-      if (variant === 'hosted') {state.provider = 'anthropic'; state.model = 'claude-example-hosted-model'; task = {...task, runId: ${JSON.stringify(longRunId)}, usageUnits: 0, reservedUnits: 16384};}
+      if (variant === 'hosted') {state.provider = 'anthropic'; state.model = 'claude-example-hosted-model'; task = {...task, runId: ${JSON.stringify(longRunId)}, usageUnits: 0, reservedUnits: 16384}; spend = {...spend, paid: {model: 'claude-example-hosted-model', minimumMicros: 368640}};}
+      if (variant === 'unpriced') spend = {...spend, paid: {model: 'claude-example-hosted-model', minimumMicros: null}};
       if (variant === 'spend-limit') spend = {...spend, day: {...spend.day, spentMicros: 20000000, unreported: 0, unreportedMicros: 0}};
       if (variant === 'uncertain') task = {...task, status: 'uncertain', questionId: null, code: 'uncertain-result'};
       if (variant === 'succeeded') {
@@ -180,6 +181,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Paid cost', '0 (synthetic calls)');
     await fact(usage, 'Spend today', '$1.23 of $20.00, including $0.34 reserved for 1 call without reported usage');
     await fact(usage, 'Spend this month', '$12.50 of $150.00');
+    await fact(usage, 'Prices', 'Not needed (synthetic calls)');
     await settings.locator('summary').click();
     assert.equal(await disable.isDisabled(), true, 'unfinished tasks prevent disabling Conversation');
     assert.equal(await settings.getByRole('link', {name: 'Preferences', exact: true}).getAttribute('href'), '#/module/companions/preferences');
@@ -210,7 +212,13 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Model usage', '0 tokens');
     await fact(usage, 'Reserved usage', '16384 / 1000000 tokens');
     await fact(usage, 'Paid cost', 'Unknown (provider billing)');
+    await fact(usage, 'Prices', 'Configured for claude-example-hosted-model');
     assert.equal(await page.getByText(/spend limit .* is reached/).count(), 0, 'below the limit the composer shows no spend notice');
+    await page.evaluate("window.conversationFixture.update('unpriced')");
+    await fact(usage, 'Prices', 'Missing for claude-example-hosted-model; paid messages are refused');
+    await page.locator('.conversation-compose').getByText('No price is configured for claude-example-hosted-model, so new messages are refused. Add it to assistant.prices in the private configuration.', {exact: true}).waitFor();
+    await page.evaluate("window.conversationFixture.update('hosted')");
+    await fact(usage, 'Prices', 'Configured for claude-example-hosted-model');
     await page.evaluate("window.conversationFixture.update('spend-limit')");
     await fact(usage, 'Spend today', '$20.00 of $20.00');
     await page.locator('.conversation-compose').getByText("The daily spend limit of $20.00 is reached. New messages can start after midnight, the runtime host's local time.", {exact: true}).waitFor();

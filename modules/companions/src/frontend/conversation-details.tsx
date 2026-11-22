@@ -3,8 +3,8 @@ import type {AssistantProfile, AssistantState, AssistantTaskSummary} from '@jimm
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendUi} from '@jimmie-potts/sdk/frontend';
 import {LIMITS} from '../assistant/limits.js';
-import type {SpendTotals} from '../assistant/spend-contract.js';
-import {spendText} from './conversation-spend.js';
+import type {SpendView} from '../assistant/spend-contract.js';
+import {priceText, spendText} from './conversation-spend.js';
 
 /** The longest owner title, as the session label bound (Hub #2025). */
 const TITLE_CHARS = 80;
@@ -46,7 +46,7 @@ export function ConversationDetails({
   id: string; open: boolean; overlay: boolean; onClose: () => void; stopSpeaking: React.JSX.Element | null;
   Facts: FrontendUi['Facts']; profile: AssistantProfile; profileName: string;
   state: AssistantState | undefined; task: AssistantTaskSummary | undefined; coding: CodingState | undefined; live: boolean;
-  spend: SpendTotals | undefined;
+  spend: SpendView | undefined;
   savedQuestion: React.ReactNode; receipt: string | undefined; locked: boolean; unfinished: boolean;
   setEnabled: (action: 'enable' | 'disable') => void;
   title: ConversationTitle | undefined; rename: (title: string) => void;
@@ -144,6 +144,7 @@ export function ConversationDetails({
         <Facts items={[
           ['Spend today', spend === undefined ? 'Unknown' : spendText(spend.day)],
           ['Spend this month', spend === undefined ? 'Unknown' : spendText(spend.month)],
+          ['Prices', priceText(spend)],
         ]}/>
         <p>Spend counts every profile's paid model calls from reported usage at the configured prices, by the runtime host's local day and month. A call without reported usage counts its reservation. Coding-worker runs are not counted.</p>
       </details>

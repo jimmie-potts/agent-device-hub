@@ -47,10 +47,12 @@ const refuse = (detail: string): ErrorBody => errorBody('invalid-request', {deta
 const MODEL = /^[a-z0-9][a-z0-9.-]{0,127}$/;
 const PRICE_CLASSES = ['input', 'output', 'cacheWrite', 'cacheRead'] as const;
 /**
- * `assistant.prices` (Hub #2024): at most 16 models, each with all four prices in US dollars per million tokens, finite
- * and from 0 to 1000. A hosted provider needs its own model's entry, so every paid call it makes can be counted.
+ * `assistant.prices` (Hub #2024), optional: at most 16 models, each with all four prices in US dollars per million tokens,
+ * finite and from 0 to 1000. Without an entry for the hosted model the section is still accepted, so the module starts
+ * before the owner adds prices, and the engine refuses that model's paid turns and calls, so spend stays bounded.
  */
-function pricesOf(value: unknown, model: string): PriceTable | string {
+function pricesOf(value: unknown): PriceTable | string {
+  if (value === undefined) return {};
   const shape = 'assistant.prices maps each model to input, output, cacheWrite and cacheRead prices in US dollars per million tokens, from 0 to 1000';
   if (!isObject(value) || Object.keys(value).length > 16) return shape;
   const table: Record<string, ModelPrices> = {};
@@ -60,7 +62,7 @@ function pricesOf(value: unknown, model: string): PriceTable | string {
     })) return shape;
     table[name] = {input: entry.input as number, output: entry.output as number, cacheWrite: entry.cacheWrite as number, cacheRead: entry.cacheRead as number};
   }
-  return Object.hasOwn(table, model) ? table : `assistant.prices has no entry for the model ${model}, so its spend could not be counted`;
+  return table;
 }
 export function configureCompanions(section: unknown): Configured<CompanionsConfig> | ErrorBody {
   if (!isObject(section) || !only(section, ['assistant', 'secrets'])) return refuse('the companions section has only assistant and secrets');
@@ -78,10 +80,8 @@ export function configureCompanions(section: unknown): Configured<CompanionsConf
   if (typeof model !== 'string' || !MODEL.test(model)) return refuse('assistant.model is a model identifier of at most 128 lowercase letters, digits, dots and hyphens');
   if (typeof titleModel !== 'string' || !MODEL.test(titleModel)) return refuse('assistant.titleModel is a model identifier of at most 128 lowercase letters, digits, dots and hyphens');
   if (!EFFORTS.includes(effort as Effort)) return refuse('assistant.effort is low, medium or high');
-  const prices = pricesOf(assistant.prices, model);
+  const prices = pricesOf(assistant.prices);
   if (typeof prices === 'string') return refuse(prices);
-  // The conversation title model (Hub #2025) is a paid model too, so its calls need a price to be counted.
-  if (!Object.hasOwn(prices, titleModel)) return refuse(`assistant.prices has no entry for the title model ${titleModel}, so its spend could not be counted`);
   if (!isObject(section.secrets) || !Object.hasOwn(section.secrets, API_KEY_SECRET)) return refuse(`a hosted provider names its API key file as secrets.${API_KEY_SECRET}`);
   return {config: {assistant: {provider, model, effort: effort as Effort, titleModel, tools: [...tools], prices}}};
 }

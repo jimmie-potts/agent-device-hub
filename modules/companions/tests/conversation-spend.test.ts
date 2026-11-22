@@ -2,15 +2,16 @@
 // still counted for unreported usage, and the notice at a limit. Synthetic amounts only.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {decodeSpend, spendNotice, spendText} from '../src/frontend/conversation-spend.js';
+import {decodeSpend, priceText, spendNotice, spendText} from '../src/frontend/conversation-spend.js';
 
 const day = {period: '2026-11-21', spentMicros: 1_234_567, limitMicros: 20_000_000, unreported: 0, unreportedMicros: 0};
 const month = {period: '2026-11', spentMicros: 12_500_000, limitMicros: 150_000_000, unreported: 0, unreportedMicros: 0};
+const paid = {model: 'model-a', minimumMicros: 368_640};
 
 void test('only a well-formed spend answer is read, and anything else reads as unknown', () => {
-  assert.deepEqual(decodeSpend({version: 1, day, month}), {version: 1, day, month});
-  for (const value of [undefined, null, [], {version: 2, day, month}, {version: 1, day}, {version: 1, day: {...day, period: '2026-11'}, month},
-    {version: 1, day: {...day, spentMicros: -1}, month}, {version: 1, day: {...day, unreported: 0.5}, month}, {version: 1, day, month: {...month, period: '2026-11-21'}},
+  assert.deepEqual(decodeSpend({version: 1, day, month, paid}), {version: 1, day, month, paid});
+  for (const value of [undefined, null, [], {version: 2, day, month, paid}, {version: 1, day}, {version: 1, day, month}, {version: 1, day, month, paid: {model: 'Bad Model', minimumMicros: 1}}, {version: 1, day, month, paid: {model: 'model-a', minimumMicros: -1}}, {version: 1, day: {...day, period: '2026-11'}, month, paid},
+    {version: 1, day: {...day, spentMicros: -1}, month, paid}, {version: 1, day: {...day, unreported: 0.5}, month, paid}, {version: 1, day, month: {...month, period: '2026-11-21'}, paid},
     {version: 2, profile: 'bunny', conversationId: null, messages: [], currentTask: null, older: null}]) {
     assert.equal(decodeSpend(value), undefined, JSON.stringify(value));
   }
@@ -19,7 +20,20 @@ void test('only a well-formed spend answer is read, and anything else reads as u
 void test('spend reads as dollars of the limit, naming reservations still counted, and a reached limit is a notice', () => {
   assert.equal(spendText(day), '$1.23 of $20.00');
   assert.equal(spendText({...day, unreported: 2, unreportedMicros: 680_000}), '$1.23 of $20.00, including $0.68 reserved for 2 calls without reported usage');
-  assert.equal(spendNotice(undefined), undefined); assert.equal(spendNotice({version: 1, day, month}), undefined);
-  assert.equal(spendNotice({version: 1, day: {...day, spentMicros: 20_000_000}, month}), 'The daily spend limit of $20.00 is reached. New messages can start after midnight, the runtime host\'s local time.');
-  assert.equal(spendNotice({version: 1, day, month: {...month, spentMicros: 150_000_001}}), 'The monthly spend limit of $150.00 is reached. New messages can start when the next month begins.');
+  assert.equal(spendNotice(undefined), undefined); assert.equal(spendNotice({version: 1, day, month, paid}), undefined);
+  assert.equal(spendNotice({version: 1, day: {...day, spentMicros: 20_000_000}, month, paid}), 'The daily spend limit of $20.00 is reached. New messages can start after midnight, the runtime host\'s local time.');
+  assert.equal(spendNotice({version: 1, day, month: {...month, spentMicros: 150_000_001}, paid}), 'The monthly spend limit of $150.00 is reached. New messages can start when the next month begins.');
+});
+
+void test('the prices fact and the notice name a missing price and a remainder below the smallest call', () => {
+  const view = (patch: object) => ({version: 1 as const, day, month, paid, ...patch});
+  assert.equal(decodeSpend(view({paid: null}))?.paid, null);
+  assert.deepEqual(decodeSpend(view({paid: {model: 'model-a', minimumMicros: null}}))?.paid, {model: 'model-a', minimumMicros: null});
+  assert.equal(priceText(undefined), 'Unknown'); assert.equal(priceText(view({paid: null})), 'Not needed (synthetic calls)');
+  assert.equal(priceText(view({})), 'Configured for model-a');
+  assert.equal(priceText(view({paid: {model: 'model-a', minimumMicros: null}})), 'Missing for model-a; paid messages are refused');
+  assert.equal(spendNotice(view({paid: null, day: {...day, spentMicros: 20_000_000}})), undefined, 'the synthetic provider meets no limit');
+  assert.equal(spendNotice(view({paid: {model: 'model-a', minimumMicros: null}})), 'No price is configured for model-a, so new messages are refused. Add it to assistant.prices in the private configuration.');
+  assert.match(spendNotice(view({day: {...day, spentMicros: 20_000_000 - 368_639}})) ?? '', /^The daily spend limit of \$20\.00 is reached\./, 'less than the smallest call remains');
+  assert.equal(spendNotice(view({day: {...day, spentMicros: 20_000_000 - 368_640}})), undefined, 'exactly the smallest call remains');
 });

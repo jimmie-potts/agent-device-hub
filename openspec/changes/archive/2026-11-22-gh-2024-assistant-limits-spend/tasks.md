@@ -13,6 +13,10 @@
 - [x] 3.1 Red: ledger tests for pricing, reservation, settlement, refusals, local boundaries and restart, engine tests for reservation before dispatch, unreported and late usage, refusals at the limits, a call already sent and a conversation-level call, and section tests for prices fail. Evidence: with the engine's spend reservation disabled as a negative control, three `assistant-spend.test.js` tests fail; `spend.test.js` and `configure.test.js` were written before the ledger and the price table.
 - [x] 3.2 Implement the ledger, the engine wiring, the section's prices and the `spend` route. Evidence: the same tests pass.
 
+## 3a. Review round 1
+
+- [x] 3a.1 Prices optional, unpriced turns and calls refused, a new paid turn refused when a limit's remainder is below the smallest first call, the page naming a missing price, and the exact process-test reservation. Evidence: `configure.test.js`, `spend.test.js`, `assistant-spend.test.js`, `assistant-process.test.js`, `conversation-spend.test.js` and the conversation state browser journey pass.
+
 ## 4. Page
 
 - [x] 4.1 Show spend today and this month in Details and the reached limit beside the composer. Evidence: `conversation-spend.test.js` and the conversation state and history browser journeys pass.
