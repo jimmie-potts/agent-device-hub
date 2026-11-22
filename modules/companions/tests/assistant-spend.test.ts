@@ -12,9 +12,10 @@ import {InProcessBus, type Participant} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
-import {inputBound, reservationCost, SpendLedger, usageCost, type ModelPrices, type SpendView, type TokenUsage} from '../src/assistant/spend.js';
+import {BUILT_IN_PRICES_AS_OF, inputBound, reservationCost, SpendLedger, usageCost, type ModelPrices, type SpendView, type TokenUsage} from '../src/assistant/spend.js';
+import {SPEND_LIMIT_REACHED} from '../src/assistant/anthropic.js';
 import {SyntheticProvider} from '../src/assistant/synthetic.js';
-import type {ModelProvider, TurnInput, TurnReply} from '../src/assistant/provider.js';
+import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 
 const ZONE = 'America/Chicago';
 // Synthetic prices in US dollars per million tokens.
@@ -204,7 +205,7 @@ void test('a new paid turn is refused when what remains of the day is below the 
   const w = await world(context, {provider});
   await enable(w.core, w.module());
   const least = reservationCost(A, LIMITS.overheadUnits, LIMITS.outputUnits);
-  assert.deepEqual((await spend(w)).paid, {model: 'model-a', minimumMicros: least}, 'the route names the paid model and its smallest call');
+  assert.deepEqual((await spend(w)).paid, {model: 'model-a', minimumMicros: least, prices: 'configured', pricesAsOf: BUILT_IN_PRICES_AS_OF}, 'the route names the paid model, its prices and its smallest call');
   // A conversation-level call leaves one millionth less than the smallest call: input at $4, and five cache reads for the last millionth.
   const ledger = w.ledger();
   assert.equal(ledger.reserve({id: 'title-3', purpose: 'conversation', owner: 'conversation-1', model: 'model-a', inputUnits: 1, outputUnits: 0}), undefined);
@@ -216,26 +217,26 @@ void test('a new paid turn is refused when what remains of the day is below the 
   assert.equal(provider.calls(), 0); assert.equal(task(w), undefined, 'the message was not admitted');
 });
 
-void test('without a price for the paid model the module still starts, refuses new paid turns and refuses a waiting turn\'s next call', async context => {
-  const provider = paid(turn => turn.transcript.length === 1 ? {text: null, calls: [{id: 'call-ask', name: 'ask_owner', input: {text: 'Which detail?'}}], stop: 'tool', units: 2, usage: used(1, 1)} : answer('Never sent.', used(1, 1)));
-  const options: CompanionsOptions = {provider};
-  const w = await world(context, options);
-  await enable(w.core, w.module()); await input(w.core, w.module(), 'Ask me first');
-  await until(() => task(w)?.status === 'waiting');
-  // The owner removes the price; the module restarts and stays available.
-  options.prices = {};
-  await w.restart();
-  assert.equal(w.module().inspectAssistant()?.available, true);
-  assert.deepEqual((await spend(w)).paid, {model: 'model-a', minimumMicros: null});
-  // The waiting turn's answer is admitted; its next model call is refused before it is sent, naming the missing price.
-  assert.equal((await input(w.core, w.module(), 'This one', {action: 'answer'})).status, 'accepted');
+void test('a provider spend-limit refusal ends the turn capacity with its message, after the call before it finished, and sends nothing more', async context => {
+  const provider = paid((_input, turn) => {
+    if (turn === 1) return read(used(10, 5));
+    throw new ProviderFault('capacity', false, SPEND_LIMIT_REACHED);
+  });
+  const w = await world(context, {provider, tools: ['read_sessions']});
+  await enable(w.core, w.module()); await input(w.core, w.module(), 'Check sessions');
   await until(() => task(w)?.status === 'failed');
-  assert.deepEqual([task(w)?.code, provider.calls()], ['capacity', 1]);
-  const message = 'No price is configured for the model model-a, so its spend cannot be counted. Nothing was sent.';
-  assert.equal((await messages(w)).at(-1), message);
-  // A new paid turn is refused at once with the same reason; the synthetic demo still starts.
-  const refused = await input(w.core, w.module(), 'Again');
-  assert.ok(refused.status === 'rejected');
-  assert.deepEqual([refused.error.error.code, refused.error.error.detail], ['capacity', message]);
-  assert.equal((await input(w.core, w.module(), 'Synthetic demo', {profile: 'reachy'})).status, 'accepted');
+  assert.deepEqual([task(w)?.code, task(w)?.modelCalls, task(w)?.toolCalls, provider.calls()], ['capacity', 2, 1, 2], 'no retry and no further call');
+  assert.equal((await messages(w)).at(-1), SPEND_LIMIT_REACHED);
+  // The refused call reported no usage, so its reservation keeps counting in the local estimate.
+  assert.equal((await spend(w)).day.unreported, 1);
+});
+
+void test('with no configured prices the paid model is priced from the built-in table or the dearest rate, and turns run', async context => {
+  const provider = paid(() => answer('Priced.', used(100, 10)));
+  const options: CompanionsOptions = {provider, prices: {}};
+  const w = await world(context, options);
+  await enable(w.core, w.module()); await input(w.core, w.module(), 'Hello');
+  await until(() => task(w)?.status === 'succeeded');
+  const view = await spend(w);
+  assert.deepEqual([view.paid?.prices, view.day.spentMicros], ['dearest', 100 * 4 + 10 * 20], 'model-a is unknown, so it takes the dearest known rate, Opus 5.5 here');
 });

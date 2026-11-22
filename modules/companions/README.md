@@ -319,12 +319,15 @@ their open state while you inspect another panel or resize the page.
 - **Usage** shows reported usage and the reservation against the task limit.
   A synthetic task may show **Unknown** usage alongside `0 / 1000000 units`
   reserved. Hosted tasks use reported tokens and leave the task's billed cost
-  unknown. **Spend today** and **Spend this month** show the shared spend of
-  every profile against the [spend limits](#spend-limits), naming any
-  reservation still counted for a call without reported usage. **Prices**
-  says whether the paid model has a configured price. When a paid profile's
-  new message would be refused, its composer says why: a missing price or a
-  reached limit.
+  unknown. **Spend today** shows the shared spend of every profile against
+  the $20 daily limit. **Spend this month (estimate)** shows the local
+  estimate against its $150 guard, and the line under it says that the
+  Anthropic Console holds the real monthly limit and spend
+  ([Spend limits](#spend-limits)). Both name any reservation still counted
+  for a call without reported usage. **Prices** says whether the paid model's
+  prices are configured, built in (with the table's date) or the dearest known
+  rate. When a paid profile's new message would be refused, its composer says
+  which limit is reached.
 - **Conversation settings** explains where submitted text goes and links to
   **Preferences** and **Companion knowledge**. An unfinished task prevents
   disabling the conversation.
@@ -356,13 +359,11 @@ as for every configured module; an empty section keeps every default:
 
 ```json
 {"companions": {"assistant": {"provider": "anthropic", "model": "claude-opus-5-5", "effort": "medium",
-  "tools": ["read_sessions", "set_mode"],
-  "prices": {"claude-opus-5-5": {"input": 1.5, "output": 7.5, "cacheWrite": 1.875, "cacheRead": 0.15}}},
-  "secrets": {"anthropic-api-key": "/run/secrets/bunny/anthropic-api-key"}}}
+  "tools": ["read_sessions", "set_mode"]}, "secrets": {"anthropic-api-key": "/run/secrets/bunny/anthropic-api-key"}}}
 ```
 
-The prices above are synthetic. Copy the provider's current price list into the
-private section instead.
+The key file holds an API key created in B.U.N.N.Y.'s own Console workspace,
+which carries the monthly spend limit ([Spend limits](#spend-limits)).
 
 - `assistant.provider` is `synthetic` (the default) or `anthropic`. The Anthropic
   provider needs `secrets.anthropic-api-key`, the owner-only file holding the
@@ -371,18 +372,29 @@ private section instead.
   the runtime redacts it from its own records. `model` defaults to
   `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`). The
   synthetic provider takes neither.
-- `assistant.prices` (Hub #2024) maps each model to its `input`, `output`,
-  `cacheWrite` and `cacheRead` prices in US dollars per million tokens, as the
-  provider's price list states them. `cacheWrite` is the five-minute cache
-  write price, which the
+- `assistant.prices` is optional. It maps each model to its `input`,
+  `output`, `cacheWrite` and `cacheRead` prices in US dollars per million
+  tokens, to override the built-in table below. Each entry needs all four
+  prices, from 0 to 1000, for at most 16 models. `cacheWrite` is the
+  five-minute cache write. The synthetic provider takes no prices.
+- **Built-in prices** (Hub #2047), read from the
   [Anthropic price list](https://platform.claude.com/docs/en/about-claude/pricing)
-  states as 1.25 times the input price. The table is optional. When present,
-  each entry needs all four prices, from 0 to 1000, for at most 16 models.
-  Without an entry for the Anthropic provider's model the section is still
-  accepted and the module starts, but every new turn and model call of that
-  model is refused with `capacity`, naming the missing price, so spend stays
-  bounded. The module has no built-in prices. The synthetic provider takes no
-  prices.
+  on 2026-11-22, in US dollars per million tokens:
+
+  | Model | Input | Five-minute cache write | Cache read | Output |
+  | --- | --- | --- | --- | --- |
+  | `claude-opus-5-5` | 4 | 5 | 0.20 | 20 |
+  | `claude-haiku-5-5`, prompt up to 100,000 tokens | 0.10 | 0.125 | 0.01 | 0.50 |
+  | `claude-haiku-5-5`, prompt over 100,000 tokens | 0.50 | 0.625 | 0.05 | 2.50 |
+
+  A Haiku prompt counts its cache reads and writes. A call is reserved at the
+  tier of its input bound, which is never below its real prompt, and settled
+  at the tier its reported prompt falls in. A model the table does not know
+  is priced at the dearest known rate for each class, across this table and
+  any configured prices. A configured price overrides the table. With no
+  prices configured the assistant runs with daily pacing. No job fetches
+  prices: the price list is not an API, and a price change needs a release or a
+  configured price.
 - `assistant.tools` lists the permitted tools by name, each once:
   `read_sessions`, `set_mode`, `delegate_coding`, `read_lifx`, `set_lifx_power`, `set_lifx_brightness`, `read_wemo` and `set_wemo_power`.
   The engine builds the model's tool
@@ -401,8 +413,15 @@ private section instead.
   call uncertain. Usage is the sum of the tokens the provider reports (input,
   output and cache tokens); unreported usage stays unknown. A report without
   input or output counts, or with a count that is not a whole number, is
-  unreported. The module enforces the [spend limits](#spend-limits); the
-  dedicated Console workspace's own monthly limit stays as a second bound.
+  unreported. The module paces each day, and Anthropic enforces the monthly
+  limit ([Spend limits](#spend-limits)). A spend-limit refusal maps to
+  `capacity` with a conversation message that names the monthly limit:
+  a 400 `invalid_request_error` whose message starts with "You have reached
+  your specified API usage limits" or "You have reached your specified
+  workspace API usage limits", or a 429 `rate_limit_error` whose
+  `error.details.error_code` is `enforced_spend_limit_reached`. Any other 400
+  or 429 keeps its code. Nothing more is sent for that turn, and nothing
+  retries.
 - Each request asks for automatic prompt caching with one top-level
   `cache_control` of type `ephemeral`, the five-minute cache. The API places
   the breakpoint on the last cacheable block. The tools, the system prompt and
@@ -584,31 +603,62 @@ its input tokens because each token encodes at least one byte of text.
 
 ### Spend limits
 
-The assistant's paid model calls may spend $20 a day and $150 a month across
-all profiles (Hub #2024). The day and the month are the runtime host's local
-ones and start at local midnight. A call counts on the day it was reserved.
-Coding-worker runs use the coding worker's own sign-in and are not counted.
+Spending is bounded in two layers (owner decision on #2024, Hub #2047):
+
+- **The month, at Anthropic.** A dedicated Console workspace for B.U.N.N.Y.
+  has a $150 monthly spend limit. Anthropic enforces it on real billing, so the
+  month cannot overrun. When it is reached, the provider refuses the call: the
+  task ends `capacity`, and the conversation says "The monthly spend limit at
+  Anthropic is reached, so the model call was refused and nothing more was
+  sent for this turn. The Anthropic Console shows the limit, this month's real
+  spend and when access resumes." The Console holds the real monthly limit and
+  spend.
+- **The day, locally.** The module paces the assistant's paid calls at $20 a
+  day across all profiles, from reported usage at the configured or built-in
+  prices. It also keeps a local estimate of the month, with a $150 guard that
+  refuses calls as the daily limit does. The estimate is not billing: it
+  counts unreported calls at their reservations and uses list prices.
+
+The day and the month are the runtime host's local ones and start at local
+midnight. A call counts on the day it was reserved. Coding-worker runs use the
+coding worker's own sign-in, and other providers, such as the art module's,
+have their own allowances. Neither is in this ledger or the workspace's limit.
+
+#### One-time setup at installation
+
+The owner does this once, in the Anthropic Console, before the hosted provider
+goes live:
+
+1. Create a dedicated workspace for B.U.N.N.Y. Do not use the default
+   workspace: Anthropic's rate-limit documentation says a limit on the
+   default workspace might not count or stop some usage there, and on some
+   platforms it cannot be set at all.
+2. Set the workspace's monthly spend limit to $150 at
+   [Spend limits](https://platform.claude.com/settings/spend-limits)
+   (`platform.claude.com/settings/spend-limits`).
+3. Create an API key in that workspace and store it in the private key file
+   that `secrets.anthropic-api-key` names, through the established private
+   configuration route. No Admin API key or other credential is needed.
 
 - **Reservation before dispatch.** In the transaction that saves a paid call's
   receipt, the module reserves the most the call can cost in its private
   SQLite ledger (`assistant_spend`). Every input unit is priced at the dearest
   input class, and every output unit at the output price. When that
-  reservation would pass the daily or the monthly limit, the call is refused
+  reservation would pass the daily limit or the month's guard, the call is refused
   with `capacity` and nothing is sent. The conversation then shows the
   limit, for example "The daily spend limit of $20.00 would be passed: $19.80
   is counted today and this model call could cost up to $0.42. Nothing was
   sent."
-- **Reported usage.** The answer's reported tokens, priced by class from
-  `assistant.prices`, replace the reservation in the same transaction that
+- **Reported usage.** The answer's reported tokens, priced by class at the
+  configured or built-in prices, replace the reservation in the same transaction that
   saves the answer. An answer that arrives after the call's deadline, while
   the module still runs, also replaces it.
 - **Unreported usage.** A call whose usage is never reported keeps counting
   its full reservation, never zero. Examples are a lost answer, a deadline, a
   crash or an error status. Its turn usage also stays unknown.
 - **New turns.** A new message to a paid profile is refused with `capacity`
-  and a detail that names the reason when its model has no price, or when what
-  remains of today's or this month's limit is below the smallest possible first
-  call: 8,192 framing units at the model's dearest input price plus 16,384
+  and a detail that names the limit when what remains of today's limit or of
+  the month's estimate is below the smallest possible first call: 8,192 framing units at the model's dearest input price plus 16,384
   output units at its output price. So a message is not admitted only to fail
   at its first model call. A call already sent finishes, and the next call is
   refused. The synthetic profiles cost nothing and keep working.
@@ -625,9 +675,9 @@ Coding-worker runs use the coding worker's own sign-in and are not counted.
 after each assistant-state revision. The route returns the day's and month's
 counted millionths of a dollar, the limits and the count and amount of
 reservations without reported usage. It also names the B.U.N.N.Y. profile's
-paid model with its smallest possible call, or null for that amount when the
-model has no price, and null for the synthetic provider. It carries no text,
-call or task identity.
+paid model, where its prices come from (`configured`, `built-in` or
+`dearest`) with the built-in table's date, and its smallest possible call. It
+is null for the synthetic provider. It carries no text, call or task identity.
 
 Unknown usage stays unknown. A crash or timeout keeps the call's reserved time
 and units; explicit continuation never resets them. Cancellation first saves a

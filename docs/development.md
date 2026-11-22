@@ -3242,6 +3242,15 @@ and `npm run test:companions:browser`. They use synthetic prices, fake
 transports, a manual clock and a fixed time zone. Existing CI discovery runs
 them. They do not show installed caching, real prices or billed spend.
 
+The Anthropic spend ceiling and built-in prices (#2047) extend the same files.
+`spend.test.js` covers the dated table, the Haiku prompt tier, configured
+overrides and the dearest rate. `anthropic.test.js` and `configure.test.js`
+cover the documented spend-limit refusals and the other 400 and 429 answers
+that stay unmapped. `assistant-spend.test.js` covers the turn that ends on such
+a refusal, and the conversation state journey covers the monthly estimate and
+the Prices fact. Run the same commands; the fakes return the documented error
+bodies, and no installed Console limit is exercised.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module

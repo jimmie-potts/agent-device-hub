@@ -250,6 +250,37 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Anthropic monthly spend limit and built-in prices (#2047)
+
+The #2047 release prices the assistant's calls from a dated built-in table
+(Anthropic's price list of 2026-11-22), so `assistant.prices` no longer needs
+entering; a configured price still overrides the table. Anthropic now enforces
+the monthly ceiling. The local ledger paces each day at $20 and shows the
+month as an estimate. An upgrade straight to this release skips the #2024
+steps below that add prices. The release changes no table and rewrites no
+record.
+
+One-time owner setup, in the Anthropic Console, before the hosted provider goes
+live (the [companions guide](../../modules/companions/README.md#spend-limits)
+has the details):
+
+1. Create a dedicated workspace for B.U.N.N.Y. Do not use the default
+   workspace: a limit there might not count or stop all usage, and on some
+   platforms it cannot be set.
+2. Set that workspace's monthly spend limit to $150 at
+   `platform.claude.com/settings/spend-limits`.
+3. Create an API key in that workspace and store it in the companions key file
+   (`secrets.anthropic-api-key`) through the established private configuration
+   route, then restart the runtime.
+
+Coding-worker runs and other providers, such as the art module's, are outside
+this workspace's limit and the assistant's ledger.
+
+To return to the #2024 release, add `assistant.prices` for the configured
+model first. Without it, that release refuses every paid turn, naming the
+missing price, though the module still starts. The workspace's limit stays in
+force either way.
+
 ## Assistant limits, prompt caching and spend (#2024)
 
 The #2024 release relaxes the assistant's per-turn limits, caches its prompts

@@ -49,8 +49,8 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
       if (variant === 'missing-proposal') question = {...approval, proposal: null};
       if (variant === 'mismatched') question = {id: 'other-question', text: 'Unrelated question', answer: null, kind: 'clarification', proposal: null};
       if (variant === 'paused') task = {...task, status: 'paused'};
-      if (variant === 'hosted') {state.provider = 'anthropic'; state.model = 'claude-example-hosted-model'; task = {...task, runId: ${JSON.stringify(longRunId)}, usageUnits: 0, reservedUnits: 16384}; spend = {...spend, paid: {model: 'claude-example-hosted-model', minimumMicros: 368640}};}
-      if (variant === 'unpriced') spend = {...spend, paid: {model: 'claude-example-hosted-model', minimumMicros: null}};
+      if (variant === 'hosted') {state.provider = 'anthropic'; state.model = 'claude-example-hosted-model'; task = {...task, runId: ${JSON.stringify(longRunId)}, usageUnits: 0, reservedUnits: 16384}; spend = {...spend, paid: {model: 'claude-example-hosted-model', minimumMicros: 368640, prices: 'configured', pricesAsOf: '2026-11-22'}};}
+      if (variant === 'unknown-model') spend = {...spend, paid: {...spend.paid, prices: 'dearest'}};
       if (variant === 'spend-limit') spend = {...spend, day: {...spend.day, spentMicros: 20000000, unreported: 0, unreportedMicros: 0}};
       if (variant === 'uncertain') task = {...task, status: 'uncertain', questionId: null, code: 'uncertain-result'};
       if (variant === 'succeeded') {
@@ -171,7 +171,8 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Reserved usage', '0 / 1000000 units');
     await fact(usage, 'Paid cost', '0 (synthetic calls)');
     await fact(usage, 'Spend today', '$1.23 of $20.00, including $0.34 reserved for 1 call without reported usage');
-    await fact(usage, 'Spend this month', '$12.50 of $150.00');
+    await fact(usage, 'Spend this month (estimate)', '$12.50 of $150.00');
+    await usage.getByText('This month\'s figure is a local estimate. The Anthropic Console holds the real monthly limit and spend.', {exact: true}).waitFor();
     await fact(usage, 'Prices', 'Not needed (synthetic calls)');
     await settings.locator('summary').click();
     assert.equal(await disable.isDisabled(), true, 'unfinished tasks prevent disabling Conversation');
@@ -188,9 +189,8 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Paid cost', 'Unknown (provider billing)');
     await fact(usage, 'Prices', 'Configured for claude-example-hosted-model');
     assert.equal(await page.getByText(/spend limit .* is reached/).count(), 0, 'below the limit the composer shows no spend notice');
-    await page.evaluate("window.conversationFixture.update('unpriced')");
-    await fact(usage, 'Prices', 'Missing for claude-example-hosted-model; paid messages are refused');
-    await page.locator('.conversation-compose').getByText('No price is configured for claude-example-hosted-model, so new messages are refused. Add it to assistant.prices in the private configuration.', {exact: true}).waitFor();
+    await page.evaluate("window.conversationFixture.update('unknown-model')");
+    await fact(usage, 'Prices', 'claude-example-hosted-model is not in the built-in prices of 2026-11-22; priced at the dearest known rate');
     await page.evaluate("window.conversationFixture.update('hosted')");
     await fact(usage, 'Prices', 'Configured for claude-example-hosted-model');
     await page.evaluate("window.conversationFixture.update('spend-limit')");

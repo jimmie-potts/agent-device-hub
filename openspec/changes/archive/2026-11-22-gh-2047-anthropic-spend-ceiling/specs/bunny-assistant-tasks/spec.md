@@ -1,0 +1,176 @@
+## MODIFIED Requirements
+
+### Requirement: Configured model provider
+
+The companions module SHALL run every task through one provider behind a tool-capable turn contract: a turn receives the fixed instructions, the task's own transcript, the permitted tool definitions, the current Hub mode and the prompt context, and answers with text, a question for the owner, tool calls or a refusal, plus reported usage or unknown. The module SHALL take a companions section, as every configured module does; with an empty section or one that names no provider, the provider SHALL be the labelled synthetic one, which makes no network call. A section whose `assistant.provider` is `anthropic` SHALL name the model, the effort and, under the section's `secrets`, the API key file, and MAY name `assistant.prices` with the input, output, five-minute cache write and cache read prices of each model in US dollars per million tokens, which override the built-in table; the module SHALL read the key once at start, never log, publish or store it, and SHALL refuse the section without the secret, with a malformed price table or with an unsupported provider. A section without prices SHALL start the module and run with daily pacing at the built-in prices. A 400 `invalid_request_error` whose message starts with "You have reached your specified API usage limits" or "You have reached your specified workspace API usage limits", or a 429 `rate_limit_error` whose `error.details.error_code` is `enforced_spend_limit_reached`, SHALL end the task with the capacity code and a conversation message naming the monthly spend limit at Anthropic, with nothing more sent for that turn and no retry; no other 400 or 429 SHALL be read as a spend limit. The `bunny` profile alone SHALL use the configured provider; other profiles SHALL keep the synthetic provider. The prompt SHALL contain only the owner's typed text, tool definitions, tool results, the fixed instructions, the current Hub mode and the prompt context: the task profile's curated persona and the owner's currently active explicit preferences, read from the module's own records at each model call and rendered as owner data that grants no tool, permission or device authority. No knowledge entry, conversation history, other task, inactive or historical preference or private context document SHALL enter the prompt. When the rendered prompt context exceeds 128 KiB the model call SHALL be refused before dispatch with a capacity outcome whose transcript message names the cause; nothing SHALL be truncated silently. A provider refusal, unavailability, rate limit or malformed answer SHALL end the task failed or unavailable with a registry code and no fallback to another model; a lost answer SHALL leave the call uncertain. Each hosted request SHALL ask for automatic prompt caching with one top-level `cache_control` of type `ephemeral`, with the tools, the system prompt and the replayed transcript first and byte-stable between a task's calls, and SHALL report usage by class: uncached input, output, cache writes and cache reads; a report without input or output counts, or with a count that is not a whole number, SHALL be unreported. Public state SHALL carry the provider, model and allowed tool names.
+
+#### Scenario: Synthetic default
+- **WHEN** the module starts with an empty companions section or with one that names no provider
+- **THEN** public state shows the synthetic provider, no outbound request is made, and a task completes through the same question, tool and approval path
+
+#### Scenario: Configured hosted provider
+- **WHEN** the section names the Anthropic provider, its model and its key secret
+- **THEN** a `bunny` task sends one request per model call to the Messages API with that model, the fixed instructions, the prompt context, the transcript and the permitted tools; usage tokens are recorded on the call; and the key appears in no record, state, log or page
+
+#### Scenario: Full tool catalog on the hosted provider
+- **WHEN** the permitted tool catalog exceeds the Messages API's strict-tool limit
+- **THEN** the request includes every permitted tool, uses strict mode within the provider's limit, and checks the remaining tool calls against their closed input schemas before they can reach approval or act
+
+#### Scenario: Persona and active preferences enter the prompt
+- **WHEN** the owner has active and inactive explicit preferences and starts a `bunny` task, then edits a preference and stops using another before the next model call
+- **THEN** the first call's prompt carries the `bunny` persona and only the then-active preferences by title and text, the next call reflects the edit and omits the stopped entry, no knowledge entry or earlier conversation appears, and the prompt text reaches no public state, outcome, log or span
+
+#### Scenario: Prompt context over its bound
+- **WHEN** the owner's active preferences render larger than 128 KiB
+- **THEN** the model call is refused before dispatch, the task ends with the capacity code and a transcript message naming the preference bound, and no request is sent
+
+#### Scenario: Provider failure
+- **WHEN** the provider answers with a refusal, an authentication or rate-limit error, is unreachable or exceeds its deadline
+- **THEN** the task ends failed or unavailable with the registry code, or uncertain after a lost answer, no second model is tried, and the dashboard's mode controls keep working
+
+#### Scenario: Cached prefix on the second call
+- **WHEN** a hosted task makes a second model call after a tool result
+- **THEN** the second request carries the top-level cache marker and begins with the first request's tools, system prompt and first message, and the cache write and cache read counts the provider reports reach the call's usage by class
+
+#### Scenario: Anthropic spend-limit refusal
+- **WHEN** the provider answers a hosted task's model call with a documented spend-limit refusal, for a limit the owner set, a workspace limit or the tier's monthly cap
+- **THEN** the task ends with the capacity code after that one request, the conversation's last message names the monthly spend limit at Anthropic and points to the Console, and another 400 or 429 keeps its own code without that message
+
+### Requirement: Shared spend limits
+
+Anthropic SHALL enforce the monthly ceiling through a dedicated Console workspace's $150 monthly spend limit, which the owner sets once at installation; the companions module SHALL pace the spend of every profile's paid model calls together at $20 a day and SHALL keep a local estimate of the month with a $150 guard, by the runtime host's local day and month starting at local midnight. Prices SHALL come from the section's price table, else from a dated built-in table read from Anthropic's price list (2026-11-22: `claude-opus-5-5`, and `claude-haiku-5-5` with its dearer tier for a prompt over 100,000 tokens, counting cache reads and writes), else from the dearest known rate for each price class; a tiered model SHALL be reserved at the tier of its input bound and settled at the tier its reported prompt falls in. In the transaction that saves a paid call's receipt, the module SHALL reserve in its own SQLite ledger the most the call can cost: every input unit at the model's dearest input price and every output unit at its output price, from the section's price table. It SHALL refuse the call with the capacity code before dispatch, and record nothing, when that reservation would pass the daily or the monthly limit, and the conversation SHALL show a message that names the limit. Reported usage priced by class SHALL replace the reservation in the transaction that saves the answer, including an answer that arrives after the call's deadline while the module runs. A call whose usage is never reported SHALL keep counting its reservation, never zero, across restart. A call SHALL count on the day and month it was reserved. A new turn of a paid profile SHALL be refused with the capacity code and a detail naming the limit when what remains of today's limit or of the month's estimate is below the smallest reservation of its first call, 8,192 framing units at the model's dearest input price plus 16,384 output units at its output price; a call already sent SHALL finish. Synthetic calls and coding-worker runs SHALL not be counted. A model call outside a task SHALL record its spend through the same ledger. The module SHALL serve the day's and month's counted amounts, their limits and the count and amount of reservations without reported usage on a private content route without text, call or task identity, together with the paid model, where its prices come from with the built-in table's date, and its smallest call, and the page SHALL read it after each assistant-state revision, show today's spend against the daily limit and the month's figure labelled as an estimate with a line that the Anthropic Console holds the real monthly limit and spend, show where the paid model's prices come from, and show beside the composer why a paid profile's new message would be refused.
+
+#### Scenario: Reservation then reported usage
+- **WHEN** a hosted task's model call is in flight and then answers with reported usage
+- **THEN** while in flight the day's spend counts the call's reservation as one call without reported usage, and afterwards it counts the reported usage priced by class and no unreported call
+
+#### Scenario: Unreported and late usage
+- **WHEN** one hosted call answers without usage and another passes its deadline, answers late with usage, and the runtime restarts
+- **THEN** the first keeps counting its reservation, the second counts its late reported usage, and both amounts survive the restart
+
+#### Scenario: Limit reached
+- **WHEN** a conversation-level call has brought today's spend to $20.00
+- **THEN** a new message to the hosted profile is refused with the capacity code and a detail naming the daily limit, no request is sent, a synthetic profile still starts a task, and after local midnight the day reads zero while the month keeps the amount
+
+#### Scenario: A call already sent finishes
+- **WHEN** other spend brings the day near its limit while a hosted call is in flight
+- **THEN** that call's answer and its tool result are kept, the next model call is refused before dispatch, the task ends with the capacity code and the conversation names the daily limit
+
+#### Scenario: Missing price
+- **WHEN** the hosted provider's section has no prices and the runtime starts
+- **THEN** a hosted turn runs, its reported usage counts at the built-in price of 2026-11-22, a model the table does not know, even one named after an inherited member such as `constructor`, counts at the dearest known rate, and Details names where the prices come from
+
+#### Scenario: Haiku prompt tier
+- **WHEN** a `claude-haiku-5-5` call's input bound is 100,000 units and another's is 100,001, and their reported prompts, counting cache reads and writes, are 100,000 and 100,001 tokens
+- **THEN** the first is reserved and settled at the lower tier and the second at the higher tier
+
+#### Scenario: Remainder below the smallest call
+- **WHEN** today's counted spend leaves one millionth of a dollar less than the smallest first call
+- **THEN** a new message to the hosted profile is refused with the capacity code and a detail naming the daily limit, and no task starts
+
+#### Scenario: Day and month boundaries
+- **WHEN** a call is reserved at 23:59:59 local time and settles after midnight, and later the month turns over
+- **THEN** the call counts on the earlier day and in its month, the new day starts at zero, and the new month starts at zero
+
+### Requirement: Conversation panel
+
+The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assistant` page: the provider and model, allowed and unavailable tools, the coding worker's availability, reported usage in hosted tokens or synthetic units, and unknown when usage is unreported, today's shared spend against the daily limit and this month's local estimate, the saved conversation with owner, assistant and tool messages, and explicit send, answer, approve, decline, resume and cancel controls. It SHALL carry the speech endpoint controls as spoken replies (enable in this tab, mute, stop speaking, playback and tracked operation) and a Read aloud control beside each saved assistant message within the spoken bound, stating that enabling makes the tab the one speaker and that stopping speech does not cancel the task. A delegation proposal SHALL show its repository, brief and bound revision; a waiting delegation SHALL say it waits for the worker and offer cancel, not an answer box. It SHALL label the synthetic provider as making no paid calls, preserve written context and saved questions on reload, and distinguish control receipts from task state. Disconnection SHALL be visible and prevent mutation against stale state. Assistant activation SHALL default off without affecting fixed-text Reachy or coding-session lifecycle ownership.
+
+#### Scenario: Approval by keyboard
+- **WHEN** a task waits for approval and the owner reloads the page and operates it by keyboard
+- **THEN** the proposal, its target and value are readable, approve and decline are labelled, and a successful answer receipt does not assert that the command completed
+
+#### Scenario: Read-only and disconnected states
+- **WHEN** the browser lacks control authority or loses its connection
+- **THEN** saved history stays readable, every mutating control is disabled, and the page says why
+
+#### Scenario: Spoken replies by keyboard
+- **WHEN** the owner enables spoken replies in the Conversation tab by keyboard, sends a request and activates Read aloud on the saved answer
+- **THEN** the question, result and replay are spoken through that tab and the Read aloud receipt is shown apart from the playback report
+
+#### Scenario: Delegation on the page
+- **WHEN** the model proposes a delegation and the owner approves it by keyboard
+- **THEN** the proposal shows the repository, brief and bound revision, the page then shows the delegated work waiting for the worker with cancel available, and the worker's result appears as a tool message
+
+#### Scenario: Open, refresh and page through recent history
+- **WHEN** a dashboard consumer opens a profile with the recent reader, refreshes it as new messages arrive, or explicitly loads an earlier page
+- **THEN** it opens at the newest window, displays loaded messages in chronological order without duplication or dropping previously loaded rows, and preserves the latest saved clarification, approval or delegation separately from pagination
+- **AND** a successful refresh does not fetch earlier pages automatically, and an explicit gap separates disjoint windows until the reader joins them
+- **AND** an obsolete or wrong-profile response cannot replace the selected profile's history, and a failed read may retain prior visible history while explicit retry repeats only the read
+
+#### Scenario: Read at a stable scroll position
+- **WHEN** the owner loads earlier saved messages or new saved messages arrive while they are reading above the latest exchange
+- **THEN** the viewed saved row stays in position and new arrivals offer a New messages action
+- **AND** a live state revision preserves a Load earlier request already in flight for that profile
+
+#### Scenario: Draft and task decisions in the composer
+- **WHEN** the owner changes profiles, opens Details, resizes the page or reconnects in the same mounted page
+- **THEN** the profile and question drafts remain in page memory, including text retained after submission
+- **AND** the composer blocks conflicting starts but allows browsing saved history and returning to the unfinished task
+- **AND** Enter submits eligible text outside IME composition, and Shift+Enter inserts a newline
+- **AND** full approval scope and active questions and waits remain visible outside collapsed routine facts
+
+#### Scenario: Compact composer and UTF-8 guidance
+- **WHEN** the owner composes a message or answers a saved clarification
+- **THEN** one input surface gives the text a Message or Answer identity and places the input action beside Voice
+- **AND** keyboard guidance and a short private-saving and model disclosure stay visible, while Conversation settings explains submitted and unsent text
+- **AND** the exact UTF-8 byte count appears at 80% of the 32,768-byte limit or above, and an over-limit draft shows a refusal and cannot submit
+
+#### Scenario: Retain a draft after a refused or lost reply
+- **WHEN** a submission is refused or its reply is lost
+- **THEN** the draft and tracked receipt remain visible and the page sends no retry
+
+#### Scenario: Guard an unavailable task decision
+- **WHEN** the assistant copy is removed or the current saved question is missing or refers to another question
+- **THEN** loaded messages remain readable and answer and approval actions remain unavailable
+- **AND** Refresh history makes one deliberate latest read when the current saved question or proposal is unavailable
+
+#### Scenario: Inspect labelled Details
+- **WHEN** a reader opens Details from the Conversation header
+- **THEN** Conversation details shows the selected profile and an explicit close action, with an independently scrolling panel beside the conversation at wide widths and an overlay at narrow widths
+- **AND** Capabilities, Task activity, Usage and Conversation settings start collapsed and expand independently, with the full saved values readable inside the panel
+- **AND** Close, Escape and tapping outside the narrow overlay return focus to Details, keep the draft and transcript position, and send no commands
+- **AND** closing Details gives the wide conversation its space back, and resizing preserves the open sections and viewed saved row
+- **AND** opening Details or Voice dismisses the other panel while keeping the original speech endpoint, and Stop speaking remains available during local playback with narrow Details open
+- **AND** provider and tool facts, worker availability, task identifiers and bounds, saved question and answer, diagnostic codes, successful control receipts and usage retain their meaning
+- **AND** retained assistant facts read as Last known, a missing worker copy reads as unknown, usage distinguishes unknown, zero, synthetic units and hosted tokens without estimating a task's billed cost, and spend today and this month's estimate read as dollars of their limit and guard, naming reservations still counted for calls without reported usage, or as unknown when the spend cannot be read
+- **AND** active decisions, task result cues, blockers, and unresolved or negative control outcomes remain visible by the relevant controls
+
+#### Scenario: Use existing conversation settings
+- **WHEN** the owner opens Conversation settings
+- **THEN** the section explains saved input and offers the current enable or disable action through the same guarded command
+- **AND** a reader or stale copy cannot mutate, and an unfinished task prevents disabling the conversation
+
+#### Scenario: Read saved conversation messages
+
+- **WHEN** the reader opens a saved exchange at desktop or narrow widths
+- **THEN** assistant replies use open text and owner messages use modest bubbles in a reading column aligned with the composer
+- **AND** paragraphs, long URLs and markup remain literal, wrap to fit and retain the complete saved text
+- **AND** each eligible assistant reply has a quiet labelled Read aloud action, and tool messages have a labelled Tool result disclosure
+
+#### Scenario: Start with empty history
+
+- **WHEN** the selected profile has a fresh, successful empty history read and can accept a new message
+- **THEN** the transcript offers a short invitation to send a message
+- **AND** while a read or a new message is unavailable, the page shows the applicable history state or blocker instead of the invitation
+
+#### Scenario: See ordinary completion and required decisions
+
+- **WHEN** a live task succeeds
+- **THEN** a compact completion cue appears by the composer, with task facts in Details
+- **AND** unresolved or unsuccessful outcomes, stale state, waits and decisions remain visible when they affect the next action
+
+#### Scenario: Expand saved tool text
+- **WHEN** the owner or reader opens a tool result on a saved transcript row
+- **THEN** the full inert text can be read without horizontal page overflow, and the row retains its original task association and message order
+- **AND** opening or closing the result does not fetch, send a command, or replay text or audio
+- **AND** loading earlier saved messages keeps the result open and preserves the current reading position within it
+
+#### Scenario: Compact spoken reply controls
+- **WHEN** the owner opens Voice on the Conversation page
+- **THEN** the titled Spoken replies panel explains browser output, shows the current blocker or Quiet suppression beside the existing Enable, Mute and eligible recovery actions, and keeps detailed requirements and playback evidence available in a disclosure
+- **AND** explicit close and Escape return keyboard focus to Voice, and clicking outside dismisses the panel without taking focus from the clicked control
+- **AND** opening or dismissing the panel preserves the draft and current speech endpoint without sending a command
+- **AND** an unresolved playback reservation disables Enable until it is cleared, and historical uncertainty remains in the playback disclosure without overriding a later successful Enable
+- **AND** Stop speaking remains available outside the panel during local playback and leaves the task and question unchanged
+- **AND** Read aloud uses the tracked command for the same saved assistant message within the speech limit, presents the command receipt separately from playback, and explains why a longer message stays written only

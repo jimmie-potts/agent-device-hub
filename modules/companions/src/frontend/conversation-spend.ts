@@ -17,10 +17,12 @@ function periodOf(value: unknown, shape: RegExp): SpendPeriod | undefined {
   return {period: value.period, spentMicros, limitMicros, unreported, unreportedMicros};
 }
 const MODEL = /^[a-z0-9][a-z0-9.-]{0,127}$/;
+const SOURCES = ['configured', 'built-in', 'dearest'] as const;
 function paidOf(value: unknown): SpendView['paid'] | undefined {
   if (value === null) return null;
-  if (!object(value) || typeof value.model !== 'string' || !MODEL.test(value.model) || (value.minimumMicros !== null && !amount(value.minimumMicros))) return undefined;
-  return {model: value.model, minimumMicros: value.minimumMicros};
+  if (!object(value) || typeof value.model !== 'string' || !MODEL.test(value.model) || !amount(value.minimumMicros) ||
+    !SOURCES.includes(value.prices as typeof SOURCES[number]) || typeof value.pricesAsOf !== 'string' || !PERIOD.day.test(value.pricesAsOf)) return undefined;
+  return {model: value.model, minimumMicros: value.minimumMicros, prices: value.prices as typeof SOURCES[number], pricesAsOf: value.pricesAsOf};
 }
 /** The route's answer, or undefined for anything else, which the page shows as unknown. */
 export function decodeSpend(value: unknown): SpendView | undefined {
@@ -34,25 +36,26 @@ export function spendText(period: SpendPeriod): string {
   if (period.unreported === 0) return counted;
   return `${counted}, including ${dollars(period.unreportedMicros)} reserved for ${String(period.unreported)} ${period.unreported === 1 ? 'call' : 'calls'} without reported usage`;
 }
-/** The prices fact: configured, missing for the paid model, or not needed by the synthetic provider. */
+/** The prices fact: configured, the dated built-in table, the dearest known rate, or not needed by the synthetic provider. */
 export function priceText(spend: SpendView | undefined): string {
   if (spend === undefined) return 'Unknown';
   if (spend.paid === null) return 'Not needed (synthetic calls)';
-  return spend.paid.minimumMicros === null ? `Missing for ${spend.paid.model}; paid messages are refused` : `Configured for ${spend.paid.model}`;
+  const {model, prices, pricesAsOf} = spend.paid;
+  return prices === 'configured' ? `Configured for ${model}` : prices === 'built-in' ? `Built-in prices of ${pricesAsOf} for ${model}`
+    : `${model} is not in the built-in prices of ${pricesAsOf}; priced at the dearest known rate`;
 }
 /**
- * Why a new paid message would be refused now, as a short notice, or undefined: no price for the paid model, or a limit
- * whose remainder is below the smallest first call, as the engine refuses it.
+ * Why a new paid message would be refused now, as a short notice, or undefined: the daily limit or the month's local
+ * estimate leaves less than the smallest first call, as the engine refuses it.
  */
 export function spendNotice(spend: SpendView | undefined): string | undefined {
   if (spend === undefined || spend.paid === null) return undefined;
   const least = spend.paid.minimumMicros;
-  if (least === null) return `No price is configured for ${spend.paid.model}, so new messages are refused. Add it to assistant.prices in the private configuration.`;
   if (spend.day.spentMicros + least > spend.day.limitMicros || spend.day.spentMicros >= spend.day.limitMicros) {
     return `The daily spend limit of ${dollars(spend.day.limitMicros)} is reached. New messages can start after midnight, the runtime host's local time.`;
   }
   if (spend.month.spentMicros + least > spend.month.limitMicros || spend.month.spentMicros >= spend.month.limitMicros) {
-    return `The monthly spend limit of ${dollars(spend.month.limitMicros)} is reached. New messages can start when the next month begins.`;
+    return `This month's local spend estimate has reached its ${dollars(spend.month.limitMicros)} guard. New messages can start when the next month begins.`;
   }
   return undefined;
 }

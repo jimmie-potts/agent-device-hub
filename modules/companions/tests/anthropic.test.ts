@@ -3,7 +3,7 @@
 // truncation stops, error mapping and abort. No network, no key or preference text in a log or an error.
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {ANTHROPIC_URL, ANTHROPIC_VERSION, AnthropicProvider, MAX_TOKENS, toMessages, type Transport} from '../src/assistant/anthropic.js';
+import {ANTHROPIC_URL, ANTHROPIC_VERSION, AnthropicProvider, MAX_TOKENS, SPEND_LIMIT_REACHED, toMessages, type Transport} from '../src/assistant/anthropic.js';
 import {ProviderFault, type TranscriptItem, type TurnInput} from '../src/assistant/provider.js';
 import {permittedTools, TOOLS} from '../src/assistant/tools.js';
 
@@ -188,4 +188,32 @@ void test('HTTP errors, malformed answers, oversized bodies and aborts map once 
   const controller = new AbortController(); controller.abort();
   const {transport} = fake(() => Promise.reject(Object.assign(new Error('aborted'), {name: 'AbortError'})));
   await assert.rejects(new AnthropicProvider({key: 'k', transport}).turn(input, controller.signal), (error: unknown) => error instanceof ProviderFault && error.code === 'cancelled');
+});
+
+void test('a spend-limit refusal maps to capacity with the monthly-limit text, and no other 400 or 429 does', async () => {
+  const body = (error: Record<string, unknown>) => JSON.stringify({type: 'error', error, request_id: 'req_synthetic'});
+  const fault = async (status: number, text: string, headers: Record<string, string> = {}) => {
+    const {transport, sent} = fake(() => new Response(text, {status, headers}));
+    try {await new AnthropicProvider({key: 'k', transport}).turn(input, signal()); return assert.fail('expected a fault');}
+    catch (error) {assert.ok(error instanceof ProviderFault); assert.equal(sent.length, 1); return {code: error.code, uncertain: error.uncertain, detail: error.detail};}
+  };
+  const limit = {code: 'capacity', uncertain: false, detail: SPEND_LIMIT_REACHED};
+  // The documented shapes: a limit the owner set (organization or workspace), and the tier's monthly cap.
+  assert.deepEqual(await fault(400, body({type: 'invalid_request_error', message: 'You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.'})), limit);
+  assert.deepEqual(await fault(400, body({type: 'invalid_request_error', message: 'You have reached your specified workspace API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.'})), limit);
+  assert.deepEqual(await fault(429, body({type: 'rate_limit_error', message: 'You have reached your API usage limits.', details: {error_code: 'enforced_spend_limit_reached'}})), limit);
+  // Nothing else is read as a spend limit: other messages, types, codes, statuses, unreadable or oversized bodies.
+  for (const [status, text, code, headers] of [
+    [400, body({type: 'invalid_request_error', message: 'max_tokens: must be positive'}), 'invalid-request', {}],
+    [400, body({type: 'invalid_request_error', message: 'Note: You have reached your specified API usage limits'}), 'invalid-request', {}],
+    [400, body({type: 'authentication_error', message: 'You have reached your specified API usage limits'}), 'invalid-request', {}],
+    [429, body({type: 'rate_limit_error', message: 'Rate limited', details: {error_code: 'ramp_limit_exceeded'}}), 'capacity', {}],
+    [429, body({type: 'rate_limit_error', message: 'You have reached your specified API usage limits'}), 'capacity', {}],
+    [403, body({type: 'invalid_request_error', message: 'You have reached your specified API usage limits'}), 'forbidden', {}],
+    [400, 'not json', 'invalid-request', {}],
+    [400, body({type: 'invalid_request_error', message: `You have reached your specified API usage limits ${'x'.repeat(262_144)}`}), 'invalid-request', {}],
+    [400, body({type: 'invalid_request_error', message: 'You have reached your specified API usage limits'}), 'invalid-request', {'content-length': '262145'}],
+  ] as const) {
+    assert.deepEqual(await fault(status, text, headers), {code, uncertain: false, detail: undefined}, `${String(status)} ${text.slice(0, 80)}`);
+  }
 });
