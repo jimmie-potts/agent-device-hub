@@ -38,6 +38,12 @@ const lighting = (page: Page): Promise<LightingLayoutRecord> => page.evaluate(as
   (await (await fetch('/api/v2/snapshot?families=lighting-layout&owner=bunny/core')).json() as {records: {'lighting-layout': LightingLayoutRecord[]}}).records['lighting-layout'][0] as LightingLayoutRecord);
 const card = (page: Page, widget: string): Locator => page.locator(`[data-home-card="${widget}"]`);
 const handle = (page: Page, widget: string): Locator => card(page, widget).locator('[data-fuse-handle]');
+/**
+ * How long a returning card may take to be home. The return eases over 340 ms on a time base and ends on the first frame
+ * after that, so the wait is for frames: a one-thread runner draws the desktop page at 2 to 3 frames a second, and
+ * slower at times, so the journey allows its 15 s action timeout rather than the 5 s poll default (#2017).
+ */
+const returned = {timeout: 15_000};
 const center = async (locator: Locator): Promise<{x: number; y: number}> => {const box = await locator.boundingBox();assert.ok(box !== null);return {x: box.x + box.width / 2, y: box.y + box.height / 2};};
 /** The group card whose panel lists exactly these members, in order. */
 async function groupOf(page: Page, members: string[]): Promise<Locator> {
@@ -81,7 +87,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   await page.mouse.move(grip.x, grip.y);await page.mouse.down();await page.mouse.move(grip.x + 40, grip.y + 300, {steps: 6});
   await expect(card(page, 'module:roborock')).not.toHaveAttribute('data-fuse-target', '');
   await page.mouse.up();
-  await expect.poll(() => lampA.evaluate(node => (node as HTMLElement).style.transform)).toBe('');
+  await expect.poll(() => lampA.evaluate(node => (node as HTMLElement).style.transform), returned).toBe('');
   const back = await lampA.boundingBox();assert.deepEqual(back, home, 'a drop elsewhere returns the card');
   await page.waitForTimeout(200);assert.equal(sent.length, 0, 'a drop elsewhere and a handle drag send nothing');
   // Cards other than lights and plugs are not targets.
@@ -94,7 +100,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   await expect(lampA).toHaveAttribute('data-fuse-dragging', '');
   await handle(page, light('lamp-a')).evaluate(node => {node.releasePointerCapture(1);});
   await expect(lampA).not.toHaveAttribute('data-fuse-dragging', '');await page.mouse.up();
-  await expect.poll(() => lampA.evaluate(node => (node as HTMLElement).style.transform)).toBe('');
+  await expect.poll(() => lampA.evaluate(node => (node as HTMLElement).style.transform), returned).toBe('');
   await page.waitForTimeout(200);assert.equal(sent.length, 0, 'a lost capture groups nothing');
   const ring = await center(lampA.locator('.light-dial'));
   await page.mouse.move(ring.x, ring.y - 30);await page.mouse.down();await page.mouse.move(ring.x, ring.y + 10, {steps: 4});await page.mouse.up();
@@ -165,7 +171,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   await mouseDrag(page, plug('shelf-lamp'), mixedCard);
   await expect(page.locator('[data-fuse-status]')).toHaveText(/^Not grouped: Refused \(revision-conflict\) without changing state\./);
   await expect(card(page, plug('shelf-lamp'))).toHaveAttribute('data-home-shape', 'square');await groupOf(page, ['lamp-c', 'desk-lamp']);
-  await expect.poll(() => card(page, plug('shelf-lamp')).evaluate(node => (node as HTMLElement).style.transform)).toBe('');
+  await expect.poll(() => card(page, plug('shelf-lamp')).evaluate(node => (node as HTMLElement).style.transform), returned).toBe('');
   assert.deepEqual(await lighting(page), saved, 'a refused save changes nothing');
   await page.unroute('**/api/v2/commands/lighting-layout-set');
   await mouseDrag(page, plug('shelf-lamp'), mixedCard);
@@ -300,11 +306,20 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
     const below = await card(small, plug('shelf-lamp')).boundingBox();assert.ok(below !== null && below.y > 844, 'the target starts below the fold');
     const cdp = await pocket.newCDPSession(small);
     await cdp.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [grip]});
-    for (let step = 1; step <= 6; step += 1) await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: grip.x, y: grip.y + (830 - grip.y) * step / 6}]});
-    await expect.poll(async () => {const box = await card(small, plug('shelf-lamp')).boundingBox();return box !== null && box.y + box.height / 2 < 700;}, {timeout: 20_000}).toBe(true);
-    const shelf = await center(card(small, plug('shelf-lamp')));
-    await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [shelf]});
-    await expect(card(small, plug('shelf-lamp'))).toHaveAttribute('data-fuse-target', '');
+    // The finger stops 34 px above the bottom, in the 56 px edge zone, and is held still: the page scrolls under it.
+    for (let step = 1; step <= 6; step += 1) await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: grip.x, y: grip.y + (810 - grip.y) * step / 6}]});
+    // Once the plug is in view the finger moves onto it, as a person's does, which leaves the edge zone and stops the
+    // scroll. The page scrolls on between a read and a move, more on a slow runner, so the finger follows the plug until
+    // it is the target with the finger outside both edge zones; a plug that went past the top is brought back by the top
+    // edge (#2017). No move comes before the plug, which started below the fold, is in view.
+    let held = true;
+    await expect.poll(async () => {
+      const shelf = await center(card(small, plug('shelf-lamp')));
+      if (held && shelf.y >= 700) return 'below the fold';
+      held = false;
+      await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: shelf.x, y: Math.min(810, Math.max(20, shelf.y))}]});
+      return shelf.y > 56 && shelf.y < 844 - 56 ? card(small, plug('shelf-lamp')).getAttribute('data-fuse-target') : 'scrolling';
+    }, {timeout: 20_000, intervals: [100]}).toBe('');
     await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
     const pair = await groupOf(small, ['shelf-lamp', 'lamp-c']);
     assert.deepEqual(smallSent.map(item => item.path), ['lighting-layout-set'], 'the phone drag sends only the layout save');smallSent.splice(0);

@@ -1231,7 +1231,12 @@ layout through `lighting-layout-set`; a drop anywhere else, Escape or a
 cancelled pointer eases the card back over 340 ms and saves nothing, and so do
 a lost pointer capture and grouping becoming unavailable mid-drag. Near the
 window's top or bottom edge a drag scrolls the page, so a card below the fold
-can be reached by touch. A refused
+can be reached by touch. The speed grows to 840 CSS pixels a second at the
+edge and is per millisecond, not per frame (`src/edge-scroll.ts`, #2017), so
+a slow frame rate scrolls as far in the same time. A frame counts for at most
+250 ms, so a stalled page does not jump. The scroll goes on while the pointer
+is held still in the zone and stops when it leaves the zone or the drag ends.
+A refused
 or failed save changes nothing and Home's line says "Not grouped" with the
 reason; every lighting save state on Home that needs attention (in flight, refused,
 expired, failed, uncertain or conflicting, the settled and locked ones with
