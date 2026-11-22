@@ -76,7 +76,7 @@ export class SpendLedger {
    * bound at its output price, the floor under any turn's first call. Undefined when the model has no price.
    */
   minimum(model: string): number | undefined {
-    const prices = this.prices[model];
+    const prices = this.#price(model);
     return prices === undefined ? undefined : reservationCost(prices, LIMITS.overheadUnits, LIMITS.outputUnits);
   }
   /**
@@ -85,7 +85,7 @@ export class SpendLedger {
    * so it joins the caller's open transaction; an identifier already reserved throws.
    */
   reserve(call: SpendCall): string | undefined {
-    const prices = this.prices[call.model];
+    const prices = this.#price(call.model);
     if (prices === undefined) return unpriced(call.model);
     const reserved = reservationCost(prices, call.inputUnits, call.outputUnits), {day, month} = this.totals();
     if (day.spentMicros + reserved > day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} would be passed: ${dollars(day.spentMicros)} is counted today and this model call could cost up to ${dollars(reserved)}. Nothing was sent.`;
@@ -98,10 +98,12 @@ export class SpendLedger {
   settle(id: string, usage: TokenUsage | null): void {
     if (usage === null) return;
     const row = this.database.prepare('SELECT model FROM assistant_spend WHERE id=?').get(id) as {model: string} | undefined;
-    const prices = row === undefined ? undefined : this.prices[row.model];
+    const prices = row === undefined ? undefined : this.#price(row.model);
     if (prices === undefined) return;
     this.database.prepare('UPDATE assistant_spend SET cost_micros=?,usage=? WHERE id=?').run(usageCost(prices, usage), JSON.stringify(usage), id);
   }
   /** Whether a model is priced, so its calls can be counted. */
   priced(model: string): boolean {return Object.hasOwn(this.prices, model);}
+  /** A model's own entry only: a name such as `constructor` must not find an inherited member. */
+  #price(model: string): ModelPrices | undefined {return Object.hasOwn(this.prices, model) ? this.prices[model] : undefined;}
 }

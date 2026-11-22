@@ -104,3 +104,29 @@ void test('a hosted section without prices starts the module, and a paid turn is
   assert.ok(spend !== undefined && !('error' in spend));
   assert.deepEqual((JSON.parse(Buffer.from(spend.bytes).toString()) as {paid: unknown}).paid, {model: 'claude-opus-5-5', minimumMicros: null});
 });
+
+void test('a hosted model named after an inherited member is unpriced and its paid turn is refused naming the missing price', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'assistant-inherited-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
+  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  let sent = 0;
+  const transport: Transport = () => {sent += 1; return Promise.resolve(new Response('{}', {status: 500}));};
+  const module = createCompanionsModule({transport});
+  const host = new ModuleHarness(module, {bus, stateDir: dir, section: {assistant: {provider: 'anthropic', model: 'constructor', prices: PRICES}, secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/anthropic-api-key'}}, secrets: {[API_KEY_SECRET]: 'sk-PRIVATE-TEST-KEY'}});
+  context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
+  await host.start();
+  const state = module.inspectAssistant(); assert.ok(state);
+  const enable = 'inherited-enable';
+  assert.equal((await core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
+    dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId: enable, action: 'enable', expectedRevision: state.revision}}, {requestId: enable, timeoutMs: 5000})).status, 'accepted');
+  const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId: 'inherited-start', signal: new AbortController().signal,
+    bytes: Buffer.from(JSON.stringify({action: 'start', profile: 'bunny', expectedRevision: module.inspectAssistant()?.revision, text: 'Hi'}))});
+  assert.ok(staged !== undefined && !('error' in staged));
+  const refused = await core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+    dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId: 'inherited-start', ...staged.data}}, {requestId: 'inherited-start', timeoutMs: 5000});
+  assert.ok(refused.status === 'rejected');
+  assert.deepEqual([refused.error.error.code, refused.error.error.detail], ['capacity', 'No price is configured for the model constructor, so its spend cannot be counted. Nothing was sent.']);
+  assert.equal(sent, 0);
+  const spend = await module.manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
+  assert.ok(spend !== undefined && !('error' in spend));
+  assert.deepEqual((JSON.parse(Buffer.from(spend.bytes).toString()) as {paid: unknown}).paid, {model: 'constructor', minimumMicros: null});
+});
