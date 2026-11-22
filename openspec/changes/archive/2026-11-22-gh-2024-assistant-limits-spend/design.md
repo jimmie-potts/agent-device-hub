@@ -47,7 +47,7 @@ A task call reserves inside the admission transaction, so its ledger row and rec
 
 ### 7. Day and month
 
-Periods are the runtime host's local day and month (`Intl` with the host zone, `localDay` as the companion rules use). A row counts on the day it was reserved, so a call admitted at 23:59 that answers after midnight counts on the earlier day. Tests name a zone through `AssistantOptions.timeZone`.
+Periods are the runtime host's local day and month (`Intl` with the host zone, `localDay` as the companion rules use), as the art module's ledger already counts its days and months. A row counts on the day it was reserved, so a call admitted at 23:59 that answers after midnight counts on the earlier day. Tests name a zone through `AssistantOptions.timeZone`.
 
 ### 8. Refusals
 

@@ -250,6 +250,26 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Assistant limits, prompt caching and spend (#2024)
+
+The #2024 release relaxes the assistant's per-turn limits, caches its prompts
+and bounds its spend at $20 a day and $150 a month. Before the upgrade, add
+`assistant.prices` to the companions section when its provider is
+`anthropic`, with an entry for the configured model, as the
+[companions guide](../../modules/companions/README.md#section-provider-and-permitted-tools)
+describes. Without it the module refuses the section and does not start. The
+synthetic provider needs no change.
+
+The companions module's first start adds the empty `assistant_spend` table. It
+rewrites no saved task, call or message, and tasks saved earlier keep their
+counters under the larger limits. Spend counts from the first paid call after
+the upgrade; calls made before it are not in the ledger.
+
+To return below this release, remove `assistant.prices` from the section first,
+because an earlier release refuses the key. The earlier release ignores the
+`assistant_spend` table and enforces no spend limit. A task whose saved
+counters pass its smaller limits cannot continue there.
+
 ## Native assistant conversation sessions (#505)
 
 The #505 release reports each B.U.N.N.Y. assistant profile's conversation as
