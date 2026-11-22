@@ -136,17 +136,16 @@ function selectTurn(session: StoredSession, turn: KnownId, consumers: readonly C
 }
 
 /**
- * Hub #2021: past `SESSION_LIMITS.notices`, retires superseded notices until the session holds the limit: those every
- * consumer acknowledged first, then the oldest. A superseded notice is one `noticeCounts` no longer counts, so no status,
- * reader, opportunity, read receipt or override depends on it; its turn end stays in history. A notice that still counts
- * is never retired, so a session whose counting notices alone pass the limit stays past it and is refused.
+ * Hub #2021: past `SESSION_LIMITS.notices`, retires superseded notices, oldest first, until the session holds the limit. A
+ * superseded notice is one `noticeCounts` no longer counts, so no status, reader, opportunity, read receipt or override
+ * depends on it; its turn end stays in history. A notice that still counts (the current turn's, one without a known turn,
+ * or any while the session's own turn is unknown) is never retired, so a session whose counting notices alone pass the
+ * limit stays past it and is refused.
  */
-function retireSuperseded(session: StoredSession, consumers: readonly Consumer[]): void {
+function retireSuperseded(session: StoredSession): void {
   const excess = session.notices.length - SESSION_LIMITS.notices;
   if (excess <= 0) return;
-  const superseded = session.notices.filter(notice => !noticeCounts(notice, session.turn));
-  const settled = (notice: StoredSession['notices'][number]): boolean => consumers.every(consumer => notice.acknowledgedBy.includes(consumer.id));
-  const retiring = new Set([...superseded.filter(settled), ...superseded.filter(notice => !settled(notice))].slice(0, excess).map(notice => notice.id));
+  const retiring = new Set(session.notices.filter(notice => !noticeCounts(notice, session.turn)).slice(0, excess).map(notice => notice.id));
   session.notices = session.notices.filter(notice => !retiring.has(notice.id));
 }
 
@@ -378,7 +377,7 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
       break;
   }
   forgetRetiredApprovals(session);
-  retireSuperseded(session, consumers);
+  retireSuperseded(session);
   boundWatermarks(session);
   if (eventDimension === 'activity' && !rootStart) {
     const conflict = previous !== undefined && previous.activity !== 'unknown' && previous.activity !== session.activity && !orderedActivity && !selectedStart && !matchingStop;

@@ -203,9 +203,13 @@ and exits 1, and the service manager restarts it whole.
   returns nothing to the hook. A session holds at most 128 notices and 256
   ordering watermarks (#2021), so it can keep taking turns. A turn end past
   128 notices retires superseded notices, whose turn the session's later known
-  turn replaced: those every consumer acknowledged first, then the oldest. A
-  notice that still counts is never retired. When those alone pass the limit,
-  the turn end is refused with `capacity`. Past 256 watermarks, a session drops
+  turn replaced, oldest first. A notice that still counts is never retired: the
+  current turn's, one without a known turn, or any while the session's own turn
+  is unknown. When those alone pass the limit, the turn end is refused with
+  `capacity`. So a session at 128 notices refuses a turn end that would make its
+  own turn ambiguous, such as a hook Stop for a prompt whose start the core never
+  saw; the refusal changes nothing, and the session's next known start and end
+  apply as usual. Past 256 watermarks, a session drops
   the watermarks of attention it no longer holds and keeps one floor per epoch,
   under the reserved dimension `floor`. Ordered evidence at or below the floor,
   in a dimension without its own watermark, is stale.

@@ -1,8 +1,7 @@
 // A session that keeps taking turns (Hub #2021): a long Claude-shaped session and a native conversation each end more
 // turns than the session's notice limit, and a native conversation asks more questions than its watermark limit, without
-// the core refusing the session's later observations. A turn end past the notice limit retires superseded notices, fully
-// acknowledged ones and then the oldest first, and never one that still counts; a session whose counting notices alone
-// pass the limit is still refused. Past the watermark limit the session drops the watermarks of attention it no longer
+// the core refusing the session's later observations. A turn end past the notice limit retires superseded notices, oldest
+// first, and never one that still counts; a session whose counting notices alone pass the limit is still refused. Past the watermark limit the session drops the watermarks of attention it no longer
 // holds and keeps a floor below which ordered evidence in a dimension without its own watermark is stale. Every identity,
 // turn and conversation here is synthetic, and the store runs on the manual clock.
 import assert from 'node:assert/strict';
@@ -74,7 +73,7 @@ it(`a Claude-shaped session that ends ${String(turns)} turns keeps taking its ob
     'the notice that counts stays unread for every consumer');
 });
 
-it('below the notice limit nothing retires, and at it a turn end retires a fully acknowledged superseded notice first', async context => {
+it('below the notice limit nothing retires, and at it each turn end retires the oldest superseded notice, whatever its acknowledgments', async context => {
   const {world, take, record, at} = await open(context);
   for (let index = 0; index < SESSION_LIMITS.notices; index++) {
     await take(hook(`prompt-${String(index)}`, {kind: 'turn-started'}, at()));
@@ -91,10 +90,49 @@ it('below the notice limit nothing retires, and at it a turn end retires a fully
   assert.equal(await take(hook(`prompt-${String(next)}`, {kind: 'turn-started'}, at())), 'applied');
   assert.equal(record().outcome.notices.length, SESSION_LIMITS.notices, 'a turn start retires nothing');
   assert.equal(await take(hook(`prompt-${String(next)}`, {kind: 'turn-ended'}, at())), 'applied');
-  assert.deepEqual(noticeTurns(record()), [...range(0, 5, 'prompt'), ...range(6, next + 1, 'prompt')], 'the fully acknowledged notice retired first');
+  assert.deepEqual(noticeTurns(record()), range(1, next + 1, 'prompt'), 'the oldest retired, not the fully acknowledged one');
+  assert.deepEqual(record().outcome.notices[4]?.acknowledgedBy, ['nanoleaf', 'pixoo', 'dashboard'], 'the acknowledged notice is kept');
   assert.equal(await take(hook(`prompt-${String(next + 1)}`, {kind: 'turn-started'}, at())), 'applied');
   assert.equal(await take(hook(`prompt-${String(next + 1)}`, {kind: 'turn-ended'}, at())), 'applied');
-  assert.deepEqual(noticeTurns(record()), [...range(1, 5, 'prompt'), ...range(6, next + 2, 'prompt')], 'then the oldest');
+  assert.deepEqual(noticeTurns(record()), range(2, next + 2, 'prompt'), 'then the next oldest');
+});
+
+it('a notice without a known turn among more than 128 known-turn notices still counts and is never retired', async context => {
+  const {take, record, at} = await open(context);
+  await take(hook('prompt-0', {kind: 'turn-started'}, at()));
+  await take(hook('prompt-0', {kind: 'turn-ended'}, at()));
+  // A Stop whose provider named no prompt: its notice has no known turn, while the session stays on its known turn.
+  assert.equal(await take({...hook('unused', {kind: 'turn-ended'}, at()), turn: {status: 'unknown'}}), 'applied');
+  assert.deepEqual([record().turn, noticeTurns(record())], [{status: 'known', id: 'prompt-0'}, ['prompt-0', 'unknown']]);
+  const outcomes: string[] = [];
+  for (let index = 1; index < turns; index++) {
+    outcomes.push(await take(hook(`prompt-${String(index)}`, {kind: 'turn-started'}, at())));
+    outcomes.push(await take(hook(`prompt-${String(index)}`, {kind: 'turn-ended'}, at())));
+  }
+  assert.deepEqual(outcomes.filter(outcome => outcome !== 'applied'), [], 'no observation is refused');
+  const held = record();
+  assert.deepEqual(held.turn, {status: 'known', id: `prompt-${String(turns - 1)}`});
+  assert.deepEqual(noticeTurns(held), ['unknown', ...range(turns - SESSION_LIMITS.notices + 1, turns, 'prompt')],
+    'the notice without a known turn is kept and the oldest known-turn notices retire around it');
+  assert.ok(noticeCounts(held.outcome.notices[0] ?? {turn: {status: 'known', id: 'none'}}, held.turn), 'it still counts');
+});
+
+it('at the notice limit a Stop for a prompt whose start was never seen is refused, and the next known start and end apply', async context => {
+  const {world, take, record, at} = await open(context);
+  for (let index = 0; index < SESSION_LIMITS.notices; index++) {
+    await take(hook(`prompt-${String(index)}`, {kind: 'turn-started'}, at()));
+    await take(hook(`prompt-${String(index)}`, {kind: 'turn-ended'}, at()));
+  }
+  const before = record(), revision = world.store.revision;
+  // The end would make the session's own turn ambiguous, so every notice would count again.
+  assert.equal(await take(hook('prompt-unseen', {kind: 'turn-ended'}, at())), 'capacity');
+  assert.equal(world.store.revision, revision, 'the refusal changes nothing');
+  assert.deepEqual(record(), before);
+  const next = `prompt-${String(SESSION_LIMITS.notices)}`;
+  assert.equal(await take(hook(next, {kind: 'turn-started'}, at())), 'applied');
+  assert.equal(await take(hook(next, {kind: 'turn-ended'}, at())), 'applied');
+  assert.deepEqual(record().status, {class: 'finished', detail: 'turn-ended'});
+  assert.deepEqual(noticeTurns(record()), range(1, SESSION_LIMITS.notices + 1, 'prompt'));
 });
 
 it('a session already stored at the notice limit, working on a turn whose end an older release refused, recovers at that end', async context => {

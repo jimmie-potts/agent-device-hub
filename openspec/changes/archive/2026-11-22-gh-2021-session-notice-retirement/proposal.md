@@ -6,10 +6,10 @@ Ordering watermarks grow the same way for native sessions. Each owner question o
 
 ## What Changes
 
-- Past the notice limit, a turn end retires superseded notices until the session holds the limit: notices every consumer acknowledged first, then the oldest. A superseded notice is one that `noticeCounts` no longer counts. A notice that still counts is never retired. Nothing changes below the limit, and only the observation reducer retires notices. Owner decision 1, 2026-11-22.
-- A session whose counting notices alone pass the limit is still refused with `capacity`. Owner decision 2.
-- Past the watermark limit, the session drops the watermarks of attention it no longer holds, lowest sequence first. It keeps one floor per ordering epoch, stored as a watermark under the reserved dimension `floor`. An ordered observation at or below its epoch's floor, in a dimension without its own watermark, is stale. Owner decision 3.
-- No migration and no cleanup at start. A session already stored at the limit recovers at its next turn end. Owner decision 4.
+- Past the notice limit, a turn end retires superseded notices oldest first, until the session holds the limit. A superseded notice is one that `noticeCounts` no longer counts. A notice that still counts is never retired. Nothing changes below the limit, and only the observation reducer retires notices. Coordinator decision 1 on #2021, 2026-11-22.
+- A session whose counting notices alone pass the limit is still refused with `capacity`. Coordinator decision 2.
+- Past the watermark limit, the session drops the watermarks of attention it no longer holds, lowest sequence first. It keeps one floor per ordering epoch, stored as a watermark under the reserved dimension `floor`. An ordered observation at or below its epoch's floor, in a dimension without its own watermark, is stale. Coordinator decision 3.
+- No migration and no cleanup at start. A session already stored at the limit recovers at its next turn end. Coordinator decision 4.
 
 ## Capabilities
 

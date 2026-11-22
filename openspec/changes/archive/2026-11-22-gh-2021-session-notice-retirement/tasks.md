@@ -4,10 +4,11 @@
 
 ## 2. Notices
 
-- [x] 2.1 Past the limit, a turn end retires superseded notices, fully acknowledged first, then the oldest; nothing retires below the limit or on an acknowledgment or start (retention tests 1-3, 5).
+- [x] 2.1 Past the limit, a turn end retires superseded notices oldest first, whatever their acknowledgments; nothing retires below the limit or on an acknowledgment or start (retention tests 1-3, 5).
 - [x] 2.2 Counting notices alone past the limit are refused with `capacity` and none is retired (retention test 4).
 - [x] 2.3 A session stored at the limit across a restart takes its next turn end (retention test 3).
-- [x] 2.4 Negative control: without the acknowledged-first order, retention test 2 fails.
+- [x] 2.4 A notice without a known turn among superseded ones is kept; negative control: treating it as superseded while the session's turn is known fails that test.
+- [x] 2.5 At the limit, a Stop for a prompt whose start was never seen is refused with `capacity` and changes nothing, and the next known start and end apply.
 
 ## 3. Watermarks
 
