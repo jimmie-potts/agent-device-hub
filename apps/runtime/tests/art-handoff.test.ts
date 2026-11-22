@@ -138,10 +138,10 @@ it('extended staging requires the current Pixoo owner declaration and keeps a tr
   record.kind = 'pixoo';
   let otherSyncs = 0;
   await contextOf(other).sdk.serveSync(['device'], () => {otherSyncs++; return {revision: record.revision, states: [state()]};});
-  core.setAutomationDevices([{id: record.id, owner: 'bunny/modules/other'}]);
+  await core.setAutomationDevices([{id: record.id, owner: 'bunny/modules/other'}]);
   await waitFor(() => otherSyncs > 0); await flush();
   assert.equal((await send(owner, 'wrong-owner')).status, 'rejected');
-  core.setAutomationDevices([]); await flush();
+  await core.setAutomationDevices([]); await flush();
   assert.equal((await send(owner, 'withdrawn')).status, 'rejected');
   assert.equal((await send(owner, 'long-stage')).status, 'accepted', 'an identical retry returns its prior answer after withdrawal');
   for (const id of ['foreign', 'unversioned', 'too-big', 'wrong-kind', 'wrong-owner', 'withdrawn']) assert.equal(handle.operation(id), undefined);

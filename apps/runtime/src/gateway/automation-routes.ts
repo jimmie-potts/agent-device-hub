@@ -49,8 +49,10 @@ export async function automationRoute(controls: AutomationControls, request: Aut
   try {
     // The configured art displays an owner show can name beside `browser` (Hub #1581). Records, not availability.
     if(path==='art/targets') {
-      noQuery();const art=controls.art;if(art===undefined)throw new AutomationError('unavailable',503);
-      return method==='GET'?answer(200,{targets:art.targets()}):undefined;
+      const approval = url.searchParams.get('view') === 'approval' && url.searchParams.size === 1;
+      if (!approval) noQuery();
+      const art=controls.art;if(art===undefined)throw new AutomationError('unavailable',503);
+      return method==='GET'?answer(200,{targets:art.targets(approval)}):undefined;
     }
     if(path==='art') {
       noQuery();const schedule=controls.artSchedule;if(schedule===undefined)throw new AutomationError('unavailable',503);

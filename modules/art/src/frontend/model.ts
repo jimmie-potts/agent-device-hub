@@ -1,5 +1,5 @@
 import type {ArtComposition, ArtOutcome, ArtRendition, ArtSelection, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
-import type {ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
+import {usableArtComposition, type ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 
 export const CATALOG_PAGE_SIZE = 6;
@@ -91,7 +91,7 @@ export const surfaceLabel = (target: string, targets: readonly ShowTarget[]): st
 };
 /** The surfaces of `chosen` for which this artwork holds a usable composition, in the order chosen. */
 export function showableSurfaces(artwork: ArtworkSummary, chosen: readonly string[], targets: readonly ShowTarget[]): string[] {
-  const usable = (kind: ArtTarget): boolean => artwork.compositions.some(item => item.target === kind && item.outcome === 'succeeded' && item.compositionId !== null && item.renditions.length > 0);
+  const usable = (kind: ArtTarget): boolean => usableArtComposition(artwork, kind) !== undefined;
   return chosen.filter(target => target === 'browser' ? usable('ui') : targets.some(item => item.target === target && usable(item.kind)));
 }
 type ShowOperation = Pick<OperationRecord, 'requestId' | 'family' | 'status' | 'result' | 'evidence' | 'error' | 'requestedBy'>;

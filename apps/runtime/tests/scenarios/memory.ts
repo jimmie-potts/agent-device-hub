@@ -13,6 +13,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {DatabaseSync} from 'node:sqlite';
 import type {Message} from '@jimmie-potts/event-contracts/v2';
+import {hostedArtCatalog} from '../../src/core/art-catalog.js';
+import {isCompanionsModule} from '@jimmie-potts/companions';
 import {createWisprModule, isWisprModule} from '@jimmie-potts/wispr';
 import {
   connectRemote, type BunnyModule, type CommandDraft, type DeviceSimulation, type Diagnostic, type ModuleRegistration, type Participant,
@@ -470,7 +472,10 @@ class Memory implements MemoryHarness {
     const wispr = modules.find(isWisprModule);
     const hosted = host.modules();
     if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {
-      core?.setModeParticipants(modeParticipants(hosted));core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
+      core?.setModeParticipants(modeParticipants(hosted));await core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
+      const artCatalog = hostedArtCatalog(host, this.#clock.scheduler);
+      core?.setArtCatalog(artCatalog);
+      modules.find(isCompanionsModule)?.setArtCatalog(artCatalog);
     }
     const actions = core?.actions, operatorActions = core?.operatorActions;
     const gateway = new Gateway({

@@ -28,7 +28,10 @@ type Candidate = {event: CompanionOpportunity; parent: TraceContext; speechEpoch
 const stateDraft = (data: CompanionState): StateDraft<CompanionState> => ({type: 'org.bunny.companion-state.updated', subject: 'reachy',
   dataschema: 'https://bunny.invalid/events/companion-state/2.0', data});
 const receiptKey = (event: CompanionOpportunity): string => createHash('sha256').update(`${event.context}:${event.origin.source}:${event.origin.id}:${event.cue}`).digest('hex');
-export type CompanionsModule = BunnyModule & {inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; pending(): number};
+type RetainedArtworkRead = NonNullable<AssistantOptions['retainedArtwork']>;
+export const isCompanionsModule = (module: BunnyModule): module is CompanionsModule =>
+  module.manifest.name === 'companions' && 'setArtCatalog' in module && typeof module.setArtCatalog === 'function';
+export type CompanionsModule = BunnyModule & {setArtCatalog(read: RetainedArtworkRead): void; inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; pending(): number};
 /** The name under the section's `secrets` of the file holding the hosted provider's API key. */
 export const API_KEY_SECRET = 'anthropic-api-key';
 /**
@@ -68,9 +71,11 @@ export function createCompanionsModule(options: CompanionsOptions = {}): Compani
   return {manifest: {name: 'companions', apiVersion: '1.3', configure: configureCompanions, pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'microduck', title: 'MicroDuck', presentation: 'react'}, {id: 'assistant', title: 'Conversation', presentation: 'react'}, {id: 'preferences', title: 'Preferences', presentation: 'react'}, {id: 'knowledge', title: 'Companion knowledge', presentation: 'react'}, {id: 'duck-conversation', title: 'Duck conversation', presentation: 'react'}],
     content: (ref, request) => engine.qualifiedSpeech(ref, request) ?? engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
     upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'knowledge' ? engine.knowledge?.stage(request) : request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
+    setArtCatalog: read => {engine.retainedArtwork = read;},
     start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), inspectSpeech: () => engine.speech?.inspect(), inspectCoding: () => engine.coding?.inspect(), pending: () => engine.pending()};
 }
 class Companions {
+  retainedArtwork: RetainedArtworkRead | undefined;
   speech: SpeechCoordinator | undefined;
   coding: CodingCoordinator | undefined;
   assistant: AssistantEngine | undefined;
@@ -139,7 +144,8 @@ class Companions {
         data: {requestId: data.requestId, endpointId: endpoint.endpointId, taskId: data.taskId, repository: data.repository, brief: data.brief, bounds: DEFAULT_CODING_BOUNDS}},
       {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent});
     });
-    this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context), preferences: () => preferences.store.active().entries, speak,
+    this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context),
+      retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries, speak,
       coding: this.options.coding ?? (() => coding.endpoint()), delegate, onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();

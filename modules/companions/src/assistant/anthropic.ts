@@ -39,6 +39,7 @@ function conformsToSchema(schema: ToolInputSchema, input: ToolCall['input']): bo
       case 'string': return typeof value === 'string' && (property.enum === undefined || property.enum.includes(value));
       case 'integer': return typeof value === 'number' && Number.isSafeInteger(value);
       case 'boolean': return typeof value === 'boolean';
+      case 'array': return Array.isArray(value) && value.every(item => typeof item === 'string');
     }
   });
 }

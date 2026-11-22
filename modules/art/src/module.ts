@@ -4,7 +4,7 @@
 // Results appear in `art` state. Restart never re-runs generation or preparation.
 import {createHash, randomUUID} from 'node:crypto';
 import {errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type MessageValidator} from '@jimmie-potts/event-contracts/v2';
-import {localGifComposition, localGifReference} from '@jimmie-potts/event-contracts/v2/art-show';
+import {localGifComposition, localGifReference, usableArtComposition} from '@jimmie-potts/event-contracts/v2/art-show';
 import {LocalGifUpload, LOCAL_GIF_LIFETIME_MS} from './local-gif.js';
 import {CONVERSATION_ART_SCHEMA, type ArtAmbientSelect, type ArtAuto22, type ArtAutoStart, type ArtCancel, type ArtPrepare, type ArtPresent, type ArtRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {ART_ID, ART_STATE_KEY, ART_STATE_21_SCHEMA, ART_STATE_TYPE, artContentRef, type ArtUploadStage, type ArtCandidate, type ArtCatalogEdit, type ArtDisplayTarget, type ArtOutcome, type ArtProviderName, type ArtProviderSpend, type ArtReason, type ArtState21, type ArtTarget, type ArtTargetOutcome, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
@@ -889,7 +889,9 @@ class ArtOwner {
             'bunny.code': 'not-found', 'bunny.request.id': job.requestId}, job);
           return undefined;
         }
-        return jsonBody({status: 'ready', artworkId: artwork.artworkId, rendition});
+        const summary = this.#summary(artwork);
+        const usableKinds = (['ui', 'pixoo', 'tidbyt'] as const).filter(kind => usableArtComposition(summary, kind) !== undefined);
+        return jsonBody({status: 'ready', artworkId: artwork.artworkId, rendition, usableKinds});
       }
       if (ref.startsWith('rendition.')) {
         const blob = this.#store.blob(ref.slice('rendition.'.length));

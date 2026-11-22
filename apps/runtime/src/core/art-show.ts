@@ -5,7 +5,7 @@
 // owner permit passes quiet hours and budgets; attention, device holds, pins and each display's own admission still decide.
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {ART_SHOW_BROWSER, localGifComposition, ART_SHOW_KEY, ART_SHOW_LEAD_MS, ART_SHOW_SUBJECT, ART_SHOW_EFFECTS_FAMILY,
+import {ART_SHOW_BROWSER, localGifComposition, sameArtShowGuard, usableArtComposition, ART_SHOW_KEY, ART_SHOW_LEAD_MS, ART_SHOW_SUBJECT, ART_SHOW_EFFECTS_FAMILY,
   ART_SHOW_EFFECTS_SCHEMA, ART_SHOW_EFFECTS_TYPE, artShowPlanId, type ArtShowEffects, type ArtShowRequest, type ArtShowSkip} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {coreValidator, operationEntityId} from '@jimmie-potts/event-contracts/v2/families';
@@ -69,8 +69,6 @@ const effectDraft = (record: ArtShowEffects): StateDraft => ({
   type: ART_SHOW_EFFECTS_TYPE, subject: record.id, dataschema: ART_SHOW_EFFECTS_SCHEMA, data: record,
 });
 
-const usable = (artwork: ArtworkSummary, kind: 'ui' | 'pixoo' | 'tidbyt'): string | undefined => artwork.compositions.find(item =>
-  item.target === kind && item.outcome === Outcome.succeeded && item.compositionId !== null && item.renditions.length > 0)?.compositionId ?? undefined;
 
 export function createArtShow(options: ArtShowOptions) {
   let showing = false;
@@ -128,10 +126,10 @@ export function createArtShow(options: ArtShowOptions) {
         if (artwork !== undefined && 'error' in artwork) return artwork;
         // The art owner verifies a temporary copy's confirmed receipt, target and expiry during tracked preparation.
         const compositionFor = (kind: 'ui' | 'pixoo' | 'tidbyt'): string | undefined => {
-          if (artwork !== undefined) return usable(artwork, kind);
+          if (artwork !== undefined) return usableArtComposition(artwork, kind);
           return kind === 'tidbyt' ? local : undefined;
         };
-        const configured = options.plans.targets(), refused: Refusal[] = [], displays: ArtPlan['displays'][number][] = [];
+        const configured = options.plans.targets(request.guards !== undefined), refused: Refusal[] = [], displays: ArtPlan['displays'][number][] = [];
         let browser: string | undefined;
         for (const target of request.targets) {
           if (target === ART_SHOW_BROWSER) {
@@ -141,9 +139,11 @@ export function createArtShow(options: ArtShowOptions) {
           }
           const display = configured.find(value => value.target === target);
           const compositionId = display === undefined ? undefined : compositionFor(display.kind);
+          const guard = request.guards?.find(item => item.target === target);
           if (display === undefined) refused.push({target, error: errorBody('not-found', {detail: 'the target is not a configured art display'})});
           else if (compositionId === undefined) refused.push({target, error: errorBody('unsupported-capability', {detail: 'the artwork has no composition for this display'})});
-          else displays.push({target, compositionId, durationMs: DURATION_MS[display.kind]});
+          else if (guard !== undefined && !sameArtShowGuard(guard, display.guard)) refused.push({target, error: errorBody('revision-conflict', {detail: 'the display changed after approval'})});
+          else displays.push({target, compositionId, durationMs: DURATION_MS[display.kind], ...(guard === undefined ? {} : {guard})});
         }
         if (displays.length > 2) return errorBody('invalid-request', {detail: 'a show presents on at most two displays and the browser'});
         const first = refused[0];

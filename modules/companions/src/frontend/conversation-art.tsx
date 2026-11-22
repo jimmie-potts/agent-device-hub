@@ -1,9 +1,10 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {isErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
-import type {ArtRecord} from '@jimmie-potts/event-contracts/v2/art-state';
-import type {FrontendApi} from '@jimmie-potts/sdk/frontend';
+import type {ArtRecord, ArtTarget} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {FrontendApi, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {followCopy} from '@jimmie-potts/sdk/remote';
 import type {ConversationAttachment} from '../assistant/history-contract.js';
+import {AttachmentDisplay} from './attachment-display.js';
 
 export function useConversationArt(api: FrontendApi, live: boolean): ArtRecord | undefined {
   const [art, setArt] = useState<ArtRecord>();
@@ -22,7 +23,7 @@ export function useConversationArt(api: FrontendApi, live: boolean): ArtRecord |
 }
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-type Media = {status: 'ready'; path: string; bytes: number; format: 'webp' | 'gif'};
+type Media = {status: 'ready'; path: string; bytes: number; format: 'webp' | 'gif'; artworkId: string; usableKinds: ArtTarget[]};
 type Result = Media | {status: 'loading' | 'pending' | 'unavailable'} | {status: 'finished'; text: string};
 function resultOf(value: unknown): Result {
   if (!record(value)) return {status: 'unavailable'};
@@ -36,7 +37,10 @@ function resultOf(value: unknown): Result {
   if (value.status !== 'ready' || !record(rendition) || (rendition.format !== 'gif' && rendition.format !== 'webp') ||
     typeof rendition.renditionId !== 'string' || !/^[a-f0-9]{64}$/.test(rendition.renditionId) ||
     typeof rendition.bytes !== 'number' || !Number.isSafeInteger(rendition.bytes) || rendition.bytes < 1) return {status: 'unavailable'};
-  return {status: 'ready', path: `/modules/art/content/rendition.${rendition.renditionId}`, bytes: rendition.bytes, format: rendition.format};
+  if (typeof value.artworkId !== 'string') return {status: 'unavailable'};
+  const kinds = value.usableKinds;
+  const usableKinds = Array.isArray(kinds) && kinds.every((kind): kind is ArtTarget => kind === 'ui' || kind === 'pixoo' || kind === 'tidbyt') ? kinds : [];
+  return {status: 'ready', path: `/modules/art/content/rendition.${rendition.renditionId}`, bytes: rendition.bytes, format: rendition.format, artworkId: value.artworkId, usableKinds};
 }
 
 function ConversationImage({api, media, description}: {api: FrontendApi; media: Media; description: string}): React.JSX.Element {
@@ -71,9 +75,10 @@ function ConversationImage({api, media, description}: {api: FrontendApi; media: 
   </figure>;
 }
 
-export function ArtworkAttachment({api, connected, attachment, artRevision}: {
-  api: FrontendApi; connected: boolean; attachment: ConversationAttachment; artRevision: number | undefined;
+export function ArtworkAttachment({context, connected, allowShow, attachment, artRevision}: {
+  context: FrontendContext; connected: boolean; allowShow: boolean; attachment: ConversationAttachment; artRevision: number | undefined;
 }): React.JSX.Element {
+  const {api} = context;
   const [result, setResult] = useState<Result>({status: 'loading'});
   const {requestId, description, admission, code} = attachment;
   // An older job can fall out of the recent list while still running. Until the
@@ -92,6 +97,9 @@ export function ArtworkAttachment({api, connected, attachment, artRevision}: {
   if (connected && result.status === 'unavailable' && admission === 'uncertain') return <p role="status">Artwork request outcome is uncertain.</p>;
   if (connected && result.status === 'unavailable' && admission === 'pending') return <p role="status">Waiting for artwork…</p>;
   if (!connected || result.status === 'unavailable') return <p role="status">Artwork attachment is unavailable.</p>;
-  if (result.status === 'ready') return <ConversationImage key={result.path} api={api} media={result} description={description}/>;
+  if (result.status === 'ready') return <>
+    <ConversationImage key={result.path} api={api} media={result} description={description}/>
+    {allowShow && <AttachmentDisplay context={context} artworkId={result.artworkId} usableKinds={result.usableKinds} attachment={attachment}/>}
+  </>;
   return <p role="status">{result.status === 'finished' ? result.text : 'Waiting for artwork…'}</p>;
 }

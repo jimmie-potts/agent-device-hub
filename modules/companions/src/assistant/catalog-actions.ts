@@ -1,7 +1,7 @@
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
-import {ART_SHOW_EFFECTS_FAMILY, artShowSurfaces, type ArtShowEffects} from '@jimmie-potts/event-contracts/v2/art-show';
-import type {ArtRecord} from '@jimmie-potts/event-contracts/v2/art-state';
-import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
+import {ART_SHOW_EFFECTS_FAMILY, artDestination, artShowSurfaces, usableArtComposition, type ArtDestination, type ArtShowEffects, type ArtShowGuard, type ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
+import type {ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {ErrorBody, ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import type {LightingState} from '@jimmie-potts/event-contracts/v2/music-lighting-data';
@@ -41,9 +41,12 @@ function matchingDevices(rows: readonly Match[], target: string, owner: string):
   return rows.filter(({device}) => device.id === target || normalize(deviceLabel(device)) === normalize(target));
 }
 
+/** A bounded read through the Art owner's public SDK content manifest for an exact retained ID outside recent state. */
+export type RetainedArtworkRead = (artworkId: string, timeoutMs: number) => Promise<ArtworkSummary | ErrorBody | undefined>;
+
 export class ConversationActions {
   #drafts: ShowDrafts | undefined;
-  constructor(private readonly context: ModuleContext, private readonly enabled: readonly string[]) {}
+  constructor(private readonly context: ModuleContext, private readonly enabled: readonly string[], private readonly retainedArtwork?: RetainedArtworkRead) {}
 
   async #snapshot<T extends object>(owner: string, family: string, parent: TraceContext): Promise<readonly T[] | undefined> {
     const result = await this.context.sdk.sync<T>([family], () => {}, {owner, timeoutMs: 1200, parent});
@@ -57,6 +60,47 @@ export class ConversationActions {
     const views = await Promise.all(owners.map(async owner => ({owner, devices: await this.#snapshot<DeviceRecord>(owner, 'device', parent)})));
     return {rows: views.flatMap(({owner, devices}) => devices?.map(device => ({owner, device})) ?? []),
       unreadable: views.filter(view => view.devices === undefined).map(view => view.owner)};
+  }
+
+  async #artDestinations(parent: TraceContext): Promise<ArtDestination[] | undefined> {
+    const directory = (await this.#snapshot<ArtTargets>(CORE, 'art-targets', parent))?.[0];
+    if (directory === undefined) return undefined;
+    const owners = [...new Set(directory.targets.map(item => 'bunny/modules/' + item.kind))];
+    const {rows} = await this.#deviceRecords(owners, parent);
+    return directory.targets.map(item => artDestination(item, rows.find(row =>
+      row.owner === 'bunny/modules/' + item.kind && row.device.id === item.target)?.device));
+  }
+
+  async #artSelection(names: unknown, parent: TraceContext, artwork?: ArtworkSummary): Promise<
+    {targets: string[]; labels: string[]; guards: ArtShowGuard[]} | {question: string} | Refusal> {
+    if (!Array.isArray(names) || names.length > 3 || !names.every((value): value is string =>
+      typeof value === 'string' && value.trim().length > 0 && value.length <= 128)) return {code: 'invalid-request'};
+    const targets: string[] = [], labels: string[] = [], guards: ArtShowGuard[] = [];
+    if (names.length === 0) return {targets, labels, guards};
+    const devices = names.every(name => ['browser', 'ui'].includes(normalize(name))) ? [] : await this.#artDestinations(parent);
+    if (devices === undefined) return {code: 'unavailable'};
+    for (const name of names) {
+      const key = normalize(name);
+      if (key === 'browser' || key === 'ui') {
+        if (artwork !== undefined && usableArtComposition(artwork, 'ui') === undefined) return {question: 'This artwork has no browser rendition. Which available destination would you like?'};
+        if (targets.includes('browser')) return {code: 'invalid-request'};
+        targets.push('browser'); labels.push('Browser');
+        continue;
+      }
+      const exact = devices.find(device => device.target === name);
+      const matches = exact === undefined ? devices.filter(device => normalize(device.label ?? device.target) === key || device.kind === key) : [exact];
+      const eligible = matches.filter(device => device.guard !== undefined && (artwork === undefined || usableArtComposition(artwork, device.kind) !== undefined));
+      if (eligible.length > 1) return {question: 'Which display did you mean? ' + eligible.map(device => (device.label ?? device.kind) + ' (' + device.target + ')').join(', ')};
+      const selected = eligible[0];
+      if (selected?.guard === undefined) {
+        if (matches.length === 0) return {question: 'No configured art display matches "' + name + '". Which destination would you like?'};
+        if (matches.every(device => device.guard === undefined)) return {question: 'The selected display is unavailable for an art show. Which destination would you like?'};
+        return {question: 'This artwork has no usable rendition for "' + name + '". Choose another destination or request a new rendition separately.'};
+      }
+      if (targets.includes(selected.target) || guards.length === 2) return {code: 'invalid-request'};
+      targets.push(selected.target); labels.push(selected.label ?? selected.target); guards.push(selected.guard);
+    }
+    return {targets, labels, guards};
   }
 
   async #operation(requestId: unknown, parent: TraceContext): Promise<OperationRecord | undefined> {
@@ -108,10 +152,12 @@ export class ConversationActions {
     if (family === 'art-request') {
       const {format, description} = call.input;
       if (!artDescription(description) || (format !== 'gif' && format !== 'still')) return {code: 'invalid-request'};
-      const data = {format, description: description.trim()};
+      const selected = await this.#artSelection(call.input.showTargets ?? [], parent);
+      if (!('targets' in selected)) return selected;
+      const data = {format, description: description.trim(), ...(selected.targets.length > 0 ? {showTargets: selected.targets} : {})};
       const binding = {kind: 'fixed', owner: ART, target: 'art'} as const;
       return {proposal: {family: 'catalog-action', command: family, target: 'art', binding, data},
-        text: `Create ${format === 'gif' ? 'an animated GIF' : 'a still image'} for this reply? This may use the art allowance. ${data.description}`};
+        text: `Create ${format === 'gif' ? 'an animated GIF' : 'a still image'} for this reply? This may use the art allowance. ${data.description}${selected.labels.length > 0 ? '. When ready, review showing it on ' + selected.labels.join(', ') + '.' : ''}`};
     }
     const route = catalogRoute(family);
     const owner = family === 'nanoleaf-show-save' ? NANOLEAF : call.input.owner;
@@ -162,12 +208,28 @@ export class ConversationActions {
       if (owner !== route.owner || name !== route.target) return {code: 'forbidden'};
       binding = {kind: 'fixed', target: route.target, owner};
     }
-    if (family === 'art-show' && (typeof data.artworkId !== 'string' || !idList(data.targets))) return {code: 'invalid-request'};
+    let showText: string | undefined;
+    if (family === 'art-show') {
+      if (typeof data.artworkId !== 'string' || !Array.isArray(data.targets) || data.targets.length === 0 || 'guards' in data) return {code: 'invalid-request'};
+      const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
+      if (art === undefined) return {code: 'unavailable'};
+      const artwork = art.artworks.find(item => item.artworkId === data.artworkId) ?? await this.retainedArtwork?.(data.artworkId, 1200);
+      if (artwork !== undefined && 'error' in artwork) return {code: artwork.error.code};
+      if (artwork === undefined) return {code: 'not-found'};
+      const selected = await this.#artSelection(data.targets, parent, artwork);
+      if (!('targets' in selected)) return selected;
+      const job = art.jobs.find(item => item.artworkId === artwork.artworkId);
+      const attached = job === undefined ? undefined : this.context.database().prepare(
+        'SELECT description FROM assistant_art_attachments WHERE request_id=?').get(job.requestId);
+      const title = typeof attached?.description === 'string' ? attached.description : 'saved artwork ' + artwork.artworkId;
+      showText = 'Show ' + title + ' on ' + selected.labels.join(', ') + '?' + (data.coversStatus === false ? ' Keep status visible.' : '');
+      data = {...data, targets: selected.targets, guards: selected.guards};
+    }
     const proposal = catalogProposal({family: 'catalog-action', command: family, target: binding.target, binding, data});
     if (proposal === undefined) return {code: 'invalid-request'};
     const effect = family === 'nanoleaf-show-save'
       ? `Save draft ${String(data.name)} (${String(data.showId)}) as “${String(data.versionName)}”, version ${Number(data.expectedVersion) + 1}?`
-      : `${family} on ${binding.target} (${binding.owner}): ${JSON.stringify(data)}`;
+      : showText ?? `${family} on ${binding.target} (${binding.owner}): ${JSON.stringify(data)}`;
     if (effect.length > 1024) return {code: 'capacity'};
     return {proposal, text: effect};
   }
@@ -236,9 +298,11 @@ export class ConversationActions {
       case READ_SHOWS: return this.#readShows(input, parent);
       case READ_ART: {
         const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
-        return art === undefined ? 'Saved art unavailable.' : textResult(art.artworks.map(item => ({
-          artworkId: item.artworkId, createdAtMs: item.createdAtMs, favorite: item.favorite, targets: item.compositions.map(composition => composition.target),
-        })));
+        if (art === undefined) return 'Saved art unavailable.';
+        const destinations = await this.#artDestinations(parent);
+        return textResult({displays: destinations?.map(({target, kind, label, guard}) => ({routingId: target, kind, label, available: guard !== undefined})) ?? null,
+          artworks: art.artworks.map(item => ({artworkId: item.artworkId, createdAtMs: item.createdAtMs, favorite: item.favorite,
+            renditionKinds: item.compositions.filter(part => usableArtComposition(item, part.target) !== undefined).map(part => part.target)}))});
       }
       case READ_PLAYBACK: {
         const records = await this.#snapshot<PlaybackState>(PLAYBACK, 'playback', parent);

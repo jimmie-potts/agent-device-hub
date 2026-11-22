@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-targets/2.0",
+  "description": "The art display routing IDs admitted by the core and the type of rendition each accepts.",
+  "type": "object", "additionalProperties": false,
+  "required": ["id", "revision", "targets"],
+  "properties": {
+    "id": {"const": "art"},
+    "revision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+    "targets": {"type": "array", "uniqueItems": true, "items": {
+      "type": "object", "required": ["target", "kind"], "additionalProperties": false,
+      "properties": {
+        "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+        "kind": {"enum": ["pixoo", "tidbyt"]}
+      }
+    }}
+  }
+}

@@ -16,6 +16,19 @@ import {edgeConfig, flush, it, manualClock, run, stateDir, waitFor} from './supp
 
 const BROWSER = 'c'.repeat(64), PIXOO = 'a'.repeat(64), TIDBYT = 'b'.repeat(64);
 const COMPOSITION: Readonly<Record<ArtTarget, string>> = {ui: BROWSER, pixoo: PIXOO, tidbyt: TIDBYT};
+
+it('publishes configured routing IDs independently of the artwork rendition kinds', async t => {
+  const w = await world(t);
+  const result = await w.artContext.sdk.sync<{id: string; revision: number; targets: {target: string; kind: string}[]}>(
+    ['art-targets'], () => {}, {owner: 'bunny/core', timeoutMs: 1000});
+  assert.equal(result.status, 'synced');
+  if (result.status !== 'synced') return;
+  try {
+    assert.deepEqual(result.copy.states()[0]?.data.targets, [
+      {target: 'desk-display', kind: 'pixoo'}, {target: 'shelf-display', kind: 'tidbyt'},
+    ]);
+  } finally {await result.copy.close();}
+});
 const artwork = (artworkId: string, kinds: readonly ArtTarget[] = ['ui', 'pixoo', 'tidbyt']): ArtworkSummary => ({artworkId, createdAtMs: 1, favorite: false, feedback: null,
   variationOf: null, palette: ['#112233'], provenance: {generatedBy: 'local', factual: false}, compositions: kinds.map((target, index) => {
     const id = String(index + 1).repeat(64);
@@ -76,7 +89,7 @@ async function world(t: TestContext, replies: Partial<Record<'desk-display' | 's
   return {clock, art, moments, prepares, browser, reads, get core() {return core;}, get handle() {assert.ok(handle); return handle;},
     get artContext() {assert.ok(artContext); return artContext;},
     show: (requestId: string, data: Omit<ArtShowRequest, 'requestId'>) => core.actions.dispatch({key: 'bunny.cmd.art-show.hub', requestedBy: 'bunny/parts/operator', requestId,
-      draft: {type: 'org.bunny.art.show.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/art-show/2.0', data}}),
+      draft: {type: 'org.bunny.art.show.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/art-show/' + (data.guards === undefined ? '2.0' : '2.1'), data}}),
     complete: async (requestId: string) => {
       assert.ok(artContext);
       await artContext.sdk.publish('bunny.event.art-auto.art', {kind: 'outcome', type: 'org.bunny.art.auto.completed', subject: 'art',
@@ -145,6 +158,18 @@ it('refusals send nothing: unknown art, no composition, a concurrent show and an
   await waitFor(() => w.prepares().length === 1);
   assert.equal(w.browser().length, 0, 'the refused second show sent nothing');
   assert.equal(w.handle.operation('show-second')?.status, 'rejected');
+});
+
+it('a changed display identity skips that display while the approved browser still presents the same artwork', async t => {
+  const w = await world(t);
+  const guard = {target: 'desk-display', kind: 'pixoo' as const, configurationRevision: 1, epoch: 'retired-epoch'};
+  const reply = await w.show('replaced-display', {artworkId: 'saved-art', targets: ['desk-display', 'browser'], guards: [guard]});
+  assert.deepEqual(reply, {status: 'accepted', requestId: 'replaced-display'});
+  w.clock.advance(20_000);
+  await waitFor(() => w.handle.operation('replaced-display')?.status === 'completed');
+  assert.equal(w.prepares().length + w.moments.length, 0);
+  assert.equal(w.browser().length, 1);
+  assert.ok(ownerRows(w, 'replaced-display').some(row => row.target === guard.target && row.reason === 'revision-conflict'));
 });
 
 it('a target without a composition is skipped while the others proceed, and logged', async t => {

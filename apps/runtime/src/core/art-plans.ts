@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
 import {ART_MODULE_SOURCE} from '@jimmie-potts/event-contracts/v2/art';
-import {localGifComposition} from '@jimmie-potts/event-contracts/v2/art-show';
+import {artDestination, localGifComposition, sameArtShowGuard, type ArtDestination, type ArtShowGuard, type ConfiguredArtTarget} from '@jimmie-potts/event-contracts/v2/art-show';
 import {commandSupported, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
 import {rainNoticeIssue, rainNoticeRefusal, type RainNotice} from '@jimmie-potts/event-contracts/v2/art-notice';
@@ -9,10 +9,10 @@ import {Outcome, type Cancel, type ModuleScheduler, type TraceContext} from '@ji
 import type {Operation} from './operations.js';
 import type {Action, ActionAnswer} from './tracker.js';
 
-export type ArtPlanTarget = {target: string; kind: 'pixoo' | 'tidbyt'};
+export type ArtPlanTarget = ConfiguredArtTarget;
 export type ArtPlan = Pick<MomentPlayRequest, 'mood' | 'priorityClass' | 'coversStatus' | 'startAtMs' | 'toleranceMs'> & {
   id: string; artworkId: string; prepareUntilMs: number;
-  displays: readonly {target: string; compositionId: string; durationMs: number}[];
+  displays: readonly {target: string; compositionId: string; durationMs: number; guard?: ArtShowGuard}[];
   browser?: {compositionId: string};
   notice?: RainNotice;
 };
@@ -137,6 +137,8 @@ export function createArtPlans(options: Options) {
     if (options.clock() >= plan.prepareUntilMs) return blocked(cutoff());
     const original = structuredClone(targetRecord(selected.target));
     if ('error' in original) return blocked(original);
+    if (selected.guard !== undefined && !sameArtShowGuard(selected.guard, artDestination({target: selected.target, kind: original.kind}, original.record).guard))
+      return blocked(errorBody('revision-conflict', {detail: 'the display changed after approval'}));
     const moment: MomentPlayRequest = {requestId: requestId(plan, 'moment', selected.target), momentId: requestId(plan, 'intent', 'art'),
       mood: plan.mood, durationMs: selected.durationMs, priorityClass: plan.priorityClass, coversStatus: plan.coversStatus,
       startAtMs: plan.startAtMs, toleranceMs: plan.toleranceMs, art: {compositionId: selected.compositionId},...(plan.notice===undefined?{}:{notice:plan.notice})};
@@ -173,7 +175,7 @@ export function createArtPlans(options: Options) {
       draft: {type: 'org.bunny.moment.play.requested', subject: selected.target, dataschema: `https://bunny.invalid/events/moment-play/${plan.notice===undefined?'2.1':'2.2'}`, data: moment}}));
   };
   return {
-    targets: (): readonly ArtPlanTarget[] => options.targets().map(target => ({...target})),
+    targets: (approval = false): readonly ArtDestination[] => options.targets().map(target => approval ? artDestination(target, options.current(target.target)) : {...target}),
     present: async (input: ArtPlan, permit: ArtPermit, parent?: TraceContext): Promise<ArtPlanResult | ErrorBody> => {
       const plan = structuredClone(input), now = options.clock();
       if (!active()) return errorBody('unavailable');

@@ -8,7 +8,8 @@ import type {AssistantProvider} from '@jimmie-potts/event-contracts/v2/assistant
 
 /** A closed JSON schema for a tool's input, as the Messages API's `input_schema` with `strict` takes it. */
 type ToolProperty = {type: 'string'; description: string; enum?: readonly string[]}
-  | {type: 'boolean' | 'integer'; description: string};
+  | {type: 'boolean' | 'integer'; description: string}
+  | {type: 'array'; items: {type: 'string'}; description: string};
 export type ToolInputSchema = {type: 'object'; properties: Readonly<Record<string, ToolProperty>>;
   required: readonly string[]; additionalProperties: false};
 /** What a tool does when the model calls it: a question, a read, a private draft edit, or an approved command. */
