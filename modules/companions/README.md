@@ -730,11 +730,14 @@ persona names until the owner renames them. When a profile gets a real model
   trailing punctuation are removed. An answer that is empty, a placeholder such
   as `Title`, or not session display text (a control character or a
   recognizable credential) is no title. So is an echo: before the description
-  is cut, the whole answer is compared with every owner and assistant message
-  in the prompt, ignoring case, spacing, surrounding quotes and trailing
-  punctuation, and a cut title that is the start of such a message is refused
-  too. The guard catches verbatim repeats only; a paraphrase or a reordered or
-  partly repeated message is not detected. A failed, refused or invalid first
+  is cut, the whole answer and the title, also with the prompt's `&lt;`,
+  `&gt;` and `&amp;` escapes undone, are compared with every owner and
+  assistant message in the prompt and with a coding hand-off's brief on its
+  own, ignoring case, spacing, surrounding quotes and trailing punctuation. An
+  answer equal to one is refused, and an answer long enough to be cut is also
+  refused when it appears anywhere inside one. The guard catches verbatim text
+  only: a paraphrase, or a reordered or reworded message, is not detected, and
+  an owner message that is already exactly the right title is refused. A failed, refused or invalid first
   title leaves the persona name; a failed refresh keeps the earlier title.
   Nothing is retried.
 - **Where it goes.** The conversation's recent messages go to Anthropic's

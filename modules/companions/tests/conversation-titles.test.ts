@@ -57,7 +57,19 @@ void test('a generated title never repeats a message the prompt carried, whole o
   assert.equal(generatedTitle('agent-device-hub#12 Please check why the kitchen lamp schedule skipped', [`#12 ${long}`]), undefined, 'with the reference written either way');
   // The assistant's own messages are prompt text too.
   assert.equal(generatedTitle('Synthetic answer about the lamp', ['Lamp please', 'Synthetic answer about the lamp.']), undefined, 'an assistant message repeated');
+  // A long verbatim excerpt from the middle of a message is an echo too.
+  assert.equal(generatedTitle('why the kitchen lamp schedule skipped this morning', [long]), undefined, 'a mid-message owner excerpt');
+  // A coding hand-off is saved with a fixed wrapper; the brief repeated on its own is an echo, long or short.
+  const brief = 'Fix the flaky timer test from the kitchen lamp schedule module';
+  assert.equal(generatedTitle(brief, [`Delegated to the coding worker in agent-device-hub: ${brief}`]), undefined, 'a long brief echoed');
+  assert.equal(generatedTitle('Fix the timer test', ['Delegated to the coding worker in agent-device-hub: Fix the timer test.']), undefined, 'a short brief echoed');
+  // The prompt escapes markup; an answer copied in escaped form is the same text.
+  assert.equal(generatedTitle('Fix &lt;b&gt;lamp&lt;/b&gt; &amp; timer', ['Fix <b>lamp</b> & timer']), undefined, 'an entity-escaped echo');
+  assert.equal(generatedTitle('Check why &lt;kitchen&gt; lamp schedule skipped this morning', [`Please check why <kitchen> lamp schedule skipped this morning and more`]), undefined,
+    'an entity-escaped mid-message excerpt');
   assert.equal(generatedTitle('Kitchen lamp schedule', [long]), 'Kitchen lamp schedule', 'a summary is a title');
+  assert.equal(generatedTitle('#2041 Flaky timer test in the kitchen lamp schedule module', [brief, long]), '#2041 Flaky timer test in the kitchen lamp',
+    'a long summary that no message contains is a title');
   assert.equal(generatedTitle('Please check why', [long]), 'Please check why', 'an uncut title may share a message\'s first words');
   assert.equal(ownerTitle('  My   kitchen  chat '), 'My kitchen chat');
   assert.equal(ownerTitle('🐰'.repeat(80)), '🐰'.repeat(80));

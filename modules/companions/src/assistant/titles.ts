@@ -165,17 +165,24 @@ function titleParts(response: string): TitleParts | undefined {
 /** A text in the form the echo guard compares: whitespace collapsed, no trailing `.?!`, this repository's references short, lower case. */
 const comparable = (value: string): string => collapse(trimQuotes(collapse(value))).replace(/[.?!]+$/u, '')
   .replace(new RegExp(`\\b${HOME_REPOSITORY}#`, 'giu'), '#').toLocaleLowerCase();
+/** A saved coding hand-off message's fixed wrapper (the engine's delegation text), so an echo of the brief alone is caught. */
+const HANDED_OFF = /^Delegated to the coding worker in [^:\s]+: /u;
+/** The answer with the prompt's entity escapes undone, so an echo the model copied in escaped form is caught too. */
+const unescaped = (value: string): string => value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
 /**
  * A generated title, or undefined when the answer is no title or repeats a message the prompt carried, so raw
- * conversation text is never published as a title. Before the description is cut, the whole normalized answer is
- * compared with every owner and assistant message; a cut title is also refused when it is the start of one of them.
- * The guard catches verbatim repeats only: a paraphrase, a reordered or a partly repeated message passes.
+ * conversation text is never published as a title. The whole normalized answer, before its description is cut, and
+ * the title are compared, also with the prompt's entity escapes undone, with every owner and assistant message and with
+ * a coding hand-off's brief on its own. An answer equal to one is refused; an answer long enough to be cut is also
+ * refused when its title or its whole text appears anywhere inside one. The guard catches verbatim text only: a
+ * paraphrase or a reordered or reworded message passes, and an owner message that is exactly the right title is refused.
  */
 export function generatedTitle(response: string | null, messages: readonly string[]): string | undefined {
   const parts = response === null ? undefined : titleParts(response);
   if (parts === undefined) return undefined;
-  const title = comparable(parts.title), full = comparable(parts.full);
-  const echoes = messages.map(comparable).some(text => text === full || text === title || (parts.cut && text.startsWith(title)));
+  const answers = [...new Set([parts.title, parts.full, unescaped(parts.title), unescaped(parts.full)].map(comparable))];
+  const texts = messages.flatMap(text => [text, text.replace(HANDED_OFF, '')]).map(comparable);
+  const echoes = texts.some(text => answers.some(answer => text === answer || (parts.cut && text.includes(answer))));
   return echoes ? undefined : parts.title;
 }
 /** The owner's title with its whitespace collapsed, or undefined when it is not session display text of at most 80 characters. */
