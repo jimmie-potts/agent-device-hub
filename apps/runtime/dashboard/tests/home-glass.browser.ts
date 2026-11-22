@@ -1,6 +1,6 @@
 // Home's glass layer (#1929) on a disposable synthetic runtime: no installed service or device. Headless Chromium draws
 // WebGL 2 with SwiftShader. The journey checks that the backdrop is drawn, that every card's glass follows its box
-// through scrolling, resizing, Edit Home and paging, that nothing draws at rest, that WebGL 2 missing or a lost
+// through scrolling (moving with the page before any frame, #2023), resizing, Edit Home and paging, that nothing draws at rest, that WebGL 2 missing or a lost
 // context leaves the Quiet glass panels with working controls, and that panel text keeps 4.5:1 over a dark and a bright
 // artwork in light and dark appearance. It also checks the lit room (#1931): a LIFX light glows in its observed color,
 // a light without color and a plug in warm white, from the ring's center; a press brightens a panel; the layer rests
@@ -124,21 +124,27 @@ async function rest(page: Page): Promise<number> {
   }
   throw new Error('the glass layer never came to rest');
 }
-/** The panels the layer drew last, against the boxes of the marked elements now in or near the window. */
-async function followsBoxes(page: Page, label: string): Promise<number> {
+/**
+ * The panels the layer drew last, against the boxes of the marked elements now in or near the window. With `scroll`,
+ * the page is first scrolled by that much in the same task, so no frame can be drawn in between: the glass on screen
+ * then follows the cards only because the browser scrolls the glass canvas with the page (#2023).
+ */
+async function followsBoxes(page: Page, label: string, scroll = 0): Promise<number> {
   await rest(page);
   // The boxes the last frame drew (data-glass-drawn), against the live boxes, both cut to what can be seen: a visible
   // change that no frame followed leaves stale glass and fails here (glass-boxes.ts, #1965).
-  const {drawn, boxes, viewport} = await page.evaluate(() => {
+  const {drawn, boxes, viewport, origin} = await page.evaluate(by => {
+    if (by !== 0) {const before = document.documentElement.scrollTop;scrollBy({top: by, behavior: 'instant'});if (Math.abs(document.documentElement.scrollTop - before - by) > 0.5) throw new Error(`the page did not scroll by ${String(by)}`);}
     const canvas = document.querySelector<HTMLCanvasElement>('.home-layout .glass-layer');
     const boxes = [...document.querySelectorAll<HTMLElement>('.home-layout [data-glass-panel]')].flatMap(element => {
       const box = element.getBoundingClientRect();
       const near = box.width > 0 && box.height > 0 && box.left < innerWidth + 64 && box.top < innerHeight + 64 && box.right > -64 && box.bottom > -64;
       return near ? [{id: element.dataset['glassPanel'] ?? '', x: box.left, y: box.top, width: box.width, height: box.height}] : [];
     });
-    return {drawn: canvas?.dataset['glassDrawn'] ?? '', boxes, viewport: {width: innerWidth, height: innerHeight}};
-  });
-  assert.deepEqual(drawnMismatches(drawn, boxes, viewport), [], `${label}: the glass on screen follows every card in view`);
+    const at = canvas?.getBoundingClientRect();
+    return {drawn: canvas?.dataset['glassDrawn'] ?? '', boxes, viewport: {width: innerWidth, height: innerHeight}, origin: {x: at?.left ?? 0, y: at?.top ?? 0}};
+  }, scroll);
+  assert.deepEqual(drawnMismatches(drawn, boxes, viewport, origin), [], `${label}: the glass on screen follows every card in view`);
   return boxes.length;
 }
 /** Whether the outermost card surface in each panel is see-through, so the glass shows. */
@@ -309,6 +315,7 @@ try {
   assert.equal(await layer(page).getAttribute('data-glass-backdrop'), '', 'with no artwork the layer draws the Quiet glass wash');
   assert.deepEqual((await surfaces(page)).filled, ['inbox'], 'the card surfaces are see-through over the glass, except the Inbox that needs attention');
   assert.equal(await layer(page).evaluate(node => getComputedStyle(node).pointerEvents), 'none', 'the canvas takes no pointer input');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY), 'none', 'the page does not bounce past its ends while the glass is drawn (#2023)');
   assert.notEqual(await page.locator('#rail').evaluate(node => getComputedStyle(node).backdropFilter), 'none', 'the rail is frosted over the backdrop');
   await shot(page, '1440-wash');
   const empty = await page.screenshot({clip: {x: 1200, y: 10, width: 40, height: 30}});
@@ -327,6 +334,33 @@ try {
 
   // Scrolling and resizing move the glass with the cards, then it rests again.
   await page.mouse.wheel(0, 420);await followsBoxes(page, 'scrolled');
+  // The glass moves with the cards as the page scrolls, not a frame later (#2023): straight after a scroll either way,
+  // before any frame, it is still on every card.
+  await followsBoxes(page, 'scrolled down, before a frame', 80);await followsBoxes(page, 'scrolled up, before a frame', -80);
+  // A short scroll that leaves the canvas where it is uses up some of its margin; the next one, as long as the margin
+  // kept (150 px), is still covered. A short window among the cards leaves room to scroll both ways.
+  await page.setViewportSize({width: 1440, height: 500});await page.evaluate(() => {scrollTo({top: 500, behavior: 'instant'});});
+  await followsBoxes(page, 'a short scroll, before a frame', 95);await followsBoxes(page, 'then a longer one, before a frame', 150);
+  await followsBoxes(page, 'a short scroll up, before a frame', -95);await followsBoxes(page, 'then a longer one up, before a frame', -150);
+  await page.setViewportSize({width: 1440, height: 900});await page.evaluate(() => {scrollTo({top: 420, behavior: 'instant'});});await followsBoxes(page, 'back in the full window');
+  // A page that gets shorter at its end moves the scroll; in every frame after that the glass stays on the cards
+  // (#2023 review: centring the canvas with the scroll from before the page got shorter drew one frame off them).
+  await page.evaluate(() => {scrollTo({top: document.documentElement.scrollHeight, behavior: 'instant'});});await rest(page);
+  const shrink = await page.evaluate(() => new Promise<{drawn: string; boxes: {id: string; x: number; y: number; width: number; height: number}[]; origin: {x: number; y: number}; viewport: {width: number; height: number}}[]>(resolve => {
+    const samples: {drawn: string; boxes: {id: string; x: number; y: number; width: number; height: number}[]; origin: {x: number; y: number}; viewport: {width: number; height: number}}[] = [];
+    const cards = [...document.querySelectorAll<HTMLElement>('.home-layout [data-home-card]')].slice(-2);
+    for (const card of cards) card.style.setProperty('display', 'none');
+    const sample = (): void => {
+      const canvas = document.querySelector<HTMLCanvasElement>('.home-layout .glass-layer'), at = canvas?.getBoundingClientRect();
+      const boxes = [...document.querySelectorAll<HTMLElement>('.home-layout [data-glass-panel]')].map(element => {const box = element.getBoundingClientRect();return {id: element.dataset['glassPanel'] ?? '', x: box.left, y: box.top, width: box.width, height: box.height};});
+      samples.push({drawn: canvas?.dataset['glassDrawn'] ?? '', boxes, origin: {x: at?.left ?? 0, y: at?.top ?? 0}, viewport: {width: innerWidth, height: innerHeight}});
+      if (samples.length < 12) requestAnimationFrame(sample);else {for (const card of cards) card.style.removeProperty('display');resolve(samples);}
+    };
+    // After the layer's own observers have asked for their frame, so each sample sees what that frame drew.
+    setTimeout(() => {requestAnimationFrame(sample);}, 0);
+  }));
+  for (const [index, sample] of shrink.entries()) assert.deepEqual(drawnMismatches(sample.drawn, sample.boxes, sample.viewport, sample.origin), [], `frame ${String(index)} after the page got shorter at its end: the glass is on every card`);
+  await page.evaluate(() => {scrollTo({top: 420, behavior: 'instant'});});await followsBoxes(page, 'back after the shorter page');
   await page.setViewportSize({width: 1100, height: 800});await followsBoxes(page, 'resized');
   // A window resize draws one frame, after the page has repacked, and a context that renders in software draws at most
   // 250,000 pixels: the page's main thread waits for every software frame, so a wide window must not cost more (the
@@ -429,6 +463,7 @@ try {
   assert.equal(await glassState(fallback.page), 'quiet');
   assert.deepEqual((await surfaces(fallback.page)).clear, [], 'without WebGL 2 every card shows its Quiet glass panel');
   assert.equal(await fallback.page.locator('.shell').evaluate(node => getComputedStyle(node).backgroundImage === 'none'), false, 'the shell keeps its wash');
+  assert.equal(await fallback.page.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY), 'auto', 'without the glass the page bounces as before');
   await controlsWork(fallback.page, fallback.sent, 'no WebGL 2');
   await shot(fallback.page, '1440-no-webgl2');
   assert.deepEqual(fallback.errors, []);await plain.close();report['noWebgl2'] = true;

@@ -1014,11 +1014,41 @@ region still shows command progress, errors and results.
 ### Glass layer
 
 Home draws on a glass layer (#1929, the Clear reference in
-`docs/design-references/home-clear/`): one WebGL 2 canvas fixed under the page
-draws the presented artwork unblurred, continuing behind the frosted rail, and
-flat, transparent glass under every Home card, with a thin bevel, a soft shadow,
-a rim and a lip of light past the far edge. Neighboring panels lean together.
-Card contents are unchanged.
+`docs/design-references/home-clear/`): WebGL 2 under the page draws the
+presented artwork unblurred, continuing behind the frosted rail, and flat,
+transparent glass under every Home card, with a thin bevel, a soft shadow, a rim
+and a lip of light past the far edge. Neighboring panels lean together. Card
+contents are unchanged.
+
+The layer draws two canvases with one program (#2023):
+
+- `.glass-backdrop` is fixed to the window and as tall as the largest viewport
+  (`100lvh`), so a phone's toolbar that shows or hides neither stretches it nor
+  rescales the artwork. It draws the artwork or the wash, the veil over it and the
+  veils of fixed or sticky elements (the rail and the phone bar).
+- `.glass-layer` is a transparent canvas that scrolls with the page. It covers the
+  window and 200 px above and below, so the browser moves the glass with the cards
+  instead of a frame later. It draws the panels, their shadow, lip and light, the
+  thumb, the page's veils and the light under the rail and phone bar, veiled as
+  they are. Wherever it changes nothing it is transparent, and
+  elsewhere it takes the least alpha that composites to the single picture. It is
+  placed again when less than 150 px of its margin is left above or below the
+  window, or when it would lengthen the page, and centred again whenever it is
+  redrawn anyway, so a scroll of up to 150 px between two frames stays covered.
+  Its width is its containing block's in CSS. Its `data-glass-drawn` boxes are in
+  its own coordinates.
+
+While the glass is drawn the page does not bounce past either end
+(`overscroll-behavior-y: none` on the root), and the veil's depth and the wash keep
+to the page's own scroll range, so the backdrop does not move or change at the top
+or bottom of the page (#2023).
+
+Without an artwork, a scroll redraws the backdrop's wash, and the glass only when
+its canvas is placed again (about every 50 px). With an artwork the glass is
+redrawn while the page scrolls, because it shows the artwork, which stays with
+the window; so it is while a lamp within 800 px of the rail or the phone bar is
+lit, since the glass draws that lamp's light under them, veiled as they veil the
+backdrop. The backdrop never redraws for a light.
 
 `GlassLayer` (`src/glass-layer.tsx`) is reusable. A page sets `data-glass` on its
 root to the state the layer reports through `onState` and renders the layer inside
@@ -1060,7 +1090,7 @@ with a running animation is read every frame while it runs. At rest it draws
 nothing. After a window resize it waits until two reads of the boxes
 agree, so it draws once, after the page has repacked. It caps the pixel ratio at
 2; where the browser renders WebGL in software (SwiftShader and similar, marked
-`data-glass-software` on the canvas), it draws at most 250,000 pixels and the
+`data-glass-software` on the glass canvas), each canvas draws at most 250,000 pixels and the
 browser scales them up, and the first appearance is one settled frame, because
 the page's main thread waits for every software frame (#1965). It takes no pointer input, sends nothing, and loses its context when
 the page is left.

@@ -776,9 +776,9 @@ SwiftShader for WebGL 2. It creates two artworks through the art module's
 Gallery and serves dark and bright synthetic pixels through the module's content
 route. It checks that the Quiet glass wash and then the artwork are drawn behind
 see-through card surfaces and a frosted rail; that the boxes the layer last drew
-(`data-glass-drawn`, cut to what can be seen, compared by `apps/runtime/dashboard/tests/glass-boxes.ts`,
-whose unit test has a negative control)
-match every card's box after loading, scrolling, resizing, moving and reshaping
+(`data-glass-drawn`, placed where the glass canvas now is and cut to what can be seen, compared by
+`apps/runtime/dashboard/tests/glass-boxes.ts`, whose unit test has a negative control)
+match every card's box after loading, scrolling, scrolling again with no frame in between (#2023), resizing, moving and reshaping
 a card in Edit Home, Cancel, paging the Inbox in one column and a reconnecting
 notice above Home; that the frame count holds for two seconds at rest; that a
 window resize to 2,560 px draws one frame and, with software rendering, at most
