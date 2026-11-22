@@ -34,6 +34,6 @@ void test('process loss after call admission preserves unknown usage and refuses
     const value = JSON.parse(inspected.stdout) as {state: AssistantState; calls: number; refused: string};
     assert.equal(value.calls, 0); assert.equal(value.refused, 'rejected');
     assert.equal(value.state.tasks[0]?.status, 'uncertain'); assert.equal(value.state.tasks[0]?.usageUnits, null);
-    assert.ok((value.state.tasks[0]?.activeMs ?? 0) >= LIMITS.modelMs); assert.ok((value.state.tasks[0]?.activeMs ?? LIMITS.activeMs) < LIMITS.activeMs); assert.equal(value.state.tasks[0]?.reservedUnits, LIMITS.callUnits);
+    assert.ok((value.state.tasks[0]?.activeMs ?? 0) >= LIMITS.modelMs); assert.ok((value.state.tasks[0]?.activeMs ?? LIMITS.activeMs) < LIMITS.activeMs); assert.ok((value.state.tasks[0]?.reservedUnits ?? 0) > LIMITS.outputUnits + LIMITS.overheadUnits, 'the lost call keeps its request bound and output reservation');
   } finally {rmSync(dir, {recursive: true, force: true});}
 });

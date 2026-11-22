@@ -10,6 +10,7 @@ import {ConversationVoice, stopSpeakingButton} from './conversation-voice.js';
 import type {SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
 import {ConversationDetails, useDetailsOverlay} from './conversation-details.js';
+import {spendNotice, useSpend} from './conversation-spend.js';
 import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
 import {ConversationTranscript} from './conversation-transcript.js';
 import {conversationRail, profiles} from './conversation-rail.js';
@@ -280,6 +281,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
     if (history !== undefined && task?.question != null) conversationRail.learn(history.profile, {taskId: task.taskId, questionId: task.question.id, kind: task.question.kind});
   }, [history]);
   const live = connected && !unavailable && state !== undefined && state.available;
+  const spend = useSpend(api, connected && historyApi === api, state?.revision);
+  // Only a paid profile's new message meets the shared spend limits; the synthetic demos cost nothing.
+  const spendLimit = profile === 'bunny' && state !== undefined && state.provider !== 'synthetic' ? spendNotice(spend) : undefined;
   const task = state?.tasks.find(value => value.profile === profile);
   const unfinished = state?.tasks.find(value => !finished(value.status));
   const visibleHistory = history?.profile === profile ? history : undefined;
@@ -358,6 +362,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
               {cue}{!live ? ' (Last known)' : ''}
             </p>}
             {task?.code != null && <p>Task code: {task.code}</p>}
+            {spendLimit !== undefined && <p role="status">{spendLimit}</p>}
             {state?.enabled === true && unfinished !== undefined && !['waiting', 'paused'].includes(task?.status ?? '') && <p>Finish or cancel the unfinished task before sending another message.</p>}
             {activeClarification !== undefined && <SavedQuestionContext question={activeClarification}/>}
             <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion}
@@ -370,7 +375,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
         </div>
         <ConversationDetails id={detailsId} open={detailsOpen} overlay={detailsOverlay} onClose={closeDetails}
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
-          coding={connected ? coding : undefined} live={live}
+          coding={connected ? coding : undefined} live={live} spend={spend}
           savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}
           receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished !== undefined} setEnabled={present}/>
       </div>;

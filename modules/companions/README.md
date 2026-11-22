@@ -277,8 +277,8 @@ available. If history or input is unavailable, the page shows the reason.
 
 Use **Send** for a message or **Answer** for a saved question. Enter submits
 and Shift+Enter inserts a line break. Enter during text composition does not
-submit. The composer shows the exact UTF-8 count starting at 3,277 bytes and
-refuses drafts over 4,096 bytes. Each profile and pending question has its own
+submit. The composer shows the exact UTF-8 count starting at 26,215 bytes and
+refuses drafts over 32,768 bytes. Each profile and pending question has its own
 draft. Drafts remain after submission and clear on reload. You can browse
 another profile while a task is unfinished. Follow the link beside the composer
 to return to that task before starting another one.
@@ -317,8 +317,12 @@ their open state while you inspect another panel or resize the page.
   bounds, diagnostic code, saved question and answer, and settled successful
   control receipt. Pending and failed receipts stay beside the controls.
 - **Usage** shows reported usage and the reservation against the task limit.
-  A synthetic task may show **Unknown** usage alongside `0 / 65536 units`
-  reserved. Hosted tasks use reported tokens and leave billed cost unknown.
+  A synthetic task may show **Unknown** usage alongside `0 / 1000000 units`
+  reserved. Hosted tasks use reported tokens and leave the task's billed cost
+  unknown. **Spend today** and **Spend this month** show the shared spend of
+  every profile against the [spend limits](#spend-limits), naming any
+  reservation still counted for a call without reported usage. At a limit the
+  composer of a paid profile says which limit is reached.
 - **Conversation settings** explains where submitted text goes and links to
   **Preferences** and **Companion knowledge**. An unfinished task prevents
   disabling the conversation.
@@ -350,8 +354,13 @@ as for every configured module; an empty section keeps every default:
 
 ```json
 {"companions": {"assistant": {"provider": "anthropic", "model": "claude-opus-5-5", "effort": "medium",
-  "tools": ["read_sessions", "set_mode"]}, "secrets": {"anthropic-api-key": "/run/secrets/bunny/anthropic-api-key"}}}
+  "tools": ["read_sessions", "set_mode"],
+  "prices": {"claude-opus-5-5": {"input": 1.5, "output": 7.5, "cacheWrite": 1.875, "cacheRead": 0.15}}},
+  "secrets": {"anthropic-api-key": "/run/secrets/bunny/anthropic-api-key"}}}
 ```
+
+The prices above are synthetic. Copy the provider's current price list into the
+private section instead.
 
 - `assistant.provider` is `synthetic` (the default) or `anthropic`. The Anthropic
   provider needs `secrets.anthropic-api-key`, the owner-only file holding the
@@ -360,6 +369,16 @@ as for every configured module; an empty section keeps every default:
   the runtime redacts it from its own records. `model` defaults to
   `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`). The
   synthetic provider takes neither.
+- `assistant.prices` (Hub #2024) maps each model to its `input`, `output`,
+  `cacheWrite` and `cacheRead` prices in US dollars per million tokens, as the
+  provider's price list states them. `cacheWrite` is the five-minute cache
+  write price, which the
+  [Anthropic price list](https://platform.claude.com/docs/en/about-claude/pricing)
+  states as 1.25 times the input price. All four are required, from 0 to 1000,
+  for at most 16 models. The Anthropic provider needs an entry for its own
+  model, and the section is refused without it, so every paid call can be
+  counted. The module has no built-in prices. The synthetic provider takes no
+  prices.
 - `assistant.tools` lists the permitted tools by name, each once:
   `read_sessions`, `set_mode`, `delegate_coding`, `read_lifx`, `set_lifx_power`, `set_lifx_brightness`, `read_wemo` and `set_wemo_power`.
   The engine builds the model's tool
@@ -376,10 +395,17 @@ as for every configured module; an empty section keeps every default:
   `unavailable`, an unreadable answer to `invalid-message`, and output cut at the
   provider's limit to `capacity`. A lost answer or a transport error leaves the
   call uncertain. Usage is the sum of the tokens the provider reports (input,
-  output and cache tokens); unreported usage stays unknown. The owner's
-  allowance for live use is a monthly spend limit on the dedicated Console
-  workspace, a precondition of installation rather than something the module
-  enforces.
+  output and cache tokens); unreported usage stays unknown. A report without
+  input or output counts, or with a count that is not a whole number, is
+  unreported. The module enforces the [spend limits](#spend-limits); the
+  dedicated Console workspace's own monthly limit stays as a second bound.
+- Each request asks for automatic prompt caching with one top-level
+  `cache_control` of type `ephemeral`, the five-minute cache. The API places
+  the breakpoint on the last cacheable block. The tools, the system prompt and
+  the replayed transcript come first and stay byte-stable between a task's
+  calls, so a second call reads the earlier prefix from the cache and reports
+  `cache_read_input_tokens`. A Hub-mode change or a preference edit changes the
+  system prompt and starts a new cache entry.
 - The model's own content blocks, thinking blocks included, are kept with the
   assistant item in the private transcript and replayed exactly as received,
   which the API requires for the turn whose tool call awaits its result. One
@@ -529,12 +555,60 @@ readable history and refuse resume. There is no execution queue.
 
 | Bound | Per task or request |
 | --- | --- |
-| Calls and questions | 6 model calls, 4 tool calls, 2 questions |
-| Active time | 300 seconds; human waits and downtime excluded |
-| Deadlines | Model 60 seconds, tool 8 seconds, control admission 5 seconds |
-| Text and working state | Input 4 KiB, result 8 KiB, a model reply with its blocks 16 KiB, transcript and serialized graph/pending writes 32 KiB |
-| Usage | 16,384 units reserved before each model call, 65,536 per task; a unit is one provider token or one fake synthetic unit |
-| Private read | At most 16 messages and 64 KiB per page, advancing cursor |
+| Calls and questions | 50 model calls, 40 tool calls, 10 questions |
+| Active time | 40 minutes; human waits and downtime excluded |
+| Deadlines | Model 6 minutes, tool 30 seconds, control admission 5 seconds |
+| Text and working state | Owner message 32 KiB, persona and preferences 128 KiB, result 8 KiB, a model reply with its blocks 16 KiB, working transcript 1 MiB, staged input 193 KiB, serialized graph and pending writes 256 KiB each |
+| Usage | 1,000,000 units per turn; each model call reserves its request's UTF-8 bytes plus 8,192 framing units and 16,384 output units before it is sent; a unit is one provider token or one fake synthetic unit |
+| Private read | At most 16 messages and 512 KiB per page, advancing cursor |
+| Spend | $20 a day and $150 a month across all profiles; see [Spend limits](#spend-limits) |
+
+A turn is one task: one owner message and everything it causes. A call that
+would pass a limit is refused before anything is sent. The task ends with
+`capacity`, and the conversation shows a message that names the limit, such
+as "This turn reached its limit of 50 model calls." A request's bytes bound
+its input tokens because each token encodes at least one byte of text.
+
+### Spend limits
+
+The assistant's paid model calls may spend $20 a day and $150 a month across
+all profiles (Hub #2024). The day and the month are the runtime host's local
+ones and start at local midnight. A call counts on the day it was reserved.
+Coding-worker runs use the coding worker's own sign-in and are not counted.
+
+- **Reservation before dispatch.** In the transaction that saves a paid call's
+  receipt, the module reserves the most the call can cost in its private
+  SQLite ledger (`assistant_spend`). Every input unit is priced at the dearest
+  input class, and every output unit at the output price. When that
+  reservation would pass the daily or the monthly limit, the call is refused
+  with `capacity` and nothing is sent. The conversation then shows the
+  limit, for example "The daily spend limit of $20.00 would be passed: $19.80
+  is counted today and this model call could cost up to $0.42. Nothing was
+  sent."
+- **Reported usage.** The answer's reported tokens, priced by class from
+  `assistant.prices`, replace the reservation in the same transaction that
+  saves the answer. An answer that arrives after the call's deadline, while
+  the module still runs, also replaces it.
+- **Unreported usage.** A call whose usage is never reported keeps counting
+  its full reservation, never zero. Examples are a lost answer, a deadline, a
+  crash or an error status. Its turn usage also stays unknown.
+- **New turns.** When today's or this month's spend has reached its limit, a
+  new message to a paid profile is refused with `capacity` and a detail that
+  names the limit. A call already sent finishes, and the next call is refused.
+  The synthetic profiles cost nothing and keep working.
+- **Restart.** The ledger is in the module's database, so it survives restart
+  unchanged. Startup never settles or releases a reservation.
+- **Other calls.** A model call outside a task, such as a conversation-level
+  call, records its spend through the same ledger (`AssistantEngine.spend`).
+  It calls `reserve` before the request leaves and refuses the call when
+  `reserve` answers a message. When the answer arrives it calls `settle` with
+  the reported usage, or with null when the answer is lost. `inputBound(request)`
+  bounds the request's input units; `LIMITS.outputUnits` bounds the answer.
+
+**Details** reads the shared totals from the private `spend` content route
+after each assistant-state revision. The route returns the day's and month's
+counted millionths of a dollar, the limits and the count and amount of
+reservations without reported usage. It carries no text, call or task identity.
 
 Unknown usage stays unknown. A crash or timeout keeps the call's reserved time
 and units; explicit continuation never resets them. Cancellation first saves a
@@ -723,7 +797,12 @@ truncation and fault codes, profile isolation), `assistant-sessions.test.js`
 baseline, Hub #505), `anthropic.test.js` (the request
 shape, tool-use parsing, usage, error mapping and abort against a fake
 transport) and `configure.test.js` (the section and a keyed provider through
-the harness's secret). `node --test apps/runtime/dist/tests/assistant-dispatch.test.js`
+the harness's secret). `spend.test.js` checks the ledger's pricing,
+reservations, settlement, local day and month boundaries and restart.
+`assistant-spend.test.js` checks the relaxed limits, their conversation
+messages, spend reservations before dispatch, refusals at the limits and
+unreported and late usage. `conversation-spend.test.js` checks the page's
+reading of the spend route. `node --test apps/runtime/dist/tests/assistant-dispatch.test.js`
 checks the core's admission. The `assistant-task` and `assistant-mode-approval`
 runtime catalog cases run over both transports and in a disposable runtime. The
 existing companions browser check exercises the real authenticated page with
