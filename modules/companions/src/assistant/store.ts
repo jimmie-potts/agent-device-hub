@@ -135,7 +135,7 @@ export class AssistantStore {
     return (this.database.prepare("SELECT role,text FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') ORDER BY seq DESC LIMIT ?")
       .all(conversationId, limit) as {role: 'owner' | 'assistant'; text: string}[]).reverse();
   }
-    /** One saved message of the task, by its id, for the owner to hear again (Hub #500). */
+  /** One saved message of the task, by its id, for the owner to hear again (Hub #500). */
   savedMessage(taskId: string, id: string): Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined {
     return this.database.prepare('SELECT id,role,text FROM assistant_messages WHERE id=? AND task_id=?').get(id, taskId) as Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined;
   }
