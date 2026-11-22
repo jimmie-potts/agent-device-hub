@@ -949,12 +949,13 @@ void test('an approved art request keeps its reply reference when admission is u
   assert.deepEqual(history.messages.flatMap(message => message.attachment === undefined ? [] : [message.attachment]), [
     {kind: 'artwork', description: 'Blue flowers', requestId: requests[0]?.requestId, admission: 'uncertain'},
   ]);
+  assert.match(history.messages.at(-1)?.text ?? '', /Blue flowers.*cannot confirm whether the request took effect/);
   assert.equal(requests.length, 1);
   const requestId = requests[0]?.requestId ?? assert.fail('no request');
   const store = w.store(), receipt = store.call(requestId) ?? assert.fail('no receipt');
   store.saveCall({...receipt, status: 'failed', code: 'internal'});
   const failedReceipt = store.recentPage('bunny', undefined);
-  assert.equal(typeof failedReceipt === 'object' && failedReceipt.messages.at(-1)?.attachment?.admission, 'uncertain');
+  assert.equal(typeof failedReceipt === 'object' && failedReceipt.messages.find(m => m.attachment !== undefined)?.attachment?.admission, 'uncertain');
 });
 
 void test('a repeated art result keeps one attachment on the original companion message', async context => {
@@ -1085,4 +1086,92 @@ void test('read_sessions reports each session\'s shared status class and detail 
     '- ASKING (codex, desktop): needs-owner (approval); work active, confirmed; waiting for approval; last evidence 1 min ago',
   ]);
   assert.doesNotMatch(text, /freshness|evidence uncertain/);
+});
+
+void test('a failed turn closes after clarification without another model call', async context => {
+  const provider = counted((_input, turn) => {
+    if (turn === 1) return call('ask_owner', {text: 'Which fixture?'});
+    throw new ProviderFault('unavailable');
+  });
+  const w = await world(context, {provider});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Inspect a fixture.');
+  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'The blue fixture.', true);
+  await until(() => status(w) === 'failed');
+  const messages = (await page(w)).messages;
+  assert.equal(messages.at(-1)?.role, 'assistant');
+  assert.match(messages.at(-1)?.text ?? '', /received your answer/i);
+  assert.equal(provider.calls(), 2);
+  await w.restart();
+  assert.deepEqual((await page(w)).messages, messages);
+});
+
+void test('a failed compound turn reports the saved artwork and exact rejected display action', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted((_input, turn) => {
+    if (turn === 1) return call('create_artwork', {format: 'still', description: 'Synthetic paper kite'});
+    if (turn === 2) return call('read_saved_art');
+    if (turn === 3) return call('control_art_show', {owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: 'kite', targets: ['display-blue']})});
+    throw new ProviderFault('unavailable');
+  });
+  const w = await world(context, {provider, tools: ['create_artwork', 'read_saved_art', 'control_art_show'], dispatch: data => {
+    requests.push(data);
+    return Promise.resolve(requests.length === 1 ? accepted(data.requestId) : {status: 'rejected', requestId: data.requestId, error: errorBody('not-found')});
+  }});
+  const art = w.bus.connect('bunny/modules/art');
+  context.after(() => art.close());
+  await art.serveSync(['art'], () => ({revision: 1, states: [{
+    type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0', data: {id: 'art', revision: 1,
+      jobs: [{requestId: requests[0]?.requestId, artworkId: 'kite', status: 'finished', outcome: 'succeeded'}],
+      artworks: [{artworkId: 'kite', compositions: [{target: 'ui', outcome: 'succeeded', renditions: [{format: 'webp'}]}]}]},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Create and show the synthetic poster.');
+  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'waiting' && task(w)?.questions === 2);
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'failed');
+  const messages = (await page(w)).messages;
+  assert.match(messages.at(-1)?.text ?? '', /paper kite.*artwork was saved.*display-blue.*request was refused/i);
+  assert.equal(requests.length, 2);
+  assert.equal(provider.calls(), 4);
+  await w.restart();
+  assert.deepEqual((await page(w)).messages, messages);
+  assert.equal(requests.length, 2);
+});
+
+void test('the exhausted model budget saves a single read-only closing reply with no extra call', async context => {
+  const provider = counted(() => call('ask_owner', {text: 'Which fixture?'}));
+  const w = await world(context, {provider});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic request with an exhausted budget.');
+  await until(() => status(w) === 'waiting');
+  const saved = w.store().task(task(w)?.taskId ?? '') ?? assert.fail('saved task');
+  saved.modelCalls = LIMITS.modelCalls;
+  w.store().save(saved);
+  await input(w.core, w.module(), 'The second fixture.', true);
+  await until(() => status(w) === 'failed');
+  const messages = (await page(w)).messages;
+  assert.match(messages.at(-1)?.text ?? '', /received your answer.*model call/i);
+  assert.equal(messages.filter(item => item.text.includes('model call')).length, 1);
+  assert.equal(provider.calls(), 1);
+  assert.equal(task(w)?.toolCalls, 0);
+});
+
+void test('an approval that runs out of tool calls before dispatch closes without a write', async context => {
+  const provider = counted(() => call('set_mode', {mode: 'quiet'}));
+  const w = await world(context, {provider, tools: ['set_mode'], core: () => ({synced: true, sessions: [], mode: hub(5)}),
+    dispatch: () => assert.fail('the tool budget refused the reservation')});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Propose quiet mode.');
+  await until(() => status(w) === 'waiting');
+  const saved = w.store().task(task(w)?.taskId ?? '') ?? assert.fail('saved task');
+  saved.toolCalls = LIMITS.toolCalls;
+  w.store().save(saved);
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => status(w) === 'failed');
+  assert.match((await page(w)).messages.at(-1)?.text ?? '', /Set the Hub mode to quiet.*stopped before dispatch.*tool call/i);
+  assert.equal(provider.calls(), 1);
 });

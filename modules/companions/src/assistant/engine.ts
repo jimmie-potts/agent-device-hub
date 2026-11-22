@@ -8,6 +8,7 @@ import {ASSISTANT_LEGACY_TOOL_LIMIT, ASSISTANT_WEMO_OWNER, type AssistantControl
 import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
+import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
 import type {Proposal} from './history-contract.js';
@@ -50,7 +51,7 @@ export type AssistantOptions = {
 /** An approved delegation as the module dispatches it, bound to the coding state revision the proposal saw. */
 export type Delegation = {requestId: string; taskId: string; repository: string; brief: string; expectedRevision: number};
 export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSignal) => Promise<RequestResult>;
-class Fault extends Error {constructor(readonly code: ErrorCode) {super(code);}}
+class Fault extends Error {constructor(readonly code: ErrorCode, readonly closingReason?: string) {super(code);}}
 function fail(code: ErrorCode): never {throw new Fault(code);}
 const codeOf = (error: unknown): ErrorCode => error instanceof Fault || error instanceof ProviderFault ? error.code : fullDisk(error) || error instanceof CheckpointCapacityError ? 'capacity' : 'internal';
 const profiles: readonly AssistantProfile[] = ['bunny', 'reachy', 'microduck'];
@@ -163,8 +164,17 @@ export class AssistantEngine {
       this.store.saveReport(task.conversationId, {sequence, projection: changes.projection});
     }
   }
-  #change(id: string, change: (task: Task) => void, parent?: TraceContext): Promise<void> {
-    return this.outbox.transaction(add => {const task = this.#task(id); change(task); this.store.save(task); this.#publish(add, parent);});
+  #change(id: string, change: (task: Task) => void, parent?: TraceContext, reason?: string): Promise<void> {
+    return this.outbox.transaction(add => {
+      const task = this.#task(id), previous = task.status;
+      change(task);
+      if (previous !== task.status && (task.status === 'failed' || task.status === 'uncertain')) {
+        const messageId = `${task.id}-closing-${String(task.generation)}`;
+        this.store.message(task, messageId, 'assistant', closingReply(task, this.store.calls(id), reason), this.context.clock.now());
+      }
+      this.store.save(task);
+      this.#publish(add, parent);
+    });
   }
   #check(command: Command<object>): ErrorCode | undefined {
     if (this.#closed || this.context.signal.aborted) return 'unavailable';
@@ -382,12 +392,20 @@ export class AssistantEngine {
       await this.#reconcile(task.id, false, active);
     } catch (error) {
       const code = codeOf(error);
-      try {await this.#change(active.taskId, task => {
-        if (terminal(task.status)) {this.#settle(task, active); return;}
-        const unknown = unresolved(this.store.calls(task.id));
-        task.status = unknown ? 'uncertain' : code === 'cancelled' ? 'paused' : 'failed';
-        task.code = unknown ? 'uncertain-result' : code; this.#settle(task, active);
-      }, active.span.context);} catch { /* Failed durability is not reported as saved; startup reconciles checkpoints and receipts. */ }
+      try {
+        await this.#change(active.taskId, task => {
+          if (terminal(task.status)) {this.#settle(task, active); return;}
+          const unknown = unresolved(this.store.calls(task.id));
+          task.status = unknown ? 'uncertain' : code === 'cancelled' ? 'paused' : 'failed';
+          task.code = unknown ? 'uncertain-result' : code; this.#settle(task, active);
+        }, active.span.context, error instanceof Fault ? error.closingReason : undefined);
+        // Keep existing spoken refusals and limit explanations. Recovery and a generic fallback only save text.
+        if (error instanceof Fault && error.closingReason !== undefined) {
+          const task = this.#task(active.taskId), id = `${task.id}-closing-${String(task.generation)}`;
+          const saved = this.store.savedMessage(task.id, id);
+          if (saved !== undefined) this.#speak(task.id, id, saved.text, active.span.context);
+        }
+      } catch { /* Failed durability is not reported as saved; startup reconciles checkpoints and receipts. */ }
     } finally {
       active.deadline?.();
       this.#log('assistant.run.settled', active); active.span.end(this.#task(active.taskId).code === null ? 'unset' : 'error'); this.context.signal.removeEventListener('abort', abort);
@@ -403,7 +421,7 @@ export class AssistantEngine {
     return this.#change(taskId, task => {
       if (task.transcript.some(existing => 'effect' in existing && existing.effect === item.effect)) return;
       task.transcript.push(item); also?.(task);
-      if (textBytes(JSON.stringify(task.transcript)) > LIMITS.stateBytes) fail('capacity');
+      if (textBytes(JSON.stringify(task.transcript)) > LIMITS.stateBytes) throw new Fault('capacity', 'This turn reached its working transcript limit.');
     }, parent);
   }
   #core(): CoreCopy {return this.options.core?.() ?? {sessions: [], mode: undefined, synced: false};}
@@ -419,26 +437,21 @@ export class AssistantEngine {
     const context = this.#context(task.profile);
     // Over the bound the call is refused before any usage is reserved or a request leaves: the owner reads why, nothing is truncated.
     if (contextBytes(context) > LIMITS.contextBytes) {
-      await this.#change(state.taskId, current => {this.store.message(current, `${id}-context`, 'assistant', CONTEXT_TOO_LARGE, this.context.clock.now());}, active.span.context);
-      this.#speak(state.taskId, `${id}-context`, CONTEXT_TOO_LARGE, active.span.context);
-      fail('capacity');
+      throw new Fault('capacity', CONTEXT_TOO_LARGE);
     }
     const text = await this.#call(state.taskId, state.step, 'model', signal => provider.turn({instructions: INSTRUCTIONS, context, transcript: task.transcript, tools,
       mode: copy.mode === undefined ? null : {mode: copy.mode.mode, revision: copy.mode.revision}}, signal).then(reply => ({text: JSON.stringify(reply), units: reply.units})));
     const reply = parseReply(text), call = reply.calls[0];
     let next: Next = 'end', result = '';
     // The final text is what the owner reads; it keeps the result bound even though a reply with the model's own blocks may be larger.
-    if (reply.text !== null && textBytes(reply.text) > LIMITS.toolBytes) fail('capacity');
+    if (reply.text !== null && textBytes(reply.text) > LIMITS.toolBytes) throw new Fault('capacity', 'The reply exceeded the text limit.');
     if (reply.stop === 'refusal') {
-      let refused = false;
-      await this.#append(state.taskId, {role: 'assistant', text: reply.text, calls: [], effect: id}, active.span.context,
-        current => {this.store.message(current, `${id}-refusal`, 'assistant', REFUSED, this.context.clock.now()); refused = true;});
-      if (refused) this.#speak(state.taskId, `${id}-refusal`, REFUSED, active.span.context);
-      fail('forbidden');
+      await this.#append(state.taskId, {role: 'assistant', text: reply.text, calls: [], effect: id}, active.span.context);
+      throw new Fault('forbidden', REFUSED);
     }
     if (reply.stop === 'truncated') {
       await this.#append(state.taskId, {role: 'assistant', text: reply.text, calls: [], effect: id}, active.span.context);
-      fail('capacity');
+      throw new Fault('capacity', 'The model reached its output limit.');
     }
     if (call === undefined) result = reply.text ?? '';
     else {
@@ -464,7 +477,7 @@ export class AssistantEngine {
     let asked = false;
     await this.#append(state.taskId, item, active.span.context, current => {
       if (question === undefined) return;
-      if (current.questions >= LIMITS.questions) fail('capacity');
+      if (current.questions >= LIMITS.questions) throw new Fault('capacity', 'This turn reached its question limit.');
       current.questions += 1; current.question = question;
       this.store.message(current, question.id, 'assistant', question.text, this.context.clock.now()); asked = true;
     });
@@ -566,7 +579,11 @@ export class AssistantEngine {
         const read = await this.options.readDevice?.(owner, name, signal, parent);
         return {text: read ?? readDevices(this.options.devices?.(owner), name, now, owner), units: 0};
       }
-      if (isCatalogTool(call.name)) return {text: await this.#catalog().read(call, parent) ?? fail('invalid-state'), units: 0};
+      if (isCatalogTool(call.name)) {
+        const evidence: ActionEvidence[] = [];
+        const text = await this.#catalog().read(call, parent, item => evidence.push(item)) ?? fail('invalid-state');
+        return {text, units: 0, evidence};
+      }
       const text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now) : fail('invalid-state');
       return {text, units: 0};
     });
@@ -596,6 +613,7 @@ export class AssistantEngine {
         : `refused: ${code}`, units: 0};
     };
     let result: string, delegation: Question | undefined;
+    const action = {questionId: question.id, description: actionDescription(proposal)};
     if (proposal.family !== 'coding-dispatch') {
       const dispatch = this.options.dispatch;
       if (dispatch === undefined) return refuse('refused', 'This tool is not permitted.');
@@ -621,8 +639,9 @@ export class AssistantEngine {
           this.#catalog().rejected(proposal, id);
         }
         return settle(answer, receipt);
-      }, artDescription === undefined ? undefined : current => {
-        this.store.artReply(current, id, artDescription, this.context.clock.now());
+      }, (current, call) => {
+        call.action = action;
+        if (artDescription !== undefined) this.store.artReply(current, id, artDescription, this.context.clock.now());
       });
     } else {
       const delegate = this.options.delegate;
@@ -632,10 +651,9 @@ export class AssistantEngine {
       const pending: Question = {id: `${state.taskId}-delegation-${String(state.step)}`, text: `Delegated to the coding worker in ${proposal.data.repository}: ${proposal.data.brief}`.slice(0, 1024),
         answer: null, kind: 'delegation', call: question.call, proposal: null};
       delegation = pending;
-      await this.#change(state.taskId, current => {if (current.question?.id !== pending.id) current.question = pending;}, active.span.context);
       result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, repository: proposal.data.repository, brief: proposal.data.brief,
         expectedRevision: proposal.expectedRevision}, active.span.context, signal)
-        .then(answer => settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)));
+        .then(answer => settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)), (current, call) => {current.question = pending; call.action = action;});
     }
     const accepted = result.startsWith('accepted');
     await this.#append(state.taskId, {role: 'tool', call: question.call, name, result, ok: accepted, effect: id}, active.span.context, current => {
@@ -666,21 +684,22 @@ export class AssistantEngine {
    * Delivers the worker's final word to the task waiting on its delegation and resumes it. A task the engine cannot run
    * now keeps the answer and waits for the owner's resume; a task that is not waiting on a delegation ignores it.
    */
-  async deliver(taskId: string, text: string, parent: TraceContext): Promise<void> {
+  async deliver(taskId: string, text: string, parent: TraceContext, evidence: ActionEvidence): Promise<void> {
     let launch = false;
     await this.outbox.transaction(add => {
       const task = this.store.task(taskId);
       if (task === undefined || terminal(task.status)) return;
       const question = task.question;
       if (question === null || question.kind !== 'delegation' || question.answer !== null) return;
+      this.store.observeAction(taskId, evidence);
       question.answer = text.slice(0, LIMITS.toolBytes);
       if (['waiting', 'paused'].includes(task.status) && this.store.meta().enabled && this.available() && this.#active === undefined && !this.#closed) {this.#activate(task, parent); launch = true;}
       this.store.save(task); this.#publish(add, parent);
     });
     if (launch && !this.#closed && !this.context.signal.aborted) this.#launch(taskId);
   }
-  async #call(taskId: string, ordinal: number, kind: 'model' | 'tool', operation: (signal: AbortSignal, parent: TraceContext) => Promise<{text: string; units: number | null}>,
-    reserve?: (task: Task) => void): Promise<string> {
+  async #call(taskId: string, ordinal: number, kind: 'model' | 'tool', operation: (signal: AbortSignal, parent: TraceContext) => Promise<{text: string; units: number | null; evidence?: ActionEvidence[]}>,
+    reserve?: (task: Task, call: Call) => void): Promise<string> {
     const active = this.#activeFor(taskId);
     const id = `${taskId}-step-${String(ordinal)}`, saved = this.store.call(id);
     if (saved !== undefined) {
@@ -700,11 +719,14 @@ export class AssistantEngine {
       await this.#change(taskId, task => {
         this.#fence(active);
         task.activeMs += Math.max(0, started - active.accountedAt);
-        if (task.nextOrdinal !== ordinal || task.activeMs + timeout > LIMITS.activeMs || task.reservedUnits + units > LIMITS.units ||
-          (kind === 'model' ? task.modelCalls >= LIMITS.modelCalls : task.toolCalls >= LIMITS.toolCalls)) fail('capacity');
+        if (task.nextOrdinal !== ordinal) fail('capacity');
+        if (task.activeMs + timeout > LIMITS.activeMs) throw new Fault('capacity', 'This turn reached its active time limit.');
+        if (task.reservedUnits + units > LIMITS.units) throw new Fault('capacity', 'This turn reached its usage limit.');
+        if (kind === 'model' ? task.modelCalls >= LIMITS.modelCalls : task.toolCalls >= LIMITS.toolCalls) {
+          throw new Fault('capacity', `This turn reached its ${kind} call limit.`);
+        }
         if (kind === 'model') task.modelCalls += 1; else task.toolCalls += 1;
-        task.activeMs += timeout; task.reservedUnits += units; this.store.saveCall(call);
-        reserve?.(task);
+        task.activeMs += timeout; task.reservedUnits += units; reserve?.(task, call); this.store.saveCall(call);
       }, span.context);
       this.#fence(active);
       const reply = await this.#wait(active, timeout, bound, () => Promise.resolve().then(() => operation(active.controller.signal, span.context)), call);
@@ -713,7 +735,11 @@ export class AssistantEngine {
       const elapsed = Math.min(timeout, Math.max(0, this.context.clock.now() - started)); active.accountedAt = this.context.clock.now();
       await this.#change(taskId, task => {
         this.#fence(active); call.status = 'succeeded'; call.result = reply.text; call.units = reply.units; call.elapsedMs = elapsed;
+        // A fast worker can finish after admission and before the dispatch reply.
+        const observed = call.action === undefined ? undefined : this.store.call(id)?.action?.observed;
+        if (call.action !== undefined && observed !== undefined) call.action.observed = observed;
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
+        for (const evidence of reply.evidence ?? []) this.store.observeAction(taskId, evidence);
         if (reply.units !== null) task.reservedUnits -= units - reply.units;
         task.nextOrdinal = ordinal + 1;
         if (kind === 'tool') this.store.message(task, id, 'tool', reply.text, this.context.clock.now());
@@ -731,9 +757,9 @@ export class AssistantEngine {
       throw error;
     } finally {this.#log('assistant.call.settled', active, id); const receipt = this.store.call(id); span.end(receipt !== undefined && receipt.status !== 'succeeded' ? 'error' : 'unset');}
   }
-  async #wait(active: Active, timeout: number, bound: number, operation: () => Promise<{text: string; units: number | null}>, call: Call): Promise<{text: string; units: number | null}> {
+  async #wait(active: Active, timeout: number, bound: number, operation: () => Promise<{text: string; units: number | null; evidence?: ActionEvidence[]}>, call: Call): Promise<{text: string; units: number | null; evidence?: ActionEvidence[]}> {
     let cancel: Cancel | undefined, stopped: (() => void) | undefined, settled = false;
-    const deadline = new Promise<{text: string; units: number | null}>((_resolve, reject) => {
+    const deadline = new Promise<{text: string; units: number | null; evidence?: ActionEvidence[]}>((_resolve, reject) => {
       stopped = () => {settled = true; reject(new Fault('cancelled'));};
       active.controller.signal.addEventListener('abort', stopped, {once: true});
       cancel = this.context.scheduler.after(timeout, () => {settled = true; reject(new Fault('uncertain-result')); active.controller.abort();});
