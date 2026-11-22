@@ -5,6 +5,7 @@
 // API requires for the turn whose tool call awaits its result. The key is held in memory, sent only as the request header
 // and never logged, stored or published. No retry and no fallback model: ADR 0012 forbids automatic resends, and the owner
 // declined a second model.
+import type {TokenUsage} from './spend-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type ToolCall, type ToolDefinition, type ToolInputSchema, type TranscriptItem, type TurnInput, type TurnReply, type TurnStop} from './provider.js';
 
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -70,6 +71,15 @@ export function toMessages(transcript: readonly TranscriptItem[]): ApiMessage[] 
   }
   return messages;
 }
+/**
+ * The reported usage by price class. Input and output counts are required; an absent or null cache count is zero, as the
+ * API reports a request that wrote or read no cache. Anything else is unreported usage, which the engine never counts as zero.
+ */
+function usageOf(usage: Record<string, unknown>): TokenUsage | null {
+  const count = (key: string, required: boolean): number | null => {const value = usage[key]; return value === undefined || value === null ? required ? null : 0 : integer(value) ? value : null;};
+  const input = count('input_tokens', true), output = count('output_tokens', true), cacheWrite = count('cache_creation_input_tokens', false), cacheRead = count('cache_read_input_tokens', false);
+  return input === null || output === null || cacheWrite === null || cacheRead === null ? null : {input, output, cacheWrite, cacheRead};
+}
 const stopOf = (reason: unknown, calls: number): TurnStop => reason === 'refusal' ? 'refusal' : reason === 'max_tokens' ? 'truncated' : calls > 0 ? 'tool' : 'end';
 const codeOfStatus = (status: number): ProviderFault => new ProviderFault(
   status === 401 ? 'unauthenticated' : status === 403 ? 'forbidden' : status === 404 ? 'not-found' : status === 429 ? 'capacity'
@@ -90,7 +100,11 @@ export class AnthropicProvider implements ModelProvider {
     const body = JSON.stringify({model: this.model, max_tokens: MAX_TOKENS, system: this.#system(input),
       tools: input.tools.map((tool, index) => ({name: tool.name, description: tool.description, input_schema: tool.input,
         ...(index < STRICT_TOOL_LIMIT ? {strict: true} : {})})),
-      tool_choice: {type: 'auto', disable_parallel_tool_use: true}, messages: toMessages(input.transcript), output_config: {effort: this.#effort}});
+      tool_choice: {type: 'auto', disable_parallel_tool_use: true}, messages: toMessages(input.transcript), output_config: {effort: this.#effort},
+      // Automatic prompt caching (Hub #2024): the API places the breakpoint on the last cacheable block and moves it as the
+      // transcript grows. Tools, then the system prompt, then the replayed transcript are byte-stable between a task's
+      // calls, so the next call reads the earlier ones' prefix from the cache at the five-minute lifetime.
+      cache_control: {type: 'ephemeral'}});
     let response: Response;
     try {
       // The API never redirects; refusing one keeps the key from following a redirect to another origin.
@@ -140,9 +154,7 @@ export class AnthropicProvider implements ModelProvider {
       } else blocks.push(block);
       // Thinking and any other block the model returned are kept as received for replay; the engine acts on none of them.
     }
-    const {usage} = value;
-    const counted = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'].map(key => usage[key]).filter(count => count !== undefined && count !== null);
-    const units = counted.length === 0 || !counted.every(integer) ? null : counted.reduce((sum, count) => sum + count, 0);
+    const usage = usageOf(value.usage), units = usage === null ? null : usage.input + usage.output + usage.cacheWrite + usage.cacheRead;
     const stop = stopOf(value.stop_reason, calls.length);
     const call = calls[0];
     if (stop === 'tool' && call !== undefined) {
@@ -150,6 +162,6 @@ export class AnthropicProvider implements ModelProvider {
       if (definition !== undefined && !conformsToSchema(definition.input, call.input)) throw new ProviderFault('invalid-message');
     }
     const text = texts.join('\n').trim();
-    return {text: text === '' ? null : text, calls: stop === 'tool' ? calls : [], stop, units, blocks};
+    return {text: text === '' ? null : text, calls: stop === 'tool' ? calls : [], stop, units, usage, blocks};
   }
 }

@@ -30,10 +30,12 @@ void test('process loss after call admission preserves unknown usage and refuses
   const child = (mode: string) => spawnSync(process.execPath, [new URL('./assistant-child.js', import.meta.url).pathname, dir, mode], {encoding: 'utf8', timeout: 20_000});
   try {
     const lost = child('lost-call'); assert.equal(lost.status, 19, lost.stderr);
+    const {reservation} = JSON.parse(lost.stdout) as {reservation: number};
     const inspected = child('refuse'); assert.equal(inspected.status, 0, inspected.stderr);
-    const value = JSON.parse(inspected.stdout) as {state: AssistantState; calls: number; refused: string};
+    const value = JSON.parse(inspected.stdout) as {state: AssistantState; calls: number; refused: string; receipts: number[]};
     assert.equal(value.calls, 0); assert.equal(value.refused, 'rejected');
     assert.equal(value.state.tasks[0]?.status, 'uncertain'); assert.equal(value.state.tasks[0]?.usageUnits, null);
-    assert.ok((value.state.tasks[0]?.activeMs ?? 0) >= LIMITS.modelMs); assert.ok((value.state.tasks[0]?.activeMs ?? LIMITS.activeMs) < LIMITS.activeMs); assert.equal(value.state.tasks[0]?.reservedUnits, LIMITS.callUnits);
+    assert.ok((value.state.tasks[0]?.activeMs ?? 0) >= LIMITS.modelMs); assert.ok((value.state.tasks[0]?.activeMs ?? LIMITS.activeMs) < LIMITS.activeMs); assert.equal(value.state.tasks[0]?.reservedUnits, reservation, 'the lost call keeps its request bound and output reservation');
+    assert.deepEqual(value.receipts, [reservation], 'its saved receipt holds the same reservation');
   } finally {rmSync(dir, {recursive: true, force: true});}
 });
