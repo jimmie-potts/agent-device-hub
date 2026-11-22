@@ -17,7 +17,7 @@ const sorted = values => [...values].sort();
 
 // Every identity a schema of these families admits: the session records, which define it, and the lifecycle
 // observations and agent occurrences, which refer to a session record's definition. The versions before the native
-// source (Hub #505) name the hook sources only; `session/3.1`, `lifecycle/2.2` and the 2.1 occurrences name every source.
+// source (Hub #505) name the hook sources only; `session/3.1`, `lifecycle/2.2` and `2.3` and the 2.1 occurrences name every source.
 const IDENTITIES = [
   ['session/2.0', '#/$defs/identity', 'hook'],
   ['session/2.1', '#/$defs/identity', 'hook'],
@@ -28,6 +28,7 @@ const IDENTITIES = [
   ['session/3.1', '#/$defs/identity', 'all'],
   ['session/3.1', '#/$defs/occurrence/properties/identity', 'all'],
   ['lifecycle/2.2', '#/properties/identity', 'all'],
+  ['lifecycle/2.3', '#/properties/identity', 'all'],
 ];
 const OCCURRENCES = ['attention-raised', 'attention-cleared', 'turn-ended'];
 

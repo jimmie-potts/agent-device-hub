@@ -168,14 +168,22 @@ function scripted(replies: (TurnReply | 'hold')[]): ModelProvider & {called: Pro
   }};
 }
 
-/** The module under the harness on a bus, with every lifecycle observation the bus carries collected in order. */
+/** A title provider that writes no title, so every conversation keeps its persona title in these tests (titles: Hub #2025). */
+const untitled = {name: 'synthetic' as const, model: 'synthetic', title: () => Promise.resolve({text: null, usage: null})};
+
+/**
+ * The module under the harness on a bus, with every lifecycle observation the bus carries collected in order; a title's
+ * display metadata, which no turn carries, is collected apart.
+ */
 async function world(context: TestContext, options: CompanionsOptions) {
+  options = {titleProvider: untitled, syntheticTitleProvider: untitled, ...options};
   let now = 1_790_000_000_000;
   const time = {clock: {now: () => now}, scheduler: {after: () => () => {}}};
   const dir = await mkdtemp(join(tmpdir(), 'assistant-sessions-')), bus = new InProcessBus({now: time.clock.now}), core = bus.connect('bunny/core');
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
-  const seen: Message<LifecycleObservation>[] = [], waiters: {count: number; resolve: () => void}[] = [];
+  const seen: Message<LifecycleObservation>[] = [], titles: Message<LifecycleObservation>[] = [], waiters: {count: number; resolve: () => void}[] = [];
   await core.subscribe<LifecycleObservation>('bunny.event.lifecycle.*', message => {
+    if (message.data.event.kind === 'metadata-observed') {titles.push(message); return;}
     seen.push(message);
     for (const waiter of waiters.filter(item => seen.length >= item.count)) waiter.resolve();
   });
@@ -184,7 +192,7 @@ async function world(context: TestContext, options: CompanionsOptions) {
   await host.start();
   context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
   return {
-    core, seen, module: () => module, tick: (ms: number) => {now += ms;},
+    core, seen, titles, module: () => module, tick: (ms: number) => {now += ms;},
     /** Resolves once the bus has carried `count` observations in all. */
     observed: (count: number) => seen.length >= count ? Promise.resolve() : new Promise<void>(resolve => {waiters.push({count, resolve});}),
     /** Stops the module, lets `between` change its database file as an earlier release or a crash left it, and starts it again. */

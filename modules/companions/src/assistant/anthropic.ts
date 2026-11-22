@@ -81,7 +81,7 @@ function usageOf(usage: Record<string, unknown>): TokenUsage | null {
   return input === null || output === null || cacheWrite === null || cacheRead === null ? null : {input, output, cacheWrite, cacheRead};
 }
 const stopOf = (reason: unknown, calls: number): TurnStop => reason === 'refusal' ? 'refusal' : reason === 'max_tokens' ? 'truncated' : calls > 0 ? 'tool' : 'end';
-const codeOfStatus = (status: number): ProviderFault => new ProviderFault(
+export const codeOfStatus = (status: number): ProviderFault => new ProviderFault(
   status === 401 ? 'unauthenticated' : status === 403 ? 'forbidden' : status === 404 ? 'not-found' : status === 429 ? 'capacity'
     : status === 400 || status === 422 ? 'invalid-request' : status === 413 ? 'too-large' : 'unavailable');
 

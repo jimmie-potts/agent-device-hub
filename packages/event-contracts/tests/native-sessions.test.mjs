@@ -154,7 +154,8 @@ test('a finished task names its result, never success without one, and an owner 
 
 test('a session reader of the previous release reads every hook record as before and skips a native record', () => {
   // The previous release registered every core family but the native source's versions, and read session/3.0 only.
-  const NEW = ['session/3.1', 'lifecycle/2.2', 'attention-raised/2.1', 'attention-cleared/2.1', 'turn-ended/2.1'].map(id => `${BASE}${id}`);
+  // lifecycle/2.3 (Hub #2025) came later still and refers to session/3.1.
+  const NEW = ['session/3.1', 'lifecycle/2.2', 'lifecycle/2.3', 'attention-raised/2.1', 'attention-cleared/2.1', 'turn-ended/2.1'].map(id => `${BASE}${id}`);
   const previous = new MessageValidator();
   registerFamilies(previous, coreFamilies.filter(family => !NEW.includes(family.dataschema)));
   const readPrevious = message => {

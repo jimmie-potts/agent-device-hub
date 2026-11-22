@@ -328,17 +328,20 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 
 /**
  * The native assistant source's binding (Hub #505): only its producer, the companions module, may name it, that producer
- * names no other provider, and only it sends `lifecycle/2.2`, whose inputs no hook sends. A native session is never ended
- * by a runtime end: its conversation and tasks are durable, and only expiry removes its monitoring record. The schemas
- * already refuse, as `invalid-message`, a native identity with another host or source ID and one in a lifecycle version
- * before 2.2, so this binding sees only messages the validator accepted.
+ * names no other provider, and only it sends `lifecycle/2.2` and `lifecycle/2.3`, whose inputs no hook sends. A native
+ * session is never ended by a runtime end: its conversation and tasks are durable, and only expiry removes its monitoring
+ * record. The schemas already refuse, as `invalid-message`, a native identity with another host or source ID and one in a
+ * lifecycle version before 2.2, and a native `metadata-observed` before 2.3 or without a title (Hub #2025), so this
+ * binding sees only messages the validator accepted.
  */
 export function nativeBinding(message: Pick<Message<Lifecycle21Observation>, 'source' | 'dataschema' | 'data'>): 'forbidden' | 'invalid-request' | undefined {
   const native = message.data.identity.provider === NATIVE_SOURCE.provider, producer = message.source === NATIVE_SOURCE.producer;
-  if (native !== producer || (message.dataschema === LIFECYCLE_22_SCHEMA && !producer)) return 'forbidden';
+  if (native !== producer || (NATIVE_SCHEMAS.includes(message.dataschema) && !producer)) return 'forbidden';
   return native && message.data.event.kind === 'runtime-ended' ? 'invalid-request' : undefined;
 }
-const LIFECYCLE_22_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.2';
+const NATIVE_SCHEMAS: readonly string[] = ['https://bunny.invalid/events/lifecycle/2.2', 'https://bunny.invalid/events/lifecycle/2.3'];
+/** The sources whose `metadata-observed` the core takes: Codex Desktop's metadata, and the native producer's conversation titles (Hub #2025). */
+const METADATA_SOURCES: readonly string[] = ['bunny/modules/codex-desktop', NATIVE_SOURCE.producer];
 
 class Core {
   readonly #automation: AutomationPart;
@@ -751,7 +754,8 @@ class Core {
         return;
       }
       if (observation.event.kind === 'metadata-observed') {
-        if (message.source !== 'bunny/modules/codex-desktop') {
+        // The schemas bind each source's identity: Codex Desktop's to codex/desktop, the native producer's to its own source.
+        if (!METADATA_SOURCES.includes(message.source)) {
           recordLog(this.#log, 'message.received', {...fields, ...refused('forbidden')}, message);
           return;
         }
