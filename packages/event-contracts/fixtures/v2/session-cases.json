@@ -873,6 +873,34 @@
    ]
   },
   {
+   "id": "native-lost-order",
+   "name": "a late, older work observation leaves a newer lost activity in place; a newer one settles it",
+   "covers": "Hub #505 decision 7: ordered work evidence on the same turn settles a lost activity only when it is newer than the marker that made it lost, in the same ordering epoch",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "evidence-unavailable", "dimension": "activity", "reason": "lost"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "nativeEventId": "5"}},
+    {"atMs": 2000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "activity-observed"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 3}, "nativeEventId": "3"}},
+    {"atMs": 3000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "activity-observed"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 6}, "nativeEventId": "6"}}
+   ],
+   "checks": [
+    {"after": 3, "atMs": 2500,
+     "records": [
+      {"session": "assistant", "revision": 2, "generation": 1, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "unavailable": [["activity", "lost"]]}
+     ],
+     "readers": {
+      "status": {"assistant": "working/unconfirmed"}, "lifx": "working", "tronbyt": [["RUN", true]], "pixoo": {"assistant": true}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": ["assistant"]}, "dashboard": {"assistant": "working"}
+     }},
+    {"after": 4, "atMs": 3500,
+     "records": [
+      {"session": "assistant", "revision": 4, "generation": 1, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 6}, "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "readers": {
+      "status": {"assistant": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": []}, "dashboard": {"assistant": "working"}
+     }}
+   ]
+  },
+  {
    "id": "native-delay",
    "name": "duplicate and late native observations revive nothing",
    "covers": "Hub #505 decision 7: the conversation's known ordering makes a late raise or a late stop stale, a late observation of an earlier task's turn is stale once the next task started, and a transport repeat is a duplicate",

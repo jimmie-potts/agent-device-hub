@@ -771,7 +771,8 @@ native source, and each task in it is one turn. The OpenSpec change
   result claims no success.
 - The case set holds native cases: a conversation's tasks as turns with an
   answer in its turn, every outcome, a resume after an uncertain call and a
-  pause, duplicate and late delivery, a restart, and expiry with reappearance
+  pause, a late, older work observation after a newer `lost` marker,
+  duplicate and late delivery, a restart, and expiry with reappearance
   on one ordering sequence.
 
 ### How 1.x error codes merged

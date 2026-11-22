@@ -355,6 +355,26 @@ void test('a task waiting on its owner when this release first starts is reporte
   assert.equal(w.seen.length, before + 3, 'the next start reports nothing again');
 });
 
+void test('a task running with a saved, unanswered question when this release first starts is reported whole, as needing its owner', {timeout: 20_000}, async context => {
+  const w = await world(context, {provider: scripted([ask('Synthetic question?')])});
+  await control(w, 'enable');
+  await input(w, 'synthetic request');
+  await w.observed(3);
+  const before = w.seen.length;
+  // A crash after the question was saved and before the run stopped: running, the question unanswered, no report table yet.
+  await w.restart(file => {
+    const database = new DatabaseSync(file);
+    const row = database.prepare('SELECT id, record FROM assistant_tasks ORDER BY seq LIMIT 1').get() as {id: string; record: string};
+    database.prepare('UPDATE assistant_tasks SET status=?, record=? WHERE id=?').run('running', JSON.stringify({...JSON.parse(row.record) as object, status: 'running'}), row.id);
+    database.exec('DROP TABLE assistant_reports');
+    database.close();
+  });
+  await w.observed(before + 3);
+  const task = w.module().inspectAssistant()?.tasks[0] ?? assert.fail('a task');
+  assert.equal(task.status, 'waiting', 'the startup recovers it waiting on its question');
+  assert.deepEqual(summary(w).slice(before), [`turn-started on ${task.taskId} #1`, `attention-input ${String(task.questionId)} on ${task.taskId} #2`, `turn-waiting on ${task.taskId} #3`]);
+});
+
 void test('a task waiting on delegated work raises no attention and makes no running-work claim', {timeout: 20_000}, async context => {
   const delegate = (call: {requestId: string}) => Promise.resolve({status: 'accepted' as const, requestId: call.requestId, reply: {} as never});
   const w = await world(context, {provider: scripted([{text: null, calls: [{id: 'call-delegate', name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: 'Add a synthetic test.'}}], stop: 'tool', units: 10}]),

@@ -267,10 +267,14 @@ reports nothing and first appears on the devices when its conversation next
 changes. A latest task that waits on the owner's answer or approval is
 reported by that same start: its turn start, its question and its wait, so it
 appears at once as needing the owner. A task that was running when the runtime
-stopped is recovered by that same start as paused or uncertain, and that
-recovery is its first report: one `turn-interrupted` or `turn-uncertain`
-observation, so it appears at once as quiet or unknown (or as needing the
-owner, when the recovery leaves it waiting on its question).
+stopped is recovered by that same start as paused, uncertain or, when its graph
+had already completed, succeeded, and that recovery is its first report: one
+`turn-interrupted`, `turn-uncertain` or `turn-ended` with its result, so it
+appears at once as quiet, unknown or finished. A running task that already
+holds a saved, unanswered question, which the engine saves before the graph's
+interrupt, waits on the owner in the same sense: that start reports it whole,
+its turn start, its question and how the recovery left its work, so it appears
+as needing the owner.
 
 ### No return below this release while a native session is stored
 
@@ -303,12 +307,8 @@ reported tasks have none, such as one whose only reported task waits on its
 question, as the first start of this release leaves a waiting task.
 
 The reviews of the #505 pull request ran these probes with an `e72f33fd`
-build; `037b327a` has the same code. They ran before the mapping moved from one
-session per task to one session per conversation and were not rerun after it.
-The refusal depends only on what a stored native record holds, its native
-identity, running work and notice results, and a conversation's record holds
-the same members, so the probes still describe it; read each "native task"
-below as a native session holding that task's state:
+build; `037b327a` has the same code. The first ran on stores with one native
+session per task, before the mapping moved to one session per conversation:
 
 - A store holding a succeeded native task was refused at 86,000 s after the
   last native change and recovered at 86,410 s, when that session had expired.
@@ -327,6 +327,25 @@ Claude observations were each refused `unavailable` (WARN). Beside a Claude
 session whose turn had ended, the same three were each refused `internal`
 (ERROR). In both, the start logged `operation.failed` `storage` `unavailable`,
 and a session sync was answered `unavailable`.
+
+The reviews of the reworked pull request reran the probes on stores with one
+session per conversation, again against an `e72f33fd` runtime:
+
+- A conversation whose earlier task succeeded and whose latest task waits on
+  its question, beside a running Claude session: the start logged
+  `operation.failed` `storage` `unavailable`, Claude observations were
+  refused `unavailable` (WARN), and a session sync was answered
+  `unavailable`.
+- The same conversation, or one holding a cancelled or failed task's result,
+  beside a Claude session whose turn had ended: Claude observations were
+  refused `internal` (ERROR).
+- Each such store recovered at 86,500 s after the last native change, when the
+  conversation's session had expired.
+- A store holding only a conversation whose task waits on its question, and
+  one holding only a conversation whose task went uncertain, was resumed and
+  was then interrupted, with no result and no running work, opened cleanly.
+- The earlier release's validator refused the native record as
+  `invalid-message` at `/identity/client`.
 
 Prefer fixing forward. A return below this release needs, as a precondition,
 that the core holds no native session:

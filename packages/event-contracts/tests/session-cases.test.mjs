@@ -15,7 +15,7 @@ const DESIGN_CASES = ['launch', 'clear-resume', 'compaction', 'approval', 'quest
   'parent-child', 'child-only', 'duplicates', 'out-of-order', 'ambiguous', 'capacity', 'expiry', 'runtime-end', 'acknowledgment',
   'unknown-detail', 'lost-prompt', 'stop-without-turn', 'unknown-turn-notice', 'superseded-notice', 'activity-lost', 'unsynced', 'reset',
   // Native assistant tasks (Hub #505).
-  'native-conversation', 'native-outcomes', 'native-resume', 'native-delay', 'native-restart', 'native-expiry'];
+  'native-conversation', 'native-outcomes', 'native-resume', 'native-lost-order', 'native-delay', 'native-restart', 'native-expiry'];
 const every = function* () {
   for (const item of set.cases) for (const [index, check] of item.checks.entries()) yield {item, index, check, where: `${item.id} check ${index}`};
 };

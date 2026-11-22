@@ -5,8 +5,8 @@
 // observation's canonical content; no 1.x key form is kept, since the step that moved here dropped the old session data.
 // One rule changed on purpose (#1865 step 8, design decision 6, #397): a root start claims no work. Hub #505 adds the
 // common inputs of `lifecycle/2.2` (`turn-waiting`, `turn-uncertain` and a turn end's result) and lets an ordered,
-// newer turn start recover the turn and activity evidence, as a best-effort start already does, and later ordered work
-// evidence on the same turn settle a lost activity.
+// newer turn start recover the turn and activity evidence, as a best-effort start already does, and ordered work
+// evidence on the same turn, newer than the marker that made the activity lost, settle it.
 import {createHash} from 'node:crypto';
 import type {Attention, KnownId, LifecycleObservation, Unavailable} from '@jimmie-potts/event-contracts/v2/families';
 import {SESSION_LIMITS, entityOf, sameId, sameTurn, type Consumer, type StoredSession} from './model.js';
@@ -241,9 +241,16 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
     else session.watermarks.push({dimension: eventDimension, epoch: order.epoch, sequence: order.sequence});
   }
   if (lifecycle && mergeMetadata(session, observation).ambiguous) ambiguous = true;
-  // Ordered, newer evidence of the work settles a lost activity (Hub #505): a native task resumed after an uncertain call
-  // stays in its turn, so no new turn's start recovers it. Only an ordered source reaches this, and only the native one is.
-  if (orderedActivity && event.kind !== 'turn-uncertain') session.unavailable = session.unavailable.filter(item => !(item.dimension === 'activity' && item.reason === 'lost'));
+  // Ordered evidence of the work on the same turn, newer than whatever marked the activity lost, settles it (Hub #505): a
+  // native task resumed after an uncertain call stays in its turn, so no new turn's start recovers it. Both markers are
+  // ordered in the session's epoch: a `turn-uncertain` is behind the activity watermark this observation passed, and an
+  // ordered `evidence-unavailable` has its own watermark, which this observation must pass too. A session whose ordering
+  // was not known in this epoch, as after an unordered marker, settles nothing here. Only ordered sources reach this.
+  const lostMarker = order.status === 'known' ? session.watermarks.find(item => item.dimension === 'unavailable:activity' && item.epoch === order.epoch) : undefined;
+  if (orderedActivity && order.status === 'known' && event.kind !== 'turn-uncertain' && previous !== undefined && sameTurn(previous.turn, turn) &&
+    previous.ordering.status === 'known' && previous.ordering.epoch === order.epoch && (lostMarker === undefined || lostMarker.sequence < order.sequence)) {
+    session.unavailable = session.unavailable.filter(item => !(item.dimension === 'activity' && item.reason === 'lost'));
+  }
   switch (event.kind) {
     case 'session-started':
       // A new root is idle; a known root keeps its work. A child start is evidenced child work.
