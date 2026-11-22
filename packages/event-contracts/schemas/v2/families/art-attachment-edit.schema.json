@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-attachment-edit/2.0",
+  "description": "Stage a private Conversation attachment or save it to the Art library.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "action", "sha256"],
+      "properties": {
+        "requestId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+        "action": {"const": "stage"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requestId", "action", "artworkId"],
+      "properties": {
+        "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+        "action": {"const": "save"},
+        "artworkId": {"type": "string", "pattern": "^upload-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}
+      }
+    }
+  ]
+}

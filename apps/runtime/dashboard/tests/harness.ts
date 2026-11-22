@@ -34,7 +34,7 @@ import {CLAUDE_RECEIPT_FEED, receiptSource} from '../../dist/src/read-receipts/q
 import {ModeDevice} from '../../dist/tests/fixtures/mode-devices.js';
 import {createPixooModule, SimulatedPixoo, SIMULATED_SECTION as PIXOO_SECTION, pixooOwnSchemas, type PlaylistRecord, type SimulatedPixooState} from '@jimmie-potts/pixoo';
 import {createPlaybackModule, playbackFactory, type PlaybackModuleOptions, type SimulatedSpeakers} from '@jimmie-potts/playback';
-import {createTidbytModule, SimulatedCloud, SIMULATED_SECTION as TIDBYT_SECTION, SIMULATED_API_KEY as TIDBYT_KEY} from '@jimmie-potts/tidbyt';
+import {createTidbytModule, SimulatedCloud, TRONBYT_SIMULATED_SECTION, type SimulatedTronbyt, SIMULATED_SECTION as TIDBYT_SECTION, SIMULATED_API_KEY as TIDBYT_KEY} from '@jimmie-potts/tidbyt';
 
 type ArtworkFetch = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['fetch']>;
 import {createWisprModule} from '@jimmie-potts/wispr';
@@ -70,6 +70,7 @@ export type WorldOptions = {
   readReceipts?: boolean;
   /** The real read-only Tidbyt module over its synthetic cloud. */
   tidbyt?: boolean;
+  tronbyt?: SimulatedTronbyt;
   /** Synthetic HTTPS forwarder for the home-Wi-Fi browser journey. */
   wifiProxy?: {origin: string; tokenDigest: string};
   privateProxy?: {origin: string; tokenDigest: string};
@@ -157,6 +158,7 @@ export type World = {
   lifxState(): ReturnType<SimulatedLifx['state']>;
   offlineLifx(address: string): void;
   pixooState(): SimulatedPixooState;
+  pixooMode(mode: SimulatedPixooState['mode']): void;
   pixooPlaylists(): Promise<readonly PlaylistRecord[]>;
   pixooMedia(): Promise<{items: {name: string; renditionId: string}[]; catalogRevision: number}>;
   /** Changes only the disposable module's internal privacy settings, never a product configuration route. */
@@ -296,7 +298,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const moduleConfig = {
     ...(options.art === true ? {art: options.artRecentLimit === undefined ? {} : {recentLimit: options.artRecentLimit}} : {}),
     ...(options.artSchedule === undefined ? {} : {weather: WEATHER_SECTION}),
-    ...(options.tidbyt === true ? {tidbyt: {...TIDBYT_SECTION, secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
+    ...(options.tidbyt === true ? {tidbyt: {...(options.tronbyt === undefined ? TIDBYT_SECTION : TRONBYT_SIMULATED_SECTION), secrets: {token: join(configDir, 'tidbyt-token')}}} : {}),
     ...(options.wemo===true?{wemo:WEMO_SIMULATED_SECTION}:{}),
     ...(options.companions === true ? {companions: {assistant: {tools: ['read_sessions', 'set_mode', ...(options.coding === true ? ['delegate_coding'] : []), ...(options.assistantLights === true ? ['read_lifx', 'set_lifx_power', 'set_lifx_brightness'] : []), ...(options.assistantWemo === true ? ['read_wemo', 'set_wemo_power'] : []), ...(options.assistantCatalog ?? [])]}}} : {}),
     ...(options.microduck===true?{microduck:options.microduckSection??MICRODUCK_SIMULATED_SECTION}:{}),
@@ -354,7 +356,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       ...(options.presence===true?[createPresenceModule({native:presence.native})]:[]),
       core = createCoreModule(coreOptions), ...(options.artSchedule === undefined ? [] : [createWeatherModule({fetch: clock => url => Promise.resolve(
         url.includes('/points/') ? weatherJson(pointsBody()) : url.includes('/alerts/') ? weatherJson(alertsBody())
-          : weatherJson(hourlyBody(clock.now(), [{shortForecast: 'Sunny', precipitation: 0}, {shortForecast: 'Chance Rain Showers', precipitation: 40}], clock.now() - 1000)))})]), ...(options.art === true ? [createArtModule({providers: simulatedProviders(art.call.bind(art))})] : []), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+          : weatherJson(hourlyBody(clock.now(), [{shortForecast: 'Sunny', precipitation: 0}, {shortForecast: 'Chance Rain Showers', precipitation: 40}], clock.now() - 1000)))})]), ...(options.art === true ? [createArtModule({providers: simulatedProviders(art.call.bind(art))})] : []), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: options.tronbyt?.fetch ?? new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}, ...(options.clock === undefined ? {} : {monotonic: now})})]
         : options.pixooPages === true || options.musicPlayback === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
@@ -463,6 +465,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     lifxState: () => bulbs.state(),
     offlineLifx: address => { bulbs.offline(address); },
     pixooState: () => panel.state(),
+    pixooMode: mode => {panel.set(mode);},
     wisprPrivacy: (expose, text) => { wispr.privacy(expose, text); },
     readonlyWispr: async ref => {
       const response = await fetch(`${runtime.url}/modules/wispr/content/${ref}`, {headers: {authorization: `Bearer ${readerToken}`}});

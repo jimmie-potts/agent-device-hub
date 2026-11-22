@@ -50,7 +50,7 @@ export type AutomationControls = Pick<Automation, 'rules' | 'rule' | 'interruptS
   replaceInterruptSet(value: unknown, context?: AutomationWriteContext): string[] | Promise<string[]>;
   replaceSettings(value: unknown, context?: AutomationWriteContext): AutomationSettings | Promise<AutomationSettings>;
   artSchedule?: {get(): ArtScheduleRecord; save(input: unknown, parent?: TraceContext): Promise<ArtScheduleRecord>};
-  art?: Pick<ArtPlans, 'targets' | 'present'>;
+  art?: Pick<ArtPlans, 'targets' | 'present'> & Partial<Pick<ArtPlans, 'targetAvailability'>>;
   routines?: RoutineControls;
   limits?: Omit<PowerLimits, 'close' | 'tick' | 'records'>;
   log(limit: number, before?: number): (LogEntry & {operation?: Operation})[];
@@ -337,7 +337,7 @@ export class AutomationPart implements CorePart {
     const noDefinition = () => undefined;
     return {
       ...(this.#schedule === undefined ? {} : {artSchedule: this.#schedule}),
-      ...(this.#art === undefined ? {} : {art: {targets: this.#art.targets, present: this.#art.present}}),
+      ...(this.#art === undefined ? {} : {art: {targets: this.#art.targets, targetAvailability: this.#art.targetAvailability, present: this.#art.present}}),
       ...(routines === undefined ? {} : {routines: {
         list: routines.list, get: routines.get, run: (id, parent) => routines.run(id, parent),
         preview: id => routines.preview(id), settled: () => routines.settled(),

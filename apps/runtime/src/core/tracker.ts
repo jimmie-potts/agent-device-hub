@@ -50,7 +50,7 @@ export const OPERATOR_ACTIONS: readonly string[] = Object.freeze(['art-upload-st
 export const BACKGROUND_ACTIONS: readonly string[] = Object.freeze(['art-auto', 'art-stage', 'art-ambient-set']);
 /** Each art family's only requester. The dashboard's source is a browser session's, which no client credential can take. */
 const ART_REQUESTERS: Readonly<Record<string, string>> = Object.freeze({
-  'art-request': DASHBOARD_SOURCE, 'art-catalog-edit': DASHBOARD_SOURCE, 'art-auto': CORE_SOURCE, 'art-stage': ART_MODULE_SOURCE, 'art-ambient-set': ART_MODULE_SOURCE,
+  'art-request': DASHBOARD_SOURCE, 'art-catalog-edit': DASHBOARD_SOURCE, 'art-attachment-edit': DASHBOARD_SOURCE, 'art-auto': CORE_SOURCE, 'art-stage': ART_MODULE_SOURCE, 'art-ambient-set': ART_MODULE_SOURCE,
 });
 /**
  * Why the dispatcher refuses this family from this requester, if it does: work only its owner may ask for. Inbox Send
