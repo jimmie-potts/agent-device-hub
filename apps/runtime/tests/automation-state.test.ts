@@ -54,7 +54,7 @@ async function world(context: TestContext, seed?: (store: AutomationStore, now: 
     }})}, {bus, stateDir: directory, clock: {now: clock.now}, scheduler: clock.scheduler});
     await harness.start();
     core.setModeParticipants([{id: 'wall', kind: 'nanoleaf'}]);
-    core.setAutomationDevices([{id: 'wall', owner: owner.source}]);
+    await core.setAutomationDevices([{id: 'wall', owner: owner.source}]);
     await flush();
     return harness;
   };

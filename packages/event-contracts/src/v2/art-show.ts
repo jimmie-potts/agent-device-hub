@@ -1,4 +1,46 @@
+import {supportsMoment} from './moment-capabilities.js';
+import type {ArtFormat} from './art.js';
 import type {ErrorCode} from './errors.js';
+import type {ArtDisplayTarget} from './art-state.js';
+import type {DeviceRecord} from './devices.js';
+
+export const ART_SHOW_MOOD = 'celebrate';
+export const ART_SHOW_DURATION_MS = {pixoo: 10_000, tidbyt: 30_000} as const;
+
+export type ConfiguredArtTarget = {target: string; kind: ArtDisplayTarget};
+export type ArtTargets = {id: 'art'; revision: number; targets: ConfiguredArtTarget[]};
+export type ArtShowGuard = ConfiguredArtTarget & {configurationRevision: number; epoch: string};
+export type ArtDestination = ConfiguredArtTarget & {label?: string; guard?: ArtShowGuard; formats?: ArtFormat[]; maxBytes?: number};
+
+export function acceptsArtRendition(destination: Pick<ArtDestination, 'formats' | 'maxBytes'>, rendition: {format: string; bytes: number} | undefined): boolean {
+  return rendition !== undefined && (rendition.format === 'gif' || rendition.format === 'png') &&
+    destination.formats?.includes(rendition.format) === true && destination.maxBytes !== undefined && rendition.bytes <= destination.maxBytes;
+}
+
+export function isArtShowGuard(value: unknown): value is ArtShowGuard {
+  if (typeof value !== 'object' || value === null) return false;
+  return 'target' in value && typeof value.target === 'string' && value.target.length <= 128 &&
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.target) && value.target !== 'browser' &&
+    'kind' in value && (value.kind === 'pixoo' || value.kind === 'tidbyt') &&
+    'configurationRevision' in value && typeof value.configurationRevision === 'number' && Number.isSafeInteger(value.configurationRevision) && value.configurationRevision >= 0 &&
+    'epoch' in value && typeof value.epoch === 'string' && /^[A-Za-z0-9_.-]{1,128}$/.test(value.epoch);
+}
+
+export function artDestination(display: ConfiguredArtTarget, device?: DeviceRecord): ArtDestination {
+  if (display.target === 'browser' || device === undefined || device.id !== display.target || device.kind !== display.kind) return display;
+  const label = device.label;
+  const moments = device.capabilities.moments;
+  const art = supportsMoment(moments, ART_SHOW_MOOD, ART_SHOW_DURATION_MS[display.kind]) ? moments.art : undefined;
+  const eligible = device.availability === 'available' && device.held === undefined && art !== undefined &&
+    !(device.externalControl.status === 'known' && device.externalControl.owner === 'external');
+  return {...display, ...(label === undefined ? {} : {label}), ...(eligible ? {formats: art.formats, maxBytes: art.maxBytes, guard: {...display,
+    configurationRevision: device.configurationRevision, epoch: device.generation.epoch}} : {})};
+}
+
+export function sameArtShowGuard(expected: ArtShowGuard, current: ArtShowGuard | undefined): boolean {
+  return current !== undefined && expected.target === current.target && expected.kind === current.kind &&
+    expected.configurationRevision === current.configurationRevision && expected.epoch === current.epoch;
+}
 
 // The owner's on-demand show of one saved artwork (Hub #1581). Browser-safe: WebCrypto only, so the gallery and the MCP
 // gateway can name the same per-surface operations the core tracks. The family itself registers in `families.ts`.
@@ -21,7 +63,7 @@ export const ART_SHOW_BROWSER = 'browser';
 export const ART_SHOW_LEAD_MS = 20_000;
 
 /** `org.bunny.art.show.requested`: show one saved artwork now. `coversStatus` defaults to true. */
-export type ArtShowRequest = {requestId: string; artworkId: string; targets: string[]; coversStatus?: boolean};
+export type ArtShowRequest = {requestId: string; artworkId: string; targets: string[]; coversStatus?: boolean; guards?: ArtShowGuard[]};
 
 /** The independently tracked operations one surface of a show may have. A missing record alone cannot distinguish a skipped request from missing evidence. */
 export type ArtShowSurface =

@@ -15,7 +15,7 @@ import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptC
 import {inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
-import {ConversationActions} from './catalog-actions.js';
+import {ConversationActions, type RetainedArtworkRead} from './catalog-actions.js';
 import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
@@ -33,6 +33,7 @@ export type Dispatch = (data: AssistantDispatch, parent: TraceContext, signal: A
  */
 export type AssistantOptions = {
   provider?: ModelProvider;
+  retainedArtwork?: RetainedArtworkRead;
   tools?: readonly string[];
   core?: () => CoreCopy;
   dispatch?: Dispatch;
@@ -544,7 +545,7 @@ export class AssistantEngine {
     if (asked && question !== undefined) this.#speak(state.taskId, question.id, question.text, active.span.context);
     return {step: state.step + 1, next, result};
   }
-  #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed);}
+  #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed, this.options.retainedArtwork);}
   #catalogActions: ConversationActions | undefined;
   /** The question a call asks, or undefined when the command cannot be proposed. */
   #question(taskId: string, call: ToolCall, copy: CoreCopy): Question | undefined {
@@ -695,7 +696,8 @@ export class AssistantEngine {
         }
         return settle(answer, receipt);
       }, artDescription === undefined ? undefined : current => {
-        this.store.artReply(current, id, artDescription, this.context.clock.now());
+        const targets = proposal.family === 'catalog-action' ? proposal.data.showTargets : undefined;
+        this.store.artReply(current, id, artDescription, this.context.clock.now(), Array.isArray(targets) && targets.every((v): v is string => typeof v === 'string') ? targets : undefined);
       });
     } else {
       const delegate = this.options.delegate;

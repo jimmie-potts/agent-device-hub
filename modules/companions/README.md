@@ -451,6 +451,11 @@ The animation stays on its first frame until played. Opening a conversation
 or playing a GIF does not generate art or send it to a device. If the art is
 removed from the library, the saved reply remains readable.
 
+Allowlist `control_art_show` to use **Show on…** on a generated reply. Select the
+browser or a configured display, then approve. When a create request also names
+a display, the reply opens this choice with the intended destination selected.
+Each display reports its own preparation and presentation results.
+
 ### Attach artwork
 
 Use Attach or drop one PNG, JPEG, or GIF onto the Conversation message field.

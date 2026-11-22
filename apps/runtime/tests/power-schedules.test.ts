@@ -386,7 +386,7 @@ void test('admitted generic devices use their SDK owner and the real tracked gua
   const harness=new CoreHarness(core,{bus,stateDir:directory,clock:{now:clock.now},scheduler:clock.scheduler});
   context.after(async()=>{await harness.stop();await owner.close();});
   await harness.start();
-  core.setAutomationDevices(automationDevices([{name:'test-power',admitted:true,devices:['lamp-a']} ],bus.syncOwners('device')));
+  await core.setAutomationDevices(automationDevices([{name:'test-power',admitted:true,devices:['lamp-a']} ],bus.syncOwners('device')));
   await flush();
   const routines=core.automation.routines;assert.ok(routines);
   const saved=await routines.create({...input,enabled:true,actions:[on,{target:'lamp-a',family:'brightness-set',data:{percent:40}}]});
@@ -407,7 +407,7 @@ void test('admitted generic devices use their SDK owner and the real tracked gua
   await harness.stop();
   const restarted=new CoreHarness(core,{bus,stateDir:directory,clock:{now:clock.now},scheduler:clock.scheduler});
   context.after(()=>restarted.stop());
-  await restarted.start();core.setAutomationDevices([{id:'lamp-a',owner:owner.source}]);await flush();
+  await restarted.start();await core.setAutomationDevices([{id:'lamp-a',owner:owner.source}]);await flush();
   assert.equal(core.automation.routines?.get(saved.id).enabled,true);assert.equal(commands.length,2);
   clock.advance(24*60*60*1000);await flush();await core.automation.routines?.settled();
   assert.equal(commands.length,4);
@@ -432,7 +432,7 @@ for(const table of ['automation_power_guard','automation_log'] as const) void te
   store.insertRule({id: 'routine-synthetic', name: input.name, enabled: true, kind: 'routine',
     trigger: JSON.stringify({schema: 'routine/1.0', days: input.days, time: input.time}),
     action: JSON.stringify({definitionId: 'synthetic-definition', actions: [on, off]}), createdAtMs: clock.now(), updatedAtMs: clock.now()}, 64);
-  part.open(db);part.setDevices([{id:'lamp-a',owner:owner.source}]);await flush();
+  part.open(db);await part.setDevices([{id:'lamp-a',owner:owner.source}]);await flush();
   try {
     const routines=part.controls.routines;assert.ok(routines);
     db.exec(`CREATE TRIGGER refuse_write BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT,'synthetic storage refusal'); END`);

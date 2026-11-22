@@ -347,8 +347,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             renderMessage={message => <article aria-label={`${message.role} message`}>
               <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
               <p className="conversation-message-text" dir="auto">{message.text}</p>
-              {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} api={context.api}
-                connected={connected} attachment={message.attachment}
+              {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
+                connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
                 artRevision={art?.revision}/>}
               {message.role === 'assistant' && (message.text.length > LIMITS.spokenChars
                 ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>

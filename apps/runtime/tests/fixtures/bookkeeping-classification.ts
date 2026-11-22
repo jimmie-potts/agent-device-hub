@@ -34,6 +34,7 @@ export const STATE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
   'music-lighting-device/2.0': [],
   'playback-position/2.0': [],
   'art-schedule/2.0': [],
+  'art-targets/2.0': [],
   'art-show-effects/2.0': [],
   'assistant-state/2.0': [], 'assistant-state/2.1': [],
   'lighting-layout/2.0': [], 'lighting-layout/2.1': [],

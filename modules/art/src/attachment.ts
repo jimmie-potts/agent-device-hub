@@ -19,7 +19,8 @@ type PreparedAttachment = {
   digest: string;
 };
 
-async function prepare(bytes: Uint8Array, requestId: string, now: number): Promise<PreparedAttachment | ErrorBody> {
+/** Decode one original into browser and display compositions without staging, generating or saving anything. */
+export async function prepareArtMedia(bytes: Uint8Array, artworkId: string): Promise<Omit<PreparedAttachment, 'artwork'> & {palette: string[]} | ErrorBody> {
   const image = sharp(bytes, {animated: true, limitInputPixels: MAX_PIXELS, failOn: 'warning'});
   const {format, width, height, pageHeight, pages = 1, delay = []} = await image.metadata();
   if (format !== 'png' && format !== 'jpeg' && format !== 'gif') return errorBody('unsupported-capability');
@@ -39,7 +40,7 @@ async function prepare(bytes: Uint8Array, requestId: string, now: number): Promi
     : await sharp(bytes, {limitInputPixels: MAX_PIXELS, failOn: 'warning'}).autoOrient().png().toBuffer();
   const browser = await sharp(poster).resize({width: 1536, height: 1024, fit: 'inside', withoutEnlargement: true})
     .webp({quality: 90}).toBuffer({resolveWithObject: true});
-  const artworkId = uploadArtworkId(requestId), digest = sha256(bytes);
+  const digest = sha256(bytes);
   const blobs = new Map<string, Blob>([[digest, {type: `image/${format}`, bytes}]]);
   const rendition = (content: Uint8Array, type: ArtRendition['format'], w: number, h: number, frames = 1): ArtRendition => {
     const id = sha256(content);
@@ -59,8 +60,7 @@ async function prepare(bytes: Uint8Array, requestId: string, now: number): Promi
     if (content.byteLength > MAX_DISPLAY_BYTES) return errorBody('too-large');
     compositions.push(composition(target, rendition(content, animated ? 'gif' : 'png', w, h, pages)));
   }
-  return {artwork: {artworkId, requestId, favorite: true, feedback: null, variationOf: null, deletedAtMs: null,
-    createdAtMs: now, generatedBy: 'local', palette: await paletteOf(poster)}, compositions, blobs, digest};
+  return {palette: await paletteOf(poster), compositions, blobs, digest};
 }
 
 /** Holds validated bytes until their tracked command admits them, then until expiry or durable save. */
@@ -79,8 +79,11 @@ export class ArtAttachments {
     this.#pending = pending;
     const release = (): void => {if (this.#pending === pending) this.#pending = undefined;};
     try {
-      const data = await prepare(request.bytes, request.requestId, this.now());
-      if ('error' in data) {release(); return data;}
+      const artworkId = uploadArtworkId(request.requestId);
+      const media = await prepareArtMedia(request.bytes, artworkId);
+      if ('error' in media) {release(); return media;}
+      const data: PreparedAttachment = {...media, artwork: {artworkId, requestId: request.requestId, favorite: true, feedback: null,
+        variationOf: null, deletedAtMs: null, createdAtMs: this.now(), generatedBy: 'local', palette: media.palette}};
       if (request.signal.aborted) {release(); return errorBody('cancelled');}
       pending.data = data;
       return {data: {action: 'stage', sha256: data.digest}, finish: reply => {
