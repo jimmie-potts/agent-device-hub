@@ -494,8 +494,12 @@ The companions module SHALL give each conversation a title of the form `#<issue>
 - **THEN** no title is published, every observation keeps the persona name, every task succeeds, and each call is recorded once as failed, invalid or uncertain
 
 #### Scenario: Spend limits
-- **WHEN** a title call's reservation would pass the daily spend limit or the month's guard, or Anthropic's monthly spend limit refuses the title call
+- **WHEN** a title call's reservation would pass the daily spend limit or the month's guard
 - **THEN** nothing is sent, the call is recorded failed with `capacity`, the persona name stands and the task succeeds
+
+#### Scenario: Anthropic spend limit refuses a title call
+- **WHEN** Anthropic answers a title call's one request with a documented spend-limit refusal
+- **THEN** that request is the only one sent and nothing retries, the call is recorded failed with `capacity`, the persona name stands and the task succeeds
 
 #### Scenario: No title model
 - **WHEN** the synthetic `bunny` profile, Reachy and MicroDuck each run a task without an injected title provider

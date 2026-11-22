@@ -277,11 +277,12 @@ has the details):
 Coding-worker runs and other providers, such as the art module's, are outside
 this workspace's limit and the assistant's ledger.
 
-To return to the #2025 or #2024 release, add `assistant.prices` for the
-configured model and the title model first. Without them, that release refuses
-every paid turn and title call, naming the missing price, though the module
-still starts. The workspace's limit stays in
-force either way.
+To return to the #2025 release, first add `assistant.prices` for the
+configured model and the title model. Without them, that release refuses every
+paid turn, naming the missing price, and refuses every title call, which it
+records as `capacity` while the persona name stays. The module still starts.
+The #2024 release has no title calls; to return to it, add a price for the
+configured model first. The workspace's limit stays in force either way.
 
 ## Conversation titles (#2025)
 
