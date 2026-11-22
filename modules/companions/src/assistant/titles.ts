@@ -4,8 +4,10 @@
 // source, generated or the owner's, and published as the session title; until one exists the persona name stands. The
 // owner's rename always wins: it advances the conversation's title generation, so a generation in flight is dropped when
 // it lands, and no generated title replaces it. A failed, refused or invalid title leaves the earlier title, or the
-// persona, and never touches a task. Each title call is recorded on the conversation with its reported usage, apart from
-// any task's bounds, so the module's spend accounting can count it (Hub #2024). Nothing is retried (ADR 0012).
+// persona, and never touches a task. Each paid title call reserves its most expensive cost in the shared spend ledger
+// (Hub #2024) before it is sent, as a conversation-level call outside every task's limits, and settles it with the
+// reported usage; a call the spend limits refuse is never sent. Each call is also recorded on the conversation with its
+// outcome. Nothing is retried (ADR 0012).
 //
 // Third-party sources (see ../../THIRD-PARTY-NOTICES.md), adapted and modified here:
 // - OpenAI Codex, codex-rs/tui/src/app/thread_title.rs at a0436d69ffd9a6d943d9b56175ba2968c5e698af, Apache License 2.0,
@@ -26,6 +28,7 @@ import {coreFamilies, type Title} from '@jimmie-potts/event-contracts/v2/familie
 import type {AddMessage, Cancel, Outbox} from '@jimmie-potts/sdk';
 import {ANTHROPIC_URL, ANTHROPIC_VERSION, codeOfStatus, type Transport} from './anthropic.js';
 import {ProviderFault, textBytes} from './provider.js';
+import {inputBound, type SpendLedger, type TokenUsage} from './spend.js';
 import {PROFILES} from '../knowledge/model.js';
 
 /** The longest description after any issue reference, in Unicode characters. */
@@ -161,10 +164,8 @@ export function ownerTitle(value: string): string | undefined {
   return displayable(title, OWNER_TITLE_CHARS) ? title : undefined;
 }
 
-/** What a title call reported it used, by token kind; the spend accounting prices each kind. */
-export type TitleUsage = {inputTokens: number; outputTokens: number; cacheCreationInputTokens: number; cacheReadInputTokens: number};
-/** A title answer: its text, or null when the provider refused or cut it, and its reported usage, or null when unreported. */
-export type TitleReply = {text: string | null; usage: TitleUsage | null};
+/** A title answer: its text, or null when the provider refused or cut it, and its reported usage by price class, or null when unreported. */
+export type TitleReply = {text: string | null; usage: TokenUsage | null};
 /** Writes one title from a bounded prompt. A provider never sees the bus, a task or anything but the prompt. */
 export type TitleProvider = {readonly name: AssistantProvider; readonly model: string; title(prompt: string, signal: AbortSignal): Promise<TitleReply>};
 
@@ -172,12 +173,14 @@ export type TitleProvider = {readonly name: AssistantProvider; readonly model: s
 export class SyntheticTitleProvider implements TitleProvider {
   readonly name = 'synthetic' as const;
   readonly model = 'synthetic';
-  title(): Promise<TitleReply> {return Promise.resolve({text: SYNTHETIC_TITLE, usage: {inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0}});}
+  title(): Promise<TitleReply> {return Promise.resolve({text: SYNTHETIC_TITLE, usage: {input: 0, output: 0, cacheWrite: 0, cacheRead: 0}});}
 }
 
 const MAX_RESPONSE_BYTES = 65_536;
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-const count = (value: unknown): number | undefined => value === undefined || value === null ? 0 : typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+/** A reported count; an absent or null cache count is zero, as the API reports a request that wrote or read no cache, while input and output are required. */
+const count = (value: unknown, required: boolean): number | undefined => value === undefined || value === null ? required ? undefined : 0
+  : typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 export type AnthropicTitleOptions = {readonly key: string; readonly model?: string; readonly transport?: Transport; readonly url?: string};
 /**
  * The Anthropic Messages API behind the title call, through the same fetch seam, version and key as the turn provider:
@@ -213,11 +216,9 @@ export class AnthropicTitleProvider implements TitleProvider {
     try {value = JSON.parse(text);} catch {throw new ProviderFault('invalid-message');}
     if (!object(value) || !Array.isArray(value.content) || !object(value.usage)) throw new ProviderFault('invalid-message');
     const {usage} = value;
-    const counts = [usage.input_tokens, usage.output_tokens, usage.cache_creation_input_tokens, usage.cache_read_input_tokens].map(count);
-    const [inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens] = counts;
-    const reported = inputTokens !== undefined && outputTokens !== undefined && cacheCreationInputTokens !== undefined && cacheReadInputTokens !== undefined
-      && usage.input_tokens !== undefined && usage.output_tokens !== undefined
-      ? {inputTokens, outputTokens, cacheCreationInputTokens, cacheReadInputTokens} : null;
+    const input = count(usage.input_tokens, true), output = count(usage.output_tokens, true);
+    const cacheWrite = count(usage.cache_creation_input_tokens, false), cacheRead = count(usage.cache_read_input_tokens, false);
+    const reported = input === undefined || output === undefined || cacheWrite === undefined || cacheRead === undefined ? null : {input, output, cacheWrite, cacheRead};
     const answer = value.content.filter((block): block is {type: 'text'; text: string} => object(block) && block.type === 'text' && typeof block.text === 'string')
       .map(block => block.text).join('\n').trim();
     const usable = value.stop_reason !== 'refusal' && value.stop_reason !== 'max_tokens' && answer !== '';
@@ -231,15 +232,18 @@ export type TitleRecord = {version: 1; title: {value: string; source: 'generated
   turns: number; lastActivityMs: number | null};
 /**
  * One title call: admitted before the request leaves, then settled. An admitted call that never settles, as after a
- * crash, keeps unknown usage, as an uncertain one does. `outcome` says what became of a definitive answer.
+ * crash, keeps unknown usage, as an uncertain one does. `outcome` says what became of a definitive answer. A call the
+ * spend limits refused is recorded failed with `capacity` and was never sent. A paid call's id is its spend ledger id.
  */
 export type TitleCall = {version: 1; id: string; conversationId: string; provider: AssistantProvider; model: string; generation: number;
   startedAtMs: number; endedAtMs: number | null; status: 'admitted' | 'succeeded' | 'failed' | 'uncertain'; code?: ErrorCode;
-  outcome: 'applied' | 'unchanged' | 'invalid' | 'dropped' | null; usage: TitleUsage | null; maxTokens: number};
+  outcome: 'applied' | 'unchanged' | 'invalid' | 'dropped' | null; usage: TokenUsage | null; maxTokens: number};
 
-/** The engine's seams: the outbox, the clock and scheduler, the profile's provider and what the conversation has saved and reported. */
+/** The engine's seams: the outbox, the clock and scheduler, the spend ledger, the profile's provider and what the conversation has saved and reported. */
 export type TitleDependencies = {
   outbox: Outbox;
+  /** The shared spend ledger (Hub #2024): a paid title call reserves before it is sent and settles with its usage. */
+  spend: Pick<SpendLedger, 'reserve' | 'settle'>;
   now: () => number;
   after: (delayMs: number, callback: () => void) => Cancel;
   provider: (profile: AssistantProfile) => TitleProvider;
@@ -349,8 +353,17 @@ export class ConversationTitles {
       prompt = titlePrompt(messages);
       if (prompt === undefined) return;
       owners = messages.filter(message => message.role === 'owner').map(message => message.text);
-      call = {version: 1, id: randomUUID(), conversationId, provider: provider.name, model: provider.model, generation: record.generation,
+      const admitted: TitleCall = {version: 1, id: randomUUID(), conversationId, provider: provider.name, model: provider.model, generation: record.generation,
         startedAtMs: this.deps.now(), endedAtMs: null, status: 'admitted', outcome: null, usage: null, maxTokens: TITLE_MAX_TOKENS};
+      // A paid call reserves its most expensive cost with its receipt, as a conversation-level call; the synthetic one is free.
+      const refused = provider.name === 'synthetic' ? undefined : this.deps.spend.reserve({id: admitted.id, purpose: 'conversation', owner: conversationId,
+        model: provider.model, inputUnits: inputBound({system: TITLE_INSTRUCTIONS, prompt}), outputUnits: TITLE_MAX_TOKENS});
+      if (refused !== undefined) {
+        // The spend limits or a missing price refuse it: nothing is sent, and the earlier title or the persona stays.
+        this.#saveCall({...admitted, endedAtMs: admitted.startedAtMs, status: 'failed', code: 'capacity'});
+        return;
+      }
+      call = admitted;
       this.#saveCall(call);
     });
     if (call === undefined || prompt === undefined) return;
@@ -368,6 +381,8 @@ export class ConversationTitles {
     await this.deps.outbox.transaction(add => {
       const saved = this.call(admitted.id) ?? admitted;
       saved.endedAtMs = this.deps.now();
+      // The reported usage replaces the reservation; a lost or failed answer reports none and keeps the reservation counting.
+      if (saved.provider !== 'synthetic') this.deps.spend.settle(saved.id, reply?.usage ?? null);
       if (reply === undefined) {
         // A lost answer, a deadline, a rename or a stop leaves the call's fate and usage unknown; a definitive error settles it.
         const definitive = fault instanceof ProviderFault && !fault.uncertain ? fault : undefined;

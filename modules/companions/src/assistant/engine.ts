@@ -110,7 +110,7 @@ export class AssistantEngine {
     this.store = new AssistantStore(context.database());
     this.spend = new SpendLedger(context.database(), options.prices ?? {}, () => context.clock.now(), options.timeZone);
     this.#syntheticTitles = options.syntheticTitleProvider ?? new SyntheticTitleProvider();
-    this.titles = new ConversationTitles(context.database(), {outbox, now: () => context.clock.now(), after: (ms, callback) => context.scheduler.after(ms, callback),
+    this.titles = new ConversationTitles(context.database(), {outbox, spend: this.spend, now: () => context.clock.now(), after: (ms, callback) => context.scheduler.after(ms, callback),
       provider: profile => profile === 'bunny' ? options.titleProvider ?? this.#syntheticTitles : this.#syntheticTitles,
       messages: conversationId => this.store.titleMessages(conversationId), reported: conversationId => this.store.report(conversationId).sequence > 0,
       metadata: (conversationId, title, observedAtMs) => observationDraft(titleObservationOf(conversationId, title, observedAtMs))});

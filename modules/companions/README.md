@@ -379,8 +379,8 @@ private section instead.
   [Anthropic price list](https://platform.claude.com/docs/en/about-claude/pricing)
   states as 1.25 times the input price. All four are required, from 0 to 1000,
   for at most 16 models. The Anthropic provider needs an entry for its own
-  model and for its title model, and the section is refused without either, so every paid call can be
-  counted. The module has no built-in prices. The synthetic provider takes no
+  model and for its title model, and the section is refused without either,
+  so every paid call can be counted. The module has no built-in prices. The synthetic provider takes no
   prices.
 - `assistant.tools` lists the permitted tools by name, each once:
   `read_sessions`, `set_mode`, `delegate_coding`, `read_lifx`, `set_lifx_power`, `set_lifx_brightness`, `read_wemo` and `set_wemo_power`.
@@ -710,13 +710,17 @@ exists, the persona name stands.
   generated title, and the model never changes it again. A title call still in
   flight is abandoned, and an answer that arrives after the rename is
   dropped. A name that is not display text is refused with `invalid-request`.
-- **Usage.** Each title call is recorded on its conversation in
-  `assistant_title_calls` with its model, status and reported input, output
-  and cache tokens. Unreported usage stays unknown. Title calls count toward
-  no task's limits; they are kept for the assistant's spend accounting
-  (Hub #2024). The synthetic provider writes the fixed title
-  `Synthetic conversation`, which never repeats the conversation and costs
-  nothing.
+- **Spend.** A paid title call reserves its most expensive cost in the shared
+  spend ledger as a conversation-level call before it is sent, and its
+  reported usage replaces the reservation; a lost or failed answer keeps the
+  reservation counting. A call that the spend limits or a missing price
+  refuse is not sent, and the persona or earlier title stays. Title calls
+  count toward the shared spend limits and toward no task's limits.
+  `assistant.prices` needs an entry for the title model. Each call is also
+  recorded on its conversation in `assistant_title_calls` with its model,
+  status, outcome and reported usage. The synthetic provider writes the fixed
+  title `Synthetic conversation`, which never repeats the conversation and
+  costs nothing.
 
 The title instruction, prompt and normalization are adapted from OpenAI Codex
 (Apache License 2.0) and T3 Code (MIT License); see

@@ -81,14 +81,14 @@ void test('the Anthropic title call sends the instruction and prompt with low ef
   assert.equal(provider.model, DEFAULT_TITLE_MODEL);
   assert.equal(DEFAULT_TITLE_MODEL, 'claude-haiku-5-5');
   assert.deepEqual(await provider.title('PROMPT', new AbortController().signal),
-    {text: '#2025 Conversation titles', usage: {inputTokens: 90, outputTokens: 12, cacheCreationInputTokens: 0, cacheReadInputTokens: 4}});
+    {text: '#2025 Conversation titles', usage: {input: 90, output: 12, cacheWrite: 0, cacheRead: 4}});
   assert.equal(sent[0]?.url, ANTHROPIC_URL);
   assert.equal(sent[0]?.init.redirect, 'error');
   assert.deepEqual(sent[0]?.init.headers, {'content-type': 'application/json', 'x-api-key': 'sk-PRIVATE-KEY', 'anthropic-version': ANTHROPIC_VERSION});
   assert.deepEqual(JSON.parse(sent[0]?.init.body ?? '{}'), {model: 'claude-haiku-5-5', max_tokens: TITLE_MAX_TOKENS, system: TITLE_INSTRUCTIONS,
     messages: [{role: 'user', content: [{type: 'text', text: 'PROMPT'}]}], output_config: {effort: 'low'}});
   answer = json({content: [], stop_reason: 'refusal', usage: {input_tokens: 9, output_tokens: 0}});
-  assert.deepEqual(await provider.title('PROMPT', new AbortController().signal), {text: null, usage: {inputTokens: 9, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0}}, 'a refusal is no title');
+  assert.deepEqual(await provider.title('PROMPT', new AbortController().signal), {text: null, usage: {input: 9, output: 0, cacheWrite: 0, cacheRead: 0}}, 'a refusal is no title');
   answer = json({content: [{type: 'text', text: '#2025 Conversation'}], stop_reason: 'max_tokens', usage: {}});
   assert.deepEqual(await provider.title('PROMPT', new AbortController().signal), {text: null, usage: null}, 'a cut answer is no title, and missing usage is unknown');
   answer = json({error: {type: 'rate_limit_error'}}, 429);
@@ -116,7 +116,9 @@ function titler(answers: (TitleReply | Error | 'hold')[]) {
   };
   return provider;
 }
-const titled = (text: string): TitleReply => ({text, usage: {inputTokens: 50, outputTokens: 6, cacheCreationInputTokens: 0, cacheReadInputTokens: 0}});
+const titled = (text: string): TitleReply => ({text, usage: {input: 50, output: 6, cacheWrite: 0, cacheRead: 0}});
+/** Synthetic prices for the title model, in dollars per million tokens. */
+const PRICES = {'claude-haiku-5-5': {input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1}};
 const done = (text: string): TurnReply => ({text, calls: [], stop: 'end', units: 10});
 const model = (): ModelProvider => ({name: 'synthetic', model: 'synthetic', turn: () => Promise.resolve(done('Synthetic answer.'))});
 
@@ -136,7 +138,7 @@ async function world(context: TestContext, options: CompanionsOptions, synthetic
     for (const waiter of waiters.filter(item => item.check())) waiter.resolve();
   });
   const until = (check: () => boolean) => check() ? Promise.resolve() : new Promise<void>(resolve => {waiters.push({check, resolve});});
-  const module = createCompanionsModule(synthetic ? options : {syntheticTitleProvider: titler([]), ...options});
+  const module = createCompanionsModule(synthetic ? options : {syntheticTitleProvider: titler([]), prices: PRICES, ...options});
   const host = new ModuleHarness(module, {bus, stateDir: dir, spans: new RecordedSpans(), section: {}, ...time});
   await host.start();
   context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
@@ -162,6 +164,8 @@ async function world(context: TestContext, options: CompanionsOptions, synthetic
       assert.equal(reply.status, 'accepted', JSON.stringify(reply));
       await until(() => seen.filter(message => message.data.event.kind === 'turn-ended').length > before);
     },
+    /** The shared spend ledger's rows: each call's purpose, owner, model and reported cost in millionths of a dollar, or null while it counts its reservation. */
+    spent: () => (host.moduleDatabase()?.prepare('SELECT id,purpose,owner,model,cost_micros AS cost FROM assistant_spend ORDER BY at_ms,id').all() ?? []).map(row => ({...row})),
     conversation: (profile = 'bunny') => module.inspectAssistant()?.tasks.find(task => task.profile === profile)?.conversationId ?? assert.fail('a conversation'),
   };
   assert.equal((await w.control('enable')).status, 'accepted');
@@ -190,8 +194,10 @@ void test('the first message of a conversation earns a model-written title, publ
   assert.equal(task?.reservedUnits, 10, 'and reserves none of its units');
   const [call] = w.store().calls();
   assert.deepEqual({status: call?.status, outcome: call?.outcome, model: call?.model, usage: call?.usage, conversationId: call?.conversationId},
-    {status: 'succeeded', outcome: 'applied', model: 'claude-haiku-5-5', usage: {inputTokens: 50, outputTokens: 6, cacheCreationInputTokens: 0, cacheReadInputTokens: 0}, conversationId: w.conversation()},
+    {status: 'succeeded', outcome: 'applied', model: 'claude-haiku-5-5', usage: {input: 50, output: 6, cacheWrite: 0, cacheRead: 0}, conversationId: w.conversation()},
     'the call and its usage are recorded on the conversation');
+  // The shared spend ledger (Hub #2024) counts it as a conversation-level call: 50 input and 6 output tokens at $1 and $5 per million.
+  assert.deepEqual(w.spent(), [{id: call?.id, purpose: 'conversation', owner: w.conversation(), model: 'claude-haiku-5-5', cost: 80}]);
   // The second task carries the title on its observations and asks for no new one.
   await w.ask('And the next step?');
   assert.deepEqual(w.seen.slice(-2).map(titleOf), [{value: '#1896 Session tracking', source: 'provider'}, {value: '#1896 Session tracking', source: 'provider'}]);
@@ -259,7 +265,7 @@ void test('compare-before-write: an answer settled after a rename advanced the g
   const outbox = {transaction: <T>(work: (add: (key: string, draft: unknown) => unknown) => T) => Promise.resolve(work((key, draft) => {added.push({key, draft}); return draft;}))} as unknown as Outbox;
   let release: (reply: TitleReply) => void = () => {};
   const provider: TitleProvider = {name: 'anthropic', model: 'claude-haiku-5-5', title: () => new Promise<TitleReply>(resolve => {release = resolve;})};
-  const titles = new ConversationTitles(database, {outbox, now: () => 1000, after: () => () => {}, provider: () => provider,
+  const titles = new ConversationTitles(database, {outbox, spend: {reserve: () => undefined, settle: () => {}}, now: () => 1000, after: () => () => {}, provider: () => provider,
     messages: () => [{role: 'owner', text: 'Synthetic request.'}], reported: () => true, metadata: (_id, title) => ({key: 'title', draft: title})});
   titles.touched('conversation-1');
   const work = titles.generate('conversation-1', 'bunny');
@@ -298,6 +304,8 @@ void test('a failed, refused, invalid or late title leaves the persona, never to
     ['failed', 'capacity', null], ['succeeded', null, 'invalid'], ['succeeded', null, 'invalid'], ['succeeded', null, 'invalid'], ['uncertain', null, null],
   ]);
   assert.equal(provider.prompts.length, 5, 'one call each, no retry');
+  assert.deepEqual(w.spent().map(row => row.cost === null ? 'reserved' : 'reported'), ['reserved', 'reserved', 'reported', 'reported', 'reserved'],
+    'a failed, unreported or lost call keeps counting its reservation; a reported one counts its usage');
 });
 
 void test('the synthetic provider writes its fixed title, which never echoes the conversation, for every profile', {timeout: 20_000}, async context => {
@@ -305,8 +313,26 @@ void test('the synthetic provider writes its fixed title, which never echoes the
   await w.ask('SYNTHETIC-PRIVATE-REQUEST');
   await w.titled(1);
   assert.deepEqual(titleOf(w.titles[0]), {value: SYNTHETIC_TITLE, source: 'provider'});
-  assert.equal(w.store().calls()[0]?.usage?.inputTokens, 0, 'it costs nothing');
+  assert.equal(w.store().calls()[0]?.usage?.input, 0, 'it costs nothing');
+  assert.deepEqual(w.spent(), [], 'and reserves no spend');
   assert.equal(JSON.stringify(w.titles).includes('SYNTHETIC-PRIVATE-REQUEST'), false);
+});
+
+void test('a title call the spend limits refuse is never sent and leaves the persona; a missing title price refuses it too', {timeout: 20_000}, async context => {
+  const provider = titler([titled('#7 Never sent')]);
+  // A reservation of 1,024 output tokens at $20,000 per million passes the $20 daily limit.
+  const w = await world(context, {provider: model(), titleProvider: provider, prices: {'claude-haiku-5-5': {input: 1, output: 20_000, cacheWrite: 1, cacheRead: 1}}});
+  await w.ask('Synthetic request.');
+  await w.control('enable');
+  assert.equal(provider.prompts.length, 0, 'nothing is sent');
+  assert.deepEqual(w.store().calls().map(call => [call.status, call.code]), [['failed', 'capacity']]);
+  assert.deepEqual(w.spent(), [], 'a refused reservation records nothing');
+  assert.equal(w.titles.length, 0);
+  assert.equal(w.module.inspectAssistant()?.tasks[0]?.status, 'succeeded', 'the task is untouched');
+  const unpriced = await world(context, {provider: model(), titleProvider: titler([titled('#8 Never sent')]), prices: {}});
+  await unpriced.ask('Synthetic request.');
+  await unpriced.control('enable');
+  assert.deepEqual(unpriced.store().calls().map(call => [call.status, call.code]), [['failed', 'capacity']]);
 });
 
 void test('stopping the module abandons a title call in flight without waiting for it', {timeout: 20_000}, async context => {
