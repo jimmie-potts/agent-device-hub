@@ -89,6 +89,10 @@ void test('labels prefer the user label, then the project ID, then a neutral has
   const codex = working({identity: {...plain.identity, provider: 'codex', client: 'cli'}});
   const [shown] = statusView(copy([codex])).rows;
   assert.match(shown?.kind === 'session' ? shown.label : '', /^X-[0-9A-F]{4}$/);
+  // A native B.U.N.N.Y. assistant conversation without a title (Hub #505).
+  const conversation = working({identity: {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId: 'synthetic-conversation'}});
+  const [native] = statusView(copy([conversation])).rows;
+  assert.match(native?.kind === 'session' ? native.label : '', /^B-[0-9A-F]{4}$/);
   const text = JSON.stringify(view);
   for (const value of Object.values(plain.identity)) assert.ok(!text.toUpperCase().includes(value.toUpperCase()), `identity field ${value} leaked`);
 });

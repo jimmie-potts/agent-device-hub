@@ -21,7 +21,7 @@ import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type C
 import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryPage, type HistoryRow, type HistoryRules} from './history.js';
 import type {HistoryDevice} from './history-alarm.js';
 import {inboxTool, historyTool} from './read-tools.js';
-import {PROVIDERS} from '@jimmie-potts/event-contracts/v2/sources';
+import {NATIVE_SOURCE, PROVIDERS} from '@jimmie-potts/event-contracts/v2/sources';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
 import {ModePart} from './mode.js';
@@ -45,7 +45,7 @@ import {Tracker, type Action, type ActionAnswer, type CoreActions, type CoreOper
 import {CORE_MODULE} from '../host.js';
 import {Backoff} from './backoff.js';
 import {LIFECYCLE_TYPE} from './schemas.js';
-import {SESSION_SCHEMA} from '@jimmie-potts/event-contracts/v2/session';
+import {sessionSchemaOf} from '@jimmie-potts/event-contracts/v2/session';
 import {DEFAULT_CONSUMERS, type Consumer} from './session/model.js';
 import {CoreStore, type CoreTransaction, type Deriver, type SessionOutcome} from './store.js';
 import {admitRuntimeOwnership, assertRuntimeOwnership, bindRuntimeOwnership, ownershipUnavailable, type CoreOwnership, type RuntimeOwnership} from '../runtime-ownership.js';
@@ -166,7 +166,7 @@ function sessionsTool(records: () => Promise<{revision: number; sessions: readon
   return {
     name: 'sessions',
     description: 'Read the agent sessions the core holds, optionally only one provider\'s and those whose label, title, project or session ID contains q, ignoring case. '
-      + 'Each is a session/3.0 record whose status is the hub\'s shared status, a class (needs-owner, working, finished, quiet or unknown) with a detail, '
+      + 'Each is a session/3.0 record, or session/3.1 for a native B.U.N.N.Y. assistant conversation (provider bunny), whose status is the hub\'s shared status, a class (needs-owner, working, finished, quiet or unknown) with a detail, '
       + 'beside its work, attention, outcome and relationship claims, each confirmed or unconfirmed. Each record carries its revision, which approval recovery '
       + 'takes as expectedRevision. Reading changes nothing, acknowledges nothing and proves no readership.',
     input: {type: 'object', additionalProperties: false, properties: {q: {type: 'string', maxLength: MAX_QUERY}, provider: {enum: [...PROVIDERS]}}},
@@ -325,6 +325,20 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
   });
   return module;
 }
+
+/**
+ * The native assistant source's binding (Hub #505): only its producer, the companions module, may name it, that producer
+ * names no other provider, and only it sends `lifecycle/2.2`, whose inputs no hook sends. A native session is never ended
+ * by a runtime end: its conversation and tasks are durable, and only expiry removes its monitoring record. The schemas
+ * already refuse, as `invalid-message`, a native identity with another host or source ID and one in a lifecycle version
+ * before 2.2, so this binding sees only messages the validator accepted.
+ */
+export function nativeBinding(message: Pick<Message<Lifecycle21Observation>, 'source' | 'dataschema' | 'data'>): 'forbidden' | 'invalid-request' | undefined {
+  const native = message.data.identity.provider === NATIVE_SOURCE.provider, producer = message.source === NATIVE_SOURCE.producer;
+  if (native !== producer || (message.dataschema === LIFECYCLE_22_SCHEMA && !producer)) return 'forbidden';
+  return native && message.data.event.kind === 'runtime-ended' ? 'invalid-request' : undefined;
+}
+const LIFECYCLE_22_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.2';
 
 class Core {
   readonly #automation: AutomationPart;
@@ -696,6 +710,11 @@ class Core {
         recordLog(this.#log, 'message.received', {...fields, ...refused(checked.ok ? 'invalid-message' : checked.error.code)});
         return;
       }
+      const binding = nativeBinding(message);
+      if (binding !== undefined) {
+        recordLog(this.#log, 'message.received', {...fields, ...refused(binding)}, message);
+        return;
+      }
       // A store that could not open, as on a first start on a full disk, holds nothing to check against: it opens now,
       // or the observation is refused with the store's code.
       const down = await this.#ensureStore();
@@ -1001,7 +1020,7 @@ class Core {
       const {families} = request.data;
       if (families.includes('music-capture-state') && !this.#music.available()) return errorBody('unavailable', {detail: 'the capture owner cannot serve current state'});
       const states: StateDraft[] = families.includes('session') ? this.#store.records().map(record => ({
-        type: 'org.bunny.session.updated', subject: record.id, dataschema: SESSION_SCHEMA, data: record,
+        type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchemaOf(record), data: record,
       })) : [];
       for (const part of this.#parts) {
         if (!(part.families ?? []).some(family => families.includes(family))) continue;

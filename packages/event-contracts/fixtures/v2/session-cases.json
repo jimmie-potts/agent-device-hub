@@ -1,5 +1,5 @@
 {
- "description": "The shared synthetic session case set (Hub #1865, design decision 10). Each case is an input sequence and checks. Steps are at `atMs` after `startAtMs`: an observation (`observe`), a transport repeat of an earlier step (`again`), a different message under an earlier step's message ID (`conflict`), a consumer's notice acknowledgment, a clock advance, a core restart, the one-time cutover reset, or launch-only roots that fill the session limit (`fill`). A check holds, after `after` steps and at `atMs`, the expected copy as session/3.0 records, the removals, the occurrences since the previous check in publication order, and each reader's expected output. Records name sessions, turns and notices by name, give the work state with why running work is unconfirmed besides its evidence (`unconfirmed`: `restart`) and children as `[working, unconfirmed]`, and take their status from their claims; and the loader in src/v2/session-cases.ts expands them into messages the core families accept. Revisions and generations count steps: the core compares their order, not their values. `since` names the first step of #1865 whose core produces the case: `now` is today's core, `step 7` the storage step and `step 8` the restart, root-start and capacity step. Hub #1947 removed the five-minute work deadline: silence never changes a claim. Reader outputs follow design decision 10 and hold for the shared read function from step 1, with status rule 3 as `noticeCounts` defines it: a notice counts until a known later turn supersedes it (owner decision, 2026-11-18). Everything here is synthetic.",
+ "description": "The shared synthetic session case set (Hub #1865, design decision 10). Each case is an input sequence and checks. Steps are at `atMs` after `startAtMs`: an observation (`observe`), a transport repeat of an earlier step (`again`), a different message under an earlier step's message ID (`conflict`), a consumer's notice acknowledgment, a clock advance, a core restart, the one-time cutover reset, or launch-only roots that fill the session limit (`fill`). A check holds, after `after` steps and at `atMs`, the expected copy as session/3.0 records, the removals, the occurrences since the previous check in publication order, and each reader's expected output. Records name sessions, turns and notices by name, give the work state with why running work is unconfirmed besides its evidence (`unconfirmed`: `restart`) and children as `[working, unconfirmed]`, and take their status from their claims; and the loader in src/v2/session-cases.ts expands them into messages the core families accept. Revisions and generations count steps: the core compares their order, not their values. `since` names the first step of #1865 whose core produces the case: `now` is today's core, `step 7` the storage step and `step 8` the restart, root-start and capacity step. Hub #1947 removed the five-minute work deadline: silence never changes a claim. Reader outputs follow design decision 10 and hold for the shared read function from step 1, with status rule 3 as `noticeCounts` defines it: a notice counts until a known later turn supersedes it (owner decision, 2026-11-18). Native assistant conversations (Hub #505), one session per profile with one turn per task, are observed by their one producer in lifecycle/2.2 with the conversation's known ordering, and their records are session/3.1; a notice may carry its task's `result`. Everything here is synthetic.",
  "startAtMs": 1791288000000,
  "sessions": {
   "claude": {"identity": {"provider": "claude", "client": "code", "hostId": "synthetic-host", "sourceId": "claude-hooks", "sessionId": "synthetic-claude"}, "parent": "unknown"},
@@ -7,7 +7,11 @@
   "claude-b": {"identity": {"provider": "claude", "client": "code", "hostId": "synthetic-host", "sourceId": "claude-hooks", "sessionId": "synthetic-claude-b"}, "parent": "unknown"},
   "codex": {"identity": {"provider": "codex", "client": "local", "hostId": "synthetic-host", "sourceId": "codex-hooks", "sessionId": "synthetic-codex"}, "parent": "unknown"},
   "codex-agent": {"identity": {"provider": "codex", "client": "local", "hostId": "synthetic-host", "sourceId": "codex-hooks", "sessionId": "synthetic-codex-agent"}, "parent": "codex"},
-  "desktop": {"identity": {"provider": "codex", "client": "desktop", "hostId": "synthetic-host", "sourceId": "codex-desktop", "sessionId": "synthetic-desktop"}, "parent": "top-level"}
+  "desktop": {"identity": {"provider": "codex", "client": "desktop", "hostId": "synthetic-host", "sourceId": "codex-desktop", "sessionId": "synthetic-desktop"}, "parent": "top-level"},
+  "assistant": {"identity": {"provider": "bunny", "client": "assistant", "hostId": "core", "sourceId": "companions", "sessionId": "synthetic-conversation-a"}, "parent": "top-level"},
+  "assistant-b": {"identity": {"provider": "bunny", "client": "assistant", "hostId": "core", "sourceId": "companions", "sessionId": "synthetic-conversation-b"}, "parent": "top-level"},
+  "assistant-c": {"identity": {"provider": "bunny", "client": "assistant", "hostId": "core", "sourceId": "companions", "sessionId": "synthetic-conversation-c"}, "parent": "top-level"},
+  "assistant-d": {"identity": {"provider": "bunny", "client": "assistant", "hostId": "core", "sourceId": "companions", "sessionId": "synthetic-conversation-d"}, "parent": "top-level"}
  },
  "policies": {
   "default": {},
@@ -732,6 +736,279 @@
       "status": {"claude": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"claude": false},
       "nanoleaf": {"tasks": {"claude": "working"}, "steady": []}, "dashboard": {"claude": "working"},
       "opportunities": [{"session": "claude", "for": "notice", "raisedAt": 0, "consumer": "reachy-mini", "matches": false}]
+     }}
+   ]
+  },
+  {
+   "id": "native-conversation",
+   "name": "a native conversation's task asks, is answered in the same turn and succeeds, and its next task is the next turn",
+   "covers": "Hub #505 decisions 3 and 4: a conversation is a root and each task a turn; the answer resolves only its question and the task works again in its turn with no new start; a result names the finished detail; the next task's start supersedes the earlier notice",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 2000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 3}, "nativeEventId": "3"}},
+    {"atMs": 4000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "attention-resolved", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 4}, "nativeEventId": "4"}},
+    {"atMs": 5000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "activity-observed"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "nativeEventId": "5"}},
+    {"atMs": 7000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-ended", "result": "succeeded"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 6}, "nativeEventId": "6"}},
+    {"atMs": 9000, "observe": {"session": "assistant", "turn": "t2", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 7}, "nativeEventId": "7"}},
+    {"atMs": 11000, "observe": {"session": "assistant", "turn": "t2", "event": {"kind": "turn-ended", "result": "succeeded"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 8}, "nativeEventId": "8"}}
+   ],
+   "checks": [
+    {"after": 3, "atMs": 3000,
+     "records": [
+      {"session": "assistant", "revision": 3, "generation": 1, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 3}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "attention": [{"kind": "input", "id": "q1", "turn": "t1"}]}
+     ],
+     "occurrences": [{"kind": "attention-raised", "session": "assistant", "attention": {"kind": "input", "id": "q1", "turn": "t1"}}],
+     "readers": {
+      "status": {"assistant": "needs-owner/input"}, "lifx": "attention", "tronbyt": [["ASK", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "blocked"}, "steady": []}, "dashboard": {"assistant": "input"}
+     }},
+    {"after": 5, "atMs": 6000,
+     "records": [
+      {"session": "assistant", "revision": 5, "generation": 1, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "observedAtMs": 5000, "lastEvidenceAtMs": 5000}
+     ],
+     "occurrences": [{"kind": "attention-cleared", "session": "assistant", "attention": {"kind": "input", "id": "q1", "turn": "t1"}, "cause": "resolved"}],
+     "readers": {
+      "status": {"assistant": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": []}, "dashboard": {"assistant": "working"}
+     }},
+    {"after": 6, "atMs": 8000,
+     "records": [
+      {"session": "assistant", "revision": 6, "generation": 1, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 6}, "observedAtMs": 7000, "lastEvidenceAtMs": 7000, "notices": [{"turn": "t1", "acknowledgedBy": [], "result": "succeeded"}]}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "assistant", "notice": "t1"}],
+     "readers": {
+      "status": {"assistant": "finished/succeeded"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "unread"}, "steady": []}, "dashboard": {"assistant": "finished"}
+     }},
+    {"after": 7, "atMs": 10000,
+     "records": [
+      {"session": "assistant", "revision": 7, "generation": 1, "turn": "t2", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 7}, "observedAtMs": 9000, "lastEvidenceAtMs": 9000, "notices": [{"turn": "t1", "acknowledgedBy": ["nanoleaf", "pixoo"], "result": "succeeded"}]}
+     ],
+     "readers": {
+      "status": {"assistant": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": []}, "dashboard": {"assistant": "working"}
+     }},
+    {"after": 8, "atMs": 12000,
+     "records": [
+      {"session": "assistant", "revision": 8, "generation": 1, "turn": "t2", "work": "idle", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 8}, "observedAtMs": 11000, "lastEvidenceAtMs": 11000, "notices": [{"turn": "t1", "acknowledgedBy": ["nanoleaf", "pixoo"], "result": "succeeded"}, {"turn": "t2", "acknowledgedBy": [], "result": "succeeded"}]}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "assistant", "notice": "t2"}],
+     "readers": {
+      "status": {"assistant": "finished/succeeded"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "unread"}, "steady": []}, "dashboard": {"assistant": "finished"}
+     }}
+   ]
+  },
+  {
+   "id": "native-outcomes",
+   "name": "native tasks fail, are cancelled while waiting for approval, are paused and are left uncertain",
+   "covers": "Hub #505 decision 4 and owner decision 1: a failure stays unread, an owner cancel ends the task with its notice acknowledged for every consumer and clears its approval, a paused task makes no running-work claim, and an uncertain one is unknown",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 0, "observe": {"session": "assistant-b", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-b", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 0, "observe": {"session": "assistant-c", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-c", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 0, "observe": {"session": "assistant-d", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-d", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "assistant-b", "turn": "t1", "event": {"kind": "attention-approval", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-conversation-b", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 1000, "observe": {"session": "assistant-b", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-conversation-b", "sequence": 3}, "nativeEventId": "3"}},
+    {"atMs": 2000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-ended", "result": "failed"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 2000, "observe": {"session": "assistant-b", "turn": "t1", "event": {"kind": "turn-ended", "result": "cancelled"}, "ordering": {"epoch": "synthetic-conversation-b", "sequence": 4}, "nativeEventId": "4"}},
+    {"atMs": 2000, "observe": {"session": "assistant-c", "turn": "t1", "event": {"kind": "turn-interrupted"}, "ordering": {"epoch": "synthetic-conversation-c", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 2000, "observe": {"session": "assistant-d", "turn": "t1", "event": {"kind": "turn-uncertain"}, "ordering": {"epoch": "synthetic-conversation-d", "sequence": 2}, "nativeEventId": "2"}}
+   ],
+   "checks": [
+    {"after": 10, "atMs": 3000,
+     "records": [
+      {"session": "assistant", "revision": 7, "generation": 1, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 2}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "notices": [{"turn": "t1", "acknowledgedBy": [], "result": "failed"}]},
+      {"session": "assistant-b", "revision": 8, "generation": 2, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-conversation-b", "sequence": 4}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "notices": [{"turn": "t1", "acknowledgedBy": ["dashboard", "nanoleaf", "pixoo"], "result": "cancelled"}]},
+      {"session": "assistant-c", "revision": 9, "generation": 3, "turn": "t1", "work": "interrupted", "ordering": {"epoch": "synthetic-conversation-c", "sequence": 2}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000},
+      {"session": "assistant-d", "revision": 10, "generation": 4, "turn": "t1", "work": "unknown", "ordering": {"epoch": "synthetic-conversation-d", "sequence": 2}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000, "unavailable": [["activity", "lost"]]}
+     ],
+     "occurrences": [{"kind": "attention-raised", "session": "assistant-b", "attention": {"kind": "approval", "id": "q1", "turn": "t1"}}, {"kind": "turn-ended", "session": "assistant", "notice": "t1"}, {"kind": "attention-cleared", "session": "assistant-b", "attention": {"kind": "approval", "id": "q1", "turn": "t1"}, "cause": "turn-ended"}, {"kind": "turn-ended", "session": "assistant-b", "notice": "t1"}],
+     "readers": {
+      "status": {"assistant": "finished/failed", "assistant-b": "finished/cancelled", "assistant-c": "quiet/interrupted", "assistant-d": "unknown/lost"}, "policies": {"default": {"assistant-b": "quiet/acknowledged"}, "dashboard": {"assistant-b": "quiet/acknowledged"}, "nanoleaf": {"assistant-b": "quiet/acknowledged"}}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"assistant": false, "assistant-b": false, "assistant-c": false, "assistant-d": true}, "nanoleaf": {"tasks": {"assistant": "unread", "assistant-b": "idle", "assistant-c": "idle", "assistant-d": "idle"}, "steady": []}, "dashboard": {"assistant": "finished", "assistant-b": "idle", "assistant-c": "interrupted", "assistant-d": "unknown"}
+     }}
+   ]
+  },
+  {
+   "id": "native-resume",
+   "name": "a native task left uncertain, then paused, resumes in its own turn each time",
+   "covers": "Hub #505 decisions 3 and 7: a resumed run is the same turn; ordered, newer work evidence settles a lost activity, so the resumed task is working and confirmed",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-uncertain"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 3000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "activity-observed"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 3}, "nativeEventId": "3"}},
+    {"atMs": 4000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-interrupted"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 4}, "nativeEventId": "4"}},
+    {"atMs": 5000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "activity-observed"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "nativeEventId": "5"}},
+    {"atMs": 6000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-ended", "result": "succeeded"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 6}, "nativeEventId": "6"}}
+   ],
+   "checks": [
+    {"after": 2, "atMs": 2000,
+     "records": [
+      {"session": "assistant", "revision": 2, "generation": 1, "turn": "t1", "work": "unknown", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 2}, "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "unavailable": [["activity", "lost"]]}
+     ],
+     "readers": {
+      "status": {"assistant": "unknown/lost"}, "lifx": "idle", "tronbyt": [], "pixoo": {"assistant": true}, "nanoleaf": {"tasks": {"assistant": "idle"}, "steady": []}, "dashboard": {"assistant": "unknown"}
+     }},
+    {"after": 3, "atMs": 3500,
+     "records": [
+      {"session": "assistant", "revision": 3, "generation": 1, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 3}, "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "readers": {
+      "status": {"assistant": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": []}, "dashboard": {"assistant": "working"}
+     }},
+    {"after": 4, "atMs": 4500,
+     "records": [
+      {"session": "assistant", "revision": 4, "generation": 1, "turn": "t1", "work": "interrupted", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 4}, "observedAtMs": 4000, "lastEvidenceAtMs": 4000}
+     ],
+     "readers": {
+      "status": {"assistant": "quiet/interrupted"}, "lifx": "idle", "tronbyt": [], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "idle"}, "steady": []}, "dashboard": {"assistant": "interrupted"}
+     }},
+    {"after": 6, "atMs": 7000,
+     "records": [
+      {"session": "assistant", "revision": 6, "generation": 1, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 6}, "observedAtMs": 6000, "lastEvidenceAtMs": 6000, "notices": [{"turn": "t1", "acknowledgedBy": [], "result": "succeeded"}]}
+     ],
+     "occurrences": [{"kind": "turn-ended", "session": "assistant", "notice": "t1"}],
+     "readers": {
+      "status": {"assistant": "finished/succeeded"}, "lifx": "done", "tronbyt": [["DONE", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "unread"}, "steady": []}, "dashboard": {"assistant": "finished"}
+     }}
+   ]
+  },
+  {
+   "id": "native-lost-order",
+   "name": "a late, older work observation leaves a newer lost activity in place; a newer one settles it",
+   "covers": "Hub #505 decision 7: ordered work evidence on the same turn settles a lost activity only when it is newer than the marker that made it lost, in the same ordering epoch",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "evidence-unavailable", "dimension": "activity", "reason": "lost"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "nativeEventId": "5"}},
+    {"atMs": 2000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "activity-observed"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 3}, "nativeEventId": "3"}},
+    {"atMs": 3000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "activity-observed"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 6}, "nativeEventId": "6"}}
+   ],
+   "checks": [
+    {"after": 3, "atMs": 2500,
+     "records": [
+      {"session": "assistant", "revision": 2, "generation": 1, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "unavailable": [["activity", "lost"]]}
+     ],
+     "readers": {
+      "status": {"assistant": "working/unconfirmed"}, "lifx": "working", "tronbyt": [["RUN", true]], "pixoo": {"assistant": true}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": ["assistant"]}, "dashboard": {"assistant": "working"}
+     }},
+    {"after": 4, "atMs": 3500,
+     "records": [
+      {"session": "assistant", "revision": 4, "generation": 1, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 6}, "observedAtMs": 3000, "lastEvidenceAtMs": 3000}
+     ],
+     "readers": {
+      "status": {"assistant": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": []}, "dashboard": {"assistant": "working"}
+     }}
+   ]
+  },
+  {
+   "id": "native-delay",
+   "name": "duplicate and late native observations revive nothing",
+   "covers": "Hub #505 decision 7: the conversation's known ordering makes a late raise or a late stop stale, a late observation of an earlier task's turn is stale once the next task started, and a transport repeat is a duplicate",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "attention-resolved", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 4}, "nativeEventId": "4"}},
+    {"atMs": 2000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "activity-observed"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "nativeEventId": "5"}},
+    {"atMs": 3000, "again": 0},
+    {"atMs": 3000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 3000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 3}, "nativeEventId": "3"}},
+    {"atMs": 4000, "observe": {"session": "assistant", "turn": "t2", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 7}, "nativeEventId": "7"}},
+    {"atMs": 5000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-ended", "result": "succeeded"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 6}, "nativeEventId": "6"}}
+   ],
+   "checks": [
+    {"after": 6, "atMs": 3500,
+     "records": [
+      {"session": "assistant", "revision": 3, "generation": 1, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "observedAtMs": 2000, "lastEvidenceAtMs": 2000}
+     ],
+     "readers": {
+      "status": {"assistant": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": []}, "dashboard": {"assistant": "working"}
+     }},
+    {"after": 8, "atMs": 6000,
+     "records": [
+      {"session": "assistant", "revision": 7, "generation": 1, "turn": "t2", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 7}, "observedAtMs": 4000, "lastEvidenceAtMs": 4000}
+     ],
+     "readers": {
+      "status": {"assistant": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": []}, "dashboard": {"assistant": "working"}
+     }}
+   ]
+  },
+  {
+   "id": "native-restart",
+   "name": "a restart with a running and a waiting native task",
+   "covers": "Hub #505 decision 7: a restart makes the running task's work unconfirmed and keeps the waiting task's question; the engine's recovery then reports the task paused",
+   "since": "step 8",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 0, "observe": {"session": "assistant-b", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-b", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "assistant-b", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-conversation-b", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 1000, "observe": {"session": "assistant-b", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-conversation-b", "sequence": 3}, "nativeEventId": "3"}},
+    {"atMs": 2000, "restart": true},
+    {"atMs": 4000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-interrupted"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 2}, "nativeEventId": "2"}}
+   ],
+   "checks": [
+    {"after": 5, "atMs": 3000,
+     "records": [
+      {"session": "assistant", "revision": 5, "generation": 1, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 1}, "observedAtMs": 0, "lastEvidenceAtMs": 0, "unconfirmed": "restart"},
+      {"session": "assistant-b", "revision": 4, "generation": 2, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-conversation-b", "sequence": 3}, "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "attention": [{"kind": "input", "id": "q1", "turn": "t1"}]}
+     ],
+     "occurrences": [{"kind": "attention-raised", "session": "assistant-b", "attention": {"kind": "input", "id": "q1", "turn": "t1"}}],
+     "readers": {
+      "status": {"assistant": "working/unconfirmed", "assistant-b": "needs-owner/input"}, "lifx": "attention", "tronbyt": [["ASK", false], ["RUN", true]], "pixoo": {"assistant": true, "assistant-b": false}, "nanoleaf": {"tasks": {"assistant": "working", "assistant-b": "blocked"}, "steady": ["assistant"]}, "dashboard": {"assistant": "working", "assistant-b": "input"}
+     }},
+    {"after": 6, "atMs": 5000,
+     "records": [
+      {"session": "assistant", "revision": 6, "generation": 1, "turn": "t1", "work": "interrupted", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 2}, "observedAtMs": 4000, "lastEvidenceAtMs": 4000},
+      {"session": "assistant-b", "revision": 4, "generation": 2, "turn": "t1", "work": "idle", "ordering": {"epoch": "synthetic-conversation-b", "sequence": 3}, "observedAtMs": 1000, "lastEvidenceAtMs": 1000, "attention": [{"kind": "input", "id": "q1", "turn": "t1"}]}
+     ],
+     "readers": {
+      "status": {"assistant": "quiet/interrupted", "assistant-b": "needs-owner/input"}, "lifx": "attention", "tronbyt": [["ASK", false]], "pixoo": {"assistant": false, "assistant-b": false}, "nanoleaf": {"tasks": {"assistant": "idle", "assistant-b": "blocked"}, "steady": []}, "dashboard": {"assistant": "interrupted", "assistant-b": "input"}
+     }}
+   ]
+  },
+  {
+   "id": "native-expiry",
+   "name": "a native conversation waits past a day, expires, reappears when answered, and again at its next task, on one ordering sequence",
+   "covers": "Hub #505 decision 8: expiry removes the monitoring record only; the conversation's next change creates a new session with a new generation and fresh watermarks, and its ordering sequence keeps counting",
+   "since": "now",
+   "steps": [
+    {"atMs": 0, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 1}, "nativeEventId": "1"}},
+    {"atMs": 1000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "attention-input", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 2}, "nativeEventId": "2"}},
+    {"atMs": 1000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-waiting"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 3}, "nativeEventId": "3"}},
+    {"atMs": 86401000, "advance": true},
+    {"atMs": 86500000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "attention-resolved", "attention": {"status": "known", "id": "q1"}}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 4}, "nativeEventId": "4"}},
+    {"atMs": 86500000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "activity-observed"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "nativeEventId": "5"}},
+    {"atMs": 86600000, "observe": {"session": "assistant", "turn": "t1", "event": {"kind": "turn-ended", "result": "succeeded"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 6}, "nativeEventId": "6"}},
+    {"atMs": 173000000, "advance": true},
+    {"atMs": 173100000, "observe": {"session": "assistant", "turn": "t2", "event": {"kind": "turn-started"}, "ordering": {"epoch": "synthetic-conversation-a", "sequence": 7}, "nativeEventId": "7"}}
+   ],
+   "checks": [
+    {"after": 4, "atMs": 86401000,
+     "records": [],
+     "removed": [{"session": "assistant", "reason": "expired"}],
+     "occurrences": [{"kind": "attention-raised", "session": "assistant", "attention": {"kind": "input", "id": "q1", "turn": "t1"}}],
+     "readers": {
+      "status": {}, "lifx": "idle", "tronbyt": [], "pixoo": {}, "nanoleaf": {"tasks": {}, "steady": []}, "dashboard": {}
+     }},
+    {"after": 6, "atMs": 86501000,
+     "records": [
+      {"session": "assistant", "revision": 6, "generation": 5, "turn": "t1", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 5}, "observedAtMs": 86500000, "lastEvidenceAtMs": 86500000}
+     ],
+     "readers": {
+      "status": {"assistant": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": []}, "dashboard": {"assistant": "working"}
+     }},
+    {"after": 8, "atMs": 173000000,
+     "records": [],
+     "removed": [{"session": "assistant", "reason": "expired"}],
+     "occurrences": [{"kind": "turn-ended", "session": "assistant", "notice": "t1"}],
+     "readers": {
+      "status": {}, "lifx": "idle", "tronbyt": [], "pixoo": {}, "nanoleaf": {"tasks": {}, "steady": []}, "dashboard": {}
+     }},
+    {"after": 9, "atMs": 173101000,
+     "records": [
+      {"session": "assistant", "revision": 9, "generation": 9, "turn": "t2", "work": "active", "ordering": {"epoch": "synthetic-conversation-a", "sequence": 7}, "observedAtMs": 173100000, "lastEvidenceAtMs": 173100000}
+     ],
+     "readers": {
+      "status": {"assistant": "working/confirmed"}, "lifx": "working", "tronbyt": [["RUN", false]], "pixoo": {"assistant": false}, "nanoleaf": {"tasks": {"assistant": "working"}, "steady": []}, "dashboard": {"assistant": "working"}
      }}
    ]
   }

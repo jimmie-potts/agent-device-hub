@@ -23,7 +23,8 @@ export function publicRecords(sessions: Iterable<StoredSession>, revision: numbe
       id: session.id, revision, generation: session.generation, identity: structuredClone(session.identity), parent: structuredClone(session.parent),
       turn: structuredClone(session.turn), work: session.activity, ...unconfirmedBy(session),
       attention: session.attention.map(({id, kind, turn}) => ({id: structuredClone(id), kind, turn: structuredClone(turn)})),
-      notices: session.notices.map(({id, kind, turn, acknowledgedBy}) => ({id, kind, turn: structuredClone(turn), acknowledgedBy: [...acknowledgedBy]})),
+      notices: session.notices.map(({id, kind, turn, acknowledgedBy, result}) => ({id, kind, turn: structuredClone(turn), acknowledgedBy: [...acknowledgedBy],
+        ...(result === undefined ? {} : {result})})),
       // A read receipt the session still holds shows it read; without one, its own read evidence does.
       read: readReceipt === undefined ? session.read : 'read',
       ...(readReceipt === undefined ? {} : {readReceipt: structuredClone(readReceipt)}),

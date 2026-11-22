@@ -1,6 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
-import {CHIP_TEXT,chipOf,sessionName,uncertainOf} from './sessions.ts';
+import {chipTextOf,sessionName,uncertainOf} from './sessions.ts';
 import {createHabitat,type HabitatController} from './habitat/controller.ts';
 import {markup} from './habitat/template.js';
 import {exportPreferences,importPreferences} from './habitat/preferences.ts';
@@ -38,6 +38,6 @@ export function HabitatPage({views,live}:{views:readonly SessionView[];live:bool
   </details>
   <p role="status">{message}</p>
   <div key={epoch} ref={root} className="habitat-root" hidden={unavailable} dangerouslySetInnerHTML={{__html:markup}}/>
-  {unavailable&&<section aria-label="Habitat session list"><h2>Session activity</h2><p>The habitat artwork is unavailable. Session evidence remains available below.</p><ul>{views.map(view=><li key={view.id}>{sessionName(view)} · {CHIP_TEXT[chipOf(view)]}{!live||uncertainOf(view)!==undefined?' · Evidence uncertain':''}</li>)}</ul>{views.length===0&&<p>No observed sessions.</p>}</section>}
+  {unavailable&&<section aria-label="Habitat session list"><h2>Session activity</h2><p>The habitat artwork is unavailable. Session evidence remains available below.</p><ul>{views.map(view=><li key={view.id}>{sessionName(view)} · {chipTextOf(view)}{!live||uncertainOf(view)!==undefined?' · Evidence uncertain':''}</li>)}</ul>{views.length===0&&<p>No observed sessions.</p>}</section>}
  </section>;
 }

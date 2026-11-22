@@ -58,7 +58,8 @@ export type SessionRow = {
   facts: {source: string; sessionId: string; work: string; read: string; parent: string; children: string};
 };
 
-const CLIENTS: Readonly<Record<string, string>> = {'claude/code': 'Claude Code', 'codex/cli': 'Codex CLI', 'codex/desktop': 'Codex Desktop', 'codex/local': 'Codex (local)'};
+const CLIENTS: Readonly<Record<string, string>> = {'claude/code': 'Claude Code', 'codex/cli': 'Codex CLI', 'codex/desktop': 'Codex Desktop', 'codex/local': 'Codex (local)',
+  'bunny/assistant': 'B.U.N.N.Y. assistant'};
 /** The client a session runs in, as a person names it. */
 export const clientName = ({provider, client, hostId, sourceId}: Identity): string =>
   // This owner-selected source is explicitly Mac-local; other local sources remain surface-unspecified.
@@ -102,6 +103,21 @@ export function chipOf(view: SessionView): SessionChip {
   }
 }
 
+const RESULT_TEXT: Readonly<Record<string, string>> = {succeeded: 'Succeeded', failed: 'Failed', cancelled: 'Cancelled'};
+
+/**
+ * The chip's words for a session: the chip's own, except that a finished turn that records its task's result names it
+ * (Hub #505): `Failed · unread` while it counts as finished, and `Failed` once the dashboard's policy retired it. A
+ * finished turn without a result never names one, so the dashboard never claims success it has no evidence of.
+ */
+export function chipTextOf(view: SessionView, chip: SessionChip = chipOf(view)): string {
+  const counting = view.outcome.notices.filter(notice => noticeCounts(notice, view.turn));
+  const result = [...counting].reverse().find(notice => notice.result !== undefined)?.result;
+  const text = result === undefined ? undefined : RESULT_TEXT[result];
+  if (text === undefined) return CHIP_TEXT[chip];
+  return chip === 'finished' ? `${text} · unread` : chip === 'idle' ? text : CHIP_TEXT[chip];
+}
+
 /**
  * Why a session is uncertain, or undefined when it is not (design decision 10): only an `unknown` status, or a `working`
  * status whose work is unconfirmed. Silence never makes a session that waits for the owner or holds a finished turn
@@ -137,7 +153,7 @@ export function sessionRow(view: SessionView): SessionRow {
   return {
     id: view.id, generation: view.generation, revision: view.revision, label: view.label, name: sessionName(view),
     where: [view.project, clientName(identity)].filter((part): part is string => part !== undefined).join(' · '),
-    chip, chipText: CHIP_TEXT[chip], unread: finishedUnread(view), uncertain: uncertainty !== undefined, uncertainty,
+    chip, chipText: chipTextOf(view, chip), unread: finishedUnread(view), uncertain: uncertainty !== undefined, uncertainty,
     attention: view.attention.items.map(attentionLine),
     notices: view.outcome.notices.map(notice => ({id: notice.id, turn: notice.turn.status === 'known' ? notice.turn.id : 'unknown turn', acknowledgedBy: notice.acknowledgedBy})),
     lastEvidenceAtMs: view.lastEvidenceAtMs,

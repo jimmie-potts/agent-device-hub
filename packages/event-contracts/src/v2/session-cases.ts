@@ -3,16 +3,19 @@
 // cutover reset), and for each check the expected records, removals and occurrences and each reader's expected output.
 // The core's tests and every session reader's tests load the cases here, so the JSON stays compact: named synthetic
 // sessions, turns by name and times as offsets. The loader expands them into full profile 2.0 messages, each expected
-// record a `session/3.0` state built with `buildSession`, and refuses a case whose message the core families do not
+// record a `session/3.0` state built with `buildSession` (`session/3.1` for a native assistant task, Hub #505), and refuses a case whose message the core families do not
 // accept. Nothing here is a real session, title, prompt or host.
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {coreValidator, sessionEntityId, type Attention, type Identity, type KnownId, type LifecycleEvent, type LifecycleObservation,
   type Notice, type NoticeAcknowledgeRequest, type Parent, type Session30Record, type Unavailable, type WorkClaim} from './families.js';
 import type {Message} from './index.js';
-import {buildSession, forConsumer, readSession, SESSION_SCHEMA, type ConsumerPolicy, type SessionView} from './session.js';
+import {buildSession, forConsumer, readSession, sessionSchemaOf, type ConsumerPolicy, type SessionView} from './session.js';
+import {NATIVE_SOURCE} from './sources.js';
 
 const LIFECYCLE_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.0';
+/** The lifecycle version the native assistant source's producer sends (Hub #505). */
+const NATIVE_LIFECYCLE_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.2';
 const ACKNOWLEDGE_SCHEMA = 'https://bunny.invalid/events/notice-acknowledge/2.0';
 /** The source of synthetic hook observations, and of the Codex Desktop module's own. */
 const HOOK_SOURCE = 'bunny/hooks/synthetic-host';
@@ -23,7 +26,7 @@ const MAX_FILL = 128;
 export type CaseSession = {identity: Identity; parent: string};
 /** An attention item by kind, ID and turn names; null is unknown. */
 export type CompactAttention = {kind: Attention['kind']; id: string | null; turn: string | null};
-type CompactNotice = {turn: string | null; acknowledgedBy: string[]; id?: string};
+type CompactNotice = {turn: string | null; acknowledgedBy: string[]; id?: string; result?: Notice['result']};
 /** One observation. It is observed at its step's instant unless `observedAtMs` names an earlier one. */
 type CompactObservation = {
   session: string; turn: string | null; event: LifecycleEvent; ordering?: {epoch: string; sequence: number};
@@ -156,10 +159,12 @@ export function loadSessionCases(): SessionCases {
       ...(compact.nativeEventId === undefined ? {} : {nativeEventId: compact.nativeEventId}),
       ...(compact.occurredAtMs === undefined ? {} : {occurredAtMs: startAtMs + compact.occurredAtMs}),
     };
+    // A native assistant task is observed by its one producer in lifecycle/2.2 (Hub #505); every other source by hooks.
+    const native = identity.provider === NATIVE_SOURCE.provider;
     return checked({
-      specversion: '1.0', bunnyprofile: '2.0', id, source: identity.client === 'desktop' ? DESKTOP_SOURCE : HOOK_SOURCE,
+      specversion: '1.0', bunnyprofile: '2.0', id, source: native ? NATIVE_SOURCE.producer : identity.client === 'desktop' ? DESKTOP_SOURCE : HOOK_SOURCE,
       type: 'org.bunny.lifecycle.observed', subject: sessionEntityId(identity), time: iso(startAtMs + atMs), kind: 'occurrence',
-      datacontenttype: 'application/json', dataschema: LIFECYCLE_SCHEMA, traceparent: traceparent(id), data,
+      datacontenttype: 'application/json', dataschema: native ? NATIVE_LIFECYCLE_SCHEMA : LIFECYCLE_SCHEMA, traceparent: traceparent(id), data,
     }, where);
   }
 
@@ -168,7 +173,7 @@ export function loadSessionCases(): SessionCases {
     const timeMs = startAtMs + atMs;
     const notices: Notice[] = (compact.notices ?? []).map(notice => ({
       id: notice.id ?? (notice.turn === null ? '' : noticeIdOf(identity, notice.turn)), kind: 'turn-ended', turn: knownId(notice.turn),
-      acknowledgedBy: notice.acknowledgedBy,
+      acknowledgedBy: notice.acknowledgedBy, ...(notice.result === undefined ? {} : {result: notice.result}),
     }));
     const [working, unconfirmed] = compact.children ?? [0, 0];
     const data = buildSession({
@@ -184,7 +189,7 @@ export function loadSessionCases(): SessionCases {
     return checked({
       specversion: '1.0', bunnyprofile: '2.0', id, source: 'bunny/core', type: 'org.bunny.session.updated', subject: data.id,
       time: iso(timeMs), kind: 'state', datacontenttype: 'application/json',
-      dataschema: SESSION_SCHEMA, traceparent: traceparent(id), data,
+      dataschema: sessionSchemaOf(data), traceparent: traceparent(id), data,
     }, where);
   }
 

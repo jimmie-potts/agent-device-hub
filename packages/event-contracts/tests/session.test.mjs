@@ -99,7 +99,7 @@ test('unknown work without another claim is unknown, detailed by the activity\'s
   for (const [klass, details] of Object.entries(STATUS_DETAILS)) {
     for (const detail of details) assert.equal(knownDetail({class: klass, detail}), true, `${klass}/${detail}`);
   }
-  assert.equal(knownDetail({class: 'finished', detail: 'failed'}), false);
+  assert.equal(knownDetail({class: 'finished', detail: 'paused'}), false);
   assert.equal(knownDetail({class: 'finished', detail: 'approval'}), false, 'a detail is known only for its own class');
 });
 
@@ -116,8 +116,8 @@ test('a session/3.0 record that needs the owner stays valid an hour after its la
   }
 });
 
-test('readSession reads session/3.0 state messages and nothing else, and the view is the record', () => {
-  assert.deepEqual(READABLE_SESSION_SCHEMAS, [`${SCHEMA}3.0`]);
+test('readSession reads session/3.0 and 3.1 state messages and nothing else, and the view is the record', () => {
+  assert.deepEqual(READABLE_SESSION_SCHEMAS, [`${SCHEMA}3.0`, `${SCHEMA}3.1`]);
   assert.equal(SESSION_SCHEMA, `${SCHEMA}3.0`);
   const waiting = fixtures['session-3'];
   const root = readSession(waiting);

@@ -7,6 +7,7 @@ import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from
 import {ASSISTANT_LIGHT_OWNER, type AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {CodingDispatch} from '@jimmie-potts/event-contracts/v2/coding';
+import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
 import {coreValidator, type AgentOccurrence, type AttentionRaised, type Session30Record, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreChange} from './store.js';
@@ -110,6 +111,10 @@ export class CompanionPart implements CorePart {
     await Promise.all(['attention-raised', 'turn-ended'].map(family => core.sdk.subscribe<AgentOccurrence>(`bunny.event.${family}.*`, async message => {
       if (this.#closed || message.source !== core.sdk.source || !this.#eligibility.take(message.id)) return;
       const data = message.data, record = this.#sessions.get(data.session);
+      // No coding opportunity for a native assistant conversation in this slice (Hub #505, owner decision 4): Conversation
+      // speaks its own question and result. This predicate is the whole exclusion, so a later companion-opportunity
+      // version can lift it.
+      if (data.identity.provider === NATIVE_SOURCE.provider) return;
       const occurredAtMs = data.occurredAtMs ?? null;
       const at = Math.min(data.observedAtMs, occurredAtMs ?? data.observedAtMs);
       // The window keeps the reporting host's clock (Hub #1865, decision 2): an instant after the hub's now, or one 30

@@ -251,9 +251,10 @@ and exits 1, and the service manager restarts it whole.
   and a logger that throws never changes a save. The size condition and its
   `bunny.state.bytes` record retired with the old state block (#1865): with one
   row per session and at most 128 sessions, no save comes near its limit.
-- **Publication and status.** The core publishes `session/3.0` (#1865 step 9):
-  each record carries the hub's status, computed by the contracts package's
-  `buildSession` from its work, attention, outcome and relationship claims
+- **Publication and status.** The core publishes `session/3.0` (#1865 step 9),
+  and a native assistant conversation's record as `session/3.1` with 2.1 occurrences
+  (#505), whose notice may name the task's result: each record carries the
+  hub's status, computed by the contracts package's `buildSession` from its work, attention, outcome and relationship claims
   (see [the shared view](../../packages/event-contracts/README.md#shared-session-view-and-read-function-hub-1865)).
   A record publishes only when its public meaning changes. Its evidence time
   counts as meaning at a one-minute resolution (`SESSION_LIMITS.evidenceResolutionMs`,
@@ -311,7 +312,8 @@ and exits 1, and the service manager restarts it whole.
   button. Nothing automatically retries or replays an action after a lost answer, reconnect or
   restart.
 - **Sessions tool.** Its manifest (module API 1.2) contributes the MCP read tool
-  `core_sessions`: the `session/3.0` records it holds at its revision, each with
+  `core_sessions`: the `session/3.0` records it holds at its revision, and
+  `session/3.1` for native assistant conversations (#505), each with
   the hub's shared status, optionally only one provider's and those whose label,
   title, project or session ID contains `q`, ignoring case. Its description names
   the status classes and the claims, so a client reads the status rather than

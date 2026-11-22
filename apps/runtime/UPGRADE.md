@@ -250,6 +250,121 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Native assistant conversation sessions (#505)
+
+The #505 release reports each B.U.N.N.Y. assistant profile's conversation as
+one session of the native source, with one turn per task. It changes no core
+table. Records the store holds stay `session/3.0`, and the core keeps
+publishing every Codex and Claude record as `session/3.0` with 2.0
+occurrences, so read-receipt helpers from an earlier host release keep
+working. A native conversation's record is `session/3.1` and its occurrences
+are 2.1; those helpers skip it.
+
+The companions module's first start adds the `assistant_reports` table, one
+row per conversation, and records each conversation's latest task as already
+reported. A latest task that had ended, or that waits on delegated work,
+reports nothing and first appears on the devices when its conversation next
+changes. A latest task that waits on the owner's answer or approval is
+reported by that same start: its turn start, its question and its wait, so it
+appears at once as needing the owner. A task that was running when the runtime
+stopped is recovered by that same start as paused, uncertain or, when its graph
+had already completed, succeeded, and that recovery is its first report: one
+`turn-interrupted`, `turn-uncertain` or `turn-ended` with its result, so it
+appears at once as quiet, unknown or finished. A running task that already
+holds a saved, unanswered question, which the engine saves before the graph's
+interrupt, waits on the owner in the same sense: that start reports it whole,
+its turn start, its question and how the recovery left its work, so it appears
+as needing the owner.
+
+### No return below this release while a native session is stored
+
+A release before this one cannot publish a native session's record. It labels
+every record `session/3.0`, whose schema names no native source, and its
+validator refuses a native record (`invalid-message`, `payload /identity/client`).
+That release republishes a stored record when its start or its first refresh
+changes it: the start transaction marks running work unconfirmed, and the
+record it rebuilds drops a notice's `result`. A stored native session with
+running work or a notice result is therefore republished in every commit that
+publishes, and the refusal rolls each such commit back. Until every such
+session has gone a day without evidence and expired, the operator sees:
+
+- at start, an `operation.failed` record (WARN) with `bunny.operation`
+  `storage` and `bunny.code` `unavailable`;
+- for every agent's lifecycle observation, Claude's and Codex's included, a
+  `message.received` record with `bunny.outcome` `rejected` and
+  `bunny.code` `unavailable` (WARN) while the start transaction has work to
+  commit, which any running session gives it, or `bunny.code` `internal`
+  (ERROR) when it has none and the observation's own commit fails (the store's
+  internal outcome is `storage-failed` in both);
+- for every core sync, any family, the reply `unavailable` with the detail
+  "the core cannot bring its sessions up to date now".
+
+A store that holds only native sessions with neither running work nor a
+result opens cleanly, but any later change to such a session would be refused
+the same way. A conversation's session keeps the result of every task it
+reported since it last expired, so that holds only for a conversation whose
+reported tasks have none, such as one whose only reported task waits on its
+question, as the first start of this release leaves a waiting task.
+
+The reviews of the #505 pull request ran these probes with an `e72f33fd`
+build; `037b327a` has the same code. The first ran on stores with one native
+session per task, before the mapping moved to one session per conversation:
+
+- A store holding a succeeded native task was refused at 86,000 s after the
+  last native change and recovered at 86,410 s, when that session had expired.
+- A store holding a running native task was refused at 5 s and recovered after
+  two days.
+- A store holding a failed native task, a needs-owner native task and a running
+  Claude session was refused.
+- A store holding one succeeded and one needs-owner native session was refused
+  at start and at 86,000 s, and recovered at 86,430 s.
+- A store holding only a waiting native task opened cleanly and accepted a
+  Claude observation.
+
+A separate probe on 2026-11-21 let an `e72f33fd` build open stores this release
+wrote with a succeeded native task. Beside a running Claude session, three
+Claude observations were each refused `unavailable` (WARN). Beside a Claude
+session whose turn had ended, the same three were each refused `internal`
+(ERROR). In both, the start logged `operation.failed` `storage` `unavailable`,
+and a session sync was answered `unavailable`.
+
+The reviews of the reworked pull request reran the probes on stores with one
+session per conversation, again against an `e72f33fd` runtime:
+
+- A conversation whose earlier task succeeded and whose latest task waits on
+  its question, beside a running Claude session: the start logged
+  `operation.failed` `storage` `unavailable`, Claude observations were
+  refused `unavailable` (WARN), and a session sync was answered
+  `unavailable`.
+- The same conversation, or one holding a cancelled or failed task's result,
+  beside a Claude session whose turn had ended: Claude observations were
+  refused `internal` (ERROR).
+- Each such store recovered at 86,500 s after the last native change, when the
+  conversation's session had expired.
+- A store holding only a conversation whose task waits on its question, and
+  one holding only a conversation whose task went uncertain, was resumed and
+  was then interrupted, with no result and no running work, opened cleanly.
+- The earlier release's validator refused the native record as
+  `invalid-message` at `/identity/client`.
+
+Prefer fixing forward. A return below this release needs, as a precondition,
+that the core holds no native session:
+
+1. End or cancel the unfinished assistant task in Conversation, then disable
+   the conversation, which Conversation refuses while a task is unfinished. No new
+   task can then start.
+2. Wait a full day after the last task change in any profile's conversation.
+   Expiry removes each native session a day after its last evidence.
+3. Check that none is left: the `core_sessions` MCP tool with
+   `{"provider": "bunny"}` returns an empty `sessions` list, as does the
+   dashboard's session list filtered to the `bunny` provider. Only then stop
+   the runtime and return.
+
+No change in this release can make an older release accept a native record.
+A later option, not built: an operator command in this release that retires
+every native session at once through the ordinary retirement path, so that
+step 2 needs no day's wait.
+
 ## Retired settings replication metadata
 
 The runtime leaves existing history rows and the former settings metadata

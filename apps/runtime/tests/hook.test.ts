@@ -18,7 +18,7 @@ import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import type {Envelope} from '@jimmie-potts/agent-state';
 import {MessageValidator, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {registerCoreFamilies, sessionEntityId, type Identity, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
+import {registerCoreFamilies, sessionEntityId, type HookIdentity as Identity, type Session30Record} from '@jimmie-potts/event-contracts/v2/families';
 import {REMOTE_PATH, REMOTE_SCHEMA, SOURCE_HEADER, prepareMessage, publishOnce} from '@jimmie-potts/sdk';
 import {
   HOOK_BUDGET_MS, LIFECYCLE_SCHEMA, lifecycleMessage, producerCredentialId, producerSource, readProducer, runHook,

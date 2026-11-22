@@ -22,7 +22,7 @@ export type SessionClaims = Pick<Session30Record, 'turn' | 'work' | 'attention' 
 export const STATUS_DETAILS: Readonly<Record<StatusClass, readonly string[]>> = Object.freeze({
   'needs-owner': Object.freeze(['approval', 'input', 'question']),
   working: Object.freeze(['confirmed', 'unconfirmed', 'subagent']),
-  finished: Object.freeze(['turn-ended']),
+  finished: Object.freeze(['turn-ended', 'succeeded', 'failed', 'cancelled']),
   quiet: Object.freeze(['idle', 'interrupted', 'acknowledged', 'read']),
   unknown: Object.freeze(['unknown', 'unsupported', 'inaccessible', 'missing', 'ambiguous', 'lost']),
 });
@@ -48,7 +48,8 @@ export function noticeCounts(notice: Pick<Notice, 'turn'>, turn: KnownId): boole
  * The hub's status of a session from its claims. The first rule that matches wins:
  * 1. attention items: `needs-owner`, detailed by the highest-ranked kind;
  * 2. active work: `working`, `confirmed` or `unconfirmed`; otherwise a working child: `working`, `subagent`;
- * 3. a notice that still counts (`noticeCounts`): `finished`, `turn-ended`, whatever the acknowledgments and read evidence;
+ * 3. a notice that still counts (`noticeCounts`): `finished`, whatever the acknowledgments and read evidence, detailed by
+ *    the result of the last such notice that has one (`succeeded`, `failed` or `cancelled`, Hub #505), or `turn-ended`;
  * 4. idle or interrupted work: `quiet`, `idle` or `interrupted`;
  * 5. otherwise `unknown`, detailed by the activity's unavailable reason, or `unknown`.
  */
@@ -58,7 +59,8 @@ export function statusOf(claims: SessionClaims): SessionStatus {
   if (kind !== undefined) return {class: 'needs-owner', detail: kind};
   if (claims.work.state === 'active') return {class: 'working', detail: claims.work.confidence};
   if (claims.relationships.children.working > 0) return {class: 'working', detail: 'subagent'};
-  if (claims.outcome.notices.some(notice => noticeCounts(notice, claims.turn))) return {class: 'finished', detail: 'turn-ended'};
+  const counting = claims.outcome.notices.filter(notice => noticeCounts(notice, claims.turn));
+  if (counting.length > 0) return {class: 'finished', detail: [...counting].reverse().find(notice => notice.result !== undefined)?.result ?? 'turn-ended'};
   if (claims.work.state === 'idle' || claims.work.state === 'interrupted') return {class: 'quiet', detail: claims.work.state};
   return {class: 'unknown', detail: claims.unavailable.find(item => item.dimension === 'activity')?.reason ?? 'unknown'};
 }

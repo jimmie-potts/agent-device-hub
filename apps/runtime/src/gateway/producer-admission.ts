@@ -20,6 +20,15 @@ export function checkKeyFamily(message: Message, key: string): ErrorBody | undef
     : errorBody('forbidden', {detail: family === 'volcano-observation' ? 'a Volcano observation must use its own family\'s routing key' : 'a lifecycle observation or Desktop snapshot must use its own family\'s routing key'});
 }
 
+/**
+ * The native assistant source travels only in-process (Hub #505): no edge credential publishes `lifecycle/2.2`, the one
+ * lifecycle version that can name it, so a remote caller is refused before the bus instead of silently at the core.
+ */
+export function checkNativeIdentity(message: Message): ErrorBody | undefined {
+  return message.dataschema === `${SCHEMA_BASE}lifecycle/2.2`
+    ? errorBody('forbidden', {detail: 'the native assistant source is reported only by its in-process producer'}) : undefined;
+}
+
 /** Additional private-ingress admission; released local producer configuration stays unchanged. */
 export function checkProducerIdentity(message: Message): ErrorBody | undefined {
   if ((message.dataschema !== LIFECYCLE_SCHEMA && message.dataschema !== READ_RECEIPT_SCHEMA) || !PRODUCER.test(message.source)) return undefined;

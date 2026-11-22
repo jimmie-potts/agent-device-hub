@@ -17,6 +17,7 @@ import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions} from './catalog-actions.js';
 import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
 import {SyntheticProvider} from './synthetic.js';
+import {changesOf, observationDraft, observationOf} from './sessions.js';
 import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices} from './devices.js';
 import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
 
@@ -140,6 +141,27 @@ export class AssistantEngine {
   #task(id: string): Task {return this.store.task(id) ?? fail('not-found');}
   #publish(add: AddMessage, parent?: TraceContext): void {
     this.store.bump(); add('bunny.state.assistant-state.assistant', assistantStateDraft(this.inspect()), parent === undefined ? {} : {parent});
+    this.#report(add, parent);
+  }
+  /**
+   * Reports each conversation's change to the shared session model in the same transaction (Hub #505): the lifecycle
+   * observations that move its session from what it last reported to its latest task's projection now, at the
+   * conversation's next ordering sequences. Only the latest task of a profile, and the turn it last reported when that
+   * is an earlier task, can change, so only those are compared.
+   */
+  #report(add: AddMessage, parent?: TraceContext): void {
+    for (const task of this.store.latest()) {
+      const reported = this.store.report(task.conversationId), turn = reported.projection?.turn;
+      const changes = changesOf(reported, turn === undefined || turn === task.id ? undefined : this.store.task(turn), task);
+      if (changes === undefined) continue;
+      let sequence = reported.sequence;
+      for (const change of changes.events) {
+        sequence += 1;
+        const {key, draft} = observationDraft(observationOf(task, change, sequence, this.context.clock.now()));
+        add(key, draft, parent === undefined ? {} : {parent});
+      }
+      this.store.saveReport(task.conversationId, {sequence, projection: changes.projection});
+    }
   }
   #change(id: string, change: (task: Task) => void, parent?: TraceContext): Promise<void> {
     return this.outbox.transaction(add => {const task = this.#task(id); change(task); this.store.save(task); this.#publish(add, parent);});
