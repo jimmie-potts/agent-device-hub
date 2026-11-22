@@ -20,6 +20,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     import React from 'react'; import {createRoot} from 'react-dom/client';
     import {AssistantPage} from '../../../../modules/companions/src/frontend/assistant.tsx';
     import {historyCursor} from '../../../../modules/companions/src/assistant/history-contract.ts';
+    import {buildSession} from '../../../../packages/event-contracts/src/v2/session-view.ts';
     import {Command} from '../src/command-control.tsx';
     import {Facts, Select} from '../src/ui.tsx';
     import '../src/skins/quiet-glass.css';
@@ -97,7 +98,15 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
       command: accepted, upload: accepted,
     };
     const root = createRoot(document.getElementById('root'));
-    const context = {api, ui: {Command, Facts, Select}, connected: true, control: true, operations: [], operationsLive: true};
+    // The conversation's session as the core publishes it, titled by the model (Hub #2025).
+    const session = title => buildSession({id: 'native-saved-conversation', revision: 1, generation: 1,
+      identity: {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId: 'saved-conversation'},
+      parent: {status: 'top-level'}, turn: {status: 'known', id: 'saved-task'}, work: 'idle', attention: [], notices: [], read: 'unknown', unavailable: [],
+      ordering: {status: 'known', authority: 'companions', epoch: 'saved-conversation', sequence: 3}, observedAtMs: 1, lastEvidenceAtMs: 1,
+      children: {working: 0, unconfirmed: 0}, title});
+    const context = {api, ui: {Command, Facts, Select}, connected: true, control: true, operations: [], operationsLive: true,
+      core: {sessions: [session({value: '#2025 Conversation titles', source: 'provider'})], sessionsLive: true, mode: undefined, modeLive: true}};
+    fixture.title = (value, source) => {context.core = {...context.core, sessions: [session({value, source})]}; render();};
     const render = () => {root.render(React.createElement(AssistantPage, {context: {...context}}));};
     fixture.control = value => {context.control = value; render();};
     fixture.settle = () => {
@@ -178,6 +187,27 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     assert.equal(await disable.isDisabled(), true, 'unfinished tasks prevent disabling Conversation');
     assert.equal(await settings.getByRole('link', {name: 'Preferences', exact: true}).getAttribute('href'), '#/module/companions/preferences');
     assert.equal(await settings.getByRole('link', {name: 'Companion knowledge', exact: true}).getAttribute('href'), '#/module/companions/knowledge');
+    // The model-written session title, and the owner's rename through assistant-control (Hub #2025).
+    // This fixture's profile runs the synthetic provider, which has no title model: a title on it is a test's fixed title.
+    await fact(settings, 'Session title', '#2025 Conversation titles (fixed synthetic title)');
+    await page.evaluate("window.conversationFixture.title('B.U.N.N.Y.', 'provider')");
+    await fact(settings, 'Session title', 'B.U.N.N.Y. (persona name; this profile has no title model)');
+    await settings.getByText('This profile has no title model, so it keeps its persona name until you rename it.', {exact: true}).waitFor();
+    const renameInput = settings.getByLabel('Rename conversation', {exact: true});
+    const renameButton = settings.getByRole('button', {name: 'Rename', exact: true});
+    assert.equal(await renameButton.isDisabled(), true, 'an empty name cannot be sent');
+    await renameInput.fill('  Kitchen   plans ');
+    await renameButton.click();
+    const renamed = await page.evaluate<{family: string; target: string; data: unknown}>('window.conversationFixture.commands.at(-1)');
+    assert.deepEqual([renamed.family, renamed.target, renamed.data], ['assistant-control', 'assistant', {action: 'rename', expectedRevision: 1, profile: 'bunny', title: 'Kitchen plans'}]);
+    assert.equal(await renameInput.inputValue(), '', 'the sent name clears the field');
+    assert.equal(await renameInput.isDisabled(), true, 'the field waits while the rename is pending');
+    await page.evaluate('window.conversationFixture.settle(); window.conversationFixture.commands.length = 0');
+    await page.evaluate("window.conversationFixture.title('Kitchen plans', 'user')");
+    await fact(settings, 'Session title', 'Kitchen plans (your name)');
+    await renameInput.fill('Kitchen plans');
+    assert.equal(await renameButton.isDisabled(), true, 'the current name is not sent again');
+    await renameInput.fill('');
     assert.equal(await page.evaluate<number>('window.conversationFixture.reads'), readsBeforeDetails, 'opening Details performs no read');
     assert.equal(await approve.isEnabled(), true, 'the active approval remains available outside Details');
 
@@ -188,6 +218,9 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Reserved usage', '16384 / 1000000 tokens');
     await fact(usage, 'Paid cost', 'Unknown (provider billing)');
     await fact(usage, 'Prices', 'Configured for claude-example-hosted-model');
+    // With a hosted provider the title model writes the title (Hub #2025).
+    await page.evaluate("window.conversationFixture.title('#2025 Conversation titles', 'provider')");
+    await fact(settings, 'Session title', '#2025 Conversation titles (written by the model)');
     assert.equal(await page.getByText(/spend limit .* is reached/).count(), 0, 'below the limit the composer shows no spend notice');
     await page.evaluate("window.conversationFixture.update('unknown-model')");
     await fact(usage, 'Prices', 'claude-example-hosted-model is not in the built-in prices of 2026-11-22; priced at the dearest known rate');

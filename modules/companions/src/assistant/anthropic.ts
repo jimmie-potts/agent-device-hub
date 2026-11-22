@@ -40,6 +40,7 @@ function conformsToSchema(schema: ToolInputSchema, input: ToolCall['input']): bo
       case 'string': return typeof value === 'string' && (property.enum === undefined || property.enum.includes(value));
       case 'integer': return typeof value === 'number' && Number.isSafeInteger(value);
       case 'boolean': return typeof value === 'boolean';
+      case 'array': return Array.isArray(value) && value.every(item => typeof item === 'string');
     }
   });
 }
@@ -101,9 +102,21 @@ function spendLimitRefusal(status: number, text: string): boolean {
   if (status === 400) return error.type === 'invalid_request_error' && typeof error.message === 'string' && SPEND_LIMIT_MESSAGES.some(start => (error.message as string).startsWith(start));
   return status === 429 && error.type === 'rate_limit_error' && object(error.details) && error.details.error_code === 'enforced_spend_limit_reached';
 }
-const codeOfStatus = (status: number): ProviderFault => new ProviderFault(
+export const codeOfStatus = (status: number): ProviderFault => new ProviderFault(
   status === 401 ? 'unauthenticated' : status === 403 ? 'forbidden' : status === 404 ? 'not-found' : status === 429 ? 'capacity'
-    : status === 400 || status === 422 ? 'invalid-request' : status === 413 ? 'too-large' : 'unavailable');
+    : status === 400 || status === 422 ? 'invalid-request' : status === 413 ? 'too-large' : 'unavailable', false, status === 413 ? 'request' : undefined);
+/**
+ * The fault an error answer maps to, once: a documented spend-limit refusal, read from the bounded body of a 400 or 429, is
+ * `capacity` with the monthly-limit text; anything else keeps its status's code. Task and title calls share it (Hub #2047).
+ */
+export async function faultOf(response: Response): Promise<ProviderFault> {
+  if (response.status === 400 || response.status === 429) {
+    const length = Number(response.headers.get('content-length') ?? '0');
+    const body = Number.isSafeInteger(length) && length > MAX_RESPONSE_BYTES ? '' : await response.text().catch(() => '');
+    if (textBytes(body) <= MAX_RESPONSE_BYTES && spendLimitRefusal(response.status, body)) return new ProviderFault('capacity', false, undefined, SPEND_LIMIT_REACHED);
+  }
+  return codeOfStatus(response.status);
+}
 
 export class AnthropicProvider implements ModelProvider {
   readonly name = 'anthropic' as const;
@@ -134,20 +147,12 @@ export class AnthropicProvider implements ModelProvider {
       // The cause stays in memory: a transport error can carry the URL or the request. The answer is lost, so the call stays uncertain.
       throw new ProviderFault(signal.aborted || (error instanceof Error && error.name === 'AbortError') ? 'cancelled' : 'unavailable', true);
     }
-    if (!response.ok) {
-      // Only a 400 or 429 can be a spend-limit refusal; its bounded body says which. An unreadable body keeps the status's code.
-      if (response.status === 400 || response.status === 429) {
-        const length = Number(response.headers.get('content-length') ?? '0');
-        const body = Number.isSafeInteger(length) && length > MAX_RESPONSE_BYTES ? '' : await response.text().catch(() => '');
-        if (textBytes(body) <= MAX_RESPONSE_BYTES && spendLimitRefusal(response.status, body)) throw new ProviderFault('capacity', false, SPEND_LIMIT_REACHED);
-      }
-      throw codeOfStatus(response.status);
-    }
+    if (!response.ok) throw await faultOf(response);
     const length = Number(response.headers.get('content-length') ?? '0');
-    if (Number.isSafeInteger(length) && length > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large');
+    if (Number.isSafeInteger(length) && length > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large', false, 'response');
     let text: string;
     try {text = await response.text();} catch {throw new ProviderFault('unavailable', true);}
-    if (textBytes(text) > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large');
+    if (textBytes(text) > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large', false, 'response');
     let parsed: unknown;
     try {parsed = JSON.parse(text);} catch {throw new ProviderFault('invalid-message');}
     return this.#reply(parsed, input.tools.slice(STRICT_TOOL_LIMIT));

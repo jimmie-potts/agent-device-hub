@@ -9,7 +9,7 @@ import {ConversationVoice, stopSpeakingButton} from './conversation-voice.js';
 
 import type {SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
-import {ConversationDetails, useDetailsOverlay} from './conversation-details.js';
+import {ConversationDetails, useDetailsOverlay, type ConversationTitle} from './conversation-details.js';
 import {spendNotice, useSpend} from './conversation-spend.js';
 import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
 import {ConversationUpload} from './conversation-upload.js';
@@ -298,6 +298,11 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   let cue = task === undefined ? undefined : taskCue[task.status];
   if (task?.status === 'waiting' && pendingQuestion) cue = activeClarification && 'Needs your answer';
   const {Command, Facts} = context.ui;
+  // The conversation's session title as the core publishes it (Hub #2025): written by the model, the owner's name, or the persona.
+  const conversationId = task?.conversationId ?? visibleHistory?.conversationId ?? null;
+  const session = conversationId === null ? undefined
+    : context.core?.sessions.find(view => view.identity.provider === 'bunny' && view.identity.sessionId === conversationId);
+  const title: ConversationTitle | undefined = session?.title === undefined ? undefined : {value: session.title.value, source: session.title.source};
   return <section aria-label="B.U.N.N.Y. conversation" className="conversation-page">
     <Command context={context} target="assistant">{command => {
       const locked = command.locked || !live || !context.control || !context.operationsLive;
@@ -342,8 +347,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             renderMessage={message => <article aria-label={`${message.role} message`}>
               <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
               <p className="conversation-message-text" dir="auto">{message.text}</p>
-              {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} api={context.api}
-                connected={connected} attachment={message.attachment}
+              {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
+                connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
                 artRevision={art?.revision}/>}
               {message.role === 'assistant' && (message.text.length > LIMITS.spokenChars
                 ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>
@@ -379,7 +384,12 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live} spend={spend}
           savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}
-          receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished !== undefined} setEnabled={present}/>
+          receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished !== undefined} setEnabled={present}
+          title={title} rename={value => {
+            if (state === undefined || locked) return;
+            void command.run({family: 'assistant-control', target: 'assistant', requestId: crypto.randomUUID(),
+              data: {action: 'rename', expectedRevision: state.revision, profile, title: value}});
+          }}/>
       </div>;
     }}</Command>
   </section>;

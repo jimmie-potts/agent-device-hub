@@ -1,4 +1,5 @@
 import type {ArtComposition, ArtOutcome, ArtRendition, ArtSelection, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import {usableArtComposition} from '@jimmie-potts/sdk/frontend';
 import type {ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 
@@ -79,10 +80,10 @@ export type ShowTarget = {target: string; kind: 'pixoo' | 'tidbyt'};
 export function showTargetsOf(value: unknown): ShowTarget[] {
   if (!object(value) || value.schema !== 'automation/2.0' || !Array.isArray(value.targets) || value.targets.length > 16) throw new Error('invalid-targets');
   const targets = value.targets.map((item: unknown): ShowTarget | undefined => object(item) && typeof item.target === 'string'
-    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.target) && item.target.length <= 128 && item.target !== 'browser'
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.target) && item.target.length <= 128
     && member(item.kind, ['pixoo', 'tidbyt'] as const) ? {target: item.target, kind: item.kind} : undefined);
   if (!targets.every((item): item is ShowTarget => item !== undefined) || new Set(targets.map(item => item.target)).size !== targets.length) throw new Error('invalid-targets');
-  return targets;
+  return targets.filter(item => item.target !== 'browser');
 }
 export const surfaceLabel = (target: string, targets: readonly ShowTarget[]): string => {
   if (target === 'browser') return 'Browser';
@@ -91,7 +92,7 @@ export const surfaceLabel = (target: string, targets: readonly ShowTarget[]): st
 };
 /** The surfaces of `chosen` for which this artwork holds a usable composition, in the order chosen. */
 export function showableSurfaces(artwork: ArtworkSummary, chosen: readonly string[], targets: readonly ShowTarget[]): string[] {
-  const usable = (kind: ArtTarget): boolean => artwork.compositions.some(item => item.target === kind && item.outcome === 'succeeded' && item.compositionId !== null && item.renditions.length > 0);
+  const usable = (kind: ArtTarget): boolean => usableArtComposition(artwork, kind) !== undefined;
   return chosen.filter(target => target === 'browser' ? usable('ui') : targets.some(item => item.target === target && usable(item.kind)));
 }
 type ShowOperation = Pick<OperationRecord, 'requestId' | 'family' | 'status' | 'result' | 'evidence' | 'error' | 'requestedBy'>;

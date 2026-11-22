@@ -1,4 +1,4 @@
-import type {ArtShowEffects} from './art-show.js';
+import type {ArtShowEffects, ArtShowRequest, ArtTargets} from './art-show.js';
 import type {ReadReceipt} from './read-receipts.js';
 import {assistantFamilies} from './assistant.js';
 import {lightingLayoutFamilies} from './lighting-layout.js';
@@ -117,6 +117,7 @@ export type Session30Record = {
  */
 export type Session31Record = Session30Record;
 export type LifecycleEvent =
+  /** Display metadata only: Codex Desktop's archived state or title, and from `lifecycle/2.3` a native conversation's title (Hub #2025). */
   | {kind: 'metadata-observed'; archived?: boolean}
   | {kind: 'session-started' | 'turn-started' | 'activity-observed' | 'turn-ended' | 'turn-interrupted' | 'runtime-ended'}
   /**
@@ -477,6 +478,11 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('playback', 'state', 'org.bunny.playback.updated', checkEntity),
   define('playback', 'state', 'org.bunny.playback.updated', checkPlaybackArtwork, '2.1'),
   define('operation', 'state', 'org.bunny.operation.updated', checkOperation),
+  define('art-targets', 'state', 'org.bunny.art-targets.updated', message => {
+    const {targets} = message.data as ArtTargets;
+    return message.source === CORE_SOURCE && new Set(targets.map(item => item.target)).size === targets.length
+      ? entity(message, 'art') : 'art display routing IDs must be distinct and supplied by the core';
+  }),
   define('art-show-effects', 'state', 'org.bunny.art-show-effects.updated', message => {
     const record = message.data as ArtShowEffects;
     return message.source === CORE_SOURCE && record.id === operationEntityId(record.requestId)
@@ -484,6 +490,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   }),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle, '2.2'),
+  define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle, '2.3'),
   define('desktop-metadata', 'occurrence', 'org.bunny.desktop-metadata.observed', checkDesktopMetadata),
   define('volcano-observation', 'occurrence', 'org.bunny.volcano-observation.observed', checkVolcanoObservation),
   define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised),
@@ -517,6 +524,12 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('art-schedule', 'state', 'org.bunny.art-schedule.updated', checkArtSchedule),
   // The owner's on-demand show (Hub #1581). The core answers only its own `hub` subject and refuses any other with `not-found`.
   define('art-show', 'command', 'org.bunny.art.show.requested', routedSubject('routing')),
+  define('art-show', 'command', 'org.bunny.art.show.requested', message => {
+    const {guards, targets} = message.data as ArtShowRequest;
+    const physical = targets.filter(target => target !== 'browser');
+    return guards?.length === physical.length && physical.every(target => guards.some(item => item.target === target))
+      ? routedSubject('routing')(message) : 'every selected display needs one identity guard';
+  }, '2.1'),
   ...assistantFamilies,
   ...lightingLayoutFamilies,
   ...playbackLayoutFamilies,

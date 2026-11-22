@@ -4,20 +4,29 @@
 // reader. This is ADR 0012's fetch of larger content by reference from its owner. It runs once per show command, with a
 // wait the caller bounds inside the command's reply deadline. It never repeats to watch for state, and it never retries.
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {artContentRef, type ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import {artContentRef, type CatalogArtwork} from '@jimmie-potts/event-contracts/v2/art-state';
 import {isUploadArtworkId} from '@jimmie-potts/event-contracts/v2/art-show';
-import type {ModuleContent, ModuleManifest, ModuleScheduler} from '@jimmie-potts/sdk';
+import {isCompanionsModule} from '@jimmie-potts/companions';
+import type {BunnyModule, ModuleContent, ModuleManifest, ModuleScheduler} from '@jimmie-potts/sdk';
 
 /**
  * One retained artwork's summary, `undefined` when the art owner retains no such artwork, or why it could not be read
  * within `timeoutMs`.
  */
-export type ArtCatalogRead = (artworkId: string, timeoutMs: number) => Promise<ArtworkSummary | undefined | ErrorBody>;
+export type ArtCatalogRead = (artworkId: string, timeoutMs: number) => Promise<CatalogArtwork | undefined | ErrorBody>;
 /** The module host's running contributions, as the gateway reads them. */
 export type ArtCatalogHost = {
   modules(): readonly {readonly name: string; readonly admitted: boolean; readonly manifest: Pick<ModuleManifest, 'apiVersion' | 'content'>}[];
   invoke<T>(name: string, call: () => T | Promise<T>): Promise<T>;
 };
+
+/** Built-in readers that already consume the public Art catalog share one bounded host adapter. */
+export function bindHostedArtCatalog(core: {setArtCatalog(read: ArtCatalogRead): void} | undefined,
+  modules: readonly BunnyModule[], host: ArtCatalogHost, scheduler: ModuleScheduler): void {
+  const read = hostedArtCatalog(host, scheduler);
+  core?.setArtCatalog(read);
+  modules.find(isCompanionsModule)?.setArtCatalog(read);
+}
 
 /** The art owner's module name: the same owner whose `art` record the core follows. */
 const ART_MODULE = 'art';
@@ -26,11 +35,11 @@ const PAGE = 100;
 
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 /** The fields the show's composition rules read, checked before the summary is trusted. */
-function summaryOf(value: unknown): ArtworkSummary | undefined {
+function summaryOf(value: unknown): CatalogArtwork | undefined {
   if (!object(value) || typeof value.artworkId !== 'string' || !Array.isArray(value.compositions)) return undefined;
   const valid = value.compositions.every(item => object(item) && typeof item.target === 'string' && typeof item.outcome === 'string'
     && (typeof item.compositionId === 'string' || item.compositionId === null) && Array.isArray(item.renditions));
-  return valid ? value as ArtworkSummary : undefined;
+  return valid && (value.sourceRequestId === undefined || typeof value.sourceRequestId === 'string' && /^[A-Za-z0-9_.-]{1,128}$/.test(value.sourceRequestId)) ? value as CatalogArtwork : undefined;
 }
 type Page = {artworks: readonly unknown[]; nextAfter: number | null};
 function pageOf(found: ModuleContent | ErrorBody | undefined): Page | undefined {
@@ -56,7 +65,7 @@ export function hostedArtCatalog(host: ArtCatalogHost, scheduler: ModuleSchedule
     const controller = new AbortController();
     let cancel = (): void => {};
     const late = new Promise<ErrorBody>(resolve => {cancel = scheduler.after(timeoutMs, () => {controller.abort(); resolve(unavailable);});});
-    const scan = async (): Promise<ArtworkSummary | undefined | ErrorBody> => {
+    const scan = async (): Promise<CatalogArtwork | undefined | ErrorBody> => {
       if (isUploadArtworkId(artworkId)) {
         const result = await host.invoke(ART_MODULE, () => content(`attachment-summary.${artworkId}`, {query: {}, signal: controller.signal}));
         if (controller.signal.aborted) return unavailable;

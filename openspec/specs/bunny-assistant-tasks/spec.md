@@ -406,7 +406,7 @@ An enabled companion artwork tool SHALL propose a still image or animated GIF fo
 
 ### Requirement: Assistant conversations report through the shared session model
 
-The companions module SHALL report each profile's conversation as one root session of the native source, with the conversation ID as its session ID and ordering epoch, each task in it, one owner message and everything it causes, as one turn named by the task ID, and each saved clarification or approval as one attention item named by its question ID. An answered question, a resume and the run either starts SHALL stay in the task's turn; only a new task SHALL start a turn, once, when it starts. Each task end SHALL report exactly one `turn-ended` with the task's result, and when one transaction ends a task and starts the next in the same conversation, the earlier turn's end SHALL precede the next turn's start. The conversation's observations SHALL carry one ordering sequence that increases across its tasks. The module SHALL add the observations for a task change to the outbox transaction that commits that change, and only for a change of the reported projection of the conversation's latest task: its turn, work, open question and result. A conversation opening, an enable or disable, a read, a spoken reply, startup reconciliation that leaves a task's state unchanged and outbox republication SHALL add no observation. The session's work, attention and outcome SHALL follow the latest task's committed status: a running task works; a task waiting on a clarification or approval needs the owner; a paused task makes no running-work claim; an uncertain task's work is unknown; a succeeded, failed or cancelled task holds one notice with that result, and no finished status SHALL claim success unless the result is `succeeded`. After a task ends, the session SHALL read as a hook session does after its turn ends, and the module SHALL never end the session. A cancelled task's notice SHALL leave no reader with an unread notice; a failed task's SHALL stay unread until acknowledged. A task waiting on delegated work SHALL raise no attention and make no running-work claim. Conversations of every profile SHALL report, titled by the profile's persona name. The assistant's `read_sessions` tool and coding suggestions SHALL leave native sessions out. The module SHALL publish no conversation text, prompt or answer in an observation. Native worker reporting is out of scope.
+The companions module SHALL report each profile's conversation as one root session of the native source, with the conversation ID as its session ID and ordering epoch, each task in it, one owner message and everything it causes, as one turn named by the task ID, and each saved clarification or approval as one attention item named by its question ID. An answered question, a resume and the run either starts SHALL stay in the task's turn; only a new task SHALL start a turn, once, when it starts. Each task end SHALL report exactly one `turn-ended` with the task's result, and when one transaction ends a task and starts the next in the same conversation, the earlier turn's end SHALL precede the next turn's start. The conversation's observations SHALL carry one ordering sequence that increases across its tasks. The module SHALL add the observations for a task change to the outbox transaction that commits that change, and only for a change of the reported projection of the conversation's latest task: its turn, work, open question and result. A conversation opening, an enable or disable, a read, a spoken reply, startup reconciliation that leaves a task's state unchanged and outbox republication SHALL add no observation. The session's work, attention and outcome SHALL follow the latest task's committed status: a running task works; a task waiting on a clarification or approval needs the owner; a paused task makes no running-work claim; an uncertain task's work is unknown; a succeeded, failed or cancelled task holds one notice with that result, and no finished status SHALL claim success unless the result is `succeeded`. After a task ends, the session SHALL read as a hook session does after its turn ends, and the module SHALL never end the session. A cancelled task's notice SHALL leave no reader with an unread notice; a failed task's SHALL stay unread until acknowledged. A task waiting on delegated work SHALL raise no attention and make no running-work claim. Conversations of every profile SHALL report, titled by the conversation's title, or by the profile's persona name until one exists. The assistant's `read_sessions` tool and coding suggestions SHALL leave native sessions out. The module SHALL publish no conversation text, prompt or answer in an observation. Native worker reporting is out of scope.
 
 #### Scenario: One session across tasks
 - **WHEN** a synthetic profile's conversation runs two tasks one after the other
@@ -477,6 +477,54 @@ Anthropic SHALL enforce the monthly ceiling through a dedicated Console workspac
 - **WHEN** a call is reserved at 23:59:59 local time and settles after midnight, and later the month turns over
 - **THEN** the call counts on the earlier day and in its month, the new day starts at zero, and the new month starts at zero
 
+### Requirement: Model-written conversation titles
+
+The companions module SHALL give each conversation a title of the form `#<issue> <description>`, or `<repository>#<issue> <description>` for an issue in another repository, or the description alone when no issue appears, written by one model call through the profile's title model ([Hub #2025](https://github.com/jimmie-potts/agent-device-hub/issues/2025)). The call SHALL run after the admission of the first task of a session appearance, the first task with no lifecycle evidence reported for a day or ever, after the admission of the third task of that appearance, and after a coding hand-off is accepted; no other task SHALL start one, and no call SHALL start for a conversation with an owner title. The call SHALL send the fixed title instruction and the conversation's last eight owner and assistant messages, escaped and bounded at 2 KiB, and no tool result, preference, knowledge entry or failed turn's closing reply. A coding hand-off's brief SHALL be recognized in both its approval question and its accepted hand-off message. The `bunny` profile with the Anthropic provider SHALL use the configured `titleModel`, default `claude-haiku-5-5`, with the same key and transport as its turns. A profile without a real title model, Reachy, MicroDuck and the `bunny` profile on the synthetic provider, SHALL make no title call and keep its persona name; only a test or harness MAY inject the fixed `Synthetic conversation` title provider, and a profile that later gets a real model gets titles by the same rule. The module SHALL keep a title only after normalization: one line, no surrounding quotes, markdown heading or emphasis, `Title:` label or trailing punctuation, this repository's issues as a bare `#<issue>`, and a description of at most 40 characters cut at a word boundary. An empty or placeholder answer, an answer whose whole normalized form or title, also with the prompt's entity escapes undone, equals any message of the prompt or a coding hand-off's brief (ignoring case, spacing, surrounding quotes and trailing punctuation), an answer whose description after any issue reference, whole or as the title keeps it, shares a run of 6 consecutive words with an owner message or a hand-off brief, an answer long enough to be cut that appears inside another assistant reply, whole or as its whole description after any issue reference, and a title that is not session display text SHALL be refused. The title call record SHALL keep the model's raw answer, at most 1 KiB, privately; no log, trace, diagnostic or published record SHALL carry it. The module SHALL store the title on the conversation with its source, generated or owner, and publish it as the session title: at once in a `lifecycle/2.3` metadata observation while the session may be shown, and on every later lifecycle observation; until a title exists the persona name SHALL stand. A failed, refused, invalid or abandoned call SHALL leave the earlier title or the persona name, SHALL NOT fail, delay or roll back a task, and SHALL NOT be retried. Each call SHALL be recorded on its conversation, admitted before it is sent and settled with its status, its outcome and its reported usage, or unknown usage. A paid call SHALL reserve its most expensive cost in the shared spend ledger as a conversation-level call, in its admission's transaction, and settle it with the reported usage, or keep the reservation counting when none is reported; a call the spend limits refuse SHALL NOT be sent and SHALL be recorded failed with `capacity`; the title model SHALL be priced like any paid model, at its configured price, else its built-in tiers, else the dearest known rate (Hub #2047), and a title call that Anthropic's monthly spend limit refuses SHALL fail with `capacity` without a retry and keep the earlier title or the persona. A title call SHALL count toward the shared spend limits and toward no task's call, unit or time limits.
+
+#### Scenario: First message
+- **WHEN** the owner starts the first task of a conversation and a fake title provider answers `"#1896 Session tracking."`
+- **THEN** the module publishes one `lifecycle/2.3` metadata observation with title `#1896 Session tracking` and source `provider`, every later observation carries that title, the task's model calls and reserved units are its own, and the recorded call holds the reported usage
+
+#### Scenario: Refresh and reappearance
+- **WHEN** a conversation runs four tasks within a day and a fifth after a day without evidence
+- **THEN** title calls start at the first, third and fifth tasks only, and the reappearing session carries the earlier title until the new one lands
+
+#### Scenario: Failures fall back
+- **WHEN** title calls fail with `capacity`, are refused, answer `Title`, answer a credential-shaped text, or reach the deadline
+- **THEN** no title is published, every observation keeps the persona name, every task succeeds, and each call is recorded once as failed, invalid or uncertain
+
+#### Scenario: Spend limits
+- **WHEN** a title call's reservation would pass the daily spend limit or the month's guard, or Anthropic's monthly spend limit refuses the title call
+- **THEN** nothing is sent, the call is recorded failed with `capacity`, the persona name stands and the task succeeds
+
+#### Scenario: No title model
+- **WHEN** the synthetic `bunny` profile, Reachy and MicroDuck each run a task without an injected title provider
+- **THEN** no title call is made and every observation carries the persona name; with the fixed synthetic provider injected, the title is `Synthetic conversation`, which contains no conversation text, and costs nothing
+
+#### Scenario: Coding hand-off
+- **WHEN** a task's coding hand-off with a brief naming `#2041` is accepted, and later another is accepted after the owner renamed the conversation
+- **THEN** the first starts a title call whose prompt carries the brief and whose title `#2041 Flaky timer test` is published, and the second starts none
+
+#### Scenario: Echo
+- **WHEN** the title model answers with a long owner message, with an excerpt of one, with an assistant message, with a coding hand-off's brief, with an issue reference followed by six or more consecutive words of an owner message or brief that names its issue elsewhere, or with any of these in the prompt's escaped form
+- **THEN** no title is kept, and a summary, a reordered or reworded title, a title reusing a reply's topic words, or one sharing fewer than six consecutive words with an owner message is kept
+
+### Requirement: Owner rename of a conversation
+
+The owner SHALL be able to rename a profile's conversation from **Conversation details** through the `rename` action of `assistant-control/2.1`, naming the profile and a title of 1 to 80 characters of session display text. The module SHALL refuse a rename whose title is not display text after its whitespace is collapsed with `invalid-request`. An accepted rename SHALL store the title with source owner, advance the conversation's title generation, publish it at once in a `lifecycle/2.3` metadata observation with source `user` while the session may be shown, and abandon any title call in flight. A settled title call whose generation is no longer the conversation's, or whose conversation has an owner title, SHALL be dropped, and no later task SHALL start a title call for a conversation with an owner title.
+
+#### Scenario: Rename drops a title in flight
+- **WHEN** a title call is in flight and the owner renames the conversation to `  Kitchen   plans `
+- **THEN** the session title becomes `Kitchen plans` with source `user` at once, the call is abandoned and recorded uncertain, its late answer publishes nothing, and later tasks start no title call and carry the owner's title
+
+#### Scenario: Compare before write
+- **WHEN** a title answer settles after a rename advanced the generation without abandoning the call
+- **THEN** the call is recorded as succeeded and dropped, and the owner's title stays
+
+#### Scenario: Bad title
+- **WHEN** the owner sends a title of whitespace only, a credential-shaped title or one of 81 characters
+- **THEN** the rename is refused, nothing is published, and the earlier title stays
+
 ### Requirement: Preview an owner attachment in Conversation
 
 Conversation SHALL accept one supported still or GIF from either a drop on the message field or the keyboard-operated Attach control. It SHALL show the same artwork to preview, replace or remove before the owner confirms a save or display.
@@ -491,3 +539,46 @@ Conversation SHALL accept one supported still or GIF from either a drop on the m
 - **WHEN** the owner confirms both actions
 - **THEN** Conversation reports the library outcome and each selected display outcome independently
 - **AND** a definitive failure can be retried without repeating a successful action, while an uncertain outcome stays visible without replay
+
+### Requirement: Resolve exact artwork and display before Conversation approval
+
+Conversation SHALL resolve the requested artwork and configured display identities before offering a display action. It SHALL distinguish a browser composition from the browser destination and a device kind from its routing ID. Each proposed destination SHALL be eligible for the exact artwork and visibly identified. Conversation SHALL explain unavailable choices and require a specific choice among ambiguous matches.
+
+#### Scenario: A display kind matches more than one installation target
+
+- **WHEN** the owner asks for a display by kind and two configured displays could match
+- **THEN** Conversation asks which display to use and dispatches nothing before an exact selection and approval
+
+#### Scenario: Generate for the reply and show on a display
+
+- **WHEN** the owner approves generation for a request that also names a configured display, and the exact generated attachment becomes ready
+- **THEN** the reply presents that attachment and offers a separate display approval with the intended destination selected, even if another artwork has been created since
+
+#### Scenario: Select a destination for a ready attachment
+
+- **WHEN** the owner opens Show on for a saved attachment
+- **THEN** available choices refer to that same artwork, incompatible or unavailable choices identify the reason, and a confirmed show reports preparation and presentation evidence for each chosen destination
+
+#### Scenario: A proposed show is dismissed or interrupted
+
+- **WHEN** the owner declines the proposal, reloads the page or reconnects after an uncertain dispatch
+- **THEN** Conversation performs no automatic generation or display write and restores the tracked preparation and presentation evidence for each selected destination, including uncertainty after a lost reply
+
+### Requirement: Closing reply when a turn fails
+
+An admitted turn that settles failed or uncertain SHALL save a single private closing reply explaining the known outcomes of its approved actions and the supported reason the turn stopped. The runtime SHALL use the records of that turn, preserve a provider's existing closing answer, and issue no model call, device command or retry to produce or deliver the fallback. If the cause is unknown, the fallback SHALL say so. Pending questions and paused tasks SHALL retain their controls.
+
+#### Scenario: A failed command follows a successful step
+
+- **WHEN** a turn has saved action evidence and a later approved action is refused, then the model cannot finish the turn
+- **THEN** the closing reply describes both outcomes using the strongest recorded evidence, preserves confirmed phases across later reads with missing records, and remains readable after reload
+
+#### Scenario: Recovery finds an uncertain call
+
+- **WHEN** recovery settles a turn with an unresolved receipt and later receives evidence
+- **THEN** the saved reply identifies uncertainty, recovery and late evidence produce no second answer or device write, and explicit continuation follows the existing recovery rules
+
+#### Scenario: No diagnosis or proposal
+
+- **WHEN** a read-only task or an answered clarification ends before a proposal or final explanation
+- **THEN** the owner sees where the turn stopped, including a specific known limit when available, and the fallback makes no claim about the requested diagnosis

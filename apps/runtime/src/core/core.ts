@@ -189,7 +189,7 @@ export interface CoreModule extends BunnyModule {
   readonly operatorActions: CoreOperatorActions;
   /** Internal qualified host admission bridge; assignment sends nothing. */
   setModeParticipants(participants: readonly ModeParticipant[]): void;
-  setAutomationDevices(devices:readonly AutomationDevice[]):void;
+  setAutomationDevices(devices:readonly AutomationDevice[]):Promise<void>;
   /** Binds the runtime's live secret registry before opening the owner store. */
   setAutomationRedactions(redactions: Redactions): void;
   /** The host binds its reader of the art owner's retained catalog for owner shows (Hub #1584); binding sends nothing. */
@@ -283,7 +283,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
       artSchedule:{get:()=>artSchedule().get(),save:(value,parent)=>artSchedule().save(value,parent)},
-      art:{targets:()=>art().targets(),targetAvailability:()=>art().targetAvailability?.()??[],present:(plan,permit,parent)=>art().present(plan,permit,parent)},
+      art:{targets:approval=>art().targets(approval),targetAvailability:()=>art().targetAvailability?.()??[],present:(plan,permit,parent)=>art().present(plan,permit,parent)},
       limits:{list:()=>limits().list(),get:id=>limits().get(id),save:(id,value,parent)=>limits().save(id,value,parent),settled:()=>limits().settled()},
       routines:{list:()=>routines().list(),get:id=>routines().get(id),create:(value,owner,context)=>routines().create(value,owner,context),
         update:(id,value,context)=>routines().update(id,value,context),setEnabled:(id,enabled,context)=>routines().setEnabled(id,enabled,context),
@@ -302,7 +302,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     setHistoryDevices: devices => { historyDevices = devices; },
     setAutomationDevices:devices=>{
       if(core===undefined) throw new Error('core-not-started');
-      core.setAutomationDevices(devices);
+      return core.setAutomationDevices(devices);
     },
     setMusicCaptureRetirement: retire => {core?.setMusicCaptureRetirement(retire);},
     setArtCatalog: read => {
@@ -328,17 +328,20 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 
 /**
  * The native assistant source's binding (Hub #505): only its producer, the companions module, may name it, that producer
- * names no other provider, and only it sends `lifecycle/2.2`, whose inputs no hook sends. A native session is never ended
- * by a runtime end: its conversation and tasks are durable, and only expiry removes its monitoring record. The schemas
- * already refuse, as `invalid-message`, a native identity with another host or source ID and one in a lifecycle version
- * before 2.2, so this binding sees only messages the validator accepted.
+ * names no other provider, and only it sends `lifecycle/2.2` and `lifecycle/2.3`, whose inputs no hook sends. A native
+ * session is never ended by a runtime end: its conversation and tasks are durable, and only expiry removes its monitoring
+ * record. The schemas already refuse, as `invalid-message`, a native identity with another host or source ID and one in a
+ * lifecycle version before 2.2, and a native `metadata-observed` before 2.3 or without a title (Hub #2025), so this
+ * binding sees only messages the validator accepted.
  */
 export function nativeBinding(message: Pick<Message<Lifecycle21Observation>, 'source' | 'dataschema' | 'data'>): 'forbidden' | 'invalid-request' | undefined {
   const native = message.data.identity.provider === NATIVE_SOURCE.provider, producer = message.source === NATIVE_SOURCE.producer;
-  if (native !== producer || (message.dataschema === LIFECYCLE_22_SCHEMA && !producer)) return 'forbidden';
+  if (native !== producer || (NATIVE_SCHEMAS.includes(message.dataschema) && !producer)) return 'forbidden';
   return native && message.data.event.kind === 'runtime-ended' ? 'invalid-request' : undefined;
 }
-const LIFECYCLE_22_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.2';
+const NATIVE_SCHEMAS: readonly string[] = ['https://bunny.invalid/events/lifecycle/2.2', 'https://bunny.invalid/events/lifecycle/2.3'];
+/** The sources whose `metadata-observed` the core takes: Codex Desktop's metadata, and the native producer's conversation titles (Hub #2025). */
+const METADATA_SOURCES: readonly string[] = ['bunny/modules/codex-desktop', NATIVE_SOURCE.producer];
 
 class Core {
   readonly #automation: AutomationPart;
@@ -346,7 +349,7 @@ class Core {
   readonly #art: ArtPart;
   setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
   get automation(): AutomationControls {return this.#automation.controls;}
-  setAutomationDevices(devices:readonly AutomationDevice[]):void {this.#automation.setDevices(devices);}
+  setAutomationDevices(devices:readonly AutomationDevice[]):Promise<void> {return this.#automation.setDevices(devices);}
   setArtCatalog(read: ArtCatalogRead): void {this.#automation.setArtCatalog(read);}
   readonly #mode: ModePart;
   readonly #music: MusicCapturePart;
@@ -751,7 +754,8 @@ class Core {
         return;
       }
       if (observation.event.kind === 'metadata-observed') {
-        if (message.source !== 'bunny/modules/codex-desktop') {
+        // The schemas bind each source's identity: Codex Desktop's to codex/desktop, the native producer's to its own source.
+        if (!METADATA_SOURCES.includes(message.source)) {
           recordLog(this.#log, 'message.received', {...fields, ...refused('forbidden')}, message);
           return;
         }

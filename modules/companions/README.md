@@ -293,6 +293,7 @@ Questions, approvals, worker waits and task controls appear above the composer.
 A successful task leaves a short **Task completed** cue by the composer.
 Open **Details** to inspect the task. Failed, cancelled, paused and uncertain
 outcomes remain visible by the relevant controls.
+When a turn fails or ends with an uncertain call, the transcript saves a closing reply from the turn’s approved requests, dispatch receipts and recorded results. It can report a known limit even when the model has no calls left. The fallback stays on the page and says when the cause is unknown. Opening the conversation again shows the same reply.
 An approval shows the full scope and the revision it applies to. A command
 receipt reports what happened to the request separately from task completion.
 Disconnected or stale copies retain loaded history and lock mutations.
@@ -359,7 +360,8 @@ as for every configured module; an empty section keeps every default:
 
 ```json
 {"companions": {"assistant": {"provider": "anthropic", "model": "claude-opus-5-5", "effort": "medium",
-  "tools": ["read_sessions", "set_mode"]}, "secrets": {"anthropic-api-key": "/run/secrets/bunny/anthropic-api-key"}}}
+  "titleModel": "claude-haiku-5-5", "tools": ["read_sessions", "set_mode"]},
+  "secrets": {"anthropic-api-key": "/run/secrets/bunny/anthropic-api-key"}}}
 ```
 
 The key file holds an API key created in B.U.N.N.Y.'s own Console workspace,
@@ -370,8 +372,10 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   API key. The module reads it once at start, holds it only in the provider,
   sends it only as the request header and never stores, publishes or logs it;
   the runtime redacts it from its own records. `model` defaults to
-  `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`). The
-  synthetic provider takes neither.
+  `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`).
+  `titleModel` names the small model that writes conversation titles (see
+  [Conversation titles](#conversation-titles)) and defaults to
+  `claude-haiku-5-5`. The synthetic provider takes none of the three.
 - `assistant.prices` is optional. It maps each model to its `input`,
   `output`, `cacheWrite` and `cacheRead` prices in US dollars per million
   tokens, to override the built-in table below. Each entry needs all four
@@ -392,7 +396,8 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   at the tier its reported prompt falls in. A model the table does not know
   is priced at the dearest known rate for each class, across this table and
   any configured prices. A configured price overrides the table. With no
-  prices configured the assistant runs with daily pacing. No job fetches
+  prices configured the assistant runs with daily pacing, and title calls on
+  the default title model are priced at Haiku's built-in tiers. No job fetches
   prices: the price list is not an API, and a price change needs a release or a
   configured price.
 - `assistant.tools` lists the permitted tools by name, each once:
@@ -464,6 +469,11 @@ specific job and displays the exact saved rendition or the job's outcome.
 The animation stays on its first frame until played. Opening a conversation
 or playing a GIF does not generate art or send it to a device. If the art is
 removed from the library, the saved reply remains readable.
+
+Allowlist `control_art_show` to use **Show on…** on a generated reply. Select the
+browser or a configured display, then approve. When a create request also names
+a display, the reply opens this choice with the intended destination selected.
+Each display reports its own preparation and presentation results.
 
 ### Attach artwork
 
@@ -647,8 +657,8 @@ goes live:
   reservation would pass the daily limit or the month's guard, the call is refused
   with `capacity` and nothing is sent. The conversation then shows the
   limit, for example "The daily spend limit of $20.00 would be passed: $19.80
-  is counted today and this model call could cost up to $0.42. Nothing was
-  sent."
+  is counted today and this model call could cost up to $0.42. The next model call was
+  not sent."
 - **Reported usage.** The answer's reported tokens, priced by class at the
   configured or built-in prices, replace the reservation in the same transaction that
   saves the answer. An answer that arrives after the call's deadline, while
@@ -708,7 +718,9 @@ task by its task ID, and an attention item is the saved question's ID. An
 answered question, a resume and the new run either starts stay in the task's
 turn; only the next task starts a new turn, which supersedes the earlier task's
 notice as a new Claude prompt does. The source is `bunny`/`assistant` on the
-core host, titled by the persona: `B.U.N.N.Y.`, `Reachy` or `MicroDuck`. Every
+core host. The session is titled by the conversation's title (see
+[Conversation titles](#conversation-titles)), or by the persona until one
+exists: `B.U.N.N.Y.`, `Reachy` or `MicroDuck`. Every
 transaction that changes a task also adds the `lifecycle/2.2` observations that
 move its conversation's session there, from the module's own source and on the
 conversation's one ordering sequence, and records the last state it reported
@@ -739,6 +751,95 @@ updating on the devices until it expires; the core refuses its further
 observations with `capacity`. No Reachy or MicroDuck
 card is raised for a conversation, and `read_sessions` and coding suggestions
 list coding agent sessions only. Native worker reporting is not part of this.
+
+### Conversation titles
+
+Each conversation gets a short title that a title model writes, led by the
+GitHub issue it is about, such as `#1896 Session tracking` or `pixoo#14 Boot
+channel` for an issue in another repository (Hub #2025). Until a title exists,
+the persona name stands.
+
+Only a profile with a real title model gets titles: B.U.N.N.Y. on the
+Anthropic provider, with `assistant.titleModel`. Reachy and MicroDuck, and
+B.U.N.N.Y. on the synthetic provider, make no title call and keep their
+persona names until the owner renames them. When a profile gets a real model
+(Hub #2026), it gets titles by the same rule. A test or harness can inject
+`SyntheticTitleProvider`, which writes the fixed title `Synthetic conversation`.
+
+- **When.** A title is written after the first message of a session
+  appearance, again at the third task of that appearance, after the first
+  message when the session reappears after a day without lifecycle evidence,
+  and when a coding hand-off is accepted, so an issue named only in the brief
+  can lead the title. The title call runs beside the task and never delays,
+  fails or rolls back it.
+- **What the model sees.** The fixed title instruction as the system prompt
+  and the conversation's last eight owner and assistant messages, escaped and
+  cut to 2 KiB. No tool result, preference or knowledge entry is sent, and no
+  failed turn's closing reply, which is the module's own status text about the
+  turn.
+- **What is kept.** After the issue reference, the description is cut to 40
+  characters at a word boundary. Quotes, markdown, a `Title:` label and
+  trailing punctuation are removed. An answer that is empty, a placeholder such
+  as `Title`, or not session display text (a control character or a
+  recognizable credential) is no title. So is an echo of the prompt. The
+  answer and its title are compared with the prompt's `&lt;`, `&gt;` and
+  `&amp;` escapes undone, ignoring case, spacing, surrounding quotes and
+  trailing punctuation:
+  - An answer equal to any message, or to a coding hand-off's brief without
+    its fixed wrapper, is refused.
+  - Against your messages and hand-off briefs, the description after any
+    issue reference may not share a run of 6 consecutive words
+    (`ECHO_RUN_WORDS`), wherever the message named its issue.
+  - Against B.U.N.N.Y.'s other replies, which naturally reuse the topic's
+    words, only an answer long enough to be cut that appears inside a reply,
+    whole or as its description after any issue reference, is refused.
+
+  A hand-off brief is found in both the approval question ("Delegate to the
+  coding worker in …") and the accepted hand-off ("Delegated to …"). The guard
+  catches verbatim text only. A paraphrase, a reordered or reworded message, a
+  shorter shared run, or a short title repeating part of a reply behind a new
+  issue reference is not detected, and a message of yours that is already
+  exactly the right title is refused. A failed, refused or invalid first
+  title leaves the persona name; a failed refresh keeps the earlier title.
+  Nothing is retried.
+- **Where it goes.** The conversation's recent messages go to Anthropic's
+  title model, as the turns' messages go to the turn model. The title is
+  stored on the conversation with its source, generated or the owner's, and
+  published at once as display metadata in `lifecycle/2.3`, which changes only
+  the session's title and keeps no expiring session alive, and on every later
+  lifecycle observation. A generated title has source `provider` and the
+  owner's has source `user`. From the session it reaches the status devices,
+  the dashboard and Habitat, the core's session history and read tools such as
+  the `core_sessions` MCP tool, Tidbyt's cloud rendering of the status tile,
+  and, once it exists, the decision maker's Decisions input, which
+  [ADR 0011](../../docs/decisions/0011-private-personal-data-retention.md)
+  allows to receive session titles. The assistant's own `read_sessions` leaves
+  native sessions out.
+- **Diagnosis.** Each title call's record keeps the model's raw answer, at
+  most 1 KiB, privately in `assistant_title_calls`, so an invalid outcome can
+  be explained. It reaches no log, trace, diagnostic or published record.
+- **Rename.** Open **Details**, then **Conversation settings**, and enter a
+  name under **Rename conversation** (at most 80 characters). The page sends
+  the `rename` action of `assistant-control/2.1`. The owner's name replaces any
+  generated title, and the model never changes it again. A title call still in
+  flight is abandoned, and an answer that arrives after the rename is
+  dropped. A name that is not display text is refused with `invalid-request`.
+- **Spend.** A paid title call reserves its most expensive cost in the shared
+  spend ledger as a conversation-level call before it is sent, and its
+  reported usage replaces the reservation; a lost or failed answer keeps the
+  reservation counting. A call that the spend limits refuse is not sent, and
+  the persona or earlier title stays. Title calls count toward the shared
+  spend limits and toward no task's limits. The default title model,
+  `claude-haiku-5-5`, is priced at its built-in tiers, and a title model the
+  table does not know at the dearest known rate, so no title call is refused
+  for want of a price (Hub #2047). A title call that Anthropic's monthly spend
+  limit refuses fails with `capacity`, is not retried, and keeps the earlier
+  title or the persona, as any failed title call does. Each call is also recorded on its conversation in
+  `assistant_title_calls` with its model, status, outcome and reported usage.
+
+The title instruction, prompt and normalization are adapted from OpenAI Codex
+(Apache License 2.0) and T3 Code (MIT License); see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ### LIFX status and controls
 
@@ -857,13 +958,17 @@ export. Reachy's fixed-text policy remains independent.
 
 ### Checks
 
+After the root build, run `node apps/runtime/dashboard/tests/failed-turn.browser.ts` for the scripted clarification, failure and reload journey.
+
 Run the root build and `npm run test:companions:built` for abrupt process exits,
 pending-write fidelity, unknown-call recovery, cancellation, budgets, full disk,
 outbox replay and private pagination, plus `assistant.test.js` (approval,
 decline, stale approval, uncertain dispatch, allowlist refusal, refusal,
 truncation and fault codes, profile isolation), `assistant-sessions.test.js`
 (each conversation's shared-session observations across its tasks, restart and
-baseline, Hub #505), `anthropic.test.js` (the request
+baseline, Hub #505), `conversation-titles.test.js` (title normalization,
+prompt, the title call, refresh, rename and failures, Hub #2025),
+`anthropic.test.js` (the request
 shape, tool-use parsing, usage, error mapping and abort against a fake
 transport) and `configure.test.js` (the section and a keyed provider through
 the harness's secret). `spend.test.js` checks the ledger's pricing,

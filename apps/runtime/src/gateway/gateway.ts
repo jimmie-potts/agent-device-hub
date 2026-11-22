@@ -970,8 +970,11 @@ export class Gateway {
     if (family === 'art-show' && target !== 'hub') return errorBody('not-found', {detail: 'art shows belong to the Hub'});
     if (DIRECT_COMMANDS.includes(family) && family !== 'inbox-handle') return errorBody('invalid-request', {detail: 'this command is the core\'s own and has its own route; it is not a tracked action'});
     const type = `org.bunny.${family.slice(0, verb)}.${family.slice(verb + 1)}.requested`;
-    const version = family === 'music-capture-control' && typeof data.action === 'string' && ['calibrate', 'cancel-calibration', 'apply-tuning'].includes(data.action) ? '2.2' :
-      family === 'music-capture-control' && data.action === 'start' && data.input === 'microphone' ? '2.1' : '2.0';
+    const version = family === 'art-show' && 'guards' in data ? '2.1' :
+      family === 'music-capture-control' && typeof data.action === 'string' && ['calibrate', 'cancel-calibration', 'apply-tuning'].includes(data.action) ? '2.2' :
+      family === 'music-capture-control' && data.action === 'start' && data.input === 'microphone' ? '2.1' :
+      // A conversation rename is the one action of assistant-control/2.1 (Hub #2025); the others keep 2.0.
+      family === 'assistant-control' && data.action === 'rename' ? '2.1' : '2.0';
     const dataschema = `${SCHEMA_BASE}${family}/${version}`;
     const now = this.#options.clock.now();
     const checked = this.#options.validator.validate({

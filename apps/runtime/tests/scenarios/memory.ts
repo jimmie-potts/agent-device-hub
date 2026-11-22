@@ -21,7 +21,7 @@ import {readEdgeCredentials, type EdgeCredential} from '../../src/credentials.js
 import {Gateway, readableFamilies} from '../../src/gateway/gateway.js';
 import {ModuleHost} from '../../src/host.js';
 import {historyDevices} from '../../src/core/history-alarm.js';
-import {isCoreModule, registrations as REGISTERED, type LogRecord, type ModuleHealth} from '../../src/index.js';
+import {bindHostedArtCatalog, isCoreModule, registrations as REGISTERED, type LogRecord, type ModuleHealth} from '../../src/index.js';
 import {modeParticipants} from '../../src/core/mode-participants.js';
 import {automationDevices} from '../../src/core/automation-devices.js';
 import {INSTANCE_ID, LogWriter} from '../../src/log.js';
@@ -470,7 +470,8 @@ class Memory implements MemoryHarness {
     const wispr = modules.find(isWisprModule);
     const hosted = host.modules();
     if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {
-      core?.setModeParticipants(modeParticipants(hosted));core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
+      core?.setModeParticipants(modeParticipants(hosted));await core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
+      bindHostedArtCatalog(core, modules, host, this.#clock.scheduler);
     }
     const actions = core?.actions, operatorActions = core?.operatorActions;
     const gateway = new Gateway({

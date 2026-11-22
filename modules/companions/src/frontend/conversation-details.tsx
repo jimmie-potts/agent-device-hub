@@ -1,10 +1,15 @@
-import React, {useEffect, useRef, useLayoutEffect, useSyncExternalStore} from 'react';
+import React, {useEffect, useId, useRef, useLayoutEffect, useState, useSyncExternalStore} from 'react';
 import type {AssistantProfile, AssistantState, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendUi} from '@jimmie-potts/sdk/frontend';
 import {LIMITS} from '../assistant/limits.js';
 import type {SpendView} from '../assistant/spend-contract.js';
 import {priceText, spendText} from './conversation-spend.js';
+
+/** The longest owner title, as the session label bound (Hub #2025). */
+const TITLE_CHARS = 80;
+/** The conversation's published session title and its source, or undefined while the session is not shown. */
+export type ConversationTitle = {value: string; source: 'provider' | 'user'};
 
 const detailsOverlay = '(width < 1120px)';
 
@@ -34,9 +39,20 @@ function toolList(names: readonly string[] | undefined): string {
   return names.length === 0 ? 'None' : names.join(', ');
 }
 
+/**
+ * Where a session title came from (Hub #2025): the owner's name, the persona name, which stands until a title model
+ * writes one and always for a profile without a title model, or a model's title. A synthetic profile has no title model,
+ * so a title on it is a test's fixed title.
+ */
+function titleOrigin(title: ConversationTitle, profileName: string, synthetic: boolean): string {
+  if (title.source === 'user') return 'your name';
+  if (title.value === profileName) return synthetic ? 'persona name; this profile has no title model' : 'persona name until a title is written';
+  return synthetic ? 'fixed synthetic title' : 'written by the model';
+}
+
 export function ConversationDetails({
   id, open, overlay, onClose, stopSpeaking,
-  Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, setEnabled,
+  Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, setEnabled, title, rename,
 }: {
   id: string; open: boolean; overlay: boolean; onClose: () => void; stopSpeaking: React.JSX.Element | null;
   Facts: FrontendUi['Facts']; profile: AssistantProfile; profileName: string;
@@ -44,7 +60,12 @@ export function ConversationDetails({
   spend: SpendView | undefined;
   savedQuestion: React.ReactNode; receipt: string | undefined; locked: boolean; unfinished: boolean;
   setEnabled: (action: 'enable' | 'disable') => void;
+  title: ConversationTitle | undefined; rename: (title: string) => void;
 }): React.JSX.Element {
+  const renameId = useId();
+  const [draftTitle, setDraftTitle] = useState('');
+  const proposed = draftTitle.trim().replace(/\s+/gu, ' ');
+  const canRename = !locked && state !== undefined && proposed !== '' && [...proposed].length <= TITLE_CHARS && proposed !== title?.value;
   const panelRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
@@ -147,6 +168,21 @@ export function ConversationDetails({
             onClick={() => {setEnabled(enabled ? 'disable' : 'enable');}}>{enabled ? 'Disable conversation' : 'Enable conversation'}</button>
           {enabled && unfinished && <p>Finish or cancel the unfinished task before disabling the conversation.</p>}
         </>}
+        <Facts items={[['Session title', title === undefined ? 'Not shown on the status devices now'
+          : `${title.value} (${titleOrigin(title, profileName, synthetic)})`]]}/>
+        <form className="conversation-rename" onSubmit={event => {
+          event.preventDefault();
+          if (!canRename) return;
+          rename(proposed);
+          setDraftTitle('');
+        }}>
+          <label htmlFor={renameId}>Rename conversation</label>
+          <input id={renameId} type="text" value={draftTitle} maxLength={TITLE_CHARS} disabled={locked} placeholder="#1896 Session tracking"
+            onChange={event => {setDraftTitle(event.target.value);}}/>
+          <button type="submit" className="secondary" disabled={!canRename}>Rename</button>
+        </form>
+        <p>{synthetic ? 'This profile has no title model, so it keeps its persona name until you rename it.'
+          : 'The title model writes a short title after the first message, again a few messages later and after a coding hand-off. Your name replaces it, and the model does not change it again.'}</p>
         <p>Submitted messages and answers are saved in private Conversation history and passed to this profile's selected model. The Demo profiles run locally and make no paid calls.</p>
         <p>Unsent drafts stay in this page until reload. Submitted drafts also stay in the composer. Review saved history before sending the same text again.</p>
         <ul className="conversation-settings-links">

@@ -142,6 +142,10 @@ occurrence instant are forbidden. The core accepts this input only from
 for known roots, and never maps it to a 1.x lifecycle observation. Metadata
 alone selects no turn and creates no activity, read or notice evidence.
 
+Hub #2025 adds `lifecycle/2.3`, which also allows `metadata-observed` for the
+native assistant source. It carries a conversation's title only, has no 1.x
+equivalent and is accepted only from `bunny/modules/companions`.
+
 Hub #567 adds the separate `desktop-metadata/2.0` family, which also has no
 1.x field or event to convert. It carries a host-local collector's bounded
 snapshot of one Codex Desktop feed's unread IDs, archived IDs and provider

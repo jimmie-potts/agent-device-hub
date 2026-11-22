@@ -2,6 +2,7 @@
 import {createHash} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
+import type {ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {AgentOccurrence, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {readSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
@@ -79,12 +80,14 @@ export function automationEvent(kind: string, message: Pick<Message<AgentOccurre
 }
 
 export class AutomationPart implements CorePart {
-  readonly families = ['power-limit', 'art-schedule', ...AUTOMATION_FAMILIES];
+  #artTargets: ArtTargets = {id: 'art', revision: 0, targets: []};
+  readonly families = ['power-limit', 'art-schedule', 'art-targets', ...AUTOMATION_FAMILIES];
   readonly states = (families: readonly string[]) => {
     const definitions = this.#definitions;
     const engine = this.#automation;
     const routines = this.#routines;
     const drafts: StateDraft[] = [];
+    if (families.includes('art-targets')) drafts.push(this.#targetDraft(this.#artTargets));
     if (families.includes('power-limit')) {
       const records = this.#limits?.records() ?? [];
       drafts.push(...records.map(record =>
@@ -145,8 +148,23 @@ export class AutomationPart implements CorePart {
     this.#followDevices();
   }
   setArtCatalog(read:ArtCatalogRead):void {this.#artCatalog=read;}
-  setDevices(devices:readonly AutomationDevice[]):void {
-    this.#configured=checkAutomationDevices(devices);this.#followDevices();
+  #targetDraft(data: ArtTargets): StateDraft<ArtTargets> {
+    return {subject: 'art', type: 'org.bunny.art-targets.updated', dataschema: 'https://bunny.invalid/events/art-targets/2.0', data};
+  }
+  async setDevices(devices: readonly AutomationDevice[]): Promise<void> {
+    const configured = checkAutomationDevices(devices);
+    const targets = configured.flatMap((item): ArtPlanTarget[] => item.owner === 'bunny/modules/pixoo' ? [{target: item.id, kind: 'pixoo'}]
+      : item.owner === 'bunny/modules/tidbyt' ? [{target: item.id, kind: 'tidbyt'}] : []);
+    if (JSON.stringify(targets) !== JSON.stringify(this.#artTargets.targets)) {
+      const handle = this.#handle;
+      if (handle === undefined) throw new Error('automation-not-started');
+      await handle.transaction(tx => {
+        const data: ArtTargets = {id: 'art', revision: tx.revision(), targets};
+        tx.add('bunny.state.art-targets.art', {kind: 'state', ...this.#targetDraft(data)});
+        tx.afterCommit?.(() => {this.#artTargets = data; this.#configured = configured;});
+      });
+    } else this.#configured = configured;
+    this.#followDevices();
   }
   #deviceMessage(id: string, freshOnly: boolean): Message<DeviceRecord> | undefined {
     const target = this.#configured.find(item => item.id === id);
@@ -212,8 +230,7 @@ export class AutomationPart implements CorePart {
     const store = this.#store(database);
     this.#definitions = new AutomationDefinitions(database, handle, this.holdsSecret);
     this.#art=createArtPlans({clock:()=>handle.clock.now(),scheduler:this.#scheduler,active:()=>!this.#closed && !this.#signal.aborted,
-      targets:()=>this.#configured.flatMap((device):ArtPlanTarget[]=>device.owner==='bunny/modules/pixoo'?[{target:device.id,kind:'pixoo'}]
-        :device.owner==='bunny/modules/tidbyt'?[{target:device.id,kind:'tidbyt'}]:[]),
+      targets:()=>this.#artTargets.targets,
       current:id=>this.currentDevice(id)?.data,
       dispatch:action=>handle.dispatch(action),operation:requestId=>handle.operation(requestId),
       claim:(id,digest)=>{

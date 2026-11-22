@@ -58,7 +58,7 @@ void test('a reservation that could pass the daily or monthly limit is refused w
   const big = (id: string, worth: number) => call(id, worth * 200_000, 0);
   assert.equal(spend.reserve(big('a', 19)), undefined);
   const refused = spend.reserve(big('b', 2));
-  assert.equal(refused, 'The daily spend limit of $20.00 would be passed: $19.00 is counted today and this model call could cost up to $2.00. Nothing was sent.');
+  assert.equal(refused, 'The daily spend limit of $20.00 would be passed: $19.00 is counted today and this model call could cost up to $2.00. The next model call was not sent.');
   assert.equal(spend.totals().day.unreported, 1, 'the refused call left no row');
   assert.equal(spend.reached(), undefined, 'below the limit a new turn may start');
   spend.settle('a', {input: 5_000_000, output: 0, cacheWrite: 0, cacheRead: 0});
@@ -70,7 +70,7 @@ void test('a reservation that could pass the daily or monthly limit is refused w
   }
   set('2026-11-28T18:00:00Z');
   assert.equal(spend.reserve(big('f', 15)), undefined);
-  assert.equal(spend.reserve(big('g', 2)), 'The local estimate of this month\'s spend would pass its $150.00 guard: an estimated $149.00 is counted this month and this model call could cost up to $2.00. Nothing was sent.');
+  assert.equal(spend.reserve(big('g', 2)), 'The local estimate of this month\'s spend would pass its $150.00 guard: an estimated $149.00 is counted this month and this model call could cost up to $2.00. The next model call was not sent.');
   spend.settle('f', {input: 4_000_000, output: 0, cacheWrite: 0, cacheRead: 0});
   set('2026-11-29T18:00:00Z');
   assert.match(spend.reached() ?? '', /^The local estimate of this month's spend has reached its \$150\.00 guard: an estimated \$150\.00 is counted this month\. A new message can start when the next month begins\. The Anthropic Console holds the real monthly limit and spend\.$/);

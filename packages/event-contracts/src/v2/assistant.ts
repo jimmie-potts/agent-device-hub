@@ -17,7 +17,12 @@ export type AssistantState = {id: 'assistant'; revision: number; enabled: boolea
   /** The configured provider and model, and the tool names the private section allows; never a key, prompt or transcript. */
   provider: AssistantProvider; model: string; tools: string[]; tasks: AssistantTaskSummary[]};
 export type AssistantInput = {requestId: string; inputRef: string};
-export type AssistantControl = {requestId: string; expectedRevision: number; action: 'enable' | 'disable' | 'resume' | 'cancel' | 'speak'; taskId?: string; messageId?: string};
+/**
+ * `org.bunny.assistant.control.requested`. Version 2.1 (Hub #2025) adds `rename`, the owner's title for a profile's
+ * conversation, which carries `profile` and `title` and no task or message; the other actions carry neither.
+ */
+export type AssistantControl = {requestId: string; expectedRevision: number; action: 'enable' | 'disable' | 'resume' | 'cancel' | 'speak' | 'rename';
+  taskId?: string; messageId?: string; profile?: AssistantProfile; title?: string};
 /**
  * `org.bunny.assistant.dispatch.requested`: the companions module asks the core to send one approved, allowlisted command
  * through its tracked dispatcher. Version 2.0 carries Hub mode. Version 2.1 carries guarded LIFX commands. Version 2.2 binds Wemo power to its owner.
@@ -34,6 +39,7 @@ export type AssistantDispatch = {requestId: string} & (AssistantDeviceAction | (
 export const assistantFamilies = [
   defineFamily('assistant-input', 'command', 'org.bunny.assistant.input.requested'),
   defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested'),
+  defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested', undefined, '2.1'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.1'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.2'),

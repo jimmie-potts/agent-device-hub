@@ -256,9 +256,10 @@ The #2047 release prices the assistant's calls from a dated built-in table
 (Anthropic's price list of 2026-11-22), so `assistant.prices` no longer needs
 entering; a configured price still overrides the table. Anthropic now enforces
 the monthly ceiling. The local ledger paces each day at $20 and shows the
-month as an estimate. An upgrade straight to this release skips the #2024
-steps below that add prices. The release changes no table and rewrites no
-record.
+month as an estimate. An upgrade straight to this release skips the #2024 and
+#2025 steps below that add prices; the default title model,
+`claude-haiku-5-5`, is priced at its built-in tiers. The release changes no
+table and rewrites no record.
 
 One-time owner setup, in the Anthropic Console, before the hosted provider goes
 live (the [companions guide](../../modules/companions/README.md#spend-limits)
@@ -276,10 +277,29 @@ has the details):
 Coding-worker runs and other providers, such as the art module's, are outside
 this workspace's limit and the assistant's ledger.
 
-To return to the #2024 release, add `assistant.prices` for the configured
-model first. Without it, that release refuses every paid turn, naming the
-missing price, though the module still starts. The workspace's limit stays in
+To return to the #2025 or #2024 release, add `assistant.prices` for the
+configured model and the title model first. Without them, that release refuses
+every paid turn and title call, naming the missing price, though the module
+still starts. The workspace's limit stays in
 force either way.
+
+## Conversation titles (#2025)
+
+The #2025 release gives each assistant conversation a model-written title and
+lets the owner rename it. When the companions provider is `anthropic`, add a
+price entry to `assistant.prices` for the title model: the default
+`claude-haiku-5-5`, or the model named by the optional `assistant.titleModel`.
+The section and the module start without it, but the spend ledger then
+refuses every title call, so conversations keep their persona names. The
+synthetic provider needs no change and makes no title call.
+
+The companions module's first start adds the empty `assistant_titles` and
+`assistant_title_calls` tables. Each conversation is titled after its next
+message; until then it keeps its persona name.
+
+To return below this release, remove `assistant.titleModel` from the section
+first, because an earlier release refuses the key. The earlier release ignores
+the two tables and titles every conversation by its persona again.
 
 ## Assistant limits, prompt caching and spend (#2024)
 

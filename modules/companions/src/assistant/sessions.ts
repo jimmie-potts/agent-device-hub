@@ -6,13 +6,15 @@
 // projection is a pure function of the saved task, and the store keeps, per conversation, the projection last reported
 // (which names its turn) and the conversation's one ordering sequence, so a change that leaves the projection equal reports nothing:
 // a read, an enable or disable, a spoken reply and a startup reconciliation that keeps a task's state report nothing.
-import {sessionEntityId, type Identity, type LifecycleEvent, type LifecycleObservation, type NoticeResult} from '@jimmie-potts/event-contracts/v2/families';
+import {sessionEntityId, type Identity, type LifecycleEvent, type LifecycleObservation, type NoticeResult, type Title} from '@jimmie-potts/event-contracts/v2/families';
 import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
 import type {AssistantProfile, AssistantStatus} from '@jimmie-potts/event-contracts/v2/assistant';
 import {PROFILES} from '../knowledge/model.js';
 
 /** The lifecycle version that names the native source. */
 export const NATIVE_LIFECYCLE_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.2';
+/** The lifecycle version whose `metadata-observed` carries a native conversation's title (Hub #2025). */
+export const NATIVE_METADATA_SCHEMA = 'https://bunny.invalid/events/lifecycle/2.3';
 
 /** What the shared session model hears of a task: its turn (the task ID), its work, its open owner question and its result. */
 export type Projection = {
@@ -110,19 +112,33 @@ export function changesOf(reported: Reported, earlier: ProjectedTask | undefined
   return events.length === 0 ? undefined : {events, projection: after};
 }
 
-/** The observation of one reported event, at its conversation's ordering sequence and the module's instant, titled by persona. */
-export function observationOf(task: Pick<ProjectedTask, 'conversationId' | 'profile'>, reported: TurnEvent, sequence: number, observedAtMs: number): LifecycleObservation {
+/**
+ * The observation of one reported event, at its conversation's ordering sequence and the module's instant, titled by the
+ * conversation's title (Hub #2025), or by persona without one.
+ */
+export function observationOf(task: Pick<ProjectedTask, 'conversationId' | 'profile'>, reported: TurnEvent, sequence: number, observedAtMs: number, title?: Title): LifecycleObservation {
   const persona = PROFILES.find(profile => profile.id === task.profile);
+  const titled = title ?? (persona === undefined ? undefined : {value: persona.name, source: 'provider' as const});
   return {
     identity: conversationIdentity(task.conversationId), turn: {status: 'known', id: reported.turn}, parent: {status: 'top-level'}, nativeEventId: String(sequence),
     event: reported.event, observedAtMs,
     ordering: {status: 'known', authority: NATIVE_SOURCE.sourceId, epoch: task.conversationId, sequence},
-    ...(persona === undefined ? {} : {title: {value: persona.name, source: 'provider' as const}}),
+    ...(titled === undefined ? {} : {title: {value: titled.value, source: titled.source}}),
   };
 }
 
-/** The message draft of an observation, on its session's lifecycle key. */
+/**
+ * A conversation's title as display metadata (Hub #2025): no turn, ordering or lifecycle evidence, so it changes the
+ * session's title alone and neither keeps an expiring session nor consumes an ordering sequence.
+ */
+export function titleObservationOf(conversationId: string, title: Title, observedAtMs: number): LifecycleObservation {
+  return {identity: conversationIdentity(conversationId), turn: {status: 'unknown'}, parent: {status: 'top-level'}, event: {kind: 'metadata-observed'},
+    observedAtMs, ordering: {status: 'unknown'}, title: {value: title.value, source: title.source}};
+}
+
+/** The message draft of an observation, on its session's lifecycle key: a title in `lifecycle/2.3`, everything else in 2.2. */
 export function observationDraft(observation: LifecycleObservation): {key: string; draft: {kind: 'occurrence'; type: string; subject: string; dataschema: string; data: LifecycleObservation}} {
   const subject = sessionEntityId(observation.identity);
-  return {key: `bunny.event.lifecycle.${subject}`, draft: {kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject, dataschema: NATIVE_LIFECYCLE_SCHEMA, data: observation}};
+  const dataschema = observation.event.kind === 'metadata-observed' ? NATIVE_METADATA_SCHEMA : NATIVE_LIFECYCLE_SCHEMA;
+  return {key: `bunny.event.lifecycle.${subject}`, draft: {kind: 'occurrence', type: 'org.bunny.lifecycle.observed', subject, dataschema, data: observation}};
 }

@@ -17,6 +17,7 @@ import {contextOf, fixture, it, manualClock, run} from './support.js';
 
 const BASE = 'https://bunny.invalid/events/';
 const NATIVE = `${BASE}lifecycle/2.2`;
+const TITLES = `${BASE}lifecycle/2.3`;
 const TRACE = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
 const conversation = (sessionId: string): Identity => ({provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId});
 const claude = (sessionId: string): Identity => ({provider: 'claude', client: 'code', hostId: 'synthetic-host', sourceId: 'claude-hooks', sessionId});
@@ -43,7 +44,16 @@ it('only the companions module names the native source, it names no other, only 
     subject: 's', time: new Date(0).toISOString(), kind: 'occurrence', datacontenttype: 'application/json', dataschema, traceparent: TRACE, data: {}});
   assert.equal(edge(NATIVE)?.error.code, 'forbidden', 'the gateway refuses every lifecycle/2.2 from an edge credential');
   assert.equal(edge(`${BASE}lifecycle/2.0`), undefined);
+  // lifecycle/2.3 carries a native conversation's title (Hub #2025): the same binding holds.
+  assert.equal(at(conversation('c'), 'bunny/modules/companions', TITLES, {kind: 'metadata-observed'}), undefined);
+  assert.equal(at(conversation('c'), 'bunny/modules/codex-desktop', TITLES, {kind: 'metadata-observed'}), 'forbidden');
+  assert.equal(at(claude('c'), 'bunny/parts/hook', TITLES), 'forbidden', 'no hook sends lifecycle/2.3');
+  assert.equal(edge(TITLES)?.error.code, 'forbidden', 'nor does an edge credential');
 });
+
+/** A native conversation's title as display metadata, in lifecycle/2.3. */
+const titleObservation = (identity: Identity, value: string, source: 'provider' | 'user', atMs: number): LifecycleObservation =>
+  ({identity, turn: {status: 'unknown'}, parent: {status: 'top-level'}, event: {kind: 'metadata-observed'}, observedAtMs: atMs, ordering: {status: 'unknown'}, title: {value, source}});
 
 /** A runtime with the core, a module that plays the companions producer, a hook, and a watcher of every message and record. */
 async function nativeRun(context: TestContext) {
@@ -98,6 +108,30 @@ it('the core publishes a native conversation as session/3.1 with 2.1 occurrences
     assert.equal(w.seen.some(message => message.source === 'bunny/core' && message.subject === id), false, 'a refused observation creates nothing');
   }
   assert.equal(w.seen.some(message => message.type === 'org.bunny.session.removed' && message.subject === entity), false, 'the conversation is not ended');
+});
+
+it('the companions module titles its conversation\'s session with display metadata at once, which no other producer may send for it', async context => {
+  const w = await nativeRun(context);
+  const now = Date.now(), entity = sessionEntityId(conversation('synthetic-titled'));
+  const records = () => w.seen.filter(message => message.source === 'bunny/core' && message.type === 'org.bunny.session.updated' && message.subject === entity)
+    .map(message => message.data as {title?: unknown; lastEvidenceAtMs: number; dataschema?: string});
+  const early = await publish(w.companions, titleObservation(conversation('synthetic-titled'), '#2025 Early title', 'provider', now), TITLES);
+  await w.until(() => refusal(w.logs, early.id) !== undefined || w.logs.some(record => record.attributes['bunny.message.id'] === early.id));
+  assert.equal(records().length, 0, 'a title establishes no session');
+  await publish(w.companions, {...observation(conversation('synthetic-titled'), 'task-1', {kind: 'turn-started'}, 1, now), title: {value: 'B.U.N.N.Y.', source: 'provider'}});
+  await w.until(() => records().length === 1);
+  await publish(w.companions, titleObservation(conversation('synthetic-titled'), '#2025 Conversation titles', 'provider', now + 5), TITLES);
+  await w.until(() => records().length === 2);
+  assert.deepEqual(records()[1]?.title, {value: '#2025 Conversation titles', source: 'provider'});
+  assert.equal(records()[1]?.lastEvidenceAtMs, records()[0]?.lastEvidenceAtMs, 'a title is no lifecycle evidence, so it keeps no expiring session');
+  await publish(w.companions, titleObservation(conversation('synthetic-titled'), 'Kitchen plans', 'user', now + 9), TITLES);
+  await w.until(() => records().length === 3);
+  assert.deepEqual(records()[2]?.title, {value: 'Kitchen plans', source: 'user'}, 'the owner\'s rename');
+  // The hook and Codex Desktop may not title a native conversation.
+  const forged = await publish(w.hook, titleObservation(conversation('synthetic-titled'), 'Forged', 'user', now + 10), TITLES);
+  await w.until(() => refusal(w.logs, forged.id) !== undefined);
+  assert.equal(refusal(w.logs, forged.id), 'forbidden');
+  assert.equal(records().length, 3);
 });
 
 const DAY = 86_400_000, START = 1_000_000_000_000;

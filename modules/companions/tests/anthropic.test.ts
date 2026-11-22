@@ -195,9 +195,9 @@ void test('a spend-limit refusal maps to capacity with the monthly-limit text, a
   const fault = async (status: number, text: string, headers: Record<string, string> = {}) => {
     const {transport, sent} = fake(() => new Response(text, {status, headers}));
     try {await new AnthropicProvider({key: 'k', transport}).turn(input, signal()); return assert.fail('expected a fault');}
-    catch (error) {assert.ok(error instanceof ProviderFault); assert.equal(sent.length, 1); return {code: error.code, uncertain: error.uncertain, detail: error.detail};}
+    catch (error) {assert.ok(error instanceof ProviderFault); assert.equal(sent.length, 1); return {code: error.code, uncertain: error.uncertain, closingReason: error.closingReason};}
   };
-  const limit = {code: 'capacity', uncertain: false, detail: SPEND_LIMIT_REACHED};
+  const limit = {code: 'capacity', uncertain: false, closingReason: SPEND_LIMIT_REACHED};
   // The documented shapes: a limit the owner set (organization or workspace), and the tier's monthly cap.
   assert.deepEqual(await fault(400, body({type: 'invalid_request_error', message: 'You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.'})), limit);
   assert.deepEqual(await fault(400, body({type: 'invalid_request_error', message: 'You have reached your specified workspace API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.'})), limit);
@@ -214,6 +214,6 @@ void test('a spend-limit refusal maps to capacity with the monthly-limit text, a
     [400, body({type: 'invalid_request_error', message: `You have reached your specified API usage limits ${'x'.repeat(262_144)}`}), 'invalid-request', {}],
     [400, body({type: 'invalid_request_error', message: 'You have reached your specified API usage limits'}), 'invalid-request', {'content-length': '262145'}],
   ] as const) {
-    assert.deepEqual(await fault(status, text, headers), {code, uncertain: false, detail: undefined}, `${String(status)} ${text.slice(0, 80)}`);
+    assert.deepEqual(await fault(status, text, headers), {code, uncertain: false, closingReason: undefined}, `${String(status)} ${text.slice(0, 80)}`);
   }
 });

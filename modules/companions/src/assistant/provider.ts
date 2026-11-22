@@ -9,7 +9,8 @@ import type {TokenUsage} from './spend-contract.js';
 
 /** A closed JSON schema for a tool's input, as the Messages API's `input_schema` with `strict` takes it. */
 type ToolProperty = {type: 'string'; description: string; enum?: readonly string[]}
-  | {type: 'boolean' | 'integer'; description: string};
+  | {type: 'boolean' | 'integer'; description: string}
+  | {type: 'array'; items: {type: 'string'}; description: string};
 export type ToolInputSchema = {type: 'object'; properties: Readonly<Record<string, ToolProperty>>;
   required: readonly string[]; additionalProperties: false};
 /** What a tool does when the model calls it: a question, a read, a private draft edit, or an approved command. */
@@ -63,8 +64,11 @@ export type ModelProvider = {
  * A definitive answer, such as a refusal or an error status, fails the call and the task with the code.
  */
 export class ProviderFault extends Error {
-  /** `detail` is fixed text for the owner that the engine saves in the conversation, such as a reached provider spend limit. */
-  constructor(readonly code: ErrorCode, readonly uncertain = false, readonly detail?: string) {super(`provider ${code}`);}
+  /**
+   * `sizeLimit` names a request or response size refusal; `closingReason` is fixed text for the owner that ends the turn's
+   * closing reply, such as Anthropic's reached monthly spend limit (Hub #2047).
+   */
+  constructor(readonly code: ErrorCode, readonly uncertain = false, readonly sizeLimit?: 'request' | 'response', readonly closingReason?: string) {super(`provider ${code}`);}
 }
 export const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
 export const textBytes = (value: string): number => Buffer.byteLength(value, 'utf8');

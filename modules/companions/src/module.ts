@@ -8,6 +8,7 @@ import {Knowledge} from './knowledge/engine.js';
 import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './preferences/engine.js';
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {AnthropicProvider, DEFAULT_MODEL, EFFORTS, type Effort, type Transport} from './assistant/anthropic.js';
+import {AnthropicTitleProvider, DEFAULT_TITLE_MODEL} from './assistant/titles.js';
 import {deviceToolOwner, allowlistable} from './assistant/tools.js';
 import {LIMITS} from './assistant/store.js';
 import type {ModelPrices, PriceTable} from './assistant/spend.js';
@@ -29,16 +30,20 @@ type Candidate = {event: CompanionOpportunity; parent: TraceContext; speechEpoch
 const stateDraft = (data: CompanionState): StateDraft<CompanionState> => ({type: 'org.bunny.companion-state.updated', subject: 'reachy',
   dataschema: 'https://bunny.invalid/events/companion-state/2.0', data});
 const receiptKey = (event: CompanionOpportunity): string => createHash('sha256').update(`${event.context}:${event.origin.source}:${event.origin.id}:${event.cue}`).digest('hex');
-export type CompanionsModule = BunnyModule & {inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; pending(): number};
+type RetainedArtworkRead = NonNullable<AssistantOptions['retainedArtwork']>;
+export const isCompanionsModule = (module: BunnyModule): module is CompanionsModule =>
+  module.manifest.name === 'companions' && 'setArtCatalog' in module && typeof module.setArtCatalog === 'function';
+export type CompanionsModule = BunnyModule & {setArtCatalog(read: RetainedArtworkRead): void; inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; pending(): number};
 /** The name under the section's `secrets` of the file holding the hosted provider's API key. */
 export const API_KEY_SECRET = 'anthropic-api-key';
 /**
  * The companions section of the private runtime configuration (Hub #46): `{assistant?, secrets?}`. `assistant` names the
- * `bunny` profile's provider, `synthetic` without one, with its model, effort and the allowlisted tool names; a hosted
- * provider needs its key file under `secrets`. An empty section keeps every default and makes no network call.
+ * `bunny` profile's provider, `synthetic` without one, with its model, effort, conversation title model (Hub #2025) and
+ * the allowlisted tool names; a hosted provider needs its key file under `secrets`. An empty section keeps every default
+ * and makes no network call.
  */
 export type CompanionsConfig = {readonly assistant: {readonly provider: 'synthetic'; readonly tools: readonly string[]}
-  | {readonly provider: 'anthropic'; readonly model: string; readonly effort: Effort; readonly tools: readonly string[]; readonly prices: PriceTable}};
+  | {readonly provider: 'anthropic'; readonly model: string; readonly effort: Effort; readonly titleModel: string; readonly tools: readonly string[]; readonly prices: PriceTable}};
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const only = (value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean => Object.keys(value).every(key => keys.includes(key));
 const refuse = (detail: string): ErrorBody => errorBody('invalid-request', {detail});
@@ -65,22 +70,23 @@ function pricesOf(value: unknown): PriceTable | string {
 export function configureCompanions(section: unknown): Configured<CompanionsConfig> | ErrorBody {
   if (!isObject(section) || !only(section, ['assistant', 'secrets'])) return refuse('the companions section has only assistant and secrets');
   const assistant = section.assistant === undefined ? {} : section.assistant;
-  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'tools', 'prices'])) return refuse('assistant has only provider, model, effort, tools and prices');
+  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'titleModel', 'tools', 'prices'])) return refuse('assistant has only provider, model, effort, titleModel, tools and prices');
   const provider = assistant.provider ?? 'synthetic';
   if (provider !== 'synthetic' && provider !== 'anthropic') return refuse('assistant.provider must be synthetic or anthropic');
   const tools = assistant.tools ?? [];
   if (!Array.isArray(tools) || tools.length > ASSISTANT_TOOL_LIMIT || !tools.every(allowlistable) || new Set(tools).size !== tools.length) return refuse('assistant.tools must list each permitted tool name once');
   if (provider === 'synthetic') {
-    if (assistant.model !== undefined || assistant.effort !== undefined || assistant.prices !== undefined) return refuse('the synthetic provider takes no model, effort or prices');
+    if (assistant.model !== undefined || assistant.effort !== undefined || assistant.titleModel !== undefined || assistant.prices !== undefined) return refuse('the synthetic provider takes no model, effort, title model or prices');
     return {config: {assistant: {provider, tools: [...tools]}}};
   }
-  const model = assistant.model ?? DEFAULT_MODEL, effort = assistant.effort ?? 'medium';
+  const model = assistant.model ?? DEFAULT_MODEL, effort = assistant.effort ?? 'medium', titleModel = assistant.titleModel ?? DEFAULT_TITLE_MODEL;
   if (typeof model !== 'string' || !MODEL.test(model)) return refuse('assistant.model is a model identifier of at most 128 lowercase letters, digits, dots and hyphens');
+  if (typeof titleModel !== 'string' || !MODEL.test(titleModel)) return refuse('assistant.titleModel is a model identifier of at most 128 lowercase letters, digits, dots and hyphens');
   if (!EFFORTS.includes(effort as Effort)) return refuse('assistant.effort is low, medium or high');
   const prices = pricesOf(assistant.prices);
   if (typeof prices === 'string') return refuse(prices);
   if (!isObject(section.secrets) || !Object.hasOwn(section.secrets, API_KEY_SECRET)) return refuse(`a hosted provider names its API key file as secrets.${API_KEY_SECRET}`);
-  return {config: {assistant: {provider, model, effort: effort as Effort, tools: [...tools], prices}}};
+  return {config: {assistant: {provider, model, effort: effort as Effort, titleModel, tools: [...tools], prices}}};
 }
 /** What a test or the runtime gives the module: the engine's seams and, for a hosted provider, the transport behind its fetch. */
 export type CompanionsOptions = AssistantOptions & {readonly transport?: Transport};
@@ -91,9 +97,11 @@ export function createCompanionsModule(options: CompanionsOptions = {}): Compani
   return {manifest: {name: 'companions', apiVersion: '1.3', configure: configureCompanions, pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'microduck', title: 'MicroDuck', presentation: 'react'}, {id: 'assistant', title: 'Conversation', presentation: 'react'}, {id: 'preferences', title: 'Preferences', presentation: 'react'}, {id: 'knowledge', title: 'Companion knowledge', presentation: 'react'}, {id: 'duck-conversation', title: 'Duck conversation', presentation: 'react'}],
     content: (ref, request) => engine.qualifiedSpeech(ref, request) ?? engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
     upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'knowledge' ? engine.knowledge?.stage(request) : request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
+    setArtCatalog: read => {engine.retainedArtwork = read;},
     start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), inspectSpeech: () => engine.speech?.inspect(), inspectCoding: () => engine.coding?.inspect(), pending: () => engine.pending()};
 }
 class Companions {
+  retainedArtwork: RetainedArtworkRead | undefined;
   speech: SpeechCoordinator | undefined;
   coding: CodingCoordinator | undefined;
   assistant: AssistantEngine | undefined;
@@ -152,7 +160,7 @@ class Companions {
     const speak: AssistantOptions['speak'] = this.options.speak ?? ((reply, key, parent) => {this.speech?.offerReply(reply, key, parent, this.speech.mark());});
     // The coding coordinator (Hub #502) is built before the engine, which binds proposals to its revision, and started after it, so a
     // responsibility settled at startup reaches a running engine.
-    const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent) => this.assistant?.deliver(taskId, text, parent) ?? Promise.resolve());
+    const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence) => this.assistant?.deliver(taskId, text, parent, evidence) ?? Promise.resolve());
     this.coding = coding;
     const delegate: AssistantOptions['delegate'] = this.options.delegate ?? ((data, parent) => {
       const endpoint = coding.endpoint();
@@ -162,7 +170,8 @@ class Companions {
         data: {requestId: data.requestId, endpointId: endpoint.endpointId, taskId: data.taskId, repository: data.repository, brief: data.brief, bounds: DEFAULT_CODING_BOUNDS}},
       {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent});
     });
-    this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context), preferences: () => preferences.store.active().entries, speak,
+    this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context),
+      retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries, speak,
       coding: this.options.coding ?? (() => coding.endpoint()), delegate, onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();
@@ -211,11 +220,13 @@ class Companions {
     // The runtime gives `config` only as `configureCompanions` returned it; a harness without a section gives undefined.
     const {options} = this, assistant = (context.config as CompanionsConfig | undefined)?.assistant;
     const tools = options.tools ?? assistant?.tools ?? [];
-    let provider = options.provider;
-    if (provider === undefined && assistant?.provider === 'anthropic') {
-      // The key is read once, at start, and lives only in the provider; the runtime redacts it from its own records.
-      const key = await context.secrets.read(API_KEY_SECRET);
-      provider = new AnthropicProvider({key, model: assistant.model, effort: assistant.effort, ...(options.transport === undefined ? {} : {transport: options.transport})});
+    let provider = options.provider, titleProvider = options.titleProvider;
+    if ((provider === undefined || titleProvider === undefined) && assistant?.provider === 'anthropic') {
+      // The key is read once, at start, and lives only in the providers; the runtime redacts it from its own records.
+      const key = await context.secrets.read(API_KEY_SECRET), transport = options.transport === undefined ? {} : {transport: options.transport};
+      provider ??= new AnthropicProvider({key, model: assistant.model, effort: assistant.effort, ...transport});
+      // The conversation title call uses the same key and transport with its own small model (Hub #2025).
+      titleProvider ??= new AnthropicTitleProvider({key, model: assistant.titleModel, ...transport});
     }
     const core = options.core ?? (() => {
       const records = this.#copy?.states().map(message => message.data) ?? [];
@@ -234,7 +245,9 @@ class Companions {
       {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.family === 'mode-set' ? '2.0' : data.family === 'catalog-action' ? '2.3' : 'owner' in data ? '2.2' : '2.1'}`, data},
       {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent}));
     const prices = options.prices ?? (assistant?.provider === 'anthropic' ? assistant.prices : undefined);
-    return {...(provider === undefined ? {} : {provider}), ...(prices === undefined ? {} : {prices}), ...(options.timeZone === undefined ? {} : {timeZone: options.timeZone}), tools, core, dispatch, devices: options.devices ?? (owner => this.#deviceCopies.get(owner)?.records()),
+    return {...(provider === undefined ? {} : {provider}), ...(prices === undefined ? {} : {prices}), ...(options.timeZone === undefined ? {} : {timeZone: options.timeZone}),
+      ...(titleProvider === undefined ? {} : {titleProvider}), ...(options.syntheticTitleProvider === undefined ? {} : {syntheticTitleProvider: options.syntheticTitleProvider}),
+      tools, core, dispatch, devices: options.devices ?? (owner => this.#deviceCopies.get(owner)?.records()),
       readDevice: options.readDevice ?? (async (owner, name, signal, parent) => this.#deviceCopies.get(owner)?.read(name, signal, parent)), ...(options.available === undefined ? {} : {available: options.available})};
   }
   #replyPolicy(): Pick<Policy, 'mode' | 'synced'> {

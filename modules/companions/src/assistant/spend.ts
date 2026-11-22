@@ -103,8 +103,8 @@ export class SpendLedger {
    */
   reserve(call: SpendCall): string | undefined {
     const reserved = reservationCost(this.#prices(call.model, call.inputUnits), call.inputUnits, call.outputUnits), {day, month} = this.totals();
-    if (day.spentMicros + reserved > day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} would be passed: ${dollars(day.spentMicros)} is counted today and this model call could cost up to ${dollars(reserved)}. Nothing was sent.`;
-    if (month.spentMicros + reserved > month.limitMicros) return `The local estimate of this month's spend would pass its ${dollars(month.limitMicros)} guard: an estimated ${dollars(month.spentMicros)} is counted this month and this model call could cost up to ${dollars(reserved)}. Nothing was sent.`;
+    if (day.spentMicros + reserved > day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} would be passed: ${dollars(day.spentMicros)} is counted today and this model call could cost up to ${dollars(reserved)}. The next model call was not sent.`;
+    if (month.spentMicros + reserved > month.limitMicros) return `The local estimate of this month's spend would pass its ${dollars(month.limitMicros)} guard: an estimated ${dollars(month.spentMicros)} is counted this month and this model call could cost up to ${dollars(reserved)}. The next model call was not sent.`;
     this.database.prepare('INSERT INTO assistant_spend(id,purpose,owner,model,day,month,at_ms,reserved_micros) VALUES (?,?,?,?,?,?,?,?)')
       .run(call.id, call.purpose, call.owner, call.model, day.period, month.period, this.now(), reserved);
     return undefined;

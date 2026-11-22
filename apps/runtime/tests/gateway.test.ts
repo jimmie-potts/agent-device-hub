@@ -1245,6 +1245,25 @@ it('authenticated malformed capture actions return invalid-request without dispa
   assertNoToken(g);
 });
 
+it('a conversation rename travels as assistant-control/2.1, the other assistant controls as 2.0, and a bad title is refused before dispatch (Hub #2025)', async context => {
+  const operator = OPERATOR(), core = createCoreModule();
+  const dispatched: Parameters<typeof core.actions.dispatch>[0][] = [];
+  core.actions.dispatch = action => {dispatched.push(action); return Promise.resolve(errorBody('unavailable'));};
+  const g = await gateway(context, [operator], {modules: [core]});
+  const send = (requestId: string, data: Record<string, unknown>) => g.ask(g.url, '/api/v2/commands/assistant-control', {method: 'POST', token: operator.token,
+    body: {target: 'assistant', requestId, data: {expectedRevision: 0, ...data}}});
+  for (const [index, data] of [{action: 'enable'}, {action: 'rename', profile: 'bunny', title: '#2025 Conversation titles'}].entries()) {
+    assert.equal(codeOf(await send(`assistant-control-${String(index)}`, data)), 'unavailable', 'only the inert owner fixture refuses a valid command');
+  }
+  for (const [index, title] of ['', 'password=synthetic-secret', 'x'.repeat(81), 'two\nlines'].entries()) {
+    const answer = await send(`assistant-rename-bad-${String(index)}`, {action: 'rename', profile: 'bunny', title});
+    assert.equal(answer.status, 400); assert.equal(codeOf(answer), 'invalid-request', JSON.stringify(title));
+  }
+  assert.equal(codeOf(await send('assistant-rename-task', {action: 'rename', profile: 'bunny', title: 'With a task', taskId: 'task-1'})), 'invalid-request');
+  assert.deepEqual(dispatched.map(action => action.draft.dataschema), ['2.0', '2.1'].map(version => `https://bunny.invalid/events/assistant-control/${version}`));
+  assertNoToken(g);
+});
+
 it('authenticated capture actions preserve canonical 2.0, 2.1 and 2.2 selection', async context => {
   const operator = OPERATOR(), core = createCoreModule();
   const dispatched: Parameters<typeof core.operatorActions.dispatch>[0][] = [];

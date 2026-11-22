@@ -44,7 +44,7 @@ export async function dispatchCatalogAction(core: Pick<CoreHandle, 'dispatch' | 
     if (admitByMs <= core.clock.now()) return errorBody('expired');
     payload = {...data, admitByMs};
   } else if (admitByMs !== undefined) return errorBody('invalid-request');
-  const minor = family === 'nanoleaf-show-save' ? '2.1' : route.binding === 'device' ? route.guardedMinor ?? '2.0' : '2.0';
+  const minor = family === 'nanoleaf-show-save' || family === 'art-show' && 'guards' in data ? '2.1' : route.binding === 'device' ? route.guardedMinor ?? '2.0' : '2.0';
   const action: Action = {key: `bunny.cmd.${family}.${target}`, requestedBy: command.source, requestId, parent: command,
     draft: {type, subject: target, dataschema: `https://bunny.invalid/events/${family}/${minor}`, data: payload}};
   return family === 'music-lighting-control' ? dispatchLighting(action) : core.dispatch(action);

@@ -1,3 +1,4 @@
+import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
 import {Messages} from '../knowledge/messages.js';
 import {advanceRevision, initializeRevision} from '../revision.js';
 import {randomUUID} from 'node:crypto';
@@ -14,11 +15,11 @@ export const GRAPH_VERSION = 'conversation-1';
 import {LIMITS} from './limits.js';
 export {LIMITS} from './limits.js';
 export type Question = SavedQuestion & {call: string};
-export type Task = {version: 1; graphVersion: string; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
+export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
   traceparent: string | null; transcript: TranscriptItem[]};
-export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool';
+export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; result: string | null; units: number | null; reservedUnits: number;
   reservedMs: number; elapsedMs: number | null; traceparent: string};
 export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; endedAtMs: number | null;
@@ -29,16 +30,18 @@ export type ConversationPage = {version: 1; conversationId: string | null; messa
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = TranscriptItem & {effect: string};
 type RecordRow = {record: string};
-type MessageRow = Omit<ConversationMessage, 'attachment'> & {artRequestId: string | null; artDescription: string | null;
+type MessageRow = Omit<ConversationMessage, 'attachment'> & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
   artStatus: Call['status'] | null; artResult: string | null};
 const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg.role,msg.text,msg.at_ms AS atMs,
-  art.request_id AS artRequestId,art.description AS artDescription,json_extract(call.record, '$.status') AS artStatus,
+  art.request_id AS artRequestId,art.description AS artDescription,intent.targets AS artTargets,json_extract(call.record, '$.status') AS artStatus,
   json_extract(call.record, '$.result') AS artResult
   FROM assistant_messages msg LEFT JOIN assistant_art_attachments art ON art.message_id=msg.id
+  LEFT JOIN assistant_art_intents intent ON intent.request_id=art.request_id
   LEFT JOIN assistant_calls call ON call.id=art.request_id`;
-function messageOf({artRequestId, artDescription, artStatus, artResult, ...message}: MessageRow): ConversationMessage {
+function messageOf({artRequestId, artDescription, artTargets, artStatus, artResult, ...message}: MessageRow): ConversationMessage {
   if (artRequestId === null || artDescription === null) return message;
-  const receipt = {kind: 'artwork' as const, requestId: artRequestId, description: artDescription};
+  const receipt = {kind: 'artwork' as const, requestId: artRequestId, description: artDescription,
+    ...(artTargets === null ? {} : {showTargets: JSON.parse(artTargets) as string[]})};
   // A local receipt write can fail after the Art owner admitted the job.
   // Only an actual dispatch refusal proves that the job was not admitted.
   const refusal = artStatus === 'succeeded' && artResult?.startsWith('refused: ') === true ? artResult.slice(9) : undefined;
@@ -67,6 +70,7 @@ export class AssistantStore {
       CREATE TABLE IF NOT EXISTS assistant_inputs (ref TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, record TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistant_controls (request_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistant_art_attachments (message_id TEXT PRIMARY KEY REFERENCES assistant_messages(id) ON DELETE CASCADE, request_id TEXT NOT NULL UNIQUE, description TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS assistant_art_intents (request_id TEXT PRIMARY KEY REFERENCES assistant_art_attachments(request_id) ON DELETE CASCADE, targets TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_message_page ON assistant_messages(conversation_id,seq);
       CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);`);
     // The release that reports conversations to the shared session model (Hub #505) starts from what each conversation's
@@ -104,10 +108,15 @@ export class AssistantStore {
   unfinished(): Task | undefined {return parsed<Task>(this.database.prepare("SELECT record FROM assistant_tasks WHERE status NOT IN ('succeeded','failed','cancelled') LIMIT 1").get() as RecordRow | undefined);}
   save(task: Task): void {this.database.prepare('INSERT INTO assistant_tasks(id,profile,status,record) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,record=excluded.record').run(task.id, task.profile, task.status, JSON.stringify(task));}
   conversation(profile: AssistantProfile): string | undefined {return (this.database.prepare('SELECT id FROM assistant_conversations WHERE profile=?').get(profile) as {id: string} | undefined)?.id;}
-  newTask(profile: AssistantProfile, prompt: string): Task {
+  /** The profile's conversation ID, saved on first use: a task or a rename (Hub #2025) opens it. */
+  ensureConversation(profile: AssistantProfile): string {
     const conversationId = this.conversation(profile) ?? randomUUID();
     this.database.prepare('INSERT OR IGNORE INTO assistant_conversations VALUES (?,?)').run(profile, conversationId);
-    return {version: 1, graphVersion: GRAPH_VERSION, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
+    return conversationId;
+  }
+  newTask(profile: AssistantProfile, prompt: string): Task {
+    const conversationId = this.ensureConversation(profile);
+    return {version: 1, graphVersion: GRAPH_VERSION, tracksApprovals: true, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
       generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null,
       transcript: [{role: 'owner', text: prompt}]};
   }
@@ -116,14 +125,25 @@ export class AssistantStore {
     this.database.prepare('INSERT OR IGNORE INTO assistant_messages(id,conversation_id,task_id,role,text,at_ms) VALUES (?,?,?,?,?,?)').run(id, task.conversationId, task.id, role, text, atMs);
     this.messages.capture(task, id, role, text, atMs);
   }
-  artReply(task: Task, requestId: string, description: string, atMs: number): void {
+  artReply(task: Task, requestId: string, description: string, atMs: number, showTargets?: readonly string[]): void {
     const id = `${task.id}-artwork`;
     this.message(task, id, 'assistant', 'Artwork for this conversation.', atMs);
     this.database.prepare('INSERT OR IGNORE INTO assistant_art_attachments SELECT ?,?,? WHERE EXISTS (SELECT 1 FROM assistant_messages WHERE id=?)')
       .run(id, requestId, description, id);
+    if (showTargets !== undefined && showTargets.length > 0) this.database.prepare('INSERT OR IGNORE INTO assistant_art_intents SELECT ?,? WHERE EXISTS (SELECT 1 FROM assistant_art_attachments WHERE request_id=?)')
+      .run(requestId, JSON.stringify(showTargets), requestId);
   }
   hasArtReply(taskId: string): boolean {
     return this.database.prepare('SELECT 1 FROM assistant_art_attachments WHERE message_id=?').get(`${taskId}-artwork`) !== undefined;
+  }
+  /**
+   * The conversation's latest saved owner and assistant messages, oldest first: what a title prompt may read (Hub #2025).
+   * A failed turn's closing reply (Hub #2042) is the engine's own status text about the turn, not what the conversation is
+   * about, so it is left out and can never become a title.
+   */
+  titleMessages(conversationId: string, limit = 8): {role: 'owner' | 'assistant'; text: string}[] {
+    return (this.database.prepare("SELECT role,text FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' ORDER BY seq DESC LIMIT ?")
+      .all(conversationId, limit) as {role: 'owner' | 'assistant'; text: string}[]).reverse();
   }
   /** One saved message of the task, by its id, for the owner to hear again (Hub #500). */
   savedMessage(taskId: string, id: string): Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined {
@@ -132,6 +152,27 @@ export class AssistantStore {
   call(id: string): Call | undefined {return parsed<Call>(this.database.prepare('SELECT record FROM assistant_calls WHERE id=?').get(id) as RecordRow | undefined);}
   calls(taskId: string): Call[] {return this.database.prepare('SELECT record FROM assistant_calls WHERE task_id=?').all(taskId).map(row => JSON.parse(row.record as string) as Call);}
   saveCall(call: Call): void {this.database.prepare('INSERT INTO assistant_calls VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(call.id, call.taskId, JSON.stringify(call));}
+  observeAction(taskId: string, evidence: ActionEvidence): void {
+    const call = this.call(evidence.requestId);
+    if (call?.action === undefined || call.taskId !== taskId) return;
+    if (call.result?.startsWith('refused: ') === true) return;
+    if (evidence.source === 'phase') {
+      const phases = call.action.phases ??= [];
+      const previous = phases.find(phase => phase.phaseId === evidence.phaseId);
+      if (previous === undefined) phases.push({phaseId: evidence.phaseId, revision: evidence.revision, text: evidence.text});
+      else if (evidence.revision > previous.revision) {
+        previous.revision = evidence.revision;
+        previous.text = evidence.text;
+      } else return;
+    } else if (evidence.source === 'operation') {
+      const previous = call.action.observed;
+      if (previous?.source === 'effect' || previous?.source === 'operation' && previous.revision >= evidence.revision) return;
+      call.action.observed = {source: 'operation', revision: evidence.revision, text: evidence.text};
+    } else {
+      call.action.observed = {source: 'effect', text: evidence.text};
+    }
+    this.saveCall(call);
+  }
   run(id: string): Run | undefined {return parsed<Run>(this.database.prepare('SELECT record FROM assistant_runs WHERE id=?').get(id) as RecordRow | undefined);}
   saveRun(run: Run): void {this.database.prepare('INSERT INTO assistant_runs VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(run.id, run.taskId, JSON.stringify(run));}
   stage(stage: Stage): void {this.database.prepare('INSERT INTO assistant_inputs VALUES (?,?,?)').run(stage.ref, stage.requestId, JSON.stringify(stage));}
