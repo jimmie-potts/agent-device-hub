@@ -3233,6 +3233,15 @@ verification CI discover these checks; no new job is needed. They use the
 synthetic provider and fake transports only: no live provider, key, installed
 client or device is exercised.
 
+The assistant's relaxed limits, prompt caching and spend limits (#2024) add
+`spend.test.js`, `assistant-spend.test.js` and `conversation-spend.test.js` to
+the companions suite and update `anthropic.test.js`, `configure.test.js` and
+the conversation state and history browser journeys. After the root build run
+`node --test modules/companions/dist/tests/spend.test.js modules/companions/dist/tests/assistant-spend.test.js modules/companions/dist/tests/anthropic.test.js modules/companions/dist/tests/configure.test.js modules/companions/dist/tests/conversation-spend.test.js`
+and `npm run test:companions:browser`. They use synthetic prices, fake
+transports, a manual clock and a fixed time zone. Existing CI discovery runs
+them. They do not show installed caching, real prices or billed spend.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module

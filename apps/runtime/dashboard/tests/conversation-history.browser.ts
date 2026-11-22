@@ -25,20 +25,20 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     const draft = panel.getByRole('textbox', {name: 'Message', exact: true});
     const send = panel.getByRole('button', {name: 'Send', exact: true});
     const cancel = panel.getByRole('button', {name: 'Cancel task', exact: true});
-    const count = panel.getByText(/^\d[\d,]* \/ 4,096 UTF-8 bytes$/);
+    const count = panel.getByText(/^\d[\d,]* \/ 32,768 UTF-8 bytes$/);
     assert.equal(await panel.getByText(/UTF-8 bytes/).count(), 0, 'the idle composer keeps the byte counter hidden');
     const emoji = '🙂';
-    await draft.fill(emoji.repeat(819)); // 3,276 UTF-8 bytes
+    await draft.fill(emoji.repeat(6553)); // 26,212 UTF-8 bytes, under 80% of 32,768
     assert.equal(await count.count(), 0, 'the counter stays hidden below 80%');
-    await draft.fill(emoji.repeat(819) + 'a');
-    await panel.getByText('3,277 / 4,096 UTF-8 bytes', {exact: true}).waitFor();
-    await draft.fill(emoji.repeat(1024));
-    await panel.getByText('4,096 / 4,096 UTF-8 bytes', {exact: true}).waitFor();
-    assert.equal(await send.isEnabled(), true, 'exactly 4,096 bytes remain eligible');
-    const oversized = emoji.repeat(1024) + 'a';
+    await draft.fill(emoji.repeat(6553) + 'aaa');
+    await panel.getByText('26,215 / 32,768 UTF-8 bytes', {exact: true}).waitFor();
+    await draft.fill(emoji.repeat(8192));
+    await panel.getByText('32,768 / 32,768 UTF-8 bytes', {exact: true}).waitFor();
+    assert.equal(await send.isEnabled(), true, 'exactly 32,768 bytes remain eligible');
+    const oversized = emoji.repeat(8192) + 'a';
     await draft.fill(oversized);
-    await panel.getByText('4,097 / 4,096 UTF-8 bytes', {exact: true}).waitFor();
-    await panel.getByRole('alert').filter({hasText: 'Shorten the text to 4,096 UTF-8 bytes.'}).waitFor();
+    await panel.getByText('32,769 / 32,768 UTF-8 bytes', {exact: true}).waitFor();
+    await panel.getByRole('alert').filter({hasText: 'Shorten the text to 32,768 UTF-8 bytes.'}).waitFor();
     assert.equal(await send.isDisabled(), true);
     const oversizedWrites = changes(page);
     await draft.press('Enter');

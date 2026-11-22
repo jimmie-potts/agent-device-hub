@@ -5,6 +5,7 @@
 // file, and never sees a knowledge entry, a conversation's history, an inactive preference or another task.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantProvider} from '@jimmie-potts/event-contracts/v2/assistant';
+import type {TokenUsage} from './spend-contract.js';
 
 /** A closed JSON schema for a tool's input, as the Messages API's `input_schema` with `strict` takes it. */
 type ToolProperty = {type: 'string'; description: string; enum?: readonly string[]}
@@ -46,7 +47,11 @@ export type TurnInput = {
 };
 /** How a turn ended: a final answer, tool calls to act on, the provider's own refusal, or output cut at the provider's limit. */
 export type TurnStop = 'end' | 'tool' | 'refusal' | 'truncated';
-export type TurnReply = {text: string | null; calls: ToolCall[]; stop: TurnStop; units: number | null; blocks?: unknown[]};
+/**
+ * A turn's answer. `units` is the reported usage's total, or null when unreported; `usage` breaks a paid provider's
+ * report down by price class for the spend ledger (Hub #2024), null when unreported, and is absent for the synthetic provider.
+ */
+export type TurnReply = {text: string | null; calls: ToolCall[]; stop: TurnStop; units: number | null; usage?: TokenUsage | null; blocks?: unknown[]};
 export type ModelProvider = {
   readonly name: AssistantProvider;
   readonly model: string;

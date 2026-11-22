@@ -2,6 +2,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {BaseCheckpointSaver, WRITES_IDX_MAP, compareWritesSortKeys, writesSortKey,
   type ChannelVersions, type Checkpoint, type CheckpointListOptions, type CheckpointMetadata,
   type CheckpointTuple, type PendingWrite} from '@langchain/langgraph-checkpoint';
+import {LIMITS} from './limits.js';
 
 type Config = Parameters<BaseCheckpointSaver['getTuple']>[0];
 type Row = {thread: string; namespace: string; id: string; parent: string | null;
@@ -71,7 +72,7 @@ export class SqliteCheckpointSaver extends BaseCheckpointSaver {
     const {thread, namespace, id} = identity(config);
     const [checkpointType, bytes] = await this.serde.dumpsTyped(checkpoint);
     const [metadataType, metadataBytes] = await this.serde.dumpsTyped(metadata);
-    if (bytes.byteLength > 32 * 1024) throw new CheckpointCapacityError();
+    if (bytes.byteLength > LIMITS.checkpointBytes) throw new CheckpointCapacityError();
     this.database.prepare('INSERT OR REPLACE INTO assistant_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(thread, namespace, checkpoint.id, id ?? null, checkpointType, bytes, metadataType, metadataBytes);
     return configFor(thread, namespace, checkpoint.id);
@@ -83,7 +84,7 @@ export class SqliteCheckpointSaver extends BaseCheckpointSaver {
       const [type, bytes] = await this.serde.dumpsTyped(value);
       return {channel, index: WRITES_IDX_MAP[channel] ?? index, type, bytes};
     }));
-    if (rows.reduce((size, row) => size + row.bytes.byteLength, 0) > 32 * 1024) throw new CheckpointCapacityError();
+    if (rows.reduce((size, row) => size + row.bytes.byteLength, 0) > LIMITS.checkpointBytes) throw new CheckpointCapacityError();
     this.transaction(() => {
       for (const row of rows) this.database.prepare(`INSERT OR ${row.index < 0 ? 'REPLACE' : 'IGNORE'} INTO assistant_writes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(thread, namespace, id, taskId, taskPath, row.index, row.channel, row.type, row.bytes);

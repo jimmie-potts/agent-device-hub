@@ -3,6 +3,8 @@ import type {AssistantProfile, AssistantState, AssistantTaskSummary} from '@jimm
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendUi} from '@jimmie-potts/sdk/frontend';
 import {LIMITS} from '../assistant/limits.js';
+import type {SpendView} from '../assistant/spend-contract.js';
+import {priceText, spendText} from './conversation-spend.js';
 
 const detailsOverlay = '(width < 1120px)';
 
@@ -34,11 +36,12 @@ function toolList(names: readonly string[] | undefined): string {
 
 export function ConversationDetails({
   id, open, overlay, onClose, stopSpeaking,
-  Facts, profile, profileName, state, task, coding, live, savedQuestion, receipt, locked, unfinished, setEnabled,
+  Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, setEnabled,
 }: {
   id: string; open: boolean; overlay: boolean; onClose: () => void; stopSpeaking: React.JSX.Element | null;
   Facts: FrontendUi['Facts']; profile: AssistantProfile; profileName: string;
   state: AssistantState | undefined; task: AssistantTaskSummary | undefined; coding: CodingState | undefined; live: boolean;
+  spend: SpendView | undefined;
   savedQuestion: React.ReactNode; receipt: string | undefined; locked: boolean; unfinished: boolean;
   setEnabled: (action: 'enable' | 'disable') => void;
 }): React.JSX.Element {
@@ -113,7 +116,7 @@ export function ConversationDetails({
             ['Task', task.taskId], ['Conversation', task.conversationId], ['Run', task.runId ?? 'Not active'],
             ['Status', task.status === 'uncertain' ? 'Uncertain outcome' : task.status],
             ['Model calls', `${task.modelCalls} / ${LIMITS.modelCalls}`], ['Tool calls', `${task.toolCalls} / ${LIMITS.toolCalls}`],
-            ['Questions', `${task.questions} / ${LIMITS.questions}`], ['Active time', `${(task.activeMs / 1000).toFixed(1)} / ${LIMITS.activeMs / 1000} seconds`],
+            ['Questions', `${task.questions} / ${LIMITS.questions}`], ['Active time', `${(task.activeMs / 60_000).toFixed(1)} / ${LIMITS.activeMs / 60_000} minutes`],
             ...(task.code === null ? [] : [['Task code', task.code] as const]),
           ]}/>}
         {savedQuestion}
@@ -128,6 +131,12 @@ export function ConversationDetails({
           ['Reserved usage', `${task.reservedUnits} / ${LIMITS.units} ${unit}`],
           ['Paid cost', synthetic ? '0 (synthetic calls)' : 'Unknown (provider billing)'],
         ]}/>}
+        <Facts items={[
+          ['Spend today', spend === undefined ? 'Unknown' : spendText(spend.day)],
+          ['Spend this month', spend === undefined ? 'Unknown' : spendText(spend.month)],
+          ['Prices', priceText(spend)],
+        ]}/>
+        <p>Spend counts every profile's paid model calls from reported usage at the configured prices, by the runtime host's local day and month. A call without reported usage counts its reservation. Coding-worker runs are not counted.</p>
       </details>
       <details>
         <summary>Conversation settings</summary>

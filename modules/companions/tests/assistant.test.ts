@@ -16,6 +16,7 @@ import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} f
 import {AnthropicProvider} from '../src/assistant/anthropic.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
+import {inputBound} from '../src/assistant/spend.js';
 import {assistantStateDraft, CONTEXT_TOO_LARGE, DECLINED, REFUSED} from '../src/assistant/engine.js';
 import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
@@ -481,7 +482,7 @@ void test('each model call carries the bunny persona and the owner\'s active pre
   assert.equal(seen.includes('PRIVATE-PREFERENCE-OLD'), false); assert.equal(seen.includes('PRIVATE-KNOWLEDGE'), false); assert.equal(seen.includes('PRIVATE-SYNTHETIC'), false);
   for (const record of [w.module().inspectAssistant(), w.host().logs, w.spans.spans, w.store().task(task(w)?.taskId ?? '')]) assert.equal(JSON.stringify(record).includes('PRIVATE-PREFERENCE'), false);
   // Over the bound the call is refused before it leaves, the task ends with the capacity code and the owner reads why.
-  for (let i = 0; i < 5; i += 1) change(preferences, {action: 'create', title: `Long ${String(i)}`, text: 'p'.repeat(4000)});
+  for (let i = 0; i < 33; i += 1) change(preferences, {action: 'create', title: `Long ${String(i)}`, text: 'p'.repeat(4000)});
   await input(w.core, w.module(), 'Again');
   await until(() => status(w) === 'failed');
   assert.equal(task(w)?.code, 'capacity'); assert.equal(provider.calls(), 2);
@@ -522,7 +523,7 @@ void test('deadline keeps unknown usage and reserved time across restart, then e
   await until(() => provider.calls() === 1); w.advance(LIMITS.modelMs);
   await until(() => status(w) === 'uncertain');
   const first = task(w); assert.ok(first);
-  assert.equal(first.usageUnits, null); assert.equal(first.reservedUnits, LIMITS.callUnits); assert.equal(first.activeMs, LIMITS.modelMs);
+  assert.equal(first.usageUnits, null); assert.equal(first.reservedUnits, inputBound(provider.inputs[0]) + LIMITS.outputUnits); assert.equal(first.activeMs, LIMITS.modelMs);
   const refused = await control(w.core, w.module(), 'resume', first.taskId); assert.equal(refused.status, 'rejected');
   result.resolve(call('ask_owner', {text: 'Late question?'}));
   await until(() => w.store().calls(first.taskId)[0]?.status === 'succeeded');
@@ -630,7 +631,7 @@ void test('malformed, oversized and expired staged input has no effect, and expi
   const w = await world(context); await control(w.core, w.module(), 'enable');
   const stage = (bytes: Uint8Array, requestId = randomUUID()) => w.module().manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal, bytes});
   const json = (text: string) => Buffer.from(JSON.stringify({action: 'start', profile: 'bunny', text, expectedRevision: w.module().inspectAssistant()?.revision}));
-  for (const bytes of [Buffer.from('{'), json('x'.repeat(4097)), json('🐇'.repeat(1025)), Buffer.from('[]')]) {
+  for (const bytes of [Buffer.from('{'), json('x'.repeat(LIMITS.inputBytes + 1)), json('🐇'.repeat(LIMITS.inputBytes / 4 + 1)), Buffer.from('[]'), new Uint8Array(LIMITS.stageBytes + 1)]) {
     const result = await stage(bytes); assert.ok(result !== undefined && 'error' in result);
   }
   const requestId = randomUUID(), saved = await stage(json('Synthetic expiry'), requestId); assert.ok(saved !== undefined && !('error' in saved));
@@ -728,8 +729,8 @@ void test('unavailable provider refuses activation while Reachy remains readable
 });
 
 void test('private history pages remain bounded and always advance through escaped text', async context => {
-  const w = await world(context), store = w.store(), started = store.newTask('bunny', '\u0001'.repeat(4096));
-  started.question = {id: `${started.id}-q1`, text: 'Synthetic question', answer: '\u0001'.repeat(4096), kind: 'clarification', call: 'c', proposal: null}; store.save(started);
+  const w = await world(context), store = w.store(), started = store.newTask('bunny', '\u0001'.repeat(LIMITS.inputBytes));
+  started.question = {id: `${started.id}-q1`, text: 'Synthetic question', answer: '\u0001'.repeat(LIMITS.inputBytes), kind: 'clarification', call: 'c', proposal: null}; store.save(started);
   store.message(started, 'prompt', 'owner', started.prompt, 0);
   for (let n = 0; n < 40; n += 1) store.message(started, `message-${String(n)}`, 'tool', '\u0001'.repeat(8192), 0);
   let after = 0, count = 0, pages = 0;
@@ -1035,13 +1036,14 @@ void test('recent conversation reads page backwards without changing saved state
   assert.deepEqual(store.meta(), snapshot);
   assert.deepEqual(store.database.prepare('SELECT total_changes() AS count').get(), changes);
 
-  const escaped = '\u0001'.repeat(6000);
+  // Each escaped message takes over half a page, so a page holds one; a message over a whole page refuses the read.
+  const escaped = '\u0001'.repeat(Math.floor(LIMITS.pageBytes * 0.55 / 6));
   for (let index = 0; index < 2; index += 1) store.message(thread, `escaped-${String(index)}`, 'tool', escaped, 100);
   const limited = await page(recent);
   assert.equal(limited.messages.length, 1);
   assert.equal(limited.messages[0]?.text, escaped);
   assert.equal((await page({...recent, before: limited.older ?? assert.fail('byte limit cursor')})).messages.at(-1)?.text, escaped);
-  store.message(thread, 'oversized', 'tool', '\u0001'.repeat(11_000), 100);
+  store.message(thread, 'oversized', 'tool', '\u0001'.repeat(Math.ceil(LIMITS.pageBytes / 6) + 1), 100);
   assert.deepEqual(await read(recent), errorBody('capacity'));
 
   for (let index = 1; index < 16; index += 1) store.message(other, `reachy-${String(index)}`, 'assistant', 'Other synthetic history', index);
@@ -1233,7 +1235,7 @@ void test('an unclassified failure after a recorded action explains that the tur
 
 for (const [name, response, expected] of [
   ['model reply bytes', () => reply('x'.repeat(17 * 1024)), /model response exceeded.*size limit/i],
-  ['per-call usage', () => ({...reply('done'), units: LIMITS.callUnits + 1}), /model.*usage.*per-call limit/i],
+  ['per-call usage', () => ({...reply('done'), units: LIMITS.units + 1}), /model.*usage.*per-call limit/i],
   ['invalid usage', () => ({...reply('done'), units: -1}), /invalid usage/i],
   ['provider capacity without a specific limit', () => {throw new ProviderFault('capacity');}, /^A capacity limit stopped this turn\.$/],
 ] as const) {
@@ -1260,7 +1262,7 @@ void test('the closing reply explains an oversized tool result', async context =
 void test('the closing reply explains an oversized graph checkpoint', async context => {
   context.mock.method(SqliteCheckpointSaver.prototype, 'put', function (this: SqliteCheckpointSaver, ...args: Parameters<SqliteCheckpointSaver['put']>) {
     context.mock.restoreAll();
-    return this.put(args[0], {...args[1], channel_values: {...args[1].channel_values, fixture: 'x'.repeat(33 * 1024)}}, args[2], args[3]);
+    return this.put(args[0], {...args[1], channel_values: {...args[1].channel_values, fixture: 'x'.repeat(LIMITS.checkpointBytes + 1)}}, args[2], args[3]);
   });
   const w = await world(context);
   await control(w.core, w.module(), 'enable');
@@ -1274,7 +1276,8 @@ for (const [name, response, expected] of [
   ['request', () => new Response('', {status: 413}), /provider rejected.*request.*too large/i],
 ] as const) {
   void test(`the closing reply identifies the oversized provider ${name}`, async context => {
-    const w = await world(context, {provider: new AnthropicProvider({key: 'synthetic', transport: () => Promise.resolve(response())})});
+    const w = await world(context, {provider: new AnthropicProvider({key: 'synthetic', model: 'fixture', transport: () => Promise.resolve(response())}),
+      prices: {fixture: {input: 1, output: 1, cacheWrite: 1, cacheRead: 1}}});
     await control(w.core, w.module(), 'enable');
     await input(w.core, w.module(), 'Synthetic provider size test.');
     await until(() => status(w) === 'failed');

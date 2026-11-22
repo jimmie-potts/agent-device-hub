@@ -55,12 +55,14 @@ void test('a turn sends one versioned, keyed request with strict tools, medium e
   const {transport, sent} = fake(() => json({content: [{type: 'text', text: 'All quiet.'}], stop_reason: 'end_turn', usage}));
   const provider = new AnthropicProvider({key: 'sk-PRIVATE-KEY', transport});
   const reply = await provider.turn(input, signal());
-  assert.deepEqual(reply, {text: 'All quiet.', calls: [], stop: 'end', units: 150, blocks: [{type: 'text', text: 'All quiet.'}]});
+  assert.deepEqual(reply, {text: 'All quiet.', calls: [], stop: 'end', units: 150, usage: {input: 120, output: 30, cacheWrite: 0, cacheRead: 0}, blocks: [{type: 'text', text: 'All quiet.'}]});
   assert.equal(sent[0]?.init.redirect, 'error');
   assert.equal(sent.length, 1); assert.equal(sent[0]?.url, ANTHROPIC_URL);
   assert.deepEqual(sent[0]?.init.headers, {'content-type': 'application/json', 'x-api-key': 'sk-PRIVATE-KEY', 'anthropic-version': ANTHROPIC_VERSION});
   const body = JSON.parse(sent[0]?.init.body ?? '{}') as Record<string, unknown>;
-  assert.equal(body.model, 'claude-opus-5-5'); assert.equal(body.max_tokens, MAX_TOKENS); assert.deepEqual(body.output_config, {effort: 'medium'}); assert.equal(body.thinking, undefined);
+  assert.equal(body.model, 'claude-opus-5-5'); assert.equal(body.max_tokens, MAX_TOKENS);
+  // Automatic prompt caching (Hub #2024): one top-level marker, the API's own five-minute breakpoint on the last cacheable block.
+  assert.deepEqual(body.cache_control, {type: 'ephemeral'}); assert.deepEqual(body.output_config, {effort: 'medium'}); assert.equal(body.thinking, undefined);
   assert.match(String(body.system), /^Instructions\n\n/);
   // The persona and the active preferences follow the instructions, in order, framed as the owner's data; an entry phrased
   // as an instruction is still just a listed preference and changes nothing about the tools.
@@ -102,12 +104,40 @@ void test('tool-use answers carry the calls, refusals and truncation stop the tu
   const provider = new AnthropicProvider({key: 'k', transport});
   const first = await provider.turn(input, signal());
   assert.deepEqual(first, {text: 'Let me check.', calls: [{id: 'toolu_2', name: 'set_mode', input: {mode: 'free'}}], stop: 'tool', units: 15,
-    blocks: [{type: 'thinking', thinking: ''}, {type: 'text', text: 'Let me check.'}, {type: 'tool_use', id: 'toolu_2', name: 'set_mode', input: {mode: 'free'}}]});
-  assert.deepEqual(await provider.turn(input, signal()), {text: 'No.', calls: [], stop: 'refusal', units: null, blocks: [{type: 'text', text: 'No.'}]});
-  assert.deepEqual(await provider.turn(input, signal()), {text: null, calls: [], stop: 'truncated', units: 1025, blocks: [{type: 'tool_use', id: 'toolu_3', name: 'set_mode', input: {mode: 'fr'}}]});
+    usage: {input: 10, output: 5, cacheWrite: 0, cacheRead: 0}, blocks: [{type: 'thinking', thinking: ''}, {type: 'text', text: 'Let me check.'}, {type: 'tool_use', id: 'toolu_2', name: 'set_mode', input: {mode: 'free'}}]});
+  assert.deepEqual(await provider.turn(input, signal()), {text: 'No.', calls: [], stop: 'refusal', units: null, usage: null, blocks: [{type: 'text', text: 'No.'}]});
+  assert.deepEqual(await provider.turn(input, signal()), {text: null, calls: [], stop: 'truncated', units: 1025, usage: {input: 1, output: 1024, cacheWrite: 0, cacheRead: 0}, blocks: [{type: 'tool_use', id: 'toolu_3', name: 'set_mode', input: {mode: 'fr'}}]});
   // A second tool call in one answer is dropped with its block, so no replayed tool_use lacks a result.
   const {transport: twice} = fake(() => json({content: [{type: 'tool_use', id: 'toolu_a', name: 'read_sessions', input: {}}, {type: 'tool_use', id: 'toolu_b', name: 'set_mode', input: {mode: 'work'}}], stop_reason: 'tool_use', usage: {input_tokens: 1, output_tokens: 1}}));
-  assert.deepEqual(await new AnthropicProvider({key: 'k', transport: twice}).turn(input, signal()), {text: null, calls: [{id: 'toolu_a', name: 'read_sessions', input: {}}], stop: 'tool', units: 2, blocks: [{type: 'tool_use', id: 'toolu_a', name: 'read_sessions', input: {}}]});
+  assert.deepEqual(await new AnthropicProvider({key: 'k', transport: twice}).turn(input, signal()), {text: null, calls: [{id: 'toolu_a', name: 'read_sessions', input: {}}], stop: 'tool', units: 2, usage: {input: 1, output: 1, cacheWrite: 0, cacheRead: 0}, blocks: [{type: 'tool_use', id: 'toolu_a', name: 'read_sessions', input: {}}]});
+});
+
+void test('a second call of a task sends the same cached prefix and reports its cache reads and writes by price class', async () => {
+  const answers = [
+    json({content: [{type: 'tool_use', id: 'toolu_1', name: 'read_sessions', input: {}}], stop_reason: 'tool_use',
+      usage: {input_tokens: 40, output_tokens: 12, cache_creation_input_tokens: 2100, cache_read_input_tokens: 0}}),
+    json({content: [{type: 'text', text: 'Nothing is running.'}], stop_reason: 'end_turn',
+      usage: {input_tokens: 25, output_tokens: 9, cache_creation_input_tokens: 60, cache_read_input_tokens: 2100}}),
+  ];
+  const {transport, sent} = fake(() => answers.shift() ?? json({}));
+  const provider = new AnthropicProvider({key: 'k', transport});
+  const owner: TurnInput = {...input, transcript: [{role: 'owner', text: 'Anything running?'}]};
+  const first = await provider.turn(owner, signal());
+  const second = await provider.turn({...owner, transcript: [...owner.transcript,
+    {role: 'assistant', text: first.text, calls: first.calls, ...(first.blocks === undefined ? {} : {blocks: first.blocks})},
+    {role: 'tool', call: 'toolu_1', name: 'read_sessions', result: 'No session.', ok: true}]}, signal());
+  assert.deepEqual([first.usage, first.units], [{input: 40, output: 12, cacheWrite: 2100, cacheRead: 0}, 2152]);
+  assert.deepEqual([second.usage, second.units], [{input: 25, output: 9, cacheWrite: 60, cacheRead: 2100}, 2194]);
+  // The second request starts with the first one's bytes: the same tools and system prompt, then the earlier turn replayed.
+  const [one, two] = sent.map(record => JSON.parse(record.init.body) as {tools: unknown; system: unknown; messages: unknown[]; cache_control: unknown});
+  assert.ok(one !== undefined && two !== undefined);
+  assert.deepEqual([two.tools, two.system, two.messages[0], two.cache_control], [one.tools, one.system, one.messages[0], {type: 'ephemeral'}]);
+  // A usage report without input or output counts, or with a malformed cache count, is unreported, never zero.
+  for (const report of [{output_tokens: 1}, {input_tokens: 1}, {input_tokens: 1, output_tokens: 1, cache_read_input_tokens: -1}, {input_tokens: 1.5, output_tokens: 1}]) {
+    const {transport: odd} = fake(() => json({content: [{type: 'text', text: 'Hi.'}], stop_reason: 'end_turn', usage: report}));
+    const reply = await new AnthropicProvider({key: 'k', transport: odd}).turn(input, signal());
+    assert.deepEqual([reply.usage, reply.units], [null, null], JSON.stringify(report));
+  }
 });
 
 void test('the full Conversation catalog reaches Claude within its strict tool limit', async () => {

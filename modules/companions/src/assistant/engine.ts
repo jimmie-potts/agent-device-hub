@@ -12,7 +12,8 @@ import {actionDescription, closingReply, type ActionEvidence} from './closing-re
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
 import type {Proposal} from './history-contract.js';
-import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnReply} from './provider.js';
+import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
+import {inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions} from './catalog-actions.js';
@@ -47,11 +48,20 @@ export type AssistantOptions = {
   delegate?: Delegate;
   /** The owner cancelled a task whose delegation is still running; the module asks the worker to stop. */
   onCancelled?: (taskId: string) => void;
+  /** The private section's prices per model for the spend ledger (Hub #2024); a paid turn or call of an unpriced model is refused. */
+  prices?: PriceTable;
+  /** The time zone whose local day and month the spend limits use: the runtime host's own unless a test names one. */
+  timeZone?: string;
 };
 /** An approved delegation as the module dispatches it, bound to the coding state revision the proposal saw. */
 export type Delegation = {requestId: string; taskId: string; repository: string; brief: string; expectedRevision: number};
 export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSignal) => Promise<RequestResult>;
+/** An engine refusal; `closingReason` is fixed text for the owner, such as the spend limit a new turn met. */
 class Fault extends Error {constructor(readonly code: ErrorCode, readonly closingReason?: string) {super(code);}}
+/** What one call answered: its text, its reported usage total, and a paid provider's usage by price class. */
+type Answer = {text: string; units: number | null; usage?: TokenUsage | null; evidence?: ActionEvidence[]};
+/** What a call may use: the units it reserves, their name in a limit message, and a paid model call's spend reservation. */
+type Budget = {units: number; unit: string; spend?: {model: string; inputUnits: number; outputUnits: number}};
 function fail(code: ErrorCode): never {throw new Fault(code);}
 const codeOf = (error: unknown): ErrorCode => error instanceof Fault || error instanceof ProviderFault ? error.code : fullDisk(error) || error instanceof CheckpointCapacityError ? 'capacity' : 'internal';
 function closingReasonOf(error: unknown): string | undefined {
@@ -93,6 +103,11 @@ const parseReply = (text: string): Replied => {
 /** The graph and all external waits belong to one companions activation. Startup only reads saved state. */
 export class AssistantEngine {
   readonly store: AssistantStore;
+  /**
+   * The shared spend ledger (Hub #2024). Task model calls reserve and settle here in their receipt's transaction; a
+   * conversation-level call uses the same `reserve` and `settle` (see spend.ts), so every paid call counts once.
+   */
+  readonly spend: SpendLedger;
   readonly #validator = coreValidator();
   readonly #subscriptions: Subscription[] = [];
   readonly #graph;
@@ -103,6 +118,7 @@ export class AssistantEngine {
   readonly #allowed: readonly string[];
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly options: AssistantOptions = {}) {
     this.store = new AssistantStore(context.database());
+    this.spend = new SpendLedger(context.database(), options.prices ?? {}, () => context.clock.now(), options.timeZone);
     this.#allowed = [...(options.tools ?? [])];
     this.#graph = new StateGraph(shape)
       .addNode('turn', state => this.#turn(state))
@@ -237,7 +253,7 @@ export class AssistantEngine {
       });
       if (launch !== undefined && !this.#closed && !this.context.signal.aborted) this.#launch(launch);
       return reply;
-    } catch (error) {return errorBody(codeOf(error), {detail: 'The assistant control was not saved.'});}
+    } catch (error) {return errorBody(codeOf(error), {detail: error instanceof Fault && error.closingReason !== undefined ? error.closingReason : 'The assistant control was not saved.'});}
   }
   #control(command: Command<AssistantControl>): Promise<Reply> {
     let spoken: {id: string; text: string} | undefined, delegated = false;
@@ -274,7 +290,7 @@ export class AssistantEngine {
     });
   }
   stage(request: ModuleUploadRequest): ModuleStagedUpload | ErrorBody {
-    if (request.target !== 'assistant' || request.name !== 'input.json' || request.signal.aborted || request.bytes.byteLength > 25_600) return errorBody('invalid-request');
+    if (request.target !== 'assistant' || request.name !== 'input.json' || request.signal.aborted || request.bytes.byteLength > LIMITS.stageBytes) return errorBody('invalid-request');
     try {
       this.#ready();
       const value: unknown = JSON.parse(Buffer.from(request.bytes).toString('utf8'));
@@ -304,6 +320,10 @@ export class AssistantEngine {
       let task: Task;
       if (input.action === 'start') {
         if (this.store.unfinished() !== undefined || this.#active !== undefined) fail('capacity');
+        // A new turn of a paid profile is refused, its reply naming why, when its model has no price or what remains of a
+        // spend limit is below the smallest first call, so it is not admitted only to fail there; synthetic turns cost nothing.
+        const paid = this.provider(input.profile), reached = paid.name === 'synthetic' ? undefined : this.spend.reached(paid.model);
+        if (reached !== undefined) throw new Fault('capacity', reached);
         task = this.store.newTask(input.profile, input.text);
         this.store.message(task, `${task.id}-prompt`, 'owner', input.text, this.context.clock.now());
       } else {
@@ -319,6 +339,15 @@ export class AssistantEngine {
     });
   }
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
+    if (ref === 'spend') {
+      // The shared spend of today and this month (Hub #2024): amounts and counts only, no prompt, model text or call identity.
+      if (request?.signal.aborted === true || Object.keys(request?.query ?? {}).length > 0) return errorBody('invalid-request');
+      try {
+        const provider = this.provider();
+        const view: SpendView = {...this.spend.totals(), paid: provider.name === 'synthetic' ? null : {model: provider.model, minimumMicros: this.spend.minimum(provider.model) ?? null}};
+        return {type: 'application/json', bytes: Buffer.from(JSON.stringify(view))};
+      } catch {return errorBody('unavailable');}
+    }
     if (ref !== 'conversation') return undefined;
     const query = request?.query ?? {}, selected = query.profile;
     if (request?.signal.aborted === true || !profile(selected)) return errorBody('invalid-request');
@@ -458,8 +487,14 @@ export class AssistantEngine {
     if (contextBytes(context) > LIMITS.contextBytes) {
       throw new Fault('capacity', CONTEXT_TOO_LARGE);
     }
-    const text = await this.#call(state.taskId, state.step, 'model', signal => provider.turn({instructions: INSTRUCTIONS, context, transcript: task.transcript, tools,
-      mode: copy.mode === undefined ? null : {mode: copy.mode.mode, revision: copy.mode.revision}}, signal).then(reply => ({text: JSON.stringify(reply), units: reply.units})));
+    const request: TurnInput = {instructions: INSTRUCTIONS, context, transcript: task.transcript, tools,
+      mode: copy.mode === undefined ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
+    // The call reserves what this request could use: its bytes bound its input tokens, and the output bound its answer's.
+    const inputUnits = inputBound(request), paid = provider.name !== 'synthetic';
+    const text = await this.#call(state.taskId, state.step, 'model', signal => provider.turn(request, signal)
+      .then(reply => ({text: JSON.stringify(reply), units: reply.units, usage: reply.usage ?? null})), undefined,
+    {units: inputUnits + LIMITS.outputUnits, unit: paid ? 'tokens' : 'synthetic units',
+      ...(paid ? {spend: {model: provider.model, inputUnits, outputUnits: LIMITS.outputUnits}} : {})});
     const reply = parseReply(text), call = reply.calls[0];
     let next: Next = 'end', result = '';
     // The final text is what the owner reads; it keeps the result bound even though a reply with the model's own blocks may be larger.
@@ -496,7 +531,7 @@ export class AssistantEngine {
     let asked = false;
     await this.#append(state.taskId, item, active.span.context, current => {
       if (question === undefined) return;
-      if (current.questions >= LIMITS.questions) throw new Fault('capacity', 'This turn reached its question limit.');
+      if (current.questions >= LIMITS.questions) throw new Fault('capacity', `This turn reached its limit of ${String(LIMITS.questions)} questions.`);
       current.questions += 1; current.question = question;
       this.store.message(current, question.id, 'assistant', question.text, this.context.clock.now()); asked = true;
     });
@@ -717,8 +752,22 @@ export class AssistantEngine {
     });
     if (launch && !this.#closed && !this.context.signal.aborted) this.#launch(taskId);
   }
-  async #call(taskId: string, ordinal: number, kind: 'model' | 'tool', operation: (signal: AbortSignal, parent: TraceContext) => Promise<{text: string; units: number | null; evidence?: ActionEvidence[]}>,
-    reserve?: (task: Task, call: Call) => void): Promise<string> {
+  /** The per-turn limit the next call would pass, as the message naming it, or undefined while every bound has room. */
+  #limitOf(task: Task, kind: 'model' | 'tool', timeout: number, budget: Budget): string | undefined {
+    if (kind === 'model' ? task.modelCalls >= LIMITS.modelCalls : task.toolCalls >= LIMITS.toolCalls) {
+      return `This turn reached its limit of ${String(kind === 'model' ? LIMITS.modelCalls : LIMITS.toolCalls)} ${kind} calls.`;
+    }
+    if (task.activeMs + timeout > LIMITS.activeMs) return `This turn reached its limit of ${String(LIMITS.activeMs / 60_000)} minutes of active time.`;
+    if (task.reservedUnits + budget.units > LIMITS.units) return `This turn reached its limit of ${LIMITS.units.toLocaleString('en-US')} ${budget.unit}: the next model call could pass it.`;
+    return undefined;
+  }
+  /**
+   * One call with its receipt. Before anything is sent, one transaction checks the turn's limits, counts the call, reserves
+   * its time and units and, for a paid model call, its spend; a limit refuses the call with `capacity` and a conversation
+   * message naming it. The answer's reported usage replaces the reservations; unreported usage keeps them.
+   */
+  async #call(taskId: string, ordinal: number, kind: 'model' | 'tool', operation: (signal: AbortSignal, parent: TraceContext) => Promise<Answer>,
+    reserve?: (task: Task, call: Call) => void, budget: Budget = {units: 0, unit: 'units'}): Promise<string> {
     const active = this.#activeFor(taskId);
     const id = `${taskId}-step-${String(ordinal)}`, saved = this.store.call(id);
     if (saved !== undefined) {
@@ -726,30 +775,28 @@ export class AssistantEngine {
       await this.#change(taskId, task => {this.#fence(active); task.nextOrdinal = Math.max(task.nextOrdinal, ordinal + 1);}, active.span.context);
       this.#fence(active); return saved.result;
     }
-    const timeout = kind === 'model' ? LIMITS.modelMs : LIMITS.toolMs, units = kind === 'model' ? LIMITS.callUnits : 0;
+    const timeout = kind === 'model' ? LIMITS.modelMs : LIMITS.toolMs, units = budget.units;
     // A model reply carries the provider's own blocks for replay, so it may be larger than a tool result.
     const bound = kind === 'model' ? LIMITS.replyBytes : LIMITS.toolBytes;
     const span = startSpan(this.context.trace, kind === 'model' ? 'bunny.assistant.model' : 'bunny.assistant.tool', {parent: active.span.context,
       attributes: {'bunny.assistant.task_id': taskId, 'bunny.assistant.run_id': active.runId, 'bunny.assistant.effect_id': id}});
     const call: Call = {version: 1, id, taskId, runId: active.runId, ordinal, kind, status: 'admitted', result: null, units: null,
       reservedUnits: units, reservedMs: timeout, elapsedMs: null, traceparent: span.context.traceparent};
-    const started = this.context.clock.now(); let replied = false;
+    const started = this.context.clock.now(); let replied = false, answer: Answer | undefined;
     try {
       await this.#change(taskId, task => {
         this.#fence(active);
         task.activeMs += Math.max(0, started - active.accountedAt);
         if (task.nextOrdinal !== ordinal) throw new Fault('capacity', 'The next step did not match the saved turn.');
-        if (task.activeMs + timeout > LIMITS.activeMs) throw new Fault('capacity', 'This turn reached its active time limit.');
-        if (task.reservedUnits + units > LIMITS.units) throw new Fault('capacity', 'This turn reached its usage limit.');
-        if (kind === 'model' ? task.modelCalls >= LIMITS.modelCalls : task.toolCalls >= LIMITS.toolCalls) {
-          throw new Fault('capacity', `This turn reached its ${kind} call limit.`);
-        }
+        let limit = this.#limitOf(task, kind, timeout, budget);
+        if (limit === undefined && budget.spend !== undefined) limit = this.spend.reserve({id, purpose: 'task', owner: taskId, ...budget.spend});
+        if (limit !== undefined) throw new Fault('capacity', limit);
         if (kind === 'model') task.modelCalls += 1; else task.toolCalls += 1;
         task.activeMs += timeout; task.reservedUnits += units; reserve?.(task, call); this.store.saveCall(call);
       }, span.context);
       this.#fence(active);
       const reply = await this.#wait(active, timeout, bound, () => Promise.resolve().then(() => operation(active.controller.signal, span.context)), call);
-      replied = true; this.#fence(active);
+      replied = true; answer = reply; this.#fence(active);
       if (typeof reply.text !== 'string') throw new Fault('capacity', `The ${kind} returned an invalid response.`);
       if (textBytes(reply.text) > bound) throw new Fault('capacity', kind === 'model' ? 'The model response exceeded its size limit.' : 'The tool result exceeded its size limit.');
       if (reply.units !== null) {
@@ -765,6 +812,7 @@ export class AssistantEngine {
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
         for (const evidence of reply.evidence ?? []) this.store.observeAction(taskId, evidence);
         if (reply.units !== null) task.reservedUnits -= units - reply.units;
+        this.spend.settle(id, reply.usage ?? null);
         task.nextOrdinal = ordinal + 1;
         if (kind === 'tool') this.store.message(task, id, 'tool', reply.text, this.context.clock.now());
       }, span.context);
@@ -773,17 +821,20 @@ export class AssistantEngine {
       active.accountedAt = this.context.clock.now();
       const admitted = this.store.call(id);
       // A definitive answer, such as a refusal, an error status or an oversized reply, settles the call; a lost answer, a
-      // deadline or a cancellation leaves its fate unknown.
+      // deadline or a cancellation leaves its fate unknown. Usage an answer reported is spent whatever became of the answer.
       const definitive = replied ? !(error instanceof Fault && error.code === 'cancelled') : error instanceof ProviderFault && !error.uncertain && error.code !== 'cancelled';
       if (admitted !== undefined && admitted.status === 'admitted') {
-        try {await this.outbox.transaction(() => {admitted.status = definitive ? 'failed' : 'uncertain'; if (definitive) admitted.code = codeOf(error); this.store.saveCall(admitted);});} catch { /* Admission remains evidence of unknown fate. */ }
+        try {await this.outbox.transaction(() => {
+          admitted.status = definitive ? 'failed' : 'uncertain'; if (definitive) admitted.code = codeOf(error); this.store.saveCall(admitted);
+          this.spend.settle(id, answer?.usage ?? null);
+        });} catch { /* Admission remains evidence of unknown fate. */ }
       }
       throw error;
     } finally {this.#log('assistant.call.settled', active, id); const receipt = this.store.call(id); span.end(receipt !== undefined && receipt.status !== 'succeeded' ? 'error' : 'unset');}
   }
-  async #wait(active: Active, timeout: number, bound: number, operation: () => Promise<{text: string; units: number | null; evidence?: ActionEvidence[]}>, call: Call): Promise<{text: string; units: number | null; evidence?: ActionEvidence[]}> {
+  async #wait(active: Active, timeout: number, bound: number, operation: () => Promise<Answer>, call: Call): Promise<Answer> {
     let cancel: Cancel | undefined, stopped: (() => void) | undefined, settled = false;
-    const deadline = new Promise<{text: string; units: number | null; evidence?: ActionEvidence[]}>((_resolve, reject) => {
+    const deadline = new Promise<Answer>((_resolve, reject) => {
       stopped = () => {settled = true; reject(new Fault('cancelled'));};
       active.controller.signal.addEventListener('abort', stopped, {once: true});
       cancel = this.context.scheduler.after(timeout, () => {
@@ -796,10 +847,16 @@ export class AssistantEngine {
     try {
       this.#fence(active);
       const pending = operation().then(reply => {
-        if (settled && !this.#closed && !this.context.signal.aborted && this.context.database().isOpen && typeof reply.text === 'string' && textBytes(reply.text) <= bound &&
-          (reply.units === null || Number.isSafeInteger(reply.units) && reply.units >= 0 && reply.units <= call.reservedUnits)) {
-          // Evidence only: no budget refund, task transition or graph continuation after the wait ended.
-          void this.outbox.transaction(() => {const saved = this.store.call(call.id); if (saved !== undefined) {saved.result = reply.text; saved.units = reply.units; saved.status = 'succeeded'; this.store.saveCall(saved);}}).catch(() => {});
+        if (settled && !this.#closed && !this.context.signal.aborted && this.context.database().isOpen) {
+          const evidence = typeof reply.text === 'string' && textBytes(reply.text) <= bound &&
+            (reply.units === null || Number.isSafeInteger(reply.units) && reply.units >= 0 && reply.units <= call.reservedUnits);
+          // Evidence only: no budget refund, task transition or graph continuation after the wait ended. Reported usage is
+          // what the late call spent, so it replaces the call's spend reservation.
+          void this.outbox.transaction(() => {
+            const saved = this.store.call(call.id);
+            if (evidence && saved !== undefined) {saved.result = reply.text; saved.units = reply.units; saved.status = 'succeeded'; this.store.saveCall(saved);}
+            this.spend.settle(call.id, reply.usage ?? null);
+          }).catch(() => {});
         }
         return reply;
       });

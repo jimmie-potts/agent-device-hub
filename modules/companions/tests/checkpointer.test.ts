@@ -7,6 +7,7 @@ import {test} from 'node:test';
 import {emptyCheckpoint} from '@langchain/langgraph-checkpoint';
 import {fullDisk, openModuleDatabaseFile} from '@jimmie-potts/sdk';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
+import {LIMITS} from '../src/assistant/limits.js';
 
 void test('SDK SQLite checkpoint survives process termination before projection and explicitly resumes', () => {
   const dir = mkdtempSync(join(tmpdir(), 'assistant-checkpoint-'));
@@ -64,11 +65,11 @@ void test('serialized working state and pending writes are bounded before SQLite
   const database = openModuleDatabaseFile(':memory:');
   try {
     const saver = new SqliteCheckpointSaver(database), root = {configurable: {thread_id: 'bounded'}};
-    const checkpoint = {...emptyCheckpoint(), channel_values: {text: 'x'.repeat(32 * 1024)}};
+    const checkpoint = {...emptyCheckpoint(), channel_values: {text: 'x'.repeat(LIMITS.checkpointBytes)}};
     await assert.rejects(saver.put(root, checkpoint, {source: 'input', step: -1, parents: {}}, {}), /checkpoint-capacity/);
     assert.equal(await saver.getTuple(root), undefined);
     const config = await saver.put(root, emptyCheckpoint(), {source: 'input', step: -1, parents: {}}, {});
-    await assert.rejects(saver.putWrites(config, [['text', 'x'.repeat(32 * 1024)]], 'task'), /checkpoint-capacity/);
+    await assert.rejects(saver.putWrites(config, [['text', 'x'.repeat(LIMITS.checkpointBytes)]], 'task'), /checkpoint-capacity/);
     assert.deepEqual((await saver.getTuple(config))?.pendingWrites, []);
   } finally {database.close();}
 });

@@ -10,6 +10,7 @@ import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './ass
 import {AnthropicProvider, DEFAULT_MODEL, EFFORTS, type Effort, type Transport} from './assistant/anthropic.js';
 import {deviceToolOwner, allowlistable} from './assistant/tools.js';
 import {LIMITS} from './assistant/store.js';
+import type {ModelPrices, PriceTable} from './assistant/spend.js';
 import {AssistantDeviceCopy} from './assistant/devices.js';
 import {ASSISTANT_TOOL_LIMIT, type AssistantDeviceOwner, type AssistantDispatch, type AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {createHash} from 'node:crypto';
@@ -37,27 +38,49 @@ export const API_KEY_SECRET = 'anthropic-api-key';
  * provider needs its key file under `secrets`. An empty section keeps every default and makes no network call.
  */
 export type CompanionsConfig = {readonly assistant: {readonly provider: 'synthetic'; readonly tools: readonly string[]}
-  | {readonly provider: 'anthropic'; readonly model: string; readonly effort: Effort; readonly tools: readonly string[]}};
+  | {readonly provider: 'anthropic'; readonly model: string; readonly effort: Effort; readonly tools: readonly string[]; readonly prices: PriceTable}};
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const only = (value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean => Object.keys(value).every(key => keys.includes(key));
 const refuse = (detail: string): ErrorBody => errorBody('invalid-request', {detail});
+const MODEL = /^[a-z0-9][a-z0-9.-]{0,127}$/;
+const PRICE_CLASSES = ['input', 'output', 'cacheWrite', 'cacheRead'] as const;
+/**
+ * `assistant.prices` (Hub #2024), optional: at most 16 models, each with all four prices in US dollars per million tokens,
+ * finite and from 0 to 1000. Without an entry for the hosted model the section is still accepted, so the module starts
+ * before the owner adds prices, and the engine refuses that model's paid turns and calls, so spend stays bounded.
+ */
+function pricesOf(value: unknown): PriceTable | string {
+  if (value === undefined) return {};
+  const shape = 'assistant.prices maps each model to input, output, cacheWrite and cacheRead prices in US dollars per million tokens, from 0 to 1000';
+  if (!isObject(value) || Object.keys(value).length > 16) return shape;
+  const table: Record<string, ModelPrices> = {};
+  for (const [name, entry] of Object.entries(value)) {
+    if (!MODEL.test(name) || !isObject(entry) || Object.keys(entry).length !== PRICE_CLASSES.length || !PRICE_CLASSES.every(key => {
+      const price = entry[key]; return typeof price === 'number' && Number.isFinite(price) && price >= 0 && price <= 1000;
+    })) return shape;
+    table[name] = {input: entry.input as number, output: entry.output as number, cacheWrite: entry.cacheWrite as number, cacheRead: entry.cacheRead as number};
+  }
+  return table;
+}
 export function configureCompanions(section: unknown): Configured<CompanionsConfig> | ErrorBody {
   if (!isObject(section) || !only(section, ['assistant', 'secrets'])) return refuse('the companions section has only assistant and secrets');
   const assistant = section.assistant === undefined ? {} : section.assistant;
-  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'tools'])) return refuse('assistant has only provider, model, effort and tools');
+  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'tools', 'prices'])) return refuse('assistant has only provider, model, effort, tools and prices');
   const provider = assistant.provider ?? 'synthetic';
   if (provider !== 'synthetic' && provider !== 'anthropic') return refuse('assistant.provider must be synthetic or anthropic');
   const tools = assistant.tools ?? [];
   if (!Array.isArray(tools) || tools.length > ASSISTANT_TOOL_LIMIT || !tools.every(allowlistable) || new Set(tools).size !== tools.length) return refuse('assistant.tools must list each permitted tool name once');
   if (provider === 'synthetic') {
-    if (assistant.model !== undefined || assistant.effort !== undefined) return refuse('the synthetic provider takes no model or effort');
+    if (assistant.model !== undefined || assistant.effort !== undefined || assistant.prices !== undefined) return refuse('the synthetic provider takes no model, effort or prices');
     return {config: {assistant: {provider, tools: [...tools]}}};
   }
   const model = assistant.model ?? DEFAULT_MODEL, effort = assistant.effort ?? 'medium';
-  if (typeof model !== 'string' || !/^[a-z0-9][a-z0-9.-]{0,127}$/.test(model)) return refuse('assistant.model is a model identifier of at most 128 lowercase letters, digits, dots and hyphens');
+  if (typeof model !== 'string' || !MODEL.test(model)) return refuse('assistant.model is a model identifier of at most 128 lowercase letters, digits, dots and hyphens');
   if (!EFFORTS.includes(effort as Effort)) return refuse('assistant.effort is low, medium or high');
+  const prices = pricesOf(assistant.prices);
+  if (typeof prices === 'string') return refuse(prices);
   if (!isObject(section.secrets) || !Object.hasOwn(section.secrets, API_KEY_SECRET)) return refuse(`a hosted provider names its API key file as secrets.${API_KEY_SECRET}`);
-  return {config: {assistant: {provider, model, effort: effort as Effort, tools: [...tools]}}};
+  return {config: {assistant: {provider, model, effort: effort as Effort, tools: [...tools], prices}}};
 }
 /** What a test or the runtime gives the module: the engine's seams and, for a hosted provider, the transport behind its fetch. */
 export type CompanionsOptions = AssistantOptions & {readonly transport?: Transport};
@@ -210,7 +233,8 @@ class Companions {
     const dispatch = options.dispatch ?? ((data: AssistantDispatch, parent: TraceContext) => context.sdk.request('bunny.cmd.assistant-dispatch.assistant',
       {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.family === 'mode-set' ? '2.0' : data.family === 'catalog-action' ? '2.3' : 'owner' in data ? '2.2' : '2.1'}`, data},
       {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent}));
-    return {...(provider === undefined ? {} : {provider}), tools, core, dispatch, devices: options.devices ?? (owner => this.#deviceCopies.get(owner)?.records()),
+    const prices = options.prices ?? (assistant?.provider === 'anthropic' ? assistant.prices : undefined);
+    return {...(provider === undefined ? {} : {provider}), ...(prices === undefined ? {} : {prices}), ...(options.timeZone === undefined ? {} : {timeZone: options.timeZone}), tools, core, dispatch, devices: options.devices ?? (owner => this.#deviceCopies.get(owner)?.records()),
       readDevice: options.readDevice ?? (async (owner, name, signal, parent) => this.#deviceCopies.get(owner)?.read(name, signal, parent)), ...(options.available === undefined ? {} : {available: options.available})};
   }
   #replyPolicy(): Pick<Policy, 'mode' | 'synced'> {

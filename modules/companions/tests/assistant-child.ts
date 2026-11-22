@@ -5,6 +5,8 @@ import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule} from '../src/module.js';
 import {SyntheticProvider} from '../src/assistant/synthetic.js';
+import {LIMITS, AssistantStore} from '../src/assistant/store.js';
+import {inputBound} from '../src/assistant/spend.js';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 const [stateDir, mode] = process.argv.slice(2); assert.ok(stateDir !== undefined);
 let calls = 0;
@@ -13,7 +15,8 @@ await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
 const synthetic = new SyntheticProvider();
 const module = createCompanionsModule({provider: {name: 'synthetic', model: 'synthetic', turn: input => {
   calls += 1;
-  if (mode === 'lost-call') process.exit(19);
+  // The lost call's reservation is its request bound plus the output bound; the parent compares the saved receipt with it.
+  if (mode === 'lost-call') {process.stdout.write(JSON.stringify({reservation: inputBound(input) + LIMITS.outputUnits})); process.exit(19);}
   return synthetic.turn(input);
 }}});
 const host = new ModuleHarness({...module, start: context => module.start({...context, sdk: {...context.sdk, publishMessage: (key, message) => {
@@ -48,5 +51,7 @@ if (mode === 'answer-crash') {assert.equal((await input(true)).status, 'accepted
 let refused: string | undefined;
 if (mode === 'resume') {assert.equal((await control('resume', state().tasks[0]?.taskId)).status, 'accepted'); await wait('succeeded');}
 if (mode === 'refuse') refused = (await control('resume', state().tasks[0]?.taskId)).status;
-process.stdout.write(JSON.stringify({state: state(), calls, refused}));
+const taskId = state().tasks[0]?.taskId, database = host.moduleDatabase();
+const receipts = taskId === undefined || database === undefined ? [] : new AssistantStore(database).calls(taskId).map(call => call.reservedUnits);
+process.stdout.write(JSON.stringify({state: state(), calls, refused, receipts}));
 await host.stop(); await core.close();
