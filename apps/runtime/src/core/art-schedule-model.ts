@@ -1,3 +1,4 @@
+import {isUploadArtworkId} from '@jimmie-potts/event-contracts/v2/art-show';
 import {Outcome} from '@jimmie-potts/sdk';
 import {Ajv2020} from 'ajv/dist/2020.js';
 import {schemas} from '@jimmie-potts/event-contracts/v2';
@@ -74,7 +75,7 @@ export function planArtDay(day: WakingDay, count: 6|7|8, nowMs: number, latest: 
   return result;
 }
 export function savedArtwork(state: ArtRecord | undefined, choice: () => number): ArtworkSummary | undefined {
-  const usable=(state?.artworks??[]).filter(art=>art.feedback!=='dismiss' && art.feedback!=='less' && art.compositions.some(item=>
+  const usable=(state?.artworks??[]).filter(art=>!isUploadArtworkId(art.artworkId) && art.feedback!=='dismiss' && art.feedback!=='less' && art.compositions.some(item=>
     item.outcome===Outcome.succeeded && item.compositionId!==null && item.renditions.length>0));
   const ranked=usable.sort((a,b)=>{const favorite=Number(b.favorite)-Number(a.favorite);return favorite!==0?favorite:Number(b.feedback==='more')-Number(a.feedback==='more');});
   const first=ranked[0];if(first===undefined)return undefined;

@@ -428,6 +428,21 @@ The companions module SHALL report each profile's conversation as one root sessi
 - **WHEN** this release first starts with saved tasks, one conversation's latest task ended and another's waiting on the owner's answer
 - **THEN** it records each conversation's latest projection and reports nothing for the ended task, and the same start reports the waiting task's turn start, question and wait, so it shows as needing the owner
 
+### Requirement: Preview an owner attachment in Conversation
+
+Conversation SHALL accept one supported still or GIF from either a drop on the message field or the keyboard-operated Attach control. It SHALL show the same artwork to preview, replace or remove before the owner confirms a save or display.
+
+#### Scenario: Select, replace or remove an attachment
+
+- **WHEN** the owner selects or drops an image, replaces it, or removes it
+- **THEN** Conversation shows the selected media or a visible validation error and issues zero display commands
+
+#### Scenario: Save and display a single upload
+
+- **WHEN** the owner confirms both actions
+- **THEN** Conversation reports the library outcome and each selected display outcome independently
+- **AND** a definitive failure can be retried without repeating a successful action, while an uncertain outcome stays visible without replay
+
 ### Requirement: Closing reply when a turn fails
 
 An admitted turn that settles failed or uncertain SHALL save a single private closing reply explaining the known outcomes of its approved actions and the supported reason the turn stopped. The runtime SHALL use the records of that turn, preserve a provider's existing closing answer, and issue no model call, device command or retry to produce or deliver the fallback. If the cause is unknown, the fallback SHALL say so. Pending questions and paused tasks SHALL retain their controls.

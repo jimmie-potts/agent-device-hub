@@ -2228,3 +2228,12 @@ Each assistant conversation SHALL count as one root session of the native source
 #### Scenario: Native roots at the limit
 - **WHEN** the core holds 128 sessions with one finished child subtree, and two native conversations and a Claude root start
 - **THEN** the first native conversation displaces the subtree, the second conversation and the Claude root are refused with `capacity`, the module's task changes all commit, and the refused conversation appears at its next change after a session expires
+
+### Requirement: Admit explicit local artwork display
+
+The runtime SHALL require authenticated control for uploads and Show. Private previews SHALL require read access. Display SHALL use a compatible configured target and the existing command tracker and writers.
+
+#### Scenario: Unavailable display after save
+
+- **WHEN** a selected device becomes unavailable after the save commits
+- **THEN** the saved item remains in the library and the display attempt reports its own outcome

@@ -517,3 +517,24 @@
 
 .conversation-artwork{margin:0;display:grid;justify-items:start;gap:.5rem}
 .conversation-artwork :is(canvas,img){max-inline-size:100%;max-block-size:26rem;object-fit:contain;border-radius:.5rem}
+
+.conversation-upload {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-s);
+  min-inline-size: 0;
+  padding-block-start: var(--space-s);
+  border-block-start: 1px solid var(--edge-dense);
+}
+
+.conversation-upload .conversation-artwork :is(canvas, img) {
+  max-block-size: 12rem;
+}
+
+.conversation-upload fieldset {
+  display: grid;
+  gap: var(--space-xs);
+  min-inline-size: 0;
+  border: 0;
+  padding: 0;
+}

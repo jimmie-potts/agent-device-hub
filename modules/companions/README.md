@@ -417,6 +417,15 @@ The animation stays on its first frame until played. Opening a conversation
 or playing a GIF does not generate art or send it to a device. If the art is
 removed from the library, the saved reply remains readable.
 
+### Attach artwork
+
+Use Attach or drop one PNG, JPEG, or GIF onto the Conversation message field.
+The attachment stays private and opens in the Conversation artwork preview.
+Choose Display now for a compatible display, Save to library for later, or
+Display and save for both. The library and each display report their own
+outcomes. A failed action can be retried independently. An uncertain action
+stays visible without replay.
+
 ### Coding delegation
 
 `delegate_coding` (Hub #502) proposes handing one bounded coding task to the

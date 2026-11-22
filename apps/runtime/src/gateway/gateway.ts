@@ -731,9 +731,14 @@ export class Gateway {
 
   /** Prepare binary input, then use the unchanged tracked dispatcher and its exact reply. */
   async #upload(request: IncomingMessage, name: string, params: URLSearchParams, principal: Principal): Promise<Answer> {
-    const {upload} = this.#module(name).manifest;
-    if (upload === undefined) throw refuse('not-found', 'the module accepts no upload');
-    const {label, family, requestId, input} = uploadInput(params, upload.family);
+    const {upload: primary, additionalUploads = []} = this.#module(name).manifest;
+    if (primary === undefined && additionalUploads.length === 0) throw refuse('not-found', 'the module accepts no upload');
+    const {label, family, requestId, input} = uploadInput(params);
+    const upload = primary?.family === family ? primary : additionalUploads.find(option => option.family === family);
+    if (upload === undefined) throw refuse('invalid-request', 'an upload names a declared family');
+    if (family === 'art-attachment-edit' && principal.kind !== 'browser') {
+      throw refuse('forbidden', 'Conversation attachments require an operator dashboard session');
+    }
     const bytes = await readUpload(request, upload.maxBytes);
     this.#admit(request);
     const incoming = request.headers.traceparent;
@@ -899,6 +904,9 @@ export class Gateway {
   async #dispatch(principal: Principal, family: string, input: ActionInput, request?: IncomingMessage, uploadOwner?: string): Promise<ActionAnswer> {
     if (!this.access.live(principal)) return errorBody('unauthenticated', {detail: 'the caller\'s credential or session has ended'});
     if (!principal.scopes.has('control')) return errorBody('forbidden', {detail: 'control authority is required'});
+    if (family === 'art-attachment-edit' && input.data.action === 'stage' && uploadOwner !== 'art') {
+      return errorBody('forbidden', {detail: 'a Conversation attachment requires the Art binary upload'});
+    }
     if (family === 'art-upload-stage' && uploadOwner !== 'art') return errorBody('forbidden', {detail: 'a local GIF requires the Art binary upload'});
     if (family.startsWith('microduck-') && principal.kind !== 'browser') return errorBody('forbidden', {detail: 'MicroDuck controls require the operator dashboard session'});
     const command = this.#command(principal.source, family, input);
@@ -926,7 +934,7 @@ export class Gateway {
     const actions = OPERATOR_ACTIONS.includes(family) ? this.#options.operatorActions : this.#options.actions;
     if (actions === undefined) return errorBody('unavailable', {detail: 'this runtime hosts no core to send actions'});
     // Mode requests and the admitted upload boundary continue their trace in the tracker's existing request span.
-    const incoming = (family === 'mode-set' || family === 'mode-override-set' || family === 'art-show') || family === 'lighting-layout-set' || family === 'playback-layout-set' || family === 'home-layout-set' ? request?.headers.traceparent : undefined;
+    const incoming = (family === 'mode-set' || family === 'mode-override-set' || family === 'art-show' || family === 'art-attachment-edit') || family === 'lighting-layout-set' || family === 'playback-layout-set' || family === 'home-layout-set' ? request?.headers.traceparent : undefined;
     const candidate = typeof incoming === 'string' ? {traceparent: incoming} : undefined;
     const parent = (request === undefined ? undefined : this.#dashboardTraces.get(request))
       ?? (candidate !== undefined && traceFields(candidate) !== undefined ? candidate : undefined);
@@ -1088,7 +1096,7 @@ function templateOf(path: string): string | undefined {
   if (Object.hasOwn(DASHBOARD_FILES, path)) return path;
   if (path === '/api/v2/history' || path === '/api/v2/build' || path === '/api/v2/authority' || path === '/api/v2/modules' || path === '/api/v2/links' || path === '/api/v2/snapshot') return path;
   if (path === '/api/v2/commands/approval-recover') return path;
-  if (/^\/api\/v2\/automation\/(rules|routines|power-limits|interrupt-set|settings|log|art|art\/targets)$/.test(path)) return path;
+  if (/^\/api\/v2\/automation\/(rules|routines|power-limits|interrupt-set|settings|log|art|art\/(?:targets|display-availability))$/.test(path)) return path;
   if (/^\/api\/v2\/automation\/power-limits\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(path)) return '/api/v2/automation/power-limits/{id}';
   if (/^\/api\/v2\/automation\/routines\/[A-Za-z0-9_.-]{1,128}(?:\/(enable|disable|run|preview))?$/.test(path)) return '/api/v2/automation/routines/{id}';
   if (/^\/api\/v2\/automation\/rules\/[A-Za-z0-9_.-]{1,128}$/.test(path)) return '/api/v2/automation/rules/{id}';
@@ -1131,12 +1139,12 @@ function actionInput(input: Record<string, unknown>): ActionInput {
   return {target, data: data as Record<string, unknown>, ...(typeof requestId === 'string' ? {requestId} : {})};
 }
 
-function uploadInput(params: URLSearchParams, declaredFamily?: string) {
+function uploadInput(params: URLSearchParams) {
   const keys = [...params.keys()];
   const label = params.get('name'), family = params.get('family'), requestId = params.get('requestId');
   if (keys.length !== 4 || new Set(keys).size !== 4 || keys.some(key => !['name', 'family', 'requestId', 'target'].includes(key))
     || label === null || label.trim().length === 0 || label.length > 120 || requestId === null || family === null
-    || (declaredFamily === undefined ? family.length > 64 || !FAMILY.test(family) || !family.includes('-') : family !== declaredFamily)) {
+    || (family.length > 64 || !FAMILY.test(family) || !family.includes('-'))) {
     throw refuse('invalid-request', 'an upload names its declared family, target, requestId and display name');
   }
   return {label, family, requestId, input: actionInput({target: params.get('target'), requestId, data: {}})};
