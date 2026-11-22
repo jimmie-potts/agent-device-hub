@@ -13,6 +13,7 @@
 - [x] 3.1 Red: unit tests for normalization, the prompt, the Anthropic title call and compare-before-write, and engine tests on the manual clock for the first title, refresh, reappearance, rename, failures and the synthetic title. Evidence: `conversation-titles.test.js`; without the rename's abandon and the generation compare, the rename and compare-before-write tests fail (negative control in the PR).
 - [x] 3.2 Implement `titles.ts`, the engine and store wiring, `titleModel` and the rename control. Evidence: `test:companions:built` passes.
 - [x] 3.3 Rename in Conversation details. Evidence: the companions browser journey passes.
+- [x] 3.4 Reserve and settle each paid title call in #2024's spend ledger as a conversation-level call; refuse the section without the title model's price. Evidence: the spend-limit, missing-price and first-message tests in `conversation-titles.test.js` and `configure.test.js` pass.
 
 ## 4. Documentation and archive
 
