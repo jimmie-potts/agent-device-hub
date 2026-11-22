@@ -12,7 +12,7 @@ import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js'
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
 import type {Proposal} from './history-contract.js';
 import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
-import {inputBound, SpendLedger, type PriceTable, type TokenUsage} from './spend.js';
+import {inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions} from './catalog-actions.js';
@@ -47,7 +47,7 @@ export type AssistantOptions = {
   delegate?: Delegate;
   /** The owner cancelled a task whose delegation is still running; the module asks the worker to stop. */
   onCancelled?: (taskId: string) => void;
-  /** The private section's prices per model for the spend ledger (Hub #2024); a paid call to an unpriced model is refused. */
+  /** The private section's prices per model for the spend ledger (Hub #2024); a paid turn or call of an unpriced model is refused. */
   prices?: PriceTable;
   /** The time zone whose local day and month the spend limits use: the runtime host's own unless a test names one. */
   timeZone?: string;
@@ -294,8 +294,9 @@ export class AssistantEngine {
       let task: Task;
       if (input.action === 'start') {
         if (this.store.unfinished() !== undefined || this.#active !== undefined) fail('capacity');
-        // At a spend limit a new turn of a paid profile is refused, its reply naming the limit; synthetic turns cost nothing.
-        const reached = this.provider(input.profile).name === 'synthetic' ? undefined : this.spend.reached();
+        // A new turn of a paid profile is refused, its reply naming why, when its model has no price or what remains of a
+        // spend limit is below the smallest first call, so it is not admitted only to fail there; synthetic turns cost nothing.
+        const paid = this.provider(input.profile), reached = paid.name === 'synthetic' ? undefined : this.spend.reached(paid.model);
         if (reached !== undefined) throw new Fault('capacity', reached);
         task = this.store.newTask(input.profile, input.text);
         this.store.message(task, `${task.id}-prompt`, 'owner', input.text, this.context.clock.now());
@@ -315,7 +316,11 @@ export class AssistantEngine {
     if (ref === 'spend') {
       // The shared spend of today and this month (Hub #2024): amounts and counts only, no prompt, model text or call identity.
       if (request?.signal.aborted === true || Object.keys(request?.query ?? {}).length > 0) return errorBody('invalid-request');
-      try {return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.spend.totals()))};} catch {return errorBody('unavailable');}
+      try {
+        const provider = this.provider();
+        const view: SpendView = {...this.spend.totals(), paid: provider.name === 'synthetic' ? null : {model: provider.model, minimumMicros: this.spend.minimum(provider.model) ?? null}};
+        return {type: 'application/json', bytes: Buffer.from(JSON.stringify(view))};
+      } catch {return errorBody('unavailable');}
     }
     if (ref !== 'conversation') return undefined;
     const query = request?.query ?? {}, selected = query.profile;

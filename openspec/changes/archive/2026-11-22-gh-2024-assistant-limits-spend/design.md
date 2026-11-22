@@ -37,7 +37,7 @@ The request carries one top-level `cache_control: {type: "ephemeral"}`, the API'
 
 ### 5. Prices
 
-`assistant.prices` maps each model to `input`, `output`, `cacheWrite` and `cacheRead` in US dollars per million tokens. All four are required, from 0 to 1000, for at most 16 models. The hosted provider's model must have an entry, or the section is refused. Prices change over time, and the owner keeps them in the private section; there are no built-in defaults that could drift silently. The README states that the five-minute cache write is 1.25 times the input price on the Anthropic price list, checked 2026-11-22, and its example uses synthetic values.
+`assistant.prices` maps each model to `input`, `output`, `cacheWrite` and `cacheRead` in US dollars per million tokens. The table is optional; when present, each entry needs all four prices, from 0 to 1000, for at most 16 models. Prices change over time, and the owner keeps them in the private section; there are no built-in defaults that could drift silently. A missing price for the hosted model does not refuse the section, which would stop the whole companions module (Reachy, MicroDuck, preferences, knowledge, speech and the coding coordinator), and the earlier release refuses the key, so no single release-and-section order would keep the module startable. Instead the engine refuses every new turn and call of an unpriced model with `capacity`, naming the missing price, so spend stays bounded (review round 1 on PR 2039). The README states that the five-minute cache write is 1.25 times the input price on the Anthropic price list, checked 2026-11-22, and its example uses synthetic values.
 
 ### 6. The ledger
 
@@ -51,7 +51,7 @@ Periods are the runtime host's local day and month (`Intl` with the host zone, `
 
 ### 8. Refusals
 
-A call is refused when its reservation plus the period's counted spend would pass a limit: the limit is never passed, even by a call that uses its whole bound. A new turn of a paid profile is refused when a period's counted spend has reached its limit. Both use `capacity`. The turn refusal's error detail names the limit; the page also shows the limit beside the composer, because the command receipt shows only the code. A call already sent finishes. A synthetic profile is never refused for spend.
+A call is refused when its reservation plus the period's counted spend would pass a limit: the limit is never passed, even by a call that uses its whole bound. A new turn of a paid profile is refused when its model has no price, or when what remains of a period's limit is below the smallest reservation its first call can make: 8,192 framing units at the dearest input price plus 16,384 output units at the output price. So a message is not admitted only to fail at its first call. Both use `capacity`. The turn refusal's error detail names the limit; the page also shows the limit beside the composer, because the command receipt shows only the code. A call already sent finishes. A synthetic profile is never refused for spend.
 
 ### 9. Calls outside a task
 
@@ -62,12 +62,12 @@ A call is refused when its reservation plus the period's counted spend would pas
 
 ### 10. Display
 
-The `spend` content route answers `{version: 1, day, month}`, each with the period, counted and limit amounts and the count and amount of reservations without reported usage. It carries no text, call or task identity. The page reads it once per assistant-state revision, which every saved call change bumps, so it follows the ledger without polling. A failed or malformed read shows Unknown.
+The `spend` content route answers `{version: 1, day, month, paid}`. Each period has its key, counted and limit amounts and the count and amount of reservations without reported usage. `paid` names the B.U.N.N.Y. profile's paid model and its smallest call, null when the model has no price, or is null for the synthetic provider. It carries no text, call or task identity. The page reads it once per assistant-state revision, which every saved call change bumps, so it follows the ledger without polling. A failed or malformed read shows Unknown.
 
 ## Risks
 
 - A provider that reports more tokens than a request's bytes would fail that call with `capacity`; its usage is still counted.
-- An owner who leaves `assistant.prices` out of the installed section refuses the module at start after the upgrade; the upgrade notes call it out.
+- An owner who leaves `assistant.prices` out of the installed section gets refused paid turns until the price is added; Details and the composer say so.
 - Prices in the section can go stale. The provider's own Console limit stays as a second bound.
 
 ## Migration

@@ -282,8 +282,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   }, [history]);
   const live = connected && !unavailable && state !== undefined && state.available;
   const spend = useSpend(api, connected && historyApi === api, state?.revision);
-  // Only a paid profile's new message meets the shared spend limits; the synthetic demos cost nothing.
-  const spendLimit = profile === 'bunny' && state !== undefined && state.provider !== 'synthetic' ? spendNotice(spend) : undefined;
+  // Only a paid profile's new message meets the shared spend limits and the price table; the synthetic demos cost nothing.
+  const spendLimit = profile === 'bunny' ? spendNotice(spend) : undefined;
   const task = state?.tasks.find(value => value.profile === profile);
   const unfinished = state?.tasks.find(value => !finished(value.status));
   const visibleHistory = history?.profile === profile ? history : undefined;

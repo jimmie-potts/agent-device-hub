@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {test} from 'node:test';
-import {SPEND_LIMITS} from '../src/assistant/limits.js';
+import {LIMITS, SPEND_LIMITS} from '../src/assistant/limits.js';
 import {dollars, reservationCost, SpendLedger, usageCost, type ModelPrices} from '../src/assistant/spend.js';
 
 // Synthetic prices in USD per million tokens, chosen so the arithmetic is easy to read.
@@ -78,8 +78,27 @@ void test('a reservation that could pass the daily or monthly limit is refused w
 
 void test('a model without a configured price is refused before anything is recorded', () => {
   const {spend} = ledger();
-  assert.equal(spend.reserve({...call('x'), model: 'model-b'}), 'No price is configured for the model model-b, so its spend cannot be counted. Nothing was sent.');
+  const message = 'No price is configured for the model model-b, so its spend cannot be counted. Nothing was sent.';
+  assert.equal(spend.reserve({...call('x'), model: 'model-b'}), message);
+  assert.equal(spend.reached('model-b'), message, 'a new turn of an unpriced model is refused the same way');
+  assert.equal(spend.minimum('model-b'), undefined);
   assert.equal(spend.totals().day.spentMicros, 0);
+});
+
+void test('a new turn is refused when what remains of a limit is below the smallest first call', () => {
+  const {spend} = ledger();
+  const least = spend.minimum('model-a') ?? assert.fail();
+  assert.equal(least, reservationCost(A, LIMITS.overheadUnits, LIMITS.outputUnits));
+  // Fill the day to one millionth more than the limit minus the smallest call, through a reservation settled by usage.
+  assert.equal(spend.reserve(call('fill', 1, 0)), undefined);
+  const fill = SPEND_LIMITS.dayMicros - least + 1;
+  // Input at $4 per million tokens, and five cache reads at $0.20 for the last millionth.
+  spend.settle('fill', {input: (fill - 1) / 4, output: 0, cacheWrite: 0, cacheRead: 5});
+  assert.equal(spend.totals().day.spentMicros, fill);
+  assert.equal(spend.reached(), undefined, 'without a model only a reached limit refuses');
+  assert.equal(spend.reached('model-a'), `The daily spend limit of $20.00 leaves too little for a model call: ${dollars(fill)} is counted today and the smallest call could cost ${dollars(least)}. A new message can start after midnight, the runtime host's local time.`);
+  spend.settle('fill', {input: (fill - 1) / 4, output: 0, cacheWrite: 0, cacheRead: 0});
+  assert.equal(spend.reached('model-a'), undefined, 'exactly the smallest call still fits');
 });
 
 void test('the ledger survives a restart on the same database', () => {

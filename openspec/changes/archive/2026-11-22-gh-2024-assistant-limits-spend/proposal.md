@@ -7,7 +7,7 @@
 - The per-turn limits become 50 model calls, 40 tool calls, 10 questions, 40 minutes active, 6 minutes per model call, 30 seconds per tool call, 1,000,000 tokens, 32 KiB per owner message, a 1 MiB working transcript and 128 KiB of persona and preferences. The staging, checkpoint and page bounds grow to fit. A turn that reaches a limit ends with `capacity` and a conversation message that names the limit.
 - A model call reserves its request's bytes plus framing and output units, instead of a fixed 16,384, because a token encodes at least one byte of text.
 - The Anthropic adapter asks for automatic prompt caching and reports usage by class: uncached input, output, cache writes and cache reads.
-- A private SQLite spend ledger reserves each paid call's most expensive cost before dispatch, in the receipt's transaction. Reported usage priced from a new required `assistant.prices` table replaces the reservation, and unreported usage keeps counting it. Calls that would pass a limit, and new paid turns at a limit, are refused with `capacity`.
+- A private SQLite spend ledger reserves each paid call's most expensive cost before dispatch, in the receipt's transaction. Reported usage priced from a new optional `assistant.prices` table replaces the reservation, and unreported usage keeps counting it. Calls that would pass a limit, and new paid turns at a limit, are refused with `capacity`.
 - Details shows today's and this month's shared spend from a private `spend` content route, and the composer says when a paid profile's limit is reached.
 - A conversation-level model call, such as #2025's titles, records its spend through the same ledger.
 
@@ -23,4 +23,4 @@ None.
 
 ## Impact
 
-`modules/companions` (limits, engine, provider adapter, store bounds, module section and the Conversation page) and the dashboard browser journeys that check the page's bounds. No event contract, SDK, runtime or diagnostic profile changes. The installed section must add `assistant.prices` for its model before the upgrade, or the module refuses the section. Installation joins the epic's batch under #1869; source tests do not establish installed caching or spend.
+`modules/companions` (limits, engine, provider adapter, store bounds, module section and the Conversation page) and the dashboard browser journeys that check the page's bounds. No event contract, SDK, runtime or diagnostic profile changes. Until the installed section adds `assistant.prices` for its model, paid turns and calls are refused, naming the missing price; the module still starts. Upgrade first, then add the prices. Installation joins the epic's batch under #1869; source tests do not establish installed caching or spend.

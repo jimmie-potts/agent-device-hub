@@ -321,8 +321,10 @@ their open state while you inspect another panel or resize the page.
   reserved. Hosted tasks use reported tokens and leave the task's billed cost
   unknown. **Spend today** and **Spend this month** show the shared spend of
   every profile against the [spend limits](#spend-limits), naming any
-  reservation still counted for a call without reported usage. At a limit the
-  composer of a paid profile says which limit is reached.
+  reservation still counted for a call without reported usage. **Prices**
+  says whether the paid model has a configured price. When a paid profile's
+  new message would be refused, its composer says why: a missing price or a
+  reached limit.
 - **Conversation settings** explains where submitted text goes and links to
   **Preferences** and **Companion knowledge**. An unfinished task prevents
   disabling the conversation.
@@ -374,10 +376,12 @@ private section instead.
   provider's price list states them. `cacheWrite` is the five-minute cache
   write price, which the
   [Anthropic price list](https://platform.claude.com/docs/en/about-claude/pricing)
-  states as 1.25 times the input price. All four are required, from 0 to 1000,
-  for at most 16 models. The Anthropic provider needs an entry for its own
-  model, and the section is refused without it, so every paid call can be
-  counted. The module has no built-in prices. The synthetic provider takes no
+  states as 1.25 times the input price. The table is optional. When present,
+  each entry needs all four prices, from 0 to 1000, for at most 16 models.
+  Without an entry for the Anthropic provider's model the section is still
+  accepted and the module starts, but every new turn and model call of that
+  model is refused with `capacity`, naming the missing price, so spend stays
+  bounded. The module has no built-in prices. The synthetic provider takes no
   prices.
 - `assistant.tools` lists the permitted tools by name, each once:
   `read_sessions`, `set_mode`, `delegate_coding`, `read_lifx`, `set_lifx_power`, `set_lifx_brightness`, `read_wemo` and `set_wemo_power`.
@@ -592,10 +596,13 @@ Coding-worker runs use the coding worker's own sign-in and are not counted.
 - **Unreported usage.** A call whose usage is never reported keeps counting
   its full reservation, never zero. Examples are a lost answer, a deadline, a
   crash or an error status. Its turn usage also stays unknown.
-- **New turns.** When today's or this month's spend has reached its limit, a
-  new message to a paid profile is refused with `capacity` and a detail that
-  names the limit. A call already sent finishes, and the next call is refused.
-  The synthetic profiles cost nothing and keep working.
+- **New turns.** A new message to a paid profile is refused with `capacity`
+  and a detail that names the reason when its model has no price, or when what
+  remains of today's or this month's limit is below the smallest possible first
+  call: 8,192 framing units at the model's dearest input price plus 16,384
+  output units at its output price. So a message is not admitted only to fail
+  at its first model call. A call already sent finishes, and the next call is
+  refused. The synthetic profiles cost nothing and keep working.
 - **Restart.** The ledger is in the module's database, so it survives restart
   unchanged. Startup never settles or releases a reservation.
 - **Other calls.** A model call outside a task, such as a conversation-level
@@ -608,7 +615,10 @@ Coding-worker runs use the coding worker's own sign-in and are not counted.
 **Details** reads the shared totals from the private `spend` content route
 after each assistant-state revision. The route returns the day's and month's
 counted millionths of a dollar, the limits and the count and amount of
-reservations without reported usage. It carries no text, call or task identity.
+reservations without reported usage. It also names the B.U.N.N.Y. profile's
+paid model with its smallest possible call, or null for that amount when the
+model has no price, and null for the synthetic provider. It carries no text,
+call or task identity.
 
 Unknown usage stays unknown. A crash or timeout keeps the call's reserved time
 and units; explicit continuation never resets them. Cancellation first saves a

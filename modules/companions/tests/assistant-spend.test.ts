@@ -12,7 +12,7 @@ import {InProcessBus, type Participant} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
-import {inputBound, reservationCost, SpendLedger, usageCost, type ModelPrices, type SpendTotals, type TokenUsage} from '../src/assistant/spend.js';
+import {inputBound, reservationCost, SpendLedger, usageCost, type ModelPrices, type SpendView, type TokenUsage} from '../src/assistant/spend.js';
 import {SyntheticProvider} from '../src/assistant/synthetic.js';
 import type {ModelProvider, TurnInput, TurnReply} from '../src/assistant/provider.js';
 
@@ -65,10 +65,10 @@ async function input(core: Participant, module: CompanionsModule, text: string, 
     dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
 }
 const task = (w: {module: () => CompanionsModule}) => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'bunny');
-async function spend(w: {module: () => CompanionsModule}): Promise<SpendTotals> {
+async function spend(w: {module: () => CompanionsModule}): Promise<SpendView> {
   const content = await w.module().manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
   assert.ok(content !== undefined && !('error' in content), JSON.stringify(content));
-  return JSON.parse(Buffer.from(content.bytes).toString()) as SpendTotals;
+  return JSON.parse(Buffer.from(content.bytes).toString()) as SpendView;
 }
 async function messages(w: {module: () => CompanionsModule}, profile = 'bunny'): Promise<string[]> {
   const content = await w.module().manifest.content?.('conversation', {query: {profile}, signal: new AbortController().signal});
@@ -197,4 +197,45 @@ void test('a turn at its question limit ends capacity with a message naming the 
   await until(() => task(w)?.status === 'failed');
   assert.deepEqual([task(w)?.code, task(w)?.questions], ['capacity', LIMITS.questions]);
   assert.equal((await messages(w)).at(-1), 'This turn reached its limit of 10 questions.');
+});
+
+void test('a new paid turn is refused when what remains of the day is below the smallest first call', async context => {
+  const provider = paid(() => answer('Never sent.', used(1, 1)));
+  const w = await world(context, {provider});
+  await enable(w.core, w.module());
+  const least = reservationCost(A, LIMITS.overheadUnits, LIMITS.outputUnits);
+  assert.deepEqual((await spend(w)).paid, {model: 'model-a', minimumMicros: least}, 'the route names the paid model and its smallest call');
+  // A conversation-level call leaves one millionth less than the smallest call: input at $4, and five cache reads for the last millionth.
+  const ledger = w.ledger();
+  assert.equal(ledger.reserve({id: 'title-3', purpose: 'conversation', owner: 'conversation-1', model: 'model-a', inputUnits: 1, outputUnits: 0}), undefined);
+  ledger.settle('title-3', {input: (20_000_000 - least) / 4, output: 0, cacheWrite: 0, cacheRead: 5});
+  const refused = await input(w.core, w.module(), 'Hello');
+  assert.ok(refused.status === 'rejected');
+  assert.equal(refused.error.error.code, 'capacity');
+  assert.match(refused.error.error.detail ?? '', /^The daily spend limit of \$20\.00 leaves too little for a model call: /);
+  assert.equal(provider.calls(), 0); assert.equal(task(w), undefined, 'the message was not admitted');
+});
+
+void test('without a price for the paid model the module still starts, refuses new paid turns and refuses a waiting turn\'s next call', async context => {
+  const provider = paid(turn => turn.transcript.length === 1 ? {text: null, calls: [{id: 'call-ask', name: 'ask_owner', input: {text: 'Which detail?'}}], stop: 'tool', units: 2, usage: used(1, 1)} : answer('Never sent.', used(1, 1)));
+  const options: CompanionsOptions = {provider};
+  const w = await world(context, options);
+  await enable(w.core, w.module()); await input(w.core, w.module(), 'Ask me first');
+  await until(() => task(w)?.status === 'waiting');
+  // The owner removes the price; the module restarts and stays available.
+  options.prices = {};
+  await w.restart();
+  assert.equal(w.module().inspectAssistant()?.available, true);
+  assert.deepEqual((await spend(w)).paid, {model: 'model-a', minimumMicros: null});
+  // The waiting turn's answer is admitted; its next model call is refused before it is sent, naming the missing price.
+  assert.equal((await input(w.core, w.module(), 'This one', {action: 'answer'})).status, 'accepted');
+  await until(() => task(w)?.status === 'failed');
+  assert.deepEqual([task(w)?.code, provider.calls()], ['capacity', 1]);
+  const message = 'No price is configured for the model model-a, so its spend cannot be counted. Nothing was sent.';
+  assert.equal((await messages(w)).at(-1), message);
+  // A new paid turn is refused at once with the same reason; the synthetic demo still starts.
+  const refused = await input(w.core, w.module(), 'Again');
+  assert.ok(refused.status === 'rejected');
+  assert.deepEqual([refused.error.error.code, refused.error.error.detail], ['capacity', message]);
+  assert.equal((await input(w.core, w.module(), 'Synthetic demo', {profile: 'reachy'})).status, 'accepted');
 });
