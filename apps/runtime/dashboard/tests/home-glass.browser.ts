@@ -1,6 +1,6 @@
 // Home's glass layer (#1929) on a disposable synthetic runtime: no installed service or device. Headless Chromium draws
 // WebGL 2 with SwiftShader. The journey checks that the backdrop is drawn, that every card's glass follows its box
-// through scrolling, resizing, Edit Home and paging, that nothing draws at rest, that WebGL 2 missing or a lost
+// through scrolling (moving with the page before any frame, #2023), resizing, Edit Home and paging, that nothing draws at rest, that WebGL 2 missing or a lost
 // context leaves the Quiet glass panels with working controls, and that panel text keeps 4.5:1 over a dark and a bright
 // artwork in light and dark appearance. It also checks the lit room (#1931): a LIFX light glows in its observed color,
 // a light without color and a plug in warm white, from the ring's center; a press brightens a panel; the layer rests
@@ -124,21 +124,27 @@ async function rest(page: Page): Promise<number> {
   }
   throw new Error('the glass layer never came to rest');
 }
-/** The panels the layer drew last, against the boxes of the marked elements now in or near the window. */
-async function followsBoxes(page: Page, label: string): Promise<number> {
+/**
+ * The panels the layer drew last, against the boxes of the marked elements now in or near the window. With `scroll`,
+ * the page is first scrolled by that much in the same task, so no frame can be drawn in between: the glass on screen
+ * then follows the cards only because the browser scrolls the glass canvas with the page (#2023).
+ */
+async function followsBoxes(page: Page, label: string, scroll = 0): Promise<number> {
   await rest(page);
   // The boxes the last frame drew (data-glass-drawn), against the live boxes, both cut to what can be seen: a visible
   // change that no frame followed leaves stale glass and fails here (glass-boxes.ts, #1965).
-  const {drawn, boxes, viewport} = await page.evaluate(() => {
+  const {drawn, boxes, viewport, origin} = await page.evaluate(by => {
+    if (by !== 0) {const before = document.documentElement.scrollTop;scrollBy({top: by, behavior: 'instant'});if (Math.abs(document.documentElement.scrollTop - before - by) > 0.5) throw new Error(`the page did not scroll by ${String(by)}`);}
     const canvas = document.querySelector<HTMLCanvasElement>('.home-layout .glass-layer');
     const boxes = [...document.querySelectorAll<HTMLElement>('.home-layout [data-glass-panel]')].flatMap(element => {
       const box = element.getBoundingClientRect();
       const near = box.width > 0 && box.height > 0 && box.left < innerWidth + 64 && box.top < innerHeight + 64 && box.right > -64 && box.bottom > -64;
       return near ? [{id: element.dataset['glassPanel'] ?? '', x: box.left, y: box.top, width: box.width, height: box.height}] : [];
     });
-    return {drawn: canvas?.dataset['glassDrawn'] ?? '', boxes, viewport: {width: innerWidth, height: innerHeight}};
-  });
-  assert.deepEqual(drawnMismatches(drawn, boxes, viewport), [], `${label}: the glass on screen follows every card in view`);
+    const at = canvas?.getBoundingClientRect();
+    return {drawn: canvas?.dataset['glassDrawn'] ?? '', boxes, viewport: {width: innerWidth, height: innerHeight}, origin: {x: at?.left ?? 0, y: at?.top ?? 0}};
+  }, scroll);
+  assert.deepEqual(drawnMismatches(drawn, boxes, viewport, origin), [], `${label}: the glass on screen follows every card in view`);
   return boxes.length;
 }
 /** Whether the outermost card surface in each panel is see-through, so the glass shows. */
@@ -327,6 +333,9 @@ try {
 
   // Scrolling and resizing move the glass with the cards, then it rests again.
   await page.mouse.wheel(0, 420);await followsBoxes(page, 'scrolled');
+  // The glass moves with the cards as the page scrolls, not a frame later (#2023): straight after a scroll either way,
+  // before any frame, it is still on every card.
+  await followsBoxes(page, 'scrolled down, before a frame', 80);await followsBoxes(page, 'scrolled up, before a frame', -80);
   await page.setViewportSize({width: 1100, height: 800});await followsBoxes(page, 'resized');
   // A window resize draws one frame, after the page has repacked, and a context that renders in software draws at most
   // 250,000 pixels: the page's main thread waits for every software frame, so a wide window must not cost more (the

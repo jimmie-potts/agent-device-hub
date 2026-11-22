@@ -9,13 +9,13 @@ import {MAX_LIGHTS} from '../src/glass-light.ts';
 import {LAG_RATE, LEAD_RATE, advanceThumb, stepThumb, thumbSettled, type GlassThumb} from '../src/glass-thumb.ts';
 
 type Box = {left: number; top: number; width: number; height: number};
-type Fake = {dataset: Record<string, string>; radius: string; box: Box; shown?: boolean; lamp?: {dataset: Record<string, string>; box: Box}};
+type Fake = {dataset: Record<string, string>; radius: string; box: Box; shown?: boolean; position?: string; lamp?: {dataset: Record<string, string>; box: Box}};
 const element = (id: string, left: number, top: number, width = 220, height = 220, radius = '34px'): Fake => ({dataset: {glassPanel: id}, radius, box: {left, top, width, height}});
 /** A root whose querySelectorAll returns fake marked elements; getComputedStyle reads their radius. */
 function page(panels: Fake[], veils: Fake[] = [], thumbs: Fake[] = []): ParentNode {
-  const wrap = (fake: Fake): unknown => ({dataset: fake.dataset, radius: fake.radius, getBoundingClientRect: () => fake.box, checkVisibility: () => fake.shown !== false,
+  const wrap = (fake: Fake): unknown => ({dataset: fake.dataset, radius: fake.radius, position: fake.position ?? 'static', parentElement: null, getBoundingClientRect: () => fake.box, checkVisibility: () => fake.shown !== false,
     querySelector: () => fake.lamp === undefined ? null : {dataset: fake.lamp.dataset, getBoundingClientRect: () => fake.lamp?.box}});
-  (globalThis as {getComputedStyle?: unknown}).getComputedStyle = (node: {radius: string}) => ({getPropertyValue: () => node.radius});
+  (globalThis as {getComputedStyle?: unknown}).getComputedStyle = (node: {radius: string; position: string}) => ({getPropertyValue: () => node.radius, position: node.position});
   return {querySelectorAll: (selector: string) => (selector === '[data-glass-panel]' ? panels : selector === '[data-glass-thumb]' ? thumbs : veils).map(wrap)} as unknown as ParentNode;
 }
 const viewport = {width: 1440, height: 900};
@@ -30,10 +30,10 @@ void test('the scene holds the marked panels in or near the window, with their r
 });
 
 void test('only veils that are shown and in the window count, and an edge veil says so', () => {
-  const root = page([], [veil(0, 0, 184, 900, {}, 'edge'), veil(-300, 0, 280, 900, {shown: false}, 'edge'), veil(216, 40, 300, 40), veil(216, -60, 300, 40), veil(216, 120, 300, 20, {shown: false})]);
+  const root = page([], [veil(0, 0, 184, 900, {position: 'sticky'}, 'edge'), veil(-300, 0, 280, 900, {shown: false}, 'edge'), veil(216, 40, 300, 40), veil(216, -60, 300, 40), veil(216, 120, 300, 20, {shown: false})]);
   const scene = readScene(root, root, viewport);
-  assert.deepEqual(scene.veils, [{rect: {x: 0, y: 0, width: 184, height: 900}, edge: true}, {rect: {x: 216, y: 40, width: 300, height: 40}, edge: false}],
-    'a closed drawer, a heading scrolled out of the window and a hidden notice draw no veil');
+  assert.deepEqual(scene.veils, [{rect: {x: 0, y: 0, width: 184, height: 900}, edge: true, fixed: true}, {rect: {x: 216, y: 40, width: 300, height: 40}, edge: false, fixed: false}],
+    'a closed drawer, a heading scrolled out of the window and a hidden notice draw no veil; the sticky rail\'s veil stays with the window (#2023)');
 });
 
 void test('the scene is capped at Home\'s placement limit', () => {
@@ -53,12 +53,13 @@ void test('a panel\'s lamp gives its light: level, color, lamp center and press 
 });
 
 void test('a read that moves nothing compares equal, so it draws no frame', () => {
-  const scene = (x: number, radius = 34): GlassScene => ({panels: [{id: 'a', rect: {x, y: 0, width: 220, height: 220}, radius}], veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: false}], thumb: {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'work'}});
+  const scene = (x: number, radius = 34): GlassScene => ({panels: [{id: 'a', rect: {x, y: 0, width: 220, height: 220}, radius}], veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: false, fixed: false}], thumb: {rect: {x: 0, y: 300, width: 90, height: 40}, key: 'work'}});
   assert.equal(sameScene(scene(10), scene(10.1)), true, 'subpixel noise is not a change');
   assert.equal(sameScene(scene(10), scene(11)), false, 'a moved box is');
   assert.equal(sameScene(scene(10), scene(10, 20)), false, 'a new radius is');
   assert.equal(sameScene(scene(10), {...scene(10), veils: []}), false, 'a removed veil is');
-  assert.equal(sameScene(scene(10), {...scene(10), veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: true}]}), false, 'a veil that changes its edge is');
+  assert.equal(sameScene(scene(10), {...scene(10), veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: true, fixed: false}]}), false, 'a veil that changes its edge is');
+  assert.equal(sameScene(scene(10), {...scene(10), veils: [{rect: {x: 0, y: 0, width: 10, height: 10}, edge: false, fixed: true}]}), false, 'a veil that becomes fixed is');
   const lit = (level: number, pressed = false, color: readonly [number, number, number] | null = null): GlassScene => ({panels: [{id: 'a', rect: {x: 0, y: 0, width: 220, height: 220}, radius: 34, light: {color, level, lamp: {x: 110, y: 60}, pressed}}], veils: [], thumb: null});
   assert.equal(sameScene(lit(0.5), lit(0.5)), true);
   assert.equal(sameScene(lit(0.5), lit(0.6)), false, 'a new level is a change');
@@ -118,7 +119,7 @@ void test('the veil loop only finds the strongest mask; the costly need is worke
   const loop = /for \(int i = 0; i < \d+; i\+\+\)\{ if \(i >= uVeilCount\) break;([\s\S]*?)\}\n/.exec(FRAGMENT)?.[1];
   assert.ok(loop !== undefined, 'the veil loop is found');
   assert.doesNotMatch(loop, /needed|backdrop|art\(/, 'nothing per veil samples the artwork or works out a need');
-  assert.match(FRAGMENT, /if \(mask > 0\.\) col = veiled\(col, mask \* max\(needed\(col\)/);
+  assert.match(FRAGMENT, /if \(veil > 0\.\) col = veiled\(col, veil \* max\(needed\(col\)/);
 });
 
 void test('a frame at the same time as the last moves the thumb nothing but keeps it travelling, so it never stalls', () => {
@@ -162,7 +163,7 @@ void test('the light loops visit only the lit panels, and no lamp walks every pa
 
 void test('a change beyond the window and its shadow is no visible change, so it draws no frame (#1950)', () => {
   const viewport = {width: 1440, height: 900};
-  const page = (height: number, y = 120): GlassScene => ({panels: [{id: 'page', rect: {x: 216, y, width: 1000, height}, radius: 26}], veils: [{rect: {x: 216, y: 40, width: 300, height: 40}, edge: false}], thumb: null});
+  const page = (height: number, y = 120): GlassScene => ({panels: [{id: 'page', rect: {x: 216, y, width: 1000, height}, radius: 26}], veils: [{rect: {x: 216, y: 40, width: 300, height: 40}, edge: false, fixed: false}], thumb: null});
   const seen = (scene: GlassScene): GlassScene => visibleScene(scene, viewport);
   assert.equal(sameScene(seen(page(2000)), seen(page(2400))), true, 'a module page that grows below the window looks the same');
   assert.equal(sameScene(seen(page(700)), seen(page(760))), false, 'a page whose bottom edge is in view looks different');

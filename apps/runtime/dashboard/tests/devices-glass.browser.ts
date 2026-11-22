@@ -45,17 +45,18 @@ async function followsBoxes(page: Page, label: string): Promise<number> {
   await rest(page);
   // The boxes the last frame drew (data-glass-drawn), against the live boxes, both cut to what can be seen: a visible
   // change that no frame followed leaves stale glass and fails here (glass-boxes.ts, #1965).
-  const {drawn, boxes, viewport} = await page.evaluate(() => {
+  const {drawn, boxes, viewport, origin} = await page.evaluate(() => {
     const canvas = document.querySelector<HTMLCanvasElement>('#main > .glass-layer');
     const boxes = [...document.querySelectorAll<HTMLElement>('#main [data-glass-panel]')].flatMap(element => {
       const box = element.getBoundingClientRect();
       const near = box.width > 0 && box.height > 0 && box.left < innerWidth + 64 && box.top < innerHeight + 64 && box.right > -64 && box.bottom > -64;
       return near ? [{id: element.dataset['glassPanel'] ?? '', x: box.left, y: box.top, width: box.width, height: box.height}] : [];
     });
-    return {drawn: canvas?.dataset['glassDrawn'] ?? '', boxes, viewport: {width: innerWidth, height: innerHeight}};
+    const at = canvas?.getBoundingClientRect();
+    return {drawn: canvas?.dataset['glassDrawn'] ?? '', boxes, viewport: {width: innerWidth, height: innerHeight}, origin: {x: at?.left ?? 0, y: at?.top ?? 0}};
   });
   assert.ok(boxes.length > 0, `${label}: the page marks its panels`);
-  assert.deepEqual(drawnMismatches(drawn, boxes, viewport), [], `${label}: the glass on screen follows every panel in view`);
+  assert.deepEqual(drawnMismatches(drawn, boxes, viewport, origin), [], `${label}: the glass on screen follows every panel in view`);
   return boxes.length;
 }
 /** Whether the outermost card surface in each panel is see-through, so the glass shows. */

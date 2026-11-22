@@ -8,7 +8,9 @@
  *   or lightens the backdrop behind it just enough to keep the text readable, with a soft edge a little past its box.
  *   `data-glass-veil="edge"` keeps the veil inside the box, for a frosted region with a hard edge such as the rail.
  *   Veils are found in the whole document, so the shell's rail and footer can carry one too; a veil that is hidden
- *   or outside the window is left out.
+ *   or outside the window is left out. A veil on an element that stays in the window while the page scrolls (it or
+ *   an ancestor is fixed or sticky, such as the rail and the phone bar) is `fixed`: the layer draws it with the
+ *   backdrop, which stays still, and every other veil with the glass, which scrolls with the page (#2023).
  * - `data-glass-thumb="<segment>"` on the selected segment of a switch, such as Home's hub mode switch (#1930). The
  *   layer draws a small glass capsule there that stretches as it travels when another segment is marked; when the
  *   same segment only moves, the capsule moves with it at once. It is not a panel: it has its own
@@ -36,7 +38,7 @@ export type GlassRgb = readonly [number, number, number];
 /** A panel's light (#1931): its color (null for the skin's warm white), level, lamp position and whether it is pressed. */
 export type GlassLight = {color: GlassRgb | null; level: number; lamp: {x: number; y: number}; pressed: boolean};
 export type GlassPanel = {id: string; rect: GlassRect; radius: number; light?: GlassLight; target?: true; dragged?: true};
-export type GlassVeil = {rect: GlassRect; edge: boolean};
+export type GlassVeil = {rect: GlassRect; edge: boolean; fixed: boolean};
 /** A switch's selected segment, with its `data-glass-thumb` value, so the thumb knows when another segment is chosen. */
 export type GlassThumbMark = {rect: GlassRect; key: string};
 export type GlassScene = {panels: readonly GlassPanel[]; veils: readonly GlassVeil[]; thumb: GlassThumbMark | null};
@@ -52,6 +54,11 @@ const DEFAULT_RADIUS = 34;
 const visible = (rect: GlassRect, width: number, height: number, reach = REACH): boolean => rect.width > 0 && rect.height > 0
   && rect.x < width + reach && rect.y < height + reach && rect.x + rect.width > -reach && rect.y + rect.height > -reach;
 const rectOf = (element: Element): GlassRect => {const box = element.getBoundingClientRect();return {x: box.left, y: box.top, width: box.width, height: box.height};};
+/** Whether an element stays in the window while the page scrolls: it or an ancestor is fixed or sticky. */
+function pinned(element: Element): boolean {
+  for (let node: Element | null = element; node !== null; node = node.parentElement) {const position = getComputedStyle(node).position;if (position === 'fixed' || position === 'sticky') return true;}
+  return false;
+}
 const unit = (value: number): number => Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 function lightOf(panel: Element): GlassLight | undefined {
   const lamp = panel.querySelector<HTMLElement>('[data-glass-lamp]');
@@ -61,12 +68,16 @@ function lightOf(panel: Element): GlassLight | undefined {
   return {color, level: unit(Number(lamp.dataset['glassLamp'])), lamp: {x: box.x + box.width / 2, y: box.y + box.height / 2}, pressed: lamp.dataset['glassPressed'] !== undefined};
 }
 
-/** Reads every marked panel and veil in or near the viewport. The layer calls it at most once per frame. */
-export function readScene(root: ParentNode, veilScope: ParentNode, viewport: {width: number; height: number}): GlassScene {
+/**
+ * Reads every marked panel and veil in or near the viewport, and `beyond` CSS pixels further above and below it, where
+ * the glass canvas reaches past the window (#2023). The layer calls it at most once per frame.
+ */
+export function readScene(root: ParentNode, veilScope: ParentNode, viewport: {width: number; height: number}, beyond = 0): GlassScene {
+  const near = (rect: GlassRect, reach = REACH): boolean => visible({...rect, y: rect.y + beyond}, viewport.width, viewport.height + 2 * beyond, reach);
   const panels: GlassPanel[] = [];
   for (const element of root.querySelectorAll<HTMLElement>('[data-glass-panel]')) {
     if (panels.length >= MAX_PANELS) break;
-    const rect = rectOf(element);if (!visible(rect, viewport.width, viewport.height)) continue;
+    const rect = rectOf(element);if (!near(rect)) continue;
     const radius = Number.parseFloat(getComputedStyle(element).getPropertyValue('--glass-radius')), light = lightOf(element);
     panels.push({id: element.dataset['glassPanel'] ?? '', rect, radius: Math.min(Number.isFinite(radius) ? radius : DEFAULT_RADIUS, rect.width / 2, rect.height / 2),
       ...(light === undefined ? {} : {light}), ...(element.dataset['glassTarget'] === undefined ? {} : {target: true as const}),
@@ -76,12 +87,12 @@ export function readScene(root: ParentNode, veilScope: ParentNode, viewport: {wi
   for (const element of veilScope.querySelectorAll<HTMLElement>('[data-glass-veil]')) {
     if (veils.length >= MAX_VEILS) break;
     const rect = rectOf(element);
-    if (!visible(rect, viewport.width, viewport.height, 0) || !element.checkVisibility({visibilityProperty: true})) continue;
-    veils.push({rect, edge: element.dataset['glassVeil'] === 'edge'});
+    if (!near(rect, 0) || !element.checkVisibility({visibilityProperty: true})) continue;
+    veils.push({rect, edge: element.dataset['glassVeil'] === 'edge', fixed: pinned(element)});
   }
   let thumb: GlassThumbMark | null = null;
   for (const element of root.querySelectorAll<HTMLElement>('[data-glass-thumb]')) {
-    const rect = rectOf(element);if (visible(rect, viewport.width, viewport.height)) {thumb = {rect, key: element.dataset['glassThumb'] ?? ''};break;}
+    const rect = rectOf(element);if (near(rect)) {thumb = {rect, key: element.dataset['glassThumb'] ?? ''};break;}
   }
   return {panels, veils, thumb};
 }
@@ -102,13 +113,21 @@ export function visibleScene(scene: GlassScene, viewport: {width: number; height
     const x = Math.max(rect.x, -REACH), y = Math.max(rect.y, -REACH);
     return {x, y, width: Math.max(0, Math.min(rect.x + rect.width, viewport.width + REACH) - x), height: Math.max(0, Math.min(rect.y + rect.height, viewport.height + REACH) - y)};
   };
-  return {...scene, panels: scene.panels.map(panel => ({...panel, rect: cut(panel.rect)})), veils: scene.veils.map(veil => ({...veil, rect: cut(veil.rect)}))};
+  // A veil is drawn only where it is in the window, as `readScene` reads it without the glass canvas's margin (#2023).
+  return {...scene, panels: scene.panels.map(panel => ({...panel, rect: cut(panel.rect)})), veils: scene.veils.filter(veil => visible(veil.rect, viewport.width, viewport.height, 0)).map(veil => ({...veil, rect: cut(veil.rect)}))};
+}
+
+/** The scene moved by (dx, dy): from window coordinates to a canvas whose top left corner is at (-dx, -dy) in the window. */
+export function moveScene(scene: GlassScene, dx: number, dy: number): GlassScene {
+  const move = (rect: GlassRect): GlassRect => ({...rect, x: rect.x + dx, y: rect.y + dy});
+  return {panels: scene.panels.map(panel => ({...panel, rect: move(panel.rect), ...(panel.light === undefined ? {} : {light: {...panel.light, lamp: {x: panel.light.lamp.x + dx, y: panel.light.lamp.y + dy}}})})),
+    veils: scene.veils.map(veil => ({...veil, rect: move(veil.rect)})), thumb: scene.thumb === null ? null : {...scene.thumb, rect: move(scene.thumb.rect)}};
 }
 
 export function sameScene(a: GlassScene, b: GlassScene): boolean {
   return a.panels.length === b.panels.length && a.veils.length === b.veils.length
     && a.panels.every((panel, index) => {const other = b.panels[index];return other !== undefined && other.id === panel.id && other.radius === panel.radius && other.target === panel.target && other.dragged === panel.dragged && sameRect(panel.rect, other.rect) && sameLight(panel.light, other.light);})
-    && a.veils.every((veil, index) => {const other = b.veils[index];return other !== undefined && other.edge === veil.edge && sameRect(veil.rect, other.rect);})
+    && a.veils.every((veil, index) => {const other = b.veils[index];return other !== undefined && other.edge === veil.edge && other.fixed === veil.fixed && sameRect(veil.rect, other.rect);})
     && (a.thumb === null ? b.thumb === null : b.thumb !== null && a.thumb.key === b.thumb.key && sameRect(a.thumb.rect, b.thumb.rect));
 }
 

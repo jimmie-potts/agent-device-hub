@@ -1,4 +1,7 @@
-// The glass layer's shaders (#1929). One full-screen triangle; the fragment shader draws the backdrop and every panel.
+// The glass layer's shaders (#1929). One full-screen triangle per canvas. The layer draws two canvases with this
+// program (#2023): the backdrop (uLayer 0), fixed to the window, draws the artwork or the wash and the fixed veils;
+// the glass (uLayer 1), which scrolls with the page, draws the panels, their shadow, lip and light, the thumb and the
+// page's veils, and is transparent wherever it leaves the backdrop as it is.
 // The look follows the accepted Clear reference (docs/design-references/home-clear): its FRAG shader with the flat and
 // sharp options, the far light model and a join of k = 20. Lengths are CSS pixels. Colors arrive as uniforms read from
 // the skin's --glass-* tokens; the few constants left here are material amounts, not colors of the interface.
@@ -19,13 +22,17 @@ export const FRAGMENT = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 uniform sampler2D uArt, uPanels;
-uniform vec2 uRes, uArtSize;
+// uRes is this canvas's size; uWin the window's, which the artwork covers; uView where this canvas's top left corner
+// is in the window. Panels, veils, the thumb, the lamps and the wash's box arrive in this canvas's coordinates.
+uniform vec2 uRes, uArtSize, uWin, uView;
 uniform float uDpr, uHasArt, uDark, uAppear, uDepth, uMerge, uInk, uContrast, uClock, uTargetGlow;
-uniform int uCount, uVeilCount, uLights, uTarget, uDragged;
+uniform int uCount, uVeilCount, uLights, uTarget, uDragged, uLayer;
 // The rows of the lit or pressed panels (#1931), uLights of them.
 uniform int uLightIndex[${String(MAX_LIGHTS)}];
 uniform vec4 uVeils[${String(MAX_VEILS)}];
 uniform float uVeilEdges[${String(MAX_VEILS)}];
+// Whether each veil stays with the window (the rail, the phone bar): 1, or scrolls with the page: 0 (#2023).
+uniform float uVeilFixed[${String(MAX_VEILS)}];
 uniform vec4 uVeil, uVeilDeep, uTone, uRim, uShadow, uWashStart, uWashEnd, uWashBox;
 // A switch's thumb (#1930): a fast capsule and a slow one, x, y, width and height; a zero width draws none.
 uniform vec4 uThumbA, uThumbB;
@@ -50,11 +57,12 @@ vec3 wash(vec2 p){
   return mix(c, uWashStart.rgb, uWashStart.a * start);
 }
 // The artwork covering the window, blurred over a disc of about radius CSS pixels. The disc is a golden-angle spiral
-// of twelve taps on a lower mip level, turned per pixel so it never bands.
+// of twelve taps on a lower mip level, turned per pixel so it never bands. p is in this canvas; the artwork stays
+// with the window.
 vec3 art(vec2 p, float radius){
   if (uHasArt < .5) return wash(p);
-  float scale = max(uRes.x / uArtSize.x, uRes.y / uArtSize.y);
-  vec2 uv = (p - uRes * .5) / (uArtSize * scale) + .5;
+  float scale = max(uWin.x / uArtSize.x, uWin.y / uArtSize.y);
+  vec2 uv = (p + uView - uWin * .5) / (uArtSize * scale) + .5;
   float texels = radius / scale, lod = log2(max(texels / 2.3, 1e-4)), sharp = max(0., log2(1. / (scale * uDpr)));
   if (lod < .7) return textureLod(uArt, uv, sharp).rgb;
   vec3 c = textureLod(uArt, uv, lod).rgb; float turn = h21(gl_FragCoord.xy * .37) * 6.2832;
@@ -149,36 +157,57 @@ vec3 glass(vec2 p, float d, vec2 g, vec3 behind, bool lamps){
   c = veiled(c, needed(c)) + others * slope * 1.5;
   float ndl = dot(g, LIGHT), rim = 1. - smoothstep(0., 1.7, -d);
   // The reflection lives in the bevel only; inside it would cost thirteen texture reads for nothing.
-  if (slope > 0.) c += art(vec2(uRes.x - p.x, p.y) + g * 60., 94.) * slope * slope * .22;
+  if (slope > 0.) c += art(vec2(uWin.x - p.x - 2. * uView.x, p.y) + g * 60., 94.) * slope * slope * .22;
   c += uRim.rgb * uRim.a * (rim * (max(ndl, 0.) * .75 + max(-ndl, 0.) * .3 + .1) + slope * max(ndl, 0.) * .2) - slope * max(-ndl, 0.) * .08;
   return mix(behind, c, (1. - smoothstep(-1., .5, d)) * smoothstep(0., .35, uAppear));
 }
 
 void main(){
   vec2 p = vec2(gl_FragCoord.x, uRes.y * uDpr - gl_FragCoord.y) / uDpr;
-  float D = field(p), appear = smoothstep(0., .6, uAppear);
+  // Veils behind text drawn over the layer (see below), and how much of this pixel the fixed ones (the rail, the phone
+  // bar) cover: the backdrop canvas draws those with the light that falls under them, and the glass canvas leaves that
+  // light out there (#2023). A veil fades out within 16 px past its box, or, marked edge, stops at it.
+  float mask = 0., fixedMask = 0.;
+  for (int i = 0; i < ${String(MAX_VEILS)}; i++){ if (i >= uVeilCount) break;
+    float edge = uVeilEdges[i], d = sdRound(p - uVeils[i].xy - uVeils[i].zw * .5, uVeils[i].zw * .5 + 4. * (1. - edge), 12. * (1. - edge));
+    float m = edge > .5 ? step(d, 0.) : 1. - smoothstep(0., 12., d);
+    if (uVeilFixed[i] > .5) fixedMask = max(fixedMask, m); else mask = max(mask, m); }
+  // The backdrop canvas has only the lit panels, and needs them only under a fixed veil.
+  bool glassLayer = uLayer == 1;
+  float D = glassLayer || fixedMask > 0. ? field(p) : 1e5, appear = smoothstep(0., .6, uAppear);
   // The field's gradient near panels: for the bevel, the lip and the spill's shadows.
   vec2 g = vec2(0., 1.);
   if (D < 20.) g = normalize(vec2(field(p + vec2(1., 0.)) - field(p - vec2(1., 0.)), field(p + vec2(0., 1.)) - field(p - vec2(0., 1.))) + 1e-5);
   // Light on the backdrop only where the backdrop shows: inside a panel the glass replaces it.
-  vec3 light = uLights > 0 && D > -1. ? spill(p, D, g) : vec3(0.), col = backdrop(p, 0.) + light;
-  float shade = (1. - smoothstep(-8., 36., field(p - vec2(0., 12.)))) * uShadow.a * appear;
-  col = mix(col, uShadow.rgb, shade);
-  // The lip of light a slab focuses just past its far edge.
-  if (D > 0. && D < 20.) col += col * exp(-D / 5.) * max(dot(g, -LIGHT), 0.) * .55 * appear;
-  if (D < 1.) col = glass(p, D, g, col, true);
-  // The thumb is glass over everything else, with a narrower bevel and a little more light, like a pressed panel.
-  if (uThumbA.z > 0.){ float d = thumb(p);
-    if (d < 1.){ vec2 gt = normalize(vec2(thumb(p + vec2(1., 0.)) - thumb(p - vec2(1., 0.)), thumb(p + vec2(0., 1.)) - thumb(p - vec2(0., 1.))) + 1e-5);
-      col = glass(p, d * 1.6, gt, col, false); col += (1. - col) * .06 * (1. - smoothstep(-1., .5, d * 1.6)); } }
-  // Veils behind text drawn over the layer, last, so they also hold over a panel's bevel and rim: as strong as the
-  // brighter of the local backdrop (outside panels) and the pixel itself needs. A veil fades out within 16 px past its
-  // box, or, marked edge, stops at it. What the pixel needs is the same for every veil, so the loop only finds the
-  // strongest mask and the need is worked out once: in software WebGL a per-veil need cost every pixel per veil.
-  float mask = 0.;
-  for (int i = 0; i < ${String(MAX_VEILS)}; i++){ if (i >= uVeilCount) break;
-    float edge = uVeilEdges[i], d = sdRound(p - uVeils[i].xy - uVeils[i].zw * .5, uVeils[i].zw * .5 + 4. * (1. - edge), 12. * (1. - edge));
-    mask = max(mask, edge > .5 ? step(d, 0.) : 1. - smoothstep(0., 12., d)); }
-  if (mask > 0.) col = veiled(col, mask * max(needed(col), D > 0. ? needed(backdrop(p, 40.) + light) : 0.));
-  color = vec4(col + (h21(gl_FragCoord.xy) - .5) * .018, 1.);
+  vec3 light = uLights > 0 && D > -1. ? spill(p, D, g) : vec3(0.), base = backdrop(p, 0.), col = base + light * (glassLayer ? 1. - fixedMask : fixedMask);
+  if (glassLayer){
+    float shade = (1. - smoothstep(-8., 36., field(p - vec2(0., 12.)))) * uShadow.a * appear;
+    col = mix(col, uShadow.rgb, shade);
+    // The lip of light a slab focuses just past its far edge.
+    if (D > 0. && D < 20.) col += col * exp(-D / 5.) * max(dot(g, -LIGHT), 0.) * .55 * appear;
+    if (D < 1.) col = glass(p, D, g, col, true);
+    // The thumb is glass over everything else, with a narrower bevel and a little more light, like a pressed panel.
+    if (uThumbA.z > 0.){ float d = thumb(p);
+      if (d < 1.){ vec2 gt = normalize(vec2(thumb(p + vec2(1., 0.)) - thumb(p - vec2(1., 0.)), thumb(p + vec2(0., 1.)) - thumb(p - vec2(0., 1.))) + 1e-5);
+        col = glass(p, d * 1.6, gt, col, false); col += (1. - col) * .06 * (1. - smoothstep(-1., .5, d * 1.6)); } }
+  }
+  // Veils last, so they also hold over a panel's bevel and rim: as strong as the brighter of the local backdrop
+  // (outside panels) and the pixel itself needs. What the pixel needs is the same for every veil, so the need is worked
+  // out once: in software WebGL a per-veil need cost every pixel per veil. Each canvas veils with its own veils.
+  float veil = glassLayer ? mask : fixedMask;
+  if (veil > 0.) col = veiled(col, veil * max(needed(col), D > 0. ? needed(backdrop(p, 40.) + light) : 0.));
+  float grain = (h21(gl_FragCoord.xy) - .5) * .018;
+  if (!glassLayer) { color = vec4(col + grain, 1.); return; }
+  // The glass canvas lies over the backdrop canvas, which shows b here. The least alpha a for which some color, once
+  // composited over b, gives col exactly (premultiplied: 0 <= rgb <= a) leaves the backdrop showing wherever the glass
+  // changes nothing, and through faint light and shadow, so it stays true while the page scrolls.
+  vec3 b = clamp(base, 0., 1.), c = clamp(col, 0., 1.);
+  vec3 under = 1. - c / max(b, 1e-4), over = (c - b) / max(1. - b, 1e-4);
+  float a = clamp(max(max(max(under.r, under.g), under.b), max(max(over.r, over.g), over.b)), 0., 1.);
+  // Where a panel, the thumb or a veil covers it, the glass is the whole picture: text there is measured against it,
+  // so none of the backdrop canvas, drawn at its own resolution, shows through.
+  float cover = max(1. - smoothstep(-1., .5, D), mask);
+  if (uThumbA.z > 0.) cover = max(cover, 1. - smoothstep(-1., .5, thumb(p) * 1.6));
+  a = max(a, cover);
+  color = vec4(clamp(c - (1. - a) * b + grain * a, 0., a), a);
 }`;

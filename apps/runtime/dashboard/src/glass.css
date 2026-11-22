@@ -1,8 +1,11 @@
 /* The glass layer (#1929, glass-layer.tsx). A page that mounts it sets data-glass on its root: "webgl" while the
    canvas draws the backdrop and the glass, "quiet" otherwise. Only the webgl state changes anything, so without
    WebGL 2 or after a lost context the page keeps its ordinary Quiet glass panels. */
-.glass-layer{position:fixed;inset:0;z-index:-1;display:block;inline-size:100%;block-size:100%;pointer-events:none}
-[data-glass=quiet] .glass-layer{visibility:hidden}
+/* The backdrop stays with the window and is as tall as the largest viewport, so a phone's toolbar that shows or hides
+   neither stretches nor rescales it; the glass scrolls with the page, and the layer sizes and places it (#2023). */
+.glass-backdrop{position:fixed;inset-block-start:0;inset-inline:0;z-index:-1;display:block;inline-size:100%;block-size:100vh;block-size:100lvh;pointer-events:none}
+.glass-layer{position:absolute;inset-block-start:0;inset-inline-start:0;inline-size:100%;z-index:-1;display:block;pointer-events:none}
+[data-glass=quiet] :is(.glass-backdrop,.glass-layer){visibility:hidden}
 /* The outermost card surface inside each panel is the glass drawn under it, with the glass's corners; nested surfaces
    keep their own fill. A surface with a fixed state meaning, such as an Inbox that needs attention, keeps its fill. */
 [data-glass=webgl] [data-glass-panel]{--light-radius:var(--glass-radius);--card-radius:var(--glass-radius)}

@@ -27,12 +27,20 @@ export type GlassTokens = {
   lamp: GlassColor;
 };
 export type GlassFrame = {
+  /**
+   * Which canvas this draws (#2023): the backdrop, fixed to the window, opaque; or the glass, which scrolls with the
+   * page and is transparent wherever it leaves the backdrop as it is. The scene's boxes are in this canvas's coordinates.
+   */
+  layer: 'backdrop' | 'glass';
+  /** This canvas's size in CSS pixels. */
   scene: GlassScene; tokens: GlassTokens; width: number; height: number; dpr: number;
+  /** Where this canvas's top left corner is in the window, and the window's size, which the artwork covers. */
+  view: readonly [number, number]; window: readonly [number, number];
   /** 0 to 1 over the first appearance; the bevel starts stronger and relaxes. */
   appear: number;
   /** 0 to 1 as the page scrolls its first 40% of a window; the dark veil deepens. */
   depth: number;
-  /** The scrolling page's box, which the wash is laid out on. */
+  /** The scrolling page's box in this canvas's coordinates, which the wash is laid out on. */
   washBox: readonly [number, number, number, number];
   /** The join between panels (0 keeps them apart). */
   merge: number;
@@ -97,7 +105,7 @@ export function createGlassRenderer(gl: WebGL2RenderingContext): GlassRenderer {
   const art = texture(0), panels = texture(1);
   gl.activeTexture(gl.TEXTURE0);gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
   gl.uniform1i(at('uArt'), 0);gl.uniform1i(at('uPanels'), 1);
-  const table = new Float32Array(PANEL_TEXELS * MAX_PANELS * 4), lightIndex = new Int32Array(MAX_LIGHTS), veils = new Float32Array(MAX_VEILS * 4), edges = new Float32Array(MAX_VEILS);
+  const table = new Float32Array(PANEL_TEXELS * MAX_PANELS * 4), lightIndex = new Int32Array(MAX_LIGHTS), veils = new Float32Array(MAX_VEILS * 4), edges = new Float32Array(MAX_VEILS), fixed = new Float32Array(MAX_VEILS);
   let size: readonly [number, number] | null = null;
 
   const color4 = (name: string, value: GlassColor): void => {gl.uniform4f(at(name), value[0], value[1], value[2], value[3]);};
@@ -124,15 +132,16 @@ export function createGlassRenderer(gl: WebGL2RenderingContext): GlassRenderer {
       });
       gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D, panels);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, PANEL_TEXELS, MAX_PANELS, 0, gl.RGBA, gl.FLOAT, table);
-      veils.fill(0);edges.fill(0);scene.veils.slice(0, MAX_VEILS).forEach((veil, index) => {veils.set([veil.rect.x, veil.rect.y, veil.rect.width, veil.rect.height], index * 4);edges[index] = veil.edge ? 1 : 0;});
+      veils.fill(0);edges.fill(0);fixed.fill(0);scene.veils.slice(0, MAX_VEILS).forEach((veil, index) => {veils.set([veil.rect.x, veil.rect.y, veil.rect.width, veil.rect.height], index * 4);edges[index] = veil.edge ? 1 : 0;fixed[index] = veil.fixed ? 1 : 0;});
       gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-      gl.uniform2f(at('uRes'), frame.width, frame.height);gl.uniform1f(at('uDpr'), frame.dpr);
+      gl.uniform2f(at('uRes'), frame.width, frame.height);gl.uniform1f(at('uDpr'), frame.dpr);gl.uniform1i(at('uLayer'), frame.layer === 'glass' ? 1 : 0);
+      gl.uniform2f(at('uView'), ...frame.view);gl.uniform2f(at('uWin'), ...frame.window);
       gl.uniform2f(at('uArtSize'), size?.[0] ?? 1, size?.[1] ?? 1);gl.uniform1f(at('uHasArt'), size === null ? 0 : 1);
       gl.uniform1f(at('uDark'), tokens.dark ? 1 : 0);gl.uniform1f(at('uInk'), tokens.ink);gl.uniform1f(at('uContrast'), CONTRAST);
       gl.uniform1f(at('uAppear'), frame.appear);gl.uniform1f(at('uDepth'), frame.depth);gl.uniform1f(at('uMerge'), frame.merge);gl.uniform1f(at('uClock'), frame.clock);
       const target = frame.target === undefined ? -1 : scene.panels.slice(0, count).findIndex(panel => panel.id === frame.target?.id);
       gl.uniform1i(at('uTarget'), target);gl.uniform1i(at('uDragged'), scene.panels.slice(0, count).findIndex(panel => panel.dragged === true));gl.uniform1f(at('uTargetGlow'), target < 0 ? 0 : frame.target?.glow ?? 0);
-      gl.uniform1i(at('uCount'), count);gl.uniform1i(at('uLights'), lit.length);gl.uniform1iv(at('uLightIndex'), lightIndex);gl.uniform1i(at('uVeilCount'), Math.min(scene.veils.length, MAX_VEILS));gl.uniform4fv(at('uVeils'), veils);gl.uniform1fv(at('uVeilEdges'), edges);
+      gl.uniform1i(at('uCount'), count);gl.uniform1i(at('uLights'), lit.length);gl.uniform1iv(at('uLightIndex'), lightIndex);gl.uniform1i(at('uVeilCount'), Math.min(scene.veils.length, MAX_VEILS));gl.uniform4fv(at('uVeils'), veils);gl.uniform1fv(at('uVeilEdges'), edges);gl.uniform1fv(at('uVeilFixed'), fixed);
       color4('uVeil', tokens.veil);color4('uVeilDeep', tokens.veilDeep);color4('uTone', tokens.tone);color4('uRim', tokens.rim);color4('uShadow', tokens.shadow);
       color4('uWashStart', tokens.washStart);color4('uWashEnd', tokens.washEnd);gl.uniform4f(at('uWashBox'), ...frame.washBox);
       gl.uniform4f(at('uThumbA'), ...frame.thumb?.lead ?? NO_THUMB);gl.uniform4f(at('uThumbB'), ...frame.thumb?.lag ?? NO_THUMB);
