@@ -52,6 +52,14 @@ async function groupOf(page: Page, members: string[]): Promise<Locator> {
   assert.deepEqual(await panel.locator('[data-group-member]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-group-member'))), members);
   return panel;
 }
+/**
+ * Waits until every member's switch of a group panel is enabled: its state is known and no command of its own is in
+ * progress, so All on or All off sends each member a command. On a slow runner a member's records or its last command
+ * can still be settling when the panel's All button is already enabled (#2017).
+ */
+async function membersReady(panel: Locator): Promise<void> {
+  for (const member of await panel.locator('[data-group-member]').all()) await expect(member).toBeEnabled({timeout: 30_000});
+}
 /** Drags by the mouse: the card follows the pointer and the target lights up before the drop. */
 async function mouseDrag(page: Page, from: string, to: string): Promise<void> {
   const start = await center(handle(page, from)), end = await center(card(page, to));
@@ -181,7 +189,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   // All off switches every member with its own power command; a plug never gets a lighting command.
   const result = group.locator('.group-panel-result');
   const allOff = group.getByRole('button', {name: 'All off', exact: true});await expect(allOff).toBeEnabled();
-  await allOff.click();
+  await membersReady(group);await allOff.click();
   await expect.poll(() => sent.length).toBe(3);
   assert.deepEqual(sent.map(item => [item.path, item.target, item.on]).sort(), [['power-set', 'desk-lamp', false], ['power-set', 'lamp-c', false], ['power-set', 'shelf-lamp', false]],
     'each member gets its own existing power command');sent.splice(0);
@@ -197,7 +205,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
     else await route.continue();
   });
   world.holdDeviceWrites(true);
-  await group.getByRole('button', {name: 'All on', exact: true}).click();
+  await membersReady(group);await group.getByRole('button', {name: 'All on', exact: true}).click();
   await expect.poll(() => sent.length).toBe(3);
   assert.deepEqual(sent.map(item => [item.path, item.target, item.on]).sort(), [['power-set', 'desk-lamp', true], ['power-set', 'lamp-c', true], ['power-set', 'shelf-lamp', true]]);sent.splice(0);
   await expect(result).toContainText('Desk lamp: Refused (unavailable) without changing state.');
@@ -210,17 +218,17 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   world.holdDeviceWrites(false);
   await expect(result).not.toContainText('lamp-c:');
   // All off again switches every member once each is clear.
-  await expect(allOff).toBeEnabled({timeout: 30_000});await allOff.click();
+  await expect(allOff).toBeEnabled({timeout: 30_000});await membersReady(group);await allOff.click();
   await expect.poll(() => sent.length).toBe(3);sent.splice(0);
   await expect.poll(() => [world.wemo.state()['shelf-lamp']?.power, world.wemo.state()['desk-lamp']?.power]).toEqual([false, false]);
   await expect(result).not.toContainText('Refused');
   // A double click and a held Enter each send exactly one power command per member; opening the options sends nothing.
   await expect(group.getByRole('button', {name: 'All on', exact: true})).toBeEnabled({timeout: 30_000});
-  await group.getByRole('button', {name: 'All on', exact: true}).dblclick();
+  await membersReady(group);await group.getByRole('button', {name: 'All on', exact: true}).dblclick();
   await expect.poll(() => sent.length).toBe(3);await page.waitForTimeout(500);
   assert.deepEqual(sent.map(item => item.target).sort(), ['desk-lamp', 'lamp-c', 'shelf-lamp'], 'a double click sends one command per member');sent.splice(0);
   await expect(allOff).toBeEnabled({timeout: 30_000});
-  await allOff.focus();await page.keyboard.down('Enter');await page.keyboard.down('Enter');await page.keyboard.down('Enter');await page.keyboard.up('Enter');
+  await membersReady(group);await allOff.focus();await page.keyboard.down('Enter');await page.keyboard.down('Enter');await page.keyboard.down('Enter');await page.keyboard.up('Enter');
   await expect.poll(() => sent.length).toBe(3);await page.waitForTimeout(500);
   assert.deepEqual(sent.map(item => [item.target, item.on]).sort(), [['desk-lamp', false], ['lamp-c', false], ['shelf-lamp', false]], 'a held Enter sends one command per member');sent.splice(0);
   await group.getByLabel(/^Options for /).click();await page.waitForTimeout(300);await group.getByLabel(/^Options for /).click();
