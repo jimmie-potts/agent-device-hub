@@ -775,6 +775,27 @@ native source, and each task in it is one turn. The OpenSpec change
   duplicate and late delivery, a restart, and expiry with reappearance
   on one ordering sequence.
 
+### Conversation titles (Hub #2025)
+
+A model writes each conversation's title, such as `#1896 Session tracking`,
+and the owner can rename it.
+
+- `lifecycle/2.3` is `lifecycle/2.2` with `metadata-observed` allowed for the
+  native source as well as Codex Desktop. A native metadata observation
+  carries a `title` and no `archived` state, with unknown turn and ordering and
+  top-level parentage, so it changes the session's title without lifecycle
+  evidence or an ordering sequence. The core binds `lifecycle/2.3` to the
+  companions module as it binds 2.2, and the gateway refuses both from every
+  edge credential. A generated title has source `provider`, and the owner's
+  rename has source `user`. The companions module publishes every other
+  observation in 2.2. `tests/conversation-titles.test.mjs` keeps the schema
+  equal to 2.2 apart from these members.
+- `assistant-control/2.1` adds the action `rename` with the `profile` and the
+  owner's `title`, 1 to 80 Unicode scalar values of display text without a
+  recognizable credential. A rename carries no task or message, and the other
+  actions carry no profile or title. The gateway sends a rename as 2.1 and the
+  other actions as 2.0.
+
 ### How 1.x error codes merged
 
 1.x components used several names for one condition. The registry keeps one

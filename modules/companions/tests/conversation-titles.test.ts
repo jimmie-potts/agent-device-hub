@@ -264,7 +264,7 @@ void test('compare-before-write: an answer settled after a rename advanced the g
   titles.touched('conversation-1');
   const work = titles.generate('conversation-1', 'bunny');
   for (let turn = 0; turn < 10 && titles.calls().length === 0; turn += 1) await Promise.resolve();
-  await outbox.transaction(add => {titles.rename(add as Parameters<ConversationTitles['rename']>[0], 'conversation-1', 'bunny', 'Owner title');});
+  await outbox.transaction(add => {titles.rename(add, 'conversation-1', 'bunny', 'Owner title');});
   release(titled('#9 Stale title'));
   await work;
   assert.deepEqual(titles.calls().map(call => [call.status, call.outcome]), [['succeeded', 'dropped']]);
@@ -293,7 +293,7 @@ void test('a failed, refused, invalid or late title leaves the persona, never to
   await w.control('enable');
   assert.equal(w.titles.length, 0, 'no title is published');
   assert.ok(w.seen.every(message => titleOf(message)?.value === 'B.U.N.N.Y.'), 'the persona stands');
-  assert.ok(w.module.inspectAssistant()?.tasks.every(task => task.status === 'succeeded'), 'every task succeeded');
+  assert.ok((w.module.inspectAssistant()?.tasks ?? []).every(task => task.status === 'succeeded'), 'every task succeeded');
   assert.deepEqual(w.store().calls().map(call => [call.status, call.code ?? null, call.outcome]), [
     ['failed', 'capacity', null], ['succeeded', null, 'invalid'], ['succeeded', null, 'invalid'], ['succeeded', null, 'invalid'], ['uncertain', null, null],
   ]);

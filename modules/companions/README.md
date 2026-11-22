@@ -354,8 +354,9 @@ as for every configured module; an empty section keeps every default:
 
 ```json
 {"companions": {"assistant": {"provider": "anthropic", "model": "claude-opus-5-5", "effort": "medium",
-  "tools": ["read_sessions", "set_mode"],
-  "prices": {"claude-opus-5-5": {"input": 1.5, "output": 7.5, "cacheWrite": 1.875, "cacheRead": 0.15}}},
+  "titleModel": "claude-haiku-5-5", "tools": ["read_sessions", "set_mode"],
+  "prices": {"claude-opus-5-5": {"input": 1.5, "output": 7.5, "cacheWrite": 1.875, "cacheRead": 0.15},
+    "claude-haiku-5-5": {"input": 0.25, "output": 1.25, "cacheWrite": 0.3125, "cacheRead": 0.025}}},
   "secrets": {"anthropic-api-key": "/run/secrets/bunny/anthropic-api-key"}}}
 ```
 
@@ -367,8 +368,10 @@ private section instead.
   API key. The module reads it once at start, holds it only in the provider,
   sends it only as the request header and never stores, publishes or logs it;
   the runtime redacts it from its own records. `model` defaults to
-  `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`). The
-  synthetic provider takes neither.
+  `claude-opus-5-5` and `effort` to `medium` (`low`, `medium` or `high`).
+  `titleModel` names the small model that writes conversation titles (see
+  [Conversation titles](#conversation-titles)) and defaults to
+  `claude-haiku-5-5`. The synthetic provider takes none of the three.
 - `assistant.prices` (Hub #2024) maps each model to its `input`, `output`,
   `cacheWrite` and `cacheRead` prices in US dollars per million tokens, as the
   provider's price list states them. `cacheWrite` is the five-minute cache
@@ -376,7 +379,7 @@ private section instead.
   [Anthropic price list](https://platform.claude.com/docs/en/about-claude/pricing)
   states as 1.25 times the input price. All four are required, from 0 to 1000,
   for at most 16 models. The Anthropic provider needs an entry for its own
-  model, and the section is refused without it, so every paid call can be
+  model and for its title model, and the section is refused without either, so every paid call can be
   counted. The module has no built-in prices. The synthetic provider takes no
   prices.
 - `assistant.tools` lists the permitted tools by name, each once:
@@ -639,7 +642,9 @@ task by its task ID, and an attention item is the saved question's ID. An
 answered question, a resume and the new run either starts stay in the task's
 turn; only the next task starts a new turn, which supersedes the earlier task's
 notice as a new Claude prompt does. The source is `bunny`/`assistant` on the
-core host, titled by the persona: `B.U.N.N.Y.`, `Reachy` or `MicroDuck`. Every
+core host. The session is titled by the conversation's title (see
+[Conversation titles](#conversation-titles)), or by the persona until one
+exists: `B.U.N.N.Y.`, `Reachy` or `MicroDuck`. Every
 transaction that changes a task also adds the `lifecycle/2.2` observations that
 move its conversation's session there, from the module's own source and on the
 conversation's one ordering sequence, and records the last state it reported
@@ -670,6 +675,52 @@ updating on the devices until it expires; the core refuses its further
 observations with `capacity`. No Reachy or MicroDuck
 card is raised for a conversation, and `read_sessions` and coding suggestions
 list coding agent sessions only. Native worker reporting is not part of this.
+
+### Conversation titles
+
+Each conversation gets a short title that a model writes, led by the GitHub
+issue it is about, such as `#1896 Session tracking` or `pixoo#14 Boot
+channel` for an issue in another repository (Hub #2025). The title is the
+session title on the status devices, the dashboard and Habitat. Until a title
+exists, the persona name stands.
+
+- **When.** A title is written after the first message of a session
+  appearance, again at the third task of that appearance, and after the first
+  message when the session reappears after a day without lifecycle evidence.
+  The title call runs beside the task, after its admission, and never delays,
+  fails or rolls back it.
+- **What the model sees.** The fixed title instruction as the system prompt
+  and the conversation's last eight owner and assistant messages, escaped and
+  cut to 2 KiB. No tool result, preference or knowledge entry is sent.
+- **What is kept.** After the issue reference, the description is cut to 40
+  characters at a word boundary. Quotes, markdown, a `Title:` label and
+  trailing punctuation are removed. An answer that is empty, a placeholder such
+  as `Title`, only a repeat of an owner message, or not session display text
+  (a control character or a recognizable credential) is no title. A failed,
+  refused or invalid first title leaves the persona name; a failed refresh
+  keeps the earlier title. Nothing is retried.
+- **Where it goes.** The title is stored on the conversation with its source,
+  generated or the owner's. It is published at once as display metadata in
+  `lifecycle/2.3`, which changes only the session's title and keeps no
+  expiring session alive, and on every later lifecycle observation. A
+  generated title has source `provider` and the owner's has source `user`.
+- **Rename.** Open **Details**, then **Conversation settings**, and enter a
+  name under **Rename conversation** (at most 80 characters). The page sends
+  the `rename` action of `assistant-control/2.1`. The owner's name replaces any
+  generated title, and the model never changes it again. A title call still in
+  flight is abandoned, and an answer that arrives after the rename is
+  dropped. A name that is not display text is refused with `invalid-request`.
+- **Usage.** Each title call is recorded on its conversation in
+  `assistant_title_calls` with its model, status and reported input, output
+  and cache tokens. Unreported usage stays unknown. Title calls count toward
+  no task's limits; they are kept for the assistant's spend accounting
+  (Hub #2024). The synthetic provider writes the fixed title
+  `Synthetic conversation`, which never repeats the conversation and costs
+  nothing.
+
+The title instruction, prompt and normalization are adapted from OpenAI Codex
+(Apache License 2.0) and T3 Code (MIT License); see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ### LIFX status and controls
 
@@ -794,7 +845,9 @@ outbox replay and private pagination, plus `assistant.test.js` (approval,
 decline, stale approval, uncertain dispatch, allowlist refusal, refusal,
 truncation and fault codes, profile isolation), `assistant-sessions.test.js`
 (each conversation's shared-session observations across its tasks, restart and
-baseline, Hub #505), `anthropic.test.js` (the request
+baseline, Hub #505), `conversation-titles.test.js` (title normalization,
+prompt, the title call, refresh, rename and failures, Hub #2025),
+`anthropic.test.js` (the request
 shape, tool-use parsing, usage, error mapping and abort against a fake
 transport) and `configure.test.js` (the section and a keyed provider through
 the harness's secret). `spend.test.js` checks the ledger's pricing,

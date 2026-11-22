@@ -58,7 +58,7 @@ The session selector identifies the actual child when `agent_id` is present; the
 
 ## Native assistant conversations
 
-The native B.U.N.N.Y. assistant (`bunny`/`assistant`, [Hub #505](https://github.com/jimmie-potts/agent-device-hub/issues/505)) is not a hook provider. Each profile's conversation is one session, and each task in it, one owner message and everything it causes, is one turn named by the task ID. The companions module reports its own committed task state in `lifecycle/2.2`, in the transaction that changes the task, with one known ordering sequence per conversation; the core accepts the source from that module only. Its mapping is documented and implemented in source with synthetic tasks; installed qualification is [Hub #1869](https://github.com/jimmie-potts/agent-device-hub/issues/1869).
+The native B.U.N.N.Y. assistant (`bunny`/`assistant`, [Hub #505](https://github.com/jimmie-potts/agent-device-hub/issues/505)) is not a hook provider. Each profile's conversation is one session, and each task in it, one owner message and everything it causes, is one turn named by the task ID. The companions module reports its own committed task state in `lifecycle/2.2`, in the transaction that changes the task, with one known ordering sequence per conversation; the core accepts the source from that module only. A conversation's model-written or owner-given title travels as display metadata in `lifecycle/2.3` ([Hub #2025](https://github.com/jimmie-potts/agent-device-hub/issues/2025)). Its mapping is documented and implemented in source with synthetic tasks; installed qualification is [Hub #1869](https://github.com/jimmie-potts/agent-device-hub/issues/1869).
 
 | Task change | Observation | Limitation |
 | --- | --- | --- |
