@@ -10,12 +10,14 @@ function scrolled(speed: number, ms: number, frame: number): number {
   return total;
 }
 
-void test('a drag scrolls only near the window\'s top or bottom edge, faster nearer the edge', () => {
+void test('a drag scrolls only near the window\'s top or bottom edge, faster nearer the edge and never faster than at it', () => {
   assert.equal(edgeSpeed(400, 844), 0);
   assert.equal(edgeSpeed(EDGE, 844), 0);assert.equal(edgeSpeed(844 - EDGE, 844), 0);
   assert.equal(edgeSpeed(0, 844), -EDGE_SPEED);assert.equal(edgeSpeed(844, 844), EDGE_SPEED);
   const near = (actual: number, expected: number): void => {assert.ok(Math.abs(actual - expected) < 1e-9, `${String(actual)} is not ${String(expected)}`);};
   near(edgeSpeed(EDGE / 2, 844), -EDGE_SPEED / 2);near(edgeSpeed(844 - EDGE / 4, 844), EDGE_SPEED * 3 / 4);
+  // A mouse dragged out of the window, above or below it.
+  assert.equal(edgeSpeed(-300, 844), -EDGE_SPEED);assert.equal(edgeSpeed(844 + 300, 844), EDGE_SPEED);
 });
 
 void test('the page scrolls as far in the same time at 4 to 120 frames a second (#2017)', () => {

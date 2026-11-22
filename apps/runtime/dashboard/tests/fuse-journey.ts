@@ -340,8 +340,30 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
     const tap = await center(member);await small.touchscreen.tap(tap.x, tap.y);
     await expect.poll(() => smallSent.length).toBe(1);await small.waitForTimeout(500);
     assert.deepEqual(smallSent.map(item => [item.path, item.target]), [['power-set', 'shelf-lamp']], 'a tap on a member sends one command');
+    // A card that leaves Home mid-drag (another session hides it) ends the drag: its handle is gone, so the lifted
+    // finger's release never reaches it, and the page must not go on scrolling toward the edge (#2017 review).
+    await handle(small, light('lamp-a')).evaluate(node => {node.scrollIntoView({block: 'center'});});
+    const lifted = await center(handle(small, light('lamp-a')));
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [lifted]});
+    for (let step = 1; step <= 4; step += 1) await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: lifted.x, y: lifted.y + (830 - lifted.y) * step / 4}]});
+    await expect(card(small, light('lamp-a'))).toHaveAttribute('data-fuse-dragging', '');
+    assert.equal(await small.evaluate(async widget => {
+      const record = (await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': HomeLayoutRecord[]}}).records['home-layout'][0];
+      const hide = (placements: HomePlacement[]): HomePlacement[] => placements.map(placement => placement.widget === widget ? {...placement, hidden: true} : placement);
+      const layouts = {desktop: hide(record?.layouts?.desktop ?? []), phone: hide(record?.layouts?.phone ?? [])};
+      return (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+        body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record?.revision ?? 0, layouts}})})).status;
+    }, light('lamp-a')), 200);
+    await expect(card(small, light('lamp-a'))).toHaveCount(0);
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+    // Ten frames from the top of the page, with no drag left, the page has not moved.
+    assert.equal(await small.evaluate(() => new Promise<string>(resolve => {
+      scrollTo(0, 0);const room = (document.scrollingElement ?? document.documentElement).scrollHeight - innerHeight;let frames = 0;
+      const frame = (): void => {frames += 1;if (scrollY !== 0) resolve(`scrolled to ${String(scrollY)} after ${String(frames)} frames`);else if (frames >= 10) resolve(room > 0 ? 'still' : 'no room to scroll');else requestAnimationFrame(frame);};
+      requestAnimationFrame(frame);
+    })), 'still', 'a drag whose card left Home stops scrolling the page');
   } finally {await pocket.close();}
   assert.deepEqual(errors, []);
   await context.close();
-  return {fuse: true, mouse: true, touch: true, keyboard: true, lights: true, plugs: true, lightWithPlug: true, refusedSave: true, dropElsewhere: true, allOnOff: true, memberRefused: true, memberNoAnswer: true, reload: true, secondBrowser: true, readOnly: true, ringDims: true, roomKept: true, noStaleLine: true, doubleClickOnce: true, heldEnterOnce: true, optionsSendNothing: true, phoneTouchAutoScroll: true, memberTap: true, lineInFlight: true, lineUncertainGroup: true, lineUncertainUngroup: true, lineRefused: true};
+  return {fuse: true, mouse: true, touch: true, keyboard: true, lights: true, plugs: true, lightWithPlug: true, refusedSave: true, dropElsewhere: true, allOnOff: true, memberRefused: true, memberNoAnswer: true, reload: true, secondBrowser: true, readOnly: true, ringDims: true, roomKept: true, noStaleLine: true, removedCardStopsScroll: true, doubleClickOnce: true, heldEnterOnce: true, optionsSendNothing: true, phoneTouchAutoScroll: true, memberTap: true, lineInFlight: true, lineUncertainGroup: true, lineUncertainUngroup: true, lineRefused: true};
 }

@@ -133,8 +133,10 @@ export function FuseProvider({runtime, connected, operations, operationsLive, un
   }).current;
   // Near the window's top or bottom edge the page scrolls under the dragged card, so a card below the fold, or above
   // it, can be reached by touch, where the handle keeps the page from scrolling itself. The speed is per millisecond
-  // (edge-scroll.ts), so a slow frame rate scrolls as far in the same time, and the scroll goes on while the pointer
-  // stays in the zone, held still or at the page's end, until it leaves the zone or the drag ends (#2017).
+  // (edge-scroll.ts), so a slow frame rate scrolls as far in the same time. The scroll goes on while the pointer is in
+  // the zone, held still included and on frames where the page does not move, until it leaves the zone or the drag
+  // ends. A card that has left the page (another session hid it) ends its drag here, as its handle and the lifted
+  // pointer's release have gone with it (#2017).
   const autoScroll = useRef((current: Drag): void => {
     // A drag that starts near an edge scrolls nothing until the pointer has been away from the edges once.
     const inZone = edgeSpeed(current.py, innerHeight) !== 0;
@@ -142,6 +144,7 @@ export function FuseProvider({runtime, connected, operations, operationsLive, un
     if (!current.armed || !inZone || current.scroll !== 0) return;
     const tick = (now: number): void => {
       current.scroll = 0;if (drag.current !== current) return;
+      if (!current.panel.isConnected) {finish(false);return;}
       const speed = edgeSpeed(current.py, innerHeight);if (speed === 0) return;
       const step = edgeStep(current.edge, speed, now);
       if (step !== 0) {const before = scrollY;scrollBy(0, step);if (scrollY !== before) place(current);}

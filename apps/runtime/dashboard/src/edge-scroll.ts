@@ -11,10 +11,13 @@ export const EDGE_SPEED = 0.84;
 /** The longest frame a step counts, in milliseconds: after a stall the page moves this far, not by the whole stall. */
 export const LONGEST_FRAME = 250;
 
-/** The scroll speed for a pointer at `y` in a window `height` CSS pixels tall: negative near the top, positive near the bottom, 0 between. */
+/**
+ * The scroll speed for a pointer at `y` in a window `height` CSS pixels tall: negative near the top, positive near the
+ * bottom, 0 between. A pointer past the window's edge (a mouse dragged outside it) scrolls at the edge's speed.
+ */
 export function edgeSpeed(y: number, height: number): number {
-  if (y < EDGE) return -EDGE_SPEED * (EDGE - y) / EDGE;
-  if (y > height - EDGE) return EDGE_SPEED * (y - height + EDGE) / EDGE;
+  if (y < EDGE) return -EDGE_SPEED * Math.min(EDGE, EDGE - y) / EDGE;
+  if (y > height - EDGE) return EDGE_SPEED * Math.min(EDGE, y - height + EDGE) / EDGE;
   return 0;
 }
 
