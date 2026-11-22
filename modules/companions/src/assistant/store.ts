@@ -142,7 +142,7 @@ export class AssistantStore {
    * about, so it is left out and can never become a title.
    */
   titleMessages(conversationId: string, limit = 8): {role: 'owner' | 'assistant'; text: string}[] {
-    return (this.database.prepare("SELECT role,text FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE '%-closing-%' ORDER BY seq DESC LIMIT ?")
+    return (this.database.prepare("SELECT role,text FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' ORDER BY seq DESC LIMIT ?")
       .all(conversationId, limit) as {role: 'owner' | 'assistant'; text: string}[]).reverse();
   }
   /** One saved message of the task, by its id, for the owner to hear again (Hub #500). */

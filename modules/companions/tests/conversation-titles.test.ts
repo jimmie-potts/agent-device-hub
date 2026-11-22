@@ -77,6 +77,11 @@ void test('a generated title never repeats text the prompt carried, and the owne
   // The approval question words the hand-off as "Delegate to"; a declined or refused hand-off is checked the same way.
   assert.equal(generatedTitle('#2025 Fix the stale session title shown on the hallway Tidbyt after a rename',
     [assistant(`Delegate to the coding worker in agent-device-hub: ${titleBrief}`)]), undefined, '#N and an approval\'s brief');
+  // Uncut answers, which only the brief rules can catch: equality with the approval's brief, and a six-word run of it.
+  assert.equal(generatedTitle('Fix the timer test', [assistant('Delegate to the coding worker in agent-device-hub: Fix the timer test.')]), undefined,
+    'a short answer equal to an approval\'s brief');
+  assert.equal(generatedTitle('Flaky lamp timer test in schedule module',
+    [assistant('Delegate to the coding worker in agent-device-hub: Fix the flaky lamp timer test in schedule module today.')]), undefined, 'six words of an approval\'s brief');
   // A cut answer inside a reply, behind a new issue reference.
   const lamp = assistant('Done: I turned off the bedroom lamp and set the alarm for six tomorrow. Sleep well.');
   assert.equal(generatedTitle('#7 I turned off the bedroom lamp and set the alarm for six tomorrow', [lamp]), undefined, '#N and a reply excerpt');
