@@ -517,6 +517,10 @@
 
 .conversation-artwork{margin:0;display:grid;justify-items:start;gap:.5rem}
 .conversation-artwork :is(canvas,img){max-inline-size:100%;max-block-size:26rem;object-fit:contain;border-radius:.5rem}
+.conversation-art-display{margin-block-start:.5rem}
+.conversation-art-display fieldset{display:flex;flex-wrap:wrap;gap:.5rem;min-inline-size:0}
+.conversation-art-display label{flex-basis:100%;overflow-wrap:anywhere}
+.conversation-art-display input{margin-inline-end:.4rem}
 
 .conversation-upload {
   display: grid;

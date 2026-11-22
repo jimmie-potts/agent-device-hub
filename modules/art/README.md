@@ -67,6 +67,11 @@ Generic provider refusals do not identify a preview-access problem; the result r
 Sunburst is permitted for owner requests but is not selected by this implementation.
 Procedural art is available only as a failed display call's free fallback.
 
+Newly generated Conversation artwork retains the primary chat image and local
+browser, Pixoo and Tidbyt compositions when conversion succeeds. Art uses the
+same source bytes for each and sends no device command during creation.
+Older saved replies can show on surfaces with a retained compatible composition.
+
 ## Conversation attachments
 
 Conversation uses the Art binary upload with family `art-attachment-edit`.

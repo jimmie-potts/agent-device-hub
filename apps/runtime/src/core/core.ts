@@ -189,7 +189,7 @@ export interface CoreModule extends BunnyModule {
   readonly operatorActions: CoreOperatorActions;
   /** Internal qualified host admission bridge; assignment sends nothing. */
   setModeParticipants(participants: readonly ModeParticipant[]): void;
-  setAutomationDevices(devices:readonly AutomationDevice[]):void;
+  setAutomationDevices(devices:readonly AutomationDevice[]):Promise<void>;
   /** Binds the runtime's live secret registry before opening the owner store. */
   setAutomationRedactions(redactions: Redactions): void;
   /** The host binds its reader of the art owner's retained catalog for owner shows (Hub #1584); binding sends nothing. */
@@ -283,7 +283,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
       artSchedule:{get:()=>artSchedule().get(),save:(value,parent)=>artSchedule().save(value,parent)},
-      art:{targets:()=>art().targets(),targetAvailability:()=>art().targetAvailability?.()??[],present:(plan,permit,parent)=>art().present(plan,permit,parent)},
+      art:{targets:approval=>art().targets(approval),targetAvailability:()=>art().targetAvailability?.()??[],present:(plan,permit,parent)=>art().present(plan,permit,parent)},
       limits:{list:()=>limits().list(),get:id=>limits().get(id),save:(id,value,parent)=>limits().save(id,value,parent),settled:()=>limits().settled()},
       routines:{list:()=>routines().list(),get:id=>routines().get(id),create:(value,owner,context)=>routines().create(value,owner,context),
         update:(id,value,context)=>routines().update(id,value,context),setEnabled:(id,enabled,context)=>routines().setEnabled(id,enabled,context),
@@ -302,7 +302,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     setHistoryDevices: devices => { historyDevices = devices; },
     setAutomationDevices:devices=>{
       if(core===undefined) throw new Error('core-not-started');
-      core.setAutomationDevices(devices);
+      return core.setAutomationDevices(devices);
     },
     setMusicCaptureRetirement: retire => {core?.setMusicCaptureRetirement(retire);},
     setArtCatalog: read => {
@@ -346,7 +346,7 @@ class Core {
   readonly #art: ArtPart;
   setMusicCaptureRetirement(retire: () => void): void {this.#music.setRetirement(retire);}
   get automation(): AutomationControls {return this.#automation.controls;}
-  setAutomationDevices(devices:readonly AutomationDevice[]):void {this.#automation.setDevices(devices);}
+  setAutomationDevices(devices:readonly AutomationDevice[]):Promise<void> {return this.#automation.setDevices(devices);}
   setArtCatalog(read: ArtCatalogRead): void {this.#automation.setArtCatalog(read);}
   readonly #mode: ModePart;
   readonly #music: MusicCapturePart;

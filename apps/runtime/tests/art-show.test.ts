@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type {TestContext} from 'node:test';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {ArtAuto21} from '@jimmie-potts/event-contracts/v2/art';
-import {artShowPlanId, artShowSurfaces, type ArtShowRequest} from '@jimmie-potts/event-contracts/v2/art-show';
+import {artDestination, artShowPlanId, artShowSurfaces, type ArtShowRequest} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtState, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
 import type {BunnyModule, Command, ModuleContent, ModuleContentRequest, ModuleContext, Reply} from '@jimmie-potts/sdk';
@@ -16,6 +16,33 @@ import {edgeConfig, flush, it, manualClock, run, stateDir, waitFor} from './supp
 
 const BROWSER = 'c'.repeat(64), PIXOO = 'a'.repeat(64), TIDBYT = 'b'.repeat(64);
 const COMPOSITION: Readonly<Record<ArtTarget, string>> = {ui: BROWSER, pixoo: PIXOO, tidbyt: TIDBYT};
+
+it('approval requires the real show mood and duration and isolates a display with the reserved browser ID', () => {
+  const record = deviceRecord('shelf-display', 1, 'tidbyt', 'available');
+  const target = {target: record.id, kind: 'tidbyt' as const};
+  record.capabilities.moments = {supported: true, moods: ['reminder'], maxDurationMs: 60_000, coversStatus: true,
+    art: {formats: ['gif'], maxBytes: 1000}};
+  assert.equal(artDestination(target, record).guard, undefined);
+  record.capabilities.moments.moods = ['celebrate'];
+  record.capabilities.moments.maxDurationMs = 10_000;
+  assert.equal(artDestination(target, record).guard, undefined);
+  record.capabilities.moments.maxDurationMs = 30_000;
+  assert.equal(artDestination(target, record).guard?.target, 'shelf-display');
+  assert.equal(artDestination({...target, target: 'browser'}, {...record, id: 'browser'}).guard, undefined);
+});
+
+it('publishes configured routing IDs independently of the artwork rendition kinds', async t => {
+  const w = await world(t);
+  const result = await w.artContext.sdk.sync<{id: string; revision: number; targets: {target: string; kind: string}[]}>(
+    ['art-targets'], () => {}, {owner: 'bunny/core', timeoutMs: 1000});
+  assert.equal(result.status, 'synced');
+  if (result.status !== 'synced') return;
+  try {
+    assert.deepEqual(result.copy.states()[0]?.data.targets, [
+      {target: 'desk-display', kind: 'pixoo'}, {target: 'shelf-display', kind: 'tidbyt'},
+    ]);
+  } finally {await result.copy.close();}
+});
 const artwork = (artworkId: string, kinds: readonly ArtTarget[] = ['ui', 'pixoo', 'tidbyt']): ArtworkSummary => ({artworkId, createdAtMs: 1, favorite: false, feedback: null,
   variationOf: null, palette: ['#112233'], provenance: {generatedBy: 'local', factual: false}, compositions: kinds.map((target, index) => {
     const id = String(index + 1).repeat(64);
@@ -76,7 +103,7 @@ async function world(t: TestContext, replies: Partial<Record<'desk-display' | 's
   return {clock, art, moments, prepares, browser, reads, get core() {return core;}, get handle() {assert.ok(handle); return handle;},
     get artContext() {assert.ok(artContext); return artContext;},
     show: (requestId: string, data: Omit<ArtShowRequest, 'requestId'>) => core.actions.dispatch({key: 'bunny.cmd.art-show.hub', requestedBy: 'bunny/parts/operator', requestId,
-      draft: {type: 'org.bunny.art.show.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/art-show/2.0', data}}),
+      draft: {type: 'org.bunny.art.show.requested', subject: 'hub', dataschema: 'https://bunny.invalid/events/art-show/' + (data.guards === undefined ? '2.0' : '2.1'), data}}),
     complete: async (requestId: string) => {
       assert.ok(artContext);
       await artContext.sdk.publish('bunny.event.art-auto.art', {kind: 'outcome', type: 'org.bunny.art.auto.completed', subject: 'art',
@@ -145,6 +172,31 @@ it('refusals send nothing: unknown art, no composition, a concurrent show and an
   await waitFor(() => w.prepares().length === 1);
   assert.equal(w.browser().length, 0, 'the refused second show sent nothing');
   assert.equal(w.handle.operation('show-second')?.status, 'rejected');
+});
+
+it('a guarded show refuses a retained rendition over the selected display byte limit before preparing it', async t => {
+  const oversize = artwork('retained-large', ['pixoo']);
+  const rendition = oversize.compositions[0]?.renditions[0];
+  assert.ok(rendition);
+  rendition.bytes = 163_841;
+  const w = await world(t, {}, pagedCatalog([[oversize]]));
+  const guard = {target: 'desk-display', kind: 'pixoo' as const, configurationRevision: 1, epoch: 'pixoo-1'};
+  const result = await w.show('too-large-for-display', {artworkId: oversize.artworkId, targets: [guard.target], guards: [guard]});
+  assert.ok('error' in result);
+  assert.equal(result.error.code, 'unsupported-capability');
+  assert.equal(w.prepares().length + w.moments.length, 0);
+});
+
+it('a changed display identity skips that display while the approved browser still presents the same artwork', async t => {
+  const w = await world(t);
+  const guard = {target: 'desk-display', kind: 'pixoo' as const, configurationRevision: 1, epoch: 'retired-epoch'};
+  const reply = await w.show('replaced-display', {artworkId: 'saved-art', targets: ['desk-display', 'browser'], guards: [guard]});
+  assert.deepEqual(reply, {status: 'accepted', requestId: 'replaced-display'});
+  w.clock.advance(20_000);
+  await waitFor(() => w.handle.operation('replaced-display')?.status === 'completed');
+  assert.equal(w.prepares().length + w.moments.length, 0);
+  assert.equal(w.browser().length, 1);
+  assert.ok(ownerRows(w, 'replaced-display').some(row => row.target === guard.target && row.reason === 'revision-conflict'));
 });
 
 it('a target without a composition is skipped while the others proceed, and logged', async t => {

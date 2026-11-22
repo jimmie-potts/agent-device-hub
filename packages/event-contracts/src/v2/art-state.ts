@@ -45,6 +45,8 @@ export type ArtJobSummary = {requestId: string; purpose: ArtPurpose; admittedBy:
 export type ArtProvenance = {generatedBy: ArtProviderName | 'local'; factual: false};
 export type ArtworkSummary = {artworkId: string; createdAtMs: number; favorite: boolean; feedback: ArtFeedback | null; variationOf: string | null; palette: string[];
   provenance: {generatedBy: 'openai' | 'local'; factual: false}; compositions: ArtComposition[]};
+/** A private catalog result may identify the original request, even outside the recent job window. */
+export type CatalogArtwork = ArtworkSummary & {sourceRequestId?: string};
 /** A composition a device confirmed staging. The module offers it; only the core's automation path can show it. */
 export type ArtCandidate = {artworkId: string; target: ArtDisplayTarget; compositionId: string; favorite: boolean; stagedUntilMs: number};
 export type ArtState = {
@@ -62,7 +64,7 @@ export type ArtRecord = ArtState | ArtState21;
 
 /** The module's content references, read at `/modules/art/content/<ref>`. */
 export const artContentRef = {
-  /** JSON: `{artworks, nextAfter}`; query `after` and `limit` (at most 100). */
+  /** JSON: `{artworks: CatalogArtwork[], nextAfter}`; query `after` and `limit` (at most 100). */
   catalog: 'catalog',
   /** JSON: `{calls, nextAfter}`, the inspectable call ledger; query `after` and `limit` (at most 100). */
   ledger: 'ledger',

@@ -46,7 +46,8 @@ void test('authoritative selection admits only the exact validated usable browse
 
 void test('Show now offers configured displays, sends only surfaces with compositions and labels them (#1581)', () => {
   const targets = showTargetsOf({schema: 'automation/2.0', targets: [{target: 'desk-display', kind: 'pixoo'}, {target: 'shelf-display', kind: 'tidbyt'}]});
-  for (const value of [{targets: []}, {schema: 'automation/2.0', targets: [{target: 'browser', kind: 'pixoo'}]}, {schema: 'automation/2.0', targets: [{target: 'Desk', kind: 'pixoo'}]},
+  assert.deepEqual(showTargetsOf({schema: 'automation/2.0', targets: [{target: 'browser', kind: 'pixoo'}, ...targets]}), targets);
+  for (const value of [{targets: []}, {schema: 'automation/2.0', targets: [{target: 'Desk', kind: 'pixoo'}]},
     {schema: 'automation/2.0', targets: [{target: 'desk-display', kind: 'lamp'}]}, {schema: 'automation/2.0', targets: [{target: 'a', kind: 'pixoo'}, {target: 'a', kind: 'tidbyt'}]}]) assert.throws(() => showTargetsOf(value));
   const row = artwork(), pixoo = {...row, compositions: [...row.compositions, {target: 'pixoo' as const, compositionId: 'b'.repeat(64), outcome: 'succeeded' as const, motion: 'gif' as const,
     renditions: [{renditionId: 'b'.repeat(64), ref: `rendition.${'b'.repeat(64)}`, width: 64, height: 64, bytes: 40, frames: 8, durationMs: 800, format: 'gif' as const}]}]};

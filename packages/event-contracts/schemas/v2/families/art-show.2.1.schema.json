@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-show/2.1",
+  "description": "An approved exact artwork and destination set, bound to each selected physical display's identity and configuration.",
+  "type": "object", "additionalProperties": false,
+  "required": ["requestId", "artworkId", "targets", "guards"],
+  "properties": {
+    "requestId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"},
+    "artworkId": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"},
+    "targets": {"$ref": "https://bunny.invalid/events/art-show/2.0#/properties/targets"},
+    "coversStatus": {"type": "boolean"},
+    "guards": {"type": "array", "maxItems": 2, "uniqueItems": true, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["target", "kind", "configurationRevision", "epoch"],
+      "properties": {
+        "target": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/routingId"},
+        "kind": {"enum": ["pixoo", "tidbyt"]},
+        "configurationRevision": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"},
+        "epoch": {"$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"}
+      }
+    }}
+  }
+}

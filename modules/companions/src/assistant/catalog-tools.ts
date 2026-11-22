@@ -46,9 +46,10 @@ export const catalogTools = [
   define(READ_VOLCANO, 'read', 'Read Volcano observations and the app’s session-gap setting. Equipment controls are unavailable.', {}),
   define(CREATE_ART, 'command', 'Propose creating one artwork to include in this reply. Requires owner approval before paid generation. Use only when asked for new artwork. It sends nothing to displays.', {
     format: {type: 'string', enum: ['still', 'gif'], description: 'A still image or animated GIF.'},
+    showTargets: {type: 'array', items: {type: 'string'}, description: 'Requested display names for a separate show approval once ready. Use [] for chat alone. Only include browser for an explicit dashboard presentation.'},
     description: text('A short visual description of the requested artwork, used for generation and to describe the image. Include only details the owner wants illustrated.'),
   }),
-  define(READ_ART, 'read', 'List recent saved artwork IDs and their compositions.', {}),
+  define(READ_ART, 'read', 'List saved artwork IDs, usable rendition kinds, and exact configured destinations. Use the routing ID of an eligible destination for a show.', {}),
   define(READ_SHOWS, 'read', 'List saved shows, drafts, or lighting sessions in pages. A draft cannot play.', {
     view: {type: 'string', enum: ['saved', 'drafts', 'lighting'], description: 'Which records to read.'},
     id: text('Exact show, draft or light ID for details, or empty to list.'),

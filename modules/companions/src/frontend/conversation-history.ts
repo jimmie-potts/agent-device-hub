@@ -1,5 +1,5 @@
 import {isErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
-import {artDescription} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {artDescription, routingId} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {catalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
 import {HISTORY_ROWS, readHistoryCursor, type ConversationMessage, type CurrentTask, type Proposal, type RecentConversationPage, type SavedQuestion} from '../assistant/history-contract.js';
@@ -80,11 +80,12 @@ export function decodeConversationWindow(value: unknown, {profile, before}: Wind
     else {
       if (role !== 'assistant' || !record(attachment) || attachment.kind !== 'artwork' || typeof attachment.requestId !== 'string' ||
         !/^[a-z0-9-]{1,100}$/.test(attachment.requestId) || !artDescription(attachment.description)) return invalidPage();
-      const {admission, code} = attachment;
+      const {admission, code, showTargets} = attachment;
+      if (showTargets !== undefined && (!Array.isArray(showTargets) || showTargets.length > 3 || !showTargets.every(routingId))) return invalidPage();
       if (admission !== 'accepted' && admission !== 'refused' && admission !== 'pending' && admission !== 'uncertain') return invalidPage();
       if (code !== undefined && !isErrorCode(code)) return invalidPage();
       messages.push({seq, id, taskId, role, text, atMs, attachment: {kind: 'artwork', requestId: attachment.requestId, description: attachment.description,
-        admission, ...(code === undefined ? {} : {code})}});
+        admission, ...(showTargets === undefined ? {} : {showTargets}), ...(code === undefined ? {} : {code})}});
     }
     previous = seq;
   }

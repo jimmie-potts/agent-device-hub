@@ -1,3 +1,4 @@
+export {bindHostedArtCatalog} from './core/art-catalog.js';
 export {CORE_MODULE, contain, sourceOf, type ModuleHealth, type ModuleState, type Reason} from './host.js';
 export {
   DEFAULT_CONSUMERS, consumerOf, createCoreModule, isCoreModule, type CoreHandle, type CoreModule, type CoreOptions, type CorePart,

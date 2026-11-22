@@ -11,7 +11,7 @@ export const HISTORY_ROWS = 16;
 export type Proposal = {family: 'mode-set'; target: 'hub'; data: {mode: Mode}; expectedRevision: number}
   | {family: 'coding-dispatch'; target: 'assistant'; data: {repository: string; brief: string}; expectedRevision: number}
   | AssistantDeviceAction | CatalogProposal;
-export type ConversationAttachment = {kind: 'artwork'; requestId: string; description: string; admission: 'pending' | 'accepted' | 'uncertain' | 'refused'; code?: ErrorCode};
+export type ConversationAttachment = {kind: 'artwork'; requestId: string; description: string; showTargets?: string[]; admission: 'pending' | 'accepted' | 'uncertain' | 'refused'; code?: ErrorCode};
 export type ConversationMessage = {seq: number; id: string; taskId: string; role: 'owner' | 'assistant' | 'tool'; text: string; atMs: number; attachment?: ConversationAttachment};
 /** A clarification for the owner, an approval decision, or a delegation waiting on the worker. */
 export type SavedQuestion = {id: string; text: string; answer: string | null; kind: 'clarification' | 'approval' | 'delegation'; proposal: Proposal | null};
