@@ -30,3 +30,10 @@ void test('the glass canvas scrolls with the page, so a drawn box is on screen w
   // A canvas that did not follow the scroll leaves the glass off its card.
   assert.deepEqual(drawnMismatches(drawn(card(320)), [card(120)], viewport, {x: 0, y: -160}), ['card glass 216,160,400,200 does not follow its box 216.0,120.0,400.0,200.0']);
 });
+
+void test('a card past the edge the canvas paints has no glass there, even within the old 64 px reach (#2023)', () => {
+  // The canvas paints down to 925 in the window; the card runs to 1000. On screen (to 900) the glass is all there.
+  assert.deepEqual(drawnMismatches('card:216.0,320.0,400.0,805.0', [card(120, 880)], viewport, {x: 0, y: -200}), []);
+  // The canvas ends at 860: the card's last 40 px on screen have no glass.
+  assert.deepEqual(drawnMismatches('card:216.0,320.0,400.0,740.0', [card(120, 880)], viewport, {x: 0, y: -200}), ['card glass 216,120,400,740 does not follow its box 216.0,120.0,400.0,780.0']);
+});

@@ -108,10 +108,10 @@ const sameLight = (a: GlassLight | undefined, b: GlassLight | undefined): boolea
  * lip. A panel taller than the window, such as a whole module page, that grows or shrinks below the window draws the
  * same picture, so comparing these finds no change and the layer draws no frame (#1950).
  */
-export function visibleScene(scene: GlassScene, viewport: {width: number; height: number}): GlassScene {
+export function visibleScene(scene: GlassScene, viewport: {width: number; height: number}, reach = REACH): GlassScene {
   const cut = (rect: GlassRect): GlassRect => {
-    const x = Math.max(rect.x, -REACH), y = Math.max(rect.y, -REACH);
-    return {x, y, width: Math.max(0, Math.min(rect.x + rect.width, viewport.width + REACH) - x), height: Math.max(0, Math.min(rect.y + rect.height, viewport.height + REACH) - y)};
+    const x = Math.max(rect.x, -reach), y = Math.max(rect.y, -reach);
+    return {x, y, width: Math.max(0, Math.min(rect.x + rect.width, viewport.width + reach) - x), height: Math.max(0, Math.min(rect.y + rect.height, viewport.height + reach) - y)};
   };
   // A veil is drawn only where it is in the window, as `readScene` reads it without the glass canvas's margin (#2023).
   return {...scene, panels: scene.panels.map(panel => ({...panel, rect: cut(panel.rect)})), veils: scene.veils.filter(veil => visible(veil.rect, viewport.width, viewport.height, 0)).map(veil => ({...veil, rect: cut(veil.rect)}))};

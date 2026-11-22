@@ -336,6 +336,12 @@ try {
   // The glass moves with the cards as the page scrolls, not a frame later (#2023): straight after a scroll either way,
   // before any frame, it is still on every card.
   await followsBoxes(page, 'scrolled down, before a frame', 80);await followsBoxes(page, 'scrolled up, before a frame', -80);
+  // A short scroll that leaves the canvas where it is uses up some of its margin; the next one, as long as the margin
+  // kept (150 px), is still covered. A short window among the cards leaves room to scroll both ways.
+  await page.setViewportSize({width: 1440, height: 500});await page.evaluate(() => {scrollTo({top: 500, behavior: 'instant'});});
+  await followsBoxes(page, 'a short scroll, before a frame', 95);await followsBoxes(page, 'then a longer one, before a frame', 150);
+  await followsBoxes(page, 'a short scroll up, before a frame', -95);await followsBoxes(page, 'then a longer one up, before a frame', -150);
+  await page.setViewportSize({width: 1440, height: 900});await page.evaluate(() => {scrollTo({top: 420, behavior: 'instant'});});await followsBoxes(page, 'back in the full window');
   await page.setViewportSize({width: 1100, height: 800});await followsBoxes(page, 'resized');
   // A window resize draws one frame, after the page has repacked, and a context that renders in software draws at most
   // 250,000 pixels: the page's main thread waits for every software frame, so a wide window must not cost more (the

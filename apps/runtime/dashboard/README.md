@@ -1032,12 +1032,18 @@ The layer draws two canvases with one program (#2023):
   instead of a frame later. It draws the panels, their shadow, lip and light, the
   thumb and the page's veils. Wherever it changes nothing it is transparent, and
   elsewhere it takes the least alpha that composites to the single picture. It is
-  placed again when it no longer covers the window and half its margin, or would
-  lengthen the page. Its `data-glass-drawn` boxes are in its own coordinates.
+  placed again when less than 150 px of its margin is left above or below the
+  window, or when it would lengthen the page, and centred again whenever it is
+  redrawn anyway, so a scroll of up to 150 px between two frames stays covered.
+  Its width is its containing block's in CSS. Its `data-glass-drawn` boxes are in
+  its own coordinates.
 
-Without an artwork and with no light on, a scroll redraws only the backdrop's
-wash. With an artwork the glass is redrawn while the page scrolls, because it
-shows the artwork, which stays with the window.
+Without an artwork, a scroll redraws the backdrop's wash, and the glass only when
+its canvas is placed again (about every 50 px). With an artwork the glass is
+redrawn while the page scrolls, because it shows the artwork, which stays with
+the window; so it is while a lamp within 800 px of the rail or the phone bar is
+lit, since the backdrop draws that lamp's light under them and the glass leaves
+it out there.
 
 `GlassLayer` (`src/glass-layer.tsx`) is reusable. A page sets `data-glass` on its
 root to the state the layer reports through `onState` and renders the layer inside
