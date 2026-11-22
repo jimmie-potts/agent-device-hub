@@ -1,6 +1,7 @@
 import React, {createContext, useContext, useEffect, useRef, useState} from 'react';
 import type {LightingLayoutRecord, LightingSelection, OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {useAttempt} from './command-control.tsx';
+import {edgeSpeed, edgeStep, type EdgeScroll} from './edge-scroll.ts';
 import {homeLine} from './home-line.ts';
 import {emptyLightingLayout, groupCards, lightingDevices, plugDevices, resolveCard, unitKey, type GroupUnit} from './lighting.ts';
 import type {RuntimeData} from './runtime-feeds.ts';
@@ -42,11 +43,8 @@ const DRAG_SLOP = 4;
 /** How long a card takes to return after its drop (the reference's 340 ms). */
 const RETURN_MS = 340;
 
-/** How near the window's top or bottom edge a drag scrolls the page, and how fast at the edge, in CSS pixels a frame. */
-const EDGE = 56, SCROLL = 14;
-
-/** A drag: where it started (pointer and page scroll), the pointer now, its target and its auto-scroll frame. */
-type Drag = {pointer: number; unit: GroupUnit; panel: HTMLElement; x: number; y: number; px: number; py: number; sx: number; sy: number; moved: boolean; target: HTMLElement | null; scroll: number; armed: boolean};
+/** A drag: where it started (pointer and page scroll), the pointer now, its target and its auto-scroll frame and time. */
+type Drag = {pointer: number; unit: GroupUnit; panel: HTMLElement; x: number; y: number; px: number; py: number; sx: number; sy: number; moved: boolean; target: HTMLElement | null; scroll: number; armed: boolean; edge: EdgeScroll};
 
 function mark(element: HTMLElement | null, on: boolean): void {
   if (element === null) return;
@@ -134,21 +132,25 @@ export function FuseProvider({runtime, connected, operations, operationsLive, un
     if (target !== current.target) {mark(current.target, false);mark(target, true);current.target = target;}
   }).current;
   // Near the window's top or bottom edge the page scrolls under the dragged card, so a card below the fold, or above
-  // it, can be reached by touch, where the handle keeps the page from scrolling itself.
+  // it, can be reached by touch, where the handle keeps the page from scrolling itself. The speed is per millisecond
+  // (edge-scroll.ts), so a slow frame rate scrolls as far in the same time. The scroll goes on while the pointer is in
+  // the zone, held still included and on frames where the page does not move, until it leaves the zone or the drag
+  // ends. A card that has left the page (another session hid it) ends its drag here, as its handle and the lifted
+  // pointer's release have gone with it (#2017).
   const autoScroll = useRef((current: Drag): void => {
     // A drag that starts near an edge scrolls nothing until the pointer has been away from the edges once.
-    const inZone = current.py < EDGE || current.py > innerHeight - EDGE;
+    const inZone = edgeSpeed(current.py, innerHeight) !== 0;
     if (!inZone) current.armed = true;
-    if (!current.armed) return;
-    const speed = (): number => current.py < EDGE ? -SCROLL * (EDGE - current.py) / EDGE : current.py > innerHeight - EDGE ? SCROLL * (current.py - innerHeight + EDGE) / EDGE : 0;
-    if (current.scroll !== 0 || speed() === 0) return;
-    const tick = (): void => {
+    if (!current.armed || !inZone || current.scroll !== 0) return;
+    const tick = (now: number): void => {
       current.scroll = 0;if (drag.current !== current) return;
-      const step = speed(), before = scrollY;if (step === 0) return;
-      scrollBy(0, step);if (scrollY === before) return;
-      place(current);current.scroll = requestAnimationFrame(tick);
+      if (!current.panel.isConnected) {finish(false);return;}
+      const speed = edgeSpeed(current.py, innerHeight);if (speed === 0) return;
+      const step = edgeStep(current.edge, speed, now);
+      if (step !== 0) {const before = scrollY;scrollBy(0, step);if (scrollY !== before) place(current);}
+      current.scroll = requestAnimationFrame(tick);
     };
-    current.scroll = requestAnimationFrame(tick);
+    current.edge = {last: performance.now(), carry: 0};current.scroll = requestAnimationFrame(tick);
   }).current;
   // Escape returns a dragged card, and so do leaving Home and grouping becoming unavailable mid-drag.
   useEffect(() => {
@@ -169,7 +171,7 @@ export function FuseProvider({runtime, connected, operations, operationsLive, un
         if (event.button > 0 || drag.current !== null || !latest.current.editable) return;
         const panel = event.currentTarget.closest<HTMLElement>('[data-home-card]');if (panel === null) return;
         event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);
-        drag.current = {pointer: event.pointerId, unit, panel, x: event.clientX, y: event.clientY, px: event.clientX, py: event.clientY, sx: scrollX, sy: scrollY, moved: false, target: null, scroll: 0, armed: false};
+        drag.current = {pointer: event.pointerId, unit, panel, x: event.clientX, y: event.clientY, px: event.clientX, py: event.clientY, sx: scrollX, sy: scrollY, moved: false, target: null, scroll: 0, armed: false, edge: {last: 0, carry: 0}};
       }}
       onPointerMove={event => {
         const current = drag.current;if (current?.pointer !== event.pointerId) return;

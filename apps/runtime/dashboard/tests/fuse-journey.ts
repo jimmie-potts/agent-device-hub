@@ -38,6 +38,12 @@ const lighting = (page: Page): Promise<LightingLayoutRecord> => page.evaluate(as
   (await (await fetch('/api/v2/snapshot?families=lighting-layout&owner=bunny/core')).json() as {records: {'lighting-layout': LightingLayoutRecord[]}}).records['lighting-layout'][0] as LightingLayoutRecord);
 const card = (page: Page, widget: string): Locator => page.locator(`[data-home-card="${widget}"]`);
 const handle = (page: Page, widget: string): Locator => card(page, widget).locator('[data-fuse-handle]');
+/**
+ * How long a returning card may take to be home. The return eases over 340 ms on a time base and ends on the first frame
+ * after that, so the wait is for frames: a one-thread runner draws the desktop page at 2 to 3 frames a second, and
+ * slower at times, so the journey allows its 15 s action timeout rather than the 5 s poll default (#2017).
+ */
+const returned = {timeout: 15_000};
 const center = async (locator: Locator): Promise<{x: number; y: number}> => {const box = await locator.boundingBox();assert.ok(box !== null);return {x: box.x + box.width / 2, y: box.y + box.height / 2};};
 /** The group card whose panel lists exactly these members, in order. */
 async function groupOf(page: Page, members: string[]): Promise<Locator> {
@@ -45,6 +51,14 @@ async function groupOf(page: Page, members: string[]): Promise<Locator> {
   await expect(panel.locator('[data-group-member]')).toHaveCount(members.length);
   assert.deepEqual(await panel.locator('[data-group-member]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-group-member'))), members);
   return panel;
+}
+/**
+ * Waits until every member's switch of a group panel is enabled: its state is known and no command of its own is in
+ * progress, so All on or All off sends each member a command. On a slow runner a member's records or its last command
+ * can still be settling when the panel's All button is already enabled (#2017).
+ */
+async function membersReady(panel: Locator): Promise<void> {
+  for (const member of await panel.locator('[data-group-member]').all()) await expect(member).toBeEnabled({timeout: 30_000});
 }
 /** Drags by the mouse: the card follows the pointer and the target lights up before the drop. */
 async function mouseDrag(page: Page, from: string, to: string): Promise<void> {
@@ -81,7 +95,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   await page.mouse.move(grip.x, grip.y);await page.mouse.down();await page.mouse.move(grip.x + 40, grip.y + 300, {steps: 6});
   await expect(card(page, 'module:roborock')).not.toHaveAttribute('data-fuse-target', '');
   await page.mouse.up();
-  await expect.poll(() => lampA.evaluate(node => (node as HTMLElement).style.transform)).toBe('');
+  await expect.poll(() => lampA.evaluate(node => (node as HTMLElement).style.transform), returned).toBe('');
   const back = await lampA.boundingBox();assert.deepEqual(back, home, 'a drop elsewhere returns the card');
   await page.waitForTimeout(200);assert.equal(sent.length, 0, 'a drop elsewhere and a handle drag send nothing');
   // Cards other than lights and plugs are not targets.
@@ -94,7 +108,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   await expect(lampA).toHaveAttribute('data-fuse-dragging', '');
   await handle(page, light('lamp-a')).evaluate(node => {node.releasePointerCapture(1);});
   await expect(lampA).not.toHaveAttribute('data-fuse-dragging', '');await page.mouse.up();
-  await expect.poll(() => lampA.evaluate(node => (node as HTMLElement).style.transform)).toBe('');
+  await expect.poll(() => lampA.evaluate(node => (node as HTMLElement).style.transform), returned).toBe('');
   await page.waitForTimeout(200);assert.equal(sent.length, 0, 'a lost capture groups nothing');
   const ring = await center(lampA.locator('.light-dial'));
   await page.mouse.move(ring.x, ring.y - 30);await page.mouse.down();await page.mouse.move(ring.x, ring.y + 10, {steps: 4});await page.mouse.up();
@@ -165,7 +179,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   await mouseDrag(page, plug('shelf-lamp'), mixedCard);
   await expect(page.locator('[data-fuse-status]')).toHaveText(/^Not grouped: Refused \(revision-conflict\) without changing state\./);
   await expect(card(page, plug('shelf-lamp'))).toHaveAttribute('data-home-shape', 'square');await groupOf(page, ['lamp-c', 'desk-lamp']);
-  await expect.poll(() => card(page, plug('shelf-lamp')).evaluate(node => (node as HTMLElement).style.transform)).toBe('');
+  await expect.poll(() => card(page, plug('shelf-lamp')).evaluate(node => (node as HTMLElement).style.transform), returned).toBe('');
   assert.deepEqual(await lighting(page), saved, 'a refused save changes nothing');
   await page.unroute('**/api/v2/commands/lighting-layout-set');
   await mouseDrag(page, plug('shelf-lamp'), mixedCard);
@@ -175,7 +189,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   // All off switches every member with its own power command; a plug never gets a lighting command.
   const result = group.locator('.group-panel-result');
   const allOff = group.getByRole('button', {name: 'All off', exact: true});await expect(allOff).toBeEnabled();
-  await allOff.click();
+  await membersReady(group);await allOff.click();
   await expect.poll(() => sent.length).toBe(3);
   assert.deepEqual(sent.map(item => [item.path, item.target, item.on]).sort(), [['power-set', 'desk-lamp', false], ['power-set', 'lamp-c', false], ['power-set', 'shelf-lamp', false]],
     'each member gets its own existing power command');sent.splice(0);
@@ -191,7 +205,7 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
     else await route.continue();
   });
   world.holdDeviceWrites(true);
-  await group.getByRole('button', {name: 'All on', exact: true}).click();
+  await membersReady(group);await group.getByRole('button', {name: 'All on', exact: true}).click();
   await expect.poll(() => sent.length).toBe(3);
   assert.deepEqual(sent.map(item => [item.path, item.target, item.on]).sort(), [['power-set', 'desk-lamp', true], ['power-set', 'lamp-c', true], ['power-set', 'shelf-lamp', true]]);sent.splice(0);
   await expect(result).toContainText('Desk lamp: Refused (unavailable) without changing state.');
@@ -204,17 +218,17 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
   world.holdDeviceWrites(false);
   await expect(result).not.toContainText('lamp-c:');
   // All off again switches every member once each is clear.
-  await expect(allOff).toBeEnabled({timeout: 30_000});await allOff.click();
+  await expect(allOff).toBeEnabled({timeout: 30_000});await membersReady(group);await allOff.click();
   await expect.poll(() => sent.length).toBe(3);sent.splice(0);
   await expect.poll(() => [world.wemo.state()['shelf-lamp']?.power, world.wemo.state()['desk-lamp']?.power]).toEqual([false, false]);
   await expect(result).not.toContainText('Refused');
   // A double click and a held Enter each send exactly one power command per member; opening the options sends nothing.
   await expect(group.getByRole('button', {name: 'All on', exact: true})).toBeEnabled({timeout: 30_000});
-  await group.getByRole('button', {name: 'All on', exact: true}).dblclick();
+  await membersReady(group);await group.getByRole('button', {name: 'All on', exact: true}).dblclick();
   await expect.poll(() => sent.length).toBe(3);await page.waitForTimeout(500);
   assert.deepEqual(sent.map(item => item.target).sort(), ['desk-lamp', 'lamp-c', 'shelf-lamp'], 'a double click sends one command per member');sent.splice(0);
   await expect(allOff).toBeEnabled({timeout: 30_000});
-  await allOff.focus();await page.keyboard.down('Enter');await page.keyboard.down('Enter');await page.keyboard.down('Enter');await page.keyboard.up('Enter');
+  await membersReady(group);await allOff.focus();await page.keyboard.down('Enter');await page.keyboard.down('Enter');await page.keyboard.down('Enter');await page.keyboard.up('Enter');
   await expect.poll(() => sent.length).toBe(3);await page.waitForTimeout(500);
   assert.deepEqual(sent.map(item => [item.target, item.on]).sort(), [['desk-lamp', false], ['lamp-c', false], ['shelf-lamp', false]], 'a held Enter sends one command per member');sent.splice(0);
   await group.getByLabel(/^Options for /).click();await page.waitForTimeout(300);await group.getByLabel(/^Options for /).click();
@@ -300,11 +314,25 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
     const below = await card(small, plug('shelf-lamp')).boundingBox();assert.ok(below !== null && below.y > 844, 'the target starts below the fold');
     const cdp = await pocket.newCDPSession(small);
     await cdp.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [grip]});
+    // The finger stops 14 px above the bottom, in the 56 px edge zone, and is held still: the page scrolls under it until
+    // the plug, which started below the fold, is in view. The page checks every frame, so the wait ends on the frame it
+    // comes into view, not up to a poll interval and a round trip later (#2017).
     for (let step = 1; step <= 6; step += 1) await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: grip.x, y: grip.y + (830 - grip.y) * step / 6}]});
-    await expect.poll(async () => {const box = await card(small, plug('shelf-lamp')).boundingBox();return box !== null && box.y + box.height / 2 < 700;}, {timeout: 20_000}).toBe(true);
-    const shelf = await center(card(small, plug('shelf-lamp')));
-    await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [shelf]});
-    await expect(card(small, plug('shelf-lamp'))).toHaveAttribute('data-fuse-target', '');
+    await small.waitForFunction(selector => {
+      const box = document.querySelector(selector)?.getBoundingClientRect();return box !== undefined && box.top + box.height / 2 < 700;
+    }, `[data-home-card="${plug('shelf-lamp')}"]`, {polling: 'raf', timeout: 20_000});
+    // Then the finger leaves the edge zone at once, which stops the scroll, and moves onto the plug, as a person's does.
+    // The page can scroll on by a frame or two before the first move lands, more on a slow runner, so the finger follows
+    // the plug until it is the target with the finger outside both edge zones; a plug that went past the top is brought
+    // back by the top edge.
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: grip.x, y: 422}]});
+    await expect.poll(async () => {
+      const shelf = await center(card(small, plug('shelf-lamp')));
+      await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: shelf.x, y: Math.min(830, Math.max(20, shelf.y))}]});
+      if (shelf.y <= 56 || shelf.y >= 844 - 56) return 'scrolling';
+      if (await card(small, plug('shelf-lamp')).getAttribute('data-fuse-target') === '') return '';
+      return `not the target (finger at ${String(Math.round(shelf.y))}, ${await card(small, light('lamp-c')).getAttribute('data-fuse-dragging') === '' ? 'still' : 'no longer'} dragging)`;
+    }, {timeout: 20_000, intervals: [100]}).toBe('');
     await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
     const pair = await groupOf(small, ['shelf-lamp', 'lamp-c']);
     assert.deepEqual(smallSent.map(item => item.path), ['lighting-layout-set'], 'the phone drag sends only the layout save');smallSent.splice(0);
@@ -312,8 +340,30 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
     const tap = await center(member);await small.touchscreen.tap(tap.x, tap.y);
     await expect.poll(() => smallSent.length).toBe(1);await small.waitForTimeout(500);
     assert.deepEqual(smallSent.map(item => [item.path, item.target]), [['power-set', 'shelf-lamp']], 'a tap on a member sends one command');
+    // A card that leaves Home mid-drag (another session hides it) ends the drag: its handle is gone, so the lifted
+    // finger's release never reaches it, and the page must not go on scrolling toward the edge (#2017 review).
+    await handle(small, light('lamp-a')).evaluate(node => {node.scrollIntoView({block: 'center'});});
+    const lifted = await center(handle(small, light('lamp-a')));
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [lifted]});
+    for (let step = 1; step <= 4; step += 1) await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: lifted.x, y: lifted.y + (830 - lifted.y) * step / 4}]});
+    await expect(card(small, light('lamp-a'))).toHaveAttribute('data-fuse-dragging', '');
+    assert.equal(await small.evaluate(async widget => {
+      const record = (await (await fetch('/api/v2/snapshot?families=home-layout&owner=bunny/core')).json() as {records: {'home-layout': HomeLayoutRecord[]}}).records['home-layout'][0];
+      const hide = (placements: HomePlacement[]): HomePlacement[] => placements.map(placement => placement.widget === widget ? {...placement, hidden: true} : placement);
+      const layouts = {desktop: hide(record?.layouts?.desktop ?? []), phone: hide(record?.layouts?.phone ?? [])};
+      return (await fetch('/api/v2/commands/home-layout-set', {method: 'POST', headers: {'content-type': 'application/json', 'bunny-request': '1'},
+        body: JSON.stringify({target: 'home', requestId: crypto.randomUUID(), data: {expectedRevision: record?.revision ?? 0, layouts}})})).status;
+    }, light('lamp-a')), 200);
+    await expect(card(small, light('lamp-a'))).toHaveCount(0);
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+    // Ten frames from the top of the page, with no drag left, the page has not moved.
+    assert.equal(await small.evaluate(() => new Promise<string>(resolve => {
+      scrollTo(0, 0);const room = (document.scrollingElement ?? document.documentElement).scrollHeight - innerHeight;let frames = 0;
+      const frame = (): void => {frames += 1;if (scrollY !== 0) resolve(`scrolled to ${String(scrollY)} after ${String(frames)} frames`);else if (frames >= 10) resolve(room > 0 ? 'still' : 'no room to scroll');else requestAnimationFrame(frame);};
+      requestAnimationFrame(frame);
+    })), 'still', 'a drag whose card left Home stops scrolling the page');
   } finally {await pocket.close();}
   assert.deepEqual(errors, []);
   await context.close();
-  return {fuse: true, mouse: true, touch: true, keyboard: true, lights: true, plugs: true, lightWithPlug: true, refusedSave: true, dropElsewhere: true, allOnOff: true, memberRefused: true, memberNoAnswer: true, reload: true, secondBrowser: true, readOnly: true, ringDims: true, roomKept: true, noStaleLine: true, doubleClickOnce: true, heldEnterOnce: true, optionsSendNothing: true, phoneTouchAutoScroll: true, memberTap: true, lineInFlight: true, lineUncertainGroup: true, lineUncertainUngroup: true, lineRefused: true};
+  return {fuse: true, mouse: true, touch: true, keyboard: true, lights: true, plugs: true, lightWithPlug: true, refusedSave: true, dropElsewhere: true, allOnOff: true, memberRefused: true, memberNoAnswer: true, reload: true, secondBrowser: true, readOnly: true, ringDims: true, roomKept: true, noStaleLine: true, removedCardStopsScroll: true, doubleClickOnce: true, heldEnterOnce: true, optionsSendNothing: true, phoneTouchAutoScroll: true, memberTap: true, lineInFlight: true, lineUncertainGroup: true, lineUncertainUngroup: true, lineRefused: true};
 }
