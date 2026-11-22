@@ -1,6 +1,6 @@
 import {SHOW_SAVE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {createHash, randomUUID} from 'node:crypto';
-import {Annotation, Command as Resume, END, StateGraph, interrupt} from '@langchain/langgraph';
+import {Annotation, Command as Resume, END, GraphRecursionError, StateGraph, interrupt} from '@langchain/langgraph';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
@@ -54,6 +54,22 @@ export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSig
 class Fault extends Error {constructor(readonly code: ErrorCode, readonly closingReason?: string) {super(code);}}
 function fail(code: ErrorCode): never {throw new Fault(code);}
 const codeOf = (error: unknown): ErrorCode => error instanceof Fault || error instanceof ProviderFault ? error.code : fullDisk(error) || error instanceof CheckpointCapacityError ? 'capacity' : 'internal';
+function closingReasonOf(error: unknown): string | undefined {
+  if (error instanceof Fault) return error.closingReason;
+  if (error instanceof CheckpointCapacityError) return 'The saved turn state exceeded its size limit.';
+  if (error instanceof GraphRecursionError) return 'This turn reached its step limit.';
+  if (fullDisk(error)) return 'There was no space left to save the turn.';
+  if (error instanceof ProviderFault) {
+    if (error.sizeLimit === 'request') return 'The provider rejected the request because it was too large.';
+    if (error.sizeLimit === 'response') return 'The provider response exceeded its size limit.';
+    if (error.code === 'too-large') return 'The provider reported a size limit.';
+    if (error.code === 'invalid-message') return 'The provider returned an invalid response.';
+    if (error.code === 'invalid-request') return 'The provider rejected the request as invalid.';
+    if (error.code === 'forbidden') return 'The provider refused access to this request.';
+    if (error.code === 'not-found') return 'The provider could not find the requested resource.';
+  }
+  return undefined;
+}
 const profiles: readonly AssistantProfile[] = ['bunny', 'reachy', 'microduck'];
 const profile = (value: unknown): value is AssistantProfile => typeof value === 'string' && profiles.includes(value as AssistantProfile);
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -66,7 +82,7 @@ export const REFUSED = 'The model declined this request.';
 type Next = 'ask' | 'tool' | 'approve' | 'await' | 'turn' | 'end';
 const shape = Annotation.Root({taskId: Annotation<string>, step: Annotation<number>, next: Annotation<Next>, decision: Annotation<string>, result: Annotation<string>});
 type GraphState = typeof shape.State;
-type Active = {taskId: string; runId: string; generation: number; controller: AbortController; span: Span; accountedAt: number; deadline?: Cancel; work: Promise<void>};
+type Active = {taskId: string; runId: string; generation: number; controller: AbortController; span: Span; accountedAt: number; deadline?: Cancel; stopReason?: string; work: Promise<void>};
 type Replied = TurnReply;
 const parseReply = (text: string): Replied => {
   const value: unknown = JSON.parse(text);
@@ -124,9 +140,9 @@ export class AssistantEngine {
       try {
         if (task.graphVersion !== GRAPH_VERSION || !this.available()) await this.#recoverUnavailable(task.id);
         else await this.#reconcile(task.id, true);
-      } catch {
+      } catch (error) {
         this.#recoveryUnavailable = true;
-        try {await this.#recoverUnavailable(task.id);} catch { /* A failed write cannot claim a saved transition. */ }
+        try {await this.#recoverUnavailable(task.id, closingReasonOf(error));} catch { /* A failed write cannot claim a saved transition. */ }
       }
     }
     this.#subscriptions.push(await this.context.sdk.respond<AssistantControl>('bunny.cmd.assistant-control.assistant', command => this.#control(command)));
@@ -322,13 +338,13 @@ export class AssistantEngine {
     const run = task.runId === null ? undefined : this.store.run(task.runId);
     if (run !== undefined && run.endedAtMs === null) {run.status = task.status; run.endedAtMs = this.context.clock.now(); this.store.saveRun(run);}
   }
-  #recoverUnavailable(taskId: string): Promise<void> {
+  #recoverUnavailable(taskId: string, reason?: string): Promise<void> {
     const traceparent = this.#task(taskId).traceparent;
     return this.#change(taskId, task => {
       const unknown = unresolved(this.store.calls(taskId));
       task.status = unknown ? 'uncertain' : 'paused'; task.code = unknown ? 'uncertain-result' : 'unavailable';
       this.#finishRecoveredRun(task);
-    }, traceparent === null ? undefined : {traceparent});
+    }, traceparent === null ? undefined : {traceparent}, reason);
   }
   async #reconcile(taskId: string, startup: boolean, active?: Active): Promise<void> {
     const snapshot = await this.#graph.getState(this.#config(taskId));
@@ -366,7 +382,10 @@ export class AssistantEngine {
       ...(run.previousTraceparent === null ? {} : {links: [{traceparent: run.previousTraceparent}]}), attributes: {'bunny.assistant.task_id': task.id, 'bunny.assistant.run_id': run.id}});
     const active: Active = {taskId, runId: run.id, generation: task.generation, controller: new AbortController(), span, accountedAt: this.context.clock.now(), work: Promise.resolve()};
     this.#active = active;
-    active.deadline = this.context.scheduler.after(Math.max(0, LIMITS.activeMs - task.activeMs), () => {active.controller.abort();});
+    active.deadline = this.context.scheduler.after(Math.max(0, LIMITS.activeMs - task.activeMs), () => {
+      active.stopReason = 'This turn reached its active time limit.';
+      active.controller.abort();
+    });
     active.work = this.#execute(active);
   }
   #fence(active: Active): Task {
@@ -398,7 +417,7 @@ export class AssistantEngine {
           const unknown = unresolved(this.store.calls(task.id));
           task.status = unknown ? 'uncertain' : code === 'cancelled' ? 'paused' : 'failed';
           task.code = unknown ? 'uncertain-result' : code; this.#settle(task, active);
-        }, active.span.context, error instanceof Fault ? error.closingReason : undefined);
+        }, active.span.context, active.stopReason ?? closingReasonOf(error));
         // Only these two intentional replies had speech before failure settlement. The generated summary has no output effects.
         if (error instanceof Fault && (error.closingReason === REFUSED || error.closingReason === CONTEXT_TOO_LARGE)) {
           const task = this.#task(active.taskId), id = `${task.id}-closing-${String(task.generation)}`;
@@ -719,7 +738,7 @@ export class AssistantEngine {
       await this.#change(taskId, task => {
         this.#fence(active);
         task.activeMs += Math.max(0, started - active.accountedAt);
-        if (task.nextOrdinal !== ordinal) fail('capacity');
+        if (task.nextOrdinal !== ordinal) throw new Fault('capacity', 'The next step did not match the saved turn.');
         if (task.activeMs + timeout > LIMITS.activeMs) throw new Fault('capacity', 'This turn reached its active time limit.');
         if (task.reservedUnits + units > LIMITS.units) throw new Fault('capacity', 'This turn reached its usage limit.');
         if (kind === 'model' ? task.modelCalls >= LIMITS.modelCalls : task.toolCalls >= LIMITS.toolCalls) {
@@ -731,7 +750,12 @@ export class AssistantEngine {
       this.#fence(active);
       const reply = await this.#wait(active, timeout, bound, () => Promise.resolve().then(() => operation(active.controller.signal, span.context)), call);
       replied = true; this.#fence(active);
-      if (typeof reply.text !== 'string' || textBytes(reply.text) > bound || (reply.units !== null && (!Number.isSafeInteger(reply.units) || reply.units < 0 || reply.units > units))) fail('capacity');
+      if (typeof reply.text !== 'string') throw new Fault('capacity', `The ${kind} returned an invalid response.`);
+      if (textBytes(reply.text) > bound) throw new Fault('capacity', kind === 'model' ? 'The model response exceeded its size limit.' : 'The tool result exceeded its size limit.');
+      if (reply.units !== null) {
+        if (!Number.isSafeInteger(reply.units) || reply.units < 0) throw new Fault('capacity', `The ${kind} reported invalid usage.`);
+        if (reply.units > units) throw new Fault('capacity', `The ${kind} reported usage above its per-call limit.`);
+      }
       const elapsed = Math.min(timeout, Math.max(0, this.context.clock.now() - started)); active.accountedAt = this.context.clock.now();
       await this.#change(taskId, task => {
         this.#fence(active); call.status = 'succeeded'; call.result = reply.text; call.units = reply.units; call.elapsedMs = elapsed;
@@ -762,7 +786,12 @@ export class AssistantEngine {
     const deadline = new Promise<{text: string; units: number | null; evidence?: ActionEvidence[]}>((_resolve, reject) => {
       stopped = () => {settled = true; reject(new Fault('cancelled'));};
       active.controller.signal.addEventListener('abort', stopped, {once: true});
-      cancel = this.context.scheduler.after(timeout, () => {settled = true; reject(new Fault('uncertain-result')); active.controller.abort();});
+      cancel = this.context.scheduler.after(timeout, () => {
+        settled = true;
+        active.stopReason ??= `The ${call.kind} call timed out. Its outcome is unconfirmed.`;
+        reject(new Fault('uncertain-result'));
+        active.controller.abort();
+      });
     });
     try {
       this.#fence(active);

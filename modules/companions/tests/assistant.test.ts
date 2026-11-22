@@ -13,6 +13,8 @@ import {test, type TestContext} from 'node:test';
 import {fullDisk, InProcessBus, type Participant, type ModuleContext, type RequestResult} from '@jimmie-potts/sdk';
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
+import {AnthropicProvider} from '../src/assistant/anthropic.js';
+import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
 import {assistantStateDraft, CONTEXT_TOO_LARGE, DECLINED, REFUSED} from '../src/assistant/engine.js';
 import {PreferenceStore} from '../src/preferences/store.js';
@@ -657,6 +659,7 @@ void test('a hanging dispatch hits the tool deadline, leaves the effect uncertai
   assert.notEqual(task(w)?.usageUnits, null);
   await input(w.core, w.module(), 'approve', true); await until(() => sends === 1); w.advance(LIMITS.toolMs);
   await until(() => status(w) === 'uncertain'); assert.equal(task(w)?.modelCalls, 1);
+  assert.match((await page(w)).messages.at(-1)?.text ?? '', /tool call timed out/i);
   await w.restart(); assert.equal(task(w)?.activeMs, LIMITS.toolMs); assert.equal(sends, 1);
   const id = task(w)?.taskId; assert.ok(id !== undefined);
   assert.equal((await control(w.core, w.module(), 'resume', id)).status, 'rejected'); assert.equal(sends, 1);
@@ -1226,4 +1229,66 @@ void test('an unclassified failure after a recorded action explains that the tur
   await input(w.core, w.module(), 'approve', true);
   await until(() => status(w) === 'failed');
   assert.match((await page(w)).messages.at(-1)?.text ?? '', /request was accepted.*turn stopped.*cause is unknown/i);
+});
+
+for (const [name, response, expected] of [
+  ['model reply bytes', () => reply('x'.repeat(17 * 1024)), /model response exceeded.*size limit/i],
+  ['per-call usage', () => ({...reply('done'), units: LIMITS.callUnits + 1}), /model.*usage.*per-call limit/i],
+  ['invalid usage', () => ({...reply('done'), units: -1}), /invalid usage/i],
+  ['provider capacity without a specific limit', () => {throw new ProviderFault('capacity');}, /^A capacity limit stopped this turn\.$/],
+] as const) {
+  void test(`the closing reply reports ${name}`, async context => {
+    const provider = counted(response);
+    const w = await world(context, {provider});
+    await control(w.core, w.module(), 'enable');
+    await input(w.core, w.module(), 'Synthetic read-only question.');
+    await until(() => status(w) === 'failed');
+    assert.match((await page(w)).messages.at(-1)?.text ?? '', expected);
+    assert.equal(provider.calls(), 1);
+  });
+}
+
+void test('the closing reply explains an oversized tool result', async context => {
+  const w = await world(context, {provider: counted(() => call('read_lifx')), tools: ['read_lifx'],
+    readDevice: () => Promise.resolve('x'.repeat(LIMITS.toolBytes + 1))});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Read the synthetic light.');
+  await until(() => status(w) === 'failed');
+  assert.match((await page(w)).messages.at(-1)?.text ?? '', /tool result exceeded.*size limit/i);
+});
+
+void test('the closing reply explains an oversized graph checkpoint', async context => {
+  const put = SqliteCheckpointSaver.prototype.put;
+  context.mock.method(SqliteCheckpointSaver.prototype, 'put', function (this: SqliteCheckpointSaver, ...args: Parameters<typeof put>) {
+    return put.call(this, args[0], {...args[1], channel_values: {...args[1].channel_values, fixture: 'x'.repeat(33 * 1024)}}, args[2], args[3]);
+  });
+  const w = await world(context);
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic checkpoint question.');
+  await until(() => status(w) === 'failed');
+  assert.match((await page(w)).messages.at(-1)?.text ?? '', /saved turn state exceeded.*size limit/i);
+});
+
+for (const [name, response, expected] of [
+  ['response', () => new Response('x'.repeat(262_145)), /provider response exceeded.*size limit/i],
+  ['request', () => new Response('', {status: 413}), /provider rejected.*request.*too large/i],
+] as const) {
+  void test(`the closing reply identifies the oversized provider ${name}`, async context => {
+    const w = await world(context, {provider: new AnthropicProvider({key: 'synthetic', transport: () => Promise.resolve(response())})});
+    await control(w.core, w.module(), 'enable');
+    await input(w.core, w.module(), 'Synthetic provider size test.');
+    await until(() => status(w) === 'failed');
+    assert.match((await page(w)).messages.at(-1)?.text ?? '', expected);
+  });
+}
+
+void test('a full disk reported by the checkpoint writer names the storage cause if settlement can still be saved', async context => {
+  const fault = Object.assign(new Error('private fixture detail'), {errcode: 13});
+  context.mock.method(SqliteCheckpointSaver.prototype, 'put', () => Promise.reject(fault));
+  const w = await world(context);
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic storage question.');
+  await until(() => status(w) === 'failed');
+  assert.equal(task(w)?.code, 'capacity');
+  assert.equal((await page(w)).messages.at(-1)?.text, 'There was no space left to save the turn.');
 });
