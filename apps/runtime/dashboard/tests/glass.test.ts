@@ -119,7 +119,7 @@ void test('the veil loop only finds the strongest mask; the costly need is worke
   const loop = /for \(int i = 0; i < \d+; i\+\+\)\{ if \(i >= uVeilCount\) break;([\s\S]*?)\}\n/.exec(FRAGMENT)?.[1];
   assert.ok(loop !== undefined, 'the veil loop is found');
   assert.doesNotMatch(loop, /needed|backdrop|art\(/, 'nothing per veil samples the artwork or works out a need');
-  assert.match(FRAGMENT, /if \(veil > 0\.\) col = veiled\(col, veil \* max\(needed\(col\)/);
+  assert.match(FRAGMENT, /if \(mask > 0\.\) col = veiled\(col, mask \* max\(needed\(col\)/);
 });
 
 void test('a frame at the same time as the last moves the thumb nothing but keeps it travelling, so it never stalls', () => {

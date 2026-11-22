@@ -6,6 +6,9 @@
 .glass-backdrop{position:fixed;inset-block-start:0;inset-inline:0;z-index:-1;display:block;inline-size:100%;block-size:100vh;block-size:100lvh;pointer-events:none}
 .glass-layer{position:absolute;inset-block-start:0;inset-inline-start:0;inline-size:100%;z-index:-1;display:block;pointer-events:none}
 [data-glass=quiet] :is(.glass-backdrop,.glass-layer){visibility:hidden}
+/* While the glass is drawn the page does not bounce past either end (macOS and iOS overscroll), which moved the
+   page against the backdrop and broke the picture at the top (#2023, owner report 2026-11-22). */
+:root:has([data-glass=webgl]){overscroll-behavior-y:none}
 /* The outermost card surface inside each panel is the glass drawn under it, with the glass's corners; nested surfaces
    keep their own fill. A surface with a fixed state meaning, such as an Inbox that needs attention, keeps its fill. */
 [data-glass=webgl] [data-glass-panel]{--light-radius:var(--glass-radius);--card-radius:var(--glass-radius)}

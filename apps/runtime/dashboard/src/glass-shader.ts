@@ -164,22 +164,21 @@ vec3 glass(vec2 p, float d, vec2 g, vec3 behind, bool lamps){
 
 void main(){
   vec2 p = vec2(gl_FragCoord.x, uRes.y * uDpr - gl_FragCoord.y) / uDpr;
-  // Veils behind text drawn over the layer (see below), and how much of this pixel the fixed ones (the rail, the phone
-  // bar) cover: the backdrop canvas draws those with the light that falls under them, and the glass canvas leaves that
-  // light out there (#2023). A veil fades out within 16 px past its box, or, marked edge, stops at it.
+  // Veils behind text drawn over the layer (see below): the page's, and the fixed ones (the rail, the phone bar), which
+  // the backdrop canvas draws (#2023). A veil fades out within 16 px past its box, or, marked edge, stops at it.
   float mask = 0., fixedMask = 0.;
   for (int i = 0; i < ${String(MAX_VEILS)}; i++){ if (i >= uVeilCount) break;
     float edge = uVeilEdges[i], d = sdRound(p - uVeils[i].xy - uVeils[i].zw * .5, uVeils[i].zw * .5 + 4. * (1. - edge), 12. * (1. - edge));
     float m = edge > .5 ? step(d, 0.) : 1. - smoothstep(0., 12., d);
     if (uVeilFixed[i] > .5) fixedMask = max(fixedMask, m); else mask = max(mask, m); }
-  // The backdrop canvas has only the lit panels, and needs them only under a fixed veil.
+  // The backdrop canvas has no panels.
   bool glassLayer = uLayer == 1;
-  float D = glassLayer || fixedMask > 0. ? field(p) : 1e5, appear = smoothstep(0., .6, uAppear);
+  float D = glassLayer ? field(p) : 1e5, appear = smoothstep(0., .6, uAppear);
   // The field's gradient near panels: for the bevel, the lip and the spill's shadows.
   vec2 g = vec2(0., 1.);
   if (D < 20.) g = normalize(vec2(field(p + vec2(1., 0.)) - field(p - vec2(1., 0.)), field(p + vec2(0., 1.)) - field(p - vec2(0., 1.))) + 1e-5);
   // Light on the backdrop only where the backdrop shows: inside a panel the glass replaces it.
-  vec3 light = uLights > 0 && D > -1. ? spill(p, D, g) : vec3(0.), base = backdrop(p, 0.), col = base + light * (glassLayer ? 1. - fixedMask : fixedMask);
+  vec3 light = uLights > 0 && D > -1. ? spill(p, D, g) : vec3(0.), base = backdrop(p, 0.), col = base + light;
   if (glassLayer){
     float shade = (1. - smoothstep(-8., 36., field(p - vec2(0., 12.)))) * uShadow.a * appear;
     col = mix(col, uShadow.rgb, shade);
@@ -193,14 +192,19 @@ void main(){
   }
   // Veils last, so they also hold over a panel's bevel and rim: as strong as the brighter of the local backdrop
   // (outside panels) and the pixel itself needs. What the pixel needs is the same for every veil, so the need is worked
-  // out once: in software WebGL a per-veil need cost every pixel per veil. Each canvas veils with its own veils.
-  float veil = glassLayer ? mask : fixedMask;
-  if (veil > 0.) col = veiled(col, veil * max(needed(col), D > 0. ? needed(backdrop(p, 40.) + light) : 0.));
+  // out once: in software WebGL a per-veil need cost every pixel per veil. The backdrop canvas draws the fixed veils
+  // over the backdrop alone; the glass canvas draws the page's veils, and, outside panels, the fixed veils again over
+  // the light that falls under them, so the backdrop canvas never redraws for a light (a panel under the phone bar keeps
+  // its own glass: the bar is frosted, and its veil there would have to follow every scroll).
+  if (mask > 0.) col = veiled(col, mask * max(needed(col), D > 0. ? needed(backdrop(p, 40.) + light) : 0.));
+  if (fixedMask > 0. && D > 0.) col = veiled(col, fixedMask * max(needed(col), needed(backdrop(p, 40.) + light)));
   float grain = (h21(gl_FragCoord.xy) - .5) * .018;
   if (!glassLayer) { color = vec4(col + grain, 1.); return; }
   // The glass canvas lies over the backdrop canvas, which shows b here. The least alpha a for which some color, once
   // composited over b, gives col exactly (premultiplied: 0 <= rgb <= a) leaves the backdrop showing wherever the glass
   // changes nothing, and through faint light and shadow, so it stays true while the page scrolls.
+  // b is what the backdrop canvas draws here: the backdrop under its fixed veils.
+  if (fixedMask > 0.) base = veiled(base, fixedMask * max(needed(base), needed(backdrop(p, 40.))));
   vec3 b = clamp(base, 0., 1.), c = clamp(col, 0., 1.);
   vec3 under = 1. - c / max(b, 1e-4), over = (c - b) / max(1. - b, 1e-4);
   float a = clamp(max(max(max(under.r, under.g), under.b), max(max(over.r, over.g), over.b)), 0., 1.);

@@ -1025,12 +1025,12 @@ The layer draws two canvases with one program (#2023):
 - `.glass-backdrop` is fixed to the window and as tall as the largest viewport
   (`100lvh`), so a phone's toolbar that shows or hides neither stretches it nor
   rescales the artwork. It draws the artwork or the wash, the veil over it and the
-  veils of fixed or sticky elements (the rail and the phone bar), with the lit
-  panels' light that falls under them.
+  veils of fixed or sticky elements (the rail and the phone bar).
 - `.glass-layer` is a transparent canvas that scrolls with the page. It covers the
   window and 200 px above and below, so the browser moves the glass with the cards
   instead of a frame later. It draws the panels, their shadow, lip and light, the
-  thumb and the page's veils. Wherever it changes nothing it is transparent, and
+  thumb, the page's veils and the light under the rail and phone bar, veiled as
+  they are. Wherever it changes nothing it is transparent, and
   elsewhere it takes the least alpha that composites to the single picture. It is
   placed again when less than 150 px of its margin is left above or below the
   window, or when it would lengthen the page, and centred again whenever it is
@@ -1038,12 +1038,17 @@ The layer draws two canvases with one program (#2023):
   Its width is its containing block's in CSS. Its `data-glass-drawn` boxes are in
   its own coordinates.
 
+While the glass is drawn the page does not bounce past either end
+(`overscroll-behavior-y: none` on the root), and the veil's depth and the wash keep
+to the page's own scroll range, so the backdrop does not move or change at the top
+or bottom of the page (#2023).
+
 Without an artwork, a scroll redraws the backdrop's wash, and the glass only when
 its canvas is placed again (about every 50 px). With an artwork the glass is
 redrawn while the page scrolls, because it shows the artwork, which stays with
 the window; so it is while a lamp within 800 px of the rail or the phone bar is
-lit, since the backdrop draws that lamp's light under them and the glass leaves
-it out there.
+lit, since the glass draws that lamp's light under them, veiled as they veil the
+backdrop. The backdrop never redraws for a light.
 
 `GlassLayer` (`src/glass-layer.tsx`) is reusable. A page sets `data-glass` on its
 root to the state the layer reports through `onState` and renders the layer inside

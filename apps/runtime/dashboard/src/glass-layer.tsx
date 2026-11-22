@@ -73,7 +73,10 @@ const OVERSCAN = 200;
  * centred again whenever the glass is redrawn anyway, so a scroll of up to this much between two frames stays covered.
  */
 const KEEP = 150;
-/** How far from a fixed veil a lamp's spill still shows under it (at 800 px it adds under 1% of white, #2023). */
+/**
+ * How far from a fixed veil a lamp's spill still shows under it (at 800 px it adds under 1% of white, #2023); while such
+ * a lamp is lit the glass, which veils that light there, is redrawn as the page scrolls.
+ */
 const SPILL_REACH = 800;
 /** The join between neighboring panels when they fuse (the reference's k). */
 const MERGE = 20;
@@ -236,24 +239,27 @@ function startGlass(canvas: HTMLCanvasElement, back: HTMLCanvasElement, root: HT
     const moving = travelling || lit.again || fluid.again || targetEasing;
 
     const scroll = doc.scrollingElement ?? doc.documentElement;
-    const page = Math.max(scroll.scrollHeight, height), depth = picture === null ? 0 : Math.min(1, scroll.scrollTop / (height * 0.4)), id = picture?.id ?? '';
+    // A bounce at either end of the page (macOS and iOS let it overshoot and spring back) reports a scroll before its
+    // start or past its end; the veil's depth and the wash keep to the page's own range, so it changes neither (#2023).
+    const scrollTop = Math.min(Math.max(scroll.scrollTop, 0), Math.max(0, scroll.scrollHeight - scroll.clientHeight)), scrollLeft = Math.max(scroll.scrollLeft, 0);
+    const page = Math.max(scroll.scrollHeight, height), depth = picture === null ? 0 : Math.min(1, scrollTop / (height * 0.4)), id = picture?.id ?? '';
     // The backdrop stays with the window: it changes with the skin, the picture, its size, the veil's depth, the
-    // wash's place on the scrolling page when there is no picture, the fixed veils and, under them, the lit panels'
-    // light, which it draws there (the glass draws it everywhere else).
+    // wash's place on the scrolling page when there is no picture, and the fixed veils. It never redraws for a light:
+    // the glass draws the light that falls under the fixed veils, veiled as they veil it.
     const veils = scene.veils.filter(veil => veil.fixed);
     const reaching = scene.panels.filter(panel => panel.light !== undefined && veils.some(veil => {
       const {x, y} = panel.light?.lamp ?? {x: 0, y: 0}, dx = Math.max(veil.rect.x - x, 0, x - veil.rect.x - veil.rect.width), dy = Math.max(veil.rect.y - y, 0, y - veil.rect.y - veil.rect.height);
       return Math.hypot(dx, dy) < SPILL_REACH;
     }));
-    const fixed: GlassScene = {panels: reaching, veils, thumb: null}, glowing = lightsOf(fixed, clock.lights, tokens) !== '', backDpr = dprOf(width, height);
+    const fixed: GlassScene = {panels: [], veils, thumb: null}, glowing = lightsOf({...fixed, panels: reaching}, clock.lights, tokens) !== '', backDpr = dprOf(width, height);
     if (backing(back, width, height, backDpr)) drawBack = true;
     // The wash's length follows the page whenever a frame is drawn, but a page that only grows draws none for it.
-    const nextBack = [id, depth.toFixed(4), picture === null ? `${scroll.scrollLeft.toFixed(1)},${scroll.scrollTop.toFixed(1)},${String(scroll.clientWidth)}` : '', veilsOf(fixed),
-      lightsOf(fixed, clock.lights, tokens)].join('/');
+    const nextBack = [id, depth.toFixed(4), picture === null ? `${scrollLeft.toFixed(1)},${scrollTop.toFixed(1)},${String(scroll.clientWidth)}` : '', veilsOf(fixed)].join('/');
     if (nextBack !== backKey) drawBack = true;
     // The glass is redrawn when what it shows changes in its own coordinates; with a picture also while the page
     // scrolls, since the glass shows the artwork, which stays with the window, and with a light whose spill reaches a
-    // fixed veil, since it leaves out that light under the veil, which stays with the window too.
+    // fixed veil, since the glass veils that light under the veil, which stays with the window too. It is also redrawn
+    // when a fixed veil changes, such as the phone's drawer closing, since it veils what it draws under them.
     const scrolls = (scene_: GlassScene): GlassScene => ({...scene_, veils: scene_.veils.filter(veil => !veil.fixed)});
     const read = scene;
     const glassAt = (box: DOMRect, size: Placement): {where: Placement; local: GlassScene; shown: GlassScene; key: string; stale: boolean} => {
@@ -262,14 +268,18 @@ function startGlass(canvas: HTMLCanvasElement, back: HTMLCanvasElement, root: HT
       // that grows below the window (into the canvas's margin) draws no frame (#1950); the margin is drawn again when
       // the page scrolls there.
       const stale = glassDrawn === undefined || !sameScene(visibleScene(moveScene(scrolls(glassDrawn), where.x, where.y), {width, height}), visibleScene(moveScene(scrolls(local), where.x, where.y), {width, height}));
-      const key = [id, depth.toFixed(4), picture === null && !glowing ? '' : `${where.x.toFixed(2)},${where.y.toFixed(2)}`, `${String(-scroll.scrollLeft - where.x)},${String(-scroll.scrollTop - where.y)},${String(scroll.clientWidth)}`].join('/');
+      const key = [id, depth.toFixed(4), picture === null && !glowing ? '' : `${where.x.toFixed(2)},${where.y.toFixed(2)}`, veilsOf(fixed), `${String(-scrollLeft - where.x)},${String(-scrollTop - where.y)},${String(scroll.clientWidth)}`].join('/');
       // The boxes as far as the canvas paints them, for checks: a card past its edge has no glass there.
       return {where, local, shown: visibleScene(local, {width: where.width, height: where.height}, 0), key, stale};
     };
     let glass = glassAt(at, placed);
     if (glass.stale || glass.key !== glassKey) drawGlass = true;
-    // A glass that is redrawn anyway is centred on the window again, which costs no frame of its own.
-    if ((drawGlass || appearing) && Math.abs(at.top - Math.round(Math.min(Math.max(-OVERSCAN, top), bottom - tall))) > 16) {placed = place(tall, top, bottom);glass = glassAt(canvas.getBoundingClientRect(), placed);}
+    // A glass that is redrawn anyway is centred on the window again, which costs no frame of its own. The document is
+    // measured again first: placing the canvas earlier in this frame can shorten the page and so move the scroll.
+    if (drawGlass || appearing) {
+      const now_ = extent(height), box = canvas.getBoundingClientRect();
+      if (Math.abs(box.top - Math.round(Math.min(Math.max(-OVERSCAN, now_.top), now_.bottom - now_.tall))) > 16) {placed = place(now_.tall, now_.top, now_.bottom);glass = glassAt(canvas.getBoundingClientRect(), placed);}
+    }
     const {where, local, shown} = glass, nextGlass = glass.key, glassDpr = dprOf(where.width, where.height);
     if (backing(canvas, where.width, where.height, glassDpr)) drawGlass = true;
 
@@ -278,13 +288,13 @@ function startGlass(canvas: HTMLCanvasElement, back: HTMLCanvasElement, root: HT
     const common = {tokens, appear, depth, merge, window: [width, height] as const, clock: now / 1000 % 1000};
     if (drawBack) {
       backKey = nextBack;
-      backRenderer.draw({...common, layer: 'backdrop', scene: fixed, width, height, dpr: backDpr, view: [0, 0], thumb: null, lights: clock.lights, liquid: wobs,
-        washBox: [-scroll.scrollLeft, -scroll.scrollTop, scroll.clientWidth, page]});
+      backRenderer.draw({...common, layer: 'backdrop', scene: fixed, width, height, dpr: backDpr, view: [0, 0], thumb: null, lights: new Map(), liquid: new Map(),
+        washBox: [-scrollLeft, -scrollTop, scroll.clientWidth, page]});
     }
     if (drawGlass || appearing) {
       glassKey = nextGlass;glassDrawn = local;replaced = false;
       renderer.draw({...common, layer: 'glass', scene: local, width: where.width, height: where.height, dpr: glassDpr, view: [where.x, where.y], thumb: thumb === null ? null : moveThumb(thumb, origin.left - where.x, origin.top - where.y),
-        lights, liquid: wobs, ...(target === undefined ? {} : {target}), washBox: [-scroll.scrollLeft - where.x, -scroll.scrollTop - where.y, scroll.clientWidth, page]});
+        lights, liquid: wobs, ...(target === undefined ? {} : {target}), washBox: [-scrollLeft - where.x, -scrollTop - where.y, scroll.clientWidth, page]});
       // The boxes this frame drew, in the glass canvas's coordinates and as far as they can be seen there, for checks:
       // the boxes last read are in glassBoxes, in the window's.
       canvas.dataset['glassDrawn'] = boxesOf(shown);
