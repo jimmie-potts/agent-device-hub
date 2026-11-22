@@ -29,9 +29,9 @@ void test('the section accepts the synthetic default and a keyed hosted provider
   const key = {[API_KEY_SECRET]: '/run/secrets/bunny/k'}, opus = PRICES['claude-opus-5-5'];
   // Prices are optional (Hub #2024 review): a section without them, or without the hosted model's entry, still starts the
   // module, and the engine refuses that model's paid turns and calls.
-  assert.deepEqual(configured({assistant: {provider: 'anthropic'}, secrets: key}), {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', tools: [], prices: {}}});
+  assert.deepEqual(configured({assistant: {provider: 'anthropic'}, secrets: key}), {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: [], prices: {}}});
   assert.deepEqual(configured({assistant: {provider: 'anthropic', prices: {'claude-sonnet-5-5': PRICES['claude-sonnet-5-5']}}, secrets: key}),
-    {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', tools: [], prices: {'claude-sonnet-5-5': PRICES['claude-sonnet-5-5']}}});
+    {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: [], prices: {'claude-sonnet-5-5': PRICES['claude-sonnet-5-5']}}});
   for (const section of [
     [], {other: true}, {assistant: null}, {assistant: {provider: 'openai'}}, {assistant: {provider: 'anthropic'}}, {assistant: {provider: 'anthropic'}, secrets: {}},
     {assistant: {tools: ['ask_owner']}}, {assistant: {tools: ['read_fixture']}}, {assistant: {tools: ['set_mode', 'set_mode']}}, {assistant: {tools: 'set_mode'}},
