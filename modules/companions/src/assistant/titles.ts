@@ -45,8 +45,8 @@ export const TITLE_RECENT_MESSAGES = 8;
 export const TITLE_REFRESH_TURN = 3;
 /** How long a title call may take before it is abandoned as uncertain. */
 export const TITLE_DEADLINE_MS = 30_000;
-/** A title whose description shares this many consecutive words with a prompt message is an echo of it. */
-export const ECHO_RUN_WORDS = 5;
+/** A title whose description shares this many consecutive words with an owner message or a hand-off brief is an echo of it. */
+export const ECHO_RUN_WORDS = 6;
 /** The bound on the raw answer a title call record keeps, in UTF-8 bytes. */
 export const TITLE_ANSWER_BYTES = 1024;
 /** The cap on one title answer's thinking and text, in tokens. */
@@ -182,24 +182,29 @@ function runs(tokens: readonly string[]): string[] {
   return found;
 }
 /**
- * A generated title, or undefined when the answer is no title or repeats a message the prompt carried, so raw
- * conversation text is never published as a title. Two rules, over every owner and assistant message and each coding
- * hand-off's brief without its fixed wrapper:
- * - the whole normalized answer, or the title, also with the prompt's entity escapes undone, may not equal a message
- *   (ignoring case, spacing, surrounding quotes and trailing punctuation), which catches a short echo;
- * - the description after any issue reference, whole or as the title keeps it, may not share a run of
- *   `ECHO_RUN_WORDS` consecutive words with a message, which catches a longer echo wherever its reference was.
- * Verbatim text only: a paraphrase or a reordered or reworded message passes, a shorter shared run passes, and an owner
- * message that is exactly the right title is refused.
+ * A generated title, or undefined when the answer is no title or repeats text the prompt carried, so raw conversation
+ * text is never published as a title. The answer is read whole and as its title, also with the prompt's entity escapes
+ * undone, and compared ignoring case, spacing, surrounding quotes and trailing punctuation:
+ * - with every message: an answer equal to one is refused, which catches a short echo;
+ * - with each owner message and coding hand-off brief (its fixed wrapper stripped): the description after any issue
+ *   reference, whole or as the title keeps it, may not share a run of `ECHO_RUN_WORDS` consecutive words with it, which
+ *   catches a longer echo wherever the text named its issue;
+ * - with each other assistant reply: an answer long enough to be cut may not appear inside it. Replies naturally reuse
+ *   the topic's words, so they get no word-run check.
+ * Verbatim text only: a paraphrase, a reordered or reworded message or a shorter shared run passes, an echo of a reply
+ * behind a new issue reference passes, and an owner message that is exactly the right title is refused.
  */
-export function generatedTitle(response: string | null, messages: readonly string[]): string | undefined {
+export function generatedTitle(response: string | null, messages: readonly TitleMessage[]): string | undefined {
   const parts = response === null ? undefined : titleParts(response);
   if (parts === undefined) return undefined;
-  const texts = messages.flatMap(text => [text, text.replace(HANDED_OFF, '')]);
-  const answers = new Set([parts.title, parts.full, unescaped(parts.title), unescaped(parts.full)].map(comparable));
-  if (texts.some(text => answers.has(comparable(text)))) return undefined;
-  const said = new Set(texts.flatMap(text => runs(words(text))));
-  const echoes = [parts.description, parts.kept].some(description => runs(words(description)).some(run => said.has(run)));
+  const answers = [...new Set([parts.title, parts.full, unescaped(parts.title), unescaped(parts.full)].map(comparable))];
+  const briefs = messages.filter(message => message.role === 'assistant' && HANDED_OFF.test(message.text)).map(message => message.text.replace(HANDED_OFF, ''));
+  const said = [...messages.filter(message => message.role === 'owner').map(message => message.text), ...briefs];
+  const replies = messages.filter(message => message.role === 'assistant' && !HANDED_OFF.test(message.text)).map(message => comparable(message.text));
+  if ([...messages.map(message => message.text), ...briefs].some(text => answers.includes(comparable(text)))) return undefined;
+  if (parts.cut && replies.some(reply => answers.some(answer => reply.includes(answer)))) return undefined;
+  const runsSaid = new Set(said.flatMap(text => runs(words(text))));
+  const echoes = [parts.description, parts.kept].some(description => runs(words(description)).some(run => runsSaid.has(run)));
   return echoes ? undefined : parts.title;
 }
 /** The owner's title with its whitespace collapsed, or undefined when it is not session display text of at most 80 characters. */
@@ -393,7 +398,7 @@ export class ConversationTitles {
   async #generate(conversationId: string, profile: AssistantProfile, controller: AbortController): Promise<void> {
     const provider = this.deps.provider(profile);
     if (provider === undefined) return;
-    let call: TitleCall | undefined, prompt: string | undefined, texts: string[] = [];
+    let call: TitleCall | undefined, prompt: string | undefined, said: TitleMessage[] = [];
     await this.deps.outbox.transaction(() => {
       const record = this.record(conversationId) ?? this.#fresh();
       if (record.title?.source === 'owner' || controller.signal.aborted) return;
@@ -401,7 +406,7 @@ export class ConversationTitles {
       prompt = titlePrompt(messages);
       if (prompt === undefined) return;
       // The echo guard compares the answer with every message the prompt carried, the owner's and the assistant's.
-      texts = messages.map(message => message.text);
+      said = messages;
       const admitted: TitleCall = {version: 1, id: randomUUID(), conversationId, provider: provider.name, model: provider.model, generation: record.generation,
         startedAtMs: this.deps.now(), endedAtMs: null, status: 'admitted', outcome: null, usage: null, maxTokens: TITLE_MAX_TOKENS};
       // A paid call reserves its most expensive cost with its receipt, as a conversation-level call; the synthetic one is free.
@@ -444,7 +449,7 @@ export class ConversationTitles {
       // The model's own answer, bounded, so an invalid or refused outcome can be diagnosed from the private record; it
       // reaches no log, trace, diagnostic or published record (ADR 0011 allows private retention).
       saved.answer = reply.text === null ? null : within(reply.text, TITLE_ANSWER_BYTES, false);
-      const record = this.record(conversationId) ?? this.#fresh(), title = generatedTitle(reply.text, texts);
+      const record = this.record(conversationId) ?? this.#fresh(), title = generatedTitle(reply.text, said);
       if (record.generation !== saved.generation || record.title?.source === 'owner') saved.outcome = 'dropped';
       else if (title === undefined) saved.outcome = 'invalid';
       else if (record.title?.value === title) saved.outcome = 'unchanged';

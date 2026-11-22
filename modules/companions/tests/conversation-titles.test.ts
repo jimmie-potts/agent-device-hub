@@ -18,7 +18,7 @@ import {ANTHROPIC_URL, ANTHROPIC_VERSION, type Transport} from '../src/assistant
 import {ProviderFault, type ModelProvider, type TurnReply} from '../src/assistant/provider.js';
 import {
   AnthropicTitleProvider, ConversationTitles, ECHO_RUN_WORDS, SyntheticTitleProvider, DEFAULT_TITLE_MODEL, generatedTitle, normalizeTitle, ownerTitle, SESSION_AGE_MS, SYNTHETIC_TITLE, TITLE_DEADLINE_MS,
-  TITLE_INSTRUCTIONS, TITLE_MAX_TOKENS, TITLE_PROMPT_BYTES, titlePrompt, type TitleProvider, type TitleReply,
+  TITLE_INSTRUCTIONS, TITLE_MAX_TOKENS, TITLE_PROMPT_BYTES, titlePrompt, type TitleMessage, type TitleProvider, type TitleReply,
 } from '../src/assistant/titles.js';
 
 void test('normalization keeps one plain title: the issue reference, then at most 40 characters of description', () => {
@@ -44,47 +44,53 @@ void test('normalization keeps one plain title: the issue reference, then at mos
   assert.equal(normalizeTitle(`${'x'.repeat(39)} words`), 'x'.repeat(39), 'a cut word goes');
 });
 
-void test('a generated title never repeats a message the prompt carried, whole or as its cut start, and the owner\'s title is bounded display text', () => {
-  assert.equal(generatedTitle('Turn on the lamp.', ['turn on   the lamp']), undefined, 'raw prompt text is not a title');
-  assert.equal(generatedTitle('Lamp control', ['turn on the lamp']), 'Lamp control');
+void test('a generated title never repeats text the prompt carried, and the owner\'s title is bounded display text', () => {
+  const owner = (...texts: string[]): TitleMessage[] => texts.map(text => ({role: 'owner', text}));
+  const assistant = (text: string): TitleMessage => ({role: 'assistant', text});
+  const handOff = (brief: string): TitleMessage => assistant(`Delegated to the coding worker in agent-device-hub: ${brief}`);
+  assert.equal(ECHO_RUN_WORDS, 6);
+  assert.equal(generatedTitle('Turn on the lamp.', owner('turn on   the lamp')), undefined, 'raw prompt text is not a title');
+  assert.equal(generatedTitle('Lamp control', owner('turn on the lamp')), 'Lamp control');
   assert.equal(generatedTitle(null, []), undefined);
-  // A long owner message repeated whole is compared before the description is cut, so its 40-character cut is no title either.
+  // A long owner message repeated whole, with quotes and punctuation, or its start, or an excerpt from its middle.
   const long = 'Please check why the kitchen lamp schedule skipped this morning and fix the timer';
-  assert.equal(generatedTitle(long, [long]), undefined, 'a long owner message repeated whole');
-  assert.equal(generatedTitle(`"${long}."`, [long]), undefined, 'with quotes and punctuation');
-  // An answer that repeats only the start of a message is cut to a title that is that message's start.
-  assert.equal(generatedTitle('Please check why the kitchen lamp schedule skipped', [long]), undefined, 'a cut title that is a message\'s start');
-  assert.equal(generatedTitle('agent-device-hub#12 Please check why the kitchen lamp schedule skipped', [`#12 ${long}`]), undefined, 'with the reference written either way');
-  // The assistant's own messages are prompt text too.
-  assert.equal(generatedTitle('Synthetic answer about the lamp', ['Lamp please', 'Synthetic answer about the lamp.']), undefined, 'an assistant message repeated');
-  // A long verbatim excerpt from the middle of a message is an echo too.
-  assert.equal(generatedTitle('why the kitchen lamp schedule skipped this morning', [long]), undefined, 'a mid-message owner excerpt');
-  // A coding hand-off is saved with a fixed wrapper; the brief repeated on its own is an echo, long or short.
+  assert.equal(generatedTitle(long, owner(long)), undefined, 'a long owner message repeated whole');
+  assert.equal(generatedTitle(`"${long}."`, owner(long)), undefined, 'with quotes and punctuation');
+  assert.equal(generatedTitle('Please check why the kitchen lamp schedule skipped', owner(long)), undefined, 'a message\'s start');
+  assert.equal(generatedTitle('agent-device-hub#12 Please check why the kitchen lamp schedule skipped', owner(`#12 ${long}`)), undefined, 'with the reference written either way');
+  assert.equal(generatedTitle('why the kitchen lamp schedule skipped this morning', owner(long)), undefined, 'a mid-message owner excerpt');
+  // The assistant's replies: an equal answer, or a cut answer inside one.
+  assert.equal(generatedTitle('Synthetic answer about the lamp', [...owner('Lamp please'), assistant('Synthetic answer about the lamp.')]), undefined, 'an assistant reply repeated');
+  assert.equal(generatedTitle('The kitchen lamp schedule skipped because the timer', [assistant('I looked: the kitchen lamp schedule skipped because the timer was off.')]), undefined,
+    'a cut answer inside a reply');
+  // A coding hand-off is saved with a fixed wrapper; its brief repeated on its own is an echo, long or short.
   const brief = 'Fix the flaky timer test from the kitchen lamp schedule module';
-  assert.equal(generatedTitle(brief, [`Delegated to the coding worker in agent-device-hub: ${brief}`]), undefined, 'a long brief echoed');
-  assert.equal(generatedTitle('Fix the timer test', ['Delegated to the coding worker in agent-device-hub: Fix the timer test.']), undefined, 'a short brief echoed');
+  assert.equal(generatedTitle(brief, [handOff(brief)]), undefined, 'a long brief echoed');
+  assert.equal(generatedTitle('Fix the timer test', [handOff('Fix the timer test.')]), undefined, 'a short brief echoed');
   // The prompt escapes markup; an answer copied in escaped form is the same text.
-  assert.equal(generatedTitle('Fix &lt;b&gt;lamp&lt;/b&gt; &amp; timer', ['Fix <b>lamp</b> & timer']), undefined, 'an entity-escaped echo');
-  assert.equal(generatedTitle('Check why &lt;kitchen&gt; lamp schedule skipped this morning', [`Please check why <kitchen> lamp schedule skipped this morning and more`]), undefined,
+  assert.equal(generatedTitle('Fix &lt;b&gt;lamp&lt;/b&gt; &amp; timer', owner('Fix <b>lamp</b> & timer')), undefined, 'an entity-escaped echo');
+  assert.equal(generatedTitle('Check why &lt;kitchen&gt; lamp schedule skipped this morning', owner('Please check why <kitchen> lamp schedule skipped this morning and more')), undefined,
     'an entity-escaped mid-message excerpt');
-  assert.equal(generatedTitle('Kitchen lamp schedule', [long]), 'Kitchen lamp schedule', 'a summary is a title');
-  assert.equal(generatedTitle('#2041 Flaky timer test in the lamp scheduler code paths', [brief, long]), '#2041 Flaky timer test in the lamp scheduler',
-    'a long summary that shares fewer than five consecutive words with any message is a title');
-  // The shape the instruction asks for: an issue reference, then verbatim text from wherever the reference was.
-  const handOff = 'Delegated to the coding worker in agent-device-hub: Fix the stale session title shown on the hallway Tidbyt after a rename (#2025).';
-  assert.equal(generatedTitle('#2025 Fix the stale session title shown on the hallway Tidbyt after a rename', [handOff]), undefined, '#N and a hand-off brief');
+  // The shape the instruction asks for: an issue reference, then six or more words verbatim from wherever the reference was.
+  const titleBrief = 'Fix the stale session title shown on the hallway Tidbyt after a rename (#2025).';
+  assert.equal(generatedTitle('#2025 Fix the stale session title shown on the hallway Tidbyt after a rename', [handOff(titleBrief)]), undefined, '#N and a hand-off brief');
   const night = 'My brother keeps waking me up at 3am every single night, see #1896';
-  assert.equal(generatedTitle('#1896 My brother keeps waking me up at 3am', [night]), undefined, '#N and an owner excerpt');
-  assert.equal(generatedTitle('pixoo#14 The boot channel resets to the cloud clock face', ['After a power cut the boot channel resets to the cloud clock face again (pixoo#14).']), undefined,
+  assert.equal(generatedTitle('#1896 My brother keeps waking me up at 3am', owner(night)), undefined, '#N and an owner excerpt');
+  assert.equal(generatedTitle('pixoo#14 The boot channel resets to the cloud clock face', owner('After a power cut the boot channel resets to the cloud clock face again (pixoo#14).')), undefined,
     'repo#N and an excerpt');
-  assert.equal(ECHO_RUN_WORDS, 5);
-  // Reordered or reworded titles are kept, whatever the conversation says.
-  const conversation = [night, handOff, long, brief, 'Where does session tracking stand for #1896? The native session titles are not published yet, and Tidbyt shows a stale title after a rename.',
-    'Pixoo boots to the cloud face after a power cut, see pixoo#14.'];
-  for (const title of ['#1896 Session tracking status', '#2025 Stale title after rename', 'pixoo#14 Boot channel', '#1896 Native session title publication and', 'Kitchen lamp schedule']) {
-    assert.equal(generatedTitle(title, conversation), title, title);
+  // Kept: summaries, reordered or reworded titles, a reply's topic words, and fewer than six shared words with an owner message.
+  const replyText = 'Session tracking for native conversations is in progress: the native session titles are not published yet, and Tidbyt shows a stale title after a rename.';
+  const conversation: TitleMessage[] = [...owner(night, long, 'Where does session tracking stand for #1896?', 'Pixoo boots to the cloud face after a power cut, see pixoo#14.'),
+    handOff(titleBrief), handOff(brief), assistant(replyText)];
+  for (const title of ['#1896 Session tracking for native conversations on dashboard', '#1896 Session tracking status', '#2025 Stale title after rename', 'pixoo#14 Boot channel',
+    '#1896 Native session title publication and', 'Kitchen lamp schedule']) {
+    assert.equal(generatedTitle(title, conversation), normalizeTitle(title), title);
   }
-  assert.equal(generatedTitle('Please check why', [long]), 'Please check why', 'an uncut title may share a message\'s first words');
+  assert.equal(generatedTitle('#7 Check the kitchen lamp schedule again', owner('Please check the kitchen lamp schedule for tonight')), '#7 Check the kitchen lamp schedule again',
+    'five shared words with an owner message');
+  assert.equal(generatedTitle('#2041 Flaky timer test in the lamp scheduler code paths', [...owner(long), handOff(brief)]), '#2041 Flaky timer test in the lamp scheduler',
+    'a long summary that shares fewer than six consecutive words');
+  assert.equal(generatedTitle('Please check why', owner(long)), 'Please check why', 'an uncut title may share a message\'s first words');
   assert.equal(ownerTitle('  My   kitchen  chat '), 'My kitchen chat');
   assert.equal(ownerTitle('🐰'.repeat(80)), '🐰'.repeat(80));
   for (const bad of ['🐰'.repeat(81), '   ', 'token=synthetic-secret', 'two\u0007bells']) assert.equal(ownerTitle(bad), undefined, JSON.stringify(bad));

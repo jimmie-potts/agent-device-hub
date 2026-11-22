@@ -729,17 +729,23 @@ persona names until the owner renames them. When a profile gets a real model
   characters at a word boundary. Quotes, markdown, a `Title:` label and
   trailing punctuation are removed. An answer that is empty, a placeholder such
   as `Title`, or not session display text (a control character or a
-  recognizable credential) is no title. So is an echo of the prompt's owner
-  and assistant messages, including a coding hand-off's brief without its
-  fixed wrapper. Two rules apply, with the prompt's `&lt;`, `&gt;` and `&amp;`
-  escapes undone. An answer equal to a message, ignoring case, spacing,
-  surrounding quotes and trailing punctuation, is refused. The description
-  after any issue reference, whole or as the title keeps it, is refused when it
-  shares a run of 5 consecutive words (`ECHO_RUN_WORDS`) with a message,
-  wherever the message names its issue. The guard catches verbatim text only:
-  a paraphrase, a reordered or reworded message or a shorter shared run is not
-  detected, and an owner message that is already exactly the right title is
-  refused. A failed, refused or invalid first
+  recognizable credential) is no title. So is an echo of the prompt. The
+  answer and its title are compared with the prompt's `&lt;`, `&gt;` and
+  `&amp;` escapes undone, ignoring case, spacing, surrounding quotes and
+  trailing punctuation:
+  - An answer equal to any message, or to a coding hand-off's brief without
+    its fixed wrapper, is refused.
+  - Against your messages and hand-off briefs, the description after any
+    issue reference may not share a run of 6 consecutive words
+    (`ECHO_RUN_WORDS`), wherever the message named its issue.
+  - Against B.U.N.N.Y.'s other replies, which naturally reuse the topic's
+    words, only an answer long enough to be cut that appears inside a reply is
+    refused.
+
+  The guard catches verbatim text only. A paraphrase, a reordered or reworded
+  message, a shorter shared run, or a reply's words behind a new issue
+  reference is not detected, and a message of yours that is already exactly
+  the right title is refused. A failed, refused or invalid first
   title leaves the persona name; a failed refresh keeps the earlier title.
   Nothing is retried.
 - **Where it goes.** The conversation's recent messages go to Anthropic's
