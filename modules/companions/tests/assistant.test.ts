@@ -1258,9 +1258,9 @@ void test('the closing reply explains an oversized tool result', async context =
 });
 
 void test('the closing reply explains an oversized graph checkpoint', async context => {
-  const put = SqliteCheckpointSaver.prototype.put;
-  context.mock.method(SqliteCheckpointSaver.prototype, 'put', function (this: SqliteCheckpointSaver, ...args: Parameters<typeof put>) {
-    return put.call(this, args[0], {...args[1], channel_values: {...args[1].channel_values, fixture: 'x'.repeat(33 * 1024)}}, args[2], args[3]);
+  context.mock.method(SqliteCheckpointSaver.prototype, 'put', function (this: SqliteCheckpointSaver, ...args: Parameters<SqliteCheckpointSaver['put']>) {
+    context.mock.restoreAll();
+    return this.put(args[0], {...args[1], channel_values: {...args[1].channel_values, fixture: 'x'.repeat(33 * 1024)}}, args[2], args[3]);
   });
   const w = await world(context);
   await control(w.core, w.module(), 'enable');
