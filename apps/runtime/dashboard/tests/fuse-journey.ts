@@ -306,19 +306,24 @@ export async function fuseJourney(browser: Browser, world: World): Promise<Recor
     const below = await card(small, plug('shelf-lamp')).boundingBox();assert.ok(below !== null && below.y > 844, 'the target starts below the fold');
     const cdp = await pocket.newCDPSession(small);
     await cdp.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [grip]});
-    // The finger stops 34 px above the bottom, in the 56 px edge zone, and is held still: the page scrolls under it.
-    for (let step = 1; step <= 6; step += 1) await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: grip.x, y: grip.y + (810 - grip.y) * step / 6}]});
-    // Once the plug is in view the finger moves onto it, as a person's does, which leaves the edge zone and stops the
-    // scroll. The page scrolls on between a read and a move, more on a slow runner, so the finger follows the plug until
-    // it is the target with the finger outside both edge zones; a plug that went past the top is brought back by the top
-    // edge (#2017). No move comes before the plug, which started below the fold, is in view.
-    let held = true;
+    // The finger stops 14 px above the bottom, in the 56 px edge zone, and is held still: the page scrolls under it until
+    // the plug, which started below the fold, is in view. The page checks every frame, so the wait ends on the frame it
+    // comes into view, not up to a poll interval and a round trip later (#2017).
+    for (let step = 1; step <= 6; step += 1) await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: grip.x, y: grip.y + (830 - grip.y) * step / 6}]});
+    await small.waitForFunction(selector => {
+      const box = document.querySelector(selector)?.getBoundingClientRect();return box !== undefined && box.top + box.height / 2 < 700;
+    }, `[data-home-card="${plug('shelf-lamp')}"]`, {polling: 'raf', timeout: 20_000});
+    // Then the finger leaves the edge zone at once, which stops the scroll, and moves onto the plug, as a person's does.
+    // The page can scroll on by a frame or two before the first move lands, more on a slow runner, so the finger follows
+    // the plug until it is the target with the finger outside both edge zones; a plug that went past the top is brought
+    // back by the top edge.
+    await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: grip.x, y: 422}]});
     await expect.poll(async () => {
       const shelf = await center(card(small, plug('shelf-lamp')));
-      if (held && shelf.y >= 700) return 'below the fold';
-      held = false;
-      await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: shelf.x, y: Math.min(810, Math.max(20, shelf.y))}]});
-      return shelf.y > 56 && shelf.y < 844 - 56 ? card(small, plug('shelf-lamp')).getAttribute('data-fuse-target') : 'scrolling';
+      await cdp.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [{x: shelf.x, y: Math.min(830, Math.max(20, shelf.y))}]});
+      if (shelf.y <= 56 || shelf.y >= 844 - 56) return 'scrolling';
+      if (await card(small, plug('shelf-lamp')).getAttribute('data-fuse-target') === '') return '';
+      return `not the target (finger at ${String(Math.round(shelf.y))}, ${await card(small, light('lamp-c')).getAttribute('data-fuse-dragging') === '' ? 'still' : 'no longer'} dragging)`;
     }, {timeout: 20_000, intervals: [100]}).toBe('');
     await cdp.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
     const pair = await groupOf(small, ['shelf-lamp', 'lamp-c']);
