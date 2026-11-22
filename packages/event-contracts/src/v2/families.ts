@@ -117,6 +117,7 @@ export type Session30Record = {
  */
 export type Session31Record = Session30Record;
 export type LifecycleEvent =
+  /** Display metadata only: Codex Desktop's archived state or title, and from `lifecycle/2.3` a native conversation's title (Hub #2025). */
   | {kind: 'metadata-observed'; archived?: boolean}
   | {kind: 'session-started' | 'turn-started' | 'activity-observed' | 'turn-ended' | 'turn-interrupted' | 'runtime-ended'}
   /**
@@ -489,6 +490,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   }),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle, '2.2'),
+  define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle, '2.3'),
   define('desktop-metadata', 'occurrence', 'org.bunny.desktop-metadata.observed', checkDesktopMetadata),
   define('volcano-observation', 'occurrence', 'org.bunny.volcano-observation.observed', checkVolcanoObservation),
   define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised),

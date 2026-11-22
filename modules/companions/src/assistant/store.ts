@@ -108,9 +108,14 @@ export class AssistantStore {
   unfinished(): Task | undefined {return parsed<Task>(this.database.prepare("SELECT record FROM assistant_tasks WHERE status NOT IN ('succeeded','failed','cancelled') LIMIT 1").get() as RecordRow | undefined);}
   save(task: Task): void {this.database.prepare('INSERT INTO assistant_tasks(id,profile,status,record) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,record=excluded.record').run(task.id, task.profile, task.status, JSON.stringify(task));}
   conversation(profile: AssistantProfile): string | undefined {return (this.database.prepare('SELECT id FROM assistant_conversations WHERE profile=?').get(profile) as {id: string} | undefined)?.id;}
-  newTask(profile: AssistantProfile, prompt: string): Task {
+  /** The profile's conversation ID, saved on first use: a task or a rename (Hub #2025) opens it. */
+  ensureConversation(profile: AssistantProfile): string {
     const conversationId = this.conversation(profile) ?? randomUUID();
     this.database.prepare('INSERT OR IGNORE INTO assistant_conversations VALUES (?,?)').run(profile, conversationId);
+    return conversationId;
+  }
+  newTask(profile: AssistantProfile, prompt: string): Task {
+    const conversationId = this.ensureConversation(profile);
     return {version: 1, graphVersion: GRAPH_VERSION, tracksApprovals: true, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
       generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null,
       transcript: [{role: 'owner', text: prompt}]};
@@ -130,6 +135,15 @@ export class AssistantStore {
   }
   hasArtReply(taskId: string): boolean {
     return this.database.prepare('SELECT 1 FROM assistant_art_attachments WHERE message_id=?').get(`${taskId}-artwork`) !== undefined;
+  }
+  /**
+   * The conversation's latest saved owner and assistant messages, oldest first: what a title prompt may read (Hub #2025).
+   * A failed turn's closing reply (Hub #2042) is the engine's own status text about the turn, not what the conversation is
+   * about, so it is left out and can never become a title.
+   */
+  titleMessages(conversationId: string, limit = 8): {role: 'owner' | 'assistant'; text: string}[] {
+    return (this.database.prepare("SELECT role,text FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' ORDER BY seq DESC LIMIT ?")
+      .all(conversationId, limit) as {role: 'owner' | 'assistant'; text: string}[]).reverse();
   }
   /** One saved message of the task, by its id, for the owner to hear again (Hub #500). */
   savedMessage(taskId: string, id: string): Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined {

@@ -1,0 +1,345 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/lifecycle/2.3",
+  "description": "Version 2.3 (Hub #2025): 2.2 with `metadata-observed` from the native assistant source, which carries a conversation's title and no archived state, so a title change reaches the session without other activity. Only the native producer may send 2.3 (the core binds it). As 2.2: Version 2.2 (Hub #505): 2.0 with session/3.1's identity, which names the native assistant source, and three common inputs: `turn-waiting`, the turn's work stopped to wait for an answer or delegated work, with no notice; `turn-uncertain`, the turn's work stopped and the fate of its last effect is unknown; and an optional `result` on `turn-ended`. Today only the native producer may send 2.2 (the core binds it); hooks keep 2.0. As 2.0: Occurrence: one agent hook observation or trusted Codex Desktop metadata input for the core, the 2.0 form of the lifecycle 1.x envelope (Hub #842). It keeps every 1.x field except the acknowledgment, which a consumer now sends as the `notice-acknowledge` command (Hub #918); event kinds are kebab-case. Hub #990 adds metadata-observed with optional archived and existing title fields, at least one required, without a 1.x equivalent or synthetic lifecycle evidence. The validator also refuses cross-source parentage, a self parent and ordering under another authority (families.ts).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "identity",
+    "turn",
+    "parent",
+    "event",
+    "observedAtMs",
+    "ordering"
+  ],
+  "properties": {
+    "identity": {
+      "$ref": "https://bunny.invalid/events/session/3.1#/$defs/identity"
+    },
+    "turn": {
+      "$ref": "https://bunny.invalid/events/session/3.1#/$defs/knownId"
+    },
+    "parent": {
+      "$ref": "https://bunny.invalid/events/session/3.1#/$defs/parent"
+    },
+    "nativeEventId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+    },
+    "event": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "session-started",
+                "turn-started",
+                "activity-observed",
+                "turn-ended",
+                "turn-interrupted",
+                "runtime-ended",
+                "turn-waiting",
+                "turn-uncertain"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "result"
+          ],
+          "properties": {
+            "kind": {
+              "const": "turn-ended"
+            },
+            "result": {
+              "$ref": "https://bunny.invalid/events/session/3.1#/$defs/result"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "attention"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "question-continuing",
+                "attention-input",
+                "attention-approval",
+                "attention-resolved"
+              ]
+            },
+            "attention": {
+              "$ref": "https://bunny.invalid/events/session/3.1#/$defs/knownId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "state"
+          ],
+          "properties": {
+            "kind": {
+              "const": "read-observed"
+            },
+            "state": {
+              "enum": [
+                "read",
+                "unread"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "dimension",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "const": "evidence-unavailable"
+            },
+            "dimension": {
+              "$ref": "https://bunny.invalid/events/session/3.1#/$defs/unavailable/properties/dimension"
+            },
+            "reason": {
+              "$ref": "https://bunny.invalid/events/session/3.1#/$defs/unavailable/properties/reason"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "metadata-observed"
+            },
+            "archived": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "observedAtMs": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+    },
+    "occurredAtMs": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/instantMs"
+    },
+    "ordering": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/ordering"
+    },
+    "projectId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+    },
+    "label": {
+      "$ref": "https://bunny.invalid/events/session/3.1#/$defs/label"
+    },
+    "title": {
+      "$ref": "https://bunny.invalid/events/session/3.1#/$defs/title"
+    },
+    "project": {
+      "$ref": "https://bunny.invalid/events/session/3.1#/$defs/project"
+    },
+    "hostSessionId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/id"
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "https://bunny.invalid/events/session/3.1#/$defs/hostSessionOnlyAtRoot"
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "read-observed"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "identity": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "const": "codex"
+              },
+              "client": {
+                "const": "desktop"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "metadata-observed"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "event": {
+                "type": "object",
+                "required": [
+                  "archived"
+                ],
+                "properties": {
+                  "archived": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "required": [
+              "title"
+            ],
+            "properties": {
+              "title": {
+                "$ref": "https://bunny.invalid/events/session/3.1#/$defs/title"
+              }
+            }
+          }
+        ],
+        "properties": {
+          "identity": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "const": "codex"
+                  },
+                  "client": {
+                    "const": "desktop"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "const": "bunny"
+                  },
+                  "client": {
+                    "const": "assistant"
+                  }
+                }
+              }
+            ]
+          },
+          "turn": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "unknown"
+              }
+            }
+          },
+          "ordering": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "const": "unknown"
+              }
+            }
+          },
+          "parent": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "enum": [
+                  "unknown",
+                  "top-level"
+                ]
+              }
+            }
+          },
+          "label": false,
+          "project": false,
+          "projectId": false,
+          "hostSessionId": false,
+          "nativeEventId": false,
+          "occurredAtMs": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "metadata-observed"
+              }
+            }
+          },
+          "identity": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "const": "bunny"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "event": {
+            "type": "object",
+            "properties": {
+              "archived": false
+            }
+          },
+          "title": {
+            "$ref": "https://bunny.invalid/events/session/3.1#/$defs/title"
+          }
+        }
+      }
+    }
+  ]
+}

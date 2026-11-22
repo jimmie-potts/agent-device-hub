@@ -98,6 +98,22 @@
   border-block-start: 1px solid var(--edge-faint);
 }
 
+.conversation-rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.conversation-rename label {
+  flex-basis: 100%;
+}
+
+.conversation-rename input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
 .conversation-settings-links {
   display: grid;
   gap: 0.5rem;

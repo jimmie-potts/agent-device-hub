@@ -250,6 +250,24 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Conversation titles (#2025)
+
+The #2025 release gives each assistant conversation a model-written title and
+lets the owner rename it. When the companions provider is `anthropic`, add a
+price entry to `assistant.prices` for the title model: the default
+`claude-haiku-5-5`, or the model named by the optional `assistant.titleModel`.
+The section and the module start without it, but the spend ledger then
+refuses every title call, so conversations keep their persona names. The
+synthetic provider needs no change and makes no title call.
+
+The companions module's first start adds the empty `assistant_titles` and
+`assistant_title_calls` tables. Each conversation is titled after its next
+message; until then it keeps its persona name.
+
+To return below this release, remove `assistant.titleModel` from the section
+first, because an earlier release refuses the key. The earlier release ignores
+the two tables and titles every conversation by its persona again.
+
 ## Assistant limits, prompt caching and spend (#2024)
 
 The #2024 release relaxes the assistant's per-turn limits, caches its prompts
