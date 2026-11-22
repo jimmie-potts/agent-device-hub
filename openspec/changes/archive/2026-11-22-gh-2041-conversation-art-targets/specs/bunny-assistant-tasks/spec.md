@@ -22,4 +22,4 @@ Conversation SHALL resolve the requested artwork and configured display identiti
 #### Scenario: A proposed show is dismissed or interrupted
 
 - **WHEN** the owner declines the proposal, reloads the page or reconnects after an uncertain dispatch
-- **THEN** Conversation performs no automatic generation or display write and a lost reply preserves the uncertainty
+- **THEN** Conversation performs no automatic generation or display write and restores the tracked preparation and presentation evidence for each selected destination, including uncertainty after a lost reply

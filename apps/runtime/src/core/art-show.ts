@@ -6,7 +6,7 @@
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {usableArtComposition} from '@jimmie-potts/sdk';
 import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
-import {ART_SHOW_BROWSER, acceptsArtRendition, localGifComposition, sameArtShowGuard, ART_SHOW_KEY, ART_SHOW_LEAD_MS, ART_SHOW_SUBJECT, ART_SHOW_EFFECTS_FAMILY,
+import {ART_SHOW_BROWSER, ART_SHOW_DURATION_MS, ART_SHOW_MOOD, acceptsArtRendition, localGifComposition, sameArtShowGuard, ART_SHOW_KEY, ART_SHOW_LEAD_MS, ART_SHOW_SUBJECT, ART_SHOW_EFFECTS_FAMILY,
   ART_SHOW_EFFECTS_SCHEMA, ART_SHOW_EFFECTS_TYPE, artShowPlanId, type ArtShowEffects, type ArtShowRequest, type ArtShowSkip} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import {coreValidator, operationEntityId} from '@jimmie-potts/event-contracts/v2/families';
@@ -22,7 +22,6 @@ import type {CompletedOutcome} from './tracker.js';
 
 /** The automation log's rule identity for owner shows: `priorityClass` `event`, so no flourish budget or spacing counts them. */
 export const ART_SHOW_RULE = 'art-show';
-const DURATION_MS = {pixoo: 10_000, tidbyt: 30_000} as const;
 /** Time kept after a catalog read for the refusal to reach the dispatcher before the command's reply deadline. */
 export const ART_CATALOG_REPLY_MARGIN_MS = 1000;
 /** The longest catalog read, for a command without a reply deadline. */
@@ -146,14 +145,14 @@ export function createArtShow(options: ArtShowOptions) {
           else if (guard !== undefined && !sameArtShowGuard(guard, display.guard)) refused.push({target, error: errorBody('revision-conflict', {detail: 'the display changed after approval'})});
           else if (guard !== undefined && artwork !== undefined && !acceptsArtRendition(display, usableArtComposition(artwork, display.kind)?.renditions[0])) {
             refused.push({target, error: errorBody('unsupported-capability', {detail: 'the display cannot accept the format or size of this rendition'})});
-          } else displays.push({target, compositionId, durationMs: DURATION_MS[display.kind], ...(guard === undefined ? {} : {guard})});
+          } else displays.push({target, compositionId, durationMs: ART_SHOW_DURATION_MS[display.kind], ...(guard === undefined ? {} : {guard})});
         }
         if (displays.length > 2) return errorBody('invalid-request', {detail: 'a show presents on at most two displays and the browser'});
         const first = refused[0];
         if (displays.length === 0 && browser === undefined) return first === undefined ? errorBody('invalid-request') : {...first.error, refused};
         const startAtMs = options.clock() + ART_SHOW_LEAD_MS;
         const plan: ArtPlan = {id: await artShowPlanId(request.requestId), artworkId: request.artworkId, startAtMs, prepareUntilMs: startAtMs - 1000,
-          toleranceMs: START_TOLERANCE_MS, mood: 'celebrate', priorityClass: 'event', coversStatus: request.coversStatus ?? true,
+          toleranceMs: START_TOLERANCE_MS, mood: ART_SHOW_MOOD, priorityClass: 'event', coversStatus: request.coversStatus ?? true,
           displays, ...(browser === undefined ? {} : {browser: {compositionId: browser}})};
         held = true;
         return {requestId: request.requestId, plan, refused};

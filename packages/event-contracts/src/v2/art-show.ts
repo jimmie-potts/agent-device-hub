@@ -1,7 +1,11 @@
+import {supportsMoment} from './moment-capabilities.js';
 import type {ArtFormat} from './art.js';
 import type {ErrorCode} from './errors.js';
 import type {ArtDisplayTarget} from './art-state.js';
 import type {DeviceRecord} from './devices.js';
+
+export const ART_SHOW_MOOD = 'celebrate';
+export const ART_SHOW_DURATION_MS = {pixoo: 10_000, tidbyt: 30_000} as const;
 
 export type ConfiguredArtTarget = {target: string; kind: ArtDisplayTarget};
 export type ArtTargets = {id: 'art'; revision: number; targets: ConfiguredArtTarget[]};
@@ -23,9 +27,10 @@ export function isArtShowGuard(value: unknown): value is ArtShowGuard {
 }
 
 export function artDestination(display: ConfiguredArtTarget, device?: DeviceRecord): ArtDestination {
-  if (device === undefined || device.id !== display.target || device.kind !== display.kind) return display;
+  if (display.target === 'browser' || device === undefined || device.id !== display.target || device.kind !== display.kind) return display;
   const label = device.label;
-  const art = device.capabilities.moments.supported ? device.capabilities.moments.art : undefined;
+  const moments = device.capabilities.moments;
+  const art = supportsMoment(moments, ART_SHOW_MOOD, ART_SHOW_DURATION_MS[display.kind]) ? moments.art : undefined;
   const eligible = device.availability === 'available' && device.held === undefined && art !== undefined &&
     !(device.externalControl.status === 'known' && device.externalControl.owner === 'external');
   return {...display, ...(label === undefined ? {} : {label}), ...(eligible ? {formats: art.formats, maxBytes: art.maxBytes, guard: {...display,

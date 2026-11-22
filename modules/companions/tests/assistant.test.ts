@@ -961,7 +961,9 @@ void test('an ambiguous display kind needs an exact choice and the approved gene
   assert.equal(requests.length, 0);
   await input(w.core, w.module(), 'id:pixoo', true);
   await until(() => status(w) === 'waiting' && task(w)?.questions === 2);
-  assert.equal((await page(w)).currentTask?.question?.kind, 'approval');
+  const approval = (await page(w)).currentTask?.question;
+  assert.equal(approval?.kind, 'approval');
+  assert.match(JSON.stringify(approval), /Hall panel \(pixoo\)/);
   assert.equal(requests.length, 0);
   await input(w.core, w.module(), 'approve', true);
   await until(() => status(w) === 'succeeded');
@@ -974,6 +976,32 @@ void test('an ambiguous display kind needs an exact choice and the approved gene
   ]);
 });
 
+void test('the exact configured display ui stays independent of the reserved browser surface', async context => {
+  const provider = counted(() => call('create_artwork', {format: 'gif', description: 'Synthetic signal',
+    showTargets: ['ui', 'browser']}));
+  const w = await world(context, {provider, tools: ['create_artwork'], dispatch: () => assert.fail('no effect before approval')});
+  const targets = ['ui', 'browser'].map(target => ({target, kind: 'pixoo'}));
+  await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
+    type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
+    data: {id: 'art', revision: 1, targets},
+  }]}));
+  const pixoo = w.bus.connect('bunny/modules/pixoo');
+  context.after(() => pixoo.close());
+  await pixoo.serveSync(['device'], () => ({revision: 1, states: targets.map(({target, kind}) => {
+    const device = light(target, 'Library panel');
+    return {type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
+      data: {...device, kind, capabilities: {...device.capabilities, moments: {supported: true, moods: ['celebrate'],
+        maxDurationMs: 10000, coversStatus: true, art: {formats: ['gif'], maxBytes: 65536}}}}};
+  })}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Make a signal for the library and browser');
+  await until(() => status(w) === 'waiting');
+  const question = (await page(w)).currentTask?.question;
+  assert.equal(question?.kind, 'approval');
+  assert.match(JSON.stringify(question), /Library panel \(ui\), Browser/);
+  assert.partialDeepStrictEqual(question?.proposal, {data: {showTargets: ['ui', 'browser']}});
+});
+
 void test('an exact saved artwork outside the recent SDK state is read from the retained catalog for approval', async context => {
   const artworkId = 'retained-flag';
   const reads: string[] = [];
@@ -981,11 +1009,15 @@ void test('an exact saved artwork outside the recent SDK state is read from the 
     arguments: JSON.stringify({artworkId, targets: ['browser']})}));
   const w = await world(context, {provider, tools: ['control_art_show'], retainedArtwork: id => {
     reads.push(id);
-    return Promise.resolve({artworkId, createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
+    return Promise.resolve({artworkId, sourceRequestId: 'flag-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
       outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
         frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
       favorite: true, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false}});
   }, dispatch: () => assert.fail('approval is still pending')});
+  const store = w.store();
+  const original = store.newTask('bunny', 'Draw a striped pennant');
+  original.status = 'succeeded'; store.save(original);
+  store.artReply(original, 'flag-generation', 'Striped pennant animation', 1);
   const art = w.bus.connect('bunny/modules/art');
   context.after(() => art.close());
   await art.serveSync(['art'], () => ({revision: 1, states: [{
@@ -999,6 +1031,7 @@ void test('an exact saved artwork outside the recent SDK state is read from the 
   const question = (await page(w)).currentTask?.question;
   assert.equal(question?.kind, 'approval');
   assert.match(JSON.stringify(question?.proposal), /retained-flag/);
+  assert.match(JSON.stringify(question), /Show Striped pennant animation on Browser/);
 });
 
 for (const artworkId of ['missing-art', 'incompatible-art']) {

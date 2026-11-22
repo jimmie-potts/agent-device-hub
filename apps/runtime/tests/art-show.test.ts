@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type {TestContext} from 'node:test';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {ArtAuto21} from '@jimmie-potts/event-contracts/v2/art';
-import {artShowPlanId, artShowSurfaces, type ArtShowRequest} from '@jimmie-potts/event-contracts/v2/art-show';
+import {artDestination, artShowPlanId, artShowSurfaces, type ArtShowRequest} from '@jimmie-potts/event-contracts/v2/art-show';
 import type {ArtState, ArtTarget, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {MomentPlayRequest} from '@jimmie-potts/event-contracts/v2/families';
 import type {BunnyModule, Command, ModuleContent, ModuleContentRequest, ModuleContext, Reply} from '@jimmie-potts/sdk';
@@ -16,6 +16,20 @@ import {edgeConfig, flush, it, manualClock, run, stateDir, waitFor} from './supp
 
 const BROWSER = 'c'.repeat(64), PIXOO = 'a'.repeat(64), TIDBYT = 'b'.repeat(64);
 const COMPOSITION: Readonly<Record<ArtTarget, string>> = {ui: BROWSER, pixoo: PIXOO, tidbyt: TIDBYT};
+
+it('approval requires the real show mood and duration and isolates a display with the reserved browser ID', () => {
+  const record = deviceRecord('shelf-display', 1, 'tidbyt', 'available');
+  const target = {target: record.id, kind: 'tidbyt' as const};
+  record.capabilities.moments = {supported: true, moods: ['reminder'], maxDurationMs: 60_000, coversStatus: true,
+    art: {formats: ['gif'], maxBytes: 1000}};
+  assert.equal(artDestination(target, record).guard, undefined);
+  record.capabilities.moments.moods = ['celebrate'];
+  record.capabilities.moments.maxDurationMs = 10_000;
+  assert.equal(artDestination(target, record).guard, undefined);
+  record.capabilities.moments.maxDurationMs = 30_000;
+  assert.equal(artDestination(target, record).guard?.target, 'shelf-display');
+  assert.equal(artDestination({...target, target: 'browser'}, {...record, id: 'browser'}).guard, undefined);
+});
 
 it('publishes configured routing IDs independently of the artwork rendition kinds', async t => {
   const w = await world(t);

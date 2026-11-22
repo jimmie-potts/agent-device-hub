@@ -1,6 +1,6 @@
 import {artDescription, assistantDeviceOwners, catalogFamily, catalogProposal, catalogRoute, permitsDevice, type CatalogBinding, type CatalogFamily, type CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {ART_SHOW_EFFECTS_FAMILY, acceptsArtRendition, artDestination, artShowSurfaces, type ArtDestination, type ArtShowEffects, type ArtShowGuard, type ArtTargets} from '@jimmie-potts/event-contracts/v2/art-show';
-import type {ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
+import type {ArtRecord, ArtworkSummary, CatalogArtwork} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {ErrorBody, ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {OperationRecord, PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
@@ -42,7 +42,7 @@ function matchingDevices(rows: readonly Match[], target: string, owner: string):
 }
 
 /** A bounded read through the Art owner's public SDK content manifest for an exact retained ID outside recent state. */
-export type RetainedArtworkRead = (artworkId: string, timeoutMs: number) => Promise<ArtworkSummary | ErrorBody | undefined>;
+export type RetainedArtworkRead = (artworkId: string, timeoutMs: number) => Promise<CatalogArtwork | ErrorBody | undefined>;
 
 export class ConversationActions {
   #drafts: ShowDrafts | undefined;
@@ -77,11 +77,11 @@ export class ConversationActions {
       typeof value === 'string' && value.trim().length > 0 && value.length <= (value.startsWith('id:') ? 131 : 128))) return {code: 'invalid-request'};
     const targets: string[] = [], labels: string[] = [], guards: ArtShowGuard[] = [];
     if (names.length === 0) return {targets, labels, guards};
-    const devices = names.every(name => ['browser', 'ui'].includes(normalize(name))) ? [] : await this.#artDestinations(parent);
+    const devices = names.every(name => normalize(name) === 'browser') ? [] : await this.#artDestinations(parent);
     if (devices === undefined) return {code: 'unavailable'};
     for (const name of names) {
       const key = normalize(name);
-      if (key === 'browser' || key === 'ui') {
+      if (key === 'browser' || key === 'ui' && !devices.some(device => device.target === 'ui')) {
         if (artwork !== undefined && usableArtComposition(artwork, 'ui') === undefined) return {question: 'This artwork has no browser rendition. Which available destination would you like?'};
         if (targets.includes('browser')) return {code: 'invalid-request'};
         targets.push('browser'); labels.push('Browser');
@@ -89,7 +89,7 @@ export class ConversationActions {
       }
       const exactId = name.startsWith('id:') ? name.slice(3) : name;
       const exact = devices.filter(device => device.target === exactId);
-      const matches = name.startsWith('id:') ? exact : key === 'pixoo' || key === 'tidbyt' ? devices.filter(device => device.kind === key)
+      const matches = name.startsWith('id:') ? exact : key === 'pixoo' || key === 'tidbyt' ? devices.filter(device => device.kind === key || device.target === key)
         : exact.length > 0 ? exact : devices.filter(device => normalize(device.label ?? device.target) === key);
       const eligible = matches.filter(device => device.guard !== undefined &&
         (requestedFormat === undefined || device.formats?.includes(requestedFormat) === true) &&
@@ -103,7 +103,9 @@ export class ConversationActions {
         return {question: 'This artwork has no compatible rendition within the limits of "' + name + '". Choose another destination or request a new rendition separately.'};
       }
       if (targets.includes(selected.target) || guards.length === 2) return {code: 'invalid-request'};
-      targets.push(selected.target); labels.push(selected.label ?? selected.target); guards.push(selected.guard);
+      targets.push(selected.target);
+      labels.push(selected.label === undefined || selected.label === selected.target ? selected.target : `${selected.label} (${selected.target})`);
+      guards.push(selected.guard);
     }
     return {targets, labels, guards};
   }
@@ -218,14 +220,17 @@ export class ConversationActions {
       if (typeof data.artworkId !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(data.artworkId) || !Array.isArray(data.targets) || data.targets.length === 0 || 'guards' in data) return {code: 'invalid-request'};
       const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
       if (art === undefined) return {code: 'unavailable'};
-      const artwork = art.artworks.find(item => item.artworkId === data.artworkId) ?? await this.retainedArtwork?.(data.artworkId, 1200);
-      if (artwork !== undefined && 'error' in artwork) return {code: artwork.error.code};
+      const recent = art.artworks.find(item => item.artworkId === data.artworkId);
+      const job = art.jobs.find(item => item.artworkId === data.artworkId);
+      const retained = recent === undefined || job === undefined ? await this.retainedArtwork?.(data.artworkId, 1200) : undefined;
+      if (retained !== undefined && 'error' in retained) return {code: retained.error.code};
+      const artwork = recent ?? retained;
       if (artwork === undefined) return {code: 'not-found'};
       const selected = await this.#artSelection(data.targets, parent, artwork);
       if (!('targets' in selected)) return selected;
-      const job = art.jobs.find(item => item.artworkId === artwork.artworkId);
-      const attached = job === undefined ? undefined : this.context.database().prepare(
-        'SELECT description FROM assistant_art_attachments WHERE request_id=?').get(job.requestId);
+      const sourceRequestId = job?.requestId ?? retained?.sourceRequestId;
+      const attached = sourceRequestId === undefined ? undefined : this.context.database().prepare(
+        'SELECT description FROM assistant_art_attachments WHERE request_id=?').get(sourceRequestId);
       const title = typeof attached?.description === 'string' ? attached.description : 'saved artwork ' + artwork.artworkId;
       showText = 'Show ' + title + ' on ' + selected.labels.join(', ') + '?' + (data.coversStatus === false ? ' Keep status visible.' : '');
       data = {...data, targets: selected.targets, guards: selected.guards};

@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
 import {ART_SHOW_BROWSER, acceptsArtRendition, artShowSurfaces, isArtShowGuard, type ArtShowEffects, type ArtShowGuard, type ArtShowSurface} from '@jimmie-potts/event-contracts/v2/art-show';
+import {routingId} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {ArtTarget} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
@@ -8,15 +9,24 @@ import type {ConversationAttachment} from '../assistant/history-contract.js';
 
 export type DisplayRendition = {kind: 'pixoo' | 'tidbyt'; format: 'png' | 'gif'; bytes: number};
 type Destination = {id: string; kind: ArtTarget; label: string; guard?: ArtShowGuard; formats?: DisplayRendition['format'][]; maxBytes?: number};
-type Sent = {requestId: string; targets: Destination[]};
+type Sent = {requestId: string; targets: Pick<Destination, 'id' | 'label'>[]};
 const browser: Destination = {id: ART_SHOW_BROWSER, kind: 'ui', label: 'Browser'};
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function lastShow(key: string): Sent | undefined {
+  try {
+    const entry: unknown = JSON.parse(sessionStorage.getItem(key) ?? 'null');
+    if (!object(entry) || !routingId(entry.requestId) || !Array.isArray(entry.targets) || entry.targets.length < 1 || entry.targets.length > 3 ||
+      !entry.targets.every((row: unknown): row is Sent['targets'][number] => object(row) && routingId(row.id) && typeof row.label === 'string')) return undefined;
+    return {requestId: entry.requestId, targets: entry.targets};
+  } catch {return undefined;}
+}
 
 function destinations(value: unknown): Destination[] {
   if (!object(value) || value.schema !== 'automation/2.0' || !Array.isArray(value.targets)) throw new Error('invalid-targets');
   return [browser, ...value.targets.map((row: unknown): Destination => {
     if (!object(row) || typeof row.target !== 'string' || (row.kind !== 'pixoo' && row.kind !== 'tidbyt')) throw new Error('invalid-target');
-    const guard = row.guard;
+    const guard = row.target === ART_SHOW_BROWSER ? undefined : row.guard;
     if (guard !== undefined && (!isArtShowGuard(guard) || guard.target !== row.target || guard.kind !== row.kind)) throw new Error('invalid-guard');
     const {formats, maxBytes} = row;
     if (formats !== undefined && (!Array.isArray(formats) || !formats.every((format): format is DisplayRendition['format'] => format === 'gif' || format === 'png'))) throw new Error('invalid-formats');
@@ -76,7 +86,7 @@ function DisplayForm({context, artworkId, usableKinds, displayRenditions, attach
   });
   const [picked, setPicked] = useState<string[]>(intent ?? []);
   const [available, setAvailable] = useState<Destination[]>(), [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0), [sent, setSent] = useState<Sent>();
+  const [attempt, setAttempt] = useState(0), [sent, setSent] = useState(() => lastShow(decisionKey));
   const locked = command.locked || !context.control || !context.connected || !context.operationsLive;
   useEffect(() => {
     if (!open || !context.connected) return;
@@ -88,7 +98,7 @@ function DisplayForm({context, artworkId, usableKinds, displayRenditions, attach
     return () => {current = false;};
   }, [context.api, context.connected, open, attempt]);
   const dismiss = (): void => {
-    try {if (intent !== undefined && intent.length > 0) sessionStorage.setItem(decisionKey, 'handled');} catch { /* Reopening can only present an approval. */ }
+    try {if (sent === undefined && intent !== undefined && intent.length > 0) sessionStorage.setItem(decisionKey, 'handled');} catch { /* Reopening can only present an approval. */ }
     setOpen(false);
   };
   const unavailable = (row: Destination): string | undefined =>
@@ -100,7 +110,9 @@ function DisplayForm({context, artworkId, usableKinds, displayRenditions, attach
   const approve = (): void => {
     if (!canSend) return;
     const requestId = crypto.randomUUID();
-    setSent({requestId, targets: chosen}); dismiss();
+    const show = {requestId, targets: chosen.map(({id, label}) => ({id, label}))};
+    setSent(show); setOpen(false);
+    try {sessionStorage.setItem(decisionKey, JSON.stringify(show));} catch { /* The active page can still follow the request. */ }
     void command.run({family: 'art-show', target: 'hub', requestId, data: {artworkId, targets: chosen.map(row => row.id),
       guards: chosen.flatMap(row => row.guard === undefined ? [] : [row.guard])}});
   };
@@ -109,6 +121,8 @@ function DisplayForm({context, artworkId, usableKinds, displayRenditions, attach
       {available === undefined ? (failed ? <p role="status">Display choices are unavailable. <button type="button" onClick={() => setAttempt(n => n + 1)}>Refresh choices</button></p>
         : <p role="status">Reading display choices…</p>) : <>
         {available.map(row => {
+          if (row.kind !== 'ui' && row.id === ART_SHOW_BROWSER) return <p key={row.kind + '/browser'}>
+            {row.label} · This device cannot be selected because its ID is reserved for the browser.</p>;
           const reason = unavailable(row);
           return <label key={row.id}><input type="checkbox" checked={picked.includes(row.id)} disabled={locked || (reason !== undefined && !picked.includes(row.id))}
             onChange={e => setPicked(e.target.checked ? [...picked, row.id] : picked.filter(id => id !== row.id))}/>{row.label}{reason !== undefined && ` · ${reason}`}</label>;
@@ -120,7 +134,7 @@ function DisplayForm({context, artworkId, usableKinds, displayRenditions, attach
       <button type="button" disabled={!canSend} onClick={approve}>Approve display</button>
       <button type="button" className="secondary" onClick={dismiss}>Cancel</button>
     </fieldset> : <button type="button" className="secondary" disabled={locked} onClick={() => {setPicked([]); setAvailable(undefined); setOpen(true);}}>Show on…</button>}
-    {(sent !== undefined || command.requestId !== undefined) && <p role="status">{command.text}</p>}
+    {command.requestId !== undefined && <p role="status">{command.text}</p>}
     {sent !== undefined && <DisplayResults key={sent.requestId} context={context} sent={sent}/>}
   </div>;
 }

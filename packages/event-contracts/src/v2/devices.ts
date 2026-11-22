@@ -2,6 +2,7 @@
 // v1's closed command union, v1 admission's capability rule and the fixed Hub-mode table. The record's minor version 2.1
 // adds the optional `held` member (Hub #975), and 2.2 the optional `moments.art` (Hub #679). Device-specific families,
 // such as LIFX color or Pixoo media, belong to each module. `MAPPING.md` shows where each v1 field lands.
+import {supportsMoment} from './moment-capabilities.js';
 import type {ArtFormat, ArtStageRequest} from './art.js';
 import type {ErrorDetail, Known, Message, MessageValidator, PayloadCheck, Ticket, Unknown} from './index.js';
 import type {Mode, MomentPlayRequest} from './families.js';
@@ -106,7 +107,7 @@ export function commandSupported(capabilities: Capabilities, command: DeviceComm
     case 'media-start': return media.supported && media.playlistIds.includes(command.data.playlistId);
     case 'media-control': return media.supported && media.actions.includes(command.data.action);
     case 'device-mode-set': return modes.supported && modes.values.includes(command.data.mode);
-    case 'moment-play': return moments.supported && moments.moods.includes(command.data.mood) && command.data.durationMs <= moments.maxDurationMs &&
+    case 'moment-play': return supportsMoment(moments, command.data.mood, command.data.durationMs) &&
       (command.data.art === undefined || moments.art !== undefined) &&
       (command.data.notice === undefined || command.data.art !== undefined && moments.art?.notices?.includes(command.data.notice.kind) === true);
   }

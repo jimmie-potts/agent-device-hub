@@ -80,10 +80,10 @@ export type ShowTarget = {target: string; kind: 'pixoo' | 'tidbyt'};
 export function showTargetsOf(value: unknown): ShowTarget[] {
   if (!object(value) || value.schema !== 'automation/2.0' || !Array.isArray(value.targets) || value.targets.length > 16) throw new Error('invalid-targets');
   const targets = value.targets.map((item: unknown): ShowTarget | undefined => object(item) && typeof item.target === 'string'
-    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.target) && item.target.length <= 128 && item.target !== 'browser'
+    && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.target) && item.target.length <= 128
     && member(item.kind, ['pixoo', 'tidbyt'] as const) ? {target: item.target, kind: item.kind} : undefined);
   if (!targets.every((item): item is ShowTarget => item !== undefined) || new Set(targets.map(item => item.target)).size !== targets.length) throw new Error('invalid-targets');
-  return targets;
+  return targets.filter(item => item.target !== 'browser');
 }
 export const surfaceLabel = (target: string, targets: readonly ShowTarget[]): string => {
   if (target === 'browser') return 'Browser';

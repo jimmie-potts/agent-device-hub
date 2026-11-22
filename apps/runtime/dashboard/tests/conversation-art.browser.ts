@@ -97,7 +97,17 @@ export async function conversationArtJourney(browser: Browser): Promise<void> {
       await expect(oldGif.getByText(/unsupported format or file size/i)).toBeVisible();
       await oldGif.getByRole('button', {name: 'Cancel', exact: true}).click();
     }
+    await page.route('**/api/v2/automation/art/targets?view=approval', async route => {
+      const response = await route.fetch();
+      const body: unknown = await response.json();
+      assert.ok(typeof body === 'object' && body !== null && 'targets' in body && Array.isArray(body.targets));
+      const physical: unknown[] = body.targets;
+      await route.fulfill({response, json: {...body, targets: [...physical, {kind: 'pixoo', target: 'browser', label: 'Lobby display'}]}});
+    }, {times: 1});
     await oldGif.getByRole('button', {name: 'Show on…', exact: true}).click();
+    await expect(oldGif.getByText(/Lobby display.*reserved/)).toBeVisible();
+    await expect(oldGif.getByRole('checkbox', {name: 'Browser', exact: true})).toBeEnabled();
+    await expect(oldGif.getByRole('checkbox', {name: /pixoo-1/i})).toBeEnabled();
     await oldGif.getByRole('button', {name: 'Cancel', exact: true}).click();
     assert.equal(shows.length, 0, 'Opening and dismissing the saved attachment makes no display request');
     // The simulated panel starts passive. Let its status base draw so it can admit a moment.
@@ -131,6 +141,9 @@ export async function conversationArtJourney(browser: Browser): Promise<void> {
     await page.reload();
     await feed(page, 'connected');
     await pennant.getByRole('img', {name: 'Rotating striped pennant', exact: true}).waitFor();
+    await expect(results).toContainText(/pixoo-1/i);
+    await expect(results).toContainText(/Preparation: succeeded/);
+    await expect(results).toContainText(/Presentation: (accepted|sent|succeeded)/);
     assert.equal(shows.length, 1, 'Restoring a conversation sends no show');
     const sunflower = conversation.getByRole('article', {name: 'assistant message'}).filter({has: page.getByRole('img', {name: 'Clockwork sunflower'})});
     await sunflower.getByRole('button', {name: 'Show on…', exact: true}).click();
@@ -142,6 +155,7 @@ export async function conversationArtJourney(browser: Browser): Promise<void> {
     await feed(page, 'connected');
     const anotherShow = sunflower.getByRole('button', {name: 'Show on…', exact: true});
     await anotherShow.waitFor();
+    await expect(sunflower.getByRole('list', {name: 'Display results'})).toContainText(/Browser.*awaiting evidence/i);
     assert.equal(await anotherShow.isDisabled(), true, 'An unknown dispatch keeps the retained request locked');
     assert.equal(shows.length, 2, 'Reload never replays a show with a lost reply');
     await page.route('**/modules/art/content/rendition.*', route => route.fulfill({status: 404, contentType: 'application/json',

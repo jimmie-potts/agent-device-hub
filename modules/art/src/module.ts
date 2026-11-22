@@ -929,7 +929,7 @@ class ArtOwner {
         if (Object.keys(query).some(key => key !== 'after' && key !== 'limit') || !Number.isSafeInteger(after) || after < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > MAX_PAGE) return errorBody('invalid-request');
         if (ref === artContentRef.ledger) return jsonBody(this.#ledger.page(after, limit));
         const page = this.#store.artworks(after, limit);
-        return jsonBody({artworks: page.artworks.map(artwork => this.#summary(artwork)), nextAfter: page.nextAfter});
+        return jsonBody({artworks: page.artworks.map(artwork => ({...this.#summary(artwork), sourceRequestId: artwork.requestId})), nextAfter: page.nextAfter});
       }
       if (ref.startsWith('attachment-summary.')) {
         const id = ref.slice('attachment-summary.'.length);
