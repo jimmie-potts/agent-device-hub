@@ -28,7 +28,7 @@ import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantProfile, AssistantProvider} from '@jimmie-potts/event-contracts/v2/assistant';
 import {coreFamilies, type Title} from '@jimmie-potts/event-contracts/v2/families';
 import type {AddMessage, Cancel, Outbox} from '@jimmie-potts/sdk';
-import {ANTHROPIC_URL, ANTHROPIC_VERSION, codeOfStatus, type Transport} from './anthropic.js';
+import {ANTHROPIC_URL, ANTHROPIC_VERSION, faultOf, type Transport} from './anthropic.js';
 import {ProviderFault, textBytes} from './provider.js';
 import {inputBound, type SpendLedger, type TokenUsage} from './spend.js';
 import {PROFILES} from '../knowledge/model.js';
@@ -263,7 +263,8 @@ export class AnthropicTitleProvider implements TitleProvider {
     } catch (error) {
       throw new ProviderFault(signal.aborted || (error instanceof Error && error.name === 'AbortError') ? 'cancelled' : 'unavailable', true);
     }
-    if (!response.ok) throw codeOfStatus(response.status);
+    // A spend-limit refusal maps as for a task's call; any failure keeps the earlier title or the persona.
+    if (!response.ok) throw await faultOf(response);
     let text: string;
     try {text = await response.text();} catch {throw new ProviderFault('unavailable', true);}
     if (textBytes(text) > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large');
@@ -419,7 +420,7 @@ export class ConversationTitles {
       const refused = provider.name === 'synthetic' ? undefined : this.deps.spend.reserve({id: admitted.id, purpose: 'conversation', owner: conversationId,
         model: provider.model, inputUnits: inputBound({system: TITLE_INSTRUCTIONS, prompt}), outputUnits: TITLE_MAX_TOKENS});
       if (refused !== undefined) {
-        // The spend limits or a missing price refuse it: nothing is sent, and the earlier title or the persona stays.
+        // The spend limits refuse it: nothing is sent, and the earlier title or the persona stays. Every model is priced (Hub #2047).
         this.#saveCall({...admitted, endedAtMs: admitted.startedAtMs, status: 'failed', code: 'capacity'});
         return;
       }

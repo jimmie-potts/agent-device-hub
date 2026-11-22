@@ -82,9 +82,41 @@ function usageOf(usage: Record<string, unknown>): TokenUsage | null {
   return input === null || output === null || cacheWrite === null || cacheRead === null ? null : {input, output, cacheWrite, cacheRead};
 }
 const stopOf = (reason: unknown, calls: number): TurnStop => reason === 'refusal' ? 'refusal' : reason === 'max_tokens' ? 'truncated' : calls > 0 ? 'tool' : 'end';
+/**
+ * The owner's text for a reached Anthropic spend limit (Hub #2047): the dedicated workspace's or the organization's
+ * monthly limit, which Anthropic enforces on real billing. The task ends `capacity`; nothing more is sent and nothing retries.
+ */
+export const SPEND_LIMIT_REACHED = 'The monthly spend limit at Anthropic is reached, so the model call was refused and nothing more was sent for this turn. The Anthropic Console shows the limit, this month\'s real spend and when access resumes.';
+const SPEND_LIMIT_MESSAGES = ['You have reached your specified API usage limits', 'You have reached your specified workspace API usage limits'];
+/**
+ * Whether an error answer is a spend-limit refusal, as Anthropic's rate-limit documentation of 2026-11-22 describes it: a
+ * 400 `invalid_request_error` for a limit the owner set, whose message starts with one of two fixed phrases, or a 429
+ * `rate_limit_error` with `error.details.error_code` `enforced_spend_limit_reached` for the tier's cap. Any other 400 or
+ * 429 keeps its usual code.
+ */
+function spendLimitRefusal(status: number, text: string): boolean {
+  let value: unknown;
+  try {value = JSON.parse(text);} catch {return false;}
+  const error = object(value) && object(value.error) ? value.error : undefined;
+  if (error === undefined) return false;
+  if (status === 400) return error.type === 'invalid_request_error' && typeof error.message === 'string' && SPEND_LIMIT_MESSAGES.some(start => (error.message as string).startsWith(start));
+  return status === 429 && error.type === 'rate_limit_error' && object(error.details) && error.details.error_code === 'enforced_spend_limit_reached';
+}
 export const codeOfStatus = (status: number): ProviderFault => new ProviderFault(
   status === 401 ? 'unauthenticated' : status === 403 ? 'forbidden' : status === 404 ? 'not-found' : status === 429 ? 'capacity'
     : status === 400 || status === 422 ? 'invalid-request' : status === 413 ? 'too-large' : 'unavailable', false, status === 413 ? 'request' : undefined);
+/**
+ * The fault an error answer maps to, once: a documented spend-limit refusal, read from the bounded body of a 400 or 429, is
+ * `capacity` with the monthly-limit text; anything else keeps its status's code. Task and title calls share it (Hub #2047).
+ */
+export async function faultOf(response: Response): Promise<ProviderFault> {
+  if (response.status === 400 || response.status === 429) {
+    const length = Number(response.headers.get('content-length') ?? '0');
+    const body = Number.isSafeInteger(length) && length > MAX_RESPONSE_BYTES ? '' : await response.text().catch(() => '');
+    if (textBytes(body) <= MAX_RESPONSE_BYTES && spendLimitRefusal(response.status, body)) return new ProviderFault('capacity', false, undefined, SPEND_LIMIT_REACHED);
+  }
+  return codeOfStatus(response.status);
+}
 
 export class AnthropicProvider implements ModelProvider {
   readonly name = 'anthropic' as const;
@@ -115,7 +147,7 @@ export class AnthropicProvider implements ModelProvider {
       // The cause stays in memory: a transport error can carry the URL or the request. The answer is lost, so the call stays uncertain.
       throw new ProviderFault(signal.aborted || (error instanceof Error && error.name === 'AbortError') ? 'cancelled' : 'unavailable', true);
     }
-    if (!response.ok) throw codeOfStatus(response.status);
+    if (!response.ok) throw await faultOf(response);
     const length = Number(response.headers.get('content-length') ?? '0');
     if (Number.isSafeInteger(length) && length > MAX_RESPONSE_BYTES) throw new ProviderFault('too-large', false, 'response');
     let text: string;

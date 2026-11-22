@@ -13,7 +13,7 @@ import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js'
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
 import type {Proposal} from './history-contract.js';
 import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
-import {inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
+import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions, type RetainedArtworkRead} from './catalog-actions.js';
@@ -50,7 +50,7 @@ export type AssistantOptions = {
   delegate?: Delegate;
   /** The owner cancelled a task whose delegation is still running; the module asks the worker to stop. */
   onCancelled?: (taskId: string) => void;
-  /** The private section's prices per model for the spend ledger (Hub #2024); a paid turn or call of an unpriced model is refused. */
+  /** The private section's prices per model for the spend ledger (Hub #2024); they override the built-in table (Hub #2047). */
   prices?: PriceTable;
   /** The time zone whose local day and month the spend limits use: the runtime host's own unless a test names one. */
   timeZone?: string;
@@ -79,6 +79,7 @@ function closingReasonOf(error: unknown): string | undefined {
   if (error instanceof GraphRecursionError) return 'This turn reached its step limit.';
   if (fullDisk(error)) return 'There was no space left to save the turn.';
   if (error instanceof ProviderFault) {
+    if (error.closingReason !== undefined) return error.closingReason;
     if (error.sizeLimit === 'request') return 'The provider rejected the request because it was too large.';
     if (error.sizeLimit === 'response') return 'The provider response exceeded its size limit.';
     if (error.code === 'too-large') return 'The provider reported a size limit.';
@@ -348,8 +349,8 @@ export class AssistantEngine {
       let task: Task;
       if (input.action === 'start') {
         if (this.store.unfinished() !== undefined || this.#active !== undefined) fail('capacity');
-        // A new turn of a paid profile is refused, its reply naming why, when its model has no price or what remains of a
-        // spend limit is below the smallest first call, so it is not admitted only to fail there; synthetic turns cost nothing.
+        // A new turn of a paid profile is refused, its reply naming why, when what remains of the daily limit or the month's
+        // estimate is below the smallest first call, so it is not admitted only to fail there; synthetic turns cost nothing.
         const paid = this.provider(input.profile), reached = paid.name === 'synthetic' ? undefined : this.spend.reached(paid.model);
         if (reached !== undefined) throw new Fault('capacity', reached);
         task = this.store.newTask(input.profile, input.text);
@@ -378,7 +379,8 @@ export class AssistantEngine {
       if (request?.signal.aborted === true || Object.keys(request?.query ?? {}).length > 0) return errorBody('invalid-request');
       try {
         const provider = this.provider();
-        const view: SpendView = {...this.spend.totals(), paid: provider.name === 'synthetic' ? null : {model: provider.model, minimumMicros: this.spend.minimum(provider.model) ?? null}};
+        const view: SpendView = {...this.spend.totals(), paid: provider.name === 'synthetic' ? null
+          : {model: provider.model, minimumMicros: this.spend.minimum(provider.model), prices: this.spend.source(provider.model), pricesAsOf: BUILT_IN_PRICES_AS_OF}};
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify(view))};
       } catch {return errorBody('unavailable');}
     }

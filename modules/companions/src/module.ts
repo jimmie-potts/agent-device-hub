@@ -51,8 +51,8 @@ const MODEL = /^[a-z0-9][a-z0-9.-]{0,127}$/;
 const PRICE_CLASSES = ['input', 'output', 'cacheWrite', 'cacheRead'] as const;
 /**
  * `assistant.prices` (Hub #2024), optional: at most 16 models, each with all four prices in US dollars per million tokens,
- * finite and from 0 to 1000. Without an entry for the hosted model the section is still accepted, so the module starts
- * before the owner adds prices, and the engine refuses that model's paid turns and calls, so spend stays bounded.
+ * finite and from 0 to 1000. An entry overrides the built-in table (Hub #2047); without one the ledger uses the built-in
+ * prices, or the dearest known rate for a model the table does not know, so nothing needs entering at install.
  */
 function pricesOf(value: unknown): PriceTable | string {
   if (value === undefined) return {};

@@ -9,9 +9,11 @@ export type TokenUsage = {readonly input: number; readonly output: number; reado
 export type SpendPeriod = {readonly period: string; readonly spentMicros: number; readonly limitMicros: number; readonly unreported: number; readonly unreportedMicros: number};
 /** The private `spend` content route's answer: today's and this month's shared spend. */
 export type SpendTotals = {readonly version: 1; readonly day: SpendPeriod; readonly month: SpendPeriod};
+/** Where a model's prices come from: the private section, the dated built-in table, or the dearest known rate (Hub #2047). */
+export type PriceSource = 'configured' | 'built-in' | 'dearest';
 /**
- * The `spend` content route's answer: the shared totals, and for the `bunny` profile's paid provider its model and the
- * smallest reservation a turn's first call can make, null when the model has no configured price. `paid` is null for
- * the synthetic provider, which costs nothing.
+ * The `spend` content route's answer: the shared totals, and for the `bunny` profile's paid provider its model, where its
+ * prices come from with the built-in table's date, and the smallest reservation a turn's first call can make. `paid` is
+ * null for the synthetic provider, which costs nothing.
  */
-export type SpendView = SpendTotals & {readonly paid: {readonly model: string; readonly minimumMicros: number | null} | null};
+export type SpendView = SpendTotals & {readonly paid: {readonly model: string; readonly minimumMicros: number; readonly prices: PriceSource; readonly pricesAsOf: string} | null};

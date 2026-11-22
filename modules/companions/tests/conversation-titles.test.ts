@@ -14,7 +14,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {InProcessBus, type Outbox, type RequestResult} from '@jimmie-potts/sdk';
 import {RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
-import {ANTHROPIC_URL, ANTHROPIC_VERSION, type Transport} from '../src/assistant/anthropic.js';
+import {ANTHROPIC_URL, ANTHROPIC_VERSION, SPEND_LIMIT_REACHED, type Transport} from '../src/assistant/anthropic.js';
 import {ProviderFault, type ModelProvider, type TurnReply} from '../src/assistant/provider.js';
 import {
   AnthropicTitleProvider, ConversationTitles, ECHO_RUN_WORDS, SyntheticTitleProvider, DEFAULT_TITLE_MODEL, generatedTitle, normalizeTitle, ownerTitle, SESSION_AGE_MS, SYNTHETIC_TITLE, TITLE_DEADLINE_MS,
@@ -147,7 +147,10 @@ void test('the Anthropic title call sends the instruction and prompt with low ef
   answer = json({content: [{type: 'text', text: '#2025 Conversation'}], stop_reason: 'max_tokens', usage: {}});
   assert.deepEqual(await provider.title('PROMPT', new AbortController().signal), {text: null, usage: null}, 'a cut answer is no title, and missing usage is unknown');
   answer = json({error: {type: 'rate_limit_error'}}, 429);
-  await assert.rejects(provider.title('PROMPT', new AbortController().signal), (error: unknown) => error instanceof ProviderFault && error.code === 'capacity' && !error.uncertain);
+  await assert.rejects(provider.title('PROMPT', new AbortController().signal), (error: unknown) => error instanceof ProviderFault && error.code === 'capacity' && !error.uncertain && error.closingReason === undefined);
+  // Anthropic's monthly spend-limit refusal maps as for a task's call (Hub #2047); the engine keeps the persona on any failure.
+  answer = json({type: 'error', error: {type: 'invalid_request_error', message: 'You have reached your specified workspace API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.'}}, 400);
+  await assert.rejects(provider.title('PROMPT', new AbortController().signal), (error: unknown) => error instanceof ProviderFault && error.code === 'capacity' && error.closingReason === SPEND_LIMIT_REACHED);
   const lost = new AnthropicTitleProvider({key: 'k', model: 'claude-sonnet-5-5', transport: () => Promise.reject(new Error('socket'))});
   assert.equal(lost.model, 'claude-sonnet-5-5');
   await assert.rejects(lost.title('PROMPT', new AbortController().signal), (error: unknown) => error instanceof ProviderFault && error.code === 'unavailable' && error.uncertain);
@@ -475,7 +478,7 @@ void test('an accepted coding hand-off refreshes the title from its brief, unles
   assert.deepEqual(w.titles.map(message => titleOf(message)?.value), ['Timer question', '#2041 Flaky timer test', 'Timer work']);
 });
 
-void test('a title call the spend limits refuse is never sent and leaves the persona; a missing title price refuses it too', {timeout: 20_000}, async context => {
+void test('a title call the spend limits refuse is never sent and leaves the persona; without prices the title model is priced at its built-in tier', {timeout: 20_000}, async context => {
   const provider = titler([titled('#7 Never sent')]);
   // A reservation of 1,024 output tokens at $20,000 per million passes the $20 daily limit.
   const w = await world(context, {provider: model(), titleProvider: provider, prices: {'claude-haiku-5-5': {input: 1, output: 20_000, cacheWrite: 1, cacheRead: 1}}});
@@ -486,10 +489,23 @@ void test('a title call the spend limits refuse is never sent and leaves the per
   assert.deepEqual(w.spent(), [], 'a refused reservation records nothing');
   assert.equal(w.titles.length, 0);
   assert.equal(w.module.inspectAssistant()?.tasks[0]?.status, 'succeeded', 'the task is untouched');
-  const unpriced = await world(context, {provider: model(), titleProvider: titler([titled('#8 Never sent')]), prices: {}});
-  await unpriced.ask('Synthetic request.');
-  await unpriced.control('enable');
-  assert.deepEqual(unpriced.store().calls().map(call => [call.status, call.code]), [['failed', 'capacity']]);
+  // With no configured prices (Hub #2047) claude-haiku-5-5 takes its built-in lower tier: 50 input and 6 output tokens at $0.10 and $0.50 per million.
+  const builtIn = await world(context, {provider: model(), titleProvider: titler([titled('#8 Built-in price')]), prices: {}});
+  await builtIn.ask('Synthetic request.');
+  await builtIn.titled(1);
+  assert.deepEqual(builtIn.store().calls().map(call => call.status), ['succeeded']);
+  assert.deepEqual(builtIn.spent().map(row => row.cost), [Math.ceil(50 * 0.1 + 6 * 0.5)]);
+});
+
+void test('a title call that Anthropic\'s monthly spend limit refuses keeps the persona and leaves the task untouched', {timeout: 20_000}, async context => {
+  const provider = titler([new ProviderFault('capacity', false, undefined, SPEND_LIMIT_REACHED)]);
+  const w = await world(context, {provider: model(), titleProvider: provider, prices: {}});
+  await w.ask('Synthetic request.');
+  await w.control('enable');
+  assert.equal(provider.prompts.length, 1, 'one request, no retry');
+  assert.deepEqual(w.store().calls().map(call => [call.status, call.code]), [['failed', 'capacity']]);
+  assert.equal(w.titles.length, 0, 'the persona name stands');
+  assert.equal(w.module.inspectAssistant()?.tasks[0]?.status, 'succeeded');
 });
 
 void test('stopping the module abandons a title call in flight without waiting for it', {timeout: 20_000}, async context => {

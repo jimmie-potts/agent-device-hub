@@ -154,10 +154,11 @@ export function ConversationDetails({
         ]}/>}
         <Facts items={[
           ['Spend today', spend === undefined ? 'Unknown' : spendText(spend.day)],
-          ['Spend this month', spend === undefined ? 'Unknown' : spendText(spend.month)],
+          ['Spend this month (estimate)', spend === undefined ? 'Unknown' : spendText(spend.month)],
           ['Prices', priceText(spend)],
         ]}/>
-        <p>Spend counts every profile's paid model calls from reported usage at the configured prices, by the runtime host's local day and month. A call without reported usage counts its reservation. Coding-worker runs are not counted.</p>
+        <p>Spend counts every profile's paid model calls from reported usage at the configured or built-in prices, by the runtime host's local day and month. A call without reported usage counts its reservation. Coding-worker runs are not counted.</p>
+        <p>This month's figure is a local estimate. The Anthropic Console holds the real monthly limit and spend.</p>
       </details>
       <details>
         <summary>Conversation settings</summary>
