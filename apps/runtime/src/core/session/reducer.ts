@@ -6,9 +6,13 @@
 // One rule changed on purpose (#1865 step 8, design decision 6, #397): a root start claims no work. Hub #505 adds the
 // common inputs of `lifecycle/2.2` (`turn-waiting`, `turn-uncertain` and a turn end's result) and lets an ordered,
 // newer turn start recover the turn and activity evidence, as a best-effort start already does, and ordered work
-// evidence on the same turn, newer than the marker that made the activity lost, settle it.
+// evidence on the same turn, newer than the marker that made the activity lost, settle it. Hub #2021 bounds what a session
+// that keeps taking turns accumulates: past the notice limit a turn end retires superseded notices, and past the watermark
+// limit the session keeps a floor for the watermarks of attention it no longer holds, so only notices that still count can
+// reach the limit.
 import {createHash} from 'node:crypto';
 import type {Attention, KnownId, LifecycleObservation, Unavailable} from '@jimmie-potts/event-contracts/v2/families';
+import {noticeCounts} from '@jimmie-potts/event-contracts/v2/session-view';
 import {SESSION_LIMITS, entityOf, sameId, sameTurn, type Consumer, type StoredSession} from './model.js';
 
 /** What one observation did to a session: its outcome, the session after it when it changed, and whether it was fresh evidence. */
@@ -131,6 +135,56 @@ function selectTurn(session: StoredSession, turn: KnownId, consumers: readonly C
   if (recover) session.unavailable = session.unavailable.filter(item => item.dimension !== 'turn' && item.dimension !== 'activity');
 }
 
+/**
+ * Hub #2021: past `SESSION_LIMITS.notices`, retires superseded notices until the session holds the limit: those every
+ * consumer acknowledged first, then the oldest. A superseded notice is one `noticeCounts` no longer counts, so no status,
+ * reader, opportunity, read receipt or override depends on it; its turn end stays in history. A notice that still counts
+ * is never retired, so a session whose counting notices alone pass the limit stays past it and is refused.
+ */
+function retireSuperseded(session: StoredSession, consumers: readonly Consumer[]): void {
+  const excess = session.notices.length - SESSION_LIMITS.notices;
+  if (excess <= 0) return;
+  const superseded = session.notices.filter(notice => !noticeCounts(notice, session.turn));
+  const settled = (notice: StoredSession['notices'][number]): boolean => consumers.every(consumer => notice.acknowledgedBy.includes(consumer.id));
+  const retiring = new Set([...superseded.filter(settled), ...superseded.filter(notice => !settled(notice))].slice(0, excess).map(notice => notice.id));
+  session.notices = session.notices.filter(notice => !retiring.has(notice.id));
+}
+
+/**
+ * The reserved watermark dimension of an epoch's floor (Hub #2021): the highest sequence of the watermarks the session
+ * dropped in that epoch. No observation's dimension has this name. A release before the floor never matches it.
+ */
+export const WATERMARK_FLOOR = 'floor';
+
+/** The attention dimensions whose items the session holds: a known item's own, and an unknown one's event kinds. */
+function heldDimensions(session: StoredSession): Set<string> {
+  const held = new Set<string>();
+  for (const item of session.attention) {
+    if (item.id.status === 'known') held.add(`attention:${item.id.id}`);
+    else for (const kind of ['question-continuing', 'attention-input', 'attention-approval', 'attention-resolved']) held.add(`attention:${kind}`);
+  }
+  return held;
+}
+
+/**
+ * Hub #2021: past `SESSION_LIMITS.watermarks`, drops the watermarks of attention the session no longer holds, lowest
+ * sequence first, and raises its epoch's floor to each one dropped. An ordered observation at or below its epoch's floor
+ * in a dimension without its own watermark is older than evidence the session already took, so it is stale.
+ */
+function boundWatermarks(session: StoredSession): void {
+  if (session.watermarks.length <= SESSION_LIMITS.watermarks) return;
+  const held = heldDimensions(session);
+  const dropping = session.watermarks.filter(item => item.dimension.startsWith('attention:') && !held.has(item.dimension))
+    .sort((a, b) => a.sequence - b.sequence);
+  for (const victim of dropping) {
+    if (session.watermarks.length <= SESSION_LIMITS.watermarks) break;
+    session.watermarks = session.watermarks.filter(item => item !== victim);
+    const floor = session.watermarks.find(item => item.dimension === WATERMARK_FLOOR && item.epoch === victim.epoch);
+    if (floor !== undefined) floor.sequence = Math.max(floor.sequence, victim.sequence);
+    else session.watermarks.push({dimension: WATERMARK_FLOOR, epoch: victim.epoch, sequence: victim.sequence});
+  }
+}
+
 /** A new session for an observation: unknown activity, and the observation's identity, turn, parent and ordering. */
 function created(observation: LifecycleObservation, now: number, generation: number): StoredSession {
   return {
@@ -195,6 +249,8 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
   }
   const watermark = order.status === 'known' ? session.watermarks.find(item => item.dimension === eventDimension && item.epoch === order.epoch) : undefined;
   if (order.status === 'known' && watermark !== undefined && order.sequence <= watermark.sequence) return {outcome: 'stale', fresh: false};
+  const floor = order.status === 'known' && watermark === undefined ? session.watermarks.find(item => item.dimension === WATERMARK_FLOOR && item.epoch === order.epoch) : undefined;
+  if (order.status === 'known' && floor !== undefined && order.sequence <= floor.sequence) return {outcome: 'stale', fresh: false};
   const orderedActivity = eventDimension === 'activity' && watermark !== undefined;
   const bestEffort = order.status === 'unknown' && !session.watermarks.some(item => item.dimension === 'activity') && session.ordering.status === 'unknown';
   const selectedStart = bestEffort && event.kind === 'turn-started' && turn.status === 'known';
@@ -322,6 +378,8 @@ export function reduceSession(previous: StoredSession | undefined, observation: 
       break;
   }
   forgetRetiredApprovals(session);
+  retireSuperseded(session, consumers);
+  boundWatermarks(session);
   if (eventDimension === 'activity' && !rootStart) {
     const conflict = previous !== undefined && previous.activity !== 'unknown' && previous.activity !== session.activity && !orderedActivity && !selectedStart && !matchingStop;
     const missingStart = event.kind === 'turn-started' && turn.status === 'unknown';

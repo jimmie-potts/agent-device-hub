@@ -200,7 +200,15 @@ and exits 1, and the service manager restarts it whole.
   child is refused, and a new root displaces one finished child subtree with no
   attention, or is refused; roots are never displaced. A refusal changes
   nothing, is logged as `message.received` `rejected` with `capacity`, and
-  returns nothing to the hook.
+  returns nothing to the hook. A session holds at most 128 notices and 256
+  ordering watermarks (#2021), so it can keep taking turns. A turn end past
+  128 notices retires superseded notices, whose turn the session's later known
+  turn replaced: those every consumer acknowledged first, then the oldest. A
+  notice that still counts is never retired. When those alone pass the limit,
+  the turn end is refused with `capacity`. Past 256 watermarks, a session drops
+  the watermarks of attention it no longer holds and keeps one floor per epoch,
+  under the reserved dimension `floor`. Ordered evidence at or below the floor,
+  in a dimension without its own watermark, is stale.
 - **Publication.** Each change derives its `session` state, removal and
   occurrence messages. One SQLite transaction commits the change with those
   messages (through the SDK's outbox), the published records, a history row for
