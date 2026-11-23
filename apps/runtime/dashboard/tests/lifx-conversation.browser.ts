@@ -1,3 +1,4 @@
+import {worldClock} from './world-clock.ts';
 import assert from 'node:assert/strict';
 import {chromium, type Browser} from 'playwright';
 import {PACKET} from '@jimmie-potts/lifx';
@@ -53,7 +54,15 @@ export async function lifxConversationJourney(browser: Browser): Promise<void> {
 }
 
 export async function wemoConversationJourney(browser: Browser): Promise<void> {
-  const world = await startWorld({companions: true, wemo: true, assistantWemo: true});
+  const clock = worldClock();
+  let overrideRead: (() => Promise<boolean | undefined>) | undefined;
+  let release: (value: boolean) => void = () => {};
+  const reading = new Promise<boolean>(resolve => {release = resolve;});
+  const world = await startWorld({companions: true, wemo: true, assistantWemo: true, clock,
+    wemoReadback: (plug, observed) => {
+      assert.equal(plug, 'shelf-lamp');
+      return overrideRead?.() ?? Promise.resolve(observed);
+    }});
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
@@ -66,26 +75,69 @@ export async function wemoConversationJourney(browser: Browser): Promise<void> {
       await conversation.getByRole('textbox', {name: 'Message', exact: true}).fill(text);
       await conversation.getByRole('button', {name: 'Send', exact: true}).click();
     };
+    await clock.advance(50);
     await send('SYNTHETIC_WEMO status shelf-lamp');
     await conversation.getByText(/Synthetic result: Shelf lamp.*Observed power: off/).waitFor();
-    await send('SYNTHETIC_WEMO power shelf-lamp on');
     const proposal = conversation.getByRole('article', {name: 'Proposed command', exact: true});
-    await proposal.getByText('Turn on Shelf lamp?', {exact: true}).waitFor();
-    assert.equal(world.wemo.state()['shelf-lamp']?.writes, 0);
-    await page.reload();
-    await feed(page, 'connected');
-    await proposal.getByText('Turn on Shelf lamp?', {exact: true}).waitFor();
-    await proposal.getByRole('button', {name: 'Approve proposal', exact: true}).click();
+    const approve = async (on: boolean, before?: () => void) => {
+      const text = `Turn ${on ? 'on' : 'off'} Shelf lamp?`;
+      await send(`SYNTHETIC_WEMO power shelf-lamp ${on ? 'on' : 'off'}`);
+      await proposal.getByText(text, {exact: true}).waitFor();
+      if (world.wemo.state()['shelf-lamp']?.writes === 0) {
+        await page.reload();
+        await feed(page, 'connected');
+        await proposal.getByText(text, {exact: true}).waitFor();
+      }
+      await proposal.locator('summary').click();
+      await proposal.getByText(/bunny\/modules\/wemo/).waitFor();
+      before?.();
+      await proposal.getByRole('button', {name: 'Approve proposal', exact: true}).click();
+      await proposal.waitFor({state: 'hidden'});
+    };
+    await approve(true);
+    await conversation.getByText('Shelf lamp reports power on.').waitFor();
     const tool = conversation.getByRole('article', {name: 'tool message', exact: true}).filter({has: page.locator('p', {hasText: 'accepted: power-set on shelf-lamp'})});
     await tool.locator('summary').click();
     await tool.getByText('Tracked operation succeeded · evidence transmitted', {exact: true}).waitFor();
-    assert.equal(world.wemo.state()['shelf-lamp']?.writes, 1);
+    await approve(false);
+    await conversation.getByText('Shelf lamp reports power off.').waitFor();
+    assert.equal(world.wemo.state()['shelf-lamp']?.writes, 2);
+
+    overrideRead = () => reading;
+    await approve(true);
+    await clock.advance(1100);
+    const pending = conversation.getByText('Power command sent. I’ll update this reply when confirmation for Shelf lamp is available.');
+    await pending.waitFor();
+    await send('Wait for my next answer.');
+    await conversation.getByRole('textbox', {name: 'Answer', exact: true}).waitFor();
+    release(true);
+    const update = conversation.getByRole('article', {name: 'assistant message'}).filter({has: page.getByRole('link', {name: 'Update to earlier reply'})});
+    await update.getByText('Shelf lamp reports power on.', {exact: true}).waitFor();
+    await page.reload();
+    await feed(page, 'connected');
+    await pending.waitFor();
+    assert.equal(await update.count(), 1);
+    const answer = conversation.getByRole('textbox', {name: 'Answer', exact: true});
+    await answer.fill('Continue');
+    await conversation.getByRole('button', {name: 'Answer', exact: true}).click();
+    await conversation.getByText(/Synthetic result: Continue/).waitFor();
+
+    overrideRead = () => Promise.resolve(undefined);
+    await approve(false);
+    await conversation.getByText('Power command sent. I couldn’t confirm Shelf lamp’s power.').waitFor();
+    await approve(true, () => {world.wemoLoseReply();});
+    await conversation.getByText('I couldn’t tell whether Shelf lamp switched on. The plug entered a hold after the unanswered write.').waitFor();
+    await clock.advance(5100);
+    await send('SYNTHETIC_WEMO status shelf-lamp');
+    await conversation.getByText(/Synthetic result: Shelf lamp.*Device held.*Observed power: on/).waitFor();
+    assert.equal(world.wemo.state()['shelf-lamp']?.writes, 5, 'one write per approval, including the unanswered write');
     assert.equal(world.wemo.state()['desk-lamp']?.writes, 0);
   } finally {
+    release(false);
     await context.close();
     await world.close();
   }
-  process.stdout.write('Wemo Conversation browser: status, saved owner and target, and tracked power evidence passed.\n');
+  process.stdout.write('Wemo Conversation browser: on and off, delayed follow-up, unavailable readback, and uncertainty with one write per approval passed.\n');
 }
 
 if (import.meta.main) {

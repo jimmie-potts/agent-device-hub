@@ -93,6 +93,9 @@ function TaskControls({context, command, state, profile, live, question, drafts,
             ? <details><summary>{question.proposal.command} on {question.proposal.target}</summary>
               <pre style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{JSON.stringify({binding: question.proposal.binding, settings: question.proposal.data}, null, 2)}</pre>
             </details>
+          : 'owner' in question.proposal ? <details><summary>Power command on {question.proposal.target}</summary>
+              <pre style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{JSON.stringify(question.proposal, null, 2)}</pre>
+            </details>
           : <p><code>{question.proposal.target}</code> · {question.proposal.family === 'power-set' ? (question.proposal.data.on ? 'Power on' : 'Power off') : `Brightness ${String(question.proposal.data.percent)}%`}</p>}
         <button type="button" disabled={!enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', true);}}>Approve proposal</button>
         <button type="button" className="secondary" disabled={!enabled} onClick={() => {send('decline', true);}}>Decline proposal</button>

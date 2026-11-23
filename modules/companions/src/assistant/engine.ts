@@ -9,7 +9,7 @@ import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contrac
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
-import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, followConfirmation, pending, type Confirmation} from './confirmation.js';
+import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
 import type {Proposal} from './history-contract.js';
@@ -829,9 +829,7 @@ export class AssistantEngine {
     };
     let result: string, delegation: Question | undefined;
     const startedAtMs = this.context.clock.now();
-    const brightness = proposal.family === 'catalog-action' && proposal.command === 'brightness-set' &&
-      proposal.binding.kind === 'device' && proposal.binding.owner === 'bunny/modules/pixoo' && typeof proposal.data.percent === 'number'
-      ? {binding: proposal.binding, percent: proposal.data.percent} : undefined;
+    const target = confirmationTarget(proposal, question.text);
     const action = {questionId: question.id, description: actionDescription(proposal, question.text)};
     if (proposal.family !== 'coding-dispatch') {
       const dispatch = this.options.dispatch;
@@ -858,12 +856,9 @@ export class AssistantEngine {
           this.#catalog().rejected(proposal, id);
         }
         const settled = settle(answer, receipt);
-        if (answer.status !== 'accepted' || brightness === undefined) return settled;
-        const suffix = ` brightness to ${brightness.percent}%?`;
-        const label = question.text.startsWith('Set ') && question.text.endsWith(suffix)
-          ? question.text.slice(4, -suffix.length) : brightness.binding.target;
+        if (answer.status !== 'accepted' || target === undefined) return settled;
         const acceptedAtMs = this.context.clock.now();
-        return {...settled, confirmation: {...brightness, label, requestId: id, taskId: task.id, questionId: question.id,
+        return {...settled, confirmation: {...target, requestId: id, taskId: task.id, questionId: question.id,
           acceptedAtMs, expiresAtMs: acceptedAtMs + CONFIRMATION_LIFETIME_MS, traceparent: parent.traceparent}};
       }, (current, call) => {
         call.action = action;

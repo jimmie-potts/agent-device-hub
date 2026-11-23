@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
-import {DEVICE_READBACK_SCHEMA, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {DEVICE_POWER_READBACK_SCHEMA, DEVICE_READBACK_SCHEMA, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import {coreValidator, operationEntityId, type LifecycleObservation, type ModeState, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {test, type TestContext} from 'node:test';
@@ -104,14 +104,15 @@ void test('light status preserves unknown state after copy loss and evidence old
   assert.match(readDevices([noWrite], 'desk-lamp', 31_000), /Current state is unknown. The observation is stale/);
 });
 
-for (const resume of [false, true]) void test(`Pixoo restart preserves one write and the original exchange (resume=${resume})`, async context => {
-  const owner = 'bunny/modules/pixoo';
-  const display = {...light('studio-display', 'Studio Display'), kind: 'pixoo'};
-  const provider = counted((_input, turn) => turn === 1 ? call('control_brightness_set', {
-    owner, target: display.id, arguments: JSON.stringify({percent: 35}),
-  }) : reply('The command was sent.'));
+for (const kind of ['pixoo', 'wemo'] as const) for (const resume of [false, true]) void test(`${kind} restart preserves one write and the original exchange (resume=${resume})`, async context => {
+  const owner = `bunny/modules/${kind}`;
+  const display = {...light('studio-display', 'Studio Display'), kind};
+  const tool = kind === 'pixoo' ? 'control_brightness_set' : 'set_wemo_power';
+  const provider = counted((_input, turn) => turn !== 1 ? reply('The command was sent.') : kind === 'pixoo'
+    ? call(tool, {owner, target: display.id, arguments: JSON.stringify({percent: 35})})
+    : call(tool, {device: display.id, on: true}));
   const requests: AssistantDispatch[] = [];
-  const w = await world(context, {provider, tools: ['control_brightness_set'], dispatch: data => {
+  const w = await world(context, {provider, tools: [tool], devices: () => [display], dispatch: data => {
     requests.push(data);
     return Promise.resolve(accepted(data.requestId));
   }});
@@ -122,20 +123,20 @@ for (const resume of [false, true]) void test(`Pixoo restart preserves one write
   const atMs = Date.now() - 100;
   let device: DeviceRecord = display;
   let deviceSyncAvailable = true;
-  const draft = () => ({type: 'org.bunny.device.updated', subject: display.id, dataschema: DEVICE_READBACK_SCHEMA, data: device});
+  const draft = () => ({type: 'org.bunny.device.updated', subject: display.id, dataschema: kind === 'pixoo' ? DEVICE_READBACK_SCHEMA : DEVICE_POWER_READBACK_SCHEMA, data: device});
   await pixoo.serveSync(['device'], () => deviceSyncAvailable ? {revision: device.revision, states: [draft()]} : errorBody('unavailable'));
   await w.core.serveSync(['operation'], () => {
     const requestId = requests[0]?.requestId;
     if (requestId === undefined) return {revision: 0, states: []};
     const id = operationEntityId(requestId);
-    const operation: OperationRecord = {id, revision: 1, requestId, kind: 'device', family: 'brightness-set',
-      command: 'org.bunny.brightness.set.requested', target: display.id, requestedBy: 'bunny/modules/companions',
+    const operation: OperationRecord = {id, revision: 1, requestId, kind: 'device', family: kind === 'pixoo' ? 'brightness-set' : 'power-set',
+      command: kind === 'pixoo' ? 'org.bunny.brightness.set.requested' : 'org.bunny.power.set.requested', target: display.id, requestedBy: 'bunny/modules/companions',
       status: 'completed', result: 'succeeded', evidence: 'transmitted', sentAtMs: atMs, updatedAtMs: atMs, deadlineAtMs: atMs + 5000};
     return {revision: 1, states: [{type: 'org.bunny.operation.updated', subject: id,
       dataschema: 'https://bunny.invalid/events/operation/2.0', data: operation}]};
   });
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Set brightness');
+  await input(w.core, w.module(), 'Set one device');
   await until(() => status(w) === 'waiting');
   deviceSyncAvailable = false;
   await input(w.core, w.module(), 'approve', true);
@@ -150,8 +151,10 @@ for (const resume of [false, true]) void test(`Pixoo restart preserves one write
   const before = provider.calls();
   await w.restart(() => {
     deviceSyncAvailable = true;
-    device = {...display, revision: 2, brightnessReadbacks: [{requestId, configurationRevision: display.configurationRevision,
-      generation: display.generation, requestedPercent: 35, transmittedAtMs: atMs, reading: {status: 'known', percent: 32, observedAtMs: atMs + 1}}]};
+    const binding = {requestId, configurationRevision: display.configurationRevision, generation: display.generation, transmittedAtMs: atMs};
+    device = {...display, revision: 2, ...(kind === 'pixoo'
+      ? {brightnessReadbacks: [{...binding, requestedPercent: 35, reading: {status: 'known', percent: 32, observedAtMs: atMs + 1}}]}
+      : {powerReadbacks: [{...binding, requestedOn: true, reading: {status: 'known', on: false, observedAtMs: atMs + 1}}]})};
   });
   if (resume) {
     assert.equal(status(w), 'paused');
@@ -168,8 +171,9 @@ for (const resume of [false, true]) void test(`Pixoo restart preserves one write
   assert.ok(original);
   assert.ok(original.text.includes('The command was sent.'), 'the normal final reply remains visible');
   assert.equal(messages.filter(message => message.follows === originalTask + '-result').length, resume ? 0 : 1);
-  assert.match(resume ? original.text : messages.find(message => message.follows !== undefined)?.text ?? '', /Studio Display reports 32% brightness/);
-  if (!resume) assert.ok(original.text.includes('Brightness command sent.'));
+  assert.match(resume ? original.text : messages.find(message => message.follows !== undefined)?.text ?? '',
+    kind === 'pixoo' ? /Studio Display reports 32% brightness/ : /Studio Display reports power off/);
+  if (!resume) assert.ok(original.text.includes(kind === 'pixoo' ? 'Brightness command sent.' : 'Power command sent.'));
   assert.equal(requests.length, 1);
   assert.equal(provider.calls(), resume ? before + 1 : before);
   assert.equal(status(w), 'succeeded');
@@ -237,6 +241,8 @@ void test('an owner-approved Wemo power request preserves the exact plug, owner 
   assert.deepEqual((await page(w)).currentTask?.question?.proposal, proposal);
   assert.equal(commands.length, 0);
   await input(w.core, w.module(), 'approve', true);
+  await until(() => w.store().confirmations().length === 1);
+  w.advance(1100);
   await until(() => status(w) === 'succeeded');
   assert.equal(commands.length, 1);
   const saved = commands[0];

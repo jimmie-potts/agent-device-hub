@@ -120,3 +120,42 @@ void test('completion persistence faults are internal ERRORs correlated with the
   assert.ok(fault);assert.equal(fault.level,'error');assert.equal(fault.fields['bunny.request.id'],'completion-fault');assert.ok(fault.trace);assert.ok(host.received.some(value=>value.traceparent===fault.trace?.traceparent));
   assert.equal(sends,1);assert.ok(!JSON.stringify(host.logs).includes('private storage text'));
 });
+
+void test('Wemo binds one post-write reading from the approved plug to the original request', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'wemo-power-readback-'));
+  const bus = new InProcessBus();
+  const core = bus.connect('bunny/core');
+  let operations: string[] = [];
+  let latest: DeviceRecord | undefined;
+  const host = new ModuleHarness(createWemoModule({transport: () => ({
+    read: () => {
+      operations.push('read');
+      return Promise.resolve({power: false, firmware: 'synthetic'});
+    },
+    setPower: (on, _signal, before) => {
+      assert.equal(before(), undefined);
+      operations.push(on ? 'on' : 'off');
+      return Promise.resolve({result: 'succeeded', evidence: 'transmitted', connection: 'available'});
+    },
+  })}), {bus, stateDir: dir, section: {plugs: [section.plugs[0]]}});
+  t.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
+  await core.subscribe<DeviceRecord>('bunny.state.device.desk-lamp', message => {latest = message.data;});
+  await host.start();
+  await until(() => latest?.availability === 'available');
+  const approved = latest;
+  assert.ok(approved);
+  operations = [];
+  const answer = await core.request('bunny.cmd.power-set.desk-lamp', {
+    type: 'org.bunny.power.set.requested', subject: 'desk-lamp', dataschema: 'https://bunny.invalid/events/power-set/2.0',
+    data: {on: true, expectedConfigurationRevision: approved.configurationRevision, expectedGeneration: approved.generation},
+  }, {requestId: 'readback-on', timeoutMs: 1000});
+  assert.equal(answer.status, 'accepted');
+  const latestReadbacks = () => latest?.powerReadbacks ?? [];
+  await until(() => latestReadbacks()[0]?.reading.status === 'known');
+  const [readback] = latestReadbacks();
+  assert.deepEqual(operations, ['on', 'read']);
+  assert.equal(readback?.requestId, 'readback-on');
+  assert.equal(readback.requestedOn, true);
+  assert.ok(readback.reading.status === 'known');
+  assert.equal(readback.reading.on, false, 'the requested setting does not replace the opposite reading');
+});
