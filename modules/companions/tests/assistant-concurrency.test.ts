@@ -56,12 +56,12 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
   const control = (action: string, extra: Record<string, unknown> = {}): Promise<RequestResult> => {
     const requestId = randomUUID();
     return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
-      dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, action, expectedRevision: state().revision, ...extra}}, {requestId, timeoutMs: 5000});
+      dataschema: `https://bunny.invalid/events/assistant-control/${action === 'rename' ? '2.1' : '2.0'}`, data: {requestId, action, expectedRevision: state().revision, ...extra}}, {requestId, timeoutMs: 5000});
   };
-  const send = async (profile: AssistantProfile, text: string, answer = false): Promise<RequestResult> => {
+  const send = async (profile: AssistantProfile, text: string, answer = false, revision = state().revision): Promise<RequestResult> => {
     const requestId = randomUUID(), current = task(profile);
     const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
-      bytes: Buffer.from(JSON.stringify({action: answer ? 'answer' : 'start', profile, expectedRevision: state().revision, text,
+      bytes: Buffer.from(JSON.stringify({action: answer ? 'answer' : 'start', profile, expectedRevision: revision, text,
         ...(answer ? {taskId: current?.taskId, questionId: current?.questionId} : {})}))});
     assert.ok(staged !== undefined && !('error' in staged), JSON.stringify(staged));
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
@@ -289,4 +289,62 @@ void test('approvals from two conversations reach the single writer in arrival o
   providers.bunny.next().resolve(reply('Synthetic bunny mode not changed'));
   providers.reachy.next().resolve(reply('Synthetic reachy mode changed'));
   await settle(() => w.task('bunny')?.status === 'succeeded' && w.task('reachy')?.status === 'succeeded');
+});
+
+void test('a step in another conversation never makes a command stale, while a change in its own conversation does', async context => {
+  const providers = three(), w = await world(context, withProviders(providers));
+  await w.control('enable');
+  await w.send('bunny', 'Synthetic bunny request'); await w.send('reachy', 'Synthetic reachy request');
+  await settle(() => providers.bunny.pending.length === 1 && providers.reachy.pending.length === 1);
+  providers.bunny.next().resolve(ask('Synthetic bunny question?'));
+  await settle(() => w.task('bunny')?.status === 'waiting');
+  // The owner reads the page at this revision; then Reachy's turn takes a step, which changes the assistant's revision.
+  const seen = w.state().revision;
+  providers.reachy.next().resolve(fixture());
+  await settle(() => providers.reachy.pending.length === 1);
+  assert.ok(w.state().revision > seen, 'the other conversation moved the assistant revision');
+  // Commands for conversations that did not change since are accepted against the revision the owner saw.
+  assert.equal((await w.send('microduck', 'Synthetic microduck request', false, seen)).status, 'accepted', 'a start');
+  assert.equal((await w.control('rename', {profile: 'bunny', title: 'Synthetic bunny title', expectedRevision: seen})).status, 'accepted', 'a rename');
+  assert.equal((await w.control('speak', {taskId: w.task('bunny')?.taskId, messageId: w.task('bunny')?.questionId, expectedRevision: seen})).status, 'accepted', 'a Read aloud');
+  assert.equal((await w.send('bunny', 'Synthetic bunny answer', true, seen)).status, 'accepted', 'an answer');
+  await settle(() => providers.bunny.pending.length === 1 && providers.microduck.pending.length === 1);
+  const before = w.state().revision;
+  providers.microduck.next().resolve(fixture());
+  await settle(() => providers.microduck.pending.length === 1 && w.state().revision > before);
+  assert.equal((await w.control('cancel', {taskId: w.task('bunny')?.taskId, expectedRevision: before})).status, 'accepted', 'a cancel of a running task');
+  // A command whose own conversation changed after the revision it names is stale.
+  assert.equal(code(await w.control('cancel', {taskId: w.task('reachy')?.taskId, expectedRevision: seen})), 'revision-conflict', 'a stale cancel');
+  assert.equal(code(await w.send('bunny', 'Synthetic stale bunny request', false, seen)), 'revision-conflict', 'a stale start');
+  assert.equal(code(await w.control('cancel', {taskId: w.task('reachy')?.taskId, expectedRevision: w.state().revision + 1})), 'revision-conflict', 'a revision from the future');
+  // Enable and disable keep the assistant-wide revision.
+  assert.equal(code(await w.control('disable', {expectedRevision: seen})), 'revision-conflict');
+  assert.equal((await w.control('cancel', {taskId: w.task('reachy')?.taskId})).status, 'accepted');
+});
+
+void test('a recovery that fails in one conversation leaves that conversation unavailable and the others answering', async context => {
+  const providers = three(), w = await world(context, withProviders(providers));
+  await w.control('enable');
+  for (const profile of PROFILES) await w.send(profile, `Synthetic ${profile} request`);
+  await settle(() => PROFILES.every(profile => providers[profile].pending.length === 1));
+  for (const profile of PROFILES) providers[profile].next().resolve(ask(`Synthetic ${profile} question?`));
+  await settle(() => PROFILES.every(profile => w.task(profile)?.status === 'waiting'));
+  // Reachy's saved graph state becomes unreadable, so its startup reconciliation fails.
+  const reachy = w.task('reachy')?.taskId ?? assert.fail('reachy task');
+  w.store().database.prepare("UPDATE assistant_checkpoints SET checkpoint=CAST('not a checkpoint' AS BLOB) WHERE thread=?").run(reachy);
+  await w.restart();
+  assert.equal(w.state().available, true, 'the assistant as a whole stays available');
+  assert.deepEqual([w.task('reachy')?.status, w.task('reachy')?.code], ['paused', 'unavailable']);
+  for (const profile of ['bunny', 'microduck'] as const) {
+    assert.equal(w.task(profile)?.status, 'waiting');
+    assert.equal((await w.send(profile, `Synthetic ${profile} answer`, true)).status, 'accepted', `${profile} still answers`);
+  }
+  await settle(() => providers.bunny.pending.length === 1 && providers.microduck.pending.length === 1);
+  // The failed conversation stays unavailable until a restart, even after its task is cancelled.
+  assert.equal(code(await w.send('reachy', 'Synthetic reachy answer', true)), 'unavailable');
+  assert.equal((await w.control('cancel', {taskId: reachy})).status, 'accepted');
+  assert.equal(code(await w.send('reachy', 'Synthetic reachy request again')), 'unavailable');
+  providers.bunny.next().resolve(reply('Synthetic bunny answer'));
+  providers.microduck.next().resolve(reply('Synthetic microduck answer'));
+  await settle(() => w.task('bunny')?.status === 'succeeded' && w.task('microduck')?.status === 'succeeded');
 });

@@ -60,7 +60,10 @@ export function ConversationDetails({
   state: AssistantState | undefined; task: AssistantTaskSummary | undefined; coding: CodingState | undefined; live: boolean;
   spend: SpendView | undefined;
   savedQuestion: React.ReactNode; receipt: string | undefined; locked: boolean;
-  /** The profiles whose conversation has an unfinished task, which keep the one switch from turning off (Hub #2027). */
+  /**
+   * The profiles whose conversation has an unfinished task, which keep the one switch from turning off (Hub #2027).
+   * `goTo` opens another of them; the open conversation is named, not linked.
+   */
   unfinished: readonly AssistantProfile[]; goTo: (profile: AssistantProfile) => void;
   setEnabled: (action: 'enable' | 'disable') => void;
   title: ConversationTitle | undefined; rename: (title: string) => void;
@@ -170,10 +173,11 @@ export function ConversationDetails({
           <button type="button" className="secondary" disabled={locked || (enabled && unfinished.length > 0)}
             onClick={() => {setEnabled(enabled ? 'disable' : 'enable');}}>{enabled ? 'Disable conversation' : 'Enable conversation'}</button>
           {enabled && unfinished.length > 0 && <div className="conversation-unfinished">
-            <p>Disabling turns off every conversation. Finish or cancel the unfinished {unfinished.length === 1 ? 'task' : 'tasks'} first:</p>
-            <ul>{unfinished.map(owner => <li key={owner}>
+            <p>Disabling turns off every conversation, so every unfinished task must be finished or cancelled first.</p>
+            {unfinished.includes(profile) && <p>This conversation has an unfinished task.</p>}
+            {unfinished.some(owner => owner !== profile) && <ul aria-label="Other unfinished conversations">{unfinished.filter(owner => owner !== profile).map(owner => <li key={owner}>
               <button type="button" className="secondary" onClick={() => {goTo(owner);}}>Go to {profiles[owner].name} task</button>
-            </li>)}</ul>
+            </li>)}</ul>}
           </div>}
         </>}
         <Facts items={[['Session title', title === undefined ? 'Not shown on the status devices now'

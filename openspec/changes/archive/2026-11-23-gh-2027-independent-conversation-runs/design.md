@@ -24,21 +24,25 @@ Several graphs now interleave on one connection. Every engine write still runs i
 
 ### 4. Recovery per conversation
 
-`AssistantStore.unfinished()` returns every unfinished task, oldest first; startup reconciles each one separately and starts no run. A failed recovery write still makes the whole assistant unavailable, as before, so every later task is recovered unavailable too. Disable uses the same list: any unfinished task refuses it with `invalid-state`, because enable and disable are one switch for every conversation.
+`AssistantStore.unfinished()` returns every unfinished task, oldest first; startup reconciles each one separately and starts no run. A recovery that fails leaves only its own conversation unavailable until the next start (review round 1 on PR 2055): its answers, resumes and new tasks are refused `unavailable`, its cancel still works, and the other conversations and the published `available` flag are unaffected. Before, one conversation's unreadable checkpoint made the whole assistant unavailable. Disable uses the same list: any unfinished task refuses it with `invalid-state`, because enable and disable are one switch for every conversation.
 
-### 5. One waiting reply per conversation
+### 5. A revision per conversation
+
+The page sends the assistant state's revision with every command. One assistant-wide check refused any command after any change, so another conversation's step made a start, answer or cancel stale (review round 1 on PR 2055). The store now records, per conversation, the assistant revision of its last task change in `assistant_conversation_changes`: `save` marks the task's conversation and the next `bump` records it at the new revision. A run's trace bookkeeping does not count as a change. A command for a conversation is refused `revision-conflict` only when that conversation changed after the revision it names, or when the revision is ahead of the assistant's. Enable and disable keep the assistant-wide check. Rename is checked against its conversation too, since it is a command for one conversation. No wire change: `expectedRevision` keeps its meaning as the revision the client read. The table's first creation records every saved conversation at the current revision, which refuses exactly what the single check refused.
+
+### 6. One waiting reply per conversation
 
 The engine passes each spoken reply's conversation ID as its line. The coordinator keeps Reachy's card slot, with the existing rule that a newer card of equal or higher rank replaces the waiting card, and a map of one waiting reply per line. A newer reply of the same line, a replay included, replaces its waiting reply. Each candidate records its arrival. The voice takes the waiting candidate of the highest rank, then the earliest arrival. The ranking is unchanged: a reply ranks with coding attention, above notices and social speech, and only a strictly higher rank interrupts. Dispatch drops a candidate that went stale or lost its epoch while it waited and takes the next one. Stop, mute, loss and uncertainty clear every waiting candidate, as they cleared the one pending candidate.
 
-### 6. Device approvals
+### 7. Device approvals
 
 No new guard. A device approval keeps its configuration revision and generation guards and the unavailability and hold refusals, and a mode approval keeps its Hub-mode revision. Each device's single writer applies commands in arrival order and refuses a stale one. A test shows two conversations' mode approvals reaching a fake writer in arrival order.
 
-### 7. The page
+### 8. The page
 
-The composer blocks a start only while the open conversation's own task is unfinished. The cross-profile "One task is still unfinished" line is gone, so an empty demo now shows the invitation to send a message. Conversation settings lists a "Go to <name> task" button for each conversation with an unfinished task while Disable is unavailable.
+The composer blocks a start only while the open conversation's own task is unfinished. The cross-profile "One task is still unfinished" line is gone, so an empty demo now shows the invitation to send a message. While Disable is unavailable, Conversation settings says whether the open conversation has an unfinished task and lists a "Go to <name> task" button for each other one; at narrow widths the button also closes the Details overlay.
 
-### 8. The test seam
+### 9. The test seam
 
 `AssistantOptions.profileProviders` gives a test or harness a provider for a profile without a configured one. The qualification test uses it to give all three conversations gated paid providers. The production module passes none, so Reachy and MicroDuck keep the synthetic provider.
 
@@ -50,4 +54,4 @@ The composer blocks a start only while the open conversation's own task is unfin
 
 ## Migration
 
-None. Saved tasks, checkpoints and reports keep their shape. A database from the earlier release has at most one unfinished task, which the new startup recovers as before.
+The new `assistant_conversation_changes` table is created on first start, filled with every saved conversation at the current revision. Saved tasks, checkpoints and reports keep their shape. A database from the earlier release has at most one unfinished task, which the new startup recovers as before.

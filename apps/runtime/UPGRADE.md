@@ -250,6 +250,26 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Conversations running at once (#2027)
+
+The #2027 release lets each assistant conversation run its own task at the
+same time. It adds the `assistant_conversation_changes` table, which records
+the assistant revision of each conversation's last change, so a command is
+refused as stale only when its own conversation changed. The first start fills
+the table with every saved conversation at the current revision. No record is
+rewritten.
+
+An earlier release keeps one running slot and reconciles only one unfinished
+task at startup (`LIMIT 1`), so it would leave any other unfinished task as it
+was saved, a running one included. Before returning below this release, end or
+cancel every conversation's unfinished task in Conversation, then disable the
+conversation, which Conversation refuses while any conversation has an
+unfinished task. The earlier release ignores the added table. If this release
+is installed again later, the table keeps its earlier rows, so until each
+conversation changes again a command may be checked against an older
+revision; the task, question and status checks still apply. Prefer fixing
+forward.
+
 ## Anthropic monthly spend limit and built-in prices (#2047)
 
 The #2047 release prices the assistant's calls from a dated built-in table
@@ -435,9 +455,9 @@ session per conversation, again against an `e72f33fd` runtime:
 Prefer fixing forward. A return below this release needs, as a precondition,
 that the core holds no native session:
 
-1. End or cancel the unfinished assistant task in Conversation, then disable
-   the conversation, which Conversation refuses while a task is unfinished. No new
-   task can then start.
+1. End or cancel every conversation's unfinished assistant task in
+   Conversation, then disable the conversation, which Conversation refuses
+   while any conversation has an unfinished task. No new task can then start.
 2. Wait a full day after the last task change in any profile's conversation.
    Expiry removes each native session a day after its last evidence.
 3. Check that none is left: the `core_sessions` MCP tool with

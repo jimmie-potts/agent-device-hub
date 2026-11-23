@@ -1,6 +1,6 @@
 // A disposable process fixture for the concurrency qualification (Hub #2027): three conversations' graphs in one module
 // on its one SQLite connection, with gated paid providers answered in mixed order. `crash` exits abruptly, without the
-// module's orderly stop, while one conversation's model call is in flight and another waits on its question; `restart`
+// module's orderly stop, while two conversations' model calls are in flight and a third waits on its question; `restart`
 // starts the same state again, finishes the waiting conversation and reports what every record holds. The clock is
 // manual and nothing waits for time.
 import assert from 'node:assert/strict';
@@ -90,9 +90,11 @@ if (mode === 'crash') {
   await settle(() => providers.bunny.pending.length === 1, 'bunny second call in flight');
   accepted(await send('microduck', 'Synthetic microduck errand: time the bath again'), 'microduck second start');
   await settle(() => providers.microduck.pending.length === 1, 'microduck second call in flight');
-  providers.microduck.next().resolve(reply('Synthetic microduck answer: ten minutes'));
-  await settle(() => task('microduck')?.status === 'succeeded' && titlePrompts.length === 3, 'microduck second task and three titles');
-  // Exit while B.U.N.N.Y.'s admitted call has no answer and Reachy waits on its question, with no orderly module stop.
+  const database = host.moduleDatabase() ?? assert.fail('open database');
+  const titled = () => (database.prepare("SELECT COUNT(*) AS count FROM assistant_titles WHERE json_extract(record,'$.title') IS NOT NULL").get() as {count: number}).count;
+  await settle(() => titlePrompts.length === 3 && titled() === 3, 'three titles saved');
+  // Exit while B.U.N.N.Y.'s and MicroDuck's admitted calls have no answer and Reachy waits on its question, with no orderly
+  // module stop: two conversations' runs are lost at once.
   process.stdout.write(JSON.stringify({concurrent, observed: observed()}));
   process.exit(23);
 }

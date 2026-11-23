@@ -385,7 +385,11 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live} spend={spend}
           savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}
-          receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished} goTo={owner => {conversationRail.select(owner);}} setEnabled={present}
+          receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished} goTo={owner => {
+            // The chosen conversation shows at once; the narrow Details overlay would hide it, so it closes, as the rail's choice is made with it closed.
+            conversationRail.select(owner);
+            if (detailsOverlay) closeDetails();
+          }} setEnabled={present}
           title={title} rename={value => {
             if (state === undefined || locked) return;
             void command.run({family: 'assistant-control', target: 'assistant', requestId: crypto.randomUUID(),

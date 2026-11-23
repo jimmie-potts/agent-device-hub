@@ -275,13 +275,18 @@ void test('a failed speech revision records its internal decision once without l
 });
 
 const spoken = (taskId: string, messageId: string, text: string, validUntilMs: number) => ({taskId, messageId, text, validUntilMs});
+/** Yields event-loop turns until the check holds; no timer, so the manual clock alone moves time. */
+async function settle(check: () => boolean): Promise<void> {
+  for (let turn = 0; turn < 5000; turn += 1) {if (check()) return; await new Promise(resolve => {setImmediate(resolve);});}
+  assert.ok(check(), 'speech state arrived');
+}
 /** The text an output command speaks, a reply's or a card's. */
 const said = (command: Command<SpeechOutput> | undefined): string | undefined => command?.data.action !== 'speak' ? undefined : 'reply' in command.data ? command.data.reply.text : command.data.card.text;
 async function play(w: Awaited<ReturnType<typeof world>>, index: number): Promise<string | undefined> {
-  await w.advance(); await until(() => w.outputs.length === index + 1);
+  await w.advance(); await settle(() => w.outputs.length === index + 1);
   const command = w.outputs[index], operationId = command?.data.operationId ?? assert.fail('operation');
   await w.report({operationId, status: 'started', started: true}); await w.report({operationId, status: 'completed', started: true});
-  await until(() => w.owner().inspect().playback?.status === 'completed' && w.owner().inspect().playback?.operationId === operationId);
+  await settle(() => w.owner().inspect().playback?.status === 'completed' && w.owner().inspect().playback?.operationId === operationId);
   return said(command);
 }
 
@@ -292,7 +297,7 @@ void test('each conversation keeps one waiting reply, the others are kept, and t
     w.owner().offerReply(spoken(id, `${id}-result`, text, validUntilMs), `${id}-result`, parent, w.owner().mark(), line);
   };
   offer('conversation-a', 'First A answer.');
-  await w.advance(); await until(() => w.outputs.length === 1);
+  await w.advance(); await settle(() => w.outputs.length === 1);
   const first = w.outputs[0]?.data.operationId ?? assert.fail('operation');
   await w.report({operationId: first, status: 'started', started: true});
   // While A speaks: B and C each wait, A's second answer waits and its third replaces it, a coding question waits in
@@ -307,7 +312,7 @@ void test('each conversation keeps one waiting reply, the others are kept, and t
   assert.equal(w.owner().inspect().pending, true); await w.advance(); assert.equal(w.outputs.length, 1, 'an equal rank waits for the active reply');
   await w.advance(2000);
   await w.report({operationId: first, status: 'completed', started: true});
-  await until(() => w.owner().inspect().playback?.status === 'completed');
+  await settle(() => w.owner().inspect().playback?.status === 'completed');
   const order: (string | undefined)[] = [];
   for (let index = 1; index <= 4; index += 1) order.push(await play(w, index));
   assert.deepEqual(order, ['B answer.', 'C answer.', 'Synthetic coding question card.', 'Newest A answer.']);
@@ -318,7 +323,7 @@ void test('each conversation keeps one waiting reply, the others are kept, and t
 void test('the voice takes the highest rank first: a waiting reply speaks before an earlier waiting notice, which then still speaks', async t => {
   const w = await world(t), now = () => w.owner().context.clock.now(); await w.control('enable');
   w.owner().offerReply(spoken('task-1', 'task-1-result', 'First answer.', now() + 60_000), 'task-1-result', parent, w.owner().mark(), 'conversation-1');
-  await w.advance(); await until(() => w.outputs.length === 1);
+  await w.advance(); await settle(() => w.outputs.length === 1);
   const first = w.outputs[0]?.data.operationId ?? assert.fail('operation');
   await w.report({operationId: first, status: 'started', started: true});
   const notice = w.card(); notice.opportunity.category = 'coding-notice'; notice.opportunity.cue = 'turn-ended';
@@ -326,23 +331,23 @@ void test('the voice takes the highest rank first: a waiting reply speaks before
   w.owner().offer(notice, parent, w.owner().mark());
   w.owner().offerReply(spoken('task-2', 'task-2-result', 'Second conversation answer.', now() + 60_000), 'task-2-result', parent, w.owner().mark(), 'conversation-2');
   await w.report({operationId: first, status: 'completed', started: true});
-  await until(() => w.owner().inspect().playback?.status === 'completed');
+  await settle(() => w.owner().inspect().playback?.status === 'completed');
   assert.deepEqual([await play(w, 1), await play(w, 2)], ['Second conversation answer.', 'Synthetic notice card.']);
 });
 
 void test('Stop discards every waiting reply and card', async t => {
   const w = await world(t), now = () => w.owner().context.clock.now(); await w.control('enable');
   w.owner().offerReply(spoken('task-1', 'task-1-result', 'First answer.', now() + 60_000), 'task-1-result', parent, w.owner().mark(), 'conversation-1');
-  await w.advance(); await until(() => w.outputs.length === 1);
+  await w.advance(); await settle(() => w.outputs.length === 1);
   const first = w.outputs[0]?.data.operationId ?? assert.fail('operation');
   await w.report({operationId: first, status: 'started', started: true});
   w.owner().offerReply(spoken('task-2', 'task-2-result', 'Second answer.', now() + 60_000), 'task-2-result', parent, w.owner().mark(), 'conversation-2');
   w.owner().offerReply(spoken('task-3', 'task-3-result', 'Third answer.', now() + 60_000), 'task-3-result', parent, w.owner().mark(), 'conversation-3');
   w.owner().offer(w.card(), parent, w.owner().mark());
-  await w.control('stop'); await until(() => w.outputs.length === 2);
+  await w.control('stop'); await settle(() => w.outputs.length === 2);
   assert.equal(w.outputs[1]?.data.action, 'stop'); assert.equal(w.owner().inspect().pending, false);
   await w.report({operationId: first, status: 'stopped', started: true});
-  await until(() => w.owner().inspect().playback?.status === 'stopped'); await w.advance();
+  await settle(() => w.owner().inspect().playback?.status === 'stopped'); await w.advance();
   assert.equal(w.outputs.length, 2, 'nothing waiting speaks after Stop');
 });
 

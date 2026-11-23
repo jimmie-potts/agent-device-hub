@@ -5,10 +5,11 @@
 ## What changes
 
 - The engine keeps one running slot per conversation, keyed by conversation ID, so the Apartment conversation (#2032) can join later. A start is refused with `capacity` only while the same conversation has an unfinished task. Answer, resume, cancel and a coding worker's word find the task's own slot.
-- Startup reconciles each conversation's unfinished task separately and starts no work.
+- A command for a conversation is refused as stale only when its own conversation changed after the revision it names; enable and disable keep the assistant-wide revision. A new table records each conversation's last change.
+- Startup reconciles each conversation's unfinished task separately and starts no work. A recovery that fails leaves only its own conversation unavailable until the next start.
 - Disable stays refused with `invalid-state` while any conversation has an unfinished task. Enable is unchanged.
 - The speech coordinator keeps one waiting reply per conversation beside Reachy's card slot. A newer reply of the same conversation, a replay included, replaces that conversation's waiting reply. The voice takes the highest rank first, then arrival order. The existing ranking and the 60-second reply deadline stay.
-- The page drops the cross-profile "finish or cancel" gate for starting. Conversation settings names and links each conversation whose unfinished task keeps Disable unavailable.
+- The page drops the cross-profile "finish or cancel" gate for starting. Conversation settings says whether the open conversation has an unfinished task and links each other conversation whose unfinished task keeps Disable unavailable; the link closes the narrow Details overlay.
 - Tests: concurrency tests for the engine and the speech coordinator, and a qualification test with three graphs at once, scripted replies in mixed order, an abrupt process exit and a restart.
 
 ## Capabilities
@@ -24,4 +25,4 @@ None.
 
 ## Impact
 
-`modules/companions` (engine, store, speech coordinator, module wiring, page) and two runtime dashboard browser journeys. No event contract, SDK, runtime, table or diagnostic change. The engine gains a test seam, `profileProviders`, for a provider per profile; Reachy and MicroDuck keep the synthetic provider in production until #2026. Out of scope: coding-worker slots (#2028), the queue (#2030), steer (#2031) and the room (#2036). Delivery is reviewed source; installation joins the next runtime batch.
+`modules/companions` (engine, store, speech coordinator, module wiring, page) and two runtime dashboard browser journeys. No event contract, SDK, runtime or diagnostic change; one module table is added (`assistant_conversation_changes`), and `apps/runtime/UPGRADE.md` gains a rollback note. The engine gains a test seam, `profileProviders`, for a provider per profile; Reachy and MicroDuck keep the synthetic provider in production until #2026. Out of scope: coding-worker slots (#2028), the queue (#2030), steer (#2031) and the room (#2036). Delivery is reviewed source; installation joins the next runtime batch.

@@ -18,3 +18,12 @@
 - [x] 4.1 Drop the cross-profile start gate and list each unfinished conversation by Disable. Evidence: the conversation history and conversation state browser journeys pass in `npm run test:companions:browser`.
 - [x] 4.2 Update the companions README, `docs/architecture.md` and `docs/development.md`. Evidence: readback.
 - [x] 4.3 Synchronize `bunny-assistant-tasks` and `bunny-companions` and archive this change. Evidence: `npm run check:workflow` passes.
+
+## 5. Review round 1
+
+- [x] 5.1 Red: a step in another conversation refuses a start, answer, rename, Read aloud or cancel as a revision conflict. Evidence: the new concurrency test fails on the assistant-wide check.
+- [x] 5.2 Check each conversation's command against its own last change. Evidence: the same test passes, with stale same-conversation, future and disable commands refused.
+- [x] 5.3 Red: a mutation that recovers only the first unfinished task passes every test. Evidence: with two conversations' calls lost in the crash, the qualification test fails on that mutation and passes without it.
+- [x] 5.4 Red: one conversation's unreadable checkpoint makes the whole assistant unavailable. Evidence: the new recovery test fails, then passes with the failure scoped to its conversation.
+- [x] 5.5 Close the narrow Details overlay from Go to, and leave the open conversation out of the list. Evidence: the conversation history journey at phone width and the conversation state journey pass.
+- [x] 5.6 Wait in the new speech tests by yielding turns instead of real timers; add the #2027 rollback note to `apps/runtime/UPGRADE.md` and the two-delegation case to the companions README. Evidence: readback and `speech-coordinator.test.js`.

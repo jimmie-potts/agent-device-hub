@@ -247,7 +247,12 @@ profiles keep separate conversation histories. Each conversation runs its own
 task at the same time as the others (Hub #2027): one unfinished task and one
 graph invocation per conversation, all on the module's one SQLite connection.
 A new message to a conversation whose own task is unfinished is refused with
-`capacity`; another conversation's task never blocks it.
+`capacity`; another conversation's task never blocks it. A command for one
+conversation is refused as stale (`revision-conflict`) only when that
+conversation changed after the revision the page read, so another
+conversation's step never refuses it; enable and disable keep the
+assistant-wide revision. A startup recovery that fails leaves only its own
+conversation unavailable until the next start.
 
 Choose the everyday B.U.N.N.Y. assistant or a Reachy or MicroDuck demo under
 **Conversations** in the dashboard's rail, from any page (Hub #1890). On a
@@ -517,9 +522,14 @@ findings, limitations and usage (the model sees it as text naming the call,
 since the call's own result was the hand-off acceptance and the Messages API
 takes one result per call, Hub #1360); nothing is resent, and a restart or a lost
 worker leaves the operation uncertain. The worker runs one hand-off at a time,
-whichever conversation asked (#2028 gives each companion its own slot); while
-it is busy another conversation's delegation is not proposed, and the tool
-result says no coding worker is connected. The dispatch carries twenty minutes, sixty turns and five dollars as bounds. The page shows
+whichever conversation asked (#2028 gives each companion its own slot). While
+it is busy, another conversation's delegation is not proposed, and the tool
+result says no coding worker is connected. While it is idle, two conversations
+can each be offered a delegation; if the owner approves both, the first
+dispatch is admitted and the second is refused at dispatch as `unavailable`
+("no coding worker is connected"), and that refusal goes back to its model as
+the tool's result. Both wordings name a busy worker as not connected; #2028
+owns that behavior. The dispatch carries twenty minutes, sixty turns and five dollars as bounds. The page shows
 the worker's availability beside the provider. The worker's readiness (Hub
 #1743: tool version, signed in or not, plan and the latest limit windows, each
 unknown where the tool did not say) arrives on its enable and is published in

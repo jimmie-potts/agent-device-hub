@@ -758,7 +758,9 @@ for (const condition of ['unavailable', 'incompatible', 'recovery-failure'] as c
     assert.equal(provider.calls(), 1); assert.equal((await control(w.core, w.module(), 'resume', id)).status, 'rejected');
     const saved = w.store().task(id); assert.ok(saved !== undefined && saved.runId !== null);
     const run = w.store().run(saved.runId); assert.ok(run); assert.notEqual(run.endedAtMs, null);
-    if (condition !== 'incompatible') assert.equal(state?.available, false);
+    if (condition === 'unavailable') assert.equal(state?.available, false);
+    // A failed recovery leaves only its own conversation unavailable (Hub #2027); the assistant as a whole stays available.
+    if (condition === 'recovery-failure') assert.equal(state?.available, true);
   });
 }
 

@@ -32,14 +32,15 @@ void test('three conversations run at once, survive an abrupt exit and a restart
 
     // A restart recovers each conversation alone and starts no work.
     assert.deepEqual(after.startupCalls, [0, 0, 0], 'startup sends no model call');
-    assert.deepEqual(after.recovered, {bunny: 'uncertain', reachy: 'waiting', microduck: 'succeeded'});
+    // Two conversations lost a call in flight; each is recovered uncertain on its own, and the waiting one stays waiting.
+    assert.deepEqual(after.recovered, {bunny: 'uncertain', reachy: 'waiting', microduck: 'uncertain'});
     assert.equal(after.resume, 'uncertain-result', 'the call whose answer was lost is never retried');
     assert.deepEqual(after.calls, [0, 1, 0], 'only the answered Reachy question sent another call');
 
     const byProfile = (profile: Saved['profile']) => after.tasks.filter(task => task.profile === profile);
     const conversations = new Set(after.tasks.map(task => task.conversationId));
     assert.equal(conversations.size, 3);
-    assert.deepEqual(after.tasks.map(task => [task.profile, task.status]).sort(), [['bunny', 'uncertain'], ['microduck', 'cancelled'], ['microduck', 'succeeded'], ['reachy', 'succeeded']]);
+    assert.deepEqual(after.tasks.map(task => [task.profile, task.status]).sort(), [['bunny', 'uncertain'], ['microduck', 'cancelled'], ['microduck', 'uncertain'], ['reachy', 'succeeded']]);
 
     // Checkpoints: each task's graph thread holds its own state, and no thread is anyone else's.
     assert.deepEqual([...after.threads].sort(), after.tasks.map(task => task.id).sort());
@@ -59,7 +60,8 @@ void test('three conversations run at once, survive an abrupt exit and a restart
     // receipt, so its fate stays unknown.
     assert.equal(after.messages.microduck?.some(text => text.includes('late')), false);
     assert.deepEqual(bunny.calls.map(call => call.status).sort(), ['admitted', 'succeeded']);
-    assert.equal(bunny.code, 'uncertain-result');
+    assert.deepEqual(second.calls.map(call => call.status), ['admitted']);
+    assert.equal(bunny.code, 'uncertain-result'); assert.equal(second.code, 'uncertain-result');
 
     // Spend: each paid model call reserved once under its own task, and each title call under its own conversation.
     const taskRows = after.spend.filter(row => row.purpose === 'task');
@@ -105,7 +107,9 @@ void test('three conversations run at once, survive an abrupt exit and a restart
     // still republish what was committed before the exit.
     const fresh = after.startupObserved.filter(item => !before.observed.some(old => old.session === item.session && old.sequence === item.sequence));
     const republished = new Set(fresh.filter(item => item.kind !== 'turn-uncertain').map(item => `${item.session}:${String(item.sequence)}`));
-    assert.deepEqual(fresh.filter(item => item.kind === 'turn-uncertain').map(item => item.session), [bunny.conversationId]);
-    for (const key of republished) assert.ok(!key.startsWith(`${bunny.conversationId}:`) || Number(key.split(':')[1]) < (after.reports[bunny.conversationId] ?? 0), key);
+    assert.deepEqual(fresh.filter(item => item.kind === 'turn-uncertain').map(item => item.session).sort(), [bunny.conversationId, second.conversationId].sort(),
+      'each conversation that lost its call reports it once, on its own turn');
+    assert.deepEqual(fresh.filter(item => item.kind === 'turn-uncertain').map(item => item.turn).sort(), [bunny.id, second.id].sort());
+    for (const key of republished) assert.ok(![bunny.conversationId, second.conversationId].some(id => key.startsWith(`${id}:`) && Number(key.split(':')[1]) >= (after.reports[id] ?? 0)), key);
   } finally {rmSync(dir, {recursive: true, force: true});}
 });

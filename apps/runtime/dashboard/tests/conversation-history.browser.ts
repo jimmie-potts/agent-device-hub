@@ -85,6 +85,20 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     assert.equal(await panel.getByRole('button', {name: 'Send', exact: true}).isDisabled(), false);
     assert.equal(await panel.locator('.conversation-compose').getByText('Finish or cancel', {exact: false}).count(), 0);
     await reachyDraft.fill('');
+    // At phone width, Details names B.U.N.N.Y.'s unfinished task beside the unavailable Disable; its Go to button opens
+    // that conversation and closes the overlay.
+    await page.setViewportSize({width: 390, height: 844});
+    await panel.getByRole('button', {name: 'Details', exact: true}).click();
+    const details = page.locator('.conversation-details');
+    await details.getByText('Conversation settings', {exact: true}).click();
+    assert.equal(await details.getByRole('button', {name: 'Disable conversation', exact: true}).isDisabled(), true);
+    assert.equal(await details.getByText('This conversation has an unfinished task.', {exact: true}).count(), 0, 'Reachy has none');
+    await details.getByRole('button', {name: 'Go to B.U.N.N.Y. task', exact: true}).click();
+    await panel.locator('.conversation-header').getByRole('heading', {name: 'B.U.N.N.Y.', exact: true}).waitFor();
+    await details.waitFor({state: 'hidden'});
+    assert.equal(await details.evaluate(node => (node as HTMLDialogElement).open), false, 'the overlay closed');
+    assert.equal(await answerDraft.inputValue(), 'Synthetic answer draft');
+    await page.setViewportSize({width: 1280, height: 900});
     await chooseConversation(page, 'bunny');
     assert.equal(await answerDraft.inputValue(), 'Synthetic answer draft');
     let release = (): void => {};

@@ -136,7 +136,11 @@ export class AssistantEngine {
    */
   readonly #active = new Map<string, Active>();
   #closed = false;
-  #recoveryUnavailable = false;
+  /**
+   * Conversations whose startup recovery failed (Hub #2027). Each stays unavailable until the next start, so no run,
+   * answer or new task proceeds on state the engine could not read; other conversations keep working.
+   */
+  readonly #unrecovered = new Set<string>();
   readonly #synthetic = new SyntheticProvider();
   readonly #allowed: readonly string[];
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly options: AssistantOptions = {}) {
@@ -167,7 +171,7 @@ export class AssistantEngine {
   available(): boolean {
     // LangChain can install global content exporters from environment flags. This slice never opts into them.
     const tracing = ['LANGCHAIN_TRACING', 'LANGCHAIN_TRACING_V2', 'LANGSMITH_TRACING', 'LANGCHAIN_VERBOSE'];
-    return !this.#closed && !this.#recoveryUnavailable && !this.context.signal.aborted && this.options.available?.() !== false &&
+    return !this.#closed && !this.context.signal.aborted && this.options.available?.() !== false &&
       tracing.every(key => !['true', '1'].includes(process.env[key]?.toLowerCase() ?? ''));
   }
   /** The `bunny` profile's configured provider, else a harness's provider for the profile, else the synthetic one. */
@@ -180,14 +184,14 @@ export class AssistantEngine {
       tasks: this.store.latest().map(task => this.store.summary(task))};
   }
   async start(): Promise<void> {
-    // Each conversation's unfinished task is reconciled on its own and none is run. A failed recovery still makes the
-    // whole assistant unavailable, so every later one is recovered unavailable too.
+    // Each conversation's unfinished task is reconciled on its own and none is run. A failed recovery makes only its own
+    // conversation unavailable until the next start.
     for (const task of this.store.unfinished()) {
       try {
         if (task.graphVersion !== GRAPH_VERSION || !this.available()) await this.#recoverUnavailable(task.id);
         else await this.#reconcile(task.id, true);
       } catch (error) {
-        this.#recoveryUnavailable = true;
+        this.#unrecovered.add(task.conversationId);
         try {await this.#recoverUnavailable(task.id, closingReasonOf(error));} catch { /* A failed write cannot claim a saved transition. */ }
       }
     }
@@ -249,7 +253,15 @@ export class AssistantEngine {
     const result = this.#validator.validate(command, {nowMs: this.context.clock.now()});
     return result.ok ? undefined : result.error.code;
   }
+  /** An assistant-wide command, enable or disable, names the current assistant revision. */
   #revision(revision: number): void {if (revision !== this.store.meta().revision) fail('revision-conflict');}
+  /**
+   * A conversation's command is stale only when its own conversation changed after the revision it names, so another
+   * conversation's step never refuses it (Hub #2027). A revision the assistant has not reached is refused too.
+   */
+  #conversationRevision(revision: number, conversationId: string | undefined): void {
+    if (revision > this.store.meta().revision || (conversationId !== undefined && this.store.changedAt(conversationId) > revision)) fail('revision-conflict');
+  }
   /**
    * Offers one durable assistant message to be spoken through the companions speech endpoint. Text over the browser driver's
    * bound stays on the page unspoken rather than cut; the coordinator decides availability, Quiet and one-at-a-time.
@@ -265,6 +277,7 @@ export class AssistantEngine {
   #ready(): void {if (!this.store.meta().enabled || !this.available()) fail('unavailable');}
   #activate(task: Task, parent: TraceContext): void {
     this.#ready();
+    if (this.#unrecovered.has(task.conversationId)) fail('unavailable');
     if (this.#active.has(task.conversationId)) fail('capacity');
     if (task.graphVersion !== GRAPH_VERSION || task.version !== 1) fail('unavailable');
     if (unresolved(this.store.calls(task.id))) fail('uncertain-result');
@@ -294,7 +307,11 @@ export class AssistantEngine {
   #control(command: Command<AssistantControl>): Promise<Reply> {
     let spoken: {id: string; text: string} | undefined, delegated = false, renamed: string | undefined;
     return this.#admit(command, digest(command.data), add => {
-      const data = command.data; this.#revision(data.expectedRevision);
+      const data = command.data;
+      if (data.action === 'enable' || data.action === 'disable') this.#revision(data.expectedRevision);
+      else this.#conversationRevision(data.expectedRevision, data.action === 'rename'
+        ? data.profile === undefined ? undefined : this.store.conversation(data.profile)
+        : data.taskId === undefined ? undefined : this.store.task(data.taskId)?.conversationId);
       if (data.action !== 'speak' && data.messageId !== undefined) fail('invalid-request');
       if (data.action === 'rename') {
         // The owner's title for a profile's conversation (Hub #2025): it replaces any generated title and drops one in flight.
@@ -364,12 +381,15 @@ export class AssistantEngine {
       const staged = this.store.input(command.data.inputRef) ?? fail('invalid-request');
       if (staged.requestId !== command.data.requestId) fail('invalid-request');
       if (staged.expires <= this.context.clock.now()) fail('expired');
-      const input = staged.input; this.#revision(input.expectedRevision);
+      const input = staged.input;
+      this.#conversationRevision(input.expectedRevision, input.action === 'start' ? this.store.conversation(input.profile)
+        : input.taskId === undefined ? undefined : this.store.task(input.taskId)?.conversationId);
       let task: Task;
       if (input.action === 'start') {
         // Each conversation runs one task at a time; another conversation's task never blocks this one (Hub #2027).
         const conversationId = this.store.conversation(input.profile);
         if (conversationId !== undefined && (this.store.unfinishedIn(conversationId) !== undefined || this.#active.has(conversationId))) fail('capacity');
+        if (conversationId !== undefined && this.#unrecovered.has(conversationId)) fail('unavailable');
         // A new turn of a paid profile is refused, its reply naming why, when what remains of the daily limit or the month's
         // estimate is below the smallest first call, so it is not admitted only to fail there; synthetic turns cost nothing.
         const paid = this.provider(input.profile), reached = paid.name === 'synthetic' ? undefined : this.spend.reached(paid.model);
@@ -485,7 +505,7 @@ export class AssistantEngine {
     try {
       await this.outbox.transaction(() => {const run = this.store.run(active.runId), task = this.#fence(active);
         if (run !== undefined) {run.traceparent = active.span.context.traceparent; this.store.saveRun(run);}
-        task.traceparent = active.span.context.traceparent; this.store.save(task);});
+        task.traceparent = active.span.context.traceparent; this.store.save(task, false);});
       const task = this.#fence(active), config = {...this.#config(task.id), signal: active.controller.signal};
       const snapshot = await this.#graph.getState(config); this.#fence(active);
       const interrupted = snapshot.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0);
@@ -812,7 +832,7 @@ export class AssistantEngine {
       if (question === null || question.kind !== 'delegation' || question.answer !== null) return;
       this.store.observeAction(taskId, evidence);
       question.answer = text.slice(0, LIMITS.toolBytes);
-      if (['waiting', 'paused'].includes(task.status) && this.store.meta().enabled && this.available() && !this.#active.has(task.conversationId) && !this.#closed) {this.#activate(task, parent); launch = true;}
+      if (['waiting', 'paused'].includes(task.status) && this.store.meta().enabled && this.available() && !this.#active.has(task.conversationId) && !this.#unrecovered.has(task.conversationId) && !this.#closed) {this.#activate(task, parent); launch = true;}
       this.store.save(task); this.#publish(add, parent);
     });
     if (launch && !this.#closed && !this.context.signal.aborted) this.#launch(taskId);
