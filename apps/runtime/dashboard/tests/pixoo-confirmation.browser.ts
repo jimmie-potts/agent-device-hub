@@ -55,8 +55,8 @@ export async function pixooConfirmationJourney(browser: Browser): Promise<void> 
     await input.fill('Wait for my next answer.');
     await send.click();
     await conversation.getByRole('textbox', {name: 'Answer', exact: true}).waitFor();
-    release(60);
-    const update = conversation.getByRole('article', {name: 'assistant message'}).filter({hasText: 'Studio Display reports 60% brightness.'});
+    release(65);
+    const update = conversation.getByRole('article', {name: 'assistant message'}).filter({hasText: 'Studio Display reports 65% brightness.'});
     await expect(update).toHaveCount(1);
     await update.getByRole('link', {name: 'Update to earlier reply'}).click();
     await expect(pending.locator('xpath=ancestor::li')).toBeFocused();

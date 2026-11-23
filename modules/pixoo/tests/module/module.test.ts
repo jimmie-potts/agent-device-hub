@@ -982,6 +982,28 @@ void describe('commands and the catalog', () => {
     }
   });
 
+  void it('retains one transmitted outcome when the first readback commit fails after a brightness write', async () => {
+    const world = await World.open();
+    await within(world, async () => {
+      await world.start();
+      await waitFor(() => world.deviceRecord()?.availability === 'available' ? true : undefined, 'the device available');
+      const database = world.harness.moduleDatabase();
+      assert.ok(database);
+      let attempts = 0;
+      database.function('fail_first_readback', () => Number(++attempts === 1));
+      database.exec("CREATE TEMP TRIGGER fail_readback BEFORE INSERT ON pixoo_state WHEN NEW.key = 'brightnessReadbacks' AND fail_first_readback() BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
+      const requestId = await accepted(world.core.request(`bunny.cmd.brightness-set.${DEVICE}`, {
+        type: 'org.bunny.brightness.set.requested', subject: DEVICE, dataschema: 'https://bunny.invalid/events/brightness-set/2.0',
+        data: {percent: 35},
+      }, {timeoutMs: 5000}));
+      assert.deepEqual((await world.outcome(requestId)).data, {requestId, result: 'succeeded', evidence: 'transmitted'});
+      assert.equal(attempts, 2, 'the first readback commit failed and the fallback retained the write');
+      assert.equal(world.device.state().writes, 1);
+      assert.equal(world.seen.filter(message => message.kind === 'outcome' && (message.data as {requestId?: string}).requestId === requestId).length, 1);
+      assert.equal(world.deviceRecord()?.brightnessReadbacks?.find(readback => readback.requestId === requestId)?.reading.status, 'unavailable');
+    });
+  });
+
   void it('keeps what it serves at what it committed when an outcome\'s transaction rolls back', async () => {
     const clock = new ManualClock();
     const world = await World.open({clock});
