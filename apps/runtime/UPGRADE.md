@@ -269,6 +269,24 @@ unfinished task. The earlier release ignores the added table, and installing
 this release again later raises its rows at the first start. Prefer fixing
 forward.
 
+## Knowledge commands checked against what they change (#2056)
+
+The #2056 release checks each companion knowledge command only against the
+state it changes, so a running conversation's steps no longer refuse it. It
+adds the `companion_scope_changes` table, which records the assistant revision
+of the last change of the library and of the Duck widget selection. Message
+corrections and removals, and the conversations an archive import adds to, are
+recorded in #2027's `assistant_conversation_changes`. Each start raises both
+scope rows, and every saved conversation including a companion exchange without
+a profile, to at least the revision at start, so a command naming an older
+revision is refused once after the upgrade. No record is rewritten.
+
+An earlier release ignores the added table and compares every knowledge command
+with the assistant-wide revision again; nothing needs to be done before
+returning to it. Installing this release again later raises the rows at the
+first start, which also covers changes the earlier release made without
+recording them. Prefer fixing forward.
+
 ## Anthropic monthly spend limit and built-in prices (#2047)
 
 The #2047 release prices the assistant's calls from a dated built-in table

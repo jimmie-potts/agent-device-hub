@@ -5,7 +5,7 @@ import type {AssistantInput} from '@jimmie-potts/event-contracts/v2/assistant';
 import {assistantStateDraft, type AssistantEngine} from '../assistant/engine.js';
 import {Outcome, fullDisk, type Command, type ModuleContent, type ModuleContentRequest, type ModuleContext, type ModuleStagedUpload,
   type ModuleUploadRequest, type Outbox, type Reply, type Subscription} from '@jimmie-potts/sdk';
-import {KnowledgeLibrary} from './library.js';
+import {KnowledgeLibrary, type Changes} from './library.js';
 import {inputOf, persona, type KnowledgeInput} from './validation.js';
 import {PAGE_BYTES} from './model.js';
 import {preferenceStateDraft} from '../preferences/engine.js';
@@ -26,7 +26,9 @@ export class Knowledge {
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly assistant: AssistantEngine, preferences: PreferenceStore) {
     this.library = new KnowledgeLibrary(context.database(), assistant, preferences); this.store = this.library.entries;
   }
-  async start(): Promise<void> {this.#subscription = await this.context.sdk.respond<AssistantInput>('bunny.cmd.assistant-input.knowledge', command => this.#input(command));}
+  async start(): Promise<void> {
+    this.library.restarted();
+    this.#subscription = await this.context.sdk.respond<AssistantInput>('bunny.cmd.assistant-input.knowledge', command => this.#input(command));}
   async stop(): Promise<void> {this.#closed = true; await this.#subscription?.close();}
   stage(request: ModuleUploadRequest): ModuleStagedUpload | ErrorBody {
     if (this.#closed || this.context.signal.aborted) return errorBody('unavailable');
@@ -60,17 +62,28 @@ export class Knowledge {
         const staged = this.store.input(command.data.inputRef) ?? fail('invalid-request');
         if (staged.requestId !== command.data.requestId) fail('invalid-request');
         if (staged.expires <= this.context.clock.now()) fail('expired');
-        if (staged.input.expectedRevision !== this.assistant.store.meta().revision) fail('revision-conflict');
+        const changes = this.library.changes(staged.input);
+        this.#current(staged.input.expectedRevision, changes);
         this.library.apply(staged.input, this.context.clock.now());
         if (staged.input.action === 'import-archive') add('bunny.state.preference-state.preferences', preferenceStateDraft({id: 'preferences', revision: this.library.preferences.revision()}), {parent: command});
         this.store.discard(staged.ref); this.store.remember(command.data.requestId, fingerprint); this.store.bump();
+        for (const conversationId of changes.conversations) this.assistant.store.touch(conversationId);
         this.assistant.store.bump();
+        this.library.record(changes.scopes, this.assistant.store.meta().revision);
         add('bunny.state.assistant-state.assistant', assistantStateDraft(this.assistant.inspect()), {parent: command});
         add('bunny.event.assistant-input.knowledge', {kind: 'outcome', type: 'org.bunny.assistant.input.completed', subject: 'knowledge',
           dataschema: 'https://bunny.invalid/events/outcome/2.0', data: {requestId: command.data.requestId, result: Outcome.succeeded, evidence: Outcome.observed}}, {parent: command});
         return {status: 'accepted'} as const;
       });
     } catch (error) {return errorBody(codeOf(error), {detail: 'The knowledge change was not saved.'});}
+  }
+  /**
+   * A knowledge command is stale only when a scope or conversation it changes changed after the assistant revision it names,
+   * so a running conversation's steps never refuse it (Hub #2056). A revision the assistant has not reached is refused too.
+   */
+  #current(revision: number, {scopes, conversations}: Changes): void {
+    if (revision > this.assistant.store.meta().revision || scopes.some(scope => this.library.changedAt(scope) > revision) ||
+      conversations.some(conversationId => this.assistant.store.changedAt(conversationId) > revision)) fail('revision-conflict');
   }
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (!['knowledge', 'companion-profiles', 'companion-history', 'companion-context', 'companion-archive', 'duck-widget'].includes(ref)) return undefined;
