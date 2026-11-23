@@ -108,8 +108,9 @@ the private directory. Without a terminal the Tailscale app binary starts as the
 GUI, logs a `CLIError` and exits 0 instead of serving. `TAILSCALE_BE_CLI=1` isn't
 enough under launchd, because the binary still starts as the GUI whenever its
 parent is launchd. So the serve agent sets the variable and runs the binary from a
-`/bin/sh` that stays its parent. The shell passes a stop on to it and exits
-when it does, so launchd restarts it. To stop the route, boot out both agents; it returns at the
+`/bin/sh` that stays its parent. The shell passes a stop on to it, including one
+that arrives while the serve is starting, and exits with its status when it does, so
+launchd restarts it. To stop the route, boot out both agents; it returns at the
 next sign-in unless you also delete their plists. Never run a manual copy beside them. The route holds no state and sends no device command, and its
 authentication is unchanged.
 
