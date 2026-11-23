@@ -83,3 +83,24 @@ void test('the last Hub mode and the remembered brightness are kept, Free and no
   reopened.prepare('UPDATE pixoo_state SET value = ? WHERE key = ?').run('monitor', 'hubMode');
   assert.equal(again.hubMode(), 'free');
 });
+
+void test('restart retains completed readback and retires an interrupted read without changing its acknowledgment', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'pixoo-readback-'));
+  context.after(() => rm(dir, {recursive: true, force: true}));
+  const file = join(dir, 'pixoo.sqlite');
+  const db = openModuleDatabaseFile(file);
+  const store = new PixooStore(db);
+  const acknowledged = {configurationRevision: 0, generation: {epoch: 'fixture', sequence: 0}, requestedPercent: 35, transmittedAtMs: 10};
+  store.saveBrightnessReadback({...acknowledged, requestId: 'first', reading: {status: 'known', percent: 32, observedAtMs: 11}}, 11);
+  store.saveBrightnessReadback({...acknowledged, requestId: 'interrupted', reading: {status: 'pending'}}, 12);
+  db.close();
+
+  const reopened = openModuleDatabaseFile(file);
+  context.after(() => {reopened.close();});
+  const recovered = new PixooStore(reopened);
+  recovered.retirePendingReadbacks(13);
+  assert.deepEqual(recovered.brightnessReadbacks(13), [
+    {...acknowledged, requestId: 'interrupted', reading: {status: 'unavailable'}},
+    {...acknowledged, requestId: 'first', reading: {status: 'known', percent: 32, observedAtMs: 11}},
+  ]);
+});

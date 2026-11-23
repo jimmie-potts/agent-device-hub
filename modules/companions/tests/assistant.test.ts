@@ -6,8 +6,8 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
-import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {coreValidator, type ModeState} from '@jimmie-potts/event-contracts/v2/families';
+import {DEVICE_READBACK_SCHEMA, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {coreValidator, operationEntityId, type LifecycleObservation, type ModeState, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {test, type TestContext} from 'node:test';
 import {fullDisk, InProcessBus, type Participant, type ModuleContext, type RequestResult} from '@jimmie-potts/sdk';
@@ -56,8 +56,8 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
   let {module, host} = make();
   await host.start();
   context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
-  return {core, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async () => {
-    await host.stop(); ({module, host} = make()); await host.start();
+  return {core, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async (stopped?: () => void) => {
+    await host.stop(); stopped?.(); ({module, host} = make()); await host.start();
   }};
 }
 async function control(core: Participant, module: CompanionsModule, action: string, taskId?: string, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
@@ -101,6 +101,66 @@ void test('light status preserves unknown state after copy loss and evidence old
   const noWrite = {...device, lastTransmission: unknown};
   assert.doesNotMatch(readDevices([noWrite], 'desk-lamp', 2000), /unknown|stale/);
   assert.match(readDevices([noWrite], 'desk-lamp', 31_000), /Current state is unknown. The observation is stale/);
+});
+
+void test('a pending Pixoo confirmation recovers through sync on restart and updates the original reply once', async context => {
+  const owner = 'bunny/modules/pixoo';
+  const display = {...light('studio-display', 'Studio Display'), kind: 'pixoo'};
+  const provider = counted((_input, turn) => turn === 1 ? call('control_brightness_set', {
+    owner, target: display.id, arguments: JSON.stringify({percent: 35}),
+  }) : reply('The command was sent.'));
+  const requests: AssistantDispatch[] = [];
+  const w = await world(context, {provider, tools: ['control_brightness_set'], dispatch: data => {
+    requests.push(data);
+    return Promise.resolve(accepted(data.requestId));
+  }});
+  const events: LifecycleObservation[] = [];
+  await w.core.subscribe<LifecycleObservation>('bunny.event.lifecycle.*', message => {events.push(message.data);});
+  const pixoo = w.bus.connect(owner);
+  context.after(() => pixoo.close());
+  const atMs = Date.now() - 100;
+  let device: DeviceRecord = display;
+  const draft = () => ({type: 'org.bunny.device.updated', subject: display.id, dataschema: DEVICE_READBACK_SCHEMA, data: device});
+  await pixoo.serveSync(['device'], () => ({revision: device.revision, states: [draft()]}));
+  await w.core.serveSync(['operation'], () => {
+    const requestId = requests[0]?.requestId;
+    if (requestId === undefined) return {revision: 0, states: []};
+    const id = operationEntityId(requestId);
+    const operation: OperationRecord = {id, revision: 1, requestId, kind: 'device', family: 'brightness-set',
+      command: 'org.bunny.brightness.set.requested', target: display.id, requestedBy: 'bunny/modules/companions',
+      status: 'completed', result: 'succeeded', evidence: 'transmitted', sentAtMs: atMs, updatedAtMs: atMs, deadlineAtMs: atMs + 5000};
+    return {revision: 1, states: [{type: 'org.bunny.operation.updated', subject: id,
+      dataschema: 'https://bunny.invalid/events/operation/2.0', data: operation}]};
+  });
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Set brightness');
+  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => w.store().confirmations()[0]?.sent === true);
+  const requestId = requests[0]?.requestId ?? assert.fail('request reserved');
+  const originalTask = task(w)?.taskId ?? assert.fail('task saved');
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  assert.notEqual(w.store().confirmation(requestId)?.follows, undefined);
+  const before = provider.calls();
+  await w.restart(() => {
+    device = {...display, revision: 2, brightnessReadbacks: [{requestId, configurationRevision: display.configurationRevision,
+      generation: display.generation, requestedPercent: 35, transmittedAtMs: atMs, reading: {status: 'known', percent: 32, observedAtMs: atMs + 1}}]};
+  });
+  await until(() => w.store().confirmation(requestId) === undefined);
+  const duplicate = await pixoo.publish('bunny.state.device.' + display.id, {kind: 'state', ...draft()});
+  await pixoo.publishMessage('bunny.state.device.' + display.id, duplicate);
+  await w.restart();
+  const messages = w.store().page('bunny', 0).messages;
+  assert.equal(messages.filter(message => message.follows === originalTask + '-result').length, 1);
+  assert.equal(messages.find(message => message.follows !== undefined)?.text, 'Studio Display reports 32% brightness.');
+  assert.ok(messages.some(message => message.id === originalTask + '-result' && message.text.startsWith('Brightness command sent.')));
+  assert.equal(requests.length, 1);
+  assert.equal(provider.calls(), before);
+  assert.equal(status(w), 'succeeded');
+  const turn = events.filter(event => event.turn.status === 'known' && event.turn.id === originalTask);
+  assert.equal(turn.filter(event => event.event.kind === 'attention-resolved').length, 1);
+  assert.equal(turn.filter(event => event.event.kind === 'turn-ended').length, 1);
 });
 
 void test('a duplicate light label asks for an exact device ID and sends nothing without a specific approval', async context => {

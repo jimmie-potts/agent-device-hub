@@ -72,7 +72,7 @@ test('each device family has one kind and one type, named after the family, and 
   const types = new Map();
   for (const {family, kind, type, dataschema, schema} of deviceFamilies) {
     assert.equal(schema.$id, dataschema, family);
-    assert.match(dataschema, new RegExp(`^https://bunny\\.invalid/events/${family}/2\\.[01234]$`));
+    assert.match(dataschema, new RegExp(`^https://bunny\\.invalid/events/${family}/2\\.[012345]$`));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
     for (const uri of refs(schema)) assert.ok(profile(uri) || known(uri), `${family}: ${uri}`);
     // org.bunny.<entity>.<verb>.requested: the family's last hyphenated word is the verb, as for mode-set and moment-play.
@@ -83,7 +83,7 @@ test('each device family has one kind and one type, named after the family, and 
     types.set(type, family);
   }
   assert.deepEqual(deviceFamilies.map(({dataschema}) => dataschema.replace('https://bunny.invalid/events/', '')),
-    ['device/2.0', 'device/2.1', 'device/2.2', 'device/2.3', 'device/2.4', 'power-set/2.0', 'brightness-set/2.0', 'scene-activate/2.0', 'zone-power-set/2.0', 'media-start/2.0',
+    ['device/2.0', 'device/2.1', 'device/2.2', 'device/2.3', 'device/2.4', 'device/2.5', 'power-set/2.0', 'brightness-set/2.0', 'scene-activate/2.0', 'zone-power-set/2.0', 'media-start/2.0',
       'media-control/2.0', 'device-mode-set/2.0']);
   assert.throws(() => registerDeviceFamilies(v), /already registered/);
   assert.throws(() => registerDeviceFamilies(new MessageValidator()), /session\/2\.0/, 'the device label uses the session display text');
@@ -285,4 +285,27 @@ test('a media command keeps its optional requireMode member in the closed 2.0 sc
   // with invalid-request at admission, and the core sends none, so the capability rule ignores it.
   const pixoo = device('pixoo-desk');
   assert.equal(commandSupported(pixoo.capabilities, {family: 'media-start', data: {requestId: 'req-1', playlistId: 'playlist-1', requireMode: 'free'}}), true);
+});
+
+test('device 2.5 carries bounded request-linked brightness evidence from a post-write reading', () => {
+  const v = validator();
+  const message = structuredClone(Object.values(fixtures.valid).find(record => record.kind === 'state' && record.data.kind === 'pixoo'));
+  const now = Date.parse(message.time);
+  const {data} = message;
+  message.dataschema = 'https://bunny.invalid/events/device/2.5';
+  const evidence = {requestId: 'brightness-1', configurationRevision: data.configurationRevision, generation: data.generation,
+    requestedPercent: 35, transmittedAtMs: now - 5, reading: {status: 'known', percent: 32, observedAtMs: now}};
+  data.brightnessReadbacks = [evidence];
+  assert.equal(v.validate(message, {nowMs: now}).ok, true);
+  data.brightnessReadbacks = [evidence, {...evidence}];
+  assert.equal(v.validate(message, {nowMs: now}).ok, false, 'duplicate request');
+  data.brightnessReadbacks = [evidence];
+  evidence.reading.observedAtMs = now - 6;
+  assert.equal(v.validate(message, {nowMs: now}).ok, false, 'reading predates the write');
+  evidence.reading.observedAtMs = now + 1;
+  assert.equal(v.validate(message, {nowMs: now}).ok, false, 'reading is in the future');
+  evidence.reading = {status: 'unavailable'};
+  assert.equal(v.validate(message, {nowMs: now}).ok, true);
+  message.dataschema = 'https://bunny.invalid/events/device/2.4';
+  assert.equal(v.validate(message, {nowMs: now}).ok, false, 'closed older device schema');
 });

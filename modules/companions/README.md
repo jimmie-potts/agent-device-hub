@@ -906,6 +906,13 @@ and exact values for approval. The existing owner command checks device
 revisions, generation and capability. The tracked operation shows acceptance
 and the available effect evidence separately.
 
+For Pixoo brightness, Conversation waits up to a second within the tool budget
+for the owner's reading for that request. The original reply reports the
+observed brightness when it has arrived. If confirmation is pending when the
+reply is saved, a later result appears once with a link to the earlier reply.
+The saved dispatch receipt lets Companions resume observation on restart. A
+follow-up expires after one day.
+
 `read_saved_art` offers saved artwork IDs and compositions. After approval,
 `control_art_show` uses the existing `art-show` preparation and presentation
 path. `read_art_show_effects` uses the approved request ID to show each

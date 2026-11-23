@@ -1,6 +1,6 @@
 import {withinFrameBufferBudget} from '../device/frames.js';
 import {serializedAdmission, Outcome} from '@jimmie-potts/sdk';
-import {systemClock,type Animation,type Clock,type DeviceAdapter,type OperationResult,type UploadResult} from '../device/index.js';
+import {systemClock,type Animation,type Clock,type DeviceAdapter,type OperationResult,type ProbeResult,type UploadResult} from '../device/index.js';
 import {checkpointSchema,type PlaybackCheckpoint,type CaptureHooks,type PlaybackPolicy} from '../library/index.js';
 import {PlaybackError,type PlaybackStore,type PlayerState} from './contracts.js';
 import {cycle,next,previous,started,upcoming} from './traversal.js';
@@ -249,14 +249,40 @@ export class Player {
     return result;
   }
   async setBrightness(percent:number):Promise<OperationResult<void>> {
+    return (await this.writeBrightness(percent)).write;
+  }
+  /** Reads back the setting in the same writer turn as its acknowledged write. */
+  setBrightnessWithReadback(percent:number, timeoutMs:number, acknowledged?: (write:OperationResult<void>)=>Promise<void>):
+    Promise<{write:OperationResult<void>;readback?:{value:number;atMs:number}}> {
+    return this.writeBrightness(percent,timeoutMs,acknowledged);
+  }
+  private async writeBrightness(percent:number, readTimeoutMs?:number, acknowledged?: (write:OperationResult<void>)=>Promise<void>):
+    Promise<{write:OperationResult<void>;readback?:{value:number;atMs:number}}> {
     if(!Number.isInteger(percent)||percent<0||percent>100)throw new PlaybackError('invalid-input');
     if(this.closing)throw new PlaybackError('closed');
     const generation=this.adapterGeneration;
     this.requestedBrightness=percent;
-    const result=await this.deviceTurns('device',()=>this.device.setBrightness(percent,{generation,timeoutMs:this.operationTimeoutMs}));
-    this.observeResult(result,generation,'brightness');
-    if(generation===this.adapterGeneration&&!this.closing&&result.ok)this.evidence.brightness.acknowledged={value:percent,atMs:result.timing.completedAtMs};
-    await this.observedControl(result,generation);return result;
+    const result=await this.deviceTurns('device',async()=>{
+      const write=await this.device.setBrightness(percent,{generation,timeoutMs:this.operationTimeoutMs});
+      this.observeResult(write,generation,'brightness');
+      if(!write.ok||generation!==this.adapterGeneration||this.closing)return {write};
+      this.evidence.brightness.acknowledged={value:percent,atMs:write.timing.completedAtMs};
+      if(readTimeoutMs===undefined)return {write};
+      await acknowledged?.(write);
+      const remaining=readTimeoutMs-(this.clock.now()-write.timing.completedAtMs);
+      if(remaining<=0||generation!==this.adapterGeneration||this.closing)return {write};
+      let reading:OperationResult<ProbeResult>;
+      try{reading=await this.device.probe({generation,timeoutMs:remaining});}
+      catch{return {write};}
+      if(!reading.ok||reading.value.mode!=='device'||reading.value.brightness===undefined||
+        reading.timing.completedAtMs<write.timing.completedAtMs||generation!==this.adapterGeneration||this.closing)return {write};
+      const readback={value:reading.value.brightness,atMs:reading.timing.completedAtMs};
+      this.evidence.brightness.observed=readback;
+      this.notify(true);
+      return {write,readback};
+    });
+    await this.observedControl(result.write,generation);
+    return result;
   }
   async setScreen(on:boolean):Promise<OperationResult<void>|undefined> {
     if(typeof on!=='boolean')throw new PlaybackError('invalid-input');

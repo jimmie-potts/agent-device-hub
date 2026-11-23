@@ -4,6 +4,7 @@
 // request ID is refused, and each multi-frame rendition's hosted check, so its frames are read once. Copies of other
 // owners' state, the core's sessions and the playback record, are rebuilt by sync and never stored. Each statement is
 // prepared once.
+import {MAX_DEVICE_READBACKS, type BrightnessReadback} from '@jimmie-potts/event-contracts/v2/devices';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import type {HostedCheck} from '../library/library.js';
 import {hubMode, momentSetting, nowPlayingSetting, presentationConfiguration, type HubMode, type MomentSetting, type NowPlayingSetting, type PresentationConfiguration} from '../core/index.js';
@@ -195,6 +196,23 @@ export class PixooStore {
   /** The last completed outcome, as the device record reports it, or undefined before the first. */
   lastOutcome(): unknown {
     return json(this.#get('lastOutcome'));
+  }
+
+  brightnessReadbacks(now: number): BrightnessReadback[] {
+    const stored = json(this.#get('brightnessReadbacks')) as BrightnessReadback[] | undefined;
+    return (stored ?? []).filter(readback => readback.transmittedAtMs > now - HANDLED_MS);
+  }
+
+  saveBrightnessReadback(readback: BrightnessReadback, now: number): void {
+    const retained = this.brightnessReadbacks(now).filter(current => current.requestId !== readback.requestId);
+    this.#set('brightnessReadbacks', JSON.stringify([readback, ...retained].slice(0, MAX_DEVICE_READBACKS)));
+  }
+
+  retirePendingReadbacks(now: number): void {
+    const retained = this.brightnessReadbacks(now);
+    if (!retained.some(readback => readback.reading.status === 'pending')) return;
+    this.#set('brightnessReadbacks', JSON.stringify(retained.map(readback => readback.reading.status === 'pending'
+      ? {...readback, reading: {status: 'unavailable'}} : readback)));
   }
 
   saveLastOutcome(outcome: object): void {

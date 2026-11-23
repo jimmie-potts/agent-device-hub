@@ -83,9 +83,9 @@ it('a family or version that is not classified fails the check, and so does an e
   const withLamp = [...registrations, lamp({})];
   assert.deepEqual(classificationProblems(familiesOf(withLamp), STATE_FAMILIES, OTHER_MODULE_FAMILIES, declaredFor(withLamp)),
     ['lamp-glow/2.0 is a module\'s family the classification does not list']);
-  const families = [...familiesOf(registrations), {dataschema: `${SCHEMA_BASE}device/2.5`, kind: 'state' as const}];
+  const families = [...familiesOf(registrations), {dataschema: `${SCHEMA_BASE}device/2.99`, kind: 'state' as const}];
   assert.deepEqual(classificationProblems(families, STATE_FAMILIES, OTHER_MODULE_FAMILIES, declaredFor(registrations)),
-    ['device/2.5 is a state family the classification does not list']);
+    ['device/2.99 is a state family the classification does not list']);
   const changed = {...STATE_FAMILIES, 'session/2.1': ['/lastEvidenceAtMs']};
   assert.deepEqual(classificationProblems(familiesOf(registrations), changed, OTHER_MODULE_FAMILIES, declaredFor(registrations)), ['session/2.1 is declared as []']);
   const stale = {...STATE_FAMILIES, 'mode-set/2.0': []};

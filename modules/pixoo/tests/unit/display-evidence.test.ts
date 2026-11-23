@@ -34,3 +34,21 @@ it('rejects retired probe telemetry after newer user intent',async()=>{
  try{const pending=player.probe();await flush(clock);await player.stop();release();await pending;expect(player.getDisplayEvidence().transport).toBeNull();expect(player.getState().intent).toBe('stopped');}
  finally{release();await player.close();}
 });
+
+it('reads reported brightness before admitting the next brightness write', async () => {
+  const clock = new ManualClock();
+  const device = new Telemetry({clock});
+  const player = await Player.open({device, clock, store: new MemoryPlaybackStore()});
+  try {
+    const first = player.setBrightnessWithReadback(35, 2000);
+    const next = player.setBrightness(70);
+    await flush(clock);
+    const reading = await first;
+    await next;
+    expect(reading.write.ok).toBe(true);
+    expect(reading.readback?.value).toBe(25);
+    expect(device.operations.map(operation => operation.kind)).toEqual(['setBrightness', 'probe', 'setBrightness']);
+  } finally {
+    await player.close();
+  }
+});

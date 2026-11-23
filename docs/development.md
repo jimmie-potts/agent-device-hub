@@ -128,6 +128,16 @@ Conversation's generated-art display approval (#2041) uses these same CI groups 
 It checks a routing ID that differs from the rendition kind, per-target evidence
 and a lost reply after approval.
 
+Pixoo brightness confirmation (#1990) uses the existing Pixoo, event
+contracts, SDK, Companions and runtime browser groups. After the root build,
+run `npm run test:pixoo:built`, `npm run test:events:built`,
+`npm run test:events:python`, `npm run test:sdk:built`,
+`npm run test:companions:built` and
+`node apps/runtime/dashboard/tests/pixoo-confirmation.browser.ts`. The
+disposable browser exercise checks both confirmation timings, the link to the
+original reply and one write per approval. The Companions test verifies
+recovery when the reader restarts.
+
 Art-derived decoration (#683) uses `npm run test:art-theme:browser` after the
 root build, in the existing App verification runtime group and full local
 dashboard browser suite. Bounded palette and preference cases are discovered

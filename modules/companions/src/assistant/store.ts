@@ -1,3 +1,4 @@
+import type {Confirmation} from './confirmation.js';
 import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
 import {Messages} from '../knowledge/messages.js';
 import {advanceRevision, initializeRevision} from '../revision.js';
@@ -30,15 +31,16 @@ export type ConversationPage = {version: 1; conversationId: string | null; messa
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = TranscriptItem & {effect: string};
 type RecordRow = {record: string};
-type MessageRow = Omit<ConversationMessage, 'attachment'> & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
+type MessageRow = Omit<ConversationMessage, 'attachment' | 'follows'> & {follows: string | null} & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
   artStatus: Call['status'] | null; artResult: string | null};
-const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg.role,msg.text,msg.at_ms AS atMs,
+const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg.role,msg.text,msg.at_ms AS atMs,msg.follows,
   art.request_id AS artRequestId,art.description AS artDescription,intent.targets AS artTargets,json_extract(call.record, '$.status') AS artStatus,
   json_extract(call.record, '$.result') AS artResult
   FROM assistant_messages msg LEFT JOIN assistant_art_attachments art ON art.message_id=msg.id
   LEFT JOIN assistant_art_intents intent ON intent.request_id=art.request_id
   LEFT JOIN assistant_calls call ON call.id=art.request_id`;
-function messageOf({artRequestId, artDescription, artTargets, artStatus, artResult, ...message}: MessageRow): ConversationMessage {
+function messageOf({artRequestId, artDescription, artTargets, artStatus, artResult, follows, ...row}: MessageRow): ConversationMessage {
+  const message = follows === null ? row : {...row, follows};
   if (artRequestId === null || artDescription === null) return message;
   const receipt = {kind: 'artwork' as const, requestId: artRequestId, description: artDescription,
     ...(artTargets === null ? {} : {showTargets: JSON.parse(artTargets) as string[]})};
@@ -71,8 +73,13 @@ export class AssistantStore {
       CREATE TABLE IF NOT EXISTS assistant_controls (request_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS assistant_art_attachments (message_id TEXT PRIMARY KEY REFERENCES assistant_messages(id) ON DELETE CASCADE, request_id TEXT NOT NULL UNIQUE, description TEXT NOT NULL) STRICT;
       CREATE TABLE IF NOT EXISTS assistant_art_intents (request_id TEXT PRIMARY KEY REFERENCES assistant_art_attachments(request_id) ON DELETE CASCADE, targets TEXT NOT NULL) STRICT;
+      CREATE TABLE IF NOT EXISTS assistant_confirmations (request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, record TEXT NOT NULL) STRICT;
+      CREATE INDEX IF NOT EXISTS assistant_confirmations_task ON assistant_confirmations(task_id);
       CREATE INDEX IF NOT EXISTS assistant_message_page ON assistant_messages(conversation_id,seq);
       CREATE INDEX IF NOT EXISTS assistant_task_calls ON assistant_calls(task_id);`);
+    if (!database.prepare("SELECT 1 FROM pragma_table_info('assistant_messages') WHERE name='follows'").get()) {
+      database.exec('ALTER TABLE assistant_messages ADD COLUMN follows TEXT');
+    }
     // The release that reports conversations to the shared session model (Hub #505) starts from what each conversation's
     // latest task is now and reports only its next change: a baseline row per conversation, at sequence zero, that reports
     // nothing. A task that waits on its owner gets no baseline projection instead, so its first report, at the startup's
@@ -153,9 +160,9 @@ export class AssistantStore {
       generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null,
       transcript: [{role: 'owner', text: prompt}]};
   }
-  message(task: Task, id: string, role: ConversationMessage['role'], text: string, atMs: number): void {
+  message(task: Task, id: string, role: ConversationMessage['role'], text: string, atMs: number, follows?: string): void {
     if (this.messages.removal(id) !== undefined) return;
-    this.database.prepare('INSERT OR IGNORE INTO assistant_messages(id,conversation_id,task_id,role,text,at_ms) VALUES (?,?,?,?,?,?)').run(id, task.conversationId, task.id, role, text, atMs);
+    this.database.prepare('INSERT OR IGNORE INTO assistant_messages(id,conversation_id,task_id,role,text,at_ms,follows) VALUES (?,?,?,?,?,?,?)').run(id, task.conversationId, task.id, role, text, atMs, follows ?? null);
     this.messages.capture(task, id, role, text, atMs);
   }
   artReply(task: Task, requestId: string, description: string, atMs: number, showTargets?: readonly string[]): void {
@@ -185,6 +192,21 @@ export class AssistantStore {
   call(id: string): Call | undefined {return parsed<Call>(this.database.prepare('SELECT record FROM assistant_calls WHERE id=?').get(id) as RecordRow | undefined);}
   calls(taskId: string): Call[] {return this.database.prepare('SELECT record FROM assistant_calls WHERE task_id=?').all(taskId).map(row => JSON.parse(row.record as string) as Call);}
   saveCall(call: Call): void {this.database.prepare('INSERT INTO assistant_calls VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(call.id, call.taskId, JSON.stringify(call));}
+  confirmation(requestId: string): Confirmation | undefined {
+    return parsed<Confirmation>(this.database.prepare('SELECT record FROM assistant_confirmations WHERE request_id=?').get(requestId) as RecordRow | undefined);
+  }
+  confirmations(taskId?: string): Confirmation[] {
+    const rows = taskId === undefined ? this.database.prepare('SELECT record FROM assistant_confirmations').all()
+      : this.database.prepare('SELECT record FROM assistant_confirmations WHERE task_id=? ORDER BY rowid').all(taskId);
+    return rows.map(row => JSON.parse(row.record as string) as Confirmation);
+  }
+  saveConfirmation(watch: Confirmation): void {
+    this.database.prepare('INSERT INTO assistant_confirmations VALUES (?,?,?) ON CONFLICT(request_id) DO UPDATE SET record=excluded.record')
+      .run(watch.requestId, watch.taskId, JSON.stringify(watch));
+  }
+  dropConfirmation(requestId: string): void {
+    this.database.prepare('DELETE FROM assistant_confirmations WHERE request_id=?').run(requestId);
+  }
   observeAction(taskId: string, evidence: ActionEvidence): void {
     const call = this.call(evidence.requestId);
     if (call?.action === undefined || call.taskId !== taskId) return;

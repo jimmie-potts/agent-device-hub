@@ -9,6 +9,7 @@ import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contrac
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
+import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
 import type {Proposal} from './history-contract.js';
@@ -76,7 +77,7 @@ export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSig
 /** An engine refusal; `closingReason` is fixed text for the owner, such as the spend limit a new turn met. */
 class Fault extends Error {constructor(readonly code: ErrorCode, readonly closingReason?: string) {super(code);}}
 /** What one call answered: its text, its reported usage total, and a paid provider's usage by price class. */
-type Answer = {text: string; units: number | null; usage?: TokenUsage | null; evidence?: ActionEvidence[]};
+type Answer = {text: string; units: number | null; usage?: TokenUsage | null; evidence?: ActionEvidence[]; confirmation?: Confirmation};
 /** What a call may use: the units it reserves, their name in a limit message, and a paid model call's spend reservation. */
 type Budget = {units: number; unit: string; spend?: {model: string; inputUnits: number; outputUnits: number}};
 function fail(code: ErrorCode): never {throw new Fault(code);}
@@ -138,6 +139,8 @@ export class AssistantEngine {
    */
   readonly #active = new Map<string, Active>();
   #closed = false;
+  readonly #confirmationWatches = new Map<string, Promise<void>>();
+  readonly #confirmationsStopped = new AbortController();
   /**
    * Conversations whose startup recovery failed (Hub #2027). Each stays unavailable until the next start, so no run,
    * answer or new task proceeds on state the engine could not read; other conversations keep working.
@@ -198,16 +201,19 @@ export class AssistantEngine {
         try {await this.#recoverUnavailable(task.id, closingReasonOf(error), true);} catch { /* A failed write cannot claim a saved transition. */ }
       }
     }
+    for (const watch of this.store.confirmations()) void this.#followConfirmation(watch);
     this.#subscriptions.push(await this.context.sdk.respond<AssistantControl>('bunny.cmd.assistant-control.assistant', command => this.#control(command)));
     this.#subscriptions.push(await this.context.sdk.respond<AssistantInput>('bunny.cmd.assistant-input.assistant', command => this.#input(command)));
   }
   async stop(): Promise<void> {
     this.#closed = true;
+    this.#confirmationsStopped.abort();
     const active = [...this.#active.values()];
     for (const run of active) run.controller.abort();
     await this.titles.stop();
     await Promise.all(this.#subscriptions.map(subscription => subscription.close()));
     await Promise.all(active.map(run => run.work));
+    await Promise.all(this.#confirmationWatches.values());
   }
   #task(id: string): Task {return this.store.task(id) ?? fail('not-found');}
   #publish(add: AddMessage, parent?: TraceContext): void {
@@ -242,12 +248,75 @@ export class AssistantEngine {
       change(task);
       if (previous !== task.status && (task.status === 'failed' || task.status === 'uncertain')) {
         const messageId = `${task.id}-closing-${String(task.generation)}`;
-        this.store.message(task, messageId, 'assistant', closingReply(task, this.store.calls(id), reason), this.context.clock.now());
+        const reply = this.#confirmationReply(task.id, messageId) ?? closingReply(task, this.store.calls(id), reason);
+        this.store.message(task, messageId, 'assistant', reply, this.context.clock.now());
       }
       this.store.save(task);
       this.#publish(add, parent);
     });
   }
+  /** Records which result was visible when the reply committed, in the same transaction. */
+  #confirmationReply(taskId: string, messageId: string): string | undefined {
+    const watches = this.store.confirmations(taskId);
+    if (watches.length === 0) return undefined;
+    return watches.map(watch => {
+      if (watch.result !== undefined) {
+        this.store.dropConfirmation(watch.requestId);
+        return watch.result;
+      }
+      this.store.saveConfirmation({...watch, follows: watch.follows ?? messageId});
+      return pending(watch);
+    }).join(' ');
+  }
+
+  #followConfirmation(watch: Confirmation): Promise<void> {
+    if (this.#closed) return Promise.resolve();
+    const existing = this.#confirmationWatches.get(watch.requestId);
+    if (existing !== undefined) return existing;
+    const signal = this.#confirmationsStopped.signal;
+    const run = followConfirmation(this.context, watch, signal, async evidence => {
+      if (signal.aborted) return true;
+      const known = this.store.confirmation(watch.requestId);
+      if (known === undefined || known.result !== undefined) return true;
+      if (evidence.result === undefined && (evidence.sent !== true || known.sent === true)) return false;
+      await this.outbox.transaction(add => {
+        const current = this.store.confirmation(watch.requestId);
+        if (current === undefined || current.result !== undefined) return;
+        if (evidence.result !== undefined && current.follows !== undefined) {
+          const task = this.#task(current.taskId);
+          if (this.store.savedMessage(task.id, current.follows) !== undefined) {
+            this.store.message(task, `${current.requestId}-confirmation`, 'assistant', evidence.result, this.context.clock.now(), current.follows);
+            this.store.touch(task.conversationId);
+            this.#publish(add, {traceparent: current.traceparent});
+          }
+          this.store.dropConfirmation(current.requestId);
+        } else this.store.saveConfirmation({...current, ...evidence});
+      });
+      return evidence.result !== undefined;
+    }).catch(() => {
+      // Leave the saved receipt for the next activation if the store cannot commit the observation.
+    }).finally(() => {this.#confirmationWatches.delete(watch.requestId);});
+    this.#confirmationWatches.set(watch.requestId, run);
+    return run;
+  }
+
+  async #waitForConfirmation(watch: Confirmation, ms: number, signal: AbortSignal): Promise<void> {
+    const following = this.#followConfirmation(watch);
+    if (ms <= 0 || signal.aborted) return;
+    let cancel: Cancel | undefined;
+    let abort: (() => void) | undefined;
+    try {
+      await Promise.race([following, new Promise<void>(resolve => {
+        cancel = this.context.scheduler.after(ms, resolve);
+        abort = resolve;
+        signal.addEventListener('abort', abort, {once: true});
+      })]);
+    } finally {
+      cancel?.();
+      if (abort !== undefined) signal.removeEventListener('abort', abort);
+    }
+  }
+
   #check(command: Command<object>): ErrorCode | undefined {
     if (this.#closed || this.context.signal.aborted) return 'unavailable';
     if (command.source !== 'bunny/core') return 'forbidden';
@@ -468,7 +537,10 @@ export class AssistantEngine {
       if (terminal(task.status)) return;
       if (unresolved(this.store.calls(taskId))) {task.status = 'uncertain'; task.code = 'uncertain-result';}
       else if (snapshot.next.length === 0 && typeof values.result === 'string') {
-        task.status = 'succeeded'; task.code = null; this.store.message(task, `${task.id}-result`, 'assistant', values.result, this.context.clock.now()); result = values.result;
+        task.status = 'succeeded'; task.code = null;
+        const messageId = `${task.id}-result`;
+        result = this.#confirmationReply(task.id, messageId) ?? values.result;
+        this.store.message(task, messageId, 'assistant', result, this.context.clock.now());
       } else if (snapshot.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0)) {
         // The turn that decided to ask saved the question before the interrupt; an interrupt without one is not evidence of a saved question.
         if (task.question === null) {task.status = 'uncertain'; task.code = 'uncertain-result';}
@@ -750,6 +822,10 @@ export class AssistantEngine {
         : `refused: ${code}`, units: 0};
     };
     let result: string, delegation: Question | undefined;
+    const startedAtMs = this.context.clock.now();
+    const brightness = proposal.family === 'catalog-action' && proposal.command === 'brightness-set' &&
+      proposal.binding.kind === 'device' && proposal.binding.owner === 'bunny/modules/pixoo' && typeof proposal.data.percent === 'number'
+      ? {binding: proposal.binding, percent: proposal.data.percent} : undefined;
     const action = {questionId: question.id, description: actionDescription(proposal, question.text)};
     if (proposal.family !== 'coding-dispatch') {
       const dispatch = this.options.dispatch;
@@ -775,7 +851,14 @@ export class AssistantEngine {
         if (proposal.family === 'catalog-action' && answer.status === 'rejected' && answer.error.error.code !== 'uncertain-result') {
           this.#catalog().rejected(proposal, id);
         }
-        return settle(answer, receipt);
+        const settled = settle(answer, receipt);
+        if (answer.status !== 'accepted' || brightness === undefined) return settled;
+        const suffix = ` brightness to ${brightness.percent}%?`;
+        const label = question.text.startsWith('Set ') && question.text.endsWith(suffix)
+          ? question.text.slice(4, -suffix.length) : brightness.binding.target;
+        const acceptedAtMs = this.context.clock.now();
+        return {...settled, confirmation: {...brightness, label, requestId: id, taskId: task.id, questionId: question.id,
+          acceptedAtMs, expiresAtMs: acceptedAtMs + CONFIRMATION_LIFETIME_MS, traceparent: parent.traceparent}};
       }, (current, call) => {
         call.action = action;
         if (artDescription === undefined) return;
@@ -795,6 +878,14 @@ export class AssistantEngine {
         .then(answer => settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)), (current, call) => {current.question = pending; call.action = action;});
     }
     const accepted = result.startsWith('accepted');
+    const confirmation = this.store.confirmation(id);
+    if (confirmation !== undefined) {
+      const remaining = Math.min(IN_TURN_CONFIRMATION_MS, LIMITS.toolMs - (this.context.clock.now() - startedAtMs));
+      await this.#waitForConfirmation(confirmation, remaining, active.controller.signal);
+      this.#fence(active);
+      const recorded = this.store.confirmation(id) ?? confirmation;
+      result = recorded.result ?? pending(recorded);
+    }
     let handedOff = false;
     await this.#append(state.taskId, {role: 'tool', call: question.call, name, result, ok: accepted, effect: id}, active.span.context, current => {
       if (delegation === undefined) return;
@@ -902,6 +993,7 @@ export class AssistantEngine {
         const observed = call.action === undefined ? undefined : this.store.call(id)?.action?.observed;
         if (call.action !== undefined && observed !== undefined) call.action.observed = observed;
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
+        if (reply.confirmation !== undefined) this.store.saveConfirmation(reply.confirmation);
         for (const evidence of reply.evidence ?? []) this.store.observeAction(taskId, evidence);
         if (reply.units !== null) task.reservedUnits -= units - reply.units;
         this.spend.settle(id, reply.usage ?? null);

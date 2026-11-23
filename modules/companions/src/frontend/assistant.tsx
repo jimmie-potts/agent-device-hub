@@ -349,6 +349,10 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             }}
             renderMessage={message => <article aria-label={`${message.role} message`}>
               <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
+              {message.follows !== undefined && <a href={`#conversation-message-${message.follows}`} onClick={event => {
+                event.preventDefault();
+                document.getElementById(`conversation-message-${message.follows}`)?.focus();
+              }}>Update to earlier reply</a>}
               <p className="conversation-message-text" dir="auto">{message.text}</p>
               {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
                 connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
