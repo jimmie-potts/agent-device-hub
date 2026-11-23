@@ -54,12 +54,11 @@ export async function followConfirmation(context: ModuleContext, watch: Confirma
   while (!signal.aborted && context.clock.now() < watch.expiresAtMs) {
     let operation: SyncedCopy<OperationRecord> | undefined;
     let device: SyncedCopy<DeviceRecord> | undefined;
-    let ready: boolean;
-    let lost = false, changed: boolean;
+    let failed = false, changed: boolean;
     let operationCurrent = true, deviceCurrent = true;
     let wake: (() => void) | undefined;
     const notify = () => {changed = true; wake?.();};
-    const fail = () => {lost = true; notify();};
+    const fail = () => {failed = true; notify();};
     const remaining = () => Math.max(0, watch.expiresAtMs - context.clock.now());
     const wait = (ms: number) => new Promise<void>(resolve => {
       const done = () => {
@@ -73,38 +72,45 @@ export async function followConfirmation(context: ModuleContext, watch: Confirma
       wake = done;
       if (signal.aborted) done();
     });
+    const timeoutMs = Math.max(1, Math.min(1200, remaining()));
+    const openOperation = context.sdk.sync<OperationRecord>(['operation'], change => {
+      if (change.type === 'failed') {operationCurrent = false; fail();}
+      if (change.type === 'synced') operationCurrent = true;
+      notify();
+    }, {owner: 'bunny/core', timeoutMs, parent, onRestarted: () => {operationCurrent = false; notify();}})
+      .then(result => {if (result.status === 'synced') {operation = result.copy; notify();} else fail();}, fail);
+    const openDevice = context.sdk.sync<DeviceRecord>(['device'], change => {
+      if (change.type === 'failed') {deviceCurrent = false; fail();}
+      if (change.type === 'synced') deviceCurrent = true;
+      notify();
+    }, {owner: watch.binding.owner, timeoutMs, parent, onRestarted: () => {deviceCurrent = false; notify();}})
+      .then(result => {if (result.status === 'synced') {device = result.copy; notify();} else fail();}, fail);
     try {
-      const timeoutMs = Math.max(1, Math.min(1200, remaining()));
-      const [tracked, reported] = await Promise.all([
-        context.sdk.sync<OperationRecord>(['operation'], change => {
-          if (change.type === 'failed') fail();
-          if (change.type === 'synced') operationCurrent = true;
-          notify();
-        }, {owner: 'bunny/core', timeoutMs, parent, onRestarted: () => {operationCurrent = false; notify();}}),
-        context.sdk.sync<DeviceRecord>(['device'], change => {
-          if (change.type === 'failed') fail();
-          if (change.type === 'synced') deviceCurrent = true;
-          notify();
-        }, {owner: watch.binding.owner, timeoutMs, parent, onRestarted: () => {deviceCurrent = false; notify();}}),
-      ]);
-      operation = tracked.status === 'synced' ? tracked.copy : undefined;
-      device = reported.status === 'synced' ? reported.copy : undefined;
-      ready = operation !== undefined && device !== undefined;
-      while (!signal.aborted && ready && !lost && remaining() > 0) {
+      while (!signal.aborted && remaining() > 0) {
         changed = false;
         const tracked = operationCurrent ? operation?.states().find(message => message.data.requestId === watch.requestId)?.data : undefined;
         const owner = deviceCurrent ? device?.get({family: 'device', id: watch.binding.target})?.data : undefined;
         const evidence = confirmationEvidence(watch, tracked, owner, context.sdk.source);
         if (evidence.sent === true) watch.sent = true;
         if (await save(evidence)) return;
+        if (failed) break;
         if (!changed) await wait(remaining());
       }
+      // A refused device sync does not erase evidence from a core sync still in flight.
+      if (failed && !signal.aborted) {
+        await openOperation;
+        const tracked = operationCurrent ? operation?.states().find(message => message.data.requestId === watch.requestId)?.data : undefined;
+        const evidence = confirmationEvidence(watch, tracked, undefined, context.sdk.source);
+        if (evidence.sent === true) watch.sent = true;
+        if (await save(evidence)) return;
+      }
     } finally {
+      await Promise.all([openOperation, openDevice]);
       await Promise.all([operation?.close(), device?.close()]);
     }
     if (!signal.aborted && remaining() > 0) {
       await wait(Math.min(retryMs, remaining()));
-      retryMs = ready ? 1000 : Math.min(60_000, retryMs * 2);
+      retryMs = operation !== undefined && device !== undefined ? 1000 : Math.min(60_000, retryMs * 2);
     }
   }
   if (!signal.aborted) await save({result: unavailable(watch)});

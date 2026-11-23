@@ -1169,7 +1169,8 @@ class PixooRuntime {
     const call = this.#context.trace.start('bunny.device.call', {
       parent: command, kind: 'client', attributes: {'bunny.device.id': this.#device, ...requestField(command.data.requestId)},
     });
-    let completion: Completion;
+    let completion: Completion | undefined;
+    let acknowledgmentSaved = false;
     let acknowledged: BrightnessReadback | undefined;
     try {
       if (family === 'brightness-set' && command.source === 'bunny/core' && this.#player !== undefined) {
@@ -1178,12 +1179,13 @@ class PixooRuntime {
         const generation = data.expectedGeneration ?? this.#generation();
         const result = await this.#player.setBrightnessWithReadback(data.percent, this.#timing.reachMs, async write => {
           if (this.#stopping) return;
-          const pending: BrightnessReadback = {
+          completion = deviceCompletion(write, 'display');
+          acknowledged = {
             requestId: data.requestId, configurationRevision, generation, requestedPercent: data.percent,
             transmittedAtMs: write.timing.completedAtMs, reading: {status: 'pending'},
           };
-          await this.#complete(command, family, deviceCompletion(write, 'display'), pending);
-          acknowledged = pending;
+          await this.#complete(command, family, completion, acknowledged);
+          acknowledgmentSaved = true;
         });
         completion = deviceCompletion(result.write, 'display');
         if (acknowledged !== undefined) {
@@ -1193,7 +1195,7 @@ class PixooRuntime {
         }
       } else completion = await work();
     } catch (error) {
-      completion = errorCompletion(error);
+      completion ??= errorCompletion(error);
     }
     call.end(completion.result === Outcome.succeeded ? 'unset' : 'error');
     if (this.#stopping) return;
@@ -1201,10 +1203,10 @@ class PixooRuntime {
     if (family === 'moment-play' && this.#context.signal.aborted) return;
     if (catalog) await this.#readCatalog('command');
     try {
-      if (acknowledged === undefined) await this.#complete(command, family, completion);
-      else {
-        const readback = acknowledged;
-        if (readback.reading.status === 'pending') readback.reading = {status: 'unavailable'};
+      const readback = acknowledged;
+      if (readback?.reading.status === 'pending') readback.reading = {status: 'unavailable'};
+      if (!acknowledgmentSaved) await this.#complete(command, family, completion, readback);
+      else if (readback !== undefined) {
         await this.#publish({parent: command, before: () => this.#store?.saveBrightnessReadback(readback, this.#context.clock.now())});
       }
       if (family === FAMILIES.assetChange) {

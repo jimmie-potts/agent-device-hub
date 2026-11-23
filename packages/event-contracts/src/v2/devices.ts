@@ -133,7 +133,8 @@ export const EXTENDED_ART_DEVICE_SCHEMA = 'https://bunny.invalid/events/device/2
 /** The declared stage minor, owner and advertised limits all apply to a long stage. */
 export function extendedArtStageSupported(device: Pick<Message<DeviceRecord>, 'dataschema' | 'source' | 'data'> | undefined,
   stage: {format: unknown; base64: unknown}): boolean {
-  if (device?.dataschema !== EXTENDED_ART_DEVICE_SCHEMA || device.source !== 'bunny/modules/pixoo' || device.data.kind !== 'pixoo') return false;
+  if (device === undefined || device.source !== 'bunny/modules/pixoo' || device.data.kind !== 'pixoo') return false;
+  if (device.dataschema !== EXTENDED_ART_DEVICE_SCHEMA && device.dataschema !== DEVICE_READBACK_SCHEMA) return false;
   const {moments} = device.data.capabilities;
   return moments.supported && moments.art?.stageVersion === '2.1' && stage.format === 'gif' && typeof stage.base64 === 'string' &&
     artStageSupported(device.data.capabilities, {format: stage.format, base64: stage.base64});

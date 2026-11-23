@@ -41,13 +41,15 @@ it('reads reported brightness before admitting the next brightness write', async
   const player = await Player.open({device, clock, store: new MemoryPlaybackStore()});
   try {
     const first = player.setBrightnessWithReadback(35, 2000);
+    const upload = player.uploadDashboard([new Uint8Array(12288)], player.getState().generation, {whileStopped: true});
     const next = player.setBrightness(70);
     await flush(clock);
     const reading = await first;
+    expect((await upload)?.ok).toBe(true);
     await next;
     expect(reading.write.ok).toBe(true);
     expect(reading.readback?.value).toBe(25);
-    expect(device.operations.map(operation => operation.kind)).toEqual(['setBrightness', 'probe', 'setBrightness']);
+    expect(device.operations.map(operation => operation.kind)).toEqual(['setBrightness', 'probe', 'uploadAnimation', 'setBrightness']);
   } finally {
     await player.close();
   }

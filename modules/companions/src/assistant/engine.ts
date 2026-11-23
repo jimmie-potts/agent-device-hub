@@ -248,7 +248,7 @@ export class AssistantEngine {
       change(task);
       if (previous !== task.status && (task.status === 'failed' || task.status === 'uncertain')) {
         const messageId = `${task.id}-closing-${String(task.generation)}`;
-        const reply = this.#confirmationReply(task.id, messageId) ?? closingReply(task, this.store.calls(id), reason);
+        const reply = this.#confirmationReply(task.id, messageId, closingReply(task, this.store.calls(id), reason));
         this.store.message(task, messageId, 'assistant', reply, this.context.clock.now());
       }
       this.store.save(task);
@@ -256,17 +256,20 @@ export class AssistantEngine {
     });
   }
   /** Records which result was visible when the reply committed, in the same transaction. */
-  #confirmationReply(taskId: string, messageId: string): string | undefined {
+  #confirmationReply(taskId: string, messageId: string, reply: string): string {
     const watches = this.store.confirmations(taskId);
-    if (watches.length === 0) return undefined;
-    return watches.map(watch => {
+    const updates: string[] = [];
+    for (const watch of watches) {
+      const update = watch.result ?? pending(watch);
       if (watch.result !== undefined) {
+        for (const earlier of [pending(watch), pending({...watch, sent: true})]) {
+          if (earlier !== update) reply = reply.replace(earlier, update);
+        }
         this.store.dropConfirmation(watch.requestId);
-        return watch.result;
-      }
-      this.store.saveConfirmation({...watch, follows: watch.follows ?? messageId});
-      return pending(watch);
-    }).join(' ');
+      } else this.store.saveConfirmation({...watch, follows: watch.follows ?? messageId});
+      if (!reply.includes(update)) updates.push(update);
+    }
+    return [reply, ...updates].filter(Boolean).join('\n\n');
   }
 
   #followConfirmation(watch: Confirmation): Promise<void> {
@@ -413,6 +416,9 @@ export class AssistantEngine {
       if (data.action === 'cancel') {
         delegated = task.question?.kind === 'delegation' && task.question.answer === null;
         task.status = 'cancelled'; task.generation += 1; task.code = null; this.store.save(task);
+        for (const watch of this.store.confirmations(task.id)) {
+          if (watch.follows === undefined) this.store.dropConfirmation(watch.requestId);
+        }
         return undefined;
       }
       if (!['paused', 'uncertain', 'waiting'].includes(task.status) || (task.question !== null && task.question.answer === null)) fail('invalid-state');
@@ -539,7 +545,7 @@ export class AssistantEngine {
       else if (snapshot.next.length === 0 && typeof values.result === 'string') {
         task.status = 'succeeded'; task.code = null;
         const messageId = `${task.id}-result`;
-        result = this.#confirmationReply(task.id, messageId) ?? values.result;
+        result = this.#confirmationReply(task.id, messageId, values.result);
         this.store.message(task, messageId, 'assistant', result, this.context.clock.now());
       } else if (snapshot.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0)) {
         // The turn that decided to ask saved the question before the interrupt; an interrupt without one is not evidence of a saved question.
@@ -594,7 +600,7 @@ export class AssistantEngine {
       await this.#graph.invoke(input, config); this.#fence(active);
       await this.#reconcile(task.id, false, active);
     } catch (error) {
-      const code = codeOf(error);
+      const code = this.#closed || this.context.signal.aborted ? 'cancelled' : codeOf(error);
       try {
         await this.#change(active.taskId, task => {
           if (terminal(task.status)) {this.#settle(task, active); return;}
