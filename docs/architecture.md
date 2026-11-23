@@ -362,8 +362,9 @@ saver supplies durable interrupts and pending writes; startup reconciles their
 application projection without invoking work. Existing authenticated upload
 staging keeps text out of tracked command payloads, while authenticated module
 content reads serve bounded private pages. All companion state families share one owner
-revision sequence, sync provider and outbox. One unfinished task, explicit
-continuation, persisted call reservations and cancellation fences bound execution.
+revision sequence, sync provider and outbox. One unfinished task per
+conversation, explicit continuation, persisted call reservations and per-task
+cancellation fences bound execution; conversations run at the same time.
 The [companions guide](../modules/companions/README.md#conversation-and-assistant-tasks)
 owns the section, flow, limits and future workspace reference. Source checks use
 the synthetic provider and fake transports; live provider use and installation

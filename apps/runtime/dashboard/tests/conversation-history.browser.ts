@@ -77,13 +77,13 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     await answerDraft.fill('Synthetic answer draft');
     // The profiles are chosen in the rail (Hub #1890).
     await chooseConversation(page, 'reachy');
-    await panel.getByText('No saved messages for this profile yet.', {exact: true}).waitFor();
-    // Another conversation's unfinished task never holds this one's composer (Hub #2027).
+    // Another conversation's unfinished task never holds this one's composer (Hub #2027): the empty demo invites a message.
+    await panel.getByText('Send a message to start the conversation.', {exact: true}).waitFor();
     const reachyDraft = panel.getByRole('textbox', {name: 'Message', exact: true});
     assert.equal(await panel.getByRole('button', {name: 'Send', exact: true}).isDisabled(), true);
     await reachyDraft.fill('Synthetic Reachy draft');
     assert.equal(await panel.getByRole('button', {name: 'Send', exact: true}).isDisabled(), false);
-    assert.equal(await panel.getByText('Finish or cancel', {exact: false}).count(), 0);
+    assert.equal(await panel.locator('.conversation-compose').getByText('Finish or cancel', {exact: false}).count(), 0);
     await reachyDraft.fill('');
     await chooseConversation(page, 'bunny');
     assert.equal(await answerDraft.inputValue(), 'Synthetic answer draft');

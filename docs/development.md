@@ -3257,6 +3257,22 @@ a refusal, and the conversation state journey covers the monthly estimate and
 the Prices fact. Run the same commands; the fakes return the documented error
 bodies, and no installed Console limit is exercised.
 
+Independent conversation runs (#2027) add `assistant-concurrency.test.js`,
+`assistant-qualification.test.js` and its child fixture
+`assistant-qualification-child.js` to the companions suite, and extend
+`speech-coordinator.test.js`. The concurrency tests run three conversations at
+once with gated fake providers: per-conversation capacity, cancellation, disable,
+restart, spend reservations, Anthropic refusals, session reports, reply lines and
+arrival-order approvals. The qualification test runs the three graphs in a child
+process with scripted replies in mixed order, exits it abruptly, starts it again
+and checks that checkpoints, limits, spend, fences, titles and session reports
+stay with their own conversation. The speech tests cover one waiting reply per
+conversation, arrival order and the card slot. After the root build run
+`node --test modules/companions/dist/tests/assistant-concurrency.test.js modules/companions/dist/tests/assistant-qualification.test.js modules/companions/dist/tests/speech-coordinator.test.js`
+and `npm run test:companions:browser`, whose conversation history and state
+journeys cover the page. They use a manual clock and fake providers. Existing CI
+discovery runs them.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module

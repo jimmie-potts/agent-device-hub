@@ -8,7 +8,7 @@ Let one local owner converse with B.U.N.N.Y. through a configured model provider
 
 ### Requirement: Durable explicit task activation
 
-The system SHALL preserve inspectable, versioned conversations, messages, tasks, questions, answers, runs and logical call receipts in the companions-owned database. Conversation/task/question identity SHALL survive restart; each activation SHALL use a new run identity. Profile threads for B.U.N.N.Y., Reachy and MicroDuck SHALL remain distinct. Startup SHALL reconcile saved state without executing work.
+The system SHALL preserve inspectable, versioned conversations, messages, tasks, questions, answers, runs and logical call receipts in the companions-owned database. Conversation/task/question identity SHALL survive restart; each activation SHALL use a new run identity. Profile threads for B.U.N.N.Y., Reachy and MicroDuck SHALL remain distinct. Startup SHALL reconcile each conversation's saved state separately without executing work.
 
 #### Scenario: Question survives restart
 - **WHEN** a task pauses for clarification and the process stops
@@ -22,9 +22,13 @@ The system SHALL preserve inspectable, versioned conversations, messages, tasks,
 - **WHEN** recovery finds an admitted call without a result or an unsupported graph version
 - **THEN** it preserves readable evidence, reports uncertainty or unavailability and refuses automatic retry or an empty replacement thread
 
-### Requirement: Bounded single execution
+#### Scenario: Each conversation recovers separately
+- **WHEN** the runtime restarts with unfinished tasks in several conversations
+- **THEN** startup reconciles each one on its own, reports only each conversation's own change, and starts no run, model call, speech or dispatch
 
-The system SHALL admit at most one unfinished task across profiles and one invocation, with no execution queue. A turn is one task: one owner message and everything it causes. Each task SHALL retain limits of 50 model calls, 40 tool calls, 10 questions, 40 minutes active time and 1,000,000 usage units; a usage unit is one token reported by a configured provider or one fake unit of the synthetic provider. Before each model call the task SHALL reserve the request's UTF-8 bytes plus 8,192 framing units and 16,384 output units. Model/tool deadlines SHALL be six minutes and 30 seconds, and control admission five seconds. An owner message SHALL be bounded at 32 KiB, a tool result at 8 KiB, a model reply with its provider blocks at 16 KiB, the working transcript at 1 MiB, staged input at 193 KiB and each serialized checkpoint or set of pending writes at 256 KiB. A call that would pass a limit SHALL be refused before dispatch, and the task SHALL end with the capacity code and a conversation message that names the limit. Reservations SHALL precede dispatch and survive restart; resume SHALL never replenish a turn's budget; unreported usage SHALL remain unknown. Paid calls SHALL occur only through a configured provider; the synthetic provider SHALL make none.
+### Requirement: Bounded execution per conversation
+
+The system SHALL admit at most one unfinished task and one graph invocation per conversation, with no execution queue. A task in one conversation SHALL NOT block a start, answer, resume or cancel in another, and the running slot SHALL be keyed by conversation, not by a fixed list of profiles; each conversation belongs to one profile today. A start in a conversation whose own task is unfinished SHALL be refused with the capacity code. Every conversation's graph SHALL run on the module's one SDK-owned SQLite connection with no transaction across an await, its own checkpoint thread and its own cancellation fence. A turn is one task: one owner message and everything it causes. Each task SHALL retain limits of 50 model calls, 40 tool calls, 10 questions, 40 minutes active time and 1,000,000 usage units; a usage unit is one token reported by a configured provider or one fake unit of the synthetic provider. Before each model call the task SHALL reserve the request's UTF-8 bytes plus 8,192 framing units and 16,384 output units. Model/tool deadlines SHALL be six minutes and 30 seconds, and control admission five seconds. An owner message SHALL be bounded at 32 KiB, a tool result at 8 KiB, a model reply with its provider blocks at 16 KiB, the working transcript at 1 MiB, staged input at 193 KiB and each serialized checkpoint or set of pending writes at 256 KiB. A call that would pass a limit SHALL be refused before dispatch, and the task SHALL end with the capacity code and a conversation message that names the limit. Reservations SHALL precede dispatch and survive restart; resume SHALL never replenish a turn's budget; unreported usage SHALL remain unknown. Paid calls SHALL occur only through a configured provider; the synthetic provider SHALL make none.
 
 #### Scenario: A limit is exhausted
 - **WHEN** another operation would exceed a persisted limit
@@ -38,6 +42,32 @@ The system SHALL admit at most one unfinished task across profiles and one invoc
 #### Scenario: Cancellation and late result
 - **WHEN** cancellation is durably saved while a call is pending
 - **THEN** later steps remain fenced, abort is best effort, and a late result can update evidence but cannot reactivate the task
+
+#### Scenario: Three conversations at once
+- **WHEN** B.U.N.N.Y., Reachy and MicroDuck each start a task and their model replies arrive in mixed order
+- **THEN** the three tasks run at the same time and each finishes in its own conversation with its own transcript, per-turn counts and checkpoint thread
+- **AND** a second start in a conversation whose own task is unfinished is refused with the capacity code while the others keep running
+
+#### Scenario: Cancel one conversation
+- **WHEN** the owner cancels one conversation's task while all three have model calls in flight
+- **THEN** only that task's call is aborted and fenced, its late answer is not saved, and the other two finish
+
+#### Scenario: Spend reservations from several running turns
+- **WHEN** several running turns reserve their next paid model calls and only some fit under the daily limit
+- **THEN** each reservation is admitted atomically against the day's limit and the month's guard, together they never pass either, the turns that fit proceed, and a refused turn ends with the capacity code and its own message naming the limit, with nothing sent for it
+
+#### Scenario: Anthropic spend limit in several turns
+- **WHEN** Anthropic's monthly spend limit refuses the model calls of two running turns
+- **THEN** each affected turn ends with the capacity code and its own closing reply, nothing retries, and a third conversation's turn keeps running
+
+#### Scenario: Approvals from two conversations
+- **WHEN** two conversations each wait on an approval bound to the same Hub-mode revision and the owner approves one and then the other
+- **THEN** the commands reach the single writer in arrival order, each with its own guard, and the stale one is refused there and explained in its own conversation
+
+#### Scenario: Crash and restart with three conversations
+- **WHEN** the process exits abruptly while one conversation's model call is in flight, another waits on its question and a third has finished, and the runtime starts again
+- **THEN** each conversation is recovered on its own and no call is sent, the lost call leaves its task uncertain and refuses a resume, and the waiting task can be answered and finished
+- **AND** checkpoints, per-turn counts, spend reservations, cancellation fences, titles and session reports each stay with their own conversation
 
 ### Requirement: Private authorized controls and truthful outcomes
 
@@ -186,7 +216,7 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 #### Scenario: Draft and task decisions in the composer
 - **WHEN** the owner changes profiles, opens Details, resizes the page or reconnects in the same mounted page
 - **THEN** the profile and question drafts remain in page memory, including text retained after submission
-- **AND** the composer blocks conflicting starts but allows browsing saved history and returning to the unfinished task
+- **AND** the composer blocks a start only while the open conversation's own task is unfinished, never for another conversation's task, and allows browsing saved history
 - **AND** Enter submits eligible text outside IME composition, and Shift+Enter inserts a newline
 - **AND** full approval scope and active questions and waits remain visible outside collapsed routine facts
 
@@ -219,7 +249,7 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 #### Scenario: Use existing conversation settings
 - **WHEN** the owner opens Conversation settings
 - **THEN** the section explains saved input and offers the current enable or disable action through the same guarded command
-- **AND** a reader or stale copy cannot mutate, and an unfinished task prevents disabling the conversation
+- **AND** a reader or stale copy cannot mutate, and while any conversation has an unfinished task, Disable is unavailable, the command is refused with the invalid-state code, and the section names each such conversation with a link to it; Enable is unchanged
 
 #### Scenario: Read saved conversation messages
 
@@ -268,7 +298,7 @@ The Conversation page SHALL use remaining viewport height for the transcript and
 - **WHEN** the owner inspects the conversations in the rail and chooses one, or opens the Devices menu
 - **THEN** both demos are labelled before selection, the header row names the chosen profile with its Demo label, and the device-management links remain distinct from the chat choices
 - **AND** the Devices menu lists the other companion pages and marks the open page
-- **AND** switching to a demo while another profile has unfinished work allows inspection of its separate history without a conflicting start
+- **AND** switching to a demo while another profile has unfinished work shows the demo's separate history and lets the owner start the demo's own task
 
 #### Scenario: Resize or open local navigation while reading
 - **WHEN** the owner resizes the viewport, chooses another profile in the rail or opens and closes the Devices menu without leaving Conversation

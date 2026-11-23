@@ -20,7 +20,8 @@ The module syncs sessions and Hub mode from `bunny/core`; it owns no second
 lifecycle reducer or mode store. It keeps settings, at most 128 admission records and 4,096 consumed-origin receipts,
 separate live/scenario social allowances, and the last presentation in its own
 private SQLite file. Pending candidates are in memory only: one active and at
-most one waiting in each category. Coding attention survives Work/Quiet. A
+most one waiting in each category. Speech keeps its own waiting candidates, also
+in memory: one card and one reply per conversation. Coding attention survives Work/Quiet. A
 question, input request or approval takes priority over background cards,
 social cards, suggestions and automatic speech for 30 seconds from its own
 evidence instant, on the reporting host's clock as the core's opportunity sets
@@ -174,9 +175,13 @@ When a turn ends with a result, a question for the owner or a refusal, the engin
 offers that saved message once. **Read aloud** beside a saved assistant message
 offers it again under its own request identity. The command receipt and playback
 report appear separately. A reply ranks with coding
-attention: it interrupts a notice or social card after confirmed cancellation,
-waits for an active equal, and a newer pending reply replaces an older one, so a
-stale answer never precedes the current one. Replies honor Quiet and need the
+attention: it interrupts a notice or social card after confirmed cancellation
+and waits for an active equal. Each conversation keeps one waiting reply (Hub
+#2027): a newer reply of the same conversation, a Read aloud replay included,
+replaces it, so a stale answer never precedes the current one there. Replies of
+other conversations are kept, and a reply and Reachy's waiting card never
+replace each other. The voice takes the highest rank first, then the order the
+candidates arrived in. Replies honor Quiet and need the
 synced Hub mode; Reachy's text enablement and category mutes do not govern
 them. A message over 512 characters, the driver's bound, stays written only.
 A reply is stale sixty seconds after it was saved. Nothing is spoken for a task
@@ -238,8 +243,11 @@ The **Conversation** page (`assistant`) is B.U.N.N.Y.'s text conversation beside
 Reachy (Hub #46). The `bunny` profile talks to the provider the private section
 selects; Reachy and MicroDuck keep the labelled synthetic provider, which makes
 no network call and no paid usage. Activation defaults to off. The three
-profiles keep separate conversation histories, with one unfinished task across
-all of them and one graph invocation at a time.
+profiles keep separate conversation histories. Each conversation runs its own
+task at the same time as the others (Hub #2027): one unfinished task and one
+graph invocation per conversation, all on the module's one SQLite connection.
+A new message to a conversation whose own task is unfinished is refused with
+`capacity`; another conversation's task never blocks it.
 
 Choose the everyday B.U.N.N.Y. assistant or a Reachy or MicroDuck demo under
 **Conversations** in the dashboard's rail, from any page (Hub #1890). On a
@@ -279,9 +287,9 @@ Use **Send** for a message or **Answer** for a saved question. Enter submits
 and Shift+Enter inserts a line break. Enter during text composition does not
 submit. The composer shows the exact UTF-8 count starting at 26,215 bytes and
 refuses drafts over 32,768 bytes. Each profile and pending question has its own
-draft. Drafts remain after submission and clear on reload. You can browse
-another profile while a task is unfinished. Follow the link beside the composer
-to return to that task before starting another one.
+draft. Drafts remain after submission and clear on reload. Another
+conversation's unfinished task does not hold this one: switch in the rail and
+send to it while the other works or waits.
 
 **Voice** is in the composer toolbar. Open **Spoken replies** to enable output
 in this tab, mute it, or inspect requirements and tracked playback evidence.
@@ -330,8 +338,10 @@ their open state while you inspect another panel or resize the page.
   rate. When a paid profile's new message would be refused, its composer says
   which limit is reached.
 - **Conversation settings** explains where submitted text goes and links to
-  **Preferences** and **Companion knowledge**. An unfinished task prevents
-  disabling the conversation.
+  **Preferences** and **Companion knowledge**. Enable and disable are one
+  switch for every conversation, so an unfinished task in any of them keeps
+  **Disable conversation** unavailable (`invalid-state`). The section lists a
+  **Go to <name> task** link for each such conversation.
 
 In a synthetic session, ask about recent coding activity and answer the
 clarification. Open **Tool result** in the transcript to read the saved result,
@@ -506,8 +516,10 @@ result as the tool's later word, bounded text naming outcome, git facts, checks,
 findings, limitations and usage (the model sees it as text naming the call,
 since the call's own result was the hand-off acceptance and the Messages API
 takes one result per call, Hub #1360); nothing is resent, and a restart or a lost
-worker leaves the operation uncertain. One task runs at a time; the dispatch
-carries twenty minutes, sixty turns and five dollars as bounds. The page shows
+worker leaves the operation uncertain. The worker runs one hand-off at a time,
+whichever conversation asked (#2028 gives each companion its own slot); while
+it is busy another conversation's delegation is not proposed, and the tool
+result says no coding worker is connected. The dispatch carries twenty minutes, sixty turns and five dollars as bounds. The page shows
 the worker's availability beside the provider. The worker's readiness (Hub
 #1743: tool version, signed in or not, plan and the latest limit windows, each
 unknown where the tool did not say) arrives on its enable and is published in
