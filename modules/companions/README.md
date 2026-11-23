@@ -251,8 +251,11 @@ A new message to a conversation whose own task is unfinished is refused with
 conversation is refused as stale (`revision-conflict`) only when that
 conversation changed after the revision the page read, so another
 conversation's step never refuses it; enable and disable keep the
-assistant-wide revision. A startup recovery that fails leaves only its own
-conversation unavailable until the next start.
+assistant-wide revision; a rename counts as a change of its conversation, and
+each start counts every conversation as changed then. A startup recovery that
+fails leaves only its own conversation unavailable until the next start, and
+that conversation gets a message saying its saved progress could not be
+restored, that **Cancel task** works and that a restart tries again.
 
 Choose the everyday B.U.N.N.Y. assistant or a Reachy or MicroDuck demo under
 **Conversations** in the dashboard's rail, from any page (Hub #1890). On a

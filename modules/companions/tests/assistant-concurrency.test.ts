@@ -17,6 +17,7 @@ import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore} from '../src/assistant/store.js';
 import {SPEND_LIMIT_REACHED} from '../src/assistant/anthropic.js';
+import {RECOVERY_FAILED} from '../src/assistant/engine.js';
 import type {SpendView} from '../src/assistant/spend.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 
@@ -305,7 +306,6 @@ void test('a step in another conversation never makes a command stale, while a c
   assert.ok(w.state().revision > seen, 'the other conversation moved the assistant revision');
   // Commands for conversations that did not change since are accepted against the revision the owner saw.
   assert.equal((await w.send('microduck', 'Synthetic microduck request', false, seen)).status, 'accepted', 'a start');
-  assert.equal((await w.control('rename', {profile: 'bunny', title: 'Synthetic bunny title', expectedRevision: seen})).status, 'accepted', 'a rename');
   assert.equal((await w.control('speak', {taskId: w.task('bunny')?.taskId, messageId: w.task('bunny')?.questionId, expectedRevision: seen})).status, 'accepted', 'a Read aloud');
   assert.equal((await w.send('bunny', 'Synthetic bunny answer', true, seen)).status, 'accepted', 'an answer');
   await settle(() => providers.bunny.pending.length === 1 && providers.microduck.pending.length === 1);
@@ -344,7 +344,41 @@ void test('a recovery that fails in one conversation leaves that conversation un
   assert.equal(code(await w.send('reachy', 'Synthetic reachy answer', true)), 'unavailable');
   assert.equal((await w.control('cancel', {taskId: reachy})).status, 'accepted');
   assert.equal(code(await w.send('reachy', 'Synthetic reachy request again')), 'unavailable');
+  // The owner reads why in that conversation, once for this failed start, and the others read nothing of it.
+  const notice = (texts: {text: string}[]) => texts.filter(message => message.text === RECOVERY_FAILED).length;
+  assert.equal(notice(await w.messages('reachy')), 1);
+  assert.equal(notice(await w.messages('bunny')) + notice(await w.messages('microduck')), 0);
   providers.bunny.next().resolve(reply('Synthetic bunny answer'));
   providers.microduck.next().resolve(reply('Synthetic microduck answer'));
   await settle(() => w.task('bunny')?.status === 'succeeded' && w.task('microduck')?.status === 'succeeded');
+  // A start that recovers without a failure writes no such message.
+  await w.restart();
+  assert.equal(notice(await w.messages('reachy')), 1);
+});
+
+void test('a rename counts as a change of its conversation, so a second rename bound to the same revision is refused', async context => {
+  const w = await world(context, withProviders(three()));
+  await w.control('enable');
+  const seen = w.state().revision;
+  assert.equal((await w.control('rename', {profile: 'reachy', title: 'Synthetic first title', expectedRevision: seen})).status, 'accepted');
+  assert.equal(code(await w.control('rename', {profile: 'reachy', title: 'Synthetic stale title', expectedRevision: seen})), 'revision-conflict');
+  assert.equal((await w.control('rename', {profile: 'bunny', title: 'Synthetic other title', expectedRevision: seen})).status, 'accepted', 'another conversation is unaffected');
+});
+
+void test('a start counts every conversation as changed then, so a command bound to an earlier revision is refused once', async context => {
+  const providers = three(), w = await world(context, withProviders(providers));
+  await w.control('enable');
+  await w.send('bunny', 'Synthetic bunny request');
+  await settle(() => providers.bunny.pending.length === 1);
+  providers.bunny.next().resolve(reply('Synthetic bunny answer'));
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  const seen = w.state().revision;
+  await w.send('reachy', 'Synthetic reachy request');
+  await settle(() => providers.reachy.pending.length === 1);
+  assert.equal((await w.control('rename', {profile: 'microduck', title: 'Synthetic duck title', expectedRevision: seen})).status, 'accepted',
+    'before a restart, another conversation\'s step leaves the revision current for this one');
+  await w.restart();
+  // A finished conversation, which startup reconciliation does not touch, still counts as changed at the start.
+  assert.equal(code(await w.send('bunny', 'Synthetic bunny request again', false, seen)), 'revision-conflict');
+  assert.equal((await w.send('bunny', 'Synthetic bunny request again')).status, 'accepted');
 });

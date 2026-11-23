@@ -95,20 +95,10 @@ export class AssistantStore {
       }
     }
     initializeRevision(database, this.meta().revision);
-    // Each conversation's last change, as the assistant revision that published it (Hub #2027): a task-scoped command is
-    // stale only when its own conversation changed after the revision it names. The release that adds the table counts
-    // every saved conversation as changed at the current revision, which refuses exactly what the one revision refused.
-    if (database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='assistant_conversation_changes'").get() === undefined) {
-      database.exec('SAVEPOINT assistant_conversation_changes');
-      try {
-        database.exec(`CREATE TABLE assistant_conversation_changes (conversation_id TEXT PRIMARY KEY, revision INTEGER NOT NULL) STRICT;
-          INSERT INTO assistant_conversation_changes SELECT id,(SELECT revision FROM assistant_meta WHERE id=1) FROM assistant_conversations;
-          RELEASE assistant_conversation_changes`);
-      } catch (error) {
-        if (database.isTransaction) database.exec('ROLLBACK TO assistant_conversation_changes; RELEASE assistant_conversation_changes');
-        throw error;
-      }
-    }
+    // Each conversation's last change, as the assistant revision that published it (Hub #2027): a conversation's command is
+    // stale only when its own conversation changed after the revision it names. The engine's start raises every row with
+    // `restarted`.
+    database.exec('CREATE TABLE IF NOT EXISTS assistant_conversation_changes (conversation_id TEXT PRIMARY KEY, revision INTEGER NOT NULL) STRICT');
     this.messages = new Messages(database);
   }
   /** Conversations whose tasks changed in the open transaction; the next `bump` records them at its revision. */
@@ -123,6 +113,16 @@ export class AssistantStore {
     const record = this.database.prepare('INSERT INTO assistant_conversation_changes VALUES (?,?) ON CONFLICT(conversation_id) DO UPDATE SET revision=excluded.revision');
     for (const conversationId of this.#changed) record.run(conversationId, revision);
     this.#changed.clear();
+  }
+  /** Counts a change of the conversation other than a task's, such as the owner's rename, at the next `bump`. */
+  touch(conversationId: string): void {this.#changed.add(conversationId);}
+  /**
+   * Counts every saved conversation as changed at the current revision, once per start: a command bound to a revision read
+   * before the start is refused as the one assistant-wide revision refused it, whatever rows an earlier release left.
+   */
+  restarted(): void {
+    this.database.prepare(`INSERT INTO assistant_conversation_changes SELECT id,(SELECT revision FROM assistant_meta WHERE id=1) FROM assistant_conversations WHERE true
+      ON CONFLICT(conversation_id) DO UPDATE SET revision=MAX(revision,excluded.revision)`).run();
   }
   /** The assistant revision of the conversation's last change, or 0 before its first. */
   changedAt(conversationId: string): number {

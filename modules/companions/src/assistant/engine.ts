@@ -107,6 +107,8 @@ export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the ev
 export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${String(LIMITS.contextBytes / 1024)} KiB prompt bound; stop using some on the Preferences page and start again.`;
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
+/** What a conversation reads when its saved progress could not be restored at a start (Hub #2027); once per failed start. */
+export const RECOVERY_FAILED = 'This conversation\'s saved progress could not be restored when the assistant started, so this task cannot continue. Cancel task still works, and restarting the assistant tries the recovery again.';
 type Next = 'ask' | 'tool' | 'approve' | 'await' | 'turn' | 'end';
 const shape = Annotation.Root({taskId: Annotation<string>, step: Annotation<number>, next: Annotation<Next>, decision: Annotation<string>, result: Annotation<string>});
 type GraphState = typeof shape.State;
@@ -185,14 +187,15 @@ export class AssistantEngine {
   }
   async start(): Promise<void> {
     // Each conversation's unfinished task is reconciled on its own and none is run. A failed recovery makes only its own
-    // conversation unavailable until the next start.
+    // conversation unavailable until the next start, and that conversation says so.
+    this.store.restarted();
     for (const task of this.store.unfinished()) {
       try {
         if (task.graphVersion !== GRAPH_VERSION || !this.available()) await this.#recoverUnavailable(task.id);
         else await this.#reconcile(task.id, true);
       } catch (error) {
         this.#unrecovered.add(task.conversationId);
-        try {await this.#recoverUnavailable(task.id, closingReasonOf(error));} catch { /* A failed write cannot claim a saved transition. */ }
+        try {await this.#recoverUnavailable(task.id, closingReasonOf(error), true);} catch { /* A failed write cannot claim a saved transition. */ }
       }
     }
     this.#subscriptions.push(await this.context.sdk.respond<AssistantControl>('bunny.cmd.assistant-control.assistant', command => this.#control(command)));
@@ -318,6 +321,7 @@ export class AssistantEngine {
         if (data.taskId !== undefined || data.profile === undefined || data.title === undefined) fail('invalid-request');
         const title = ownerTitle(data.title) ?? fail('invalid-request');
         renamed = this.store.ensureConversation(data.profile);
+        this.store.touch(renamed);
         this.titles.rename(add, renamed, data.profile, title);
         return undefined;
       }
@@ -444,12 +448,15 @@ export class AssistantEngine {
     const run = task.runId === null ? undefined : this.store.run(task.runId);
     if (run !== undefined && run.endedAtMs === null) {run.status = task.status; run.endedAtMs = this.context.clock.now(); this.store.saveRun(run);}
   }
-  #recoverUnavailable(taskId: string, reason?: string): Promise<void> {
+  #recoverUnavailable(taskId: string, reason?: string, failed = false): Promise<void> {
     const traceparent = this.#task(taskId).traceparent;
     return this.#change(taskId, task => {
       const unknown = unresolved(this.store.calls(taskId));
       task.status = unknown ? 'uncertain' : 'paused'; task.code = unknown ? 'uncertain-result' : 'unavailable';
       this.#finishRecoveredRun(task);
+      // A paused task gets no #2046 closing reply, so a failed recovery writes its own, under the closing-reply prefix that
+      // keeps it out of title prompts. Each failed start writes one.
+      if (failed) this.store.message(task, `${task.id}-closing-recovery-${randomUUID()}`, 'assistant', RECOVERY_FAILED, this.context.clock.now());
     }, traceparent === null ? undefined : {traceparent}, reason);
   }
   async #reconcile(taskId: string, startup: boolean, active?: Active): Promise<void> {

@@ -27,3 +27,8 @@
 - [x] 5.4 Red: one conversation's unreadable checkpoint makes the whole assistant unavailable. Evidence: the new recovery test fails, then passes with the failure scoped to its conversation.
 - [x] 5.5 Close the narrow Details overlay from Go to, and leave the open conversation out of the list. Evidence: the conversation history journey at phone width and the conversation state journey pass.
 - [x] 5.6 Wait in the new speech tests by yielding turns instead of real timers; add the #2027 rollback note to `apps/runtime/UPGRADE.md` and the two-delegation case to the companions README. Evidence: readback and `speech-coordinator.test.js`.
+
+## 6. Review round 2
+
+- [x] 6.1 Red: a second rename bound to the same revision is accepted; a failed recovery writes no message; a command for a finished conversation bound to a revision from before a restart is accepted. Evidence: the three concurrency tests fail.
+- [x] 6.2 Mark a renamed conversation, write one recovery message per failed start, and raise every conversation's row at each start. Evidence: the same tests pass.
