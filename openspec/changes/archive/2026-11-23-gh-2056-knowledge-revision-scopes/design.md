@@ -40,7 +40,7 @@ A refusal is a typed `revision-conflict` before any effect, with the existing de
 - `fixture` creates a synthetic Reachy–Duck exchange from the Companion knowledge page. It changes no existing conversation. Leaving it with no scope would mean the rule never applies to it, against the owner's decision to narrow the rule and not remove it. So it is checked and recorded on the library scope, and the existing test that refuses a fixture naming an old revision still holds.
 - `import-archive` adds missing knowledge entries and voices, so it changes the library. It also adds to conversations. Section 3 explains which ones it is checked against.
 - `select-duck-conversation` changes only the widget's selection row.
-- A correction or removal changes one message, and the issue names the owning conversation's #2027 change revision for it. A removal of a message already removed, or a command for an unknown message, changes no conversation; the unknown message is still refused `not-found` when it applies.
+- A correction or removal changes one message, and the issue names the owning conversation's #2027 change revision for it. Once a message is removed, its removal record names the conversation (review round 1 on PR 2073), so a stale repeat removal or correction is still refused as a revision conflict, as it was under the assistant-wide check. A command for an unknown message names no conversation and is refused `not-found` when it applies.
 - A preference merge inside `import-archive` is not checked against preference changes. Preference commands move only the preference revision, never the assistant revision the page reads, so the old check never covered them either.
 
 ### 3. An import is checked against the conversations it actually changes

@@ -9,3 +9,9 @@
 
 - [x] 2.1 Update the companions README, `docs/development.md` and `apps/runtime/UPGRADE.md`. Evidence: readback.
 - [x] 2.2 Synchronize `bunny-companion-knowledge` and `bunny-assistant-tasks` and archive this change. Evidence: `npm run check:workflow` passes.
+
+## 3. Review round 1
+
+- [x] 3.1 Red: with the Duck widget changed before the library, removing the Duck widget's raise at start passes every test. Evidence: the restart test now selects the Duck conversation first, then creates an entry and renames another conversation; removing either scope from the raise fails it.
+- [x] 3.2 Red: a stale second removal of a message another page already removed is accepted. Evidence: the message test refuses it; dropping the removal-record fallback fails that assertion.
+- [x] 3.3 Red: an import's removal and new-conversation branches have no failing test. Evidence: the new import test refuses a stale correction after an import removed a sibling message, and a stale rename after an import added MicroDuck's conversation and binding; mutating either branch to record nothing fails it.

@@ -27,14 +27,15 @@ export class KnowledgeLibrary {
   }
   /**
    * The scopes and conversations a command changes, read before it applies. Entries, voices, a fixture and an archive change
-   * the library; a correction or removal changes its message's conversation, and an archive also changes each conversation
-   * it adds to.
+   * the library; a correction or removal changes its message's conversation, found through the removal record once the message
+   * is removed, and an archive also changes each conversation it adds to.
    */
   changes(input: KnowledgeInput): Changes {
     switch (input.action) {
       case 'select-duck-conversation': return {scopes: ['duck-widget'], conversations: []};
       case 'correct-message': case 'delete-message': {
-        const conversationId = this.assistant.store.messages.get(input.messageId)?.conversationId;
+        const messages = this.assistant.store.messages;
+        const conversationId = messages.get(input.messageId)?.conversationId ?? messages.removal(input.messageId)?.conversationId;
         return {scopes: [], conversations: conversationId === undefined ? [] : [conversationId]};
       }
       case 'import-archive': return {scopes: ['library'], conversations: this.#imported(input.archive)};

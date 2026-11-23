@@ -1208,7 +1208,7 @@ the assistant's (Hub #2056). A running conversation's steps never refuse it.
 | `create`, `edit`, `import`, `set-active`, `set-voice`, `fixture` | the library |
 | `import-archive` | the library, and each conversation it adds to: a conversation or profile binding not yet saved, a removal not yet known, or a new message |
 | `select-duck-conversation` | the Duck widget selection |
-| `correct-message`, `delete-message` | the message's conversation |
+| `correct-message`, `delete-message` | the message's conversation, found through its removal record once removed |
 
 The library and the Duck widget each keep the assistant revision of their last
 change in `companion_scope_changes`. Conversations use the per-conversation

@@ -163,6 +163,8 @@ void test('a message correction or removal is checked against its own conversati
   const corrected = await w.seen();
   await w.step('call-removal');
   assert.equal((await w.knowledge({action: 'delete-message', messageId: third.messageId}, corrected)).status, 'accepted', 'a removal');
+  assert.equal(code(await w.knowledge({action: 'delete-message', messageId: third.messageId}, corrected)), 'revision-conflict',
+    'a stale removal of a message another page already removed');
   assert.equal((await w.exchange()).messages.some(message => message.messageId === third.messageId), false);
   assert.equal(code(await w.knowledge({action: 'correct-message', messageId: second.messageId, meaning: {kind: 'unknown'}}, w.state().revision + 1)), 'revision-conflict',
     'a revision the assistant has not reached');
@@ -214,6 +216,33 @@ void test('an archive import is checked against the library and each conversatio
   assert.equal(code(await w.knowledge({action: 'fixture'}, w.state().revision + 1)), 'revision-conflict', 'a fixture naming a revision ahead');
 });
 
+void test('an archive import that removes a message or adds a profile conversation counts as a change of that conversation', async context => {
+  const w = await world(context);
+  await w.running();
+  const {id: duck, messages: [first, second]} = await w.exchange();
+  assert.ok(first !== undefined && second !== undefined);
+  // The archive removes one exchange message: a stale correction of another message there is refused afterwards.
+  const current = await w.content<Archive>('companion-archive');
+  const removed = current.messages.find(message => message.messageId === second.messageId) ?? assert.fail('the message to remove');
+  const removal = {...current, messages: current.messages.filter(message => message.messageId !== removed.messageId),
+    removals: [...current.removals, {messageId: removed.messageId, conversationId: duck, ordering: removed.ordering, removedAtMs: removed.createdAtMs}]};
+  const beforeRemoval = await w.seen();
+  assert.equal((await w.knowledge({action: 'import-archive', archive: removal}, beforeRemoval)).status, 'accepted');
+  assert.equal((await w.exchange()).messages.some(message => message.messageId === second.messageId), false, 'the import removed the message');
+  assert.equal(code(await w.knowledge({action: 'correct-message', messageId: first.messageId, meaning: {kind: 'unknown'}}, beforeRemoval)), 'revision-conflict',
+    'a stale correction in the conversation the import removed from');
+  // The archive adds MicroDuck's conversation and its profile binding: a stale rename of that conversation is refused afterwards.
+  const next = await w.content<Archive>('companion-archive');
+  assert.equal(next.conversations.some(conversation => conversation.profile === 'microduck'), false);
+  const added = {...next, conversations: [...next.conversations,
+    {id: 'synthetic-microduck-conversation', participants: ['microduck' as const], epoch: 'synthetic-microduck-conversation', profile: 'microduck' as const}]};
+  const beforeBinding = await w.seen();
+  assert.equal((await w.knowledge({action: 'import-archive', archive: added}, beforeBinding)).status, 'accepted');
+  assert.equal(code(await w.control('rename', {profile: 'microduck', title: 'Synthetic stale title', expectedRevision: beforeBinding})), 'revision-conflict',
+    'a stale rename of the conversation the import added');
+  assert.equal((await w.control('rename', {profile: 'microduck', title: 'Synthetic duck title', expectedRevision: await w.seen()})).status, 'accepted');
+});
+
 void test('a start counts the library, the Duck widget and every conversation as changed at its revision', async context => {
   const w = await world(context);
   await w.running();
@@ -221,19 +250,21 @@ void test('a start counts the library, the Duck widget and every conversation as
   await settle(() => w.task('bunny')?.status === 'succeeded');
   const {id: duck, messages: [first]} = await w.exchange();
   assert.ok(first !== undefined);
-  const before = await w.seen();
-  assert.equal((await w.knowledge({action: 'create', title: 'Synthetic Frank', text: 'Frank.'}, before)).status, 'accepted');
+  // The Duck widget, then the library, then another conversation change, so the Duck widget, the library and the exchange
+  // each last changed before the revision at start; only the start's raise makes a command naming `seen` stale.
+  assert.equal((await w.knowledge({action: 'select-duck-conversation', conversationId: duck}, await w.seen())).status, 'accepted');
+  assert.equal((await w.knowledge({action: 'create', title: 'Synthetic Frank', text: 'Frank.'}, await w.seen())).status, 'accepted');
   const seen = await w.seen();
-  // Before a restart, the Duck widget and the exchange are current for a revision older than the library change.
-  assert.equal((await w.knowledge({action: 'select-duck-conversation', conversationId: duck}, before)).status, 'accepted');
-  const selected = await w.seen();
+  assert.equal((await w.control('rename', {profile: 'microduck', title: 'Synthetic duck title', expectedRevision: seen})).status, 'accepted');
+  const atStart = await w.seen();
+  assert.ok(atStart > seen);
   await w.restart();
-  assert.equal(await w.seen(), selected, 'the start itself moved no revision');
+  assert.equal(await w.seen(), atStart, 'the start itself moved no revision');
   assert.equal(code(await w.knowledge({action: 'create', title: 'Synthetic Frank', text: 'Frank.'}, seen)), 'revision-conflict', 'the library');
   assert.equal(code(await w.knowledge({action: 'select-duck-conversation', conversationId: null}, seen)), 'revision-conflict', 'the Duck widget');
   assert.equal(code(await w.knowledge({action: 'correct-message', messageId: first.messageId, meaning: {kind: 'unknown'}}, seen)), 'revision-conflict',
     'a conversation without a profile');
-  assert.equal((await w.knowledge({action: 'correct-message', messageId: first.messageId, meaning: {kind: 'unknown'}}, selected)).status, 'accepted');
-  assert.equal((await w.knowledge({action: 'select-duck-conversation', conversationId: null}, selected)).status, 'accepted');
-  assert.equal((await w.knowledge({action: 'create', title: 'Synthetic Frank', text: 'Frank.'}, selected)).status, 'accepted');
+  assert.equal((await w.knowledge({action: 'correct-message', messageId: first.messageId, meaning: {kind: 'unknown'}}, atStart)).status, 'accepted');
+  assert.equal((await w.knowledge({action: 'select-duck-conversation', conversationId: null}, atStart)).status, 'accepted');
+  assert.equal((await w.knowledge({action: 'create', title: 'Synthetic Frank', text: 'Frank.'}, atStart)).status, 'accepted');
 });
