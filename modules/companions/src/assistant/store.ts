@@ -124,11 +124,13 @@ export class AssistantStore {
   /** Counts a change of the conversation other than a task's, such as the owner's rename, at the next `bump`. */
   touch(conversationId: string): void {this.#changed.add(conversationId);}
   /**
-   * Counts every saved conversation as changed at the current revision, once per start: a command naming an older revision
-   * is refused, whatever rows an earlier release left; one naming the revision at start depends on its conversation's changes.
+   * Counts every saved conversation, a profile's or a companion exchange without one (Hub #2056), as changed at the current
+   * revision, once per start: a command naming an older revision is refused, whatever rows an earlier release left; one
+   * naming the revision at start depends on its conversation's changes.
    */
   restarted(): void {
-    this.database.prepare(`INSERT INTO assistant_conversation_changes SELECT id,(SELECT revision FROM assistant_meta WHERE id=1) FROM assistant_conversations WHERE true
+    this.database.prepare(`INSERT INTO assistant_conversation_changes SELECT id,(SELECT revision FROM assistant_meta WHERE id=1)
+      FROM (SELECT id FROM assistant_conversations UNION SELECT id FROM companion_conversations) WHERE true
       ON CONFLICT(conversation_id) DO UPDATE SET revision=MAX(revision,excluded.revision)`).run();
   }
   /** The assistant revision of the conversation's last change, or 0 before its first. */

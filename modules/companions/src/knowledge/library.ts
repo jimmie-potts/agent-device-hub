@@ -4,6 +4,14 @@ import {PreferenceStore} from '../preferences/store.js';
 import {fail} from '../preferences/validation.js';
 import {ARCHIVE_BYTES, PAGE_BYTES, PROFILES, type Archive, type CompanionMessage, type ContextDocument, type DuckWidget, type Order, type Persona, type PersonaId} from './model.js';
 import type {KnowledgeInput} from './validation.js';
+/**
+ * A part of the companion records with its own change revision (Hub #2056): the library, which holds knowledge entries,
+ * voices and the synthetic exchanges a fixture adds, or the Duck widget's selection.
+ */
+export type Scope = 'library' | 'duck-widget';
+const SCOPES: readonly Scope[] = ['library', 'duck-widget'];
+/** What a knowledge command changes: its scopes, and the conversations whose records it changes. */
+export type Changes = {scopes: Scope[]; conversations: string[]};
 const sameOrder = (a: Order, b: Order): boolean => a.authority === b.authority && a.epoch === b.epoch && a.sequence === b.sequence;
 const identity = (value: CompanionMessage): string => JSON.stringify([value.conversationId, value.turnId, value.taskId, value.speakerId, value.recipientIds,
   value.createdAtMs, value.ordering.authority, value.ordering.epoch, value.ordering.sequence]);
@@ -13,6 +21,53 @@ export class KnowledgeLibrary {
   constructor(readonly db: DatabaseSync, readonly assistant: AssistantEngine, readonly preferences: PreferenceStore) {
     this.entries = new PreferenceStore<KnowledgeInput>(db, 'knowledge');
     db.exec('CREATE TABLE IF NOT EXISTS companion_widget (id INTEGER PRIMARY KEY CHECK(id=1), conversation_id TEXT) STRICT');
+    // Each scope's last change, as the assistant revision that published it (Hub #2056): a knowledge command is stale only
+    // when a scope it changes changed after the revision it names. Each start raises both rows with `restarted`.
+    db.exec('CREATE TABLE IF NOT EXISTS companion_scope_changes (scope TEXT PRIMARY KEY, revision INTEGER NOT NULL) STRICT');
+  }
+  /**
+   * The scopes and conversations a command changes, read before it applies. Entries, voices, a fixture and an archive change
+   * the library; a correction or removal changes its message's conversation, found through the removal record once the message
+   * is removed, and an archive also changes each conversation it adds to.
+   */
+  changes(input: KnowledgeInput): Changes {
+    switch (input.action) {
+      case 'select-duck-conversation': return {scopes: ['duck-widget'], conversations: []};
+      case 'correct-message': case 'delete-message': {
+        const messages = this.assistant.store.messages;
+        const conversationId = messages.get(input.messageId)?.conversationId ?? messages.removal(input.messageId)?.conversationId;
+        return {scopes: [], conversations: conversationId === undefined ? [] : [conversationId]};
+      }
+      case 'import-archive': return {scopes: ['library'], conversations: this.#imported(input.archive)};
+      case 'create': case 'edit': case 'import': case 'set-active': case 'set-voice': case 'fixture': return {scopes: ['library'], conversations: []};
+    }
+  }
+  /** The assistant revision of the scope's last change, or 0 before its first. */
+  changedAt(scope: Scope): number {
+    return (this.db.prepare('SELECT revision FROM companion_scope_changes WHERE scope=?').get(scope) as {revision: number} | undefined)?.revision ?? 0;
+  }
+  /** Records the scopes as changed at the revision, in the command's transaction. */
+  record(scopes: readonly Scope[], revision: number): void {
+    const record = this.db.prepare('INSERT INTO companion_scope_changes VALUES (?,?) ON CONFLICT(scope) DO UPDATE SET revision=excluded.revision');
+    for (const scope of scopes) record.run(scope, revision);
+  }
+  /**
+   * Counts every scope as changed at the current revision, once per start, as the assistant's start does for conversations:
+   * a command naming an older revision is refused, whatever an earlier release changed without recording it.
+   */
+  restarted(): void {
+    const raise = this.db.prepare('INSERT INTO companion_scope_changes VALUES (?,?) ON CONFLICT(scope) DO UPDATE SET revision=MAX(revision,excluded.revision)');
+    for (const scope of SCOPES) raise.run(scope, this.assistant.store.meta().revision);
+  }
+  /** The conversations an archive import adds to: a new conversation or profile binding, an unknown removal or a new message. */
+  #imported(archive: Archive): string[] {
+    const messages = this.assistant.store.messages, changed = new Set<string>();
+    for (const conversation of archive.conversations) {
+      if (messages.conversation(conversation.id) === undefined || (conversation.profile !== null && this.assistant.store.conversation(conversation.profile) === undefined)) changed.add(conversation.id);
+    }
+    for (const removal of archive.removals) if (messages.removal(removal.messageId) === undefined) changed.add(removal.conversationId);
+    for (const message of archive.messages) if (messages.get(message.messageId) === undefined && messages.removal(message.messageId) === undefined) changed.add(message.conversationId);
+    return [...changed];
   }
   duckWidget(history: boolean, after = 0): DuckWidget {
     const revision = this.assistant.store.meta().revision;

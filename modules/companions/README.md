@@ -251,9 +251,10 @@ A new message to a conversation whose own task is unfinished is refused with
 conversation is refused as stale (`revision-conflict`) only when that
 conversation changed after the revision the page read, so another
 conversation's step never refuses it; enable and disable keep the
-assistant-wide revision; a rename counts as a change of its conversation, and
-each start counts every conversation as changed at the revision it started
-with, so a command naming an older revision is refused. A startup recovery
+assistant-wide revision; a rename, or a correction or removal of one of its
+messages, counts as a change of its conversation, and each start counts every
+conversation, a companion exchange included, as changed at the revision it
+started with, so a command naming an older revision is refused. A startup recovery
 that fails leaves only its own conversation unavailable until the next start,
 and that conversation gets a message saying its saved progress could not be
 restored, that the task can be cancelled but new messages there can't be sent
@@ -1198,6 +1199,26 @@ Origin, grants and tracked outcomes. Assistant-state metadata invalidates conten
 reads; preference changes also invalidate explicit context. No polling or prose
 in shared state/commands/outcomes/diagnostics is added.
 
+A knowledge command is refused as stale (`revision-conflict`) only when the state
+it changes changed after the revision it names, or when that revision is ahead of
+the assistant's (Hub #2056). A running conversation's steps never refuse it.
+
+| Action | Checked against and recorded as changed |
+| --- | --- |
+| `create`, `edit`, `import`, `set-active`, `set-voice`, `fixture` | the library |
+| `import-archive` | the library, and each conversation it adds to: a conversation or profile binding not yet saved, a removal not yet known, or a new message |
+| `select-duck-conversation` | the Duck widget selection |
+| `correct-message`, `delete-message` | the message's conversation, found through its removal record once removed |
+
+The library and the Duck widget each keep the assistant revision of their last
+change in `companion_scope_changes`. Conversations use the per-conversation
+change revision of Hub #2027, so a correction or removal also counts as a change
+of that conversation for its own task commands. A correction of an earlier
+message is still refused when its own conversation's running task took a step
+after the page's read. An archive whose records are all present changes no conversation. Each start
+counts both scopes as changed at the revision it started with. The page keeps
+sending the one revision it read.
+
 Archive import validates the whole document, then commits one outbox transaction.
 Existing knowledge/preferences and their histories remain unchanged; missing
 entries arrive inactive, including in an empty store. Existing explicit voice
@@ -1253,8 +1274,9 @@ selected conversation (or null), messages and next cursor. Default `view=latest`
 returns at most one Duck message; `view=history&after=<sequence>` reuses the
 existing bounded history reader as Reachy. Only view/cursor appear in the URL.
 `select-duck-conversation` knowledge input takes `conversationId` (or null) and
-the existing expected revision. It reuses authenticated staging, tracked outcomes
-and assistant-state invalidation. One additive singleton row stores the selection
+the existing expected revision, checked only against the selection's own last
+change. It reuses authenticated staging, tracked outcomes and assistant-state
+invalidation. One additive singleton row stores the selection
 on the same SDK SQLite connection. Archive import leaves that local choice alone;
 fresh archive recovery requires explicit reselection. **Clear Home conversation**
 clears only this choice, retaining messages and Home placement.

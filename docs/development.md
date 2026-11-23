@@ -3291,6 +3291,18 @@ and `npm run test:companions:browser`, whose conversation history and state
 journeys cover the page. They use a manual clock and fake providers. Existing CI
 discovery runs them.
 
+Knowledge revision scopes (#2056) add `knowledge-revision-scopes.test.js` to the
+companions suite. While a fake-provider conversation runs, it checks that its
+steps never make a library, voice, Duck widget, correction, removal, fixture or
+archive command stale, that a second command of the same scope or conversation
+naming the same revision is refused, that a revision ahead of the assistant's
+is refused, and that a start counts the library, the Duck widget and companion
+exchanges as changed. As a negative control, three tests show a disable naming
+the same revision refused: the assistant-wide check, which enable and disable
+keep, would have refused the accepted commands too. After the root build run
+`node --test modules/companions/dist/tests/knowledge-revision-scopes.test.js modules/companions/dist/tests/knowledge.test.js modules/companions/dist/tests/assistant-concurrency.test.js`.
+They use a manual clock and fake providers. Existing CI discovery runs them.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module
