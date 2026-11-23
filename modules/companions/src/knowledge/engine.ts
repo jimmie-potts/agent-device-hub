@@ -28,7 +28,8 @@ export class Knowledge {
   }
   async start(): Promise<void> {
     this.library.restarted();
-    this.#subscription = await this.context.sdk.respond<AssistantInput>('bunny.cmd.assistant-input.knowledge', command => this.#input(command));}
+    this.#subscription = await this.context.sdk.respond<AssistantInput>('bunny.cmd.assistant-input.knowledge', command => this.#input(command));
+  }
   async stop(): Promise<void> {this.#closed = true; await this.#subscription?.close();}
   stage(request: ModuleUploadRequest): ModuleStagedUpload | ErrorBody {
     if (this.#closed || this.context.signal.aborted) return errorBody('unavailable');
