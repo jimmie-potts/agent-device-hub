@@ -3155,11 +3155,12 @@ account/device compatibility or map attribution.
 ## Companions source checks
 
 For Conversation uploads, build and run `node apps/runtime/dashboard/tests/conversation-upload.browser.ts`
-to isolate the keyboard picker, drop, private preview, display-only, save-only
-and combined actions. The companions browser suite runs the journey in CI.
-Run the Art, event, SDK and runtime suites for binary admission, exact originals,
-retention and restart. Simulated Pixoo and Tronbyt evidence covers the bounded
-display renditions. The selected Mac rollout owns installed checks.
+to isolate the keyboard picker, drop, private preview, attachment-only Send and
+immediate playback on a named display. The companions browser suite runs the
+journey in CI. Run the Companions, Art, event, SDK and runtime suites for binary
+admission, exact originals, the Companions-only save contract, durable history
+and tracked display evidence. Simulated Pixoo and Tronbyt evidence covers
+the bounded display renditions. The selected Mac rollout owns installed checks.
 
 Conversation artwork uses the existing companions browser suite in runtime CI.
 Run `node apps/runtime/dashboard/tests/conversation-art.browser.ts` after the root

@@ -31,6 +31,7 @@ import {LIGHTING_SHOW_LIMITS} from '@jimmie-potts/event-contracts/v2/music-light
 import {PrivateRequestDigest, SdkError,
   acknowledgmentOf, recordLog, startSpan, type Cancel, type Clock, type Command, type CommandDraft, type LogEvent, type LogFields, type Logger, type ModuleScheduler, type RequestResult,
   type Sdk, type TraceContext, type Tracing, Outcome} from '@jimmie-potts/sdk';
+import {CONVERSATION_ATTACHMENT_SAVE_SCHEMA} from '@jimmie-potts/event-contracts/v2/art-state';
 import {DASHBOARD_SOURCE} from '../credentials.js';
 import {REGISTRY_REASONS} from '../diagnostics.js';
 import {kept, type OperationStep} from './history.js';
@@ -57,6 +58,9 @@ const ART_REQUESTERS: Readonly<Record<string, string>> = Object.freeze({
  * again asks as whoever handles the item, so the inbox reads the same rule (Hub #1657).
  */
 export function requesterRefusal(family: string, requestedBy: string, dataschema?: string): ErrorBody | undefined {
+  if (family === 'art-attachment-edit' && dataschema === CONVERSATION_ATTACHMENT_SAVE_SCHEMA) {
+    return requestedBy === 'bunny/modules/companions' ? undefined : errorBody('forbidden', {detail: 'Conversation attachment save requires the companions owner'});
+  }
   if (family === 'art-request' && dataschema === CONVERSATION_ART_SCHEMA) {
     return requestedBy === 'bunny/modules/companions' ? undefined : errorBody('forbidden', {detail: 'Conversation artwork requires the companions owner'});
   }

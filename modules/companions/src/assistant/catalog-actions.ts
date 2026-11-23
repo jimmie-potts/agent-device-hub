@@ -34,6 +34,7 @@ function textResult(value: unknown): string {
 }
 type Proposed = {proposal: CatalogProposal; text: string} | {question: string} | {code: ErrorCode};
 type Refusal = {code: ErrorCode};
+export type SentArtworkDestination = {target: string; label: string; guard: ArtShowGuard} | {question: string} | Refusal;
 type Match = {owner: string; device: DeviceRecord};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
 function matchingDevices(rows: readonly Match[], target: string, owner: string): readonly Match[] {
@@ -63,11 +64,12 @@ export class ConversationActions {
       unreadable: views.filter(view => view.devices === undefined).map(view => view.owner)};
   }
 
-  async #artDestinations(parent: TraceContext): Promise<ArtDestination[] | undefined> {
+  async #artDestinations(parent: TraceContext, requireCurrentOwners = false): Promise<ArtDestination[] | undefined> {
     const directory = (await this.#snapshot<ArtTargets>(CORE, 'art-targets', parent))?.[0];
     if (directory === undefined) return undefined;
     const owners = [...new Set(directory.targets.map(item => 'bunny/modules/' + item.kind))];
-    const {rows} = await this.#deviceRecords(owners, parent);
+    const {rows, unreadable} = await this.#deviceRecords(owners, parent);
+    if (requireCurrentOwners && unreadable.length > 0) return undefined;
     return directory.targets.map(item => artDestination(item, rows.find(row =>
       row.owner === 'bunny/modules/' + item.kind && row.device.id === item.target)?.device));
   }
@@ -109,6 +111,24 @@ export class ConversationActions {
       guards.push(selected.guard);
     }
     return {targets, labels, guards};
+  }
+
+  async resolveSentArtworkDestination(destination: string, parent: TraceContext): Promise<SentArtworkDestination> {
+    const displays = await this.#artDestinations(parent, true);
+    if (displays === undefined) return {code: 'unavailable'};
+    const key = normalize(destination);
+    const exactId = key.startsWith('id:') ? key.slice(3) : undefined;
+    const aliases = new Set([key, key.replace(/^the[ \t]+/, '')]);
+    const matches = displays.filter(device => exactId !== undefined ? device.target === exactId :
+      [device.target, device.kind, device.label ?? device.target].some(name => aliases.has(normalize(name))));
+    if (matches.length > 1) {
+      return {question: 'Which display did you mean? ' + matches.map(device => (device.label ?? device.kind) + ' (id:' + device.target + ')').join(', ')};
+    }
+    const [selected] = matches;
+    if (selected === undefined) return {question: 'No configured display matches that name. Which display would you like to use?'};
+    if (selected.guard === undefined) return {code: 'unavailable'};
+    const label = selected.label === undefined || selected.label === selected.target ? selected.target : `${selected.label} (${selected.target})`;
+    return {target: selected.target, label, guard: selected.guard};
   }
 
   async #operation(requestId: unknown, parent: TraceContext): Promise<OperationRecord | undefined> {

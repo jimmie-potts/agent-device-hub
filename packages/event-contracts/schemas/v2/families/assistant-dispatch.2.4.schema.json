@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/assistant-dispatch/2.4",
+  "description": "Promote the validated artwork attached to an owner message.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "family",
+    "target",
+    "data"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "family": {
+      "const": "art-attachment-edit"
+    },
+    "target": {
+      "const": "art"
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "artworkId"
+      ],
+      "properties": {
+        "action": {
+          "const": "save"
+        },
+        "artworkId": {
+          "type": "string",
+          "pattern": "^upload-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
+      }
+    }
+  }
+}

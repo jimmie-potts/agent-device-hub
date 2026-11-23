@@ -52,24 +52,24 @@ function TaskControls({context, command, state, profile, live, question, drafts,
   const showInput = state !== undefined && !unavailableDecision && !approval && !delegated;
   const tooLong = bytes > LIMITS.inputBytes;
   const locked = command.locked || !live || !context.control || !context.operationsLive;
-  const canSubmit = showInput && !locked && enabled && draft.trim() !== '' && !tooLong && (pending || !open);
+  const canSubmit = showInput && !locked && enabled && !tooLong && (pending || !open);
   const control = (action: 'resume' | 'cancel', taskId: string): void => {
     if (state === undefined) return;
     const requestId = crypto.randomUUID();
     void command.run({family: 'assistant-control', target: 'assistant', requestId,
       data: {action, expectedRevision: state.revision, taskId}});
   };
-  const send = (text: string, answer: boolean): void => {
+  const send = (text: string, answer: boolean, attachment?: {requestId: string; parent: Parameters<FrontendContext['api']['upload']>[0]['parent']}): string | undefined => {
     if (state === undefined) return;
     // Command retains this identity before staging. The draft remains on refusals and uncertain replies.
     const requestId = crypto.randomUUID();
     const input = {action: answer ? 'answer' : 'start', profile, text, expectedRevision: state.revision,
+      ...(attachment === undefined ? {} : {attachmentRequestId: attachment.requestId}),
       ...(answer && task !== undefined ? {taskId: task.taskId, questionId: task.questionId} : {})};
     void command.run({family: 'assistant-input', target: 'assistant', requestId,
+      ...(attachment?.parent === undefined ? {} : {parent: attachment.parent}),
       upload: {name: 'input.json', file: new Blob([JSON.stringify(input)], {type: 'application/json'})}});
-  };
-  const submit = (): void => {
-    if (canSubmit) send(draft, pending);
+    return requestId;
   };
   return <>
     {unavailableDecision && <div>
@@ -106,7 +106,14 @@ function TaskControls({context, command, state, profile, live, question, drafts,
         <button type="button" className="secondary" onClick={() => {control('cancel', task.taskId);}}>Cancel task</button>
       </div>}
     </fieldset>
-    <ConversationUpload key={draftKey} context={context} locked={locked || !showInput}>{attach => <>
+    <ConversationUpload key={draftKey} context={context} locked={locked || !showInput || pending} commandLocked={command.locked} onSent={() => setDraft(draftKey, '')}>{artwork => {
+      const canSend = canSubmit && (artwork.hasAttachment ? artwork.draft !== undefined : draft.trim() !== '');
+      const submit = (): void => {
+        if (!canSend) return;
+        const requestId = send(draft, pending, artwork.draft);
+        if (requestId !== undefined && artwork.draft !== undefined) artwork.submitted(requestId);
+      };
+      return <>
       {showInput && <form id={formId} onSubmit={event => {event.preventDefault(); submit();}}>
         <label className="vh" htmlFor="assistant-input">{pending ? 'Answer' : 'Message'}</label>
         <textarea id="assistant-input" rows={2} value={draft} aria-describedby="assistant-input-help"
@@ -124,10 +131,11 @@ function TaskControls({context, command, state, profile, live, question, drafts,
       </form>}
       <div className="conversation-composer-actions">
         {voice}
-        {showInput && attach}
-        {showInput && <button type="submit" form={formId} disabled={!canSubmit}>{pending ? 'Answer' : 'Send'}</button>}
+        {showInput && !pending && artwork.attach}
+        {showInput && <button type="submit" form={formId} disabled={!canSend}>{pending ? 'Answer' : 'Send'}</button>}
       </div>
-    </>}</ConversationUpload>
+      </>;
+    }}</ConversationUpload>
     {showInput && <div id="assistant-input-help" className="conversation-input-help">
       <p>Enter to {pending ? 'answer' : 'send'}. Shift+Enter for a new line.</p>
       <p>Saved privately. Sent to the selected model.</p>
@@ -359,9 +367,10 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                   document.getElementById(`conversation-message-${message.follows}`)?.focus();
                 }}>Update to earlier reply</a>
                 : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
-              <p className="conversation-message-text" dir="auto">{message.text}</p>
+              {message.text !== '' && <p className="conversation-message-text" dir="auto">{message.text}</p>}
+              {message.playbackUncertain === true && <p role="status">Playback result uncertain.</p>}
               {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
-                connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
+                connected={connected} allowShow={live && state?.enabled === true && (message.role === 'owner' ? message.attachment.admission === 'accepted' : state.tools.includes('control_art_show'))} attachment={message.attachment}
                 artRevision={art?.revision}/>}
               {message.role === 'assistant' && (message.text.length > LIMITS.spokenChars
                 ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>

@@ -498,11 +498,13 @@ Each display reports its own preparation and presentation results.
 ### Attach artwork
 
 Use Attach or drop one PNG, JPEG, or GIF onto the Conversation message field.
-The attachment stays private and opens in the Conversation artwork preview.
-Choose Display now for a compatible display, Save to library for later, or
-Display and save for both. The library and each display report their own
-outcomes. A failed action can be retried independently. An uncertain action
-stays visible without replay.
+Preview, replace or remove the attachment before Send. Send posts the private
+attachment to the conversation and saves it to the Art library. With an
+attachment alone, the reply asks whether to display it. An explicit instruction
+such as “Play this on the Tidbyt” sends one request to the uniquely named
+display after the save. If the name is ambiguous, choose a destination from the
+saved attachment. The reply reports library and display outcomes separately.
+A lost display result stays visible without replay.
 
 ### Coding delegation
 

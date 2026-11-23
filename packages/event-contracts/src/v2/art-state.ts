@@ -94,9 +94,12 @@ export type ArtAttachmentEdit = {requestId: string} & (
   | {action: 'save'; artworkId: string}
 );
 
+export const CONVERSATION_ATTACHMENT_SAVE_SCHEMA = `${SCHEMA_BASE}art-attachment-edit/2.1`;
+
 const onArt = (message: {subject: string}): string | undefined => message.subject === ART_ID ? undefined : 'envelope /subject must be art';
 const families = [defineFamily('art', 'state', ART_STATE_TYPE, onArt), defineFamily('art', 'state', ART_STATE_TYPE, onArt, '2.1'), defineFamily('art-catalog-edit', 'command', ART_CATALOG_EDIT_TYPE, onArt), defineFamily('art-upload-stage', 'command', ART_UPLOAD_STAGE_TYPE, onArt),
-  defineFamily(ART_ATTACHMENT_FAMILY, 'command', 'org.bunny.art-attachment.edit.requested', onArt)];
+  defineFamily(ART_ATTACHMENT_FAMILY, 'command', 'org.bunny.art-attachment.edit.requested', onArt),
+  defineFamily(ART_ATTACHMENT_FAMILY, 'command', 'org.bunny.art-attachment.edit.requested', onArt, '2.1')];
 /** The art state and catalog families, which the art module registers (Hub #680). */
 export const artStateFamilies: readonly PayloadFamily[] = families;
 export const artSchemas: Readonly<Record<string, object>> = Object.fromEntries(families.map(family => [family.dataschema, family.schema]));

@@ -1,3 +1,4 @@
+import {ATTACHED_ASSISTANT_INPUT_PREFIX} from '@jimmie-potts/event-contracts/v2/assistant';
 import {historyFilter, type HistoryFilter, type HistoryPage} from '../core/history.js';
 import type {AutomationControls} from '../core/automation-part.js';
 import {holdsAutomationSecret, isAutomationDefinitionFamily} from '../core/automation-definitions.js';
@@ -906,6 +907,10 @@ export class Gateway {
     if (!principal.scopes.has('control')) return errorBody('forbidden', {detail: 'control authority is required'});
     if (family === 'art-attachment-edit' && input.data.action === 'stage' && uploadOwner !== 'art') {
       return errorBody('forbidden', {detail: 'a Conversation attachment requires the Art binary upload'});
+    }
+    if (family === 'assistant-input' && typeof input.data.inputRef === 'string' &&
+        input.data.inputRef.startsWith(ATTACHED_ASSISTANT_INPUT_PREFIX) && (principal.kind !== 'browser' || uploadOwner !== 'companions')) {
+      return errorBody('forbidden', {detail: 'sending an attached artwork requires the operator Conversation composer'});
     }
     if (family === 'art-upload-stage' && uploadOwner !== 'art') return errorBody('forbidden', {detail: 'a local GIF requires the Art binary upload'});
     if (family.startsWith('microduck-') && principal.kind !== 'browser') return errorBody('forbidden', {detail: 'MicroDuck controls require the operator dashboard session'});

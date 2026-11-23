@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/art-attachment-edit/2.1",
+  "description": "Save a validated owner attachment from a Conversation turn.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "action",
+    "artworkId"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "action": {
+      "const": "save"
+    },
+    "artworkId": {
+      "type": "string",
+      "pattern": "^upload-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}
