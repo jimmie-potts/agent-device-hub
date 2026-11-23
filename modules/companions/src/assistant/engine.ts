@@ -108,7 +108,7 @@ export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${St
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
 /** What a conversation reads when its saved progress could not be restored at a start (Hub #2027); once per failed start. */
-export const RECOVERY_FAILED = 'This conversation\'s saved progress couldn\'t be restored when B.U.N.N.Y. started. You can cancel it, but new messages here wait until B.U.N.N.Y. restarts, which tries the recovery again.';
+export const RECOVERY_FAILED = 'This conversation\'s saved progress couldn\'t be restored when B.U.N.N.Y. started. You can cancel the task, but new messages here can\'t be sent until B.U.N.N.Y. restarts, which tries the recovery again.';
 type Next = 'ask' | 'tool' | 'approve' | 'await' | 'turn' | 'end';
 const shape = Annotation.Root({taskId: Annotation<string>, step: Annotation<number>, next: Annotation<Next>, decision: Annotation<string>, result: Annotation<string>});
 type GraphState = typeof shape.State;

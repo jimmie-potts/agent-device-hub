@@ -8,7 +8,7 @@ Let one local owner converse with B.U.N.N.Y. through a configured model provider
 
 ### Requirement: Durable explicit task activation
 
-The system SHALL preserve inspectable, versioned conversations, messages, tasks, questions, answers, runs and logical call receipts in the companions-owned database. Conversation/task/question identity SHALL survive restart; each activation SHALL use a new run identity. Profile threads for B.U.N.N.Y., Reachy and MicroDuck SHALL remain distinct. Startup SHALL reconcile each conversation's saved state separately without executing work. A recovery that fails SHALL leave only its own conversation unavailable, refusing its answers, resumes and new tasks until the next start, while the others keep working, and SHALL save one assistant message in that conversation for each failed start saying that its saved progress could not be restored, that the task can be cancelled but new messages there wait until B.U.N.N.Y. restarts, and that the restart tries the recovery again.
+The system SHALL preserve inspectable, versioned conversations, messages, tasks, questions, answers, runs and logical call receipts in the companions-owned database. Conversation/task/question identity SHALL survive restart; each activation SHALL use a new run identity. Profile threads for B.U.N.N.Y., Reachy and MicroDuck SHALL remain distinct. Startup SHALL reconcile each conversation's saved state separately without executing work. A recovery that fails SHALL leave only its own conversation unavailable, refusing its answers, resumes and new tasks until the next start, while the others keep working, and SHALL save one assistant message in that conversation for each failed start saying that its saved progress could not be restored, that the task can be cancelled but new messages there can't be sent until B.U.N.N.Y. restarts, and that the restart tries the recovery again.
 
 #### Scenario: Question survives restart
 - **WHEN** a task pauses for clarification and the process stops
@@ -28,7 +28,7 @@ The system SHALL preserve inspectable, versioned conversations, messages, tasks,
 
 #### Scenario: A recovery fails in one conversation
 - **WHEN** one conversation's saved graph state cannot be read at startup while two others wait on their questions
-- **THEN** that conversation's task is recovered unavailable, its conversation shows one message naming the cause, that the task can be cancelled and that new messages wait for a restart, and it refuses an answer and, after a cancel, a new task until the next start, while the assistant stays available and the other two are answered and finish
+- **THEN** that conversation's task is recovered unavailable, its conversation shows one message naming the cause, that the task can be cancelled and that new messages can't be sent until a restart, and it refuses an answer and, after a cancel, a new task until the next start, while the assistant stays available and the other two are answered and finish
 - **AND** a later start whose recovery succeeds writes no such message
 
 ### Requirement: Bounded execution per conversation
