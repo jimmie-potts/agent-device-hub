@@ -1,3 +1,4 @@
+import {pixooConfirmationJourney} from './pixoo-confirmation.browser.ts';
 import {showConversationJourney} from './show-conversation.browser.ts';
 import {failedTurnJourney} from './failed-turn.browser.ts';
 import {conversationArtJourney} from './conversation-art.browser.ts';
@@ -33,6 +34,7 @@ try {
   await wemoConversationJourney(browser);
   await showConversationJourney(browser);
   await conversationArtJourney(browser);
+  await pixooConfirmationJourney(browser);
   await conversationUploadJourney(browser);
   await conversationStateJourney(browser);
   await failedTurnJourney(browser);

@@ -1458,10 +1458,10 @@
    "name": "a device record at an unregistered version",
    "base": "device-nanoleaf",
    "set": {
-    "/dataschema": "https://bunny.invalid/events/device/2.5"
+    "/dataschema": "https://bunny.invalid/events/device/2.99"
    },
    "expect": "unsupported-version",
-   "detail": "https://bunny.invalid/events/device/2.5"
+   "detail": "https://bunny.invalid/events/device/2.99"
   },
   {
    "name": "a hold without its request",

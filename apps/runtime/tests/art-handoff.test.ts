@@ -129,6 +129,8 @@ it('extended staging requires the current Pixoo owner declaration and keeps a tr
   const publish = async () => {
     assert.ok(pixooSdk); record.revision++; await pixooSdk.publish(`bunny.state.device.${record.id}`, {kind: 'state', ...state()}); await flush();
   };
+  version = '2.5'; await publish();
+  assert.equal((await send(owner, 'long-stage-with-readback')).status, 'accepted');
   version = '2.2'; await publish(); // A field smuggled into an older document grants nothing.
   assert.equal((await send(owner, 'unversioned')).status, 'rejected');
   version = '2.4'; artCapability.maxBytes = 1; await publish();
@@ -145,7 +147,7 @@ it('extended staging requires the current Pixoo owner declaration and keeps a tr
   assert.equal((await send(owner, 'withdrawn')).status, 'rejected');
   assert.equal((await send(owner, 'long-stage')).status, 'accepted', 'an identical retry returns its prior answer after withdrawal');
   for (const id of ['foreign', 'unversioned', 'too-big', 'wrong-kind', 'wrong-owner', 'withdrawn']) assert.equal(handle.operation(id), undefined);
-  assert.equal(seen.length, 1);
+  assert.equal(seen.length, 2);
 });
 
 it('a dispatch is refused before transport when it names a moment, another family or bytes that are not what it says', async context => {

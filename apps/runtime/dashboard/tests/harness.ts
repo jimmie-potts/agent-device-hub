@@ -98,6 +98,7 @@ export type WorldOptions = {
   wispr?: {exposeToDashboard?: boolean; shareTextAggregates?: boolean};
   /** The real Pixoo module with a fresh library and an in-memory device. */
   pixooPages?: boolean;
+  pixooReadback?: {label: string; reading: () => Promise<number | undefined>};
   /** Real playback owner and decoder over caller-owned synthetic speakers/bytes; no live fetch fallback. */
   playbackArtwork?: {speakers: SimulatedSpeakers; fetch: ArtworkFetch};
   /** A synthetic module principal for Desktop metadata; reads no provider files. */
@@ -313,7 +314,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       ...options.nanoleafPanels === true ? [{id: 'nl22', kind: 'panels', address: PANELS_ADDRESS, secret: 'token'}] : []],
       qualifiedSources: [...NANOLEAF_SECTION.qualifiedSources,
       {provider: 'codex', client: 'desktop', hostId: 'host-sim', sourceId: 'desktop'}], secrets: {token: nanoleafToken}}} : {},
-    ...options.pixooPages === true ? {pixoo: PIXOO_SECTION.config} : {},
+    ...options.pixooPages === true ? {pixoo: options.pixooReadback === undefined ? PIXOO_SECTION.config
+      : {device: {...PIXOO_SECTION.config.device, label: options.pixooReadback.label}}} : {},
     ...(options.pixooPages === true || options.playbackArtwork !== undefined) ? {playback: playbackFactory.simulatedSection.config} : {},
     ...(options.musicPlayback === true ? {playback: {id: 'playback', sources: [{kind: 'music'}]}} : {}),
     ...options.modeDevices === true ? {nanoleaf: {}, pixoo: {}} : {}};
@@ -333,6 +335,22 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const nano = new ModeDevice('nanoleaf', 'wall'); nano.result = 'failed';
   const pixoo = new ModeDevice('pixoo', 'pixoo-1');
   const panel = new SimulatedPixoo();
+  const readback = options.pixooReadback;
+  const panelTransport = readback === undefined ? panel : {simulated: true, async open(config: Parameters<typeof panel.open>[0]) {
+    const opened = await panel.open(config);
+    const probe = opened.adapter.probe.bind(opened.adapter);
+    let lastWrite = 0;
+    opened.adapter.probe = async options => {
+      const result = await probe(options);
+      const writes = panel.state().writes;
+      if (!result.ok || writes === lastWrite) return result;
+      lastWrite = writes;
+      const brightness = await readback.reading();
+      return {...result, timing: {...result.timing, completedAtMs: config.clock.now()},
+        value: {mode: 'device', connected: true, available: true, channel: 1, ...(brightness === undefined ? {} : {brightness})}};
+    };
+    return opened;
+  }};
   const editor = options.pixooPages === true ? await editorFixture() : undefined;
   let desktopSdk: Sdk | undefined;
   const desktopMetadata: BunnyModule = {
@@ -360,7 +378,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
           : weatherJson(hourlyBody(clock.now(), [{shortForecast: 'Sunny', precipitation: 0}, {shortForecast: 'Chance Rain Showers', precipitation: 40}], clock.now() - 1000)))})]), ...(options.art === true ? [createArtModule({providers: simulatedProviders(art.call.bind(art))})] : []), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: options.tronbyt?.fetch ?? new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}, ...(options.clock === undefined ? {} : {monotonic: now})})]
         : options.pixooPages === true || options.musicPlayback === true ? [playbackFactory.simulate()] : []),
-      ...(options.pixooPages === true ? [createPixooModule({transport: panel})] : []), ...(editor === undefined ? [] : [editor]),
+      ...(options.pixooPages === true ? [createPixooModule({transport: panelTransport})] : []), ...(editor === undefined ? [] : [editor]),
       ...(options.desktopMetadata === true ? [desktopMetadata] : []), ...(options.nanoleaf === true ? [createNanoleafModule({transport: lines.request, datagram: lines.datagram,
         ...(options.musicShowAuthoring === undefined ? {} : {authoringProvider: options.musicShowAuthoring})})] : [])]
       .map(module => options.clock?.working === undefined ? module : holdingWorkers(module, options.clock.working)),

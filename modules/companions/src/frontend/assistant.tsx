@@ -91,7 +91,7 @@ function TaskControls({context, command, state, profile, live, question, drafts,
             {' '}Bound to coding worker revision {String(question.proposal.expectedRevision)}; a worker changed since then refuses it.</p>
           : question.proposal.family === 'catalog-action'
             ? <details><summary>{question.proposal.command} on {question.proposal.target}</summary>
-              <pre style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{JSON.stringify(question.proposal.data, null, 2)}</pre>
+              <pre style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{JSON.stringify({binding: question.proposal.binding, settings: question.proposal.data}, null, 2)}</pre>
             </details>
           : <p><code>{question.proposal.target}</code> · {question.proposal.family === 'power-set' ? (question.proposal.data.on ? 'Power on' : 'Power off') : `Brightness ${String(question.proposal.data.percent)}%`}</p>}
         <button type="button" disabled={!enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', true);}}>Approve proposal</button>
@@ -292,6 +292,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   // Every conversation with an unfinished task: the one switch stays on until each finishes or is cancelled.
   const unfinished = state?.tasks.filter(value => !finished(value.status)).map(value => value.profile) ?? [];
   const visibleHistory = history?.profile === profile ? history : undefined;
+  const visibleMessageIds = new Set(visibleHistory?.windows.flatMap(window => window.messages.map(message => message.id)));
   const hasArt = visibleHistory?.windows.some(window => window.messages.some(message => message.attachment !== undefined)) ?? false;
   const art = useConversationArt(context.api, connected && hasArt);
   const savedTask = visibleHistory?.currentTask;
@@ -349,6 +350,12 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             }}
             renderMessage={message => <article aria-label={`${message.role} message`}>
               <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
+              {message.follows !== undefined && (visibleMessageIds.has(message.follows)
+                ? <a href={`#conversation-message-${message.follows}`} onClick={event => {
+                  event.preventDefault();
+                  document.getElementById(`conversation-message-${message.follows}`)?.focus();
+                }}>Update to earlier reply</a>
+                : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
               <p className="conversation-message-text" dir="auto">{message.text}</p>
               {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
                 connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}

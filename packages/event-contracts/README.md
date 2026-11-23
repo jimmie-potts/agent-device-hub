@@ -863,7 +863,7 @@ owns the handoff and its policy.
   dispatch fit the 256 KiB message cap.
 - Art uses `art-dispatch/2.0` and the core forwards `art-stage/2.0` through 256 frames.
   For a longer GIF, Art sends `art-dispatch/2.2` only to a Pixoo whose current
-  `device/2.4` record declares `capabilities.moments.art.stageVersion: "2.1"`,
+  `device/2.4` or `device/2.5` record declares `capabilities.moments.art.stageVersion: "2.1"`,
   GIF support and sufficient `maxBytes`. The core checks its copy from the configured
   device owner before admitting the tracked `art-stage/2.1`. This stage accepts a
   positive safe-integer frame count. Both versions bound decoded media at 160 KiB

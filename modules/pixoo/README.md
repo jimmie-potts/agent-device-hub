@@ -239,7 +239,13 @@ and a recovery after a warning is one record.
 
 It serves, through sync and as live states:
 - `device/2.3`, kind `pixoo`, including exact-art moments and `rain-forecast` notices. The hosted
-  route publishes `device/2.4`, which adds the extended staging declaration;
+  route publishes `device/2.4`, which adds the extended staging declaration.
+  While recent tracked brightness readbacks are available, both routes publish
+  `device/2.5`. Acknowledged writes keep their terminal transmission evidence.
+  Each readback identifies the request and the approved configuration and
+  generation. The writer records a bounded read before the next brightness
+  write. The latest 32 results stay available for up to a day. On restart an
+  interrupted read becomes unavailable.
 - `pixoo-display/2.1`: the Hub mode and any pending mode, the base on the display
   (`status` or `playback`), whether the status dashboard is drawn and current
   (`participating`), its filter, cadence and sessions, what the presentation
@@ -438,7 +444,7 @@ and timing. The shared stage budgets are 160 KiB and five minutes of animation.
 The direct command permits up to 59 frames. Hosted animations of 60 through
 256 frames still use `art-stage/2.0`.
 Above 256 frames, the core forwards `art-stage/2.1` only to a hosted Pixoo
-declaring that support in `device/2.4`. That route fetches a
+declaring that support in `device/2.4` or `device/2.5`. That route fetches a
 64×64 GIF and preserves every frame and delay. Each physical animation uses
 one delay, and hosted encoding requires exact GIF centiseconds and at most 256
 colors across the animation. Hosted admission measures the encoded whole GIF

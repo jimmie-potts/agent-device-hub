@@ -6,8 +6,8 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
-import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {coreValidator, type ModeState} from '@jimmie-potts/event-contracts/v2/families';
+import {DEVICE_READBACK_SCHEMA, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
+import {coreValidator, operationEntityId, type LifecycleObservation, type ModeState, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {test, type TestContext} from 'node:test';
 import {fullDisk, InProcessBus, type Participant, type ModuleContext, type RequestResult} from '@jimmie-potts/sdk';
@@ -23,6 +23,7 @@ import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from 
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
 import type {SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {readDevices} from '../src/assistant/devices.js';
+import {confirmationEvidence, type Confirmation} from '../src/assistant/confirmation.js';
 import {catalogTools} from '../src/assistant/catalog-tools.js';
 import {FIXTURE_TEXT, summarizeSessions} from '../src/assistant/tools.js';
 
@@ -56,8 +57,8 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
   let {module, host} = make();
   await host.start();
   context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
-  return {core, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async () => {
-    await host.stop(); ({module, host} = make()); await host.start();
+  return {core, bus, spans, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}, store: () => new AssistantStore(host.moduleDatabase() ?? assert.fail('open database')), module: () => module, host: () => host, restart: async (stopped?: () => void) => {
+    await host.stop(); stopped?.(); ({module, host} = make()); await host.start();
   }};
 }
 async function control(core: Participant, module: CompanionsModule, action: string, taskId?: string, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
@@ -101,6 +102,103 @@ void test('light status preserves unknown state after copy loss and evidence old
   const noWrite = {...device, lastTransmission: unknown};
   assert.doesNotMatch(readDevices([noWrite], 'desk-lamp', 2000), /unknown|stale/);
   assert.match(readDevices([noWrite], 'desk-lamp', 31_000), /Current state is unknown. The observation is stale/);
+});
+
+for (const resume of [false, true]) void test(`Pixoo restart preserves one write and the original exchange (resume=${resume})`, async context => {
+  const owner = 'bunny/modules/pixoo';
+  const display = {...light('studio-display', 'Studio Display'), kind: 'pixoo'};
+  const provider = counted((_input, turn) => turn === 1 ? call('control_brightness_set', {
+    owner, target: display.id, arguments: JSON.stringify({percent: 35}),
+  }) : reply('The command was sent.'));
+  const requests: AssistantDispatch[] = [];
+  const w = await world(context, {provider, tools: ['control_brightness_set'], dispatch: data => {
+    requests.push(data);
+    return Promise.resolve(accepted(data.requestId));
+  }});
+  const events: LifecycleObservation[] = [];
+  await w.core.subscribe<LifecycleObservation>('bunny.event.lifecycle.*', message => {events.push(message.data);});
+  const pixoo = w.bus.connect(owner);
+  context.after(() => pixoo.close());
+  const atMs = Date.now() - 100;
+  let device: DeviceRecord = display;
+  let deviceSyncAvailable = true;
+  const draft = () => ({type: 'org.bunny.device.updated', subject: display.id, dataschema: DEVICE_READBACK_SCHEMA, data: device});
+  await pixoo.serveSync(['device'], () => deviceSyncAvailable ? {revision: device.revision, states: [draft()]} : errorBody('unavailable'));
+  await w.core.serveSync(['operation'], () => {
+    const requestId = requests[0]?.requestId;
+    if (requestId === undefined) return {revision: 0, states: []};
+    const id = operationEntityId(requestId);
+    const operation: OperationRecord = {id, revision: 1, requestId, kind: 'device', family: 'brightness-set',
+      command: 'org.bunny.brightness.set.requested', target: display.id, requestedBy: 'bunny/modules/companions',
+      status: 'completed', result: 'succeeded', evidence: 'transmitted', sentAtMs: atMs, updatedAtMs: atMs, deadlineAtMs: atMs + 5000};
+    return {revision: 1, states: [{type: 'org.bunny.operation.updated', subject: id,
+      dataschema: 'https://bunny.invalid/events/operation/2.0', data: operation}]};
+  });
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Set brightness');
+  await until(() => status(w) === 'waiting');
+  deviceSyncAvailable = false;
+  await input(w.core, w.module(), 'approve', true);
+  await until(() => w.store().confirmations()[0]?.sent === true);
+  const requestId = requests[0]?.requestId ?? assert.fail('request reserved');
+  const originalTask = task(w)?.taskId ?? assert.fail('task saved');
+  if (!resume) {
+    w.advance(1100);
+    await until(() => status(w) === 'succeeded');
+    assert.notEqual(w.store().confirmation(requestId)?.follows, undefined);
+  }
+  const before = provider.calls();
+  await w.restart(() => {
+    deviceSyncAvailable = true;
+    device = {...display, revision: 2, brightnessReadbacks: [{requestId, configurationRevision: display.configurationRevision,
+      generation: display.generation, requestedPercent: 35, transmittedAtMs: atMs, reading: {status: 'known', percent: 32, observedAtMs: atMs + 1}}]};
+  });
+  if (resume) {
+    assert.equal(status(w), 'paused');
+    assert.equal(task(w)?.taskId, originalTask);
+    await control(w.core, w.module(), 'resume', originalTask);
+    await until(() => status(w) === 'succeeded');
+  }
+  await until(() => w.store().confirmation(requestId) === undefined);
+  const duplicate = await pixoo.publish('bunny.state.device.' + display.id, {kind: 'state', ...draft()});
+  await pixoo.publishMessage('bunny.state.device.' + display.id, duplicate);
+  await w.restart();
+  const messages = w.store().page('bunny', 0).messages;
+  const original = messages.find(message => message.id === originalTask + '-result');
+  assert.ok(original);
+  assert.ok(original.text.includes('The command was sent.'), 'the normal final reply remains visible');
+  assert.equal(messages.filter(message => message.follows === originalTask + '-result').length, resume ? 0 : 1);
+  assert.match(resume ? original.text : messages.find(message => message.follows !== undefined)?.text ?? '', /Studio Display reports 32% brightness/);
+  if (!resume) assert.ok(original.text.includes('Brightness command sent.'));
+  assert.equal(requests.length, 1);
+  assert.equal(provider.calls(), resume ? before + 1 : before);
+  assert.equal(status(w), 'succeeded');
+  const turn = events.filter(event => event.turn.status === 'known' && event.turn.id === originalTask);
+  assert.equal(turn.filter(event => event.event.kind === 'attention-resolved').length, 1);
+  assert.equal(turn.filter(event => event.event.kind === 'turn-ended').length, 1);
+});
+
+void test('Pixoo confirmation rejects other requests, targets, configuration and evidence from before the write', () => {
+  const display = light('studio-display', 'Studio Display');
+  const id = 'task-step-1', requestedBy = 'bunny/modules/companions';
+  const watch: Confirmation = {requestId: id, taskId: 'task', questionId: 'task-q1', label: 'Studio Display',
+    binding: {kind: 'device', target: display.id, owner: 'bunny/modules/pixoo', configurationRevision: display.configurationRevision,
+      generation: display.generation}, percent: 35, acceptedAtMs: 10, expiresAtMs: 100, traceparent: ''};
+  const operation: OperationRecord = {id, revision: 1, requestId: id, kind: 'device', family: 'brightness-set', command: 'brightness',
+    target: display.id, requestedBy, status: 'completed', result: 'succeeded', evidence: 'transmitted', sentAtMs: 5, updatedAtMs: 10, deadlineAtMs: 100};
+  const exact = {requestId: id, configurationRevision: display.configurationRevision, generation: display.generation,
+    requestedPercent: 35, transmittedAtMs: 8, reading: {status: 'known' as const, percent: 40, observedAtMs: 9}};
+  for (const unrelated of [{...exact, requestId: 'newer-approval'}, {...exact, transmittedAtMs: 4},
+    {...exact, requestedPercent: 34}, {...exact, configurationRevision: 0}, {...exact, generation: {epoch: 'old', sequence: 0}}]) {
+    assert.deepEqual(confirmationEvidence(watch, operation, {...display, brightnessReadbacks: [unrelated]}, requestedBy), {sent: true});
+  }
+  assert.deepEqual(confirmationEvidence(watch, operation, {...display, id: 'wrong-target', brightnessReadbacks: [exact]}, requestedBy), {sent: true});
+  assert.deepEqual(confirmationEvidence(watch, {...operation, requestedBy: 'other'}, {...display, brightnessReadbacks: [exact]}, requestedBy), {});
+  for (const status of ['expired', 'rejected', 'conflict'] as const) {
+    assert.match(confirmationEvidence(watch, {...operation, status}, undefined, requestedBy).result ?? '', new RegExp(status === 'rejected' ? 'refused' : status));
+  }
+  assert.deepEqual(confirmationEvidence(watch, operation, {...display, brightnessReadbacks: [exact]}, requestedBy),
+    {sent: true, result: 'Studio Display reports 40% brightness.'});
 });
 
 void test('a duplicate light label asks for an exact device ID and sends nothing without a specific approval', async context => {

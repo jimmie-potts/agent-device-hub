@@ -80,7 +80,7 @@ export function ConversationTranscript({history, status, live, canStart, readLoc
     <div className="conversation-transcript" ref={scroll} tabIndex={-1} onScroll={remember}>
       {hasMessages && <ol key={id} aria-label="Saved conversation messages">
         {history?.windows.flatMap((window, index) => {
-          const messages = window.messages.map(message => <li key={`message:${message.id}`} tabIndex={-1} data-message={message.id} data-role={message.role}>
+          const messages = window.messages.map(message => <li key={`message:${message.id}`} tabIndex={-1} id={`conversation-message-${message.id}`} data-message={message.id} data-role={message.role}>
             {message.role === 'tool' ? <article aria-label="tool message">
               <details className="conversation-tool-result" onToggle={remember}>
                 <summary>Tool result</summary>

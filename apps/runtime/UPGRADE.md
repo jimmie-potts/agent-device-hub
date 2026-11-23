@@ -354,6 +354,20 @@ owner message near the new 32 KiB limit whose JSON escaping passes 64 KiB, such
 as one of control characters, makes its recent-history read refuse that
 profile's conversation with `capacity`.
 
+## Pixoo brightness confirmation (#1990)
+
+Companions adds an empty `assistant_confirmations` table for outstanding
+read-only watches and an optional `assistant_messages.follows` column that
+links a later result to its earlier reply. Earlier messages read with a null
+link. The Pixoo store keeps recent request-linked brightness readings in its
+existing state table. An interrupted read retires as unavailable on startup.
+The tracked write retains its committed outcome and does not run again.
+
+Keep these records with the stopped-writer backup. Check both stores reopen
+with saved messages and readbacks intact before qualifying the forward batch.
+Recovery to an earlier revision needs its own assessment of pending watches
+and retained device state.
+
 ## Native assistant conversation sessions (#505)
 
 The #505 release reports each B.U.N.N.Y. assistant profile's conversation as

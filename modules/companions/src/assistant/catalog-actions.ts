@@ -186,6 +186,7 @@ export class ConversationActions {
       data = value;
     }
     let binding: CatalogBinding;
+    let deviceApproval: string | undefined;
     if (route.binding === 'device') {
       const owners = owner === 'auto' ? route.owners : route.owners.filter(source => source === owner);
       if (owners.length === 0) return {code: 'unsupported-capability'};
@@ -206,6 +207,12 @@ export class ConversationActions {
         if (device.held === undefined || data.heldRequestId !== device.held.requestId) return {code: 'revision-conflict'};
       } else if (device.availability !== 'available' || device.held !== undefined) return {code: 'unavailable'};
       binding = {kind: 'device', target: device.id, owner: selected.owner, configurationRevision: device.configurationRevision, generation: device.generation};
+      if (family === 'brightness-set' && selected.owner === 'bunny/modules/pixoo') {
+        if (typeof data.percent !== 'number' || !Number.isSafeInteger(data.percent) || data.percent < 0 || data.percent > 100) {
+          return {code: 'invalid-request'};
+        }
+        deviceApproval = `Set ${deviceLabel(device)} brightness to ${data.percent}%?`;
+      }
     } else if (route.binding === 'record') {
       if (owner !== route.owner) return {code: 'forbidden'};
       const guarded = family === 'playback-control' ? await this.#playback(name, data, parent)
@@ -240,7 +247,7 @@ export class ConversationActions {
     if (proposal === undefined) return {code: 'invalid-request'};
     const effect = family === 'nanoleaf-show-save'
       ? `Save draft ${String(data.name)} (${String(data.showId)}) as “${String(data.versionName)}”, version ${Number(data.expectedVersion) + 1}?`
-      : showText ?? `${family} on ${binding.target} (${binding.owner}): ${JSON.stringify(data)}`;
+      : deviceApproval ?? showText ?? `${family} on ${binding.target} (${binding.owner}): ${JSON.stringify(data)}`;
     if (effect.length > 1024) return {code: 'capacity'};
     return {proposal, text: effect};
   }

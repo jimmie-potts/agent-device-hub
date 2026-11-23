@@ -14,7 +14,7 @@ import {join} from 'node:path';
 import {MessageValidator, errorBody, type ErrorBody, type ErrorCode, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {artCommandRefusal, EXTENDED_ART_STAGE_SCHEMA, MAX_ART_BYTES, type ArtStageRequest} from '@jimmie-potts/event-contracts/v2/art';
 import {
-  commandSupported, registerDeviceFamilies, type Capabilities, type CompletedOutcome, type DeviceCommand, type DeviceRecord,
+  commandSupported, DEVICE_READBACK_SCHEMA, registerDeviceFamilies, type BrightnessReadback, type BrightnessSetRequest, type Capabilities, type CompletedOutcome, type DeviceCommand, type DeviceRecord,
 } from '@jimmie-potts/event-contracts/v2/devices';
 import {registerCoreFamilies, type MomentEnded, type MomentPlayRequest, type PlaybackState} from '@jimmie-potts/event-contracts/v2/families';
 import {readSession, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
@@ -27,7 +27,7 @@ import {Player, LibraryPlaybackStore} from '../playback/index.js';
 import {MOMENT_MAX_MS, MOMENT_MOODS, MonitorPresentation, defaultMoments, defaultNowPlaying, defaultPresentation, momentContent, monitorView, nowPlayingView} from '../presentation/index.js';
 import {SIMULATED_SECTION, configurePixoo, HOSTED_PROFILE, type PixooConfig} from './configuration.js';
 import {pixooSettings} from './settings.js';
-import {OBSERVED, PixooControl, errorCompletion, type Completion, type MediaAction} from './control.js';
+import {OBSERVED, PixooControl, deviceCompletion, errorCompletion, type Completion, type MediaAction} from './control.js';
 import {readPixooContent} from './content.js';
 import {playerContent} from './player-content.js';
 import {readMonitorContent} from './monitor-content.js';
@@ -324,6 +324,7 @@ class PixooRuntime {
     this.#control = new PixooControl({player, monitor, library, profile: device.profile, quiet: {
       level: this.#config.quietBrightness, remembered: () => store.rememberedBrightness(), remember: percent => { store.saveRememberedBrightness(percent); },
     }});
+    store.retirePendingReadbacks(clock.now());
     // Everything the module serves at its start carries the revision it starts at; each later change raises it. The
     // catalog is not read here: it follows once the module has started, so a large library never delays the start.
     for (const [key, json] of this.#records()) this.#shown.set(key, {json, revision: store.revision});
@@ -692,6 +693,7 @@ class PixooRuntime {
     const times = [brightness?.atMs, screen?.atMs].filter((value): value is number => value !== undefined);
     const pending = store?.pending() ?? [];
     const outcome = store?.lastOutcome() as CompletedOutcome | undefined;
+    const brightnessReadbacks = store?.brightnessReadbacks(this.#context.clock.now()) ?? [];
     return {
       id: this.#device, kind: PIXOO_KIND, ...(this.#config.device.label === undefined ? {} : {label: this.#config.device.label}),
       availability: state?.availability === 'available' ? 'available' : state?.availability === 'offline' ? 'unavailable' : 'unknown',
@@ -707,6 +709,7 @@ class PixooRuntime {
       pending: pending.length, pendingKinds: [...new Set(pending.map(command => command.family))],
       lastOutcome: outcome === undefined ? UNKNOWN : {status: 'known', outcome},
       lastTransmission: structuredClone(transmission), externalControl: UNKNOWN,
+      ...(brightnessReadbacks.length === 0 ? {} : {brightnessReadbacks}),
     };
   }
 
@@ -752,7 +755,9 @@ class PixooRuntime {
     const type = family === 'device' ? 'org.bunny.device.updated' : `org.bunny.${family}.updated`;
     const data = JSON.parse(json) as DeviceRecord | DisplayRecord | RenditionRecord | PlaylistRecord;
     let dataschema = family === FAMILIES.display ? DISPLAY_SCHEMA : schemaOf(family);
-    if (family === 'device') dataschema = this.#hostedArt() ? HOSTED_DEVICE_SCHEMA : DEVICE_SCHEMA;
+    if (family === 'device') {
+      dataschema = 'brightnessReadbacks' in data ? DEVICE_READBACK_SCHEMA : this.#hostedArt() ? HOSTED_DEVICE_SCHEMA : DEVICE_SCHEMA;
+    }
     if (family === FAMILIES.rendition && 'frameCount' in data) dataschema = renditionSchemaOf(data.frameCount);
     return {key: `bunny.state.${family}.${id}`, draft: {type, subject: id, dataschema, data: {...data, id, revision}}};
   }
@@ -1164,11 +1169,33 @@ class PixooRuntime {
     const call = this.#context.trace.start('bunny.device.call', {
       parent: command, kind: 'client', attributes: {'bunny.device.id': this.#device, ...requestField(command.data.requestId)},
     });
-    let completion: Completion;
+    let completion: Completion | undefined;
+    let acknowledgmentSaved = false;
+    let acknowledged: BrightnessReadback | undefined;
     try {
-      completion = await work();
+      if (family === 'brightness-set' && command.source === 'bunny/core' && this.#player !== undefined) {
+        const data = command.data as BrightnessSetRequest;
+        const configurationRevision = data.expectedConfigurationRevision ?? this.#store?.configurationRevision ?? 0;
+        const generation = data.expectedGeneration ?? this.#generation();
+        const result = await this.#player.setBrightnessWithReadback(data.percent, this.#timing.reachMs, async write => {
+          if (this.#stopping) return;
+          completion = deviceCompletion(write, 'display');
+          acknowledged = {
+            requestId: data.requestId, configurationRevision, generation, requestedPercent: data.percent,
+            transmittedAtMs: write.timing.completedAtMs, reading: {status: 'pending'},
+          };
+          await this.#complete(command, family, completion, acknowledged);
+          acknowledgmentSaved = true;
+        });
+        completion = deviceCompletion(result.write, 'display');
+        if (acknowledged !== undefined) {
+          const {readback} = result;
+          acknowledged.reading = readback === undefined ? {status: 'unavailable'}
+            : {status: 'known', percent: readback.value, observedAtMs: readback.atMs};
+        }
+      } else completion = await work();
     } catch (error) {
-      completion = errorCompletion(error);
+      completion ??= errorCompletion(error);
     }
     call.end(completion.result === Outcome.succeeded ? 'unset' : 'error');
     if (this.#stopping) return;
@@ -1176,7 +1203,12 @@ class PixooRuntime {
     if (family === 'moment-play' && this.#context.signal.aborted) return;
     if (catalog) await this.#readCatalog('command');
     try {
-      await this.#complete(command, family, completion);
+      const readback = acknowledged;
+      if (readback?.reading.status === 'pending') readback.reading = {status: 'unavailable'};
+      if (!acknowledgmentSaved) await this.#complete(command, family, completion, readback);
+      else if (readback !== undefined) {
+        await this.#publish({parent: command, before: () => this.#store?.saveBrightnessReadback(readback, this.#context.clock.now())});
+      }
       if (family === FAMILIES.assetChange) {
         const {change} = command.data as AssetChangeRequest;
         if (change.operation === 'import' && 'staged' in change.content) await this.#uploads?.completed(command.source, command.data.requestId, change.content.staged.file);
@@ -1209,7 +1241,7 @@ class PixooRuntime {
   }
 
   /** Stores a command's outcome with every changed record, publishes them, and logs the completion. */
-  async #complete(command: {source: string; type: string; subject?: string; traceparent: string; data: {requestId: string}}, family: string, completion: Completion): Promise<void> {
+  async #complete(command: {source: string; type: string; subject?: string; traceparent: string; data: {requestId: string}}, family: string, completion: Completion, readback?: BrightnessReadback): Promise<void> {
     const store = this.#store;
     if (store === undefined) return;
     const {requestId} = command.data;
@@ -1224,6 +1256,7 @@ class PixooRuntime {
       before: () => {
         store.complete(command.source, requestId, clock.now());
         store.saveLastOutcome(outcome);
+        if (readback !== undefined) store.saveBrightnessReadback(readback, clock.now());
       },
       add: add => {
         add(`bunny.event.${family}.${this.#device}`, {

@@ -13,7 +13,7 @@ const DEVICE = ['/observed/observedAtMs', '/lastTransmission/transmittedAtMs', '
 /** Every state family and version, with its bookkeeping members. */
 export const STATE_FAMILIES: Readonly<Record<string, readonly string[]>> = {
   // The contracts package's families, published by the core or by modules.
-  'device/2.0': DEVICE, 'device/2.1': DEVICE, 'device/2.2': DEVICE, 'device/2.3': DEVICE, 'device/2.4': DEVICE,
+  'device/2.0': DEVICE, 'device/2.1': DEVICE, 'device/2.2': DEVICE, 'device/2.3': DEVICE, 'device/2.4': DEVICE, 'device/2.5': DEVICE,
   'automation-rule/2.0': [],
   'automation-routine/2.0': [],
   'automation-settings/2.0': [],
