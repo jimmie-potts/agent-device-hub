@@ -772,7 +772,7 @@ The Wemo owner SHALL bind an acknowledged power write and its subsequent read to
 
 ### Requirement: Correlate sent artwork with its library and display results
 
-The authenticated Conversation Send request SHALL bind one attachment reference to the originating message. The library save and physical show SHALL use distinct stable tracked request identities for the same artwork and follow the original exchange. A guarded physical show SHALL bind the exact selected routing identity and its current configuration. Binary media SHALL stay on the existing authenticated upload and content routes. The Companions-only save SHALL use `assistant-dispatch/2.4` and `art-attachment-edit/2.1`, which accept only a save of an uploaded artwork reference. The browser retains the released 2.0 attachment contract.
+The authenticated Conversation Send request SHALL bind one attachment reference to the originating message. The library save and physical show SHALL use distinct stable tracked request identities for the same artwork and follow the original exchange. A guarded physical show SHALL bind the exact selected routing identity and configuration at Send, before saving the artwork. Binary media SHALL stay on the existing authenticated upload and content routes. The Companions-only save SHALL use `assistant-dispatch/2.4` and `art-attachment-edit/2.1`, which accept only a save of an uploaded artwork reference. The browser retains the released 2.0 attachment contract.
 
 #### Scenario: A target changes before dispatch
 
@@ -783,3 +783,8 @@ The authenticated Conversation Send request SHALL bind one attachment reference 
 
 - **WHEN** the original reply reports pending display confirmation and definitive evidence later arrives for the tracked show
 - **THEN** the original exchange receives one correlated update without a new device write or a second turn-end notice
+
+#### Scenario: A lost acknowledgment settles later
+- **WHEN** a save acknowledgment is lost or a display phase is temporarily uncertain, and its tracked owner evidence becomes definitive
+- **THEN** the original exchange receives the result without replaying a save or show
+- **AND** a late library success leaves the saved attachment available for a fresh owner display choice

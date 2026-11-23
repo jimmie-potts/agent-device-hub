@@ -1,3 +1,4 @@
+import type {SentArtworkDestination} from './catalog-actions.js';
 import type {Confirmation} from './confirmation.js';
 import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
 import {Messages} from '../knowledge/messages.js';
@@ -19,10 +20,10 @@ export type Question = SavedQuestion & {call: string};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
-  traceparent: string | null; transcript: TranscriptItem[]; attachmentRequestId?: string};
+  traceparent: string | null; transcript: TranscriptItem[]; attachmentRequestId?: string; attachmentDestination?: SentArtworkDestination};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; result: string | null; units: number | null; reservedUnits: number;
-  reservedMs: number; elapsedMs: number | null; traceparent: string};
+  reservedMs: number; elapsedMs: number | null; traceparent: string; attachmentSaved?: boolean};
 export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; endedAtMs: number | null;
   status: AssistantStatus; traceparent: string; previousTraceparent: string | null};
 export type StagedInput = {action: 'start' | 'answer'; profile: AssistantProfile; text: string; expectedRevision: number; taskId?: string; questionId?: string; attachmentRequestId?: string};
@@ -32,14 +33,14 @@ export type ConversationPage = {version: 1; conversationId: string | null; messa
 export type Appended = TranscriptItem & {effect: string};
 type RecordRow = {record: string};
 type MessageRow = Omit<ConversationMessage, 'attachment' | 'follows'> & {follows: string | null} & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
-  artStatus: Call['status'] | null; artResult: string | null};
+  artStatus: Call['status'] | null; artResult: string | null; attachmentSaved: number | null};
 const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg.role,msg.text,msg.at_ms AS atMs,msg.follows,
   art.request_id AS artRequestId,art.description AS artDescription,intent.targets AS artTargets,json_extract(call.record, '$.status') AS artStatus,
-  json_extract(call.record, '$.result') AS artResult
+  json_extract(call.record, '$.result') AS artResult,json_extract(call.record, '$.attachmentSaved') AS attachmentSaved
   FROM assistant_messages msg LEFT JOIN assistant_art_attachments art ON art.message_id=msg.id
   LEFT JOIN assistant_art_intents intent ON intent.request_id=art.request_id
   LEFT JOIN assistant_calls call ON call.id=CASE WHEN msg.role='owner' THEN msg.task_id||'-step-0' ELSE art.request_id END`;
-function messageOf({artRequestId, artDescription, artTargets, artStatus, artResult, follows, ...row}: MessageRow): ConversationMessage {
+function messageOf({artRequestId, artDescription, artTargets, artStatus, artResult, attachmentSaved, follows, ...row}: MessageRow): ConversationMessage {
   const message = follows === null ? row : {...row, follows};
   if (artRequestId === null || artDescription === null) return message;
   const receipt = {kind: 'artwork' as const, requestId: artRequestId, description: artDescription,
@@ -47,6 +48,8 @@ function messageOf({artRequestId, artDescription, artTargets, artStatus, artResu
   // A local receipt write can fail after the Art owner admitted the job.
   // Only an actual dispatch refusal proves that the job was not admitted.
   const refusal = artStatus === 'succeeded' && artResult?.startsWith('refused: ') === true ? artResult.slice(9) : undefined;
+  if (attachmentSaved === 1) return {...message, attachment: {...receipt, admission: 'accepted'}};
+  if (attachmentSaved === 0) return {...message, attachment: {...receipt, admission: 'refused'}};
   if (isErrorCode(refusal)) return {...message, attachment: {...receipt, admission: 'refused', code: refusal}};
   const admission = artStatus === 'succeeded' && artResult?.startsWith('accepted: ') === true ? 'accepted'
     : artStatus === 'admitted' || row.role === 'owner' && artStatus === null ? 'pending' : 'uncertain';

@@ -34,6 +34,7 @@ function textResult(value: unknown): string {
 }
 type Proposed = {proposal: CatalogProposal; text: string} | {question: string} | {code: ErrorCode};
 type Refusal = {code: ErrorCode};
+export type SentArtworkDestination = {target: string; label: string; guard: ArtShowGuard} | {question: string} | Refusal;
 type Match = {owner: string; device: DeviceRecord};
 const normalize = (name: string): string => name.trim().toLocaleLowerCase();
 function matchingDevices(rows: readonly Match[], target: string, owner: string): readonly Match[] {
@@ -63,16 +64,17 @@ export class ConversationActions {
       unreadable: views.filter(view => view.devices === undefined).map(view => view.owner)};
   }
 
-  async #artDestinations(parent: TraceContext): Promise<ArtDestination[] | undefined> {
+  async #artDestinations(parent: TraceContext, requireCurrentOwners = false): Promise<ArtDestination[] | undefined> {
     const directory = (await this.#snapshot<ArtTargets>(CORE, 'art-targets', parent))?.[0];
     if (directory === undefined) return undefined;
     const owners = [...new Set(directory.targets.map(item => 'bunny/modules/' + item.kind))];
-    const {rows} = await this.#deviceRecords(owners, parent);
+    const {rows, unreadable} = await this.#deviceRecords(owners, parent);
+    if (requireCurrentOwners && unreadable.length > 0) return undefined;
     return directory.targets.map(item => artDestination(item, rows.find(row =>
       row.owner === 'bunny/modules/' + item.kind && row.device.id === item.target)?.device));
   }
 
-  async #artSelection(names: unknown, parent: TraceContext, artwork?: ArtworkSummary, requestedFormat?: 'png' | 'gif', requireExactDisplay = false): Promise<
+  async #artSelection(names: unknown, parent: TraceContext, artwork?: ArtworkSummary, requestedFormat?: 'png' | 'gif'): Promise<
     {targets: string[]; labels: string[]; guards: ArtShowGuard[]} | {question: string} | Refusal> {
     if (!Array.isArray(names) || names.length > 3 || !names.every((value): value is string =>
       typeof value === 'string' && value.trim().length > 0 && value.length <= (value.startsWith('id:') ? 131 : 128))) return {code: 'invalid-request'};
@@ -83,7 +85,6 @@ export class ConversationActions {
     for (const name of names) {
       const key = normalize(name);
       if (key === 'browser' || key === 'ui' && !devices.some(device => device.target === 'ui')) {
-        if (requireExactDisplay) return {question: 'Which physical display would you like to use?' };
         if (artwork !== undefined && usableArtComposition(artwork, 'ui') === undefined) return {question: 'This artwork has no browser rendition. Which available destination would you like?'};
         if (targets.includes('browser')) return {code: 'invalid-request'};
         targets.push('browser'); labels.push('Browser');
@@ -93,9 +94,6 @@ export class ConversationActions {
       const exact = devices.filter(device => device.target === exactId);
       const matches = name.startsWith('id:') ? exact : key === 'pixoo' || key === 'tidbyt' ? devices.filter(device => device.kind === key || device.target === key)
         : exact.length > 0 ? exact : devices.filter(device => normalize(device.label ?? device.target) === key);
-      if (requireExactDisplay && matches.length > 1) {
-        return {question: 'Which display did you mean? ' + matches.map(device => (device.label ?? device.kind) + ' (id:' + device.target + ')').join(', ')};
-      }
       const eligible = matches.filter(device => device.guard !== undefined &&
         (requestedFormat === undefined || device.formats?.includes(requestedFormat) === true) &&
         (artwork === undefined || acceptsArtRendition(device, usableArtComposition(artwork, device.kind)?.renditions[0])));
@@ -115,16 +113,22 @@ export class ConversationActions {
     return {targets, labels, guards};
   }
 
-  async selectSentArtwork(artworkId: string, destination: string, parent: TraceContext): Promise<
-    {target: string; label: string; guard: ArtShowGuard} | {question: string} | Refusal> {
-    const records = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
-    const artwork = records?.artworks.find(item => item.artworkId === artworkId) ?? await this.retainedArtwork?.(artworkId, 1200);
-    if (artwork === undefined) return {code: 'not-found'};
-    if ('error' in artwork) return {code: artwork.error.code};
-    const selected = await this.#artSelection([destination], parent, artwork, undefined, true);
-    if (!('targets' in selected)) return selected;
-    const [target] = selected.targets, [label] = selected.labels, [guard] = selected.guards;
-    return target === undefined || label === undefined || guard === undefined ? {code: 'unavailable'} : {target, label, guard};
+  async resolveSentArtworkDestination(destination: string, parent: TraceContext): Promise<SentArtworkDestination> {
+    const displays = await this.#artDestinations(parent, true);
+    if (displays === undefined) return {code: 'unavailable'};
+    const key = normalize(destination);
+    const exactId = key.startsWith('id:') ? key.slice(3) : undefined;
+    const aliases = new Set([key, key.replace(/^the[ \t]+/, '')]);
+    const matches = displays.filter(device => exactId !== undefined ? device.target === exactId :
+      [device.target, device.kind, device.label ?? device.target].some(name => aliases.has(normalize(name))));
+    if (matches.length > 1) {
+      return {question: 'Which display did you mean? ' + matches.map(device => (device.label ?? device.kind) + ' (id:' + device.target + ')').join(', ')};
+    }
+    const [selected] = matches;
+    if (selected === undefined) return {question: 'No configured display matches that name. Which display would you like to use?'};
+    if (selected.guard === undefined) return {code: 'unavailable'};
+    const label = selected.label === undefined || selected.label === selected.target ? selected.target : `${selected.label} (${selected.target})`;
+    return {target: selected.target, label, guard: selected.guard};
   }
 
   async #operation(requestId: unknown, parent: TraceContext): Promise<OperationRecord | undefined> {

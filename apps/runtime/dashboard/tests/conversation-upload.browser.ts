@@ -70,6 +70,8 @@ export async function conversationUploadJourney(browser: Browser): Promise<void>
     await button.click();
     return admittedInput;
   };
+  const surfaceMoment = (surface: Awaited<ReturnType<typeof artShowSurfaces>>[number] | undefined): string =>
+    surface?.kind === 'display' ? surface.momentRequestId : assert.fail('missing moment identity');
   const admittedMoment = async (count: number, kind: 'pixoo' | 'tidbyt'): Promise<void> => {
     await expect.poll(() => displays().length).toBe(count);
     const show = displays().at(-1)?.attributes['bunny.request.id'];
@@ -83,7 +85,8 @@ export async function conversationUploadJourney(browser: Browser): Promise<void>
     if (typeof target !== 'string') return assert.fail('missing target routing identity');
     const surfaces = await artShowSurfaces(show, [target.split('.').at(-1) ?? '']);
     assert.ok(surfaces[0]?.kind === 'display');
-    await expect.poll(() => admitted(target).length).toBe(1);
+    await expect.poll(() => admitted(target).filter(record =>
+      record.attributes['bunny.request.id'] === surfaceMoment(surfaces[0])).length).toBe(1);
   };
 
   try {
@@ -104,7 +107,6 @@ export async function conversationUploadJourney(browser: Browser): Promise<void>
     assert.match(JSON.stringify(available), /"kind":"pixoo","formats":\["png","gif"\]/, 'the disposable Pixoo has current artwork capability');
     await picker(still, 'image/png', 'still.png');
     await expect(preview).toBeVisible();
-    await remove();
     await drop(gif, 'image/gif', 'moving.gif');
     await expect(preview).toBeVisible();
     await attachment.getByRole('button', {name: 'Play animation', exact: true}).click();
@@ -149,10 +151,14 @@ export async function conversationUploadJourney(browser: Browser): Promise<void>
     const body = await page.locator('html').getAttribute('data-assistant-input');
     assert.ok(body?.includes('Play this on the Tidbyt') === true);
     const duplicate = await page.evaluate(async ({url, body}) => {
-      const response = await fetch(url, {method: 'POST', headers: {'content-type': 'application/octet-stream', 'bunny-request': '1'}, body});
-      return response.status;
+      const statuses: number[] = [];
+      for (let index = 0; index < 9; index += 1) {
+        const response = await fetch(url, {method: 'POST', headers: {'content-type': 'application/octet-stream', 'bunny-request': '1'}, body});
+        statuses.push(response.status);
+      }
+      return statuses;
     }, {url: tidbytSend.url(), body});
-    assert.equal(duplicate, 200);
+    assert.deepEqual(duplicate, Array.from({length: 9}, () => 200));
     assert.equal(displays().length, 1);
     assert.equal((await catalog()).length, 2);
     await clock.advance(31_000);

@@ -4,7 +4,7 @@ type AttachmentPlaybackIntent =
   | {kind: 'display'; destination: string}
   | {kind: 'message'};
 
-const directRequest = /^(?:please[ \t]+)?(?:play|show)[ \t]+(?:this|it)(?:[ \t]+(?:image|gif|attachment))?(?:[ \t]+on[ \t]+(?:the[ \t]+)?((?:id:)?[\p{L}\p{N}][\p{L}\p{N} _-]*))?[.!]?$/iu;
+const directRequest = /^(?:please[ \t]+)?(?:play|show)[ \t]+(?:this|it)(?:[ \t]+(?:image|gif|attachment))?(?:[ \t]+on[ \t]+((?:id:)?[\p{L}\p{N}][\p{L}\p{N} _-]*))?[.!]?$/iu;
 const multipleOrConditional = /(?:^|[ \t])(?:and|or|if|when|unless|then|after|before)(?:[ \t]|$)/iu;
 
 export function attachmentPlaybackIntent(text: string): AttachmentPlaybackIntent {

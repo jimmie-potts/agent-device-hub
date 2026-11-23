@@ -20,5 +20,5 @@ void test('owner attachment confirmation requires the exact display phase and pr
   assert.deepEqual(confirmationEvidence(watch, show, undefined, requester, moment),
     {sent: true, result: 'Sent the artwork to Sideboard.'});
   assert.deepEqual(confirmationEvidence(watch, show, undefined, requester, {...moment, status: 'uncertain', result: Outcome.uncertain}),
-    {result: 'The artwork was sent to Sideboard. I couldn’t confirm whether Sideboard presented the artwork.'});
+    {sent: true, uncertain: true});
 });

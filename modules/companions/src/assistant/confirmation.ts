@@ -11,10 +11,11 @@ export const CONFIRMATION_LIFETIME_MS = 86_400_000;
 type DeviceBinding = Extract<CatalogBinding, {kind: 'device'}>;
 type SettingTarget = {binding: DeviceBinding; label: string} & ({percent: number} | {on: boolean});
 type ArtworkTarget = {artwork: {target: string; prepareRequestId: string; momentRequestId: string}; label: string};
-type ConfirmationTarget = SettingTarget | ArtworkTarget;
+type AttachmentSaveTarget = {attachmentSave: string; label: string};
+type ConfirmationTarget = SettingTarget | ArtworkTarget | AttachmentSaveTarget;
 export type Confirmation = ConfirmationTarget & {
   requestId: string; taskId: string; questionId: string; acceptedAtMs: number; expiresAtMs: number; traceparent: string;
-  sent?: true; prepared?: true; result?: string; follows?: string;
+  sent?: true; prepared?: true; uncertain?: true; saved?: boolean; result?: string; follows?: string;
 };
 
 export function confirmationTarget(proposal: Proposal, question: string): ConfirmationTarget | undefined {
@@ -34,6 +35,7 @@ export function confirmationTarget(proposal: Proposal, question: string): Confir
 }
 
 export function unavailable(watch: Confirmation): string {
+  if ('attachmentSave' in watch) return 'I couldn’t confirm the library save. No display request was sent.';
   if ('artwork' in watch) {
     const prior = watch.sent === true ? `The artwork was sent to ${watch.label}. `
       : watch.prepared === true ? `The artwork was prepared for ${watch.label}. ` : '';
@@ -46,8 +48,10 @@ export function unavailable(watch: Confirmation): string {
     : `I couldn’t confirm the ${setting} request for ${watch.label}.`;
 }
 
-export function pending(watch: Confirmation): string {
-  if ('artwork' in watch) return `Playback confirmation for ${watch.label} is pending. I’ll update this reply when evidence arrives.`;
+export function pending(watch: Confirmation, playbackUncertain = watch.uncertain === true): string {
+  if ('attachmentSave' in watch) return 'Library save confirmation is pending. No display request was sent.';
+  if ('artwork' in watch) return playbackUncertain ? `Playback on ${watch.label} is uncertain. I’ll update this reply if definitive evidence arrives.`
+    : `Playback confirmation for ${watch.label} is pending. I’ll update this reply when evidence arrives.`;
   const setting = 'on' in watch ? 'Power' : 'Brightness';
   const sent = watch.sent === true ? `${setting} command sent.` : `${setting} request accepted.`;
   return `${sent} I’ll update this reply when confirmation for ${watch.label} is available.`;
@@ -61,10 +65,21 @@ function matchesReading(readback: ReadbackIdentity, watch: Confirmation & Settin
 }
 
 /** Combines the core's decision about a tracked operation with the exact owner's reading. */
-type ConfirmationEvidence = {sent?: true; prepared?: true; result?: string};
+type ConfirmationEvidence = {sent?: true; prepared?: true; uncertain?: true; saved?: boolean; result?: string};
 
 export function confirmationEvidence(watch: Confirmation, operation: OperationRecord | undefined, device: DeviceRecord | undefined,
   requestedBy: string, moment?: OperationRecord, preparation?: OperationRecord): ConfirmationEvidence {
+  if ('attachmentSave' in watch) {
+    if (operation?.requestId !== watch.requestId || operation.requestedBy !== requestedBy ||
+        operation.target !== 'art' || operation.family !== 'art-attachment-edit') return {};
+    if (operation.status === 'completed' && operation.result === Outcome.succeeded && operation.evidence === Outcome.observed) {
+      return {saved: true, result: 'The attachment was saved to the library. No display request was sent.'};
+    }
+    if (operation.status === 'rejected' || operation.status === 'expired' || operation.result === Outcome.failed) {
+      return {saved: false, result: 'The attachment could not be saved. Select it again to retry.'};
+    }
+    return {};
+  }
   if ('artwork' in watch) {
     if (operation?.requestId !== watch.requestId || operation.requestedBy !== requestedBy ||
         operation.target !== 'hub' || operation.family !== 'art-show') return {};
@@ -84,8 +99,8 @@ export function confirmationEvidence(watch: Confirmation, operation: OperationRe
         return {result: `Playback on ${watch.label} failed${moment.error === undefined ? '.' : ` (${moment.error.code}).`}${prior}`};
       }
       if (moment.status === 'uncertain' || moment.status === 'conflict' || moment.result === Outcome.uncertain) {
-        return {result: unavailable({...watch, ...preparationEvidence,
-          ...(moment.evidence === Outcome.transmitted || moment.evidence === Outcome.observed ? {sent: true as const} : {})})};
+        return {...preparationEvidence, uncertain: true,
+          ...(moment.evidence === Outcome.transmitted || moment.evidence === Outcome.observed ? {sent: true as const} : {})};
       }
     }
     if (operation.status === 'rejected' || operation.status === 'expired' || operation.result === Outcome.failed) {
@@ -154,7 +169,7 @@ export async function followConfirmation(context: ModuleContext, watch: Confirma
       notify();
     }, {owner: 'bunny/core', timeoutMs, parent, onRestarted: () => {operationCurrent = false; notify();}})
       .then(result => {if (result.status === 'synced') {operation = result.copy; notify();} else fail();}, fail);
-    const openDevice = 'artwork' in watch ? Promise.resolve() : context.sdk.sync<DeviceRecord>(['device'], change => {
+    const openDevice = !('binding' in watch) ? Promise.resolve() : context.sdk.sync<DeviceRecord>(['device'], change => {
       if (change.type === 'failed') {deviceCurrent = false; fail();}
       if (change.type === 'synced') deviceCurrent = true;
       notify();
@@ -172,6 +187,7 @@ export async function followConfirmation(context: ModuleContext, watch: Confirma
           artwork === undefined ? undefined : phase(artwork.momentRequestId), artwork === undefined ? undefined : phase(artwork.prepareRequestId));
         if (evidence.sent === true) watch.sent = true;
         if (evidence.prepared === true) watch.prepared = true;
+        if (evidence.uncertain === true) watch.uncertain = true;
         if (await save(evidence)) return;
         if (failed) break;
         if (!changed) await wait(remaining());

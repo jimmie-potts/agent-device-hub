@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import {attachmentPlaybackIntent} from '../src/assistant/attachment-playback-intent.js';
 
 void test('recognizes a direct playback instruction and keeps its exact requested destination', () => {
-  assert.deepEqual(attachmentPlaybackIntent('Play this on the Tidbyt.'), {kind: 'display', destination: 'Tidbyt'});
+  assert.deepEqual(attachmentPlaybackIntent('Play this on the Tidbyt.'), {kind: 'display', destination: 'the Tidbyt'});
   assert.deepEqual(attachmentPlaybackIntent('Please show this image on id:sideboard-2'), {kind: 'display', destination: 'id:sideboard-2'});
   assert.deepEqual(attachmentPlaybackIntent('Show this GIF on Living Room'), {kind: 'display', destination: 'Living Room'});
 });

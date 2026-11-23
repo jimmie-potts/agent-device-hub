@@ -1054,7 +1054,11 @@ void test('a worker result that comes back before the hand-off is recorded still
   assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
 });
 
-void test('an attached-art Send saves before choosing and never guesses between matching displays', async context => {
+for (const [instruction, labels] of [
+  ['Show this on Pixoo', ['Hall panel', 'Hall panel']],
+  ['Show this on The Hall', ['The Hall', 'Hall']],
+  ['Show this on first-panel', ['Office', 'first-panel']],
+] as const) void test(`an attached-art Send saves without guessing between targets for ${instruction}`, async context => {
   const requests: AssistantDispatch[] = [];
   const provider = counted(() => assert.fail('attachment-only control requires no model call'));
   const attachmentRequestId = randomUUID();
@@ -1071,7 +1075,7 @@ void test('an attached-art Send saves before choosing and never guesses between 
   const pixoo = w.bus.connect('bunny/modules/pixoo'), art = w.bus.connect('bunny/modules/art');
   context.after(async () => {await pixoo.close(); await art.close();});
   await pixoo.serveSync(['device'], () => ({revision: 1, states: targets.map(({target, kind}, index) => {
-    const device = light(target, 'Hall panel');
+    const device = light(target, labels[index]);
     return {type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
       data: {...device, kind, availability: index === 0 ? 'available' : 'unavailable',
         capabilities: {...device.capabilities, moments: {supported: true, moods: ['celebrate'],
@@ -1084,7 +1088,7 @@ void test('an attached-art Send saves before choosing and never guesses between 
     }]}]},
   }]}));
   await control(w.core, w.module(), 'enable');
-  const sent = await input(w.core, w.module(), 'Show this on Pixoo', false, randomUUID(), {attachmentRequestId});
+  const sent = await input(w.core, w.module(), instruction, false, randomUUID(), {attachmentRequestId});
   assert.equal(sent.status, 'accepted');
   await until(() => status(w) === 'succeeded');
   const messages = w.store().page('bunny', 0).messages;
@@ -1095,6 +1099,44 @@ void test('an attached-art Send saves before choosing and never guesses between 
   await w.restart();
   assert.deepEqual(w.store().page('bunny', 0).messages, messages);
   assert.equal(requests.length, 1);
+});
+
+void test('a lost save acknowledgment reconciles an owner attachment without replaying save or show', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(() => assert.fail('save recovery requires no model call'));
+  const w = await world(context, {provider, dispatch: data => {
+    requests.push(data);
+    return Promise.resolve({status: 'uncertain', requestId: data.requestId, error: errorBody('uncertain-result')});
+  }});
+  const attachmentRequestId = randomUUID();
+  let operations: OperationRecord[] = [];
+  await w.core.serveSync(['operation'], () => ({revision: operations.length, states: operations.map(data => ({
+    type: 'org.bunny.operation.updated', subject: data.id, dataschema: 'https://bunny.invalid/events/operation/2.0', data,
+  }))}));
+  await control(w.core, w.module(), 'enable');
+  const requestId = randomUUID(), expectedRevision = w.module().inspectAssistant()?.revision;
+  const submit = () => input(w.core, w.module(), 'Play this on Tidbyt', false, requestId, {attachmentRequestId, expectedRevision});
+  assert.equal((await submit()).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  const [send, , original] = w.store().page('bunny', 0).messages;
+  assert.equal(send?.attachment?.admission, 'uncertain');
+  assert.equal(original?.text, 'Library save confirmation is pending. No display request was sent.');
+  await w.restart(() => {
+    const requestId = requests[0]?.requestId ?? assert.fail('one save was tracked');
+    const now = Date.now();
+    operations = [{id: operationEntityId(requestId), requestId, revision: 1, kind: 'device',
+      family: 'art-attachment-edit', command: 'org.bunny.art-attachment.edit.requested', target: 'art',
+      requestedBy: 'bunny/modules/companions', status: 'completed', result: 'succeeded', evidence: 'observed',
+      sentAtMs: now, updatedAtMs: now, deadlineAtMs: now + 5000}];
+  });
+  await until(() => w.store().confirmations().length === 0);
+  const history = w.store().page('bunny', 0).messages;
+  assert.equal(history[0]?.attachment?.admission, 'accepted');
+  assert.deepEqual(history.filter(row => row.follows === original?.id).map(row => row.text),
+    ['The attachment was saved to the library. No display request was sent.']);
+  assert.equal((await submit()).status, 'accepted');
+  assert.equal(w.store().stagedCount(), 0, 'a completed replay does not reserve a staging slot');
+  assert.deepEqual(requests.map(data => data.family), ['art-attachment-edit']);
 });
 
 void test('an expired owner attachment refuses its save without invoking a model or display', async context => {
@@ -1423,7 +1465,7 @@ void test('a failed turn closes after clarification without another model call',
   assert.deepEqual((await page(w)).messages, messages);
 });
 
-async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<typeof world>>, generated?: () => string | undefined, artworkId = 'kite'): Promise<void> {
+async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<typeof world>>, generated?: () => string | undefined, artworkId = 'kite') {
   const target = 'display-blue';
   await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
     type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
@@ -1431,7 +1473,7 @@ async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<type
   }]}));
   const pixoo = w.bus.connect('bunny/modules/pixoo'), art = w.bus.connect('bunny/modules/art');
   context.after(async () => {await pixoo.close(); await art.close();});
-  const device = light(target, 'Blue panel');
+  let device = light(target, 'Blue panel');
   await pixoo.serveSync(['device'], () => ({revision: 1, states: [{
     type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
     data: {...device, kind: 'pixoo', capabilities: {...device.capabilities, moments: {supported: true,
@@ -1443,9 +1485,34 @@ async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<type
       artworks: [{artworkId, compositions: [{target: 'pixoo', compositionId: 'a'.repeat(64), outcome: 'succeeded',
         renditions: [{format: 'png', bytes: 128}]}]}]},
   }]}));
+  return {replace: () => {device = {...device, configurationRevision: device.configurationRevision + 1};}};
 }
 
-void test('attached artwork gets one later result in the original exchange after restart', async context => {
+void test('an owner Send retains the display identity it bound before the library save', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(() => assert.fail('the exact attachment request is handled locally'));
+  const attachmentRequestId = randomUUID();
+  let replaceDisplay: (() => void) | undefined;
+  const w = await world(context, {provider, dispatch: data => {
+    requests.push(data);
+    if (data.family === 'art-attachment-edit') {
+      replaceDisplay?.();
+      return Promise.resolve(accepted(data.requestId));
+    }
+    assert.ok(data.family === 'catalog-action');
+    assert.deepEqual(data.data.guards, [{target: 'display-blue', kind: 'pixoo', epoch: 'start-1', configurationRevision: 3}]);
+    return Promise.resolve({status: 'rejected', requestId: data.requestId, error: errorBody('revision-conflict')});
+  }});
+  replaceDisplay = (await serveKiteDisplay(context, w, undefined, `upload-${attachmentRequestId}`)).replace;
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'Show this on Blue panel', false, randomUUID(), {attachmentRequestId})).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(requests.map(data => data.family), ['art-attachment-edit', 'catalog-action']);
+  const final = w.store().page('bunny', 0).messages.at(-1);
+  assert.match(final?.text ?? '', /Saved to the library.*revision-conflict/);
+});
+
+for (const cancel of [false, true]) void test(`attached artwork gets one later result after restart (cancel=${cancel})`, async context => {
   const requests: AssistantDispatch[] = [];
   const provider = counted(() => assert.fail('the named attachment request requires no model call'));
   const w = await world(context, {provider, dispatch: data => {
@@ -1467,23 +1534,34 @@ void test('attached artwork gets one later result in the original exchange after
   assert.deepEqual(show.data.targets, ['display-blue']);
   assert.equal(show.data.artworkId, artworkId);
   await until(() => w.store().call(show.requestId)?.status === 'succeeded');
-  w.advance(1100);
-  await until(() => status(w) === 'succeeded');
-  const original = w.store().page('bunny', 0).messages.at(-1);
-  assert.ok(original?.text.includes('Playback confirmation') === true);
   const [surface] = await artShowSurfaces(show.requestId, ['display-blue']);
   assert.ok(surface?.kind === 'display');
+  const now = Date.now(), requestId = show.requestId;
+  const parent: OperationRecord = {id: operationEntityId(requestId), requestId, revision: 1, kind: 'moment',
+    family: 'art-show', command: 'org.bunny.art.show.requested', target: 'hub', requestedBy: 'bunny/modules/companions',
+    status: 'completed', result: 'succeeded', evidence: 'observed', sentAtMs: now, updatedAtMs: now, deadlineAtMs: now + 5000};
+  const moment: OperationRecord = {...parent, id: operationEntityId(surface.momentRequestId), requestId: surface.momentRequestId,
+    family: 'moment-play', command: 'org.bunny.moment.play.requested', target: 'display-blue',
+    requestedBy: 'bunny/core', status: 'uncertain', result: 'uncertain', evidence: 'none'};
+  operations = [parent, moment];
+  for (const operation of operations) await w.core.publish(`bunny.state.operation.${operation.id}`, {kind: 'state', ...draft(operation)});
+  await until(() => w.store().confirmation(requestId)?.uncertain === true);
+  if (cancel) {
+    assert.equal((await control(w.core, w.module(), 'cancel', task(w)?.taskId)).status, 'accepted');
+    await until(() => status(w) === 'cancelled');
+  } else {
+    w.advance(1100);
+    await until(() => status(w) === 'succeeded');
+    assert.match(w.store().page('bunny', 0).messages.at(-1)?.text ?? '', /Playback.*is uncertain/);
+  }
+  const follows = w.store().confirmation(requestId)?.follows;
+  assert.ok(follows !== undefined);
   await w.restart(() => {
-    const atMs = Date.now(), requestId = show.requestId;
-    const parent: OperationRecord = {id: operationEntityId(requestId), requestId, revision: 1, kind: 'moment',
-      family: 'art-show', command: 'org.bunny.art.show.requested', target: 'hub', requestedBy: 'bunny/modules/companions',
-      status: 'completed', result: 'succeeded', evidence: 'observed', sentAtMs: atMs, updatedAtMs: atMs, deadlineAtMs: atMs + 5000};
-    operations = [parent, {...parent, id: operationEntityId(surface.momentRequestId), requestId: surface.momentRequestId,
-      family: 'moment-play', command: 'org.bunny.moment.play.requested', target: 'display-blue', requestedBy: 'bunny/core', evidence: 'transmitted'}];
+    operations = [parent, {...moment, revision: 2, status: 'completed', result: 'succeeded', evidence: 'transmitted'}];
   });
   await until(() => w.store().confirmations().length === 0);
   await w.restart();
-  const updates = w.store().page('bunny', 0).messages.filter(message => message.follows === original.id);
+  const updates = w.store().page('bunny', 0).messages.filter(message => message.follows === follows);
   assert.deepEqual(updates.map(message => message.text), ['Sent the artwork to Blue panel (display-blue).']);
   assert.equal(requests.length, 2);
   assert.equal(provider.calls(), 0);

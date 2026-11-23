@@ -19,7 +19,7 @@ import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptC
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
-import {ConversationActions, type RetainedArtworkRead} from './catalog-actions.js';
+import {ConversationActions, type RetainedArtworkRead, type SentArtworkDestination} from './catalog-actions.js';
 import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
@@ -105,6 +105,7 @@ const profiles: readonly AssistantProfile[] = ['bunny', 'reachy', 'microduck'];
 const profile = (value: unknown): value is AssistantProfile => typeof value === 'string' && profiles.includes(value as AssistantProfile);
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const attachedInputFingerprint = ({requestId, inputRef}: AssistantInput): string => digest({requestId, inputRef});
 export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as const, type: 'org.bunny.assistant-state.updated', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-state/${data.tools.length > ASSISTANT_LEGACY_TOOL_LIMIT ? '2.1' : '2.0'}`, data});
 export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the evidence the tools return.';
 export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${String(LIMITS.contextBytes / 1024)} KiB prompt bound; stop using some on the Preferences page and start again.`;
@@ -264,7 +265,7 @@ export class AssistantEngine {
     for (const watch of watches) {
       const update = watch.result ?? pending(watch);
       if (watch.result !== undefined) {
-        for (const earlier of [pending(watch), pending({...watch, sent: true})]) {
+        for (const earlier of [pending(watch), pending({...watch, sent: true}), pending(watch, false)]) {
           if (earlier !== update) reply = reply.replace(earlier, update);
         }
         this.store.dropConfirmation(watch.requestId);
@@ -284,10 +285,15 @@ export class AssistantEngine {
       const known = this.store.confirmation(watch.requestId);
       if (known === undefined || known.result !== undefined) return true;
       if (evidence.result === undefined && (evidence.sent !== true || known.sent === true) &&
-          (evidence.prepared !== true || known.prepared === true)) return false;
+          (evidence.prepared !== true || known.prepared === true) &&
+          (evidence.uncertain !== true || known.uncertain === true)) return false;
       await this.outbox.transaction(add => {
         const current = this.store.confirmation(watch.requestId);
         if (current === undefined || current.result !== undefined) return;
+        if (evidence.saved !== undefined && 'attachmentSave' in current) {
+          const call = this.store.call(current.requestId);
+          if (call !== undefined) this.store.saveCall({...call, attachmentSaved: evidence.saved});
+        }
         if (evidence.result !== undefined && current.follows !== undefined) {
           const task = this.#task(current.taskId);
           if (this.store.savedMessage(task.id, current.follows) !== undefined) {
@@ -384,6 +390,7 @@ export class AssistantEngine {
   }
   #control(command: Command<AssistantControl>): Promise<Reply> {
     let spoken: {id: string; text: string} | undefined, delegated = false, renamed: string | undefined;
+    const retainedWatches: Confirmation[] = [];
     return this.#admit(command, digest(command.data), add => {
       const data = command.data;
       if (data.action === 'enable' || data.action === 'disable') this.#revision(data.expectedRevision);
@@ -420,7 +427,19 @@ export class AssistantEngine {
         delegated = task.question?.kind === 'delegation' && task.question.answer === null;
         task.status = 'cancelled'; task.generation += 1; task.code = null; this.store.save(task);
         for (const watch of this.store.confirmations(task.id)) {
-          if (watch.follows === undefined) this.store.dropConfirmation(watch.requestId);
+          if (watch.follows !== undefined) continue;
+          if ('artwork' in watch || 'attachmentSave' in watch) {
+            const follows = `${task.id}-prompt`;
+            if (watch.result === undefined) {
+              const retained = {...watch, follows};
+              this.store.saveConfirmation(retained);
+              retainedWatches.push(retained);
+            }
+            else {
+              this.store.message(task, `${watch.requestId}-confirmation`, 'assistant', watch.result, this.context.clock.now(), follows);
+              this.store.dropConfirmation(watch.requestId);
+            }
+          } else this.store.dropConfirmation(watch.requestId);
         }
         return undefined;
       }
@@ -429,7 +448,10 @@ export class AssistantEngine {
     }).then(reply => {
       if (renamed !== undefined && !('error' in reply)) this.titles.drop(renamed);
       const active = [...this.#active.values()].find(run => run.taskId === command.data.taskId);
-      if (command.data.action === 'cancel' && !('error' in reply) && active !== undefined) active.controller.abort();
+      if (command.data.action === 'cancel' && !('error' in reply)) {
+        active?.controller.abort();
+        for (const watch of retainedWatches) void this.#followConfirmation(watch);
+      }
       if (command.data.action === 'cancel' && !('error' in reply) && delegated && command.data.taskId !== undefined) {try {this.options.onCancelled?.(command.data.taskId);} catch { /* the worker's own report settles it */ }}
       if (spoken !== undefined && !('error' in reply) && command.data.taskId !== undefined) this.#speak(command.data.taskId, spoken.id, spoken.text, command, `${spoken.id}:${command.data.requestId}`);
       return reply;
@@ -448,19 +470,39 @@ export class AssistantEngine {
           !isUploadArtworkId(uploadArtworkId(value.attachmentRequestId)))) fail('invalid-request');
       const input = value as StagedInput;
       this.store.expireStages(this.context.clock.now());
+      const ref = input.attachmentRequestId === undefined ? undefined : ATTACHED_ASSISTANT_INPUT_PREFIX + digest({requestId: request.requestId, input});
+      const receipt = ref === undefined ? undefined : this.store.receipt(request.requestId);
+      if (ref !== undefined && receipt !== undefined) {
+        if (receipt !== attachedInputFingerprint({requestId: request.requestId, inputRef: ref})) fail('duplicate-conflict');
+        return {data: {inputRef: ref}, finish: () => {}};
+      }
       const previous = this.store.inputFor(request.requestId);
       if (previous !== undefined && digest(previous.input) !== digest(input)) fail('duplicate-conflict');
       if (previous === undefined && this.store.stagedCount() >= 8) fail('capacity');
-      const staged = previous ?? {ref: input.attachmentRequestId === undefined ? randomUUID() : ATTACHED_ASSISTANT_INPUT_PREFIX + digest({requestId: request.requestId, input}), requestId: request.requestId, input, expires: this.context.clock.now() + LIMITS.controlMs};
+      const staged = previous ?? {ref: ref ?? randomUUID(), requestId: request.requestId, input, expires: this.context.clock.now() + LIMITS.controlMs};
       if (previous === undefined) this.store.stage(staged);
       return {data: {inputRef: staged.ref}, finish: reply => {
         if ('error' in reply && reply.error.code !== 'uncertain-result') this.store.discard(staged.ref);
       }};
     } catch (error) {return errorBody(error instanceof SyntaxError ? 'invalid-request' : codeOf(error));}
   }
-  #input(command: Command<AssistantInput>): Promise<Reply> {
+  async #input(command: Command<AssistantInput>): Promise<Reply> {
+    const refused = this.#check(command);
+    if (refused !== undefined) return errorBody(refused);
+    const staged = this.store.input(command.data.inputRef);
+    let destination: SentArtworkDestination | undefined;
+    if (this.store.receipt(command.data.requestId) === undefined && staged?.requestId === command.data.requestId &&
+        staged.expires > this.context.clock.now() && staged.input.attachmentRequestId !== undefined) {
+      const intent = attachmentPlaybackIntent(staged.input.text);
+      if (intent.kind === 'display') {
+        destination = await this.#catalog().resolveSentArtworkDestination(intent.destination, command)
+          .catch((): SentArtworkDestination => ({code: 'unavailable'}));
+      }
+    }
     let titled: {conversationId: string; profile: AssistantProfile} | undefined;
-    return this.#admit(command, digest(command.data), () => {
+    const fingerprint = command.data.inputRef.startsWith(ATTACHED_ASSISTANT_INPUT_PREFIX)
+      ? attachedInputFingerprint(command.data) : digest(command.data);
+    return this.#admit(command, fingerprint, () => {
       this.#ready();
       const staged = this.store.input(command.data.inputRef) ?? fail('invalid-request');
       if (staged.requestId !== command.data.requestId) fail('invalid-request');
@@ -484,6 +526,7 @@ export class AssistantEngine {
         if (input.attachmentRequestId === undefined) this.store.message(task, `${task.id}-prompt`, 'owner', input.text, this.context.clock.now());
         else {
           task.attachmentRequestId = input.attachmentRequestId;
+          if (destination !== undefined) task.attachmentDestination = destination;
           if (!this.store.ownerAttachment(task, input.attachmentRequestId, this.context.clock.now())) fail('duplicate-conflict');
         }
         // The first message of a session appearance, or a few turns in, earns the conversation a model-written title (Hub #2025).
@@ -608,7 +651,7 @@ export class AssistantEngine {
       const interrupted = snapshot.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0);
       const input = interrupted && task.question?.answer !== null && task.question?.answer !== undefined
         ? new Resume<unknown, Partial<GraphState>, 'turn' | 'ask' | 'answered' | 'tool' | 'approve' | 'act' | '__start__'>({resume: task.question.answer})
-        : snapshot.createdAt === undefined ? {taskId: task.id, step: this.#fence(active).nextOrdinal, next: 'end' as const, decision: '', result: ''} : null;
+        : snapshot.createdAt === undefined ? {taskId: task.id, step: task.attachmentRequestId === undefined ? 0 : 1, next: 'end' as const, decision: '', result: ''} : null;
       await this.#graph.invoke(input, config); this.#fence(active);
       await this.#reconcile(task.id, false, active);
     } catch (error) {
@@ -620,6 +663,9 @@ export class AssistantEngine {
           task.status = unknown ? 'uncertain' : code === 'cancelled' ? 'paused' : 'failed';
           task.code = unknown ? 'uncertain-result' : code; this.#settle(task, active);
         }, active.span.context, active.stopReason ?? closingReasonOf(error));
+        for (const watch of this.store.confirmations(active.taskId)) {
+          if ('artwork' in watch || 'attachmentSave' in watch) void this.#followConfirmation(watch);
+        }
         // Only these two intentional replies had speech before failure settlement. The generated summary has no output effects.
         if (error instanceof Fault && (error.closingReason === REFUSED || error.closingReason === CONTEXT_TOO_LARGE)) {
           const task = this.#task(active.taskId), id = `${task.id}-closing-${String(task.generation)}`;
@@ -637,18 +683,26 @@ export class AssistantEngine {
     const task = this.#fence(active), dispatch = this.options.dispatch ?? fail('unavailable');
     const artworkId = uploadArtworkId(attachmentRequestId);
     const requestId = `${task.id}-step-0`;
+    const acceptedAtMs = this.context.clock.now();
+    const watch: Confirmation = {attachmentSave: artworkId, label: 'Art library', requestId, taskId: task.id,
+      questionId: `${task.id}-prompt`, acceptedAtMs, expiresAtMs: acceptedAtMs + CONFIRMATION_LIFETIME_MS,
+      traceparent: active.span.context.traceparent};
     const saved = await this.#call(task.id, 0, 'tool', async (signal, parent) => {
       const result = await dispatch({requestId, family: 'art-attachment-edit', target: 'art', data: {action: 'save', artworkId}}, parent, signal);
       if (result.status === 'accepted') return {text: 'accepted: Saved to the library.', units: 0};
       if (result.status !== 'rejected' || result.error.error.code === 'uncertain-result') {
-        throw new Fault('uncertain-result', 'I couldn’t confirm the library save. No display request was sent.');
+        void this.#followConfirmation(watch);
+        return {text: pending(watch), units: 0};
       }
       return {text: `refused: ${result.error.error.code}`, units: 0};
-    });
+    }, (_current, call) => {this.store.saveConfirmation({...watch, traceparent: call.traceparent});});
+    const savePending = saved === pending(watch);
+    if (!savePending) await this.outbox.transaction(() => {this.store.dropConfirmation(requestId);});
     const intent = attachmentPlaybackIntent(task.prompt);
     if (saved.startsWith('accepted: ') && intent.kind === 'message') return false;
-    const text = !saved.startsWith('accepted: ') ? `I couldn’t save the attachment (${saved.slice('refused: '.length)}). Select it again to retry.`
-      : intent.kind === 'display' ? await this.#showSentAttachment(active, artworkId, intent.destination)
+    const text = savePending ? saved
+      : !saved.startsWith('accepted: ') ? `I couldn’t save the attachment (${saved.slice('refused: '.length)}). Select it again to retry.`
+      : intent.kind === 'display' ? await this.#showSentAttachment(active, artworkId, task.attachmentDestination)
       : intent.kind === 'offer-display' ? 'Saved to the library. Would you like me to display this?'
       : 'Saved to the library. Which display would you like to use?';
     const messageId = `${task.id}-result`;
@@ -663,13 +717,13 @@ export class AssistantEngine {
     this.#speak(task.id, messageId, text, active.span.context);
     return true;
   }
-  async #showSentAttachment(active: Active, artworkId: string, destination: string): Promise<string> {
+  async #showSentAttachment(active: Active, artworkId: string, selected: SentArtworkDestination | undefined): Promise<string> {
     const task = this.#fence(active), dispatch = this.options.dispatch ?? fail('unavailable');
     const requestId = `${task.id}-step-1`;
     const prior = this.store.call(requestId);
     if (prior !== undefined) return ['Saved to the library.', prior.result].filter(Boolean).join(' ');
-    const selected = await this.#catalog().selectSentArtwork(artworkId, destination, active.span.context);
     const saved = 'Saved to the library.';
+    if (selected === undefined) return `${saved} Which display would you like to use?`;
     if ('question' in selected) return `${saved} ${selected.question}`;
     if ('code' in selected) return `${saved} I couldn’t choose the display (${selected.code}).`;
     const [surface] = await artShowSurfaces(requestId, [selected.target]);
@@ -1063,8 +1117,10 @@ export class AssistantEngine {
       await this.#change(taskId, task => {
         this.#fence(active); call.status = 'succeeded'; call.result = reply.text; call.units = reply.units; call.elapsedMs = elapsed;
         // A fast worker can finish after admission and before the dispatch reply.
-        const observed = call.action === undefined ? undefined : this.store.call(id)?.action?.observed;
+        const current = this.store.call(id);
+        const observed = current?.action?.observed;
         if (call.action !== undefined && observed !== undefined) call.action.observed = observed;
+        if (current?.attachmentSaved !== undefined) call.attachmentSaved = current.attachmentSaved;
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
         if (reply.confirmation !== undefined) this.store.saveConfirmation(reply.confirmation);
         for (const evidence of reply.evidence ?? []) this.store.observeAction(taskId, evidence);
