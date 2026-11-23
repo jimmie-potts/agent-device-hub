@@ -277,9 +277,9 @@ adds the `companion_scope_changes` table, which records the assistant revision
 of the last change of the library and of the Duck widget selection. Message
 corrections and removals, and the conversations an archive import adds to, are
 recorded in #2027's `assistant_conversation_changes`. Each start raises both
-scope rows, and every saved conversation including a companion exchange without
-a profile, to at least the revision at start, so a command naming an older
-revision is refused once after the upgrade. No record is rewritten.
+scope rows and every saved conversation's row, a companion exchange without a
+profile included, to at least the revision at start. So a command naming an
+older revision is refused once after the upgrade. No record is rewritten.
 
 An earlier release ignores the added table and compares every knowledge command
 with the assistant-wide revision again; nothing needs to be done before
