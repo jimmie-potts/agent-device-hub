@@ -37,7 +37,8 @@ function TaskControls({context, command, state, profile, live, question, drafts,
 }): React.JSX.Element {
   const formId = useId();
   const task = state?.tasks.find(value => value.profile === profile);
-  const unfinished = state?.tasks.find(value => !finished(value.status));
+  // Only this conversation's own unfinished task holds a new message; another conversation's never does (Hub #2027).
+  const open = task !== undefined && !finished(task.status);
   const pending = task !== undefined && task.questionId !== null && !task.hasAnswer && ['waiting', 'paused'].includes(task.status);
   const approval = pending && question?.kind === 'approval';
   const unavailableDecision = pending && (question === undefined || (approval && question.proposal === null));
@@ -51,7 +52,7 @@ function TaskControls({context, command, state, profile, live, question, drafts,
   const showInput = state !== undefined && !unavailableDecision && !approval && !delegated;
   const tooLong = bytes > LIMITS.inputBytes;
   const locked = command.locked || !live || !context.control || !context.operationsLive;
-  const canSubmit = showInput && !locked && enabled && draft.trim() !== '' && !tooLong && (pending || unfinished === undefined);
+  const canSubmit = showInput && !locked && enabled && draft.trim() !== '' && !tooLong && (pending || !open);
   const control = (action: 'resume' | 'cancel', taskId: string): void => {
     if (state === undefined) return;
     const requestId = crypto.randomUUID();
@@ -287,7 +288,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   // Only a paid profile's new message meets the shared spend limits and the price table; the synthetic demos cost nothing.
   const spendLimit = profile === 'bunny' ? spendNotice(spend) : undefined;
   const task = state?.tasks.find(value => value.profile === profile);
-  const unfinished = state?.tasks.find(value => !finished(value.status));
+  const open = task !== undefined && !finished(task.status);
+  // Every conversation with an unfinished task: the one switch stays on until each finishes or is cancelled.
+  const unfinished = state?.tasks.filter(value => !finished(value.status)).map(value => value.profile) ?? [];
   const visibleHistory = history?.profile === profile ? history : undefined;
   const hasArt = visibleHistory?.windows.some(window => window.messages.some(message => message.attachment !== undefined)) ?? false;
   const art = useConversationArt(context.api, connected && hasArt);
@@ -312,7 +315,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
         context.operationsLive && operation?.status === 'completed' && operation.result === 'succeeded'
       ));
       const present = (action: 'enable' | 'disable'): void => {
-        if (state === undefined || locked || (action === 'disable' && unfinished !== undefined)) return;
+        if (state === undefined || locked || (action === 'disable' && unfinished.length > 0)) return;
         void command.run({family: 'assistant-control', target: 'assistant', requestId: crypto.randomUUID(),
           data: {action, expectedRevision: state.revision}});
       };
@@ -335,7 +338,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             {context.control && !context.operationsLive && <p>Tracked operations are unavailable. Conversation controls are locked.</p>}
           </div>
           <ConversationTranscript key={profile} history={visibleHistory} status={!connected && historyStatus === 'loading' ? 'unavailable' : historyStatus}
-            live={live} canStart={!locked && state?.enabled === true && unfinished === undefined}
+            live={live} canStart={!locked && state?.enabled === true && !open}
             readLocked={!connected || historyStatus === 'loading'} loadEarlier={before => {readHistory(before);}} retry={() => {readHistory(failedCursor.current);}}
             renderToolEvidence={message => {
               const operation = context.operations.find(value => value.requestId === message.id && value.requestedBy === 'bunny/modules/companions');
@@ -363,14 +366,12 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             </article>}/>
           <div className="conversation-compose">
             {state !== undefined && !state.enabled && <p>Conversation is off. <button type="button" disabled={locked} onClick={() => {present('enable');}}>Enable conversation</button></p>}
-            {unfinished !== undefined && unfinished.profile !== profile && <p>One task is still unfinished. <button type="button"
-              onClick={() => {conversationRail.select(unfinished.profile);}}>Go to {profiles[unfinished.profile].name} task</button></p>}
             {cue !== undefined && <p role="status" className={live && task?.status === 'succeeded' ? 'conversation-completed' : undefined}>
               {cue}{!live ? ' (Last known)' : ''}
             </p>}
             {task?.code != null && <p>Task code: {task.code}</p>}
             {spendLimit !== undefined && <p role="status">{spendLimit}</p>}
-            {state?.enabled === true && unfinished !== undefined && !['waiting', 'paused'].includes(task?.status ?? '') && <p>Finish or cancel the unfinished task before sending another message.</p>}
+            {state?.enabled === true && open && !['waiting', 'paused'].includes(task.status) && <p>Finish or cancel this conversation's task before sending another message.</p>}
             {activeClarification !== undefined && <SavedQuestionContext question={activeClarification}/>}
             <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion}
               drafts={drafts} setDraft={(key, value) => {setDrafts(prior => ({...prior, [key]: value}));}}
@@ -384,7 +385,11 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live} spend={spend}
           savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}
-          receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished !== undefined} setEnabled={present}
+          receipt={routineReceipt ? command.text : undefined} locked={locked} unfinished={unfinished} goTo={owner => {
+            // The chosen conversation shows at once; the narrow Details overlay would hide it, so it closes, as the rail's choice is made with it closed.
+            conversationRail.select(owner);
+            if (detailsOverlay) closeDetails();
+          }} setEnabled={present}
           title={title} rename={value => {
             if (state === undefined || locked) return;
             void command.run({family: 'assistant-control', target: 'assistant', requestId: crypto.randomUUID(),

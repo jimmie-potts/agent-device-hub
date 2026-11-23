@@ -157,7 +157,7 @@ class Companions {
     this.preferences = new Preferences(context, this.#outbox);
     const preferences = this.preferences;
     // A reply that ends a turn, or one the owner asks to hear again, goes to the same coordinator and endpoint as Reachy's spoken alerts (Hub #500).
-    const speak: AssistantOptions['speak'] = this.options.speak ?? ((reply, key, parent) => {this.speech?.offerReply(reply, key, parent, this.speech.mark());});
+    const speak: AssistantOptions['speak'] = this.options.speak ?? ((reply, key, parent, line) => {this.speech?.offerReply(reply, key, parent, this.speech.mark(), line);});
     // The coding coordinator (Hub #502) is built before the engine, which binds proposals to its revision, and started after it, so a
     // responsibility settled at startup reaches a running engine.
     const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence) => this.assistant?.deliver(taskId, text, parent, evidence) ?? Promise.resolve());
@@ -247,6 +247,7 @@ class Companions {
     const prices = options.prices ?? (assistant?.provider === 'anthropic' ? assistant.prices : undefined);
     return {...(provider === undefined ? {} : {provider}), ...(prices === undefined ? {} : {prices}), ...(options.timeZone === undefined ? {} : {timeZone: options.timeZone}),
       ...(titleProvider === undefined ? {} : {titleProvider}), ...(options.syntheticTitleProvider === undefined ? {} : {syntheticTitleProvider: options.syntheticTitleProvider}),
+      ...(options.profileProviders === undefined ? {} : {profileProviders: options.profileProviders}),
       tools, core, dispatch, devices: options.devices ?? (owner => this.#deviceCopies.get(owner)?.records()),
       readDevice: options.readDevice ?? (async (owner, name, signal, parent) => this.#deviceCopies.get(owner)?.read(name, signal, parent)), ...(options.available === undefined ? {} : {available: options.available})};
   }

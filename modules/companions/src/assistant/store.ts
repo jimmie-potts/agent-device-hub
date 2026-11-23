@@ -95,18 +95,51 @@ export class AssistantStore {
       }
     }
     initializeRevision(database, this.meta().revision);
+    // Each conversation's last change, as the assistant revision that published it (Hub #2027): a conversation's command is
+    // stale only when its own conversation changed after the revision it names. The engine's start raises every row with
+    // `restarted`.
+    database.exec('CREATE TABLE IF NOT EXISTS assistant_conversation_changes (conversation_id TEXT PRIMARY KEY, revision INTEGER NOT NULL) STRICT');
     this.messages = new Messages(database);
   }
+  /** Conversations whose tasks changed in the open transaction; the next `bump` records them at its revision. */
+  readonly #changed = new Set<string>();
   meta(): {revision: number; enabled: boolean} {
     const row = this.database.prepare('SELECT revision,enabled FROM assistant_meta WHERE id=1').get() as {revision: number; enabled: number};
     return {revision: row.revision, enabled: row.enabled === 1};
   }
-  bump(): void {this.database.prepare('UPDATE assistant_meta SET revision=? WHERE id=1').run(advanceRevision(this.database));}
+  bump(): void {
+    const revision = advanceRevision(this.database);
+    this.database.prepare('UPDATE assistant_meta SET revision=? WHERE id=1').run(revision);
+    const record = this.database.prepare('INSERT INTO assistant_conversation_changes VALUES (?,?) ON CONFLICT(conversation_id) DO UPDATE SET revision=excluded.revision');
+    for (const conversationId of this.#changed) record.run(conversationId, revision);
+    this.#changed.clear();
+  }
+  /** Counts a change of the conversation other than a task's, such as the owner's rename, at the next `bump`. */
+  touch(conversationId: string): void {this.#changed.add(conversationId);}
+  /**
+   * Counts every saved conversation as changed at the current revision, once per start: a command naming an older revision
+   * is refused, whatever rows an earlier release left; one naming the revision at start depends on its conversation's changes.
+   */
+  restarted(): void {
+    this.database.prepare(`INSERT INTO assistant_conversation_changes SELECT id,(SELECT revision FROM assistant_meta WHERE id=1) FROM assistant_conversations WHERE true
+      ON CONFLICT(conversation_id) DO UPDATE SET revision=MAX(revision,excluded.revision)`).run();
+  }
+  /** The assistant revision of the conversation's last change, or 0 before its first. */
+  changedAt(conversationId: string): number {
+    return (this.database.prepare('SELECT revision FROM assistant_conversation_changes WHERE conversation_id=?').get(conversationId) as {revision: number} | undefined)?.revision ?? 0;
+  }
   enable(enabled: boolean): void {this.database.prepare('UPDATE assistant_meta SET enabled=? WHERE id=1').run(enabled ? 1 : 0);}
   task(id: string): Task | undefined {return parsed<Task>(this.database.prepare('SELECT record FROM assistant_tasks WHERE id=?').get(id) as RecordRow | undefined);}
   latest(): Task[] {return this.database.prepare('SELECT record FROM assistant_tasks WHERE seq IN (SELECT MAX(seq) FROM assistant_tasks GROUP BY profile) ORDER BY seq').all().map(row => JSON.parse(row.record as string) as Task);}
-  unfinished(): Task | undefined {return parsed<Task>(this.database.prepare("SELECT record FROM assistant_tasks WHERE status NOT IN ('succeeded','failed','cancelled') LIMIT 1").get() as RecordRow | undefined);}
-  save(task: Task): void {this.database.prepare('INSERT INTO assistant_tasks(id,profile,status,record) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,record=excluded.record').run(task.id, task.profile, task.status, JSON.stringify(task));}
+  /** Every conversation's unfinished task, oldest first: each conversation has at most one (Hub #2027). */
+  unfinished(): Task[] {return this.database.prepare("SELECT record FROM assistant_tasks WHERE status NOT IN ('succeeded','failed','cancelled') ORDER BY seq").all().map(row => JSON.parse(row.record as string) as Task);}
+  /** The conversation's unfinished task, if it has one. */
+  unfinishedIn(conversationId: string): Task | undefined {return this.unfinished().find(task => task.conversationId === conversationId);}
+  /** Saves a task; `changed` false keeps a bookkeeping write, such as a run's trace, from counting as a change of its conversation. */
+  save(task: Task, changed = true): void {
+    if (changed) this.#changed.add(task.conversationId);
+    this.database.prepare('INSERT INTO assistant_tasks(id,profile,status,record) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,record=excluded.record').run(task.id, task.profile, task.status, JSON.stringify(task));
+  }
   conversation(profile: AssistantProfile): string | undefined {return (this.database.prepare('SELECT id FROM assistant_conversations WHERE profile=?').get(profile) as {id: string} | undefined)?.id;}
   /** The profile's conversation ID, saved on first use: a task or a rename (Hub #2025) opens it. */
   ensureConversation(profile: AssistantProfile): string {

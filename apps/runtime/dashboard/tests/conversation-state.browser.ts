@@ -185,6 +185,9 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Prices', 'Not needed (synthetic calls)');
     await settings.locator('summary').click();
     assert.equal(await disable.isDisabled(), true, 'unfinished tasks prevent disabling Conversation');
+    // The open conversation's own task is named, not linked; only other conversations get a Go to button (Hub #2027).
+    await settings.getByText('This conversation has an unfinished task.', {exact: true}).waitFor();
+    assert.equal(await settings.getByRole('button', {name: 'Go to B.U.N.N.Y. task', exact: true}).count(), 0);
     assert.equal(await settings.getByRole('link', {name: 'Preferences', exact: true}).getAttribute('href'), '#/module/companions/preferences');
     assert.equal(await settings.getByRole('link', {name: 'Companion knowledge', exact: true}).getAttribute('href'), '#/module/companions/knowledge');
     // The model-written session title, and the owner's rename through assistant-control (Hub #2025).

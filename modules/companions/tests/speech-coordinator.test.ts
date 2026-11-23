@@ -275,30 +275,105 @@ void test('a failed speech revision records its internal decision once without l
 });
 
 const spoken = (taskId: string, messageId: string, text: string, validUntilMs: number) => ({taskId, messageId, text, validUntilMs});
+/** Yields event-loop turns until the check holds; no timer, so the manual clock alone moves time. */
+async function settle(check: () => boolean): Promise<void> {
+  for (let turn = 0; turn < 5000; turn += 1) {if (check()) return; await new Promise(resolve => {setImmediate(resolve);});}
+  assert.ok(check(), 'speech state arrived');
+}
+/** The text an output command speaks, a reply's or a card's. */
+const said = (command: Command<SpeechOutput> | undefined): string | undefined => command?.data.action !== 'speak' ? undefined : 'reply' in command.data ? command.data.reply.text : command.data.card.text;
+async function play(w: Awaited<ReturnType<typeof world>>, index: number): Promise<string | undefined> {
+  await w.advance(); await settle(() => w.outputs.length === index + 1);
+  const command = w.outputs[index], operationId = command?.data.operationId ?? assert.fail('operation');
+  await w.report({operationId, status: 'started', started: true}); await w.report({operationId, status: 'completed', started: true});
+  await settle(() => w.owner().inspect().playback?.status === 'completed' && w.owner().inspect().playback?.operationId === operationId);
+  return said(command);
+}
 
-void test('a saved reply speaks through the reserved endpoint once per key, and a newer pending reply replaces an older one', async t => {
+void test('each conversation keeps one waiting reply, the others are kept, and the voice takes them in arrival order with cards in their own slot', async t => {
+  const w = await world(t), now = () => w.owner().context.clock.now(); await w.control('enable');
+  const offer = (line: string, text: string, validUntilMs = now() + 60_000) => {
+    const id = `${line}-${text}`;
+    w.owner().offerReply(spoken(id, `${id}-result`, text, validUntilMs), `${id}-result`, parent, w.owner().mark(), line);
+  };
+  offer('conversation-a', 'First A answer.');
+  await w.advance(); await settle(() => w.outputs.length === 1);
+  const first = w.outputs[0]?.data.operationId ?? assert.fail('operation');
+  await w.report({operationId: first, status: 'started', started: true});
+  // While A speaks: B and C each wait, A's second answer waits and its third replaces it, a coding question waits in
+  // the card slot, and D's answer goes stale before its turn. Nothing of equal rank interrupts.
+  offer('conversation-b', 'B answer.');
+  offer('conversation-d', 'Stale D answer.', now() + 1000);
+  offer('conversation-c', 'C answer.');
+  offer('conversation-a', 'Replaced A answer.');
+  const question = w.card(); question.text = 'Synthetic coding question card.';
+  w.owner().offer(question, parent, w.owner().mark());
+  offer('conversation-a', 'Newest A answer.');
+  assert.equal(w.owner().inspect().pending, true); await w.advance(); assert.equal(w.outputs.length, 1, 'an equal rank waits for the active reply');
+  await w.advance(2000);
+  await w.report({operationId: first, status: 'completed', started: true});
+  await settle(() => w.owner().inspect().playback?.status === 'completed');
+  const order: (string | undefined)[] = [];
+  for (let index = 1; index <= 4; index += 1) order.push(await play(w, index));
+  assert.deepEqual(order, ['B answer.', 'C answer.', 'Synthetic coding question card.', 'Newest A answer.']);
+  await w.advance(); assert.equal(w.outputs.length, 5, 'the replaced and the stale answers never speak');
+  assert.equal(w.owner().inspect().pending, false);
+});
+
+void test('the voice takes the highest rank first: a waiting reply speaks before an earlier waiting notice, which then still speaks', async t => {
+  const w = await world(t), now = () => w.owner().context.clock.now(); await w.control('enable');
+  w.owner().offerReply(spoken('task-1', 'task-1-result', 'First answer.', now() + 60_000), 'task-1-result', parent, w.owner().mark(), 'conversation-1');
+  await w.advance(); await settle(() => w.outputs.length === 1);
+  const first = w.outputs[0]?.data.operationId ?? assert.fail('operation');
+  await w.report({operationId: first, status: 'started', started: true});
+  const notice = w.card(); notice.opportunity.category = 'coding-notice'; notice.opportunity.cue = 'turn-ended';
+  notice.opportunity.attention = null; notice.opportunity.noticeId = 'notice-rank'; notice.text = 'Synthetic notice card.';
+  w.owner().offer(notice, parent, w.owner().mark());
+  w.owner().offerReply(spoken('task-2', 'task-2-result', 'Second conversation answer.', now() + 60_000), 'task-2-result', parent, w.owner().mark(), 'conversation-2');
+  await w.report({operationId: first, status: 'completed', started: true});
+  await settle(() => w.owner().inspect().playback?.status === 'completed');
+  assert.deepEqual([await play(w, 1), await play(w, 2)], ['Second conversation answer.', 'Synthetic notice card.']);
+});
+
+void test('Stop discards every waiting reply and card', async t => {
+  const w = await world(t), now = () => w.owner().context.clock.now(); await w.control('enable');
+  w.owner().offerReply(spoken('task-1', 'task-1-result', 'First answer.', now() + 60_000), 'task-1-result', parent, w.owner().mark(), 'conversation-1');
+  await w.advance(); await settle(() => w.outputs.length === 1);
+  const first = w.outputs[0]?.data.operationId ?? assert.fail('operation');
+  await w.report({operationId: first, status: 'started', started: true});
+  w.owner().offerReply(spoken('task-2', 'task-2-result', 'Second answer.', now() + 60_000), 'task-2-result', parent, w.owner().mark(), 'conversation-2');
+  w.owner().offerReply(spoken('task-3', 'task-3-result', 'Third answer.', now() + 60_000), 'task-3-result', parent, w.owner().mark(), 'conversation-3');
+  w.owner().offer(w.card(), parent, w.owner().mark());
+  await w.control('stop'); await settle(() => w.outputs.length === 2);
+  assert.equal(w.outputs[1]?.data.action, 'stop'); assert.equal(w.owner().inspect().pending, false);
+  await w.report({operationId: first, status: 'stopped', started: true});
+  await settle(() => w.owner().inspect().playback?.status === 'stopped'); await w.advance();
+  assert.equal(w.outputs.length, 2, 'nothing waiting speaks after Stop');
+});
+
+void test('a saved reply speaks through the reserved endpoint once per key, and a newer reply of the same conversation replaces its waiting one', async t => {
   const w = await world(t), now = () => w.owner().context.clock.now();
-  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Silent before enablement.', now() + 60_000), 'task-1-result', parent, w.owner().mark());
+  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Silent before enablement.', now() + 60_000), 'task-1-result', parent, w.owner().mark(), 'conversation-1');
   await w.advance(); assert.equal(w.outputs.length, 0);
   await w.control('enable');
-  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Two coding sessions are active.', now() + 60_000), 'task-1-result', parent, w.owner().mark());
+  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Two coding sessions are active.', now() + 60_000), 'task-1-result', parent, w.owner().mark(), 'conversation-1');
   await w.advance(); await until(() => w.outputs.length === 1);
   const first = w.outputs[0]?.data; assert.ok(first?.action === 'speak' && 'reply' in first);
   assert.deepEqual(first.reply, {taskId: 'task-1', messageId: 'task-1-result', text: 'Two coding sessions are active.', validUntilMs: first.reply.validUntilMs});
   const operationId = first.operationId;
   await w.report({operationId, status: 'started', started: true});
-  // While the first answer plays, two later answers arrive: only the newest waits, at equal rank, without interrupting.
-  w.owner().offerReply(spoken('task-2', 'task-2-result', 'Stale middle answer.', now() + 60_000), 'task-2-result', parent, w.owner().mark());
-  w.owner().offerReply(spoken('task-3', 'task-3-result', 'Newest answer.', now() + 60_000), 'task-3-result', parent, w.owner().mark());
+  // While the first answer plays, two later answers of one conversation arrive: only its newest waits, at equal rank, without interrupting.
+  w.owner().offerReply(spoken('task-2', 'task-2-result', 'Stale middle answer.', now() + 60_000), 'task-2-result', parent, w.owner().mark(), 'conversation-2');
+  w.owner().offerReply(spoken('task-3', 'task-3-result', 'Newest answer.', now() + 60_000), 'task-3-result', parent, w.owner().mark(), 'conversation-2');
   assert.equal(w.owner().inspect().pending, true); await w.advance(); assert.equal(w.outputs.length, 1);
   await w.report({operationId, status: 'completed', started: true}); await until(() => w.reports.length === 1);
   await w.advance(); await until(() => w.outputs.length === 2);
   const next = w.outputs[1]?.data; assert.ok(next?.action === 'speak' && 'reply' in next); assert.equal(next.reply.text, 'Newest answer.');
   await w.report({operationId: next.operationId, status: 'started', started: true}); await w.report({operationId: next.operationId, status: 'completed', started: true});
   await until(() => w.reports.length === 2);
-  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Two coding sessions are active.', now() + 60_000), 'task-1-result', parent, w.owner().mark());
+  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Two coding sessions are active.', now() + 60_000), 'task-1-result', parent, w.owner().mark(), 'conversation-1');
   await w.advance(); assert.equal(w.outputs.length, 2, 'the same key never speaks twice');
-  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Two coding sessions are active.', now() + 60_000), 'task-1-result:replay-1', parent, w.owner().mark());
+  w.owner().offerReply(spoken('task-1', 'task-1-result', 'Two coding sessions are active.', now() + 60_000), 'task-1-result:replay-1', parent, w.owner().mark(), 'conversation-1');
   await w.advance(); await until(() => w.outputs.length === 3);
   const replay = w.outputs[2]?.data; assert.ok(replay?.action === 'speak' && 'reply' in replay); assert.equal(replay.reply.messageId, 'task-1-result');
 });
@@ -310,7 +385,7 @@ void test('a reply preempts a notice after confirmed stop, waits for active codi
   w.owner().offer(notice, parent, w.owner().mark()); await w.advance(); await until(() => w.outputs.length === 1);
   const noticeOperation = w.outputs[0]?.data.operationId ?? assert.fail('operation');
   await w.report({operationId: noticeOperation, status: 'started', started: true});
-  w.owner().offerReply(spoken('task-1', 'task-1-q1', 'Which session do you mean?', now() + 60_000), 'task-1-q1', parent, w.owner().mark());
+  w.owner().offerReply(spoken('task-1', 'task-1-q1', 'Which session do you mean?', now() + 60_000), 'task-1-q1', parent, w.owner().mark(), 'conversation-1');
   await until(() => w.outputs.length === 2); assert.equal(w.outputs[1]?.data.action, 'stop');
   await w.report({operationId: noticeOperation, status: 'stopped', started: true});
   await until(() => w.owner().inspect().playback?.status === 'stopped'); await w.advance(); await until(() => w.outputs.length === 3);
@@ -323,8 +398,8 @@ void test('a reply preempts a notice after confirmed stop, waits for active codi
   const attention = w.outputs[3]?.data; assert.ok(attention?.action === 'speak' && 'card' in attention);
   await w.report({operationId: attention.operationId, status: 'started', started: true}); await w.report({operationId: attention.operationId, status: 'completed', started: true});
   await until(() => w.reports.length === 3);
-  w.owner().offerReply(spoken('task-4', 'task-4-result', 'Expired.', now()), 'task-4-result', parent, w.owner().mark()); await w.advance();
-  w.allow(false); w.owner().offerReply(spoken('task-5', 'task-5-result', 'Quiet.', now() + 60_000), 'task-5-result', parent, w.owner().mark()); await w.advance();
+  w.owner().offerReply(spoken('task-4', 'task-4-result', 'Expired.', now()), 'task-4-result', parent, w.owner().mark(), 'conversation-4'); await w.advance();
+  w.allow(false); w.owner().offerReply(spoken('task-5', 'task-5-result', 'Quiet.', now() + 60_000), 'task-5-result', parent, w.owner().mark(), 'conversation-5'); await w.advance();
   assert.equal(w.outputs.length, 4);
 });
 
