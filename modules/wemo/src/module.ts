@@ -15,7 +15,8 @@ const deviceDraft = (record: DeviceRecord) => ({type: 'org.bunny.device.updated'
 const unknown={status:'unknown'} as const,unsupported={supported:false} as const;
 type Input=PowerSetRequest&{heldRequestId?:string};
 type Pending={command:Command<Input>;family:string};
-type Target={config:Plug;transport:PlugTransport;record:DeviceRecord;lease?:Lease;pending:Map<string,Pending>;queue:Array<Pending|'poll'>;running?:Promise<void>;poll?:Cancel;stale?:Cancel;pollQueued:boolean};
+type Target={config:Plug;transport:PlugTransport;record:DeviceRecord;lease?:Lease;pending:Map<string,Pending>;queue:Array<Pending|'poll'>;running?:Promise<void>;poll?:Cancel;stale?:Cancel;pollQueued:boolean;readbackAbort?: AbortController};
+const isShutoff = (work: Pending | 'poll'): boolean => work !== 'poll' && work.family === 'power-set' && !work.command.data.on;
 const completed=(id:string,code:ErrorCode,uncertain=false):CompletedOutcome=>({requestId:id,result:uncertain?Outcome.uncertain:Outcome.failed,evidence:Outcome.none,error:errorBody(code,{detail:uncertain?'the Wemo write is uncertain and will not be replayed':'Wemo work ended without a confirmed effect'}).error});
 const typeOf=(family:string)=>family===RELEASE?RELEASE_TYPE:'org.bunny.power.set.requested';
 export function createWemoModule(options:{transport?:(plug:Plug)=>PlugTransport}={}):BunnyModule<WemoConfig>{
@@ -96,16 +97,22 @@ class Owner {
       this.#store.save({requestId:id,target:target.config.id,family,digest,traceparent:command.traceparent,state:'accepted'});
       target.pending.set(id,{family,command});this.#record(add,target,command);accepted=true;answer={status:'accepted'};
     },target,command,command.data.requestId);}catch(error){target.pending.delete(id);return errorBody(fullDisk(error)?'capacity':'internal');}
-    if(accepted){recordLog(this.#context.log, 'command.queued',{'bunny.device.id':target.config.id,'bunny.request.id':id},command);target.queue.push({family,command});this.#drain(target);}
+    if (accepted) {
+      recordLog(this.#context.log, 'command.queued', {'bunny.device.id': target.config.id, 'bunny.request.id': id}, command);
+      const work = {family, command};
+      target.queue.push(work);
+      if (isShutoff(work)) target.readbackAbort?.abort();
+      this.#drain(target);
+    }
     return answer;
   }
   #drain(target:Target):void{
     if(target.running!==undefined)return;
     target.running=(async()=>{await Promise.resolve();while(!this.#stopped){const next=target.queue.shift();if(next===undefined)break;if(next==='poll'){target.pollQueued=false;await this.#read(target);}else await this.#execute(target,next);}})().catch(()=>{this.#storageFailed(target);}).finally(()=>{delete target.running;});
   }
-  #bounded<T>(work:(signal:AbortSignal)=>Promise<T>,ms:number):Promise<T>{
+  #bounded<T>(work:(signal:AbortSignal)=>Promise<T>,ms:number, stop?: AbortSignal):Promise<T>{
     const controller=new AbortController(),cancel=this.#context.scheduler.after(ms,()=>controller.abort());
-    const signal=AbortSignal.any([controller.signal,this.#context.signal,this.#stop.signal]);
+    const signal=AbortSignal.any([controller.signal,this.#context.signal,this.#stop.signal, ...(stop === undefined ? [] : [stop])]);
     return (async()=>{let abort:()=>void=()=>{};try{signal.throwIfAborted();return await Promise.race([work(signal),new Promise<never>((_,reject)=>{abort=()=>reject(new Error('Wemo deadline'));signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();})]);}finally{signal.removeEventListener('abort',abort);cancel();controller.abort();}})();
   }
   async #execute(target:Target,pending:Pending):Promise<void>{
@@ -135,23 +142,28 @@ class Owner {
     const outcome:CompletedOutcome={requestId:row.requestId,result:attempt.result,evidence:release&&attempt.result===Outcome.succeeded?Outcome.observed:attempt.evidence,...(attempt.code===undefined?{}:{error:errorBody(attempt.code).error})};
     const readback: PowerReadback | undefined = !release && command.source === 'bunny/core' &&
       outcome.result === Outcome.succeeded && outcome.evidence === Outcome.transmitted ? {
-        requestId: row.requestId, requestedOn: command.data.on, transmittedAtMs: this.#context.clock.now(), reading: {status: 'pending'},
+        requestId: row.requestId, requestedOn: command.data.on, transmittedAtMs: this.#context.clock.now(), reading: {status: target.queue.some(isShutoff) ? 'unavailable' : 'pending'},
         configurationRevision: command.data.expectedConfigurationRevision ?? target.record.configurationRevision,
         generation: command.data.expectedGeneration ?? structuredClone(target.record.generation),
       } : undefined;
     await this.#finish(target, row, outcome, attempt.connection, release ? undefined : command.data.on, readback);
-    if (readback !== undefined) await this.#readback(target, row, readback);
+    if (readback?.reading.status === 'pending') await this.#readback(target, row, readback);
   }
   async #readback(target: Target, row: Row, readback: PowerReadback): Promise<void> {
     if (this.#stopped || this.#storageDown) return;
     let observation: Observation | undefined;
     const remaining = POWER_READBACK_MS - (this.#context.clock.now() - readback.transmittedAtMs);
-    if (remaining > 0) {
+    // The original deadline of a queued shutoff takes priority over an optional read.
+    if (remaining > 0 && !target.queue.some(isShutoff)) {
+      const interrupt = target.readbackAbort = new AbortController();
       const probe = this.#context.trace.start('bunny.device.call', {parent: row, kind: 'client',
         attributes: {'bunny.device.id': target.config.id, 'bunny.operation': 'snapshot', 'bunny.request.id': row.requestId}});
-      try {observation = await this.#bounded(signal => target.transport.read(signal), remaining);}
+      try {observation = await this.#bounded(signal => target.transport.read(signal), remaining, interrupt.signal);}
       catch { /* An unavailable read leaves the acknowledged transmission intact. */ }
-      probe.end(observation === undefined ? 'error' : 'unset');
+      finally {
+        delete target.readbackAbort;
+        probe.end(observation === undefined ? 'error' : 'unset');
+      }
     }
     if (this.#stopped || this.#storageDown) return;
     const now = this.#context.clock.now();

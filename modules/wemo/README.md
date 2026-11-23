@@ -41,7 +41,7 @@ load. A successful SOAP reply establishes transmission, not visible lamp output.
 Commands use generic `power-set/2.0` through the core's tracked dispatcher. Durable
 request fences prevent duplicate effects and restart replay. After an
 acknowledged core write, the same queue reads the plug once with a two-second
-budget. The owner publishes the result and the exact request binding through
+budget. A queued shutoff takes priority and can make readback unavailable. The owner publishes the result and the exact request binding through
 `device/2.6` while it has recent readbacks. On restart an interrupted read
 retires as unavailable and the acknowledged transmission remains saved. A write whose reply
 is lost creates a persistent hold. Polling, startup and schedules cannot clear it.

@@ -4,7 +4,7 @@ Wemo owns each plug's queue and durable requests. Its identity-checked read alre
 
 ## Decisions
 
-- Commit the acknowledged write and pending readback together. Use one bounded read of the same plug before leaving the writer turn. Publish the returned power and its time or mark readback unavailable.
+- Commit the acknowledged write and pending readback together. Use one bounded read of the same plug before leaving the writer turn. Publish the returned power and its time or mark readback unavailable. Skip or interrupt this read when a shutoff is queued so the off command keeps its existing deadline.
 - Keep the shared confirmation watcher and its deadlines. Extend it to Wemo power and retain the text of a previously saved Pixoo watch after upgrade.
 - Store pending and recent Wemo readings in the plug's existing record. When a restart interrupted a reading, keep the transmission acknowledgment and retire that read as unavailable. A normal poll describes the current plug and cannot settle or release an uncertain write.
 - Use the existing profile, error registry and command trace. An unreadable write reply still creates the hold. The maximum-on limit continues to use the core's existing power timing and shutoff policy.

@@ -66,7 +66,8 @@ export function confirmationEvidence(watch: Confirmation, operation: OperationRe
     return {result: power ? `I couldn’t tell whether ${watch.label} switched ${watch.on ? 'on' : 'off'}. The plug entered a hold after the unanswered write.`
       : 'I couldn’t tell whether the brightness command took effect.'};
   }
-  if (operation.result === Outcome.failed) return {result: `The ${setting} request failed.`};
+  if (operation.result === Outcome.failed) return {result: operation.error?.code === 'expired'
+    ? `The ${setting} request expired.` : `The ${setting} request failed.`};
   if (operation.status !== 'completed' || operation.result !== Outcome.succeeded || operation.evidence !== Outcome.transmitted) return {};
   if (device?.id !== watch.binding.target) return {sent: true};
   const readback = power

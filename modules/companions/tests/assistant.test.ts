@@ -205,6 +205,20 @@ void test('Pixoo confirmation rejects other requests, targets, configuration and
     {sent: true, result: 'Studio Display reports 40% brightness.'});
 });
 
+void test('an admitted Wemo request that expires before the write is reported as expired', () => {
+  const binding = {kind: 'device', owner: 'bunny/modules/wemo', target: 'shelf-lamp',
+    configurationRevision: 1, generation: {epoch: 'fixture', sequence: 0}} as const;
+  const id = 'wemo-expired';
+  const watch: Confirmation = {requestId: id, taskId: 'task', questionId: 'task-q1', label: 'Shelf lamp', binding,
+    on: true, acceptedAtMs: 1, expiresAtMs: 3, traceparent: ''};
+  const operation: OperationRecord = {id, revision: 1, requestId: id, kind: 'device', family: 'power-set', command: 'power',
+    target: binding.target, requestedBy: 'bunny/modules/companions', status: 'completed', result: 'failed', evidence: 'none',
+    error: errorBody('expired').error, updatedAtMs: 3, sentAtMs: 1, deadlineAtMs: 3};
+  assert.deepEqual(confirmationEvidence(watch, operation, undefined, operation.requestedBy), {result: 'The power request expired.'});
+  assert.deepEqual(confirmationEvidence(watch, {...operation, status: 'conflict'}, undefined, operation.requestedBy),
+    {result: 'The power request has conflicting results.'});
+});
+
 void test('a duplicate light label asks for an exact device ID and sends nothing without a specific approval', async context => {
   const names = [light('first', 'Desk lamp'), light('second', 'Desk lamp')];
   const provider = counted((_input, turn) => turn === 1 ? call('set_lifx_power', {device: 'Desk lamp', on: false})
