@@ -78,6 +78,7 @@ export type WorldOptions = {
   assistantProvider?: NonNullable<Parameters<typeof createCompanionsModule>[0]>['provider'];
   assistantLights?: boolean;
   assistantWemo?: boolean;
+  wemoReadback?: (plugId: string, observed: boolean) => Promise<boolean | undefined>;
   assistantCatalog?: readonly string[];
   artRecentLimit?: number;
   /** A coding-worker credential and the delegation tool, so a journey can connect a fake worker through the real gateway (Hub #502). */
@@ -375,7 +376,28 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       ...(options.presence===true?[createPresenceModule({native:presence.native})]:[]),
       core = createCoreModule(coreOptions), ...(options.artSchedule === undefined ? [] : [createWeatherModule({fetch: clock => url => Promise.resolve(
         url.includes('/points/') ? weatherJson(pointsBody()) : url.includes('/alerts/') ? weatherJson(alertsBody())
-          : weatherJson(hourlyBody(clock.now(), [{shortForecast: 'Sunny', precipitation: 0}, {shortForecast: 'Chance Rain Showers', precipitation: 40}], clock.now() - 1000)))})]), ...(options.art === true ? [createArtModule({providers: simulatedProviders(art.call.bind(art))})] : []), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: options.tronbyt?.fetch ?? new SimulatedCloud().fetch})] : []), ...(options.wemo===true?[createWemoModule({transport:plug=>{const transport=wemo.transport(plug.id);return {...transport,setPower:async(on,signal,before)=>{const answer=await transport.setPower(on,signal,before);if(loseWemoReply&&answer.result==='succeeded'){loseWemoReply=false;return {result:'uncertain' as const,evidence:'none' as const,code:'uncertain-result' as const,connection:'available' as const};}return answer;}};}})]:[]), ...(options.companions === true ? [companionModule()] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
+          : weatherJson(hourlyBody(clock.now(), [{shortForecast: 'Sunny', precipitation: 0}, {shortForecast: 'Chance Rain Showers', precipitation: 40}], clock.now() - 1000)))})]), ...(options.art === true ? [createArtModule({providers: simulatedProviders(art.call.bind(art))})] : []), ...(options.microduck===true?[options.microduckVendor===true?createMicroDuckModule():createMicroDuckModule({transport:options.microduckTransport??microduck})]:[]), ...(options.reachy===true?[createReachyModule({transport:reachyTransport})]:[]), ...(options.tidbyt === true ? [createTidbytModule({transport: options.tronbyt?.fetch ?? new SimulatedCloud().fetch})] : []), ...(options.wemo === true ? [createWemoModule({transport: plug => {
+        const transport = wemo.transport(plug.id);
+        let awaitingRead = false;
+        return {
+          async read(signal) {
+            const result = await transport.read(signal);
+            if (!awaitingRead || result === undefined || options.wemoReadback === undefined) return result;
+            awaitingRead = false;
+            const power = await options.wemoReadback(plug.id, result.power);
+            return power === undefined ? undefined : {...result, power};
+          },
+          async setPower(on, signal, before) {
+            const answer = await transport.setPower(on, signal, before);
+            if (loseWemoReply && answer.result === 'succeeded') {
+              loseWemoReply = false;
+              return {result: 'uncertain', evidence: 'none', code: 'uncertain-result', connection: 'available'};
+            }
+            awaitingRead = answer.result === 'succeeded';
+            return answer;
+          },
+        };
+      }})] : []), ...(options.companions === true ? [companionModule()] : []), ...(options.roborock===true?[roborockModule=createRoborockModule({transport:roborock})]:[]),...(options.volcano===true?[createVolcanoModule({feed:volcano})]:[]), ...(options.wispr === undefined ? [] : [wispr = createWisprModule()]), ...(options.inbox === true ? [gadget.module()] : []), ...(withDevices ? [createLifxModule({transport: network}), createSignModule({transport: new SimulatedSigns({online: true})})] : []), ...(options.modeDevices === true ? [nano.module(), pixoo.module()] : []),
       ...(options.playbackArtwork !== undefined ? [createPlaybackModule({transport: options.playbackArtwork.speakers, artwork: {fetch: options.playbackArtwork.fetch}, ...(options.clock === undefined ? {} : {monotonic: now})})]
         : options.pixooPages === true || options.musicPlayback === true ? [playbackFactory.simulate()] : []),
       ...(options.pixooPages === true ? [createPixooModule({transport: panelTransport})] : []), ...(editor === undefined ? [] : [editor]),

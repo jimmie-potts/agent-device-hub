@@ -39,13 +39,15 @@ export type CompletedOutcome = {
  * releases the hold, after a person's later command to the device or a later definitive outcome for that operation.
  */
 export const DEVICE_READBACK_SCHEMA = 'https://bunny.invalid/events/device/2.5';
+export const DEVICE_POWER_READBACK_SCHEMA = 'https://bunny.invalid/events/device/2.6';
 export const MAX_DEVICE_READBACKS = 32;
+export const DEVICE_READBACK_TTL_MS = 86_400_000;
 
-/** The Pixoo owner's bounded reading after the acknowledged write for this request. */
-export type BrightnessReadback = {
-  requestId: string; configurationRevision: number; generation: Ticket; requestedPercent: number; transmittedAtMs: number;
-  reading: {status: 'pending' | 'unavailable'} | {status: 'known'; percent: number; observedAtMs: number};
-};
+/** The device binding and transmission time for a request-linked reading. */
+export type ReadbackIdentity = {requestId: string; configurationRevision: number; generation: Ticket; transmittedAtMs: number};
+type Reading<Result> = {status: 'pending' | 'unavailable'} | ({status: 'known'; observedAtMs: number} & Result);
+export type BrightnessReadback = ReadbackIdentity & {requestedPercent: number; reading: Reading<{percent: number}>};
+export type PowerReadback = ReadbackIdentity & {requestedOn: boolean; reading: Reading<{on: boolean}>};
 
 export type DeviceHold = {requestId: string; heldAtMs: number};
 /**
@@ -68,6 +70,7 @@ export type DeviceRecord = {
   /** The last send that reached the transport, for a command (`requestId`) or a paint of the module's own. Never an observation. */
   lastTransmission: Unknown | {status: 'known'; requestId?: string; transmittedAtMs: number; operationIds: string[]};
   brightnessReadbacks?: BrightnessReadback[];
+  powerReadbacks?: PowerReadback[];
   externalControl: Unknown | {status: 'known'; owner: 'module' | 'external'; observedAtMs: number};
 };
 
@@ -134,7 +137,7 @@ export const EXTENDED_ART_DEVICE_SCHEMA = 'https://bunny.invalid/events/device/2
 export function extendedArtStageSupported(device: Pick<Message<DeviceRecord>, 'dataschema' | 'source' | 'data'> | undefined,
   stage: {format: unknown; base64: unknown}): boolean {
   if (device === undefined || device.source !== 'bunny/modules/pixoo' || device.data.kind !== 'pixoo') return false;
-  if (device.dataschema !== EXTENDED_ART_DEVICE_SCHEMA && device.dataschema !== DEVICE_READBACK_SCHEMA) return false;
+  if (device.dataschema !== EXTENDED_ART_DEVICE_SCHEMA && device.dataschema !== DEVICE_READBACK_SCHEMA && device.dataschema !== DEVICE_POWER_READBACK_SCHEMA) return false;
   const {moments} = device.data.capabilities;
   return moments.supported && moments.art?.stageVersion === '2.1' && stage.format === 'gif' && typeof stage.base64 === 'string' &&
     artStageSupported(device.data.capabilities, {format: stage.format, base64: stage.base64});
@@ -173,12 +176,14 @@ const checkDevice: PayloadCheck = message => {
   if (record.lastTransmission.status === 'known' && after(message, record.lastTransmission.transmittedAtMs)) {
     return 'payload /lastTransmission/transmittedAtMs after time';
   }
-  const readbacks = record.brightnessReadbacks ?? [];
-  if (new Set(readbacks.map(readback => readback.requestId)).size !== readbacks.length) return 'payload /brightnessReadbacks duplicate request';
-  for (const {transmittedAtMs, reading} of readbacks) {
-    if (after(message, transmittedAtMs)) return 'payload /brightnessReadbacks transmission after time';
-    if (reading.status === 'known' && (reading.observedAtMs < transmittedAtMs || after(message, reading.observedAtMs))) {
-      return 'payload /brightnessReadbacks observation outside evidence time';
+  for (const field of ['brightnessReadbacks', 'powerReadbacks'] as const) {
+    const readbacks = record[field] ?? [];
+    if (new Set(readbacks.map(readback => readback.requestId)).size !== readbacks.length) return `payload /${field} duplicate request`;
+    for (const {transmittedAtMs, reading} of readbacks) {
+      if (after(message, transmittedAtMs)) return `payload /${field} transmission after time`;
+      if (reading.status === 'known' && (reading.observedAtMs < transmittedAtMs || after(message, reading.observedAtMs))) {
+        return `payload /${field} observation outside evidence time`;
+      }
     }
   }
   // A hold begins no later than the message that reports it, and a held device is not presented as available.
@@ -205,6 +210,7 @@ export const deviceFamilies: readonly PayloadFamily[] = [
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.3'),
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.4'),
   defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.5'),
+  defineFamily('device', 'state', 'org.bunny.device.updated', checkDevice, '2.6'),
   defineFamily('power-set', 'command', 'org.bunny.power.set.requested', checkCommand),
   defineFamily('brightness-set', 'command', 'org.bunny.brightness.set.requested', checkCommand),
   defineFamily('scene-activate', 'command', 'org.bunny.scene.activate.requested', checkCommand),

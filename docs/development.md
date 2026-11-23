@@ -138,6 +138,14 @@ disposable browser exercise checks both confirmation timings, the link to the
 original reply and one write per approval. The Companions test verifies
 recovery when the reader restarts.
 
+Wemo power confirmation (#1991) adds on, off, delayed and held-uncertain
+replies to the existing Conversation browser group. Run `npm run test:wemo:built`,
+`npm run test:wemo:browser`, `npm run test:runtime:scenarios:built` and
+`node apps/runtime/dashboard/tests/lifx-conversation.browser.ts` after the
+root build, alongside the event contracts and Companions checks above.
+The Wemo power-limit journey verifies the existing timing, hold and writer
+protections on synthetic plugs.
+
 Art-derived decoration (#683) uses `npm run test:art-theme:browser` after the
 root build, in the existing App verification runtime group and full local
 dashboard browser suite. Bounded palette and preference cases are discovered

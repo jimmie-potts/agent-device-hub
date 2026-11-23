@@ -72,7 +72,7 @@ test('each device family has one kind and one type, named after the family, and 
   const types = new Map();
   for (const {family, kind, type, dataschema, schema} of deviceFamilies) {
     assert.equal(schema.$id, dataschema, family);
-    assert.match(dataschema, new RegExp(`^https://bunny\\.invalid/events/${family}/2\\.[012345]$`));
+    assert.match(dataschema, new RegExp(`^https://bunny\\.invalid/events/${family}/2\\.[0123456]$`));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
     for (const uri of refs(schema)) assert.ok(profile(uri) || known(uri), `${family}: ${uri}`);
     // org.bunny.<entity>.<verb>.requested: the family's last hyphenated word is the verb, as for mode-set and moment-play.
@@ -83,7 +83,7 @@ test('each device family has one kind and one type, named after the family, and 
     types.set(type, family);
   }
   assert.deepEqual(deviceFamilies.map(({dataschema}) => dataschema.replace('https://bunny.invalid/events/', '')),
-    ['device/2.0', 'device/2.1', 'device/2.2', 'device/2.3', 'device/2.4', 'device/2.5', 'power-set/2.0', 'brightness-set/2.0', 'scene-activate/2.0', 'zone-power-set/2.0', 'media-start/2.0',
+    ['device/2.0', 'device/2.1', 'device/2.2', 'device/2.3', 'device/2.4', 'device/2.5', 'device/2.6', 'power-set/2.0', 'brightness-set/2.0', 'scene-activate/2.0', 'zone-power-set/2.0', 'media-start/2.0',
       'media-control/2.0', 'device-mode-set/2.0']);
   assert.throws(() => registerDeviceFamilies(v), /already registered/);
   assert.throws(() => registerDeviceFamilies(new MessageValidator()), /session\/2\.0/, 'the device label uses the session display text');
@@ -308,4 +308,23 @@ test('device 2.5 carries bounded request-linked brightness evidence from a post-
   assert.equal(v.validate(message, {nowMs: now}).ok, true);
   message.dataschema = 'https://bunny.invalid/events/device/2.4';
   assert.equal(v.validate(message, {nowMs: now}).ok, false, 'closed older device schema');
+});
+
+test('device 2.6 distinguishes Wemo readback from the requested switch setting', () => {
+  const v = validator();
+  const message = structuredClone(Object.values(fixtures.valid).find(record => record.kind === 'state' && record.data.kind === 'pixoo'));
+  const now = Date.parse(message.time);
+  const {data} = message;
+  message.dataschema = 'https://bunny.invalid/events/device/2.6';
+  data.kind = 'wemo';
+  message.source = 'bunny/modules/wemo';
+  const readback = {requestId: 'power-on', configurationRevision: data.configurationRevision, generation: data.generation,
+    requestedOn: true, transmittedAtMs: now - 5, reading: {status: 'known', on: false, observedAtMs: now}};
+  data.powerReadbacks = [readback];
+  assert.equal(v.validate(message, {nowMs: now}).ok, true);
+  readback.reading.on = 0;
+  assert.equal(v.validate(message, {nowMs: now}).ok, false);
+  readback.reading.on = false;
+  message.dataschema = 'https://bunny.invalid/events/device/2.5';
+  assert.equal(v.validate(message, {nowMs: now}).ok, false);
 });

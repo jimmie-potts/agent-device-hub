@@ -368,6 +368,15 @@ with saved messages and readbacks intact before qualifying the forward batch.
 Recovery to an earlier revision needs its own assessment of pending watches
 and retained device state.
 
+## Wemo power confirmation (#1991)
+
+The Wemo store retains bounded readbacks in the existing plug record. Earlier
+records have no readbacks. A pending read at startup becomes unavailable, with
+the transmitted outcome and any uncertain-write hold preserved. Companions
+reads earlier brightness watches alongside power watches. Before a forward
+batch, verify that both stores reopen and that the core retains the original
+maximum-on timing. Assess earlier readers on the selected recovery revision.
+
 ## Native assistant conversation sessions (#505)
 
 The #505 release reports each B.U.N.N.Y. assistant profile's conversation as

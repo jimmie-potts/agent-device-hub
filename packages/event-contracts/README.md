@@ -491,6 +491,16 @@ external-control reading or transmission after the envelope `time`, pending
 kinds that disagree with the pending count, and a general command whose
 `subject` is not a device ID.
 
+#### Request-linked device readback
+
+`device/2.5` adds optional `brightnessReadbacks`. `device/2.6` also carries
+optional `powerReadbacks`. Each list has at most 32 entries. The entry binds
+one acknowledged transmission to the request, device configuration and
+generation, and requested value. A reading is pending, unavailable or known
+with the value and its evidence time. Only a known reading dated from the
+transmission onward can confirm what the device reported for that request.
+The existing command outcome keeps its own evidence and identity.
+
 #### Held devices (`device/2.1`)
 
 A module holds a device after a write that may have reached it but went

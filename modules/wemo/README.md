@@ -32,14 +32,18 @@ its native saved rules or upgrade firmware. Avoid competing app/rule writers.
 
 The module verifies identity and same-origin service paths before every power
 write. Each plug has its own bounded queue and private writer lease. Five-second
-reads publish `device/2.1` observed power; unavailable or stale evidence never
+reads publish observed power through device state, unavailable or stale evidence never
 means off. The shared Wemo card selects On/Off from plug-reported power and keeps
 desired power, observation age and transmission evidence separately in its
 collapsed Device evidence disclosure. Its lamp/plug illustration identifies the
 load. A successful SOAP reply establishes transmission, not visible lamp output.
 
 Commands use generic `power-set/2.0` through the core's tracked dispatcher. Durable
-request fences prevent duplicate effects and restart replay. A write whose reply
+request fences prevent duplicate effects and restart replay. After an
+acknowledged core write, the same queue reads the plug once with a two-second
+budget. A queued shutoff takes priority and can make readback unavailable. The owner publishes the result and the exact request binding through
+`device/2.6` while it has recent readbacks. On restart an interrupted read
+retires as unavailable and the acknowledged transmission remains saved. A write whose reply
 is lost creates a persistent hold. Polling, startup and schedules cannot clear it.
 The card's explicit **Release Wemo hold** command carries the exact held request,
 configuration revision and generation; it performs a fresh identity/power read

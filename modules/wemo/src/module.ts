@@ -1,7 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {errorBody,type ErrorBody,type ErrorCode,type MessageValidator} from '@jimmie-potts/event-contracts/v2';
-import type {CompletedOutcome,DeviceRecord,PowerSetRequest} from '@jimmie-potts/event-contracts/v2/devices';
+import {DEVICE_POWER_READBACK_SCHEMA, DEVICE_READBACK_TTL_MS, MAX_DEVICE_READBACKS, type CompletedOutcome, type DeviceRecord, type PowerReadback, type PowerSetRequest} from '@jimmie-potts/event-contracts/v2/devices';
 import {recordLog, DeviceAvailability,fullDisk,Outbox,type AddMessage,type BunnyModule,type Cancel,type Command,type ModuleContext,type Reply,type TraceContext, Outcome} from '@jimmie-potts/sdk';
 import {configureWemo,type WemoConfig} from './configuration.js';
 import {wemoValidator,RELEASE,RELEASE_SCHEMA,RELEASE_TYPE} from './families.js';
@@ -9,10 +9,14 @@ import {acquireLease,type Lease} from './lease.js';
 import {canonical,WemoStore,type Row} from './store.js';
 import {WemoTransport,type Plug,type PlugTransport,type Observation,type Attempt} from './transport.js';
 export const POLL_MS=5000,STALE_MS=15000,MAX_PENDING=8,ACTION_LIMIT_MS=5000;
+const POWER_READBACK_MS = 2000;
+const deviceDraft = (record: DeviceRecord) => ({type: 'org.bunny.device.updated', subject: record.id,
+  dataschema: record.powerReadbacks === undefined ? 'https://bunny.invalid/events/device/2.1' : DEVICE_POWER_READBACK_SCHEMA, data: record});
 const unknown={status:'unknown'} as const,unsupported={supported:false} as const;
 type Input=PowerSetRequest&{heldRequestId?:string};
 type Pending={command:Command<Input>;family:string};
-type Target={config:Plug;transport:PlugTransport;record:DeviceRecord;lease?:Lease;pending:Map<string,Pending>;queue:Array<Pending|'poll'>;running?:Promise<void>;poll?:Cancel;stale?:Cancel;pollQueued:boolean};
+type Target={config:Plug;transport:PlugTransport;record:DeviceRecord;lease?:Lease;pending:Map<string,Pending>;queue:Array<Pending|'poll'>;running?:Promise<void>;poll?:Cancel;stale?:Cancel;pollQueued:boolean;readbackAbort?: AbortController};
+const isShutoff = (work: Pending | 'poll'): boolean => work !== 'poll' && work.family === 'power-set' && !work.command.data.on;
 const completed=(id:string,code:ErrorCode,uncertain=false):CompletedOutcome=>({requestId:id,result:uncertain?Outcome.uncertain:Outcome.failed,evidence:Outcome.none,error:errorBody(code,{detail:uncertain?'the Wemo write is uncertain and will not be replayed':'Wemo work ended without a confirmed effect'}).error});
 const typeOf=(family:string)=>family===RELEASE?RELEASE_TYPE:'org.bunny.power.set.requested';
 export function createWemoModule(options:{transport?:(plug:Plug)=>PlugTransport}={}):BunnyModule<WemoConfig>{
@@ -32,6 +36,9 @@ class Owner {
         availability:locked.status==='held'?previous?.held===undefined?'unknown':'degraded':'unavailable',...(previous?.held===undefined?{}:{held:previous.held}),
         capabilities:{power:{supported:true},brightness:unsupported,modes:unsupported,moments:unsupported,media:unsupported,scenes:unsupported,zones:unsupported,preview:unsupported},
         desired:previous?.desired??{power:unknown,brightness:unknown,mode:unknown},observed:unknown,pending:0,pendingKinds:[],lastOutcome:previous?.lastOutcome??unknown,lastTransmission:previous?.lastTransmission??unknown,externalControl:unknown};
+      const retained = previous?.powerReadbacks?.filter(readback => readback.transmittedAtMs > context.clock.now() - DEVICE_READBACK_TTL_MS)
+        .map(readback => readback.reading.status === 'pending' ? {...readback, reading: {status: 'unavailable' as const}} : readback);
+      if (retained !== undefined && retained.length > 0) record.powerReadbacks = retained;
       this.#targets.set(config.id,{config,transport:factory?.(config)??new WemoTransport(config),record,...(locked.status==='held'?{lease:locked.lease}:{}),pending:new Map(),queue:[],pollQueued:false});
     }
   }
@@ -39,7 +46,7 @@ class Owner {
     for(const target of this.#targets.values())for(const family of ['power-set',RELEASE])await this.#context.sdk.respond<Input>(`bunny.cmd.${family}.${target.config.id}`,command=>{
       const work=this.#admitting.then(()=>this.#accept(family,command));this.#admitting=work.then(()=>{},()=>{});return work;
     });
-    await this.#context.sdk.serveSync(['device'],()=>({revision:this.#store.revision(),states:[...this.#targets.values()].map(target=>({type:'org.bunny.device.updated',subject:target.config.id,dataschema:'https://bunny.invalid/events/device/2.1',data:structuredClone(target.record)}))}));
+    await this.#context.sdk.serveSync(['device'],()=>({revision:this.#store.revision(),states:[...this.#targets.values()].map(target => deviceDraft(structuredClone(target.record)))}));
     await this.#outbox.republish();
     for(const row of this.#store.unfinished()){
       const target=this.#targets.get(row.target);
@@ -50,8 +57,11 @@ class Owner {
   }
   #record(add:AddMessage,target:Target,parent?:TraceContext):void{
     target.record.revision=this.#store.next();target.record.pending=target.pending.size;target.record.pendingKinds=[...new Set([...target.pending.values()].map(v=>v.family))];
+    const retained = target.record.powerReadbacks?.filter(readback => readback.transmittedAtMs > this.#context.clock.now() - DEVICE_READBACK_TTL_MS);
+    if (retained === undefined || retained.length === 0) delete target.record.powerReadbacks;
+    else target.record.powerReadbacks = retained;
     this.#store.deviceSave(target.record);
-    add(`bunny.state.device.${target.config.id}`,{kind:'state',type:'org.bunny.device.updated',subject:target.config.id,dataschema:'https://bunny.invalid/events/device/2.1',data:target.record},parent===undefined?{}:{parent});
+    add(`bunny.state.device.${target.config.id}`, {kind: 'state', ...deviceDraft(target.record)}, parent === undefined ? {} : {parent});
   }
   #transaction(work:(add:AddMessage)=>void,target?:Target,parent?:TraceContext,requestId?:string):Promise<void>{
     const task=this.#committing.then(async()=>{
@@ -87,16 +97,22 @@ class Owner {
       this.#store.save({requestId:id,target:target.config.id,family,digest,traceparent:command.traceparent,state:'accepted'});
       target.pending.set(id,{family,command});this.#record(add,target,command);accepted=true;answer={status:'accepted'};
     },target,command,command.data.requestId);}catch(error){target.pending.delete(id);return errorBody(fullDisk(error)?'capacity':'internal');}
-    if(accepted){recordLog(this.#context.log, 'command.queued',{'bunny.device.id':target.config.id,'bunny.request.id':id},command);target.queue.push({family,command});this.#drain(target);}
+    if (accepted) {
+      recordLog(this.#context.log, 'command.queued', {'bunny.device.id': target.config.id, 'bunny.request.id': id}, command);
+      const work = {family, command};
+      target.queue.push(work);
+      if (isShutoff(work)) target.readbackAbort?.abort();
+      this.#drain(target);
+    }
     return answer;
   }
   #drain(target:Target):void{
     if(target.running!==undefined)return;
     target.running=(async()=>{await Promise.resolve();while(!this.#stopped){const next=target.queue.shift();if(next===undefined)break;if(next==='poll'){target.pollQueued=false;await this.#read(target);}else await this.#execute(target,next);}})().catch(()=>{this.#storageFailed(target);}).finally(()=>{delete target.running;});
   }
-  #bounded<T>(work:(signal:AbortSignal)=>Promise<T>,ms:number):Promise<T>{
+  #bounded<T>(work:(signal:AbortSignal)=>Promise<T>,ms:number, stop?: AbortSignal):Promise<T>{
     const controller=new AbortController(),cancel=this.#context.scheduler.after(ms,()=>controller.abort());
-    const signal=AbortSignal.any([controller.signal,this.#context.signal,this.#stop.signal]);
+    const signal=AbortSignal.any([controller.signal,this.#context.signal,this.#stop.signal, ...(stop === undefined ? [] : [stop])]);
     return (async()=>{let abort:()=>void=()=>{};try{signal.throwIfAborted();return await Promise.race([work(signal),new Promise<never>((_,reject)=>{abort=()=>reject(new Error('Wemo deadline'));signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();})]);}finally{signal.removeEventListener('abort',abort);cancel();controller.abort();}})();
   }
   async #execute(target:Target,pending:Pending):Promise<void>{
@@ -124,25 +140,61 @@ class Owner {
     }catch{attempt={result:release?Outcome.failed:Outcome.uncertain,evidence:Outcome.none,code:release?'unavailable':'uncertain-result',connection:'unknown'};}
     trace.end(attempt.result===Outcome.succeeded?'unset':'error');
     const outcome:CompletedOutcome={requestId:row.requestId,result:attempt.result,evidence:release&&attempt.result===Outcome.succeeded?Outcome.observed:attempt.evidence,...(attempt.code===undefined?{}:{error:errorBody(attempt.code).error})};
-    await this.#finish(target,row,outcome,attempt.connection,release?undefined:command.data.on);
+    const readback: PowerReadback | undefined = !release && command.source === 'bunny/core' &&
+      outcome.result === Outcome.succeeded && outcome.evidence === Outcome.transmitted ? {
+        requestId: row.requestId, requestedOn: command.data.on, transmittedAtMs: this.#context.clock.now(), reading: {status: target.queue.some(isShutoff) ? 'unavailable' : 'pending'},
+        configurationRevision: command.data.expectedConfigurationRevision ?? target.record.configurationRevision,
+        generation: command.data.expectedGeneration ?? structuredClone(target.record.generation),
+      } : undefined;
+    await this.#finish(target, row, outcome, attempt.connection, release ? undefined : command.data.on, readback);
+    if (readback?.reading.status === 'pending') await this.#readback(target, row, readback);
   }
-  async #finish(target:Target,row:Row,outcome:CompletedOutcome,connection?:Attempt['connection'],desired?:boolean):Promise<void>{
+  async #readback(target: Target, row: Row, readback: PowerReadback): Promise<void> {
+    if (this.#stopped || this.#storageDown) return;
+    let observation: Observation | undefined;
+    const remaining = POWER_READBACK_MS - (this.#context.clock.now() - readback.transmittedAtMs);
+    // The original deadline of a queued shutoff takes priority over an optional read.
+    if (remaining > 0 && !target.queue.some(isShutoff)) {
+      const interrupt = target.readbackAbort = new AbortController();
+      const probe = this.#context.trace.start('bunny.device.call', {parent: row, kind: 'client',
+        attributes: {'bunny.device.id': target.config.id, 'bunny.operation': 'snapshot', 'bunny.request.id': row.requestId}});
+      try {observation = await this.#bounded(signal => target.transport.read(signal), remaining, interrupt.signal);}
+      catch { /* An unavailable read leaves the acknowledged transmission intact. */ }
+      finally {
+        delete target.readbackAbort;
+        probe.end(observation === undefined ? 'error' : 'unset');
+      }
+    }
+    if (this.#stopped || this.#storageDown) return;
+    const now = this.#context.clock.now();
+    const reading: PowerReadback['reading'] = observation === undefined ? {status: 'unavailable'}
+      : {status: 'known', on: observation.power, observedAtMs: now};
+    try {
+      await this.#transaction(add => {
+        if (observation !== undefined) this.#observation(target, observation, now);
+        target.record.powerReadbacks = target.record.powerReadbacks?.map(value => value.requestId === row.requestId ? {...value, reading} : value) ?? [];
+        this.#record(add, target, row);
+      }, target, row, row.requestId);
+    } catch { /* The storage fence is recorded and restart retires the pending read. */ }
+  }
+  async #finish(target:Target,row:Row,outcome:CompletedOutcome,connection?:Attempt['connection'],desired?:boolean, readback?: PowerReadback):Promise<void>{
     target.pending.delete(row.requestId);
     try{await this.#transaction(add=>{
       this.#store.save({...row,state:'done',outcome});target.record.lastOutcome={status:'known',outcome};
       if(outcome.result===Outcome.uncertain){target.record.held={requestId:row.requestId,heldAtMs:this.#context.clock.now()};target.record.observed=unknown;target.record.availability='degraded';}
       else if(connection==='unavailable'){target.record.observed=unknown;target.record.availability='unavailable';target.record.generation.sequence++;}
       if(outcome.result===Outcome.succeeded&&desired!==undefined)target.record.desired.power={status:'known',value:desired};
-      if(outcome.evidence===Outcome.transmitted)target.record.lastTransmission={status:'known',requestId:row.requestId,transmittedAtMs:this.#context.clock.now(),operationIds:[]};
+      if(outcome.evidence===Outcome.transmitted)target.record.lastTransmission={status:'known',requestId:row.requestId,transmittedAtMs:readback?.transmittedAtMs ?? this.#context.clock.now(),operationIds:[]};
+      if (readback !== undefined) target.record.powerReadbacks = [readback, ...(target.record.powerReadbacks ?? [])].slice(0, MAX_DEVICE_READBACKS);
       this.#record(add,target,row);
       add(`bunny.event.${row.family}.${row.target}`,{kind:'outcome',type:typeOf(row.family).replace(/\.requested$/,'.completed'),subject:row.target,dataschema:'https://bunny.invalid/events/outcome/2.0',data:outcome},{parent:row});
     },target,row,row.requestId);}catch{/* The transaction recorded the storage fence; never replay. */}
   }
-  #observation(target:Target,value:Observation|undefined):void{
+  #observation(target:Target,value:Observation|undefined, observedAtMs = this.#context.clock.now()):void{
     const before=target.record.availability,next=target.lease===undefined?'unavailable':value===undefined?'unavailable':target.record.held===undefined?'available':'degraded';
     if(before!==next)target.record.generation.sequence++;
     target.record.availability=next;
-    target.record.observed=value===undefined?unknown:{status:'known',observedAtMs:this.#context.clock.now(),power:{status:'known',value:value.power},brightness:unknown};
+    target.record.observed=value===undefined?unknown:{status:'known',observedAtMs,power:{status:'known',value:value.power},brightness:unknown};
   }
   #schedule(target:Target,delay=POLL_MS):void{
     if(this.#stopped||this.#storageDown)return;target.poll=this.#context.scheduler.after(delay,()=>{if(this.#stopped||target.pollQueued)return;target.pollQueued=true;target.queue.push('poll');this.#drain(target);});
