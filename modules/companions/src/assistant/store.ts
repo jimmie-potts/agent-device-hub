@@ -32,16 +32,19 @@ export type ConversationPage = {version: 1; conversationId: string | null; messa
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = TranscriptItem & {effect: string};
 type RecordRow = {record: string};
-type MessageRow = Omit<ConversationMessage, 'attachment' | 'follows'> & {follows: string | null} & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
-  artStatus: Call['status'] | null; artResult: string | null; attachmentSaved: number | null};
+type MessageRow = Omit<ConversationMessage, 'attachment' | 'follows' | 'playbackUncertain'> & {follows: string | null} & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
+  artStatus: Call['status'] | null; artResult: string | null; attachmentSaved: number | null; playbackUncertain: number};
 const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg.role,msg.text,msg.at_ms AS atMs,msg.follows,
   art.request_id AS artRequestId,art.description AS artDescription,intent.targets AS artTargets,json_extract(call.record, '$.status') AS artStatus,
-  json_extract(call.record, '$.result') AS artResult,json_extract(call.record, '$.attachmentSaved') AS attachmentSaved
+  json_extract(call.record, '$.result') AS artResult,json_extract(call.record, '$.attachmentSaved') AS attachmentSaved,
+  EXISTS (SELECT 1 FROM assistant_confirmations c WHERE c.task_id=msg.task_id AND json_extract(c.record, '$.follows')=msg.id
+    AND json_extract(c.record, '$.artwork') IS NOT NULL AND json_extract(c.record, '$.uncertain')=1) AS playbackUncertain
   FROM assistant_messages msg LEFT JOIN assistant_art_attachments art ON art.message_id=msg.id
   LEFT JOIN assistant_art_intents intent ON intent.request_id=art.request_id
   LEFT JOIN assistant_calls call ON call.id=CASE WHEN msg.role='owner' THEN msg.task_id||'-step-0' ELSE art.request_id END`;
-function messageOf({artRequestId, artDescription, artTargets, artStatus, artResult, attachmentSaved, follows, ...row}: MessageRow): ConversationMessage {
-  const message = follows === null ? row : {...row, follows};
+function messageOf({artRequestId, artDescription, artTargets, artStatus, artResult, attachmentSaved, follows, playbackUncertain, ...row}: MessageRow): ConversationMessage {
+  const message: ConversationMessage = {...row, ...(follows === null ? {} : {follows}),
+    ...(playbackUncertain === 1 ? {playbackUncertain: true} : {})};
   if (artRequestId === null || artDescription === null) return message;
   const receipt = {kind: 'artwork' as const, requestId: artRequestId, description: artDescription,
     ...(artTargets === null ? {} : {showTargets: JSON.parse(artTargets) as string[]})};

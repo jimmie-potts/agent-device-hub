@@ -368,6 +368,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                 }}>Update to earlier reply</a>
                 : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
               {message.text !== '' && <p className="conversation-message-text" dir="auto">{message.text}</p>}
+              {message.playbackUncertain === true && <p role="status">Playback result uncertain.</p>}
               {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
                 connected={connected} allowShow={live && state?.enabled === true && (message.role === 'owner' ? message.attachment.admission === 'accepted' : state.tools.includes('control_art_show'))} attachment={message.attachment}
                 artRevision={art?.revision}/>}

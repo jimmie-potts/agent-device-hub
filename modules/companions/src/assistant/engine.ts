@@ -302,7 +302,13 @@ export class AssistantEngine {
             this.#publish(add, {traceparent: current.traceparent});
           }
           this.store.dropConfirmation(current.requestId);
-        } else this.store.saveConfirmation({...current, ...evidence});
+        } else {
+          this.store.saveConfirmation({...current, ...evidence});
+          if (evidence.uncertain === true && current.uncertain !== true && current.follows !== undefined && 'artwork' in current) {
+            this.store.touch(this.#task(current.taskId).conversationId);
+            this.#publish(add, {traceparent: current.traceparent});
+          }
+        }
       });
       return evidence.result !== undefined;
     }).catch(() => {

@@ -1543,25 +1543,28 @@ for (const cancel of [false, true]) void test(`attached artwork gets one later r
   const moment: OperationRecord = {...parent, id: operationEntityId(surface.momentRequestId), requestId: surface.momentRequestId,
     family: 'moment-play', command: 'org.bunny.moment.play.requested', target: 'display-blue',
     requestedBy: 'bunny/core', status: 'uncertain', result: 'uncertain', evidence: 'none'};
-  operations = [parent, moment];
-  for (const operation of operations) await w.core.publish(`bunny.state.operation.${operation.id}`, {kind: 'state', ...draft(operation)});
-  await until(() => w.store().confirmation(requestId)?.uncertain === true);
   if (cancel) {
     assert.equal((await control(w.core, w.module(), 'cancel', task(w)?.taskId)).status, 'accepted');
     await until(() => status(w) === 'cancelled');
   } else {
     w.advance(1100);
     await until(() => status(w) === 'succeeded');
-    assert.match(w.store().page('bunny', 0).messages.at(-1)?.text ?? '', /Playback.*is uncertain/);
+    assert.match(w.store().page('bunny', 0).messages.at(-1)?.text ?? '', /Playback confirmation.*is pending/);
   }
   const follows = w.store().confirmation(requestId)?.follows;
   assert.ok(follows !== undefined);
+  operations = [parent, moment];
+  for (const operation of operations) await w.core.publish(`bunny.state.operation.${operation.id}`, {kind: 'state', ...draft(operation)});
+  await until(() => w.store().page('bunny', 0).messages.some(message => message.id === follows && message.playbackUncertain === true));
+  assert.equal(w.store().page('bunny', 0).messages.filter(message => message.follows === follows).length, 0);
   await w.restart(() => {
     operations = [parent, {...moment, revision: 2, status: 'completed', result: 'succeeded', evidence: 'transmitted'}];
   });
   await until(() => w.store().confirmations().length === 0);
   await w.restart();
-  const updates = w.store().page('bunny', 0).messages.filter(message => message.follows === follows);
+  const messages = w.store().page('bunny', 0).messages;
+  assert.equal(messages.find(message => message.id === follows)?.playbackUncertain, undefined);
+  const updates = messages.filter(message => message.follows === follows);
   assert.deepEqual(updates.map(message => message.text), ['Sent the artwork to Blue panel (display-blue).']);
   assert.equal(requests.length, 2);
   assert.equal(provider.calls(), 0);

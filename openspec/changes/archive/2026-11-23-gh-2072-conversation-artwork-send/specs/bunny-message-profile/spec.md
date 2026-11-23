@@ -16,5 +16,5 @@ The authenticated Conversation Send request SHALL bind one attachment reference 
 
 #### Scenario: A lost acknowledgment settles later
 - **WHEN** a save acknowledgment is lost or a display phase is temporarily uncertain, and its tracked owner evidence becomes definitive
-- **THEN** the original exchange receives the result without replaying a save or show
+- **THEN** the original exchange shows any known playback uncertainty while waiting and receives the definitive result without replaying a save or show
 - **AND** a late library success leaves the saved attachment available for a fresh owner display choice
