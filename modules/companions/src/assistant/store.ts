@@ -117,8 +117,8 @@ export class AssistantStore {
   /** Counts a change of the conversation other than a task's, such as the owner's rename, at the next `bump`. */
   touch(conversationId: string): void {this.#changed.add(conversationId);}
   /**
-   * Counts every saved conversation as changed at the current revision, once per start: a command bound to a revision read
-   * before the start is refused as the one assistant-wide revision refused it, whatever rows an earlier release left.
+   * Counts every saved conversation as changed at the current revision, once per start: a command naming an older revision
+   * is refused, whatever rows an earlier release left; one naming the revision at start depends on its conversation's changes.
    */
   restarted(): void {
     this.database.prepare(`INSERT INTO assistant_conversation_changes SELECT id,(SELECT revision FROM assistant_meta WHERE id=1) FROM assistant_conversations WHERE true

@@ -7,7 +7,7 @@
 
 ### Requirement: Durable explicit task activation
 
-The system SHALL preserve inspectable, versioned conversations, messages, tasks, questions, answers, runs and logical call receipts in the companions-owned database. Conversation/task/question identity SHALL survive restart; each activation SHALL use a new run identity. Profile threads for B.U.N.N.Y., Reachy and MicroDuck SHALL remain distinct. Startup SHALL reconcile each conversation's saved state separately without executing work. A recovery that fails SHALL leave only its own conversation unavailable, refusing its answers, resumes and new tasks until the next start, while the others keep working, and SHALL save one assistant message in that conversation for each failed start saying that its saved progress could not be restored, that Cancel task works and that a restart tries the recovery again.
+The system SHALL preserve inspectable, versioned conversations, messages, tasks, questions, answers, runs and logical call receipts in the companions-owned database. Conversation/task/question identity SHALL survive restart; each activation SHALL use a new run identity. Profile threads for B.U.N.N.Y., Reachy and MicroDuck SHALL remain distinct. Startup SHALL reconcile each conversation's saved state separately without executing work. A recovery that fails SHALL leave only its own conversation unavailable, refusing its answers, resumes and new tasks until the next start, while the others keep working, and SHALL save one assistant message in that conversation for each failed start saying that its saved progress could not be restored, that the task can be cancelled but new messages there wait until B.U.N.N.Y. restarts, and that the restart tries the recovery again.
 
 #### Scenario: Question survives restart
 - **WHEN** a task pauses for clarification and the process stops
@@ -27,7 +27,7 @@ The system SHALL preserve inspectable, versioned conversations, messages, tasks,
 
 #### Scenario: A recovery fails in one conversation
 - **WHEN** one conversation's saved graph state cannot be read at startup while two others wait on their questions
-- **THEN** that conversation's task is recovered unavailable, its conversation shows one message naming the cause, Cancel task and a restart, and it refuses an answer and, after a cancel, a new task until the next start, while the assistant stays available and the other two are answered and finish
+- **THEN** that conversation's task is recovered unavailable, its conversation shows one message naming the cause, that the task can be cancelled and that new messages wait for a restart, and it refuses an answer and, after a cancel, a new task until the next start, while the assistant stays available and the other two are answered and finish
 - **AND** a later start whose recovery succeeds writes no such message
 
 ### Requirement: Bounded execution per conversation
@@ -61,8 +61,9 @@ The system SHALL admit at most one unfinished task and one graph invocation per 
 - **THEN** the first is accepted and the second is refused as a revision conflict, while a rename of another conversation naming that revision is accepted
 
 #### Scenario: A command from before a restart
-- **WHEN** the runtime restarts after the owner read the page, and a command for a finished conversation names the revision read before the restart
-- **THEN** it is refused as a revision conflict, and the same command naming the current revision is accepted
+- **WHEN** the runtime restarts after the owner read the page and another conversation changed, and a command for a finished conversation names the revision the owner read
+- **THEN** it is refused as a revision conflict, because that revision is older than the assistant's revision when it started, and the same command naming the current revision is accepted
+- **AND** a command naming the revision at start is refused only when its conversation changed at startup, as a reconciled unfinished task does
 
 #### Scenario: Cancel one conversation
 - **WHEN** the owner cancels one conversation's task while all three have model calls in flight

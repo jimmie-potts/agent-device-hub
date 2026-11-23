@@ -365,7 +365,7 @@ void test('a rename counts as a change of its conversation, so a second rename b
   assert.equal((await w.control('rename', {profile: 'bunny', title: 'Synthetic other title', expectedRevision: seen})).status, 'accepted', 'another conversation is unaffected');
 });
 
-void test('a start counts every conversation as changed then, so a command bound to an earlier revision is refused once', async context => {
+void test('a start counts every conversation as changed at its revision, so a command naming an older revision is refused', async context => {
   const providers = three(), w = await world(context, withProviders(providers));
   await w.control('enable');
   await w.send('bunny', 'Synthetic bunny request');

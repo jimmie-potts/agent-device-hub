@@ -256,8 +256,8 @@ The #2027 release lets each assistant conversation run its own task at the
 same time. It adds the `assistant_conversation_changes` table, which records
 the assistant revision of each conversation's last change, so a command is
 refused as stale only when its own conversation changed. Each start raises
-every saved conversation to at least the current revision, so a command bound
-to a revision read before the start is refused as before. No record is
+every saved conversation to at least the revision at start, so a command naming
+an older revision is refused, as is one whose conversation changed at startup. No record is
 rewritten.
 
 An earlier release keeps one running slot and reconciles only one unfinished
