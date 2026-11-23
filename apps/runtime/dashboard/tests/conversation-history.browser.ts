@@ -78,8 +78,14 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     // The profiles are chosen in the rail (Hub #1890).
     await chooseConversation(page, 'reachy');
     await panel.getByText('No saved messages for this profile yet.', {exact: true}).waitFor();
+    // Another conversation's unfinished task never holds this one's composer (Hub #2027).
+    const reachyDraft = panel.getByRole('textbox', {name: 'Message', exact: true});
     assert.equal(await panel.getByRole('button', {name: 'Send', exact: true}).isDisabled(), true);
-    await panel.getByRole('button', {name: 'Go to B.U.N.N.Y. task', exact: true}).click();
+    await reachyDraft.fill('Synthetic Reachy draft');
+    assert.equal(await panel.getByRole('button', {name: 'Send', exact: true}).isDisabled(), false);
+    assert.equal(await panel.getByText('Finish or cancel', {exact: false}).count(), 0);
+    await reachyDraft.fill('');
+    await chooseConversation(page, 'bunny');
     assert.equal(await answerDraft.inputValue(), 'Synthetic answer draft');
     let release = (): void => {};
     const hold = new Promise<void>(resolve => {release = resolve;});
@@ -91,7 +97,7 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     try {
       await (await conversationLink(page, 'reachy')).click();
       await held;
-      await panel.getByRole('button', {name: 'Go to B.U.N.N.Y. task', exact: true}).click();
+      await (await conversationLink(page, 'bunny')).click();
       await answerDraft.waitFor();
       const late = page.waitForEvent('requestfinished', {predicate: request => request.url().includes('profile=reachy&view=recent')});
       release();

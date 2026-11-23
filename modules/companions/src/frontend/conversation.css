@@ -98,6 +98,15 @@
   border-block-start: 1px solid var(--edge-faint);
 }
 
+.conversation-unfinished ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
 .conversation-rename {
   display: flex;
   flex-wrap: wrap;

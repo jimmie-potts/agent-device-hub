@@ -5,6 +5,7 @@ import type {FrontendUi} from '@jimmie-potts/sdk/frontend';
 import {LIMITS} from '../assistant/limits.js';
 import type {SpendView} from '../assistant/spend-contract.js';
 import {priceText, spendText} from './conversation-spend.js';
+import {profiles} from './conversation-rail.js';
 
 /** The longest owner title, as the session label bound (Hub #2025). */
 const TITLE_CHARS = 80;
@@ -52,13 +53,15 @@ function titleOrigin(title: ConversationTitle, profileName: string, synthetic: b
 
 export function ConversationDetails({
   id, open, overlay, onClose, stopSpeaking,
-  Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, setEnabled, title, rename,
+  Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, goTo, setEnabled, title, rename,
 }: {
   id: string; open: boolean; overlay: boolean; onClose: () => void; stopSpeaking: React.JSX.Element | null;
   Facts: FrontendUi['Facts']; profile: AssistantProfile; profileName: string;
   state: AssistantState | undefined; task: AssistantTaskSummary | undefined; coding: CodingState | undefined; live: boolean;
   spend: SpendView | undefined;
-  savedQuestion: React.ReactNode; receipt: string | undefined; locked: boolean; unfinished: boolean;
+  savedQuestion: React.ReactNode; receipt: string | undefined; locked: boolean;
+  /** The profiles whose conversation has an unfinished task, which keep the one switch from turning off (Hub #2027). */
+  unfinished: readonly AssistantProfile[]; goTo: (profile: AssistantProfile) => void;
   setEnabled: (action: 'enable' | 'disable') => void;
   title: ConversationTitle | undefined; rename: (title: string) => void;
 }): React.JSX.Element {
@@ -164,9 +167,14 @@ export function ConversationDetails({
         <summary>Conversation settings</summary>
         {enabled === undefined ? <p>Conversation settings are unavailable.</p> : <>
           <p>{lastKnown ? 'Last known setting: ' : 'Conversation is '}{enabled ? 'on' : 'off'}.</p>
-          <button type="button" className="secondary" disabled={locked || (enabled && unfinished)}
+          <button type="button" className="secondary" disabled={locked || (enabled && unfinished.length > 0)}
             onClick={() => {setEnabled(enabled ? 'disable' : 'enable');}}>{enabled ? 'Disable conversation' : 'Enable conversation'}</button>
-          {enabled && unfinished && <p>Finish or cancel the unfinished task before disabling the conversation.</p>}
+          {enabled && unfinished.length > 0 && <div className="conversation-unfinished">
+            <p>Disabling turns off every conversation. Finish or cancel the unfinished {unfinished.length === 1 ? 'task' : 'tasks'} first:</p>
+            <ul>{unfinished.map(owner => <li key={owner}>
+              <button type="button" className="secondary" onClick={() => {goTo(owner);}}>Go to {profiles[owner].name} task</button>
+            </li>)}</ul>
+          </div>}
         </>}
         <Facts items={[['Session title', title === undefined ? 'Not shown on the status devices now'
           : `${title.value} (${titleOrigin(title, profileName, synthetic)})`]]}/>

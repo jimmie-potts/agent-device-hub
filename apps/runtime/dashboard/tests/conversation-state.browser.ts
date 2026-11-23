@@ -185,6 +185,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Prices', 'Not needed (synthetic calls)');
     await settings.locator('summary').click();
     assert.equal(await disable.isDisabled(), true, 'unfinished tasks prevent disabling Conversation');
+    await settings.getByRole('button', {name: 'Go to B.U.N.N.Y. task', exact: true}).waitFor();
     assert.equal(await settings.getByRole('link', {name: 'Preferences', exact: true}).getAttribute('href'), '#/module/companions/preferences');
     assert.equal(await settings.getByRole('link', {name: 'Companion knowledge', exact: true}).getAttribute('href'), '#/module/companions/knowledge');
     // The model-written session title, and the owner's rename through assistant-control (Hub #2025).

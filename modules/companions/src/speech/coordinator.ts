@@ -8,7 +8,8 @@ import {advanceRevision} from '../revision.js';
 import {SpeechStore, type Responsibility} from './store.js';
 
 export type {SpeechSource};
-type Candidate = {source: SpeechSource; parent: TraceContext; epoch: number; candidateId: string};
+/** A waiting utterance, with the order it arrived in; `line` names a reply's conversation. */
+type Candidate = {source: SpeechSource; parent: TraceContext; epoch: number; candidateId: string; arrival: number; line?: string};
 type Active = Responsibility & {candidate: Candidate; accepted: boolean; sent: boolean; stopping: boolean; settling: boolean; deadlineAtMs: number; cancel: Cancel};
 const noop = (): void => {};
 /** A reply answers the owner's own request, so it ranks with coding attention: above notices and social speech, never above an active equal. */
@@ -16,14 +17,21 @@ const priority = (source: SpeechSource): number => source.kind === 'reply' ? 2 :
 export const speechStateDraft = (data: SpeechState) => ({kind: 'state' as const, type: 'org.bunny.companion-speech-state.updated', subject: 'reachy',
   dataschema: 'https://bunny.invalid/events/companion-speech-state/2.1', data});
 
-/** One selected endpoint, one active operation and at most one current pending card. */
+/**
+ * One selected endpoint and one active operation. Waiting are at most one card and one reply per conversation (Hub
+ * #2027); the voice takes the highest rank first, then arrival order.
+ */
 export class SpeechCoordinator {
   readonly #store: SpeechStore;
   readonly #validator = coreValidator();
   readonly #subscriptions: Subscription[] = [];
   #state: SpeechState = {id: 'reachy', revision: 0, endpointId: null, availability: 'off', playback: null, pending: false};
   #active: Active | undefined;
-  #pending: Candidate | undefined;
+  /** Reachy's card slot: a newer card of equal or higher rank replaces the waiting one. */
+  #card: Candidate | undefined;
+  /** Each conversation's one waiting reply: a newer reply of the same conversation replaces it. */
+  readonly #replies = new Map<string, Candidate>();
+  #arrivals = 0;
   #epoch = 0;
   #closed = false;
   #blocked = false;
@@ -57,34 +65,56 @@ export class SpeechCoordinator {
     await Promise.all(this.#subscriptions.map(subscription => subscription.close()));
   }
   offer(card: CompanionCard, parent: TraceContext, epoch: number | undefined): void {
-    this.#offer({kind: 'card', card: structuredClone(card)}, `${card.opportunity.origin.source}:${card.opportunity.origin.id}`, parent, epoch);
+    this.#offer({kind: 'card', card: structuredClone(card)}, `${card.opportunity.origin.source}:${card.opportunity.origin.id}`, parent, epoch, undefined);
   }
-  /** Offers a saved assistant reply once per `key`: the message itself for the reply that ended a turn, or the message with the owner's request for a replay. */
-  offerReply(reply: SpokenReply, key: string, parent: TraceContext, epoch: number | undefined): void {
-    this.#offer({kind: 'reply', reply: {...reply}}, `reply:${reply.taskId}:${key}`, parent, epoch);
+  /**
+   * Offers a saved assistant reply once per `key`: the message itself for the reply that ended a turn, or the message with
+   * the owner's request for a replay. `line` names the reply's conversation, which keeps one waiting reply (Hub #2027).
+   */
+  offerReply(reply: SpokenReply, key: string, parent: TraceContext, epoch: number | undefined, line: string): void {
+    this.#offer({kind: 'reply', reply: {...reply}}, `reply:${reply.taskId}:${key}`, parent, epoch, line);
   }
-  #offer(source: SpeechSource, identity: string, parent: TraceContext, epoch: number | undefined): void {
+  #offer(source: SpeechSource, identity: string, parent: TraceContext, epoch: number | undefined, line: string | undefined): void {
     if (epoch === undefined || epoch !== this.mark() || !this.#eligible(source)) return;
     const candidateId = createHash('sha256').update(identity).digest('hex');
-    if (this.#store.has(candidateId) || this.#active?.candidateId === candidateId || this.#pending?.candidateId === candidateId) return;
-    const candidate: Candidate = {source, parent: {...parent}, epoch, candidateId};
-    // A newer candidate of equal rank replaces the pending one, so a later reply is never preceded by a stale pending answer.
-    if (this.#pending !== undefined && priority(this.#pending.source) > priority(source)) return;
-    this.#pending = candidate; this.#changed();
+    if (this.#store.has(candidateId) || this.#active?.candidateId === candidateId || this.#waiting().some(waiting => waiting.candidateId === candidateId)) return;
+    const candidate: Candidate = {source, parent: {...parent}, epoch, candidateId, arrival: ++this.#arrivals, ...(line === undefined ? {} : {line})};
+    if (line === undefined) {
+      // A newer card of equal rank replaces the waiting card; a reply and a card never replace each other.
+      if (this.#card !== undefined && priority(this.#card.source) > priority(source)) return;
+      this.#card = candidate;
+    } else {
+      // A newer reply of the same conversation replaces its waiting one, so a later answer is never preceded by a stale one there.
+      this.#replies.set(line, candidate);
+    }
+    this.#changed();
     const active = this.#active;
     if (active === undefined) this.#schedule();
     else if (priority(source) > priority(active.candidate.source)) this.#interrupt(active);
   }
   invalidate(): void {
-    if (this.#pending !== undefined && !this.#eligible(this.#pending.source)) {this.#pending = undefined; this.#changed();}
+    const stale = this.#waiting().filter(waiting => !this.#eligible(waiting.source));
+    for (const waiting of stale) this.#remove(waiting);
+    if (stale.length > 0) this.#changed();
     if (this.#active !== undefined && !this.#eligible(this.#active.candidate.source)) this.#interrupt(this.#active);
+  }
+  /** Every waiting candidate: the card and each conversation's reply. */
+  #waiting(): Candidate[] {return [...(this.#card === undefined ? [] : [this.#card]), ...this.#replies.values()];}
+  #remove(candidate: Candidate): void {
+    if (this.#card === candidate) this.#card = undefined;
+    else if (candidate.line !== undefined && this.#replies.get(candidate.line) === candidate) this.#replies.delete(candidate.line);
+  }
+  /** The candidate the voice takes next: the highest rank, then the earliest arrival. */
+  #next(): Candidate | undefined {
+    return this.#waiting().reduce<Candidate | undefined>((best, waiting) => best === undefined || priority(waiting.source) > priority(best.source)
+      || (priority(waiting.source) === priority(best.source) && waiting.arrival < best.arrival) ? waiting : best, undefined);
   }
   #eligible(source: SpeechSource): boolean {
     if (this.#closed || this.context.signal.aborted || this.context.clock.now() >= deadline(source)) return false;
     if (source.kind === 'card' && (source.card.history || source.card.opportunity.context !== 'live')) return false;
     return this.eligible(source);
   }
-  #clear(): void {this.#epoch += 1; this.#pending = undefined; this.#queued?.(); this.#queued = undefined;}
+  #clear(): void {this.#epoch += 1; this.#card = undefined; this.#replies.clear(); this.#queued?.(); this.#queued = undefined;}
   #control(command: Command<SpeechEndpointControl>): Reply {
     if (this.#closed || this.context.signal.aborted) return errorBody('unavailable');
     if (command.source !== 'bunny/parts/dashboard') return errorBody('forbidden');
@@ -128,13 +158,17 @@ export class SpeechCoordinator {
     return {status: 'accepted'};
   }
   #schedule(): void {
-    if (this.#queued !== undefined || this.#active !== undefined || this.#pending === undefined || this.mark() === undefined) return;
+    if (this.#queued !== undefined || this.#active !== undefined || this.#next() === undefined || this.mark() === undefined) return;
     this.#queued = this.context.scheduler.after(0, () => {this.#queued = undefined; void this.#dispatch();});
   }
   async #dispatch(): Promise<void> {
-    const candidate = this.#pending, endpointId = this.#state.endpointId;
-    this.#pending = undefined;
-    if (candidate === undefined || endpointId === null || candidate.epoch !== this.mark() || !this.#eligible(candidate.source)) {this.#changed(); return;}
+    const endpointId = this.#state.endpointId;
+    if (endpointId === null) {this.#card = undefined; this.#replies.clear(); this.#changed(); return;}
+    // A candidate that went stale or lost its epoch while waiting is dropped, and the next one is taken.
+    let candidate = this.#next();
+    while (candidate !== undefined && (candidate.epoch !== this.mark() || !this.#eligible(candidate.source))) {this.#remove(candidate); candidate = this.#next();}
+    if (candidate === undefined) {this.#changed(); return;}
+    this.#remove(candidate);
     const active: Active = {...candidate, candidate, endpointId, operationId: randomUUID(), traceparent: candidate.parent.traceparent,
       started: false, accepted: false, sent: false, stopping: false, settling: false, deadlineAtMs: this.context.clock.now() + 25_000, cancel: noop};
     this.#active = active; this.#state.playback = {operationId: active.operationId, status: 'dispatching', started: false}; this.#changed();
@@ -264,7 +298,7 @@ export class SpeechCoordinator {
       'bunny.code': fullDisk(error) ? 'capacity' : 'internal'}, parent);
   }
   #changed(savedRevision?: number): void {
-    this.#state.pending = this.#pending !== undefined;
+    this.#state.pending = this.#waiting().length > 0;
     if (this.#closed || this.context.signal.aborted) return;
     try {this.#state.revision = savedRevision ?? advanceRevision(this.context.database());}
     catch (error) {
