@@ -17,6 +17,7 @@ export type AssistantState = {id: 'assistant'; revision: number; enabled: boolea
   /** The configured provider and model, and the tool names the private section allows; never a key, prompt or transcript. */
   provider: AssistantProvider; model: string; tools: string[]; tasks: AssistantTaskSummary[]};
 export type AssistantInput = {requestId: string; inputRef: string};
+export const ATTACHED_ASSISTANT_INPUT_PREFIX = 'attachment-';
 /**
  * `org.bunny.assistant.control.requested`. Version 2.1 (Hub #2025) adds `rename`, the owner's title for a profile's
  * conversation, which carries `profile` and `title` and no task or message; the other actions carry neither.
@@ -35,7 +36,8 @@ export const ASSISTANT_WEMO_OWNER = 'bunny/modules/wemo';
 export type AssistantDeviceOwner = typeof ASSISTANT_LIGHT_OWNER | typeof ASSISTANT_WEMO_OWNER;
 export type AssistantWemoAction = {family: 'power-set'; target: string; owner: typeof ASSISTANT_WEMO_OWNER; data: LightGuards & {on: boolean}};
 export type AssistantDeviceAction = AssistantLightAction | AssistantWemoAction;
-export type AssistantDispatch = {requestId: string} & (AssistantDeviceAction | (CatalogProposal & {admitByMs?: number}) | {family: 'mode-set'; target: 'hub'; data: {mode: Mode; expectedRevision?: number}});
+export type AssistantAttachmentSave = {family: 'art-attachment-edit'; target: 'art'; data: {action: 'save'; artworkId: string}};
+export type AssistantDispatch = {requestId: string} & (AssistantAttachmentSave | AssistantDeviceAction | (CatalogProposal & {admitByMs?: number}) | {family: 'mode-set'; target: 'hub'; data: {mode: Mode; expectedRevision?: number}});
 export const assistantFamilies = [
   defineFamily('assistant-input', 'command', 'org.bunny.assistant.input.requested'),
   defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested'),
@@ -44,6 +46,7 @@ export const assistantFamilies = [
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.1'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.2'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.3'),
+  defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.4'),
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant'),
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.1'),
 ] as const;

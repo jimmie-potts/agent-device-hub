@@ -25,7 +25,7 @@ const check = value => validator.validate(value, {nowMs: Date.parse(value.time)}
 
 test('the art family carries spend per provider and recent work by reference', () => {
   assert.equal(ART_STATE_SCHEMA, `${SCHEMA_BASE}art/2.0`);
-  assert.deepEqual(Object.keys(artSchemas), [ART_STATE_SCHEMA, ART_STATE_21_SCHEMA, ART_CATALOG_EDIT_SCHEMA, 'https://bunny.invalid/events/art-upload-stage/2.0', `${SCHEMA_BASE}art-attachment-edit/2.0`]);
+  assert.deepEqual(Object.keys(artSchemas), [ART_STATE_SCHEMA, ART_STATE_21_SCHEMA, ART_CATALOG_EDIT_SCHEMA, 'https://bunny.invalid/events/art-upload-stage/2.0', `${SCHEMA_BASE}art-attachment-edit/2.0`, `${SCHEMA_BASE}art-attachment-edit/2.1`]);
   const answer = check(message(data()));
   assert.equal(answer.ok, true, JSON.stringify(answer));
 });
@@ -66,5 +66,16 @@ test('an artwork attachment command carries only a stage digest or a save refere
   for (const value of [stage, save]) assert.equal(check(command(value)).ok, true);
   for (const value of [{...stage, name: 'image.gif'}, {...stage, requestId: 'unexpected'}, {...save, artworkId: 'art-1'}, {...save, sha256: sha}]) {
     assert.equal(check(command(value)).ok, false);
+  }
+});
+
+test('the Conversation save contract admits only a validated attachment reference', () => {
+  const save = {requestId: 'save-1', action: 'save', artworkId: 'upload-cc032fa4-40e8-4ad3-99fc-ef24c0d5e9a2'};
+  const command = data => ({...structuredClone(fixtures.valid['assistant-dispatch']), source: 'bunny/core',
+    type: 'org.bunny.art-attachment.edit.requested', subject: ART_ID,
+    dataschema: `${SCHEMA_BASE}art-attachment-edit/2.1`, data});
+  assert.equal(check(command(save)).ok, true);
+  for (const bad of [{...save, action: 'stage'}, {...save, artworkId: 'art-1'}, {...save, bytes: 'abcd'}]) {
+    assert.equal(check(command(bad)).ok, false);
   }
 });

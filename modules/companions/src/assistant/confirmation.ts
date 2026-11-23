@@ -9,10 +9,12 @@ export const IN_TURN_CONFIRMATION_MS = 1000;
 export const CONFIRMATION_LIFETIME_MS = 86_400_000;
 
 type DeviceBinding = Extract<CatalogBinding, {kind: 'device'}>;
-type ConfirmationTarget = {binding: DeviceBinding; label: string} & ({percent: number} | {on: boolean});
+type SettingTarget = {binding: DeviceBinding; label: string} & ({percent: number} | {on: boolean});
+type ArtworkTarget = {artwork: {target: string; prepareRequestId: string; momentRequestId: string}; label: string};
+type ConfirmationTarget = SettingTarget | ArtworkTarget;
 export type Confirmation = ConfirmationTarget & {
   requestId: string; taskId: string; questionId: string; acceptedAtMs: number; expiresAtMs: number; traceparent: string;
-  sent?: true; result?: string; follows?: string;
+  sent?: true; prepared?: true; result?: string; follows?: string;
 };
 
 export function confirmationTarget(proposal: Proposal, question: string): ConfirmationTarget | undefined {
@@ -32,6 +34,11 @@ export function confirmationTarget(proposal: Proposal, question: string): Confir
 }
 
 export function unavailable(watch: Confirmation): string {
+  if ('artwork' in watch) {
+    const prior = watch.sent === true ? `The artwork was sent to ${watch.label}. `
+      : watch.prepared === true ? `The artwork was prepared for ${watch.label}. ` : '';
+    return `${prior}I couldn’t confirm whether ${watch.label} presented the artwork.`;
+  }
   const power = 'on' in watch;
   const setting = power ? 'power' : 'brightness';
   const command = power ? 'Power' : 'Brightness';
@@ -40,12 +47,13 @@ export function unavailable(watch: Confirmation): string {
 }
 
 export function pending(watch: Confirmation): string {
+  if ('artwork' in watch) return `Playback confirmation for ${watch.label} is pending. I’ll update this reply when evidence arrives.`;
   const setting = 'on' in watch ? 'Power' : 'Brightness';
   const sent = watch.sent === true ? `${setting} command sent.` : `${setting} request accepted.`;
   return `${sent} I’ll update this reply when confirmation for ${watch.label} is available.`;
 }
 
-function matchesReading(readback: ReadbackIdentity, watch: Confirmation, sentAtMs: number): boolean {
+function matchesReading(readback: ReadbackIdentity, watch: Confirmation & SettingTarget, sentAtMs: number): boolean {
   const {configurationRevision, generation} = watch.binding;
   return readback.requestId === watch.requestId && readback.transmittedAtMs >= sentAtMs &&
     readback.configurationRevision === configurationRevision && readback.generation.epoch === generation.epoch &&
@@ -53,8 +61,39 @@ function matchesReading(readback: ReadbackIdentity, watch: Confirmation, sentAtM
 }
 
 /** Combines the core's decision about a tracked operation with the exact owner's reading. */
+type ConfirmationEvidence = {sent?: true; prepared?: true; result?: string};
+
 export function confirmationEvidence(watch: Confirmation, operation: OperationRecord | undefined, device: DeviceRecord | undefined,
-  requestedBy: string): {sent?: true; result?: string} {
+  requestedBy: string, moment?: OperationRecord, preparation?: OperationRecord): ConfirmationEvidence {
+  if ('artwork' in watch) {
+    if (operation?.requestId !== watch.requestId || operation.requestedBy !== requestedBy ||
+        operation.target !== 'hub' || operation.family !== 'art-show') return {};
+    const prepared = watch.prepared === true || preparation?.requestId === watch.artwork.prepareRequestId &&
+      preparation.family === 'art-auto' && preparation.target === 'art' && preparation.requestedBy === 'bunny/core' &&
+      preparation.status === 'completed' && preparation.result === Outcome.succeeded && preparation.evidence === Outcome.observed;
+    const preparationEvidence = prepared ? {prepared: true as const} : {};
+    if (moment?.requestId === watch.artwork.momentRequestId && moment.family === 'moment-play' &&
+        moment.target === watch.artwork.target && moment.requestedBy === 'bunny/core') {
+      if (moment.status === 'completed' && moment.result === Outcome.succeeded) {
+        if (moment.evidence === Outcome.observed) return {sent: true, result: `${watch.label} reported presenting the artwork.`};
+        if (moment.evidence === Outcome.transmitted) return {sent: true, result: `Sent the artwork to ${watch.label}.`};
+      }
+      if (moment.status === 'rejected' || moment.status === 'expired' || moment.result === Outcome.failed) {
+        const prior = moment.evidence === Outcome.transmitted || moment.evidence === Outcome.observed
+          ? ' The display received the request.' : prepared ? ' The artwork was prepared.' : '';
+        return {result: `Playback on ${watch.label} failed${moment.error === undefined ? '.' : ` (${moment.error.code}).`}${prior}`};
+      }
+      if (moment.status === 'uncertain' || moment.status === 'conflict' || moment.result === Outcome.uncertain) {
+        return {result: unavailable({...watch, ...preparationEvidence,
+          ...(moment.evidence === Outcome.transmitted || moment.evidence === Outcome.observed ? {sent: true as const} : {})})};
+      }
+    }
+    if (operation.status === 'rejected' || operation.status === 'expired' || operation.result === Outcome.failed) {
+      const prior = prepared ? ' The artwork was prepared.' : '';
+      return {result: `Playback on ${watch.label} could not start${operation.error === undefined ? '.' : ` (${operation.error.code}).`}${prior}`};
+    }
+    return preparationEvidence;
+  }
   const power = 'on' in watch;
   const setting = power ? 'power' : 'brightness';
   if (operation?.requestId !== watch.requestId || operation.requestedBy !== requestedBy ||
@@ -84,7 +123,7 @@ export function confirmationEvidence(watch: Confirmation, operation: OperationRe
 
 /** A bounded lifetime of read-only SDK copies. Later sync replaces state after a gap. */
 export async function followConfirmation(context: ModuleContext, watch: Confirmation, signal: AbortSignal,
-  save: (evidence: {sent?: true; result?: string}) => Promise<boolean>): Promise<void> {
+  save: (evidence: ConfirmationEvidence) => Promise<boolean>): Promise<void> {
   const parent: TraceContext = {traceparent: watch.traceparent};
   let retryMs = 1000;
   while (!signal.aborted && context.clock.now() < watch.expiresAtMs) {
@@ -115,7 +154,7 @@ export async function followConfirmation(context: ModuleContext, watch: Confirma
       notify();
     }, {owner: 'bunny/core', timeoutMs, parent, onRestarted: () => {operationCurrent = false; notify();}})
       .then(result => {if (result.status === 'synced') {operation = result.copy; notify();} else fail();}, fail);
-    const openDevice = context.sdk.sync<DeviceRecord>(['device'], change => {
+    const openDevice = 'artwork' in watch ? Promise.resolve() : context.sdk.sync<DeviceRecord>(['device'], change => {
       if (change.type === 'failed') {deviceCurrent = false; fail();}
       if (change.type === 'synced') deviceCurrent = true;
       notify();
@@ -125,9 +164,14 @@ export async function followConfirmation(context: ModuleContext, watch: Confirma
       while (!signal.aborted && remaining() > 0) {
         changed = false;
         const tracked = operationCurrent ? operation?.states().find(message => message.data.requestId === watch.requestId)?.data : undefined;
-        const owner = deviceCurrent ? device?.get({family: 'device', id: watch.binding.target})?.data : undefined;
-        const evidence = confirmationEvidence(watch, tracked, owner, context.sdk.source);
+        const owner = deviceCurrent && 'binding' in watch ? device?.get({family: 'device', id: watch.binding.target})?.data : undefined;
+        const records = operationCurrent ? operation?.states() : undefined;
+        const phase = (id: string) => records?.find(message => message.data.requestId === id)?.data;
+        const artwork = 'artwork' in watch ? watch.artwork : undefined;
+        const evidence = confirmationEvidence(watch, tracked, owner, context.sdk.source,
+          artwork === undefined ? undefined : phase(artwork.momentRequestId), artwork === undefined ? undefined : phase(artwork.prepareRequestId));
         if (evidence.sent === true) watch.sent = true;
+        if (evidence.prepared === true) watch.prepared = true;
         if (await save(evidence)) return;
         if (failed) break;
         if (!changed) await wait(remaining());

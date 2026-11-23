@@ -5,6 +5,7 @@ import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
 import {ASSISTANT_LIGHT_OWNER, type AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
+import {CONVERSATION_ATTACHMENT_SAVE_SCHEMA} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {CodingDispatch} from '@jimmie-potts/event-contracts/v2/coding';
 import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
@@ -85,6 +86,12 @@ export class CompanionPart implements CorePart {
       if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
       const checked = validator.validate(command, {nowMs: core.clock.now()});
       if (!checked.ok) return {error: checked.error};
+      if (command.data.family === 'art-attachment-edit') {
+        const {requestId, data} = command.data;
+        const answer = await core.dispatch({key: 'bunny.cmd.art-attachment-edit.art', requestedBy: command.source, requestId, parent: command,
+          draft: {type: 'org.bunny.art-attachment.edit.requested', subject: 'art', dataschema: CONVERSATION_ATTACHMENT_SAVE_SCHEMA, data}});
+        return 'error' in answer ? answer : {status: 'accepted'};
+      }
       if (command.data.family === 'catalog-action') {
         const answer = await dispatchCatalogAction(core, {...command, data: command.data}, this.device, this.dispatchLighting);
         return 'error' in answer ? answer : {status: 'accepted'};

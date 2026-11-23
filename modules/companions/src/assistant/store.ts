@@ -19,13 +19,13 @@ export type Question = SavedQuestion & {call: string};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
-  traceparent: string | null; transcript: TranscriptItem[]};
+  traceparent: string | null; transcript: TranscriptItem[]; attachmentRequestId?: string};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; result: string | null; units: number | null; reservedUnits: number;
   reservedMs: number; elapsedMs: number | null; traceparent: string};
 export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; endedAtMs: number | null;
   status: AssistantStatus; traceparent: string; previousTraceparent: string | null};
-export type StagedInput = {action: 'start' | 'answer'; profile: AssistantProfile; text: string; expectedRevision: number; taskId?: string; questionId?: string};
+export type StagedInput = {action: 'start' | 'answer'; profile: AssistantProfile; text: string; expectedRevision: number; taskId?: string; questionId?: string; attachmentRequestId?: string};
 export type Stage = {ref: string; requestId: string; input: StagedInput; expires: number};
 export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: Question | null} | null; next: number | null};
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
@@ -38,7 +38,7 @@ const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg
   json_extract(call.record, '$.result') AS artResult
   FROM assistant_messages msg LEFT JOIN assistant_art_attachments art ON art.message_id=msg.id
   LEFT JOIN assistant_art_intents intent ON intent.request_id=art.request_id
-  LEFT JOIN assistant_calls call ON call.id=art.request_id`;
+  LEFT JOIN assistant_calls call ON call.id=CASE WHEN msg.role='owner' THEN msg.task_id||'-step-0' ELSE art.request_id END`;
 function messageOf({artRequestId, artDescription, artTargets, artStatus, artResult, follows, ...row}: MessageRow): ConversationMessage {
   const message = follows === null ? row : {...row, follows};
   if (artRequestId === null || artDescription === null) return message;
@@ -49,7 +49,7 @@ function messageOf({artRequestId, artDescription, artTargets, artStatus, artResu
   const refusal = artStatus === 'succeeded' && artResult?.startsWith('refused: ') === true ? artResult.slice(9) : undefined;
   if (isErrorCode(refusal)) return {...message, attachment: {...receipt, admission: 'refused', code: refusal}};
   const admission = artStatus === 'succeeded' && artResult?.startsWith('accepted: ') === true ? 'accepted'
-    : artStatus === 'admitted' ? 'pending' : 'uncertain';
+    : artStatus === 'admitted' || row.role === 'owner' && artStatus === null ? 'pending' : 'uncertain';
   return {...message, attachment: {...receipt, admission}};
 }
 const parsed = <T>(row: RecordRow | undefined): T | undefined => row === undefined ? undefined : JSON.parse(row.record) as T;
@@ -164,6 +164,12 @@ export class AssistantStore {
     if (this.messages.removal(id) !== undefined) return;
     this.database.prepare('INSERT OR IGNORE INTO assistant_messages(id,conversation_id,task_id,role,text,at_ms,follows) VALUES (?,?,?,?,?,?,?)').run(id, task.conversationId, task.id, role, text, atMs, follows ?? null);
     this.messages.capture(task, id, role, text, atMs);
+  }
+  ownerAttachment(task: Task, requestId: string, atMs: number): boolean {
+    const id = `${task.id}-prompt`;
+    this.message(task, id, 'owner', task.prompt, atMs);
+    return this.database.prepare('INSERT OR IGNORE INTO assistant_art_attachments VALUES (?,?,?)')
+      .run(id, requestId, 'Attached artwork').changes === 1;
   }
   artReply(task: Task, requestId: string, description: string, atMs: number, showTargets?: readonly string[]): void {
     const id = `${task.id}-artwork`;

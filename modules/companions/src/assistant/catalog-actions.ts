@@ -72,7 +72,7 @@ export class ConversationActions {
       row.owner === 'bunny/modules/' + item.kind && row.device.id === item.target)?.device));
   }
 
-  async #artSelection(names: unknown, parent: TraceContext, artwork?: ArtworkSummary, requestedFormat?: 'png' | 'gif'): Promise<
+  async #artSelection(names: unknown, parent: TraceContext, artwork?: ArtworkSummary, requestedFormat?: 'png' | 'gif', requireExactDisplay = false): Promise<
     {targets: string[]; labels: string[]; guards: ArtShowGuard[]} | {question: string} | Refusal> {
     if (!Array.isArray(names) || names.length > 3 || !names.every((value): value is string =>
       typeof value === 'string' && value.trim().length > 0 && value.length <= (value.startsWith('id:') ? 131 : 128))) return {code: 'invalid-request'};
@@ -83,6 +83,7 @@ export class ConversationActions {
     for (const name of names) {
       const key = normalize(name);
       if (key === 'browser' || key === 'ui' && !devices.some(device => device.target === 'ui')) {
+        if (requireExactDisplay) return {question: 'Which physical display would you like to use?' };
         if (artwork !== undefined && usableArtComposition(artwork, 'ui') === undefined) return {question: 'This artwork has no browser rendition. Which available destination would you like?'};
         if (targets.includes('browser')) return {code: 'invalid-request'};
         targets.push('browser'); labels.push('Browser');
@@ -92,6 +93,9 @@ export class ConversationActions {
       const exact = devices.filter(device => device.target === exactId);
       const matches = name.startsWith('id:') ? exact : key === 'pixoo' || key === 'tidbyt' ? devices.filter(device => device.kind === key || device.target === key)
         : exact.length > 0 ? exact : devices.filter(device => normalize(device.label ?? device.target) === key);
+      if (requireExactDisplay && matches.length > 1) {
+        return {question: 'Which display did you mean? ' + matches.map(device => (device.label ?? device.kind) + ' (id:' + device.target + ')').join(', ')};
+      }
       const eligible = matches.filter(device => device.guard !== undefined &&
         (requestedFormat === undefined || device.formats?.includes(requestedFormat) === true) &&
         (artwork === undefined || acceptsArtRendition(device, usableArtComposition(artwork, device.kind)?.renditions[0])));
@@ -109,6 +113,18 @@ export class ConversationActions {
       guards.push(selected.guard);
     }
     return {targets, labels, guards};
+  }
+
+  async selectSentArtwork(artworkId: string, destination: string, parent: TraceContext): Promise<
+    {target: string; label: string; guard: ArtShowGuard} | {question: string} | Refusal> {
+    const records = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
+    const artwork = records?.artworks.find(item => item.artworkId === artworkId) ?? await this.retainedArtwork?.(artworkId, 1200);
+    if (artwork === undefined) return {code: 'not-found'};
+    if ('error' in artwork) return {code: artwork.error.code};
+    const selected = await this.#artSelection([destination], parent, artwork, undefined, true);
+    if (!('targets' in selected)) return selected;
+    const [target] = selected.targets, [label] = selected.labels, [guard] = selected.guards;
+    return target === undefined || label === undefined || guard === undefined ? {code: 'unavailable'} : {target, label, guard};
   }
 
   async #operation(requestId: unknown, parent: TraceContext): Promise<OperationRecord | undefined> {

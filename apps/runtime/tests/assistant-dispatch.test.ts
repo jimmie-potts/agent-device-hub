@@ -101,6 +101,31 @@ it('approved Conversation art sends private text to Art once and omits it from t
   assert.equal(descriptions.length, 1);
 });
 
+it('only companions can promote an owner attachment through the tracked save route', async context => {
+  let handle: CoreHandle | undefined;
+  const core = createCoreModule({parts: [{start: given => {handle = given; return Promise.resolve();}}]});
+  const companions = fixture('companions'), art = fixture('art'), other = fixture('assistant-other');
+  await run(context, {modules: [core, companions, art, other]});
+  const delivered: object[] = [];
+  await contextOf(art).sdk.respond('bunny.cmd.art-attachment-edit.art', command => {
+    delivered.push(command.data);
+    assert.equal(command.dataschema, 'https://bunny.invalid/events/art-attachment-edit/2.1');
+    return {status: 'accepted'};
+  });
+  const data: AssistantDispatch = {requestId: 'conversation-save-fixture', family: 'art-attachment-edit', target: 'art',
+    data: {action: 'save', artworkId: 'upload-cc032fa4-40e8-4ad3-99fc-ef24c0d5e9a2'}};
+  const command = {...draft(data), dataschema: 'https://bunny.invalid/events/assistant-dispatch/2.4'};
+  const request = {requestId: data.requestId, timeoutMs: 2000};
+  const refusal = await contextOf(other).sdk.request('bunny.cmd.assistant-dispatch.assistant', command, request);
+  assert.equal(refusal.status === 'rejected' && refusal.error.error.code, 'forbidden');
+  assert.equal(handle?.operation(data.requestId), undefined);
+  for (const _attempt of [1, 2]) {
+    assert.equal((await contextOf(companions).sdk.request('bunny.cmd.assistant-dispatch.assistant', command, request)).status, 'accepted');
+  }
+  assert.deepEqual(delivered, [{...data.data, requestId: data.requestId}]);
+  assert.equal(handle?.operation(data.requestId)?.requestedBy, 'bunny/modules/companions');
+});
+
 it('every catalog route delivers its exact input and guards to the existing owner contract', async () => {
   const timestamp = Date.parse('2026-11-05T00:00:00.000Z');
   const hash = 'a'.repeat(64);

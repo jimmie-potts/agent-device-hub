@@ -15,20 +15,26 @@ export async function conversationUploadJourney(browser: Browser): Promise<void>
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
   await clock.install(page);
+  await page.addInitScript(() => {
+    const send = window.fetch.bind(window);
+    window.fetch = (resource, init) => {
+      if (typeof resource === 'string' && new URL(resource, location.href).searchParams.get('family') === 'assistant-input' &&
+          init?.body instanceof Blob) {
+        void init.body.text().then(body => {document.documentElement.dataset.assistantInput = body;});
+      }
+      return send(resource, init);
+    };
+  });
   const still = await sharp({create: {width: 82, height: 60, channels: 3, background: '#3c784b'}}).png().toBuffer();
   const pixels = Buffer.concat([Buffer.alloc(64 * 32 * 3, 24), Buffer.alloc(64 * 32 * 3, 190)]);
   const gif = await sharp(pixels, {raw: {width: 64, height: 64, pageHeight: 32, channels: 3}})
     .gif({delay: [100, 200]}).toBuffer();
-  type Payload = {requestId: string; data: {action?: string; artworkId?: string; targets?: string[]}};
-  const requests: ({family: string} & Payload)[] = [];
   const errors: string[] = [];
   page.on('pageerror', error => {errors.push(error.name);});
-  page.on('request', request => {
-    const [, family] = /^\/api\/v2\/commands\/(art-show|art-attachment-edit)$/.exec(new URL(request.url()).pathname) ?? [];
-    if (family !== undefined && request.method() === 'POST') requests.push({family, ...request.postDataJSON() as Payload});
-  });
-  const displays = () => requests.filter(item => item.family === 'art-show');
-  const saves = () => requests.filter(item => item.data.action === 'save');
+  const admitted = (key: string) => world.logs.filter(record => record.event_name === 'command.admitted' &&
+    record.attributes['bunny.routing.key'] === key);
+  const displays = () => admitted('bunny.cmd.art-show.hub');
+  const artMode = 'bunny.cmd.art-attachment-edit.art';
   const catalog = async (): Promise<{artworkId: string}[]> => {
     const response = await fetch(`${world.url}/modules/art/content/catalog`, {headers: {authorization: `Bearer ${world.readerToken}`}});
     assert.equal(response.status, 200);
@@ -56,17 +62,28 @@ export async function conversationUploadJourney(browser: Browser): Promise<void>
     try {await conversation.getByRole('textbox', {name: 'Message', exact: true}).dispatchEvent('drop', {dataTransfer: data});}
     finally {await data.dispose();}
   };
-  const admittedMoment = async (index: number): Promise<void> => {
-    await expect.poll(() => displays().length).toBe(index + 1);
-    const show = displays()[index];
-    assert.ok(show?.data.targets !== undefined);
-    const surfaces = await artShowSurfaces(show.requestId, show.data.targets);
-    for (const surface of surfaces) {
-      if (surface.kind === 'display') {
-        await expect.poll(() => world.logs.some(record => record.event_name === 'command.admitted' &&
-          record.attributes['bunny.request.id'] === surface.momentRequestId)).toBe(true);
-      }
-    }
+  const send = async (text = '') => {
+    await conversation.getByRole('textbox', {name: 'Message', exact: true}).fill(text);
+    const button = conversation.getByRole('button', {name: 'Send', exact: true});
+    await expect(button).toBeEnabled();
+    const admittedInput = page.waitForRequest(request => new URL(request.url()).searchParams.get('family') === 'assistant-input');
+    await button.click();
+    return admittedInput;
+  };
+  const admittedMoment = async (count: number, kind: 'pixoo' | 'tidbyt'): Promise<void> => {
+    await expect.poll(() => displays().length).toBe(count);
+    const show = displays().at(-1)?.attributes['bunny.request.id'];
+    assert.equal(typeof show, 'string');
+    if (typeof show !== 'string') return assert.fail('missing show identity');
+    await expect.poll(() => world.logs.find(record => record.event_name === 'command.admitted' &&
+      String(record.attributes['bunny.routing.key']).startsWith('bunny.cmd.moment-play.' + kind))?.attributes['bunny.request.id']).toBeDefined();
+    const target = world.logs.find(record => record.event_name === 'command.admitted' &&
+      String(record.attributes['bunny.routing.key']).startsWith('bunny.cmd.moment-play.' + kind))?.attributes['bunny.routing.key'];
+    assert.equal(typeof target, 'string');
+    if (typeof target !== 'string') return assert.fail('missing target routing identity');
+    const surfaces = await artShowSurfaces(show, [target.split('.').at(-1) ?? '']);
+    assert.ok(surfaces[0]?.kind === 'display');
+    await expect.poll(() => admitted(target).length).toBe(1);
   };
 
   try {
@@ -104,119 +121,75 @@ export async function conversationUploadJourney(browser: Browser): Promise<void>
     await picker(Buffer.alloc(MAX_ART_ATTACHMENT_BYTES + 1), 'image/png', 'oversized.png');
     await expect(conversation.getByRole('alert')).toContainText('up to 4 MB');
     assert.equal(displays().length, 0);
-    assert.equal(saves().length, 0);
     assert.equal((await catalog()).length, 0);
 
     await drop(still, 'image/png', 'still.png');
     await expect(preview).toBeVisible();
-    await attachment.getByRole('checkbox', {name: 'Pixoo', exact: true}).check();
-    await attachment.getByRole('button', {name: 'Display now', exact: true}).click();
-    await admittedMoment(0);
+    const firstDurableAttachment = admitted(artMode).length;
+    await send();
+    await expect(conversation.getByText('Saved to the library. Would you like me to display this?', {exact: true})).toBeVisible();
+    await expect.poll(async () => (await catalog()).length).toBe(1);
+    assert.equal(admitted(artMode).length, firstDurableAttachment + 1);
+    assert.equal(displays().length, 0);
+    await expect(conversation.getByRole('article', {name: 'owner message'}).getByRole('img', {name: 'Attached artwork'})).toBeVisible();
+    await page.reload();
+    await feed(page, 'connected');
+    await expect(conversation.getByRole('article', {name: 'owner message'}).getByRole('img', {name: 'Attached artwork'})).toBeVisible();
+
+    await picker(gif, 'image/gif', 'moving.gif');
+    await expect(preview).toBeVisible();
+    const tidbytSend = await send('Play this on the Tidbyt');
+    await admittedMoment(1, 'tidbyt');
+    await expect(conversation.getByRole('button', {name: 'Approve proposal'})).toHaveCount(0);
+    await clock.advance(ART_SHOW_LEAD_MS + 1500);
+    await expect.poll(() => tronbyt.state().installations.bunnymoment?.animation?.frames.length).toBe(2);
+    const frames = tronbyt.state().installations.bunnymoment?.animation?.frames;
+    assert.ok(frames !== undefined && JSON.stringify(frames[0]) !== JSON.stringify(frames[1]));
+    await expect.poll(async () => (await catalog()).length).toBe(2);
+    const body = await page.locator('html').getAttribute('data-assistant-input');
+    assert.ok(body?.includes('Play this on the Tidbyt') === true);
+    const duplicate = await page.evaluate(async ({url, body}) => {
+      const response = await fetch(url, {method: 'POST', headers: {'content-type': 'application/octet-stream', 'bunny-request': '1'}, body});
+      return response.status;
+    }, {url: tidbytSend.url(), body});
+    assert.equal(duplicate, 200);
+    assert.equal(displays().length, 1);
+    assert.equal((await catalog()).length, 2);
+    await clock.advance(31_000);
+
+    await drop(still, 'image/png', 'pixoo.png');
+    await expect(preview).toBeVisible();
+    await send('Show this on the Pixoo');
+    await admittedMoment(2, 'pixoo');
     await clock.advance(ART_SHOW_LEAD_MS + 1500);
     const rgb = Buffer.alloc(64 * 64 * 3);
     for (let index = 0; index < rgb.byteLength; index += 3) rgb.set([0x3c, 0x78, 0x4b], index);
     const expected = createHash('sha256').update(rgb).digest('hex').slice(0, 16);
     await expect.poll(() => world.pixooState().shown?.digests).toEqual([expected]);
-    assert.equal((await catalog()).length, 0);
-    await clock.advance(11_000);
-    await remove();
-
-    await picker(gif, 'image/gif', 'moving.gif');
-    await expect(preview).toBeVisible();
-    await attachment.getByRole('button', {name: 'Save to library', exact: true}).click();
-    await expect(attachment.getByText('Library. Saved to library.', {exact: true})).toBeVisible();
-    assert.equal(displays().length, 1);
-    const [saved] = await catalog();
-    assert.ok(saved !== undefined && saved.artworkId === saves()[0]?.data.artworkId);
-    await page.goto(`${world.url}/#/module/art/gallery`);
-    await feed(page, 'connected');
-    await page.getByRole('button', {name: 'Play saved animation', exact: true}).click();
-    await expect(page.getByRole('img', {name: 'Saved animation', exact: true})).toBeVisible();
-    const panel = page.getByRole('region', {name: 'Show now', exact: true});
-    await panel.getByRole('checkbox', {name: 'Show on Browser', exact: true}).uncheck();
-    await panel.getByRole('checkbox', {name: /Show on Pixoo/}).uncheck();
-    await panel.getByRole('button', {name: 'Show now', exact: true}).click();
-    await admittedMoment(1);
-    await clock.advance(ART_SHOW_LEAD_MS + 1500);
-    await expect.poll(() => tronbyt.state().installations.bunnymoment?.animation?.frames.length).toBe(2);
-    const frames = tronbyt.state().installations.bunnymoment?.animation?.frames;
-    assert.ok(frames !== undefined && JSON.stringify(frames[0]) !== JSON.stringify(frames[1]));
+    await expect.poll(async () => (await catalog()).length).toBe(3);
     await clock.advance(31_000);
 
-    await page.goto(`${world.url}/#/module/companions/assistant`);
-    await feed(page, 'connected');
-    await drop(gif, 'image/gif', 'moving.gif');
+    await picker(still, 'image/png', 'choose.png');
     await expect(preview).toBeVisible();
-    await attachment.getByRole('checkbox', {name: 'Pixoo', exact: true}).check();
-    await attachment.getByRole('checkbox', {name: 'Tidbyt', exact: true}).check();
-    await attachment.getByRole('button', {name: 'Display and save', exact: true}).click();
-    await expect(attachment.getByText('Library. Saved to library.', {exact: true})).toBeVisible();
-    await admittedMoment(2);
-    await clock.advance(ART_SHOW_LEAD_MS + 1500);
-    await expect.poll(() => world.pixooState().shown?.frames).toBe(2);
-    await expect.poll(() => tronbyt.state().installations.bunnymoment?.animation?.frames.length).toBe(2);
-    const combined = displays()[2], save = saves()[1];
-    assert.ok(combined?.data.targets !== undefined && save?.data.artworkId !== undefined);
-    assert.equal(combined.data.targets.length, 2);
-    assert.equal(combined.data.artworkId, save.data.artworkId);
-    const traceRequestIds = [
-      save.data.artworkId.slice('upload-'.length), save.requestId, combined.requestId,
-      ...(await artShowSurfaces(combined.requestId, combined.data.targets)).flatMap(surface =>
-        surface.kind === 'display' ? [surface.prepareRequestId, surface.momentRequestId] : []),
-    ];
-    const traceIds = traceRequestIds.map(id => world.logs.find(record => record.event_name === 'command.queued' &&
-      record.attributes['bunny.request.id'] === id)?.trace_id);
-    assert.ok(traceIds[0] !== undefined && traceIds.every(id => id === traceIds[0]), 'upload, save and both device attempts share a trace');
-    assert.equal(saves().length, 2);
-    assert.equal((await catalog()).length, 2);
-    await clock.advance(31_000);
-    await remove();
+    await send('Play this');
+    await expect(conversation.getByText('Saved to the library. Which display would you like to use?', {exact: true})).toBeVisible();
+    await expect.poll(async () => (await catalog()).length).toBe(4);
+    assert.equal(displays().length, 2);
 
-    await picker(still, 'image/png', 'failure.png');
+    await drop(still, 'image/png', 'failure.png');
     await expect(preview).toBeVisible();
-    const pixoo = attachment.getByRole('checkbox', {name: 'Pixoo', exact: true});
-    await pixoo.check();
-    await attachment.getByRole('checkbox', {name: 'Tidbyt', exact: true}).check();
-    await attachment.getByRole('button', {name: 'Display and save', exact: true}).click();
-    await expect(attachment.getByText('Library. Saved to library.', {exact: true})).toBeVisible();
-    await admittedMoment(3);
+    await send('Play this on the Pixoo');
+    await expect.poll(() => displays().length).toBe(3);
+    await expect.poll(() => admitted('bunny.cmd.moment-play.pixoo-1').length).toBe(2);
     world.pixooMode('offline');
-    await clock.advance(ART_SHOW_LEAD_MS + 3500);
-    const retry = attachment.getByRole('button', {name: 'Retry display on Pixoo', exact: true});
-    await expect(retry).toBeVisible();
-    const shownStill = tronbyt.state().installations.bunnymoment;
-    assert.ok(shownStill !== undefined && shownStill.animation === undefined, 'the other display received the still');
-    assert.equal((await catalog()).length, 3);
-    await attachment.getByRole('button', {name: 'Check displays', exact: true}).click();
-    await expect(attachment.getByText(/Unavailable/, {exact: false})).toBeVisible();
-
-    world.pixooMode('online');
-    await clock.advance(31_000);
-    await attachment.getByRole('button', {name: 'Check displays', exact: true}).click();
-    await retry.click();
-    await admittedMoment(4);
-    world.pixooMode('silent');
     await clock.advance(ART_SHOW_LEAD_MS + 9000);
-    await expect(attachment.getByText('Outcome uncertain. The request was not sent again.', {exact: false})).toBeVisible();
-    await expect(retry).toHaveCount(0);
-    assert.equal(displays().length, 5);
-    const [retriedDisplay] = displays()[4]?.data.targets ?? [];
-    assert.deepEqual(displays()[4]?.data.targets, [retriedDisplay]);
-    assert.match(retriedDisplay ?? '', /^pixoo/);
-    assert.equal(saves().length, 3);
-    assert.equal((await catalog()).length, 3);
-
-    await remove();
-    await drop(gif, 'image/gif', 'partial.gif');
-    await expect(preview).toBeVisible();
-    await attachment.getByRole('checkbox', {name: 'Tidbyt', exact: true}).check();
-    await attachment.getByRole('button', {name: 'Display now', exact: true}).click();
-    await admittedMoment(5);
-    tronbyt.answerNextPatch(400);
-    await clock.advance(ART_SHOW_LEAD_MS + 3500);
-    await expect(attachment.getByText('Media was sent to the display.', {exact: false})).toBeVisible();
-    await expect(attachment.getByRole('button', {name: 'Retry display on Tidbyt', exact: true})).toHaveCount(0);
-    assert.equal((await catalog()).length, 3);
+    await expect.poll(async () => (await catalog()).length).toBe(5);
+    await page.reload();
+    await feed(page, 'connected');
+    await expect(conversation.getByText(/Playback on pixoo-1 (failed|could not start)/)).toBeVisible();
+    assert.equal(displays().length, 3);
+    assert.equal(admitted('bunny.cmd.moment-play.pixoo-1').length, 2);
+    await expect(conversation.getByText('Update to earlier reply', {exact: true}).last()).toBeVisible();
     assert.equal(world.art.state().imageCalls, 0);
     assert.deepEqual(errors, []);
     console.log('Conversation uploads passed with simulated Pixoo and Tidbyt display evidence.');

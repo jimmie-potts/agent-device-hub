@@ -1054,6 +1054,64 @@ void test('a worker result that comes back before the hand-off is recorded still
   assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
 });
 
+void test('an attached-art Send saves before choosing and never guesses between matching displays', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(() => assert.fail('attachment-only control requires no model call'));
+  const attachmentRequestId = randomUUID();
+  const artworkId = `upload-${attachmentRequestId}`;
+  const w = await world(context, {provider, dispatch: data => {
+    requests.push(data);
+    return Promise.resolve(accepted(data.requestId));
+  }});
+  const targets = ['first-panel', 'second-panel'].map(target => ({target, kind: 'pixoo'}));
+  await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
+    type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
+    data: {id: 'art', revision: 1, targets},
+  }]}));
+  const pixoo = w.bus.connect('bunny/modules/pixoo'), art = w.bus.connect('bunny/modules/art');
+  context.after(async () => {await pixoo.close(); await art.close();});
+  await pixoo.serveSync(['device'], () => ({revision: 1, states: targets.map(({target, kind}, index) => {
+    const device = light(target, 'Hall panel');
+    return {type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
+      data: {...device, kind, availability: index === 0 ? 'available' : 'unavailable',
+        capabilities: {...device.capabilities, moments: {supported: true, moods: ['celebrate'],
+          maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png'], maxBytes: 65536}}}}};
+  })}));
+  await art.serveSync(['art'], () => ({revision: 1, states: [{
+    type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0',
+    data: {id: 'art', revision: 1, jobs: [], artworks: [{artworkId, compositions: [{
+      target: 'pixoo', compositionId: 'a'.repeat(64), outcome: 'succeeded', renditions: [{format: 'png', bytes: 128}],
+    }]}]},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  const sent = await input(w.core, w.module(), 'Show this on Pixoo', false, randomUUID(), {attachmentRequestId});
+  assert.equal(sent.status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  const messages = w.store().page('bunny', 0).messages;
+  assert.equal(messages[0]?.attachment?.requestId, attachmentRequestId);
+  assert.match(messages.at(-1)?.text ?? '', /Saved to the library. Which display did you mean\?.*id:first-panel.*id:second-panel/);
+  assert.deepEqual(requests.map(request => request.family), ['art-attachment-edit']);
+  assert.equal(provider.calls(), 0);
+  await w.restart();
+  assert.deepEqual(w.store().page('bunny', 0).messages, messages);
+  assert.equal(requests.length, 1);
+});
+
+void test('an expired owner attachment refuses its save without invoking a model or display', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(() => assert.fail('a failed attachment save requires no model call'));
+  const w = await world(context, {provider, dispatch: data => {
+    requests.push(data);
+    return Promise.resolve({status: 'rejected', requestId: data.requestId, error: errorBody('not-found')});
+  }});
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'Play this on Tidbyt', false, randomUUID(),
+    {attachmentRequestId: randomUUID()})).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(requests.map(request => request.family), ['art-attachment-edit']);
+  assert.match(w.store().page('bunny', 0).messages.at(-1)?.text ?? '', /couldn.t save.*not-found/);
+});
+
 void test('an ambiguous display kind needs an exact choice and the approved generation retains that choice after restart', async context => {
   const provider = counted((_input, turn) => turn <= 2 ? call('create_artwork', {
     format: 'gif', description: 'Synthetic flag', showTargets: [turn === 1 ? 'pixoo' : 'id:pixoo'],
@@ -1365,7 +1423,7 @@ void test('a failed turn closes after clarification without another model call',
   assert.deepEqual((await page(w)).messages, messages);
 });
 
-async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<typeof world>>, generated?: () => string | undefined): Promise<void> {
+async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<typeof world>>, generated?: () => string | undefined, artworkId = 'kite'): Promise<void> {
   const target = 'display-blue';
   await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
     type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
@@ -1382,10 +1440,54 @@ async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<type
   await art.serveSync(['art'], () => ({revision: 1, states: [{
     type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0', data: {id: 'art', revision: 1,
       jobs: generated === undefined ? [] : [{requestId: generated(), artworkId: 'kite', status: 'finished', outcome: 'succeeded'}],
-      artworks: [{artworkId: 'kite', compositions: [{target: 'pixoo', compositionId: 'a'.repeat(64), outcome: 'succeeded',
+      artworks: [{artworkId, compositions: [{target: 'pixoo', compositionId: 'a'.repeat(64), outcome: 'succeeded',
         renditions: [{format: 'png', bytes: 128}]}]}]},
   }]}));
 }
+
+void test('attached artwork gets one later result in the original exchange after restart', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(() => assert.fail('the named attachment request requires no model call'));
+  const w = await world(context, {provider, dispatch: data => {
+    requests.push(data);
+    return Promise.resolve(accepted(data.requestId));
+  }});
+  const attachmentRequestId = randomUUID(), artworkId = `upload-${attachmentRequestId}`;
+  await serveKiteDisplay(context, w, undefined, artworkId);
+  let operations: OperationRecord[] = [];
+  const draft = (data: OperationRecord) => ({type: 'org.bunny.operation.updated', subject: data.id,
+    dataschema: 'https://bunny.invalid/events/operation/2.0', data});
+  await w.core.serveSync(['operation'], () => ({revision: operations.length, states: operations.map(draft)}));
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'Play this on Blue panel', false, randomUUID(), {attachmentRequestId})).status, 'accepted');
+  await until(() => requests.length === 2 && w.store().confirmations().length === 1);
+  const [save, show] = requests;
+  assert.equal(save?.family, 'art-attachment-edit');
+  assert.ok(show?.family === 'catalog-action');
+  assert.deepEqual(show.data.targets, ['display-blue']);
+  assert.equal(show.data.artworkId, artworkId);
+  await until(() => w.store().call(show.requestId)?.status === 'succeeded');
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  const original = w.store().page('bunny', 0).messages.at(-1);
+  assert.ok(original?.text.includes('Playback confirmation') === true);
+  const [surface] = await artShowSurfaces(show.requestId, ['display-blue']);
+  assert.ok(surface?.kind === 'display');
+  await w.restart(() => {
+    const atMs = Date.now(), requestId = show.requestId;
+    const parent: OperationRecord = {id: operationEntityId(requestId), requestId, revision: 1, kind: 'moment',
+      family: 'art-show', command: 'org.bunny.art.show.requested', target: 'hub', requestedBy: 'bunny/modules/companions',
+      status: 'completed', result: 'succeeded', evidence: 'observed', sentAtMs: atMs, updatedAtMs: atMs, deadlineAtMs: atMs + 5000};
+    operations = [parent, {...parent, id: operationEntityId(surface.momentRequestId), requestId: surface.momentRequestId,
+      family: 'moment-play', command: 'org.bunny.moment.play.requested', target: 'display-blue', requestedBy: 'bunny/core', evidence: 'transmitted'}];
+  });
+  await until(() => w.store().confirmations().length === 0);
+  await w.restart();
+  const updates = w.store().page('bunny', 0).messages.filter(message => message.follows === original.id);
+  assert.deepEqual(updates.map(message => message.text), ['Sent the artwork to Blue panel (display-blue).']);
+  assert.equal(requests.length, 2);
+  assert.equal(provider.calls(), 0);
+});
 
 void test('a failed compound turn reports the saved artwork and exact rejected display action', async context => {
   const requests: AssistantDispatch[] = [];

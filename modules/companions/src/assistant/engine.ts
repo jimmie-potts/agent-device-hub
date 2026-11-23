@@ -4,10 +4,12 @@ import {Annotation, Command as Resume, END, GraphRecursionError, StateGraph, int
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {ASSISTANT_LEGACY_TOOL_LIMIT, ASSISTANT_WEMO_OWNER, type AssistantControl, type AssistantDeviceOwner, type AssistantDispatch, type AssistantInput, type AssistantProfile, type AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
+import {ATTACHED_ASSISTANT_INPUT_PREFIX, ASSISTANT_LEGACY_TOOL_LIMIT, ASSISTANT_WEMO_OWNER, type AssistantControl, type AssistantDeviceOwner, type AssistantDispatch, type AssistantInput, type AssistantProfile, type AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
+import {artShowSurfaces, isUploadArtworkId, uploadArtworkId} from '@jimmie-potts/event-contracts/v2/art-show';
+import {attachmentPlaybackIntent} from './attachment-playback-intent.js';
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
 import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
@@ -281,7 +283,8 @@ export class AssistantEngine {
       if (signal.aborted) return true;
       const known = this.store.confirmation(watch.requestId);
       if (known === undefined || known.result !== undefined) return true;
-      if (evidence.result === undefined && (evidence.sent !== true || known.sent === true)) return false;
+      if (evidence.result === undefined && (evidence.sent !== true || known.sent === true) &&
+          (evidence.prepared !== true || known.prepared === true)) return false;
       await this.outbox.transaction(add => {
         const current = this.store.confirmation(watch.requestId);
         if (current === undefined || current.result !== undefined) return;
@@ -437,16 +440,18 @@ export class AssistantEngine {
     try {
       this.#ready();
       const value: unknown = JSON.parse(Buffer.from(request.bytes).toString('utf8'));
-      if (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId'].includes(key)) ||
-        !profile(value.profile) || !['start', 'answer'].includes(String(value.action)) || typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > LIMITS.inputBytes ||
+      if (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'attachmentRequestId'].includes(key)) ||
+        !profile(value.profile) || !['start', 'answer'].includes(String(value.action)) || typeof value.text !== 'string' || (value.text.trim() === '' && value.attachmentRequestId === undefined) || textBytes(value.text) > LIMITS.inputBytes ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0) fail('invalid-request');
       if (value.action === 'start' ? value.taskId !== undefined || value.questionId !== undefined : typeof value.taskId !== 'string' || typeof value.questionId !== 'string') fail('invalid-request');
+      if (value.attachmentRequestId !== undefined && (value.action !== 'start' || typeof value.attachmentRequestId !== 'string' ||
+          !isUploadArtworkId(uploadArtworkId(value.attachmentRequestId)))) fail('invalid-request');
       const input = value as StagedInput;
       this.store.expireStages(this.context.clock.now());
       const previous = this.store.inputFor(request.requestId);
       if (previous !== undefined && digest(previous.input) !== digest(input)) fail('duplicate-conflict');
       if (previous === undefined && this.store.stagedCount() >= 8) fail('capacity');
-      const staged = previous ?? {ref: randomUUID(), requestId: request.requestId, input, expires: this.context.clock.now() + LIMITS.controlMs};
+      const staged = previous ?? {ref: input.attachmentRequestId === undefined ? randomUUID() : ATTACHED_ASSISTANT_INPUT_PREFIX + digest({requestId: request.requestId, input}), requestId: request.requestId, input, expires: this.context.clock.now() + LIMITS.controlMs};
       if (previous === undefined) this.store.stage(staged);
       return {data: {inputRef: staged.ref}, finish: reply => {
         if ('error' in reply && reply.error.code !== 'uncertain-result') this.store.discard(staged.ref);
@@ -471,12 +476,18 @@ export class AssistantEngine {
         if (conversationId !== undefined && this.#unrecovered.has(conversationId)) fail('unavailable');
         // A new turn of a paid profile is refused, its reply naming why, when what remains of the daily limit or the month's
         // estimate is below the smallest first call, so it is not admitted only to fail there; synthetic turns cost nothing.
-        const paid = this.provider(input.profile), reached = paid.name === 'synthetic' ? undefined : this.spend.reached(paid.model);
+        const paid = this.provider(input.profile);
+        const localAttachment = input.attachmentRequestId !== undefined && attachmentPlaybackIntent(input.text).kind !== 'message';
+        const reached = paid.name === 'synthetic' || localAttachment ? undefined : this.spend.reached(paid.model);
         if (reached !== undefined) throw new Fault('capacity', reached);
         task = this.store.newTask(input.profile, input.text);
-        this.store.message(task, `${task.id}-prompt`, 'owner', input.text, this.context.clock.now());
+        if (input.attachmentRequestId === undefined) this.store.message(task, `${task.id}-prompt`, 'owner', input.text, this.context.clock.now());
+        else {
+          task.attachmentRequestId = input.attachmentRequestId;
+          if (!this.store.ownerAttachment(task, input.attachmentRequestId, this.context.clock.now())) fail('duplicate-conflict');
+        }
         // The first message of a session appearance, or a few turns in, earns the conversation a model-written title (Hub #2025).
-        if (this.titles.started(task.conversationId)) titled = {conversationId: task.conversationId, profile: task.profile};
+        if (!localAttachment && this.titles.started(task.conversationId)) titled = {conversationId: task.conversationId, profile: task.profile};
       } else {
         task = this.#task(input.taskId ?? fail('invalid-request'));
         if (!['waiting', 'paused'].includes(task.status) || task.profile !== input.profile || task.question === null || task.question.id !== input.questionId || task.question.answer !== null) fail('invalid-state');
@@ -592,11 +603,12 @@ export class AssistantEngine {
         if (run !== undefined) {run.traceparent = active.span.context.traceparent; this.store.saveRun(run);}
         task.traceparent = active.span.context.traceparent; this.store.save(task, false);});
       const task = this.#fence(active), config = {...this.#config(task.id), signal: active.controller.signal};
+      if (task.attachmentRequestId !== undefined && await this.#runAttachment(active, task.attachmentRequestId)) return;
       const snapshot = await this.#graph.getState(config); this.#fence(active);
       const interrupted = snapshot.tasks.some(pending => (pending.interrupts?.length ?? 0) > 0);
       const input = interrupted && task.question?.answer !== null && task.question?.answer !== undefined
         ? new Resume<unknown, Partial<GraphState>, 'turn' | 'ask' | 'answered' | 'tool' | 'approve' | 'act' | '__start__'>({resume: task.question.answer})
-        : snapshot.createdAt === undefined ? {taskId: task.id, step: 0, next: 'end' as const, decision: '', result: ''} : null;
+        : snapshot.createdAt === undefined ? {taskId: task.id, step: this.#fence(active).nextOrdinal, next: 'end' as const, decision: '', result: ''} : null;
       await this.#graph.invoke(input, config); this.#fence(active);
       await this.#reconcile(task.id, false, active);
     } catch (error) {
@@ -620,6 +632,66 @@ export class AssistantEngine {
       this.#log('assistant.run.settled', active); active.span.end(this.#task(active.taskId).code === null ? 'unset' : 'error'); this.context.signal.removeEventListener('abort', abort);
       if (this.#active.get(active.conversationId) === active) this.#active.delete(active.conversationId);
     }
+  }
+  async #runAttachment(active: Active, attachmentRequestId: string): Promise<boolean> {
+    const task = this.#fence(active), dispatch = this.options.dispatch ?? fail('unavailable');
+    const artworkId = uploadArtworkId(attachmentRequestId);
+    const requestId = `${task.id}-step-0`;
+    const saved = await this.#call(task.id, 0, 'tool', async (signal, parent) => {
+      const result = await dispatch({requestId, family: 'art-attachment-edit', target: 'art', data: {action: 'save', artworkId}}, parent, signal);
+      if (result.status === 'accepted') return {text: 'accepted: Saved to the library.', units: 0};
+      if (result.status !== 'rejected' || result.error.error.code === 'uncertain-result') {
+        throw new Fault('uncertain-result', 'I couldn’t confirm the library save. No display request was sent.');
+      }
+      return {text: `refused: ${result.error.error.code}`, units: 0};
+    });
+    const intent = attachmentPlaybackIntent(task.prompt);
+    if (saved.startsWith('accepted: ') && intent.kind === 'message') return false;
+    const text = !saved.startsWith('accepted: ') ? `I couldn’t save the attachment (${saved.slice('refused: '.length)}). Select it again to retry.`
+      : intent.kind === 'display' ? await this.#showSentAttachment(active, artworkId, intent.destination)
+      : intent.kind === 'offer-display' ? 'Saved to the library. Would you like me to display this?'
+      : 'Saved to the library. Which display would you like to use?';
+    const messageId = `${task.id}-result`;
+    await this.#change(task.id, current => {
+      this.#fence(active);
+      current.status = 'succeeded';
+      current.code = null;
+      const reply = this.#confirmationReply(task.id, messageId, text);
+      this.store.message(current, messageId, 'assistant', reply, this.context.clock.now());
+      this.#settle(current, active);
+    }, active.span.context);
+    this.#speak(task.id, messageId, text, active.span.context);
+    return true;
+  }
+  async #showSentAttachment(active: Active, artworkId: string, destination: string): Promise<string> {
+    const task = this.#fence(active), dispatch = this.options.dispatch ?? fail('unavailable');
+    const requestId = `${task.id}-step-1`;
+    const prior = this.store.call(requestId);
+    if (prior !== undefined) return ['Saved to the library.', prior.result].filter(Boolean).join(' ');
+    const selected = await this.#catalog().selectSentArtwork(artworkId, destination, active.span.context);
+    const saved = 'Saved to the library.';
+    if ('question' in selected) return `${saved} ${selected.question}`;
+    if ('code' in selected) return `${saved} I couldn’t choose the display (${selected.code}).`;
+    const [surface] = await artShowSurfaces(requestId, [selected.target]);
+    if (surface?.kind !== 'display') return fail('invalid-state');
+    const acceptedAtMs = this.context.clock.now();
+    const watch: Confirmation = {artwork: {target: selected.target, prepareRequestId: surface.prepareRequestId, momentRequestId: surface.momentRequestId},
+      label: selected.label, requestId, taskId: task.id, questionId: `${task.id}-prompt`, acceptedAtMs,
+      expiresAtMs: acceptedAtMs + CONFIRMATION_LIFETIME_MS, traceparent: active.span.context.traceparent};
+    const reply = await this.#call(task.id, 1, 'tool', async (signal, parent) => {
+      void this.#followConfirmation(watch);
+      const binding = {kind: 'fixed', owner: 'bunny/core', target: 'hub'} as const;
+      const response = await dispatch({requestId, family: 'catalog-action', command: 'art-show', target: 'hub', binding,
+        data: {artworkId, targets: [selected.target], guards: [selected.guard]}}, parent, signal);
+      if (response.status === 'rejected' && response.error.error.code !== 'uncertain-result') {
+        const result = `I couldn’t send the artwork to ${selected.label} (${response.error.error.code}).`;
+        return {text: result, units: 0, confirmation: {...watch, result}};
+      }
+      return {text: pending(watch), units: 0};
+    }, (_current, call) => {this.store.saveConfirmation({...watch, traceparent: call.traceparent});});
+    const recorded = this.store.confirmation(requestId);
+    if (recorded !== undefined && recorded.result === undefined) await this.#waitForConfirmation(recorded, IN_TURN_CONFIRMATION_MS, active.controller.signal);
+    return `${saved} ${reply}`;
   }
   #activeFor(taskId: string): Active {
     const active = this.#active.get(this.#task(taskId).conversationId); if (active === undefined || active.taskId !== taskId) return fail('invalid-state');

@@ -1,3 +1,4 @@
+import {isUploadArtworkId, uploadArtworkId} from '@jimmie-potts/event-contracts/v2/art-show';
 import {isErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import {artDescription, routingId} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {catalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
@@ -80,8 +81,9 @@ export function decodeConversationWindow(value: unknown, {profile, before}: Wind
       !/^[a-z0-9-]{1,128}$/.test(follows) || !follows.startsWith(taskId + '-'))) return invalidPage();
     if (attachment === undefined) messages.push({seq, id, taskId, role, text, atMs, ...(follows === undefined ? {} : {follows})});
     else {
-      if (role !== 'assistant' || !record(attachment) || attachment.kind !== 'artwork' || typeof attachment.requestId !== 'string' ||
-        !/^[a-z0-9-]{1,100}$/.test(attachment.requestId) || !artDescription(attachment.description)) return invalidPage();
+      if (role === 'tool' || !record(attachment) || attachment.kind !== 'artwork' || typeof attachment.requestId !== 'string' ||
+        !/^[a-z0-9-]{1,100}$/.test(attachment.requestId) || !artDescription(attachment.description) ||
+        role === 'owner' && !isUploadArtworkId(uploadArtworkId(attachment.requestId))) return invalidPage();
       const {admission, code, showTargets} = attachment;
       if (showTargets !== undefined && (!Array.isArray(showTargets) || showTargets.length > 3 || !showTargets.every(routingId))) return invalidPage();
       if (admission !== 'accepted' && admission !== 'refused' && admission !== 'pending' && admission !== 'uncertain') return invalidPage();
