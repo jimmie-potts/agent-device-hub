@@ -52,6 +52,40 @@ ${background ? '  <key>ProcessType</key>\n  <string>Background</string>\n' : ''}
 `;
 }
 
+// The serve agent's shell, POSIX sh only (macOS /bin/sh is bash 3.2 in POSIX mode). The traps only count stops (TERM or
+// INT) and, once the serve's pid is in `c`, start the re-send helper; the serve's status is collected at one `wait` alone.
+// - A stop before the first trap kills the shell by default, before any serve has started.
+// - A stop before the check on the second line is counted, and the shell exits 143 without starting a serve.
+// - A stop from the check until the second trap is counted, and the line after that trap starts the helper. A stop
+//   between the check and the fork therefore starts the serve and then stops it.
+// - After that, the first stop starts the helper. There is only ever one helper: `go` marks it started before forking
+//   it. A stop after its five TERMs forwards nothing more; launchd's own kill at its ExitTimeOut, which also reaches
+//   the job's process group, ends a serve that ignored them.
+// A forked child keeps the shell's signal handler until it resets it and execs, and a TERM it receives then is lost, so
+// one forwarded TERM is not enough: the helper sends TERM up to 5 times in all, a second apart, while the serve answers.
+// The lost window lasts only until the exec, a serve that stops within a second gets one TERM, and the last comes about
+// 4 s after the first, well before launchd's 20 s ExitTimeOut.
+// The loop waits for the serve. A wait that a stop interrupted returns early, leaving the serve waitable; it is told
+// apart from one that collected the serve, whose status may be over 128 too, by the stop count changing and the pid
+// still answering `kill -0`, and the loop then waits again. If the serve exits within milliseconds of a stop, it can be
+// reaped before `kill -0` runs; the loop then keeps the interrupted wait's 143, so the job exits 143 rather than the
+// serve's status. In every case the serve has ended and nothing is orphaned.
+// The shell then ignores stops, waits for the helper rather than signalling it, so no `sleep` is left behind, and exits
+// with the serve's status; after a stop that is up to a second after the serve exits, when the helper finds it gone.
+// Signalling by pid stays racy in two places: the helper can send its next TERM to the serve's pid up to a second after
+// the serve was reaped, and the loop's `kill -0` microseconds after; either reaches another process only if the pid is
+// reused within that time.
+export const serveScript = [
+  'stop=0; trap \'stop=$((stop + 1))\' TERM INT',
+  '[ "$stop" -eq 0 ] || exit 143',
+  '"$0" serve --https=443 http://127.0.0.1:18789 & c=$! r=',
+  'go() { [ -n "$r" ] || { r=0; (n=0; while [ "$n" -lt 5 ] && kill -TERM "$c" 2>/dev/null; do sleep 1; n=$((n + 1)); done) & r=$!; }; }',
+  'trap \'stop=$((stop + 1)); go\' TERM INT',
+  '[ "$stop" -eq 0 ] || go',
+  '{ while :; do seen=$stop; wait "$c"; s=$?; [ "$stop" != "$seen" ] && kill -0 "$c" 2>/dev/null || break; done; }',
+  'trap \'\' TERM INT; [ -z "$r" ] || wait "$r"; exit "$s"',
+].join('\n');
+
 export function agents({home, node, project = 'bunny-mac-personal'}) {
   const signin = join(home, '.local', 'share', 'bunny', 'signin');
   const route = join(home, '.config', 'bunny', 'private-access');
@@ -65,10 +99,9 @@ export function agents({home, node, project = 'bunny-mac-personal'}) {
       program: ['/bin/sh', join(route, 'start-forwarder.sh')], log: join(route, 'forwarder.log')},
     // The app binary starts as the GUI, logs a CLIError and exits 0 without a terminal unless TAILSCALE_BE_CLI is set, and
     // even then whenever its parent is launchd. So a shell stays its parent: no exec, the binary as $0 rather than shell
-    // text, a stop forwarded and waited for, and the job ending with the serve so KeepAlive restarts it. The trap exits
-    // with the serve's status: a bare exit there keeps the interrupted wait's 143 in dash, as POSIX specifies.
+    // text, a stop forwarded and waited for, and the job ending with the serve so KeepAlive restarts it. See serveScript.
     {label: 'org.bunny.private-serve', keepAlive: true, path, environment: {TAILSCALE_BE_CLI: '1'}, workingDirectory: route,
-      program: ['/bin/sh', '-c', `trap 'kill -TERM "$c" 2>/dev/null; wait "$c"; exit "$?"' TERM INT; "$0" serve --https=443 http://127.0.0.1:18789 & c=$!; wait "$c"`, tailscale],
+      program: ['/bin/sh', '-c', serveScript, tailscale],
       log: join(route, 'serve.log')},
   ];
 }
