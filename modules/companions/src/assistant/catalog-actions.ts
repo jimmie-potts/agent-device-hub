@@ -328,7 +328,10 @@ export class ConversationActions {
         }
         const destinations = await this.#artDestinations(parent);
         return textResult({displays: destinations?.map(({target, kind, label, guard, formats, maxBytes}) => ({routingId: target, kind, label, available: guard !== undefined, formats, maxBytes})) ?? null,
-          artworks: art.artworks.map(item => ({artworkId: item.artworkId, createdAtMs: item.createdAtMs, favorite: item.favorite,
+          // `sourceRequestId` is the generation request a Conversation attachment names (Hub #2029), so a follow-up such as
+          // "show that animation" can find the attached artwork's ID.
+          artworks: art.artworks.map(item => ({artworkId: item.artworkId, sourceRequestId: art.jobs.find(job => job.artworkId === item.artworkId)?.requestId ?? null,
+            createdAtMs: item.createdAtMs, favorite: item.favorite,
             renditionKinds: item.compositions.filter(part => usableArtComposition(item, part.target) !== undefined).map(part => part.target)}))});
       }
       case READ_PLAYBACK: {

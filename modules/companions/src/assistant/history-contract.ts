@@ -1,6 +1,7 @@
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import type {CatalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
-import type {AssistantDeviceAction, AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
+import type {AssistantDeviceAction, AssistantProfile, AssistantProvider} from '@jimmie-potts/event-contracts/v2/assistant';
+import type {ContextSection} from './context.js';
 import type {Mode} from '@jimmie-potts/event-contracts/v2/families';
 
 export const HISTORY_ROWS = 16;
@@ -24,6 +25,22 @@ export type RecentConversationPage = {
   currentTask: CurrentTask | null;
   older: string | null;
 };
+
+/**
+ * A profile's conversations (Hub #2029): the current one first, which new messages go to, then each earlier one New
+ * conversation replaced, by its last message, newest first; each stays readable by its ID. `title` is the session title
+ * it publishes. `older` is the keyset cursor of the next page, passed back as `after`.
+ */
+export type ConversationListEntry = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null;
+  title: {value: string; source: 'provider' | 'user'}};
+export type ConversationList = {version: 1; profile: AssistantProfile; conversations: ConversationListEntry[]; older: string | null};
+/**
+ * The page's context preview (Hub #2029): the context builder's sections, exactly as the next model call for the profile
+ * would send them, with each one's budget and what it left out. `basis` says which call: the next one of the current
+ * conversation's unfinished task, or that of a new message's task.
+ */
+export type ContextPreview = {schema: 'assistant-context/1.0'; revision: number; profile: AssistantProfile; conversationId: string | null;
+  provider: AssistantProvider; model: string; basis: {kind: 'task'; taskId: string} | {kind: 'next-message'}; sections: readonly ContextSection[]};
 
 type Cursor = {profile: AssistantProfile; conversationId: string; seq: number};
 

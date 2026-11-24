@@ -2,15 +2,18 @@ import {isErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
 import {artDescription, routingId} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {catalogProposal} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
-import {HISTORY_ROWS, readHistoryCursor, type ConversationMessage, type CurrentTask, type Proposal, type RecentConversationPage, type SavedQuestion} from '../assistant/history-contract.js';
+import {HISTORY_ROWS, readHistoryCursor, type ConversationList, type ConversationListEntry, type ConversationMessage, type CurrentTask, type Proposal, type RecentConversationPage, type SavedQuestion} from '../assistant/history-contract.js';
 import {LIMITS} from '../assistant/limits.js';
 
-type WindowRequest = {profile: AssistantProfile; before?: string};
+/** `conversationId` asks for an earlier conversation of the profile by its ID (Hub #2029); without it the current one is read. */
+type WindowRequest = {profile: AssistantProfile; before?: string; conversationId?: string};
 export type HistoryWindow = {messages: readonly ConversationMessage[]; older: string | null};
 /** Windows are chronological. A later window's cursor can fill the gap before it. */
 export type ConversationHistory = {
   profile: AssistantProfile;
   conversationId: string | null;
+  /** Whether this is an earlier conversation the owner opened by its ID, which is read only and has no current task. */
+  earlier: boolean;
   currentTask: CurrentTask | null;
   windows: readonly HistoryWindow[];
 };
@@ -60,7 +63,8 @@ function decodeTask(value: unknown): CurrentTask | null {
   return {taskId: value.taskId, question: decodeQuestion(value.question)};
 }
 
-export function decodeConversationWindow(value: unknown, {profile, before}: WindowRequest): RecentConversationPage {
+export function decodeConversationWindow(value: unknown, request: WindowRequest): RecentConversationPage {
+  const {profile, before} = request;
   if (!record(value) || value.version !== 2 || value.profile !== profile || !Array.isArray(value.messages) ||
     value.messages.length > HISTORY_ROWS || new TextEncoder().encode(JSON.stringify(value)).byteLength > LIMITS.pageBytes) return invalidPage();
   const {conversationId, older} = value;
@@ -69,6 +73,7 @@ export function decodeConversationWindow(value: unknown, {profile, before}: Wind
   const currentTask = decodeTask(value.currentTask);
   const anchor = before === undefined ? undefined : readHistoryCursor(before, profile);
   if (before !== undefined && (anchor === undefined || anchor.conversationId !== conversationId || currentTask !== null)) return invalidPage();
+  if (request.conversationId !== undefined && (conversationId !== request.conversationId || currentTask !== null)) return invalidPage();
   let previous = 0;
   const messages: ConversationMessage[] = [];
   for (const message of value.messages) {
@@ -103,6 +108,7 @@ async function readWindow(read: Read, request: WindowRequest, signal: AbortSigna
   signal.throwIfAborted();
   const query = new URLSearchParams({profile: request.profile, view: 'recent'});
   if (request.before !== undefined) query.set('before', request.before);
+  if (request.conversationId !== undefined) query.set('conversationId', request.conversationId);
   const response = await read(`/modules/companions/content/conversation?${query.toString()}`, signal);
   signal.throwIfAborted();
   return decodeConversationWindow(response, request);
@@ -121,12 +127,16 @@ function mergeWindows(windows: readonly HistoryWindow[], page: RecentConversatio
   return [...windows.slice(0, first), {messages: [...messages.values()].sort((a, b) => a.seq - b.seq), older}, ...windows.slice(anchorIndex + 1)];
 }
 
-/** One recent read. Abort the previous request when the selected profile or read attempt changes. */
-export async function refreshConversationHistory(read: Read, profile: AssistantProfile, signal: AbortSignal, prior?: ConversationHistory): Promise<ConversationHistory> {
-  const page = await readWindow(read, {profile}, signal);
+/**
+ * One recent read of the profile's current conversation, or of an earlier one by its ID (Hub #2029). Abort the previous
+ * request when the selected profile, conversation or read attempt changes.
+ */
+export async function refreshConversationHistory(read: Read, profile: AssistantProfile, signal: AbortSignal, prior?: ConversationHistory, conversationId?: string): Promise<ConversationHistory> {
+  const page = await readWindow(read, {profile, ...(conversationId === undefined ? {} : {conversationId})}, signal);
   signal.throwIfAborted();
-  const windows = prior?.profile === profile && prior.conversationId === page.conversationId ? prior.windows : [];
-  return {profile, conversationId: page.conversationId, currentTask: page.currentTask,
+  const earlier = conversationId !== undefined;
+  const windows = prior?.profile === profile && prior.conversationId === page.conversationId && prior.earlier === earlier ? prior.windows : [];
+  return {profile, conversationId: page.conversationId, earlier, currentTask: page.currentTask,
     windows: mergeWindows(windows, page, windows.length)};
 }
 
@@ -134,8 +144,30 @@ export async function refreshConversationHistory(read: Read, profile: AssistantP
 export async function loadEarlierConversationHistory(read: Read, history: ConversationHistory, before: string, signal: AbortSignal): Promise<ConversationHistory> {
   const index = history.windows.findIndex(window => window.older === before);
   if (index < 0) return invalidPage();
-  const page = await readWindow(read, {profile: history.profile, before}, signal);
+  const page = await readWindow(read, {profile: history.profile, before, ...(history.earlier && history.conversationId !== null ? {conversationId: history.conversationId} : {})}, signal);
   signal.throwIfAborted();
   if (page.conversationId !== history.conversationId) return invalidPage();
   return {...history, windows: mergeWindows(history.windows, page, index)};
+}
+
+/** The profile's conversations as the list read returns them (Hub #2029), checked before the page shows them. */
+export function decodeConversationList(value: unknown, profile: AssistantProfile): ConversationList {
+  if (!record(value) || value.version !== 1 || value.profile !== profile || !Array.isArray(value.conversations) || value.conversations.length > 17 ||
+    !(value.older === null || (typeof value.older === 'string' && /^(-1|\d{1,15}):\d{1,15}$/.test(value.older)))) return invalidPage();
+  const conversations: ConversationListEntry[] = value.conversations.map((entry: unknown) => {
+    if (!record(entry) || typeof entry.conversationId !== 'string' || entry.conversationId === '' || typeof entry.current !== 'boolean' || !integer(entry.messages) ||
+      !(entry.firstAtMs === null || integer(entry.firstAtMs)) || !(entry.lastAtMs === null || integer(entry.lastAtMs)) || !record(entry.title) ||
+      typeof entry.title.value !== 'string' || (entry.title.source !== 'provider' && entry.title.source !== 'user')) return invalidPage();
+    return {conversationId: entry.conversationId, current: entry.current, messages: entry.messages, firstAtMs: entry.firstAtMs, lastAtMs: entry.lastAtMs,
+      title: {value: entry.title.value, source: entry.title.source}};
+  });
+  return {version: 1, profile, conversations, older: value.older};
+}
+
+/** Reads a page of the profile's conversations: the first, or the one after the `older` cursor an earlier page returned. */
+export async function readConversationList(read: Read, profile: AssistantProfile, signal: AbortSignal, after?: string): Promise<ConversationList> {
+  const query = new URLSearchParams({profile, view: 'list', ...(after === undefined ? {} : {after})});
+  const response = await read(`/modules/companions/content/conversation?${query.toString()}`, signal);
+  signal.throwIfAborted();
+  return decodeConversationList(response, profile);
 }

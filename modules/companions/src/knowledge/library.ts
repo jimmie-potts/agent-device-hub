@@ -6,10 +6,11 @@ import {ARCHIVE_BYTES, PAGE_BYTES, PROFILES, type Archive, type CompanionMessage
 import type {KnowledgeInput} from './validation.js';
 /**
  * A part of the companion records with its own change revision (Hub #2056): the library, which holds knowledge entries,
- * voices and the synthetic exchanges a fixture adds, or the Duck widget's selection.
+ * voices and the synthetic exchanges a fixture adds, the Duck widget's selection, or the companions' context switches
+ * (Hub #2029).
  */
-export type Scope = 'library' | 'duck-widget';
-const SCOPES: readonly Scope[] = ['library', 'duck-widget'];
+export type Scope = 'library' | 'duck-widget' | 'context';
+const SCOPES: readonly Scope[] = ['library', 'duck-widget', 'context'];
 /** What a knowledge command changes: its scopes, and the conversations whose records it changes. */
 export type Changes = {scopes: Scope[]; conversations: string[]};
 const sameOrder = (a: Order, b: Order): boolean => a.authority === b.authority && a.epoch === b.epoch && a.sequence === b.sequence;
@@ -33,6 +34,7 @@ export class KnowledgeLibrary {
   changes(input: KnowledgeInput): Changes {
     switch (input.action) {
       case 'select-duck-conversation': return {scopes: ['duck-widget'], conversations: []};
+      case 'set-context-knowledge': return {scopes: ['context'], conversations: []};
       case 'correct-message': case 'delete-message': {
         const messages = this.assistant.store.messages;
         const conversationId = messages.get(input.messageId)?.conversationId ?? messages.removal(input.messageId)?.conversationId;
@@ -98,8 +100,16 @@ export class KnowledgeLibrary {
       SELECT SUM(length(CAST(record AS BLOB))) FROM companion_removals)`).get() as {bytes: number | null};
     if ((bytes.bytes ?? 0) > ARCHIVE_BYTES) fail('capacity');
     return {schema: 'companion-archive/1.0', knowledge: this.entries.entries(), preferences: this.preferences.library(),
-      voices: this.profiles().map(({id, voiceRef}) => ({id, voiceRef})), conversations: this.assistant.store.messages.conversations(),
+      voices: this.profiles().map(({id, voiceRef}) => ({id, voiceRef})), conversations: this.#exported(),
       messages: this.assistant.store.messages.all(), removals: this.assistant.store.messages.removals()};
+  }
+  /**
+   * The conversations in archive order (Hub #2029): each profile's earlier conversations in saved order, then the current
+   * ones, so an import into a store without a current conversation takes the export's current one as its own.
+   */
+  #exported(): Archive['conversations'] {
+    const all = this.assistant.store.messages.conversations(), current = this.assistant.store.currentConversations();
+    return [...all.filter(conversation => !current.has(conversation.id)), ...all.filter(conversation => current.has(conversation.id))];
   }
   capacity(): void {if (Buffer.byteLength(JSON.stringify(this.archive())) > ARCHIVE_BYTES) fail('capacity');}
   apply(input: KnowledgeInput, now: number): void {
@@ -108,6 +118,7 @@ export class KnowledgeLibrary {
         if (input.conversationId !== null) this.#duckConversation(input.conversationId);
         this.db.prepare('INSERT INTO companion_widget VALUES(1,?) ON CONFLICT(id) DO UPDATE SET conversation_id=excluded.conversation_id').run(input.conversationId);
         break;
+      case 'set-context-knowledge': this.assistant.store.setKnowledge(input.persona, input.enabled); break;
       case 'fixture': this.assistant.store.messages.fixture(now); break;
       case 'correct-message': this.assistant.store.messages.correct(input.messageId, input.meaning); break;
       case 'delete-message': this.assistant.store.messages.remove(input.messageId, now); break;
@@ -124,10 +135,6 @@ export class KnowledgeLibrary {
       const current = messages.conversation(conversation.id);
       if (current !== undefined && (current.epoch !== conversation.epoch || current.profile !== conversation.profile ||
         [...current.participants].sort().join(',') !== [...conversation.participants].sort().join(','))) fail('invalid-request');
-      if (conversation.profile !== null) {
-        const binding = this.assistant.store.conversation(conversation.profile);
-        if (binding !== undefined && binding !== conversation.id) fail('invalid-request');
-      }
     }
     this.capacity();
     const currentMessages = messages.all(), currentRemovals = messages.removals();
@@ -139,8 +146,11 @@ export class KnowledgeLibrary {
       if ('meaning' in record && current !== undefined && identity(current) !== identity(record)) fail('invalid-request');
       if ([...currentMessages, ...currentRemovals].some(local => local.messageId !== record.messageId && local.conversationId === record.conversationId && sameOrder(local.ordering, record.ordering))) fail('invalid-request');
     }
-    for (const conversation of archive.conversations) {
-      this.db.prepare('INSERT OR IGNORE INTO companion_conversations VALUES(?,?)').run(conversation.id, JSON.stringify(conversation));
+    // A profile's conversations arrive in the archive's order, oldest first. An import never moves a profile's current
+    // conversation; a profile without one takes the archive's last, and the others stay readable as earlier conversations
+    // (Hub #2029).
+    for (const conversation of archive.conversations) this.db.prepare('INSERT OR IGNORE INTO companion_conversations VALUES(?,?)').run(conversation.id, JSON.stringify(conversation));
+    for (const conversation of [...archive.conversations].reverse()) {
       if (conversation.profile !== null) this.db.prepare('INSERT OR IGNORE INTO assistant_conversations VALUES(?,?)').run(conversation.profile, conversation.id);
     }
     for (const removal of archive.removals) messages.applyRemoval(removal);

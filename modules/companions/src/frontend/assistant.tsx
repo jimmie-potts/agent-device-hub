@@ -7,8 +7,8 @@ import {LIMITS} from '../assistant/limits.js';
 import {useCompanionSpeechCopy, useSpeechControlsSession} from './speech.js';
 import {ConversationVoice, stopSpeakingButton} from './conversation-voice.js';
 
-import type {SavedQuestion} from '../assistant/history-contract.js';
-import {loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
+import type {ConversationListEntry, SavedQuestion} from '../assistant/history-contract.js';
+import {loadEarlierConversationHistory, readConversationList, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
 import {ConversationDetails, useDetailsOverlay, type ConversationTitle} from './conversation-details.js';
 import {spendNotice, useSpend} from './conversation-spend.js';
 import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
@@ -157,6 +157,11 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
     return () => {conversationRail.setOpen(false);};
   }, []);
   const [history, setHistory] = useState<ConversationHistory>();
+  // An earlier conversation of this profile the owner opened from Details (Hub #2029), read only; undefined shows the current one.
+  const [viewing, setViewing] = useState<string>();
+  const [conversations, setConversations] = useState<readonly ConversationListEntry[]>();
+  // The cursor of the next page of the profile's conversations, or null when every one is listed.
+  const [olderConversations, setOlderConversations] = useState<string | null>(null);
   const historyRef = useRef<ConversationHistory>(undefined);
   const historyAttempt = useRef<HistoryAttempt>(undefined);
   const [historyStatus, setHistoryStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
@@ -250,8 +255,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
     failedCursor.current = undefined;
     setHistoryStatus('loading');
     const request = before === undefined
-      ? refreshConversationHistory(read, profile, controller.signal, prior)
-      : prior?.profile === profile ? loadEarlierConversationHistory(read, prior, before, controller.signal) : undefined;
+      ? refreshConversationHistory(read, profile, controller.signal, prior, viewing)
+      : prior?.profile === profile && prior.earlier === (viewing !== undefined) ? loadEarlierConversationHistory(read, prior, before, controller.signal) : undefined;
     if (request === undefined) {
       historyAttempt.current = undefined;
       setHistoryStatus('failed');
@@ -272,7 +277,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
       historyAttempt.current = undefined;
       if (attempt.refreshAfter) readWindow();
     });
-  }, [api, connected, profile]);
+  }, [api, connected, profile, viewing]);
   useEffect(() => () => {
     historyAttempt.current?.controller.abort();
     historyAttempt.current = undefined;
@@ -284,7 +289,29 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   useLayoutEffect(() => {
     historyAttempt.current?.controller.abort();
     setHistoryStatus('loading');
-  }, [profile]);
+  }, [profile, viewing]);
+  // Another profile opens on its current conversation.
+  useLayoutEffect(() => {setViewing(undefined);}, [profile]);
+  // The profile's conversations, current and earlier (Hub #2029), read while Details is open or an earlier one is shown,
+  // and again at each change of the assistant's state meanwhile.
+  const listed = detailsOpen || viewing !== undefined;
+  useEffect(() => {
+    setConversations(undefined);
+    if (!connected || historyApi !== api || !listed) return;
+    const controller = new AbortController();
+    void readConversationList(path => api.read(path), profile, controller.signal).then(list => {
+      if (!controller.signal.aborted) {setConversations(list.conversations); setOlderConversations(list.older);}
+    }, () => {if (!controller.signal.aborted) setConversations(undefined);});
+    return () => {controller.abort();};
+  }, [api, connected, historyApi, listed, profile, state?.revision]);
+  const showOlderConversations = (): void => {
+    const after = olderConversations;
+    if (after === null || conversations === undefined) return;
+    void readConversationList(path => api.read(path), profile, new AbortController().signal, after).then(list => {
+      setConversations(prior => prior === undefined ? prior : [...prior, ...list.conversations.filter(next => !prior.some(value => value.conversationId === next.conversationId))]);
+      setOlderConversations(list.older);
+    }, () => {setOlderConversations(after);});
+  };
   // The rail marks a conversation that needs the owner. The page shares the kind of question it has already read.
   useEffect(() => {
     const task = history?.currentTask;
@@ -300,7 +327,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const open = task !== undefined && !finished(task.status);
   // Every conversation with an unfinished task: the one switch stays on until each finishes or is cancelled.
   const unfinished = state?.tasks.filter(value => !finished(value.status)).map(value => value.profile) ?? [];
-  const visibleHistory = history?.profile === profile ? history : undefined;
+  const visibleHistory = history?.profile === profile && history.earlier === (viewing !== undefined) &&
+    (viewing === undefined || history.conversationId === viewing) ? history : undefined;
+  const earlier = viewing === undefined ? undefined : conversations?.find(value => value.conversationId === viewing);
   const visibleMessageIds = new Set(visibleHistory?.windows.flatMap(window => window.messages.map(message => message.id)));
   const hasArt = visibleHistory?.windows.some(window => window.messages.some(message => message.attachment !== undefined)) ?? false;
   const art = useConversationArt(context.api, connected && hasArt);
@@ -312,7 +341,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   if (task?.status === 'waiting' && pendingQuestion) cue = activeClarification && 'Needs your answer';
   const {Command, Facts} = context.ui;
   // The conversation's session title as the core publishes it (Hub #2025): written by the model, the owner's name, or the persona.
-  const conversationId = task?.conversationId ?? visibleHistory?.conversationId ?? null;
+  const conversationId = task?.conversationId ?? (visibleHistory?.earlier === false ? visibleHistory.conversationId : undefined)
+    ?? conversations?.find(value => value.current)?.conversationId ?? null;
   const session = conversationId === null ? undefined
     : context.core?.sessions.find(view => view.identity.provider === 'bunny' && view.identity.sessionId === conversationId);
   const title: ConversationTitle | undefined = session?.title === undefined ? undefined : {value: session.title.value, source: session.title.source};
@@ -329,24 +359,44 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
         void command.run({family: 'assistant-control', target: 'assistant', requestId: crypto.randomUUID(),
           data: {action, expectedRevision: state.revision}});
       };
+      // New conversation (Hub #2029): the module refuses it while this conversation's task is unfinished, so the page does too.
+      // An empty current conversation has nothing to leave behind, so New conversation waits for its first message.
+      const empty = viewing === undefined && visibleHistory !== undefined && !visibleHistory.earlier && task === undefined &&
+        !visibleHistory.windows.some(window => window.messages.length > 0);
+      const held = viewing !== undefined ? undefined : open ? 'Finish or cancel this conversation\'s task first.' : empty ? 'This conversation is empty. Send a message first.' : undefined;
+      const canStartNew = state !== undefined && !locked && held === undefined && viewing === undefined;
+      const startNew = (): void => {
+        if (!canStartNew) return;
+        void command.run({family: 'assistant-input', target: 'assistant', requestId: crypto.randomUUID(),
+          upload: {name: 'input.json', file: new Blob([JSON.stringify({action: 'new-conversation', profile, expectedRevision: state.revision})], {type: 'application/json'})}});
+      };
       return <div className="conversation-layout">
         <div className="conversation-main">
           <div className="conversation-context">
             <header className="conversation-header">
               <h2>{profiles[profile].name}</h2>
+              {/* A phone header shows a plus sign; the button's name stays "New conversation". */}
+              <button type="button" className="secondary conversation-new" disabled={!canStartNew} aria-label="New conversation" title="New conversation"
+                aria-describedby={held === undefined ? undefined : `${detailsId}-new-held`} onClick={startNew}>
+                <span className="conversation-new-wide" aria-hidden="true">New conversation</span><span className="conversation-new-narrow" aria-hidden="true">+</span></button>
               <button type="button" className="secondary conversation-details-trigger" ref={detailsTrigger}
                 aria-expanded={detailsOpen} aria-controls={detailsId} onClick={() => {
                   if (detailsOpen) closeDetails();
                   else setPanel('details');
                 }}>Details</button>
             </header>
+            {held !== undefined && <p id={`${detailsId}-new-held`} className="conversation-new-held">{held}</p>}
+            {viewing !== undefined && <div className="conversation-earlier" role="note">
+              <p>{earlier === undefined ? '' : <><strong>{earlier.title.value}</strong> · </>}Earlier conversation, read only. New messages go to the current conversation.</p>
+              <button type="button" className="secondary" onClick={() => {setViewing(undefined);}}>Back to current conversation</button>
+            </div>}
             {!connected ? <p role="status">Disconnected. Saved history remains readable. Last known task state.</p>
               : !live && <p role="status">Stale. Current conversation state is unavailable. Saved history remains readable.</p>}
             {!context.control && <p>Read-only access. Controls require operator authority.</p>}
             {context.control && !context.operationsLive && <p>Tracked operations are unavailable. Conversation controls are locked.</p>}
           </div>
-          <ConversationTranscript key={profile} history={visibleHistory} status={!connected && historyStatus === 'loading' ? 'unavailable' : historyStatus}
-            live={live} canStart={!locked && state?.enabled === true && !open}
+          <ConversationTranscript key={`${profile}:${viewing ?? 'current'}`} history={visibleHistory} status={!connected && historyStatus === 'loading' ? 'unavailable' : historyStatus}
+            live={live} canStart={!locked && state?.enabled === true && !open && viewing === undefined}
             readLocked={!connected || historyStatus === 'loading'} loadEarlier={before => {readHistory(before);}} retry={() => {readHistory(failedCursor.current);}}
             renderToolEvidence={message => {
               const operation = context.operations.find(value => value.requestId === message.id && value.requestedBy === 'bunny/modules/companions');
@@ -380,7 +430,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                     data: {action: 'speak', expectedRevision: state.revision, taskId: message.taskId, messageId: message.id}});
                 }}>Read aloud</button>)}
             </article>}/>
-          <div className="conversation-compose">
+          {viewing === undefined && <div className="conversation-compose">
             {state !== undefined && !state.enabled && <p>Conversation is off. <button type="button" disabled={locked} onClick={() => {present('enable');}}>Enable conversation</button></p>}
             {cue !== undefined && <p role="status" className={live && task?.status === 'succeeded' ? 'conversation-completed' : undefined}>
               {cue}{!live ? ' (Last known)' : ''}
@@ -395,7 +445,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
               voice={<ConversationVoice context={context} speech={speech} open={panel === 'voice'} onOpenChange={setVoiceOpen}
                 stopSpeaking={stopInDrawer ? null : stopSpeaking}/>}/>
             {!routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
-          </div>
+          </div>}
+          {viewing !== undefined && !routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
         </div>
         <ConversationDetails id={detailsId} open={detailsOpen} overlay={detailsOverlay} onClose={closeDetails}
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
@@ -406,6 +457,10 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             conversationRail.select(owner);
             if (detailsOverlay) closeDetails();
           }} setEnabled={present}
+          conversations={conversations} viewing={viewing} showOlder={olderConversations === null ? undefined : showOlderConversations} openConversation={id => {
+            setViewing(conversations?.find(value => value.conversationId === id)?.current === true ? undefined : id);
+            if (detailsOverlay) closeDetails();
+          }}
           title={title} rename={value => {
             if (state === undefined || locked) return;
             void command.run({family: 'assistant-control', target: 'assistant', requestId: crypto.randomUUID(),

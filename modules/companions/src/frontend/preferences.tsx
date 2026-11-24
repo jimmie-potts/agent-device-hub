@@ -2,6 +2,7 @@ import React, {useEffect, useState} from 'react';
 import type {PreferenceState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {ActivePreferences, Preference, PreferenceLibrary, PreferenceView} from '../preferences/model.js';
+import {entriesLeftOut, leftOutNote} from '../assistant/context.js';
 
 const endpoint = '/modules/companions/content/preferences';
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -36,6 +37,9 @@ export function EntryLibrary({context, command, view, live, kind = 'preferences'
   const [history, setHistory] = useState<string>();
   const locked = !live || !context.control || !context.operationsLive || command.locked || busy;
   const invalid = title.trim() === '' || text.trim() === '' || bytes(title) > 200 || bytes(text) > 4096;
+  // The model context's section for these entries keeps to its budget and leaves the last ones out (Hub #2029).
+  const active = view.entries.filter(entry => entry.active);
+  const leftOut = entriesLeftOut(kind, active);
   useEffect(() => {
     if (pending !== undefined && context.operations.some(operation => operation.requestId === pending && operation.result === 'succeeded')) {
       setPending(undefined); setTitle(''); setText(''); setEditing(undefined);
@@ -100,6 +104,7 @@ export function EntryLibrary({context, command, view, live, kind = 'preferences'
       </form>
     </fieldset>
     <p role="status">{command.text}</p>
+    {leftOut > 0 && <p role="note">{leftOutNote(kind, leftOut, active.length)}</p>}
     <h3>Saved {kind}</h3>
     {view.entries.length === 0 && <p>No {kind} yet.</p>}
     <div style={{overflowWrap: 'anywhere'}}>{view.entries.map(entry => <article key={entry.id} aria-label={entry.title}>

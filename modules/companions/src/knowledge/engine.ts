@@ -7,7 +7,7 @@ import {Outcome, fullDisk, type Command, type ModuleContent, type ModuleContentR
   type ModuleUploadRequest, type Outbox, type Reply, type Subscription} from '@jimmie-potts/sdk';
 import {KnowledgeLibrary, type Changes} from './library.js';
 import {inputOf, persona, type KnowledgeInput} from './validation.js';
-import {PAGE_BYTES} from './model.js';
+import {PAGE_BYTES, PERSONAS} from './model.js';
 import {preferenceStateDraft} from '../preferences/engine.js';
 import {PreferenceStore} from '../preferences/store.js';
 import {PreferenceFault, fail, id} from '../preferences/validation.js';
@@ -107,7 +107,9 @@ export class Knowledge {
           ...(view === 'export' ? {} : {revision: this.assistant.store.meta().revision})};
       } else if (ref === 'companion-profiles' || ref === 'companion-archive') {
         if (Object.keys(query).length > 0) fail('invalid-request');
-        document = ref === 'companion-profiles' ? {schema: 'companion-profiles/1.0', revision: this.assistant.store.meta().revision, profiles: this.library.profiles()} : this.library.archive();
+        // `knowledgeContext` names the companions whose context holds the owner's knowledge notes (Hub #2029).
+        document = ref === 'companion-profiles' ? {schema: 'companion-profiles/1.0', revision: this.assistant.store.meta().revision, profiles: this.library.profiles(),
+          knowledgeContext: PERSONAS.filter(id => this.assistant.store.knowledgeEnabled(id))} : this.library.archive();
         if (ref === 'companion-archive') this.library.capacity();
       } else {
         const profile = query.profile;

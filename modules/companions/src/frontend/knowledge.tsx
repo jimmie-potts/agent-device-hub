@@ -6,9 +6,55 @@ import {EntryLibrary} from './preferences.js';
 import {DuckSelection} from './duck.js';
 import {MessageMeaning, meaningLabel as label} from './message.js';
 import type {Archive, CompanionMessage, ContextDocument, HistoryPage, KnowledgeView, Meaning, Persona, PersonaId} from '../knowledge/model.js';
+import type {ContextPreview} from '../assistant/history-contract.js';
+import type {ContextSection} from '../assistant/context.js';
 const root = '/modules/companions/content/';
 const emptyHistory = (): HistoryPage => ({schema: 'companion-history/1.0', revision: 0, availability: 'available', conversations: [], messages: [], next: null});
-function Management({context, command, view, profiles, live, preferenceRevision}: {context: FrontendContext; command: FrontendCommand; view: KnowledgeView; profiles: Persona[]; live: boolean; preferenceRevision: number}): React.JSX.Element {
+const SECTION_LABELS: Readonly<Record<ContextSection['name'], string>> = {personality: 'Personality', knowledge: 'Knowledge notes', preferences: 'Active preferences',
+  memory: 'Long-term memory', recent: 'Recent conversation'};
+function sectionSummary(section: ContextSection): string {
+  const state = section.state === 'off' ? 'Off for this companion' : section.state === 'empty' ? section.name === 'memory' ? 'Empty; reserved for later work' : 'Nothing to send' : `${String(section.included)} sent`;
+  const trim = section.trimmed > 0 ? `, ${String(section.trimmed)} left out by the budget` : '';
+  return `${state}${trim}. ${section.bytes.toLocaleString('en-US')} of ${section.budgetBytes.toLocaleString('en-US')} bytes.`;
+}
+/**
+ * The model context preview (Hub #2029): the context builder's own sections for the chosen companion, exactly as its next
+ * model call sends them. Reading it sends nothing anywhere.
+ */
+function ModelContext({context, profile, persona, revision, live, locked, enabled, send}: {context: FrontendContext; profile: PersonaId; persona: Persona | undefined;
+  revision: number; live: boolean; locked: boolean; enabled: boolean; send: (input: object) => void}): React.JSX.Element {
+  const [preview, setPreview] = useState<ContextPreview>();
+  const [status, setStatus] = useState('');
+  useEffect(() => {setPreview(undefined); setStatus('');}, [profile, revision]);
+  const read = async (): Promise<void> => {
+    if (!live) return;
+    try {
+      const value = await context.api.read(`${root}assistant-context?${new URLSearchParams({profile}).toString()}`) as ContextPreview;
+      if (value.schema !== 'assistant-context/1.0' || value.profile !== profile || !Array.isArray(value.sections)) throw new Error('Invalid preview');
+      setPreview(value); setStatus('');
+    } catch {setPreview(undefined); setStatus('Model context unavailable or access denied.');}
+  };
+  const name = persona?.name ?? profile;
+  return <section aria-label="Model context">
+    <h3>Model context</h3>
+    <p>Each model call for {name} sends these sections, in this order, after the fixed instructions and before the current Hub mode. Each section has its own size budget and says what it left out. The recent conversation holds this conversation's earlier messages and tool results, never another companion's or another conversation's.</p>
+    <label style={{display: 'flex', alignItems: 'center', gap: '0.6rem', minBlockSize: '2.75rem'}}>
+      <input type="checkbox" style={{flex: 'none', inlineSize: '1.1rem', blockSize: '1.1rem', margin: 0}} checked={enabled} disabled={locked}
+        onChange={event => {send({action: 'set-context-knowledge', persona: profile, enabled: event.target.checked});}}/>
+      Send active knowledge notes to {name}'s model</label>
+    <button type="button" disabled={!live} onClick={() => {void read();}}>Preview model context</button>
+    {preview !== undefined && <div style={{overflowWrap: 'anywhere'}}>
+      <p>{preview.basis.kind === 'task' ? 'The next call of the unfinished task' : 'The next message'} in {preview.conversationId === null ? 'a new conversation' : 'the current conversation'}, for the {preview.provider} provider.</p>
+      <ol aria-label="Context sections">{preview.sections.map(section => <li key={section.name}>
+        <h4>{SECTION_LABELS[section.name]}</h4>
+        <p>{sectionSummary(section)}</p>
+        {section.text !== null && <pre style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxBlockSize: '16rem', overflow: 'auto'}}>{section.text}</pre>}
+      </li>)}</ol>
+    </div>}
+    {status !== '' && <p role="status">{status}</p>}
+  </section>;
+}
+function Management({context, command, view, profiles, live, preferenceRevision, knowledgeContext}: {context: FrontendContext; command: FrontendCommand; view: KnowledgeView; profiles: Persona[]; live: boolean; preferenceRevision: number; knowledgeContext: readonly PersonaId[]}): React.JSX.Element {
   const [profile, setProfile] = useState<PersonaId>('bunny');
   const [conversation, setConversation] = useState('');
   const [history, setHistory] = useState<HistoryPage>(emptyHistory);
@@ -88,10 +134,13 @@ function Management({context, command, view, profiles, live, preferenceRevision}
     }}>{profiles.map(value => <option key={value.id} value={value.id}>{value.name}</option>)}</select>
     {persona !== undefined && <article aria-label="Companion profile"><h4>{persona.name}</h4><p>{persona.character}</p>
       <p>Stable ID: {persona.id}. Voice: {persona.voiceRef ?? 'Not selected'}. Audio rule: {persona.audio}. A saved voice reference does not qualify audio output.</p></article>}
-    <p>Context uses current active knowledge and preferences, plus only the messages selected below. Notes about people or locations are not recognition or current location evidence. Nothing enters the synthetic task graph automatically.</p>
-    <button type="button" disabled={!live || busy} onClick={() => {void contextRead(false);}}>Preview current context</button>
+    <ModelContext context={context} profile={profile} persona={persona} revision={view.revision} live={live} locked={locked}
+      enabled={knowledgeContext.includes(profile)} send={send}/>
+    <h3>Context to copy</h3>
+    <p>This copy uses current active knowledge and preferences, plus only the messages selected below, for pasting elsewhere. Notes about people or locations are not recognition or current location evidence. Copying sends nothing to a model.</p>
+    <button type="button" disabled={!live || busy} onClick={() => {void contextRead(false);}}>Preview context to copy</button>
     <button type="button" disabled={!live || busy} onClick={() => {void contextRead(true);}}>Copy current context</button>
-    {preview !== '' && <label>Current context<textarea readOnly value={preview} rows={10} style={{width: '100%', boxSizing: 'border-box'}}/></label>}
+    {preview !== '' && <label>Context to copy<textarea readOnly value={preview} rows={10} style={{width: '100%', boxSizing: 'border-box'}}/></label>}
     <h3>Attributed conversation</h3>
     <button type="button" disabled={locked} onClick={() => {send({action: 'fixture'}); setProfile('reachy'); setConversation(''); setSelected([]);}}>Create synthetic Reachy–Duck exchange</button>
     <p>This fixture stores fictional dialogue only. It produces no audio or device output.</p>
@@ -133,6 +182,7 @@ export function KnowledgePage({context}: {context: FrontendContext}): React.JSX.
   const [synced, setSynced] = useState(false);
   const [view, setView] = useState<KnowledgeView>();
   const [profiles, setProfiles] = useState<Persona[]>([]);
+  const [knowledgeContext, setKnowledgeContext] = useState<readonly PersonaId[]>([]);
   const [loaded, setLoaded] = useState(false);
   const {api, connected} = context;
   useEffect(() => {
@@ -153,16 +203,17 @@ export function KnowledgePage({context}: {context: FrontendContext}): React.JSX.
     let active = true; setLoaded(false);
     void Promise.all([api.read(`${root}knowledge?view=manage`), api.read(`${root}companion-profiles`)]).then(([entries, personas]) => {
       if (!active) return; const value = entries as KnowledgeView;
-      setView(value); setProfiles((personas as {profiles: Persona[]}).profiles); setLoaded(value.revision >= revision);
+      const read = personas as {profiles: Persona[]; knowledgeContext?: PersonaId[]};
+      setView(value); setProfiles(read.profiles); setKnowledgeContext(read.knowledgeContext ?? []); setLoaded(value.revision >= revision);
     }, () => {if (active) setLoaded(false);});
     return () => {active = false;};
   }, [api, connected, synced, revision]);
   const live = connected && synced && loaded && view !== undefined && revision !== undefined && view.revision >= revision;
   const {Command} = context.ui;
   return <section aria-label="Companion knowledge" className="panel"><h2>Companion knowledge</h2>
-    <p>Explicit private notes, curated profiles and attributed conversation. No automatic learning or live model is enabled.</p>
+    <p>Explicit private notes, curated profiles and attributed conversation. No automatic learning. Knowledge notes reach a companion's model only once you turn them on for it below.</p>
     {!connected ? <p role="status">Disconnected. Saved knowledge may be out of date.</p> : !live && <p role="status">Knowledge unavailable or loading.</p>}
     {!context.control && <p>Read-only access. Controls require operator authority.</p>}
-    {view !== undefined && <Command context={context} target="knowledge">{command => <Management context={context} command={command} view={view} profiles={profiles} live={live} preferenceRevision={preferenceRevision}/>}</Command>}
+    {view !== undefined && <Command context={context} target="knowledge">{command => <Management context={context} command={command} view={view} profiles={profiles} live={live} preferenceRevision={preferenceRevision} knowledgeContext={knowledgeContext}/>}</Command>}
   </section>;
 }

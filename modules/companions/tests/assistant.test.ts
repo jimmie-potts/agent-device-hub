@@ -17,7 +17,8 @@ import {AnthropicProvider} from '../src/assistant/anthropic.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
 import {inputBound} from '../src/assistant/spend.js';
-import {assistantStateDraft, CONTEXT_TOO_LARGE, DECLINED, REFUSED, UNSPOKEN} from '../src/assistant/engine.js';
+import {assistantStateDraft, DECLINED, REFUSED, UNSPOKEN} from '../src/assistant/engine.js';
+import {sectionOf} from '../src/assistant/context.js';
 import {PROFILES} from '../src/knowledge/model.js';
 import {unspokenNote} from '../src/frontend/conversation-rail.js';
 import {PreferenceStore} from '../src/preferences/store.js';
@@ -596,18 +597,23 @@ void test('each model call carries the bunny persona and the owner\'s active pre
   await input(w.core, w.module(), 'PRIVATE-SYNTHETIC-ANSWER', true);
   await until(() => status(w) === 'succeeded');
   assert.equal(provider.calls(), 2);
-  assert.deepEqual(provider.inputs[0]?.context, {persona: {name: 'B.U.N.N.Y.', character: 'Helpful generalist. Be clear about what is known and unknown.'},
-    preferences: [{title: 'Tea', text: 'PRIVATE-PREFERENCE-TEA'}, {title: 'Lights', text: 'PRIVATE-PREFERENCE-LIGHTS'}]});
-  assert.deepEqual(provider.inputs[1]?.context.preferences, [{title: 'Tea', text: 'PRIVATE-PREFERENCE-TEA-EDITED'}]);
+  const first = provider.inputs[0]?.context ?? assert.fail('first call');
+  assert.equal(sectionOf(first, 'personality').text, 'You are B.U.N.N.Y., the owner\'s home assistant. Helpful generalist. Be clear about what is known and unknown. Answer in one to three short sentences.');
+  assert.match(sectionOf(first, 'preferences').text ?? '', /\n- Tea: PRIVATE-PREFERENCE-TEA\n- Lights: PRIVATE-PREFERENCE-LIGHTS$/);
+  assert.equal(sectionOf(provider.inputs[1]?.context ?? first, 'preferences').text?.endsWith('\n- Tea: PRIVATE-PREFERENCE-TEA-EDITED'), true);
+  // The knowledge notes are off until the owner turns them on, and the first task's own text is its transcript, not its context.
+  assert.equal(sectionOf(first, 'knowledge').state, 'off');
   const seen = JSON.stringify(provider.inputs.map(turn => turn.context));
   assert.equal(seen.includes('PRIVATE-PREFERENCE-OLD'), false); assert.equal(seen.includes('PRIVATE-KNOWLEDGE'), false); assert.equal(seen.includes('PRIVATE-SYNTHETIC'), false);
   for (const record of [w.module().inspectAssistant(), w.host().logs, w.spans.spans, w.store().task(task(w)?.taskId ?? '')]) assert.equal(JSON.stringify(record).includes('PRIVATE-PREFERENCE'), false);
-  // Over the bound the call is refused before it leaves, the task ends with the capacity code and the owner reads why.
+  // Over its budget the preferences section keeps what fits and states how many it left out (Hub #2029): the call is sent.
   for (let i = 0; i < 33; i += 1) change(preferences, {action: 'create', title: `Long ${String(i)}`, text: 'p'.repeat(4000)});
   await input(w.core, w.module(), 'Again');
-  await until(() => status(w) === 'failed');
-  assert.equal(task(w)?.code, 'capacity'); assert.equal(provider.calls(), 2);
-  assert.equal((await page(w)).messages.at(-1)?.text, CONTEXT_TOO_LARGE);
+  await until(() => status(w) === 'succeeded' && provider.calls() === 3);
+  const trimmed = sectionOf(provider.inputs[2]?.context ?? first, 'preferences');
+  assert.equal(trimmed.included + trimmed.trimmed, 34);
+  assert.ok(trimmed.trimmed > 0 && trimmed.bytes <= trimmed.budgetBytes);
+  assert.match(trimmed.text ?? '', new RegExp(`\\n${String(trimmed.trimmed)} more preferences were left out to fit the 32 KiB budget\\.$`));
 });
 
 void test('Reachy and MicroDuck use the configured provider with their own curated persona, and a harness may still give a profile the synthetic one', async context => {
@@ -622,8 +628,11 @@ void test('Reachy and MicroDuck use the configured provider with their own curat
   }
   assert.equal(provider.calls(), 2, 'one call of the configured provider for each companion');
   const persona = (id: string) => PROFILES.find(value => value.id === id) ?? assert.fail(id);
-  assert.deepEqual(provider.inputs.map(sent => sent.context.persona), [{name: 'Reachy', character: persona('reachy').character}, {name: 'MicroDuck', character: persona('microduck').character}]);
-  assert.match(provider.inputs[1]?.context.persona.character ?? '', /English text is intended meaning, never spoken English\./);
+  // Each companion's personality section carries its own curated persona (Hub #2029's context builder).
+  assert.deepEqual(provider.inputs.map(sent => [sent.context.profile, sectionOf(sent.context, 'personality').text]),
+    [['reachy', `You are Reachy, the owner's home assistant. ${persona('reachy').character} Answer in one to three short sentences.`],
+      ['microduck', `You are MicroDuck, the owner's home assistant. ${persona('microduck').character} Answer in one to three short sentences.`]]);
+  assert.match(sectionOf(provider.inputs[1]?.context ?? assert.fail('MicroDuck call'), 'personality').text ?? '', /English text is intended meaning, never spoken English\./);
   for (const sent of provider.inputs) assert.deepEqual(sent.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_sessions'], 'the configured tools that are neither device nor catalog tools, without the synthetic fixture');
   assert.equal((await input(w.core, w.module(), 'Synthetic bunny request')).status, 'accepted');
   await until(() => w.module().inspectAssistant()?.tasks.find(t => t.profile === 'bunny')?.status === 'succeeded');

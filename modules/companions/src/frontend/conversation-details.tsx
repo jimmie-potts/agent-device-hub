@@ -4,6 +4,7 @@ import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendUi} from '@jimmie-potts/sdk/frontend';
 import {LIMITS} from '../assistant/limits.js';
 import type {SpendView} from '../assistant/spend-contract.js';
+import type {ConversationListEntry} from '../assistant/history-contract.js';
 import {priceText, spendText} from './conversation-spend.js';
 import {profiles} from './conversation-rail.js';
 import {planUsage, slotStatus, workerAvailability} from './coding-status.js';
@@ -47,6 +48,7 @@ function titleOrigin(title: ConversationTitle, profileName: string, synthetic: b
 export function ConversationDetails({
   id, open, overlay, onClose, stopSpeaking,
   Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, goTo, setEnabled, title, rename,
+  conversations, viewing, openConversation, showOlder,
 }: {
   id: string; open: boolean; overlay: boolean; onClose: () => void; stopSpeaking: React.JSX.Element | null;
   Facts: FrontendUi['Facts']; profile: AssistantProfile; profileName: string;
@@ -60,6 +62,13 @@ export function ConversationDetails({
   unfinished: readonly AssistantProfile[]; goTo: (profile: AssistantProfile) => void;
   setEnabled: (action: 'enable' | 'disable') => void;
   title: ConversationTitle | undefined; rename: (title: string) => void;
+  /**
+   * The profile's conversations, newest first (Hub #2029), or undefined while unread. `viewing` is the earlier one the page
+   * shows, if any; `openConversation` shows one, the current one included.
+   */
+  conversations: readonly ConversationListEntry[] | undefined; viewing: string | undefined; openConversation: (conversationId: string) => void;
+  /** Lists the next page of older conversations, or undefined when every one is listed. */
+  showOlder: (() => void) | undefined;
 }): React.JSX.Element {
   const renameId = useId();
   const [draftTitle, setDraftTitle] = useState('');
@@ -167,6 +176,22 @@ export function ConversationDetails({
         <p>This month's figure is a local estimate. The Anthropic Console holds the real monthly limit and spend.</p>
       </details>
       <details>
+        <summary>Conversations</summary>
+        {conversations === undefined ? <p>The list of conversations is unavailable.</p> : conversations.length === 0 ? <p>No conversation saved for {profileName} yet.</p>
+          : <ul className="conversation-list" aria-label={`${profileName} conversations`}>{conversations.map(value => {
+            const shown = value.current ? viewing === undefined : viewing === value.conversationId;
+            const when = value.lastAtMs === null ? 'No messages yet' : `${String(value.messages)} ${value.messages === 1 ? 'message' : 'messages'}, last ${new Date(value.lastAtMs).toLocaleString()}`;
+            return <li key={value.conversationId}>
+              <span className="conversation-list-title">{value.title.value}</span>
+              <small>{value.current ? 'Current. ' : 'Earlier, read only. '}{when}</small>
+              {shown ? <small aria-current="true">Shown now</small>
+                : <button type="button" className="secondary" onClick={() => {openConversation(value.conversationId);}}>{value.current ? 'Show current conversation' : 'Open'}</button>}
+            </li>;
+          })}</ul>}
+        {conversations !== undefined && showOlder !== undefined && <button type="button" className="secondary" onClick={showOlder}>Show older conversations</button>}
+        <p>New conversation starts a fresh conversation with its own session and title. Earlier conversations stay readable here, and their messages no longer reach the model.</p>
+      </details>
+      <details>
         <summary>Conversation settings</summary>
         {enabled === undefined ? <p>Conversation settings are unavailable.</p> : <>
           <p>{lastKnown ? 'Last known setting: ' : 'Conversation is '}{enabled ? 'on' : 'off'}.</p>
@@ -197,7 +222,7 @@ export function ConversationDetails({
           : 'The title model writes a short title after the first message and checks it after each finished task and major event, such as an approval or a coding hand-off. Your name replaces it, and the model keeps your name unless the topic clearly changes.'}</p>
         <p>Submitted messages and answers are saved in private Conversation history. {synthetic
           ? 'The synthetic provider answers them locally and makes no paid calls.'
-          : 'They are passed to the configured model, which B.U.N.N.Y., Reachy and MicroDuck share, and every conversation\'s calls count toward the same spend limits.'}</p>
+          : 'They are passed to the configured model, which B.U.N.N.Y., Reachy and MicroDuck share, and every conversation\'s calls count toward the same spend limits.'} Each call carries this conversation's recent messages and tool results as context, which the Companion knowledge page previews.</p>
         <p>Unsent drafts stay in this page until reload. Submitted drafts also stay in the composer. Review saved history before sending the same text again.</p>
         <ul className="conversation-settings-links">
           <li><a href="#/module/companions/preferences">Preferences</a></li>

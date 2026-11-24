@@ -12,8 +12,9 @@ import {actionDescription, closingReply, type ActionEvidence} from './closing-re
 import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
-import type {Proposal} from './history-contract.js';
-import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
+import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
+import {ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
+import {buildContext, type ContextEntry} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
@@ -43,6 +44,8 @@ export type AssistantOptions = {
   readDevice?: (owner: AssistantDeviceOwner, name: unknown, signal: AbortSignal, parent: TraceContext) => Promise<string | undefined>;
   available?: () => boolean;
   preferences?: () => readonly ActivePreference[];
+  /** The owner's active knowledge notes, read at each model call; a companion's context holds them once the owner turns them on for it (Hub #2029). */
+  knowledge?: () => readonly ContextEntry[];
   /**
    * Offers a saved assistant message to the speech coordinator, once per key: the message that ended a turn, or a replay
    * the owner asked for (Hub #500). `line` is the message's conversation, which keeps one waiting reply (Hub #2027).
@@ -130,7 +133,6 @@ export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this han
 /** How a waiting hand-off is worded in the conversation until it is sent; "Delegated to ..." replaces it then. */
 export const WAITING_PREFIX = 'Waiting to delegate';
 const waitingText = (delegated: string): string => `${WAITING_PREFIX}${delegated.slice('Delegated'.length)}`.slice(0, 1024);
-export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${String(LIMITS.contextBytes / 1024)} KiB prompt bound; stop using some on the Preferences page and start again.`;
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
 /** Why a Speak request is refused for a profile whose audio is not speech, as MicroDuck's is quacks only (Hub #2026). */
@@ -487,13 +489,18 @@ export class AssistantEngine {
   stage(request: ModuleUploadRequest): ModuleStagedUpload | ErrorBody {
     if (request.target !== 'assistant' || request.name !== 'input.json' || request.signal.aborted || request.bytes.byteLength > LIMITS.stageBytes) return errorBody('invalid-request');
     try {
-      this.#ready();
       const value: unknown = JSON.parse(Buffer.from(request.bytes).toString('utf8'));
-      if (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId'].includes(key)) ||
+      // New conversation (Hub #2029) names its profile and the revision the page read, and nothing else. It runs no work,
+      // so it is admitted while conversation is off, as a rename is.
+      const fresh = object(value) && value.action === 'new-conversation';
+      if (!fresh) this.#ready();
+      if (fresh && (Object.keys(value).some(key => !['action', 'profile', 'expectedRevision'].includes(key)) || !profile(value.profile) ||
+        typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
+      if (!fresh && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId'].includes(key)) ||
         !profile(value.profile) || !['start', 'answer'].includes(String(value.action)) || typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > LIMITS.inputBytes ||
-        typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0) fail('invalid-request');
-      if (value.action === 'start' ? value.taskId !== undefined || value.questionId !== undefined : typeof value.taskId !== 'string' || typeof value.questionId !== 'string') fail('invalid-request');
-      const input = value as StagedInput;
+        typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
+      if (!fresh && (value.action === 'start' ? value.taskId !== undefined || value.questionId !== undefined : typeof value.taskId !== 'string' || typeof value.questionId !== 'string')) fail('invalid-request');
+      const input = (fresh ? {...value, text: ''} : value) as StagedInput;
       this.store.expireStages(this.context.clock.now());
       const previous = this.store.inputFor(request.requestId);
       if (previous !== undefined && digest(previous.input) !== digest(input)) fail('duplicate-conflict');
@@ -508,13 +515,28 @@ export class AssistantEngine {
   #input(command: Command<AssistantInput>): Promise<Reply> {
     let titled: {conversationId: string; profile: AssistantProfile; event: TitleEvent} | undefined;
     return this.#admit(command, digest(command.data), () => {
-      this.#ready();
       const staged = this.store.input(command.data.inputRef) ?? fail('invalid-request');
+      if (staged.input.action !== 'new-conversation') this.#ready();
       if (staged.requestId !== command.data.requestId) fail('invalid-request');
       if (staged.expires <= this.context.clock.now()) fail('expired');
       const input = staged.input;
-      this.#conversationRevision(input.expectedRevision, input.action === 'start' ? this.store.conversation(input.profile)
-        : input.taskId === undefined ? undefined : this.store.task(input.taskId)?.conversationId);
+      this.#conversationRevision(input.expectedRevision, input.action === 'answer'
+        ? input.taskId === undefined ? undefined : this.store.task(input.taskId)?.conversationId : this.store.conversation(input.profile));
+      if (input.action === 'new-conversation') {
+        // One unfinished task per profile (Hub #2029, owner decision): New conversation is refused while the current
+        // conversation's task is unfinished, whether it runs, waits on an answer, an approval or the coding worker, is
+        // paused or is uncertain. The owner finishes or cancels it first.
+        const current = this.store.conversation(input.profile);
+        if (current !== undefined && (this.store.unfinishedIn(current) !== undefined || this.#active.has(current))) fail('invalid-state');
+        // An empty conversation, or none yet, has nothing to leave behind, so repeated requests cannot pile up empty ones.
+        if (current === undefined || this.store.lastSequence(current) === 0) fail('invalid-state');
+        const {previous, conversationId} = this.store.newConversation(input.profile);
+        // Both conversations change: a command bound to the earlier one's revision is stale now, as is one naming the profile.
+        if (previous !== undefined) this.store.touch(previous);
+        this.store.touch(conversationId);
+        this.store.discard(staged.ref);
+        return undefined;
+      }
       let task: Task;
       if (input.action === 'start') {
         // Each conversation runs one task at a time; another conversation's task never blocks this one (Hub #2027).
@@ -561,13 +583,35 @@ export class AssistantEngine {
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify(view))};
       } catch {return errorBody('unavailable');}
     }
+    if (ref === 'assistant-context') {
+      // The context preview (Hub #2029): the builder's own sections, exactly as the next call would send them.
+      const query = request?.query ?? {};
+      if (request?.signal.aborted === true || Object.keys(query).some(key => key !== 'profile') || !profile(query.profile)) return errorBody('invalid-request');
+      try {
+        const {context, basis} = this.previewContext(query.profile), provider = this.provider(query.profile);
+        const document: ContextPreview = {schema: 'assistant-context/1.0', revision: this.store.meta().revision, profile: query.profile, conversationId: context.conversationId,
+          provider: provider.name, model: provider.model, basis, sections: context.sections};
+        return {type: 'application/json', bytes: Buffer.from(JSON.stringify(document))};
+      } catch {return errorBody('unavailable');}
+    }
     if (ref !== 'conversation') return undefined;
     const query = request?.query ?? {}, selected = query.profile;
     if (request?.signal.aborted === true || !profile(selected)) return errorBody('invalid-request');
     try {
+      if (query.view === 'list') {
+        // The profile's conversations (Hub #2029), the current one first, then the rest newest first, each with its title as
+        // its session shows it. `after` is the keyset cursor of a later page, `<last message time or -1>:<row>`.
+        const cursor = query.after === undefined ? undefined : /^(-1|\d{1,15}):(\d{1,15})$/.exec(query.after);
+        if (Object.keys(query).some(key => !['profile', 'view', 'after'].includes(key)) || cursor === null) return errorBody('invalid-request');
+        const listed = this.store.conversations(selected, cursor === undefined ? undefined : {last: Number(cursor[1]), row: Number(cursor[2])});
+        const document: ConversationList = {version: 1, profile: selected, older: listed.older,
+          conversations: listed.conversations.map(value => ({...value, title: this.titles.published(value.conversationId, selected)}))};
+        return {type: 'application/json', bytes: Buffer.from(JSON.stringify(document))};
+      }
       if (query.view === 'recent') {
-        if (Object.keys(query).some(key => !['profile', 'view', 'before'].includes(key))) return errorBody('invalid-request');
-        const page = this.store.recentPage(selected, query.before);
+        if (Object.keys(query).some(key => !['profile', 'view', 'before', 'conversationId'].includes(key)) ||
+          (query.conversationId !== undefined && !/^[A-Za-z0-9-]{1,128}$/.test(query.conversationId))) return errorBody('invalid-request');
+        const page = this.store.recentPage(selected, query.before, query.conversationId);
         return typeof page === 'string' ? errorBody(page) : {type: 'application/json', bytes: Buffer.from(JSON.stringify(page))};
       }
       const after = query.after === undefined ? 0 : Number(query.after);
@@ -665,8 +709,8 @@ export class AssistantEngine {
           task.status = unknown ? 'uncertain' : code === 'cancelled' ? 'paused' : 'failed';
           task.code = unknown ? 'uncertain-result' : code; this.#settle(task, active);
         }, active.span.context, active.stopReason ?? closingReasonOf(error));
-        // Only these two intentional replies had speech before failure settlement. The generated summary has no output effects.
-        if (error instanceof Fault && (error.closingReason === REFUSED || error.closingReason === CONTEXT_TOO_LARGE)) {
+        // Only the model's refusal had speech before failure settlement. The generated summary has no output effects.
+        if (error instanceof Fault && error.closingReason === REFUSED) {
           const task = this.#task(active.taskId), id = `${task.id}-closing-${String(task.generation)}`;
           const saved = this.store.savedMessage(task.id, id);
           if (saved !== undefined) this.#speak(task.id, id, error.closingReason, active.span.context);
@@ -691,20 +735,37 @@ export class AssistantEngine {
     }, parent);
   }
   #core(): CoreCopy {return this.options.core?.() ?? {sessions: [], mode: undefined, synced: false};}
-  /** The prompt context at this call: the profile's curated persona and the owner's active preferences as they are now. */
-  #context(profile: AssistantProfile): PromptContext {
-    const persona = PROFILES.find(value => value.id === profile) ?? fail('internal');
-    return {persona: {name: persona.name, character: persona.character}, preferences: (this.options.preferences?.() ?? []).map(entry => ({title: entry.title, text: entry.text}))};
+  /**
+   * The prompt context at this call (Hub #2029): the builder's sections for the task's companion, from the records as they
+   * are now, with the recent conversation held to the messages saved before the task started. A task saved before that
+   * boundary existed has no recent conversation.
+   */
+  #context(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>): PromptContext {
+    const persona = PROFILES.find(value => value.id === task.profile) ?? fail('internal');
+    const recent = task.contextThrough === undefined ? {messages: [], total: 0} : this.store.recentContext(task.profile, task.conversationId, task.contextThrough);
+    return buildContext({profile: task.profile, persona: {name: persona.name, character: persona.character},
+      knowledge: {enabled: this.store.knowledgeEnabled(task.profile), entries: (this.options.knowledge?.() ?? []).map(entry => ({title: entry.title, text: entry.text}))},
+      preferences: (this.options.preferences?.() ?? []).map(entry => ({title: entry.title, text: entry.text})),
+      recent: {conversationId: task.conversationId, ...recent}});
+  }
+  /**
+   * What the builder would send for the profile now (Hub #2029), for the page's context preview: the next call of the
+   * current conversation's unfinished task, or else of a new message's task in it.
+   */
+  previewContext(profile: AssistantProfile): {context: PromptContext; basis: {kind: 'task'; taskId: string} | {kind: 'next-message'}} {
+    const conversationId = this.store.conversation(profile);
+    const unfinished = conversationId === undefined ? undefined : this.store.unfinishedIn(conversationId);
+    if (unfinished !== undefined) return {context: this.#context(unfinished), basis: {kind: 'task', taskId: unfinished.id}};
+    const context = conversationId === undefined ? {...this.#context({profile, conversationId: '', contextThrough: 0}), conversationId: null}
+      : this.#context({profile, conversationId, contextThrough: this.store.lastSequence(conversationId)});
+    return {context, basis: {kind: 'next-message'}};
   }
   async #turn(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
     const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile), copy = this.#core();
     const id = `${state.taskId}-step-${String(state.step)}`;
-    const context = this.#context(task.profile);
-    // Over the bound the call is refused before any usage is reserved or a request leaves: the owner reads why, nothing is truncated.
-    if (contextBytes(context) > LIMITS.contextBytes) {
-      throw new Fault('capacity', CONTEXT_TOO_LARGE);
-    }
+    // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
+    const context = this.#context(task);
     const request: TurnInput = {instructions: INSTRUCTIONS, context, transcript: task.transcript, tools,
       mode: copy.mode === undefined ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
     // The call reserves what this request could use: its bytes bound its input tokens, and the output bound its answer's.

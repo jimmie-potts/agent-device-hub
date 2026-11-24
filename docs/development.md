@@ -3352,6 +3352,25 @@ offered beside those that stay B.U.N.N.Y.'s, and the spend notice.
 under an Anthropic section and answers them on the configured model. They use fake providers and
 transports only, and no paid call. Existing CI discovery runs them.
 
+Recent context and New conversation (#2029) add `conversation-context.test.js`
+and extend `anthropic.test.js`, `assistant.test.js` and
+`conversation-history.test.js`. Gated fake providers on the manual clock cover
+the context builder's fixed order, budgets and stated trims; recent messages
+and tool results fixed when a task starts, without removed messages, other
+companions or companion exchanges; New conversation refused while a task runs,
+waits or is uncertain, then its own conversation, session, title, change rows
+and empty context, with the earlier one readable and listed; the per-companion
+knowledge switch and its scope; the context preview against the next call;
+the device, artwork, troubleshooting and read-only follow-ups; the Duck widget
+across several conversations; and archive import of earlier conversations.
+After the root build run
+`node --test modules/companions/dist/tests/conversation-context.test.js modules/companions/dist/tests/anthropic.test.js modules/companions/dist/tests/assistant.test.js modules/companions/dist/tests/conversation-history.test.js`
+and `node apps/runtime/dashboard/tests/conversation-context.browser.ts`.
+`npm run test:companions:browser` runs that journey and the Companion
+knowledge journey, whose context-to-copy controls were renamed.
+`DASHBOARD_RECEIPTS` keeps the journey's screenshots private. They use
+synthetic data and scripted providers only. Existing CI discovery runs them.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module

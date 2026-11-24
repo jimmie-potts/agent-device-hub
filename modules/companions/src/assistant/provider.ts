@@ -1,11 +1,15 @@
-// The tool-capable turn contract every provider answers (Hub #46, #507). A provider sees the fixed instructions, the
-// task's own transcript, the permitted tool definitions, the current Hub mode and the prompt context (the profile's
-// curated persona and the owner's active explicit preferences), and answers with text, tool calls or a stop that ends
-// the task. The engine owns limits, receipts, approval and effects; a provider never reaches the bus, a device or a
-// file, and never sees a knowledge entry, a conversation's history, an inactive preference or another task.
+// The tool-capable turn contract every provider answers (Hub #46, #507, #2029). A provider sees the fixed instructions,
+// the task's own transcript, the permitted tool definitions, the current Hub mode and the prompt context, which the
+// sectioned context builder assembles for the task's companion (see context.ts): its curated personality, the owner's
+// knowledge notes once the owner turns them on for it, the owner's active explicit preferences, an empty long-term memory
+// slot and the recent messages of the task's own conversation. It answers with text, tool calls or a stop that ends the
+// task. The engine owns limits, receipts, approval and effects; a provider never reaches the bus, a device or a file, and
+// never sees another conversation, another companion's messages, an inactive preference or a removed message.
 import type {ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantProvider} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {TokenUsage} from './spend-contract.js';
+import type {PromptContext} from './context.js';
+export type {PromptContext} from './context.js';
 
 import type {ToolDefinition} from './tool-types.js';
 export type {ToolDefinition, ToolEffect, ToolInputSchema} from './tool-types.js';
@@ -19,18 +23,6 @@ export type TranscriptItem =
   | {role: 'owner'; text: string}
   | {role: 'assistant'; text: string | null; calls: ToolCall[]; blocks?: unknown[]}
   | {role: 'tool'; call: string; name: string; result: string; ok: boolean};
-/**
- * What the module knows about the owner that may shape an answer (Hub #507, decision 5 as amended 2026-10-31): the
- * task profile's curated persona and the owner's currently active explicit preferences, read at each model call. It is
- * data, never an instruction that grants a tool or a permission; the engine bounds its rendered size before a call.
- */
-export type PromptContext = {
-  readonly persona: {readonly name: string; readonly character: string};
-  readonly preferences: readonly {readonly title: string; readonly text: string}[];
-};
-/** The bytes a prompt context occupies when rendered: every title and text, as the engine's bound counts them. */
-export const contextBytes = (context: PromptContext): number =>
-  textBytes(context.persona.name) + textBytes(context.persona.character) + context.preferences.reduce((sum, entry) => sum + textBytes(entry.title) + textBytes(entry.text), 0);
 export type TurnInput = {
   readonly instructions: string;
   readonly context: PromptContext;

@@ -234,7 +234,7 @@ void test('a section that names only B.U.N.N.Y.\'s model gives Reachy and MicroD
   assert.equal(titles.length, 4, 'two title checks for each conversation, on the configured title model');
   for (const [index, name] of ['Reachy', 'MicroDuck'].entries()) {
     const persona = PROFILES.find(value => value.name === name) ?? assert.fail(name);
-    assert.ok(String(turns[index]?.system).includes(`You are ${name}, the owner's home assistant. ${persona.character}`), `${name}'s curated persona`);
+    assert.ok(JSON.stringify(turns[index]?.system).includes(`You are ${name}, the owner's home assistant. ${persona.character}`), `${name}'s curated persona`);
     assert.deepEqual(turns[index]?.cache, {type: 'ephemeral'}, `${name}'s request asks for prompt caching`);
   }
   const record = (profile: string) => {
