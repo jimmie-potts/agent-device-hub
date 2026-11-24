@@ -252,7 +252,7 @@ void test('Stop with an empty queue holds nothing, and a withdrawn last message 
   await settle(() => w.task()?.status === 'cancelled');
   assert.equal((await w.queued()).held?.reason, 'stop');
   assert.equal((await w.control('withdraw', {profile: 'bunny', queuedId: only.id})).status, 'accepted');
-  assert.deepEqual(await w.queued(), {version: 1, profile: 'bunny', conversationId: w.task()?.conversationId, revision: w.state().revision, current: true, held: null, messages: []});
+  assert.deepEqual(await w.queued(), {version: 1, profile: 'bunny', conversationId: w.task()?.conversationId, revision: w.state().revision, current: true, held: null, messages: [], steers: []});
 });
 
 void test('after a restart a waiting queue stays held until Start, and nothing runs at the start', async context => {

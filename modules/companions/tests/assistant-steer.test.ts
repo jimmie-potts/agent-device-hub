@@ -230,6 +230,35 @@ void test('a steer that arrives after the last model call becomes the next queue
   assert.equal(ownerText(provider.next().input), 'Synthetic message queued behind');
 });
 
+void test('a steer that reaches its turn after the turn ended becomes the next queued message: it starts at once, or waits behind a held queue', async context => {
+  const provider = gated(), w = await world(context, {provider});
+  await w.control('enable');
+  await w.send('Synthetic request that ends first');
+  await settle(() => provider.pending.length === 1);
+  const ended = w.task()?.taskId;
+  provider.next().resolve(reply('Synthetic answer before the steer'));
+  await settle(() => w.task()?.status === 'succeeded');
+  // The page still showed the turn running: its steer names that turn, which is still the conversation's latest.
+  const late = await w.steer('Synthetic steer after the end', {taskId: ended});
+  assert.equal(late.result.status, 'accepted');
+  await settle(() => provider.pending.length === 1, 'the late steer started as the next message');
+  assert.deepEqual(plain(provider.pending[0]?.input.transcript ?? []), [{role: 'owner', text: 'Synthetic steer after the end'}]);
+  assert.notEqual(w.task()?.taskId, ended, 'a turn of its own');
+  // Behind a held queue it waits first in line, and Skip or Decline at an ended turn is stale.
+  await w.queue('Synthetic queued before the stop');
+  await w.control('cancel', {taskId: w.task()?.taskId});
+  await settle(() => w.task()?.status === 'cancelled');
+  provider.pending.length = 0;
+  const stopped = w.task()?.taskId;
+  assert.equal(code((await w.steer('Synthetic skip at an ended turn', {taskId: stopped, questionId: 'any-question'})).result), 'invalid-state');
+  assert.equal((await w.steer('Synthetic steer after the stop', {taskId: stopped})).result.status, 'accepted');
+  const document = await w.queued();
+  assert.deepEqual(texts(document), ['Synthetic steer after the stop', 'Synthetic queued before the stop']);
+  assert.equal(document.held?.reason, 'stop');
+  await quiet();
+  assert.equal(provider.pending.length, 0, 'the held queue started nothing');
+});
+
 void test('Skip question and send drops the pending clarification and steers the task in one step', async context => {
   const provider = gated(), w = await world(context, {provider});
   await w.control('enable');
@@ -397,9 +426,9 @@ void test('a steer aimed at a turn that is not the conversation\'s unfinished ta
   const first = w.task()?.taskId;
   provider.next().resolve(reply('Synthetic first answer'));
   await settle(() => w.task()?.status === 'succeeded');
-  assert.equal(code((await w.steer('Synthetic steer at a finished turn', {taskId: first})).result), 'invalid-state', 'a finished turn is stale');
   await w.send('Synthetic second request');
   await settle(() => provider.pending.length === 1);
+  assert.equal(code((await w.steer('Synthetic steer at a turn a newer one followed', {taskId: first})).result), 'invalid-state', 'a turn a newer one followed is stale');
   await w.send('Synthetic reachy request', 'reachy');
   await settle(() => provider.pending.length === 2);
   assert.equal(code((await w.steer('Synthetic steer at another conversation', {taskId: w.task('reachy')?.taskId})).result), 'invalid-state');

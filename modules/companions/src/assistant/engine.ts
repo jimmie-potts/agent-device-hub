@@ -13,6 +13,7 @@ import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, f
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
 import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type StagedInput, type Task} from './store.js';
 import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
+import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {buildContext, type ContextEntry} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
@@ -753,8 +754,10 @@ export class AssistantEngine {
   }
   /**
    * Steers the conversation's unfinished task with a new message (Hub #2031), in the input's transaction. The steer names
-   * the turn it expects, as Codex's `expected_turn_id`: a steer aimed at a turn that is not the conversation's unfinished
-   * task is refused with `invalid-state`, and nothing retries it. Its text is saved at once and taken into the task's own
+   * the turn it expects, as Codex's `expected_turn_id`. A steer that reaches that turn after it ended, while it is still
+   * the conversation's latest turn, arrived after its last model call, so it becomes the next queued message, as one the
+   * turn's close returned does, and starts at once unless the queue is held. A steer aimed at any other turn, one a newer
+   * turn followed or another conversation's, is stale: it is refused with `invalid-state`, and nothing retries it. Its text is saved at once and taken into the task's own
    * transcript just before its next model call; it never bumps the task's generation, so the running call goes on.
    * During an approval, or when fewer than two model calls remain in the turn's limits, the text is queued instead. With
    * `questionId`, Skip question and send answers a clarification with `SKIPPED`, and Decline with message declines an
@@ -766,8 +769,14 @@ export class AssistantEngine {
     // move that revision. A revision the assistant has not reached is still refused.
     if (input.expectedRevision > this.store.meta().revision) fail('revision-conflict');
     const conversationId = this.store.conversation(input.profile), task = input.taskId === undefined ? undefined : this.store.task(input.taskId);
-    if (task === undefined || conversationId === undefined || task.conversationId !== conversationId || task.profile !== input.profile || terminal(task.status)) fail('invalid-state');
+    if (task === undefined || conversationId === undefined || task.conversationId !== conversationId || task.profile !== input.profile) fail('invalid-state');
     if (this.#unrecovered.has(conversationId)) fail('unavailable');
+    if (terminal(task.status)) {
+      if (input.questionId !== undefined || this.store.latest().find(entry => entry.conversationId === conversationId)?.id !== task.id) fail('invalid-state');
+      if (this.store.queue.count(conversationId) >= LIMITS.queueBound) throw new Fault('capacity', QUEUE_FULL);
+      this.store.queue.prepend([{id: command.data.requestId, conversationId, profile: task.profile, text: input.text, queuedAtMs: now, updatedAtMs: now, traceparent: command.traceparent}]);
+      return {launch: this.#dispatch(conversationId)};
+    }
     const asked = task.question !== null && task.question.answer === null ? task.question : null;
     // The text becomes a queued message, keyed as a steer is by this request ID: it waits for the task to end.
     const queued = (): void => {
@@ -1068,7 +1077,7 @@ export class AssistantEngine {
     const item: Appended = {role: 'assistant', text: reply.text, calls: call === undefined ? [] : [call], effect: id, ...(reply.blocks === undefined ? {} : {blocks: reply.blocks})};
     let asked = false;
     await this.#append(state.taskId, item, active.span.context, current => {
-      if (forced && reply.text !== null && reply.text.trim() !== '') this.store.message(current, `${id}-reply`, 'assistant', reply.text, this.context.clock.now());
+      if (forced && reply.text !== null && reply.text.trim() !== '') this.store.message(current, supersededReplyId(id), 'assistant', reply.text, this.context.clock.now());
       if (question === undefined) return;
       if (current.questions >= LIMITS.questions) throw new Fault('capacity', `This turn reached its limit of ${String(LIMITS.questions)} questions.`);
       current.questions += 1; current.question = question;
@@ -1087,7 +1096,7 @@ export class AssistantEngine {
       const effect = `steer-${steer.id}`;
       const item: Appended = {role: 'owner', text: steer.text, effect};
       if (!task.transcript.some(existing => 'effect' in existing && existing.effect === effect)) task.transcript.push(item);
-      this.store.message(task, `${task.id}-steer-${steer.id}`, 'owner', steer.text, this.context.clock.now());
+      this.store.message(task, steerMessageId(task.id, steer.id), 'owner', steer.text, this.context.clock.now());
       this.store.queue.delivered(steer.id);
     }
     if (textBytes(JSON.stringify(task.transcript)) > LIMITS.stateBytes) throw new Fault('capacity', 'This turn reached its working transcript limit.');

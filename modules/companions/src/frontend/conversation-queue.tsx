@@ -70,7 +70,10 @@ export function QueuedMessages({context, command, queue, profile, waiting, locke
   const count = queue.messages.length;
   return <section aria-label="Queued messages" className="conversation-queue">
     <header className="conversation-queue-header">
-      <h3>Queued {count === 1 ? 'message' : 'messages'}{!earlier && <> <span className="conversation-queue-count">{count} of {LIMITS.queuedMessages}</span></>}</h3>
+      <h3>Queued {count === 1 ? 'message' : 'messages'}{!earlier && <> <span className="conversation-queue-count">{count > LIMITS.queuedMessages
+        ? `${String(count)}, over the limit of ${String(LIMITS.queuedMessages)}` : `${String(count)} of ${String(LIMITS.queuedMessages)}`}</span></>}</h3>
+      {/* Steers a stopped turn returned may take the queue past its limit (Hub #2031); a new message waits until it is below it. */}
+      {!earlier && count > LIMITS.queuedMessages && <p>Your unread messages came back from the stopped task. Queue takes a new message once fewer than {LIMITS.queuedMessages} wait.</p>}
       {earlier ? <p>Left in this conversation by an earlier release. They never start; withdraw them.</p>
         : held === undefined && <p>{waiting ? 'Each starts as its own turn, in this order, after the current task ends.' : 'The next one starts now.'}</p>}
     </header>
@@ -112,6 +115,26 @@ export function QueuedMessages({context, command, queue, profile, waiting, locke
           </>}
         </li>;
       })}
+    </ol>
+  </section>;
+}
+
+/**
+ * The running task's unread steers (Hub #2031): messages the owner sent while it worked, which it reads at its next model
+ * call, after its last call's tool results or the coding worker's result. They show above the composer until then; a
+ * read one shows in the transcript where the model read it.
+ */
+export function PendingSteers({queue, waitsOnWorker}: {queue: QueueView; waitsOnWorker: boolean}): React.JSX.Element | null {
+  if (!queue.current || queue.steers.length === 0) return null;
+  return <section aria-label="Messages for the next step" className="conversation-queue conversation-steers">
+    <header className="conversation-queue-header">
+      <h3>Steering this task</h3>
+      <p>{waitsOnWorker ? 'The task reads these after the coding worker\'s result.' : 'The task reads these at its next step.'} Cancel task moves them to the queue.</p>
+    </header>
+    <ol className="conversation-queue-list">
+      {queue.steers.map((steer, index) => <li key={steer.id} className="conversation-queue-item">
+        <p className="conversation-queue-text" dir="auto"><span className="vh">Steering message {index + 1}: </span>{steer.text}</p>
+      </li>)}
     </ol>
   </section>;
 }

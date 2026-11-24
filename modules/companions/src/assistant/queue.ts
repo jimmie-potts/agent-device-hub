@@ -130,14 +130,22 @@ export class MessageQueue {
    */
   returnSteers(taskId: string, atMs: number): number {
     const steers = this.steers(taskId);
-    const first = steers[0];
-    if (first === undefined) return 0;
+    this.prepend(steers.map(steer => ({id: steer.id, conversationId: steer.conversationId, profile: steer.profile, text: steer.text, queuedAtMs: steer.savedAtMs,
+      updatedAtMs: atMs, traceparent: steer.traceparent})));
+    this.database.prepare('DELETE FROM assistant_steers WHERE task_id=?').run(taskId);
+    return steers.length;
+  }
+  /**
+   * Saves messages of one conversation at the head of its queue, in their order and before the messages already queued:
+   * steers that become the next messages to start (Hub #2031). The caller has checked the queue's bound.
+   */
+  prepend(messages: readonly QueuedMessage[]): void {
+    const first = messages[0];
+    if (first === undefined) return;
     const head = (this.database.prepare('SELECT MIN(position) AS position FROM assistant_queued_messages WHERE conversation_id=?').get(first.conversationId) as {position: number | null}).position ?? 1;
     const insert = this.database.prepare('INSERT INTO assistant_queued_messages VALUES (?,?,?,?,?,?,?,?)');
-    steers.forEach((steer, index) => {insert.run(steer.id, steer.conversationId, steer.profile, head - steers.length + index, steer.text, steer.savedAtMs, atMs, steer.traceparent);});
-    this.database.prepare('DELETE FROM assistant_steers WHERE task_id=?').run(taskId);
+    messages.forEach((message, index) => {insert.run(message.id, message.conversationId, message.profile, head - messages.length + index, message.text, message.queuedAtMs, message.updatedAtMs, message.traceparent);});
     this.touch(first.conversationId);
-    return steers.length;
   }
   edit(id: string, text: string, atMs: number): void {
     const message = this.message(id); if (message === undefined) return;

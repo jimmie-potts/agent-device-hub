@@ -193,6 +193,13 @@
   font-weight: 650;
 }
 
+/* A steer the task read while it worked, and an answer a steer superseded (Hub #2031). */
+.conversation-steer-note {
+  display: block;
+  color: var(--muted-dense);
+  font-size: var(--type-small, 0.875em);
+}
+
 .conversation-message-text, .conversation-compose article, .conversation-question {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -384,7 +391,12 @@
   margin-block-start: 0.5rem;
 }
 
-/* Queued messages above the composer (Hub #2030): the waiting messages in the order they start, and the queue's hold. */
+/* Queued messages above the composer (Hub #2030): the waiting messages in the order they start, and the queue's hold.
+   The running task's unread steers (Hub #2031) use the same box, marked by an accent edge. */
+.conversation-steers {
+  border-inline-start: 3px solid var(--accent, var(--edge-faint));
+}
+
 .conversation-queue {
   display: grid;
   gap: var(--space-xs);

@@ -15,7 +15,7 @@ import type {CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/co
 import {InProcessBus, type Command, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
-import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
+import type {ModelProvider, TranscriptItem, TurnReply} from '../src/assistant/provider.js';
 
 const PROFILES = ['bunny', 'reachy', 'microduck'] as const;
 const ENDPOINT = 'worker-endpoint-1';
@@ -68,6 +68,15 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
   };
+  /** Steers the profile's unfinished task with a new message (Hub #2031). */
+  const steer = async (profile: AssistantProfile, text: string): Promise<RequestResult> => {
+    const requestId = randomUUID();
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({action: 'steer', profile, expectedRevision: state().revision, text, taskId: task(profile)?.taskId}))});
+    assert.ok(staged !== undefined && !('error' in staged), JSON.stringify(staged));
+    return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+  };
   const messages = async (profile: AssistantProfile): Promise<{role: string; text: string}[]> => {
     const content = await module.manifest.content?.('conversation', {query: {profile}, signal: new AbortController().signal});
     assert.ok(content !== undefined && !('error' in content), JSON.stringify(content));
@@ -84,7 +93,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     await settle(() => task(profile)?.status === 'waiting' && task(profile)?.questionId !== null && task(profile)?.hasAnswer === false, `${profile} waits for approval`);
     assert.equal((await send(profile, 'approve', true)).status, 'accepted');
   };
-  return {module: () => module, task, control, send, messages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
+  return {module: () => module, task, control, send, steer, messages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
     restart: async () => {await host.stop(); ({module, host} = make()); await host.start();}, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}};
 }
 
@@ -201,4 +210,42 @@ void test('a waiting hand-off that the module sent before its waiting line was s
   const text = JSON.stringify(await w.messages('reachy'));
   assert.match(text, /Delegated to the coding worker in agent-device-hub: Synthetic reachy brief\./);
   assert.doesNotMatch(text, /Waiting to delegate/);
+});
+
+void test('a steer during a delegation wait, a hand-off waiting for its slot included, is kept until the worker\'s result arrives (Hub #2031)', {timeout: 30_000}, async context => {
+  const seen: {profile: AssistantProfile; transcript: readonly TranscriptItem[]}[] = [];
+  const recording = (profile: AssistantProfile): ModelProvider => {
+    const inner = delegating(profile);
+    return {...inner, turn: (input, signal) => {seen.push({profile, transcript: input.transcript}); return inner.turn(input, signal);}};
+  };
+  const w = await world(context, {provider: recording('bunny'), profileProviders: {reachy: recording('reachy'), microduck: recording('microduck')}});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  // An older worker holds one run for every companion, so Reachy's approved hand-off waits for its slot.
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic bunny request')).status, 'accepted'); await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  assert.equal((await w.send('reachy', 'Synthetic reachy request')).status, 'accepted'); await w.approved('reachy');
+  await settle(() => w.coding().waiting?.length === 1);
+  const calls = seen.length;
+  assert.equal((await w.steer('bunny', 'Synthetic bunny steer during the run')).status, 'accepted');
+  assert.equal((await w.steer('reachy', 'Synthetic reachy steer while the hand-off waits')).status, 'accepted');
+  for (let turn = 0; turn < 50; turn += 1) await new Promise(resolve => {setImmediate(resolve);});
+  assert.equal(seen.length, calls, 'neither steer makes a model call before the worker\'s result');
+  assert.deepEqual([w.task('bunny')?.status, w.task('reachy')?.status], ['waiting', 'waiting']);
+  const tail = (profile: AssistantProfile): unknown[] => (seen.filter(entry => entry.profile === profile).at(-1)?.transcript ?? []).slice(-2)
+    .map(item => item.role === 'tool' ? {role: item.role, name: item.name, result: item.result.slice(0, 9)} : item.role === 'owner' ? {role: item.role, text: item.text} : {role: item.role});
+  const run = w.starts()[0]?.data.operationId;
+  await w.progress({operationId: run, status: 'started'});
+  await w.progress({operationId: run, status: 'completed', result: result('Synthetic bunny result.')});
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  assert.deepEqual(tail('bunny'), [{role: 'tool', name: 'delegate_coding', result: 'completed'}, {role: 'owner', text: 'Synthetic bunny steer during the run'}],
+    'the steer follows the worker\'s result in the next call');
+  // The freed slot sends Reachy's hand-off; its steer still waits for that worker's result.
+  await settle(() => w.starts().length === 2);
+  assert.equal(seen.filter(entry => entry.profile === 'reachy').length, 1);
+  const second = w.starts()[1]?.data.operationId;
+  await w.progress({operationId: second, status: 'started'});
+  await w.progress({operationId: second, status: 'completed', result: result('Synthetic reachy result.')});
+  await settle(() => w.task('reachy')?.status === 'succeeded');
+  assert.deepEqual(tail('reachy'), [{role: 'tool', name: 'delegate_coding', result: 'completed'}, {role: 'owner', text: 'Synthetic reachy steer while the hand-off waits'}]);
 });
