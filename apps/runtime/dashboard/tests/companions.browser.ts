@@ -9,6 +9,7 @@ import {conversationStateJourney} from './conversation-state.browser.ts';
 import {conversationHistoryJourney} from './conversation-history.browser.ts';
 import {companionSessionJourney} from './companion-session.browser.ts';
 import {conversationContextJourney} from './conversation-context.browser.ts';
+import {conversationQueueJourney} from './conversation-queue.browser.ts';
 import {homeSpeechLifetimeJourney, speechJourney, spokenRepliesJourney} from './speech.browser.ts';
 import {lifxConversationJourney, wemoConversationJourney} from './lifx-conversation.browser.ts';
 import {codingDelegationJourney} from './coding-delegation.browser.ts';
@@ -35,6 +36,7 @@ try {
   await conversationHistoryJourney(browser);
   await companionSessionJourney(browser);
   await conversationContextJourney(browser);
+  await conversationQueueJourney(browser);
   await lifxConversationJourney(browser);
   await wemoConversationJourney(browser);
   await showConversationJourney(browser);

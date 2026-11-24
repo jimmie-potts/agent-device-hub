@@ -16,6 +16,8 @@ import {ConversationUpload} from './conversation-upload.js';
 import {ConversationTranscript} from './conversation-transcript.js';
 import {conversationRail, profiles, unspokenNote} from './conversation-rail.js';
 import {companionName, handOffWaiting, slotBusy} from './coding-status.js';
+import {QueuedMessages} from './conversation-queue.js';
+import {useQueue, type QueueView} from './conversation-queue-read.js';
 import './conversation.css';
 
 const finished = (status: string): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
@@ -31,12 +33,15 @@ function SavedQuestionContext({question}: {question: SavedQuestion}): React.JSX.
   </article>;
 }
 
-function TaskControls({context, command, state, profile, live, question, coding, drafts, setDraft, refreshHistory, historyBusy, voice}: {
+function TaskControls({context, command, state, profile, live, question, coding, queue, drafts, setDraft, refreshHistory, historyBusy, voice}: {
   context: FrontendContext; command: FrontendCommand; state: AssistantState | undefined; profile: AssistantProfile; live: boolean; coding: CodingState | undefined;
-  question: SavedQuestion | undefined; drafts: Record<string, string>; setDraft: (key: string, value: string) => void;
+  question: SavedQuestion | undefined; queue: QueueView | undefined; drafts: Record<string, string>; setDraft: (key: string, value: string) => void;
   refreshHistory: () => void; historyBusy: boolean; voice: React.JSX.Element;
 }): React.JSX.Element {
   const formId = useId();
+  // The draft a sent or queued message came from, cleared once its command succeeded, so the composer is ready for the
+  // next message while the task runs; a refused or uncertain command keeps it.
+  const [submitted, setSubmitted] = useState<{requestId: string; key: string; text: string}>();
   const task = state?.tasks.find(value => value.profile === profile);
   // Only this conversation's own unfinished task holds a new message; another conversation's never does (Hub #2027).
   const open = task !== undefined && !finished(task.status);
@@ -50,27 +55,44 @@ function TaskControls({context, command, state, profile, live, question, coding,
   const draftKey = `${profile}:${pending ? task.questionId ?? 'start' : 'start'}`;
   const draft = drafts[draftKey] ?? '';
   const bytes = new TextEncoder().encode(draft).byteLength;
-  const showInput = state !== undefined && !unavailableDecision && !approval && !delegated;
+  // The composer stays available while the task runs or waits (Hub #2030): during an approval or a hand-off it only queues.
+  const showInput = state !== undefined && !unavailableDecision;
+  const answerable = showInput && !approval && !delegated;
   const tooLong = bytes > LIMITS.inputBytes;
   const locked = command.locked || !live || !context.control || !context.operationsLive;
-  const canSubmit = showInput && !locked && enabled && draft.trim() !== '' && !tooLong && (pending || !open);
+  const canSubmit = answerable && !locked && enabled && draft.trim() !== '' && !tooLong && (pending || !open);
+  // Queue saves the message for after the current task; with no task it joins a held queue. A free, empty queue with no
+  // task to wait for has nothing to queue behind, so Send alone shows.
+  const queued = queue?.messages.length ?? 0;
+  const queueable = showInput && (open || queued > 0);
+  const canQueue = queueable && !locked && enabled && draft.trim() !== '' && !tooLong && queued < LIMITS.queuedMessages;
+  useEffect(() => {
+    if (submitted === undefined) return;
+    const operation = context.operations.find(value => value.requestId === submitted.requestId);
+    if (operation?.status !== 'completed') return;
+    if (operation.result === 'succeeded' && drafts[submitted.key] === submitted.text) setDraft(submitted.key, '');
+    setSubmitted(undefined);
+  }, [context.operations, drafts, setDraft, submitted]);
   const control = (action: 'resume' | 'cancel', taskId: string): void => {
     if (state === undefined) return;
     const requestId = crypto.randomUUID();
     void command.run({family: 'assistant-control', target: 'assistant', requestId,
       data: {action, expectedRevision: state.revision, taskId}});
   };
-  const send = (text: string, answer: boolean): void => {
+  const send = (text: string, action: 'start' | 'answer' | 'queue'): void => {
     if (state === undefined) return;
     // Command retains this identity before staging. The draft remains on refusals and uncertain replies.
     const requestId = crypto.randomUUID();
-    const input = {action: answer ? 'answer' : 'start', profile, text, expectedRevision: state.revision,
-      ...(answer && task !== undefined ? {taskId: task.taskId, questionId: task.questionId} : {})};
+    const input = {action, profile, text, expectedRevision: state.revision,
+      ...(action === 'answer' && task !== undefined ? {taskId: task.taskId, questionId: task.questionId} : {})};
+    if (action !== 'answer' || (text !== 'approve' && text !== 'decline')) setSubmitted({requestId, key: draftKey, text});
     void command.run({family: 'assistant-input', target: 'assistant', requestId,
       upload: {name: 'input.json', file: new Blob([JSON.stringify(input)], {type: 'application/json'})}});
   };
+  // Enter sends or answers when it can, and queues while the task runs.
   const submit = (): void => {
-    if (canSubmit) send(draft, pending);
+    if (canSubmit) send(draft, pending ? 'answer' : 'start');
+    else if (canQueue && !(pending && answerable)) send(draft, 'queue');
   };
   return <>
     {unavailableDecision && <div>
@@ -101,8 +123,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
               <pre style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{JSON.stringify(question.proposal, null, 2)}</pre>
             </details>
           : <p><code>{question.proposal.target}</code> · {question.proposal.family === 'power-set' ? (question.proposal.data.on ? 'Power on' : 'Power off') : `Brightness ${String(question.proposal.data.percent)}%`}</p>}
-        <button type="button" disabled={!enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', true);}}>Approve proposal</button>
-        <button type="button" className="secondary" disabled={!enabled} onClick={() => {send('decline', true);}}>Decline proposal</button>
+        <button type="button" disabled={!enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', 'answer');}}>Approve proposal</button>
+        <button type="button" className="secondary" disabled={!enabled} onClick={() => {send('decline', 'answer');}}>Decline proposal</button>
         <p>Approval sends one tracked command; its outcome is reported separately. Declining changes nothing.</p>
       </article> : null)}
       {task !== undefined && !finished(task.status) && <div className="conversation-task-actions">
@@ -110,11 +132,13 @@ function TaskControls({context, command, state, profile, live, question, coding,
         <button type="button" className="secondary" onClick={() => {control('cancel', task.taskId);}}>Cancel task</button>
       </div>}
     </fieldset>
-    <ConversationUpload key={draftKey} context={context} locked={locked || !showInput}>{attach => <>
+    {queue !== undefined && state !== undefined && <QueuedMessages context={context} command={command} queue={queue} profile={profile} revision={state.revision}
+      waiting={open} locked={locked} enabled={enabled}/>}
+    <ConversationUpload key={draftKey} context={context} locked={locked || !answerable}>{attach => <>
       {showInput && <form id={formId} onSubmit={event => {event.preventDefault(); submit();}}>
-        <label className="vh" htmlFor="assistant-input">{pending ? 'Answer' : 'Message'}</label>
+        <label className="vh" htmlFor="assistant-input">{pending && answerable ? 'Answer' : 'Message'}</label>
         <textarea id="assistant-input" rows={2} value={draft} aria-describedby="assistant-input-help"
-          placeholder={pending ? 'Answer the question' : `Message ${profiles[profile].name}`} disabled={locked} aria-invalid={tooLong || undefined}
+          placeholder={pending && answerable ? 'Answer the question' : open ? 'Queue a message for after this task' : `Message ${profiles[profile].name}`} disabled={locked} aria-invalid={tooLong || undefined}
           onKeyDown={event => {
             if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
             event.preventDefault();
@@ -128,12 +152,14 @@ function TaskControls({context, command, state, profile, live, question, coding,
       </form>}
       <div className="conversation-composer-actions">
         {voice}
-        {showInput && attach}
-        {showInput && <button type="submit" form={formId} disabled={!canSubmit}>{pending ? 'Answer' : 'Send'}</button>}
+        {answerable && attach}
+        {queueable && <button type="button" className="secondary conversation-queue-button" disabled={!canQueue} onClick={() => {if (canQueue) send(draft, 'queue');}}>Queue</button>}
+        {answerable && <button type="submit" form={formId} disabled={!canSubmit}>{pending ? 'Answer' : 'Send'}</button>}
       </div>
     </>}</ConversationUpload>
     {showInput && <div id="assistant-input-help" className="conversation-input-help">
-      <p>Enter to {pending ? 'answer' : 'send'}. Shift+Enter for a new line.</p>
+      <p>{pending && answerable ? 'Enter to answer.' : answerable && !open ? 'Enter to send.' : 'Enter to queue.'} Shift+Enter for a new line.</p>
+      {queued >= LIMITS.queuedMessages && <p>The queue is full. Withdraw a message or wait for one to start.</p>}
       <p>Saved privately. Sent to the selected model.</p>
     </div>}
   </>;
@@ -319,6 +345,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   }, [history]);
   const live = connected && !unavailable && state !== undefined && state.available;
   const spend = useSpend(api, connected && historyApi === api, state?.revision);
+  // The current conversation's queued messages (Hub #2030), read again at each assistant-state revision.
+  const queue = useQueue(api, connected && historyApi === api && viewing === undefined, profile, state?.revision);
   // Every profile's new message meets the shared spend limits on a paid provider (Hub #2026); the synthetic one costs nothing.
   const spendLimit = spendNotice(spend);
   // A profile whose persona's audio is not speech shows why in place of Read aloud (Hub #2026).
@@ -363,7 +391,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
       // An empty current conversation has nothing to leave behind, so New conversation waits for its first message.
       const empty = viewing === undefined && visibleHistory !== undefined && !visibleHistory.earlier && task === undefined &&
         !visibleHistory.windows.some(window => window.messages.length > 0);
-      const held = viewing !== undefined ? undefined : open ? 'Finish or cancel this conversation\'s task first.' : empty ? 'This conversation is empty. Send a message first.' : undefined;
+      const held = viewing !== undefined ? undefined : open ? 'Finish or cancel this conversation\'s task first.'
+        : (queue?.messages.length ?? 0) > 0 ? 'Start or withdraw the queued messages first.' : empty ? 'This conversation is empty. Send a message first.' : undefined;
       const canStartNew = state !== undefined && !locked && held === undefined && viewing === undefined;
       const startNew = (): void => {
         if (!canStartNew) return;
@@ -437,9 +466,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             </p>}
             {task?.code != null && <p>Task code: {task.code}</p>}
             {spendLimit !== undefined && <p role="status">{spendLimit}</p>}
-            {state?.enabled === true && open && !['waiting', 'paused'].includes(task.status) && <p>Finish or cancel this conversation's task before sending another message.</p>}
+            {state?.enabled === true && open && !['waiting', 'paused'].includes(task.status) && <p>This task is working. Queue a message to start it after the task ends, or cancel the task.</p>}
             {activeClarification !== undefined && <SavedQuestionContext question={activeClarification}/>}
-            <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion} coding={connected ? coding : undefined}
+            <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion} coding={connected ? coding : undefined} queue={queue}
               drafts={drafts} setDraft={(key, value) => {setDrafts(prior => ({...prior, [key]: value}));}}
               refreshHistory={() => {readHistory();}} historyBusy={historyStatus === 'loading'}
               voice={<ConversationVoice context={context} speech={speech} open={panel === 'voice'} onOpenChange={setVoiceOpen}

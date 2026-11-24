@@ -4,7 +4,7 @@ import {Annotation, Command as Resume, END, GraphRecursionError, StateGraph, int
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {ASSISTANT_LEGACY_TOOL_LIMIT, ASSISTANT_WEMO_OWNER, type AssistantControl, type AssistantDeviceOwner, type AssistantDispatch, type AssistantInput, type AssistantProfile, type AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
+import {ASSISTANT_LEGACY_TOOL_LIMIT, ASSISTANT_WEMO_OWNER, type AssistantControl, type AssistantDeviceOwner, type AssistantDispatch, type AssistantInput, type AssistantProfile, type AssistantQueueSummary, type AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
@@ -117,6 +117,8 @@ function closingReasonOf(error: unknown): string | undefined {
 const profiles: readonly AssistantProfile[] = ['bunny', 'reachy', 'microduck'];
 const profile = (value: unknown): value is AssistantProfile => typeof value === 'string' && profiles.includes(value as AssistantProfile);
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+/** A queued message's ID: the request ID that queued it, as the blocks define one. */
+const QUEUED_ID = /^[A-Za-z0-9_.-]{1,128}$/u;
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 /** The tool an approved proposal runs, by its tool identifier. */
 const proposalTool = (proposal: Proposal): string => proposal.family === 'mode-set' ? SET_MODE : proposal.family === 'coding-dispatch' ? DELEGATE_CODING :
@@ -126,7 +128,9 @@ const handOffOutcome = (text: string): 'completed' | 'failed' | 'cancelled' | 'u
   const word = /^[a-z]+/u.exec(text)?.[0];
   return word === 'completed' || word === 'failed' || word === 'cancelled' || word === 'uncertain' ? word : 'unknown';
 };
-export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as const, type: 'org.bunny.assistant-state.updated', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-state/${data.tools.length > ASSISTANT_LEGACY_TOOL_LIMIT ? '2.1' : '2.0'}`, data});
+/** The state's version: 2.2 while a conversation's queue holds messages (Hub #2030), else 2.1 for the full tool list, else 2.0. */
+export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as const, type: 'org.bunny.assistant-state.updated', subject: 'assistant',
+  dataschema: `https://bunny.invalid/events/assistant-state/${data.queues !== undefined ? '2.2' : data.tools.length > ASSISTANT_LEGACY_TOOL_LIMIT ? '2.1' : '2.0'}`, data});
 export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the evidence the tools return.';
 /** The start of the tool result for a hand-off that waits for its companion's busy slot (Hub #2028). */
 export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this hand-off waits for';
@@ -139,6 +143,8 @@ export const REFUSED = 'The model declined this request.';
 export const UNSPOKEN = 'This companion\'s audio is not speech, so its text is its intended meaning and is never read aloud.';
 /** What a conversation reads when its saved progress could not be restored at a start (Hub #2027); once per failed start. */
 export const RECOVERY_FAILED = 'This conversation\'s saved progress couldn\'t be restored when B.U.N.N.Y. started. You can cancel the task, but new messages here can\'t be sent until B.U.N.N.Y. restarts, which tries the recovery again.';
+/** Why a message is not queued when its conversation's queue is full (Hub #2030). */
+export const QUEUE_FULL = `This conversation's queue holds its limit of ${String(LIMITS.queuedMessages)} messages. Withdraw one or wait for one to start.`;
 type Next = 'ask' | 'tool' | 'approve' | 'await' | 'turn' | 'end';
 const shape = Annotation.Root({taskId: Annotation<string>, step: Annotation<number>, next: Annotation<Next>, decision: Annotation<string>, result: Annotation<string>});
 type GraphState = typeof shape.State;
@@ -167,6 +173,11 @@ export class AssistantEngine {
    * connection. Keyed by conversation, not by profile, so another conversation can join without a new slot.
    */
   readonly #active = new Map<string, Active>();
+  /**
+   * A conversation's task started while its previous run still settles, such as a queued message that started in the
+   * commit that ended the task before it (Hub #2030): it launches once that run lets go of the conversation's slot.
+   */
+  readonly #deferred = new Map<string, string>();
   #closed = false;
   readonly #confirmationWatches = new Map<string, Promise<void>>();
   readonly #confirmationsStopped = new AbortController();
@@ -219,8 +230,18 @@ export class AssistantEngine {
   }
   inspect(): AssistantState {
     const provider = this.provider();
+    const queues = this.#queues();
     return {id: 'assistant', ...this.store.meta(), available: this.available(), provider: provider.name, model: provider.model, tools: [...this.#allowed],
-      tasks: this.store.latest().map(task => this.store.summary(task))};
+      tasks: this.store.latest().map(task => this.store.summary(task)), ...(queues.length === 0 ? {} : {queues})};
+  }
+  /** Each profile's current conversation whose queue holds messages (Hub #2030): how many, and whether and why it is held. */
+  #queues(): AssistantQueueSummary[] {
+    return profiles.flatMap(owner => {
+      const conversationId = this.store.conversation(owner), messages = conversationId === undefined ? 0 : this.store.queue.count(conversationId);
+      if (conversationId === undefined || messages === 0) return [];
+      const hold = this.store.queue.hold(conversationId);
+      return [{conversationId, profile: owner, messages, held: hold?.reason ?? null, code: hold?.code ?? null}];
+    });
   }
   async start(): Promise<void> {
     // Each conversation's unfinished task is reconciled on its own and none is run. A failed recovery makes only its own
@@ -237,6 +258,8 @@ export class AssistantEngine {
           try {await this.#recoverUnavailable(task.id, closingReasonOf(error), true);} catch { /* A failed write cannot claim a saved transition. */ }
         }
       }
+      // A queue the start held changed at the start (Hub #2030): a revision records it, so a command read before is stale.
+      if (this.store.queue.changed()) await this.outbox.transaction(add => {this.#publish(add);});
     } finally {this.#starting = false;}
     for (const watch of this.store.confirmations()) void this.#followConfirmation(watch);
     this.#subscriptions.push(await this.context.sdk.respond<AssistantControl>('bunny.cmd.assistant-control.assistant', command => this.#control(command)));
@@ -280,7 +303,7 @@ export class AssistantEngine {
     }
   }
   #change(id: string, change: (task: Task) => void, parent?: TraceContext, reason?: string): Promise<void> {
-    let finished: Task | undefined;
+    let finished: Task | undefined, next: string | undefined;
     return this.outbox.transaction(add => {
       const task = this.#task(id), previous = task.status;
       change(task);
@@ -290,11 +313,15 @@ export class AssistantEngine {
         this.store.message(task, messageId, 'assistant', reply, this.context.clock.now());
       }
       this.store.save(task);
+      // A task that ended starts the next queued message of its conversation in the same commit (Hub #2030), so the
+      // session report states this turn's end before the next turn's start. Stop, a cancel, never ends a task here.
+      if (!terminal(previous) && terminal(task.status)) {finished = task; next = this.#dispatch(task.conversationId);}
       this.#publish(add, parent);
-      if (!terminal(previous) && terminal(task.status)) finished = task;
     }).then(() => {
-      // A finished task asks the title model to check the conversation's title (Hub #2075), once its result is saved.
+      // A finished task asks the title model to check the conversation's title (Hub #2075), once its result is saved. The
+      // queued message that started after it starts no check of its own.
       if (finished !== undefined) this.#checkTitle(finished, {kind: 'task', result: finished.status as 'succeeded' | 'failed' | 'cancelled'});
+      if (next !== undefined && !this.#closed && !this.context.signal.aborted) this.#launch(next);
     });
   }
   /**
@@ -387,6 +414,14 @@ export class AssistantEngine {
     if (revision > this.store.meta().revision || (conversationId !== undefined && this.store.changedAt(conversationId) > revision)) fail('revision-conflict');
   }
   /**
+   * A queue command, to queue, edit, withdraw, reorder or resume (Hub #2030), is stale only when the conversation's queue
+   * changed after the revision it names, as the #2056 scopes are: the steps of the conversation's running task never
+   * refuse it, while a message that started, moved or changed since does.
+   */
+  #queueRevision(revision: number, conversationId: string | undefined): void {
+    if (revision > this.store.meta().revision || (conversationId !== undefined && this.store.queue.changedAt(conversationId) > revision)) fail('revision-conflict');
+  }
+  /**
    * Offers one durable assistant message to be spoken through the companions speech endpoint. Text over the browser driver's
    * bound stays on the page unspoken rather than cut; the coordinator decides availability, Quiet and one-at-a-time.
    */
@@ -401,10 +436,10 @@ export class AssistantEngine {
     catch { /* Speech is an output of the saved message, never a condition of it. */ }
   }
   #ready(): void {if (!this.store.meta().enabled || !this.available()) fail('unavailable');}
-  #activate(task: Task, parent: TraceContext): void {
+  #activate(task: Task, parent: TraceContext, settling = false): void {
     this.#ready();
     if (this.#unrecovered.has(task.conversationId)) fail('unavailable');
-    if (this.#active.has(task.conversationId)) fail('capacity');
+    if (settling ? this.#busy(task.conversationId) : this.#active.has(task.conversationId)) fail('capacity');
     if (task.graphVersion !== GRAPH_VERSION || task.version !== 1) fail('unavailable');
     if (unresolved(this.store.calls(task.id))) fail('uncertain-result');
     if (task.activeMs >= LIMITS.activeMs || task.reservedUnits >= LIMITS.units) fail('capacity');
@@ -412,6 +447,46 @@ export class AssistantEngine {
     this.store.saveRun({version: 1, id: runId, taskId: task.id, startedAtMs: this.context.clock.now(), endedAtMs: null,
       status: 'running', traceparent: parent.traceparent, previousTraceparent: task.traceparent});
     task.runId = runId; task.generation += 1; task.status = 'running'; task.code = null;
+  }
+  /** Whether the conversation's slot holds a run whose task has not ended; a run still settling an ended task does not count. */
+  #busy(conversationId: string): boolean {
+    const run = this.#active.get(conversationId);
+    return run !== undefined && !terminal(this.store.task(run.taskId)?.status ?? 'succeeded');
+  }
+  /**
+   * Starts the conversation's next queued message as a new task and turn in the open transaction (Hub #2030) when its
+   * queue is not held and the conversation has no unfinished task, and removes it from the queue in the same commit, so
+   * a crash can never leave it both started and queued. A start, the run's launch included, follows the module's own
+   * rules for a new message: conversation on, the conversation recovered and room in the spend limits. A start the module
+   * refuses holds the queue with the refusal's code and fixed reason, and the message stays queued; with `refuse`, the
+   * owner's Resume queue or Start, the refusal is the command's and nothing changes. A start of the module starts nothing.
+   * Returns the task to launch after the commit.
+   */
+  #dispatch(conversationId: string, refuse = false): string | undefined {
+    if (this.#closed || this.#starting || this.context.signal.aborted) return undefined;
+    const head = this.store.queue.messages(conversationId)[0];
+    if (head === undefined || this.store.queue.hold(conversationId) !== null) return undefined;
+    if (this.store.unfinishedIn(conversationId) !== undefined || this.#busy(conversationId)) return undefined;
+    const refusal = this.#startRefusal(head.profile, conversationId);
+    if (refusal !== undefined) {
+      if (refuse) throw refusal;
+      this.store.queue.setHold(conversationId, {reason: 'refused', code: refusal.code, detail: refusal.closingReason ?? null});
+      return undefined;
+    }
+    const task = this.store.newTask(head.profile, head.text);
+    this.store.message(task, `${task.id}-prompt`, 'owner', head.text, this.context.clock.now());
+    this.#activate(task, {traceparent: head.traceparent}, true);
+    this.store.save(task);
+    this.store.queue.remove(head.id);
+    return task.id;
+  }
+  /** Why the conversation's next message cannot start now, checked before anything is written, or undefined when it can. */
+  #startRefusal(owner: AssistantProfile, conversationId: string): Fault | undefined {
+    if (!this.store.meta().enabled || !this.available() || this.#unrecovered.has(conversationId)) return new Fault('unavailable');
+    if (this.store.conversation(owner) !== conversationId) return new Fault('invalid-state');
+    // A paid profile's message meets the spend limits as a new message does; synthetic turns cost nothing.
+    const paid = this.provider(owner), reached = paid.name === 'synthetic' ? undefined : this.spend.reached(paid.model);
+    return reached === undefined ? undefined : new Fault('capacity', reached);
   }
   async #admit<T extends {requestId: string}>(command: Command<T>, fingerprint: string, apply: (add: AddMessage) => string | undefined): Promise<Reply> {
     const refused = this.#check(command); if (refused !== undefined) return errorBody(refused);
@@ -433,12 +508,16 @@ export class AssistantEngine {
   #control(command: Command<AssistantControl>): Promise<Reply> {
     let spoken: {id: string; text: string} | undefined, delegated = false, renamed: string | undefined, cancelled: Task | undefined;
     return this.#admit(command, digest(command.data), add => {
-      const data = command.data;
+      const data = command.data, queued = data.action === 'withdraw' || data.action === 'reorder' || data.action === 'resume-queue';
       if (data.action === 'enable' || data.action === 'disable') this.#revision(data.expectedRevision);
+      else if (queued) this.#queueRevision(data.expectedRevision, data.profile === undefined ? undefined : this.store.conversation(data.profile));
       else this.#conversationRevision(data.expectedRevision, data.action === 'rename'
         ? data.profile === undefined ? undefined : this.store.conversation(data.profile)
         : data.taskId === undefined ? undefined : this.store.task(data.taskId)?.conversationId);
       if (data.action !== 'speak' && data.messageId !== undefined) fail('invalid-request');
+      if (data.action !== 'reorder' && data.beforeId !== undefined) fail('invalid-request');
+      if (!queued && data.queuedId !== undefined) fail('invalid-request');
+      if (queued) return this.#queueControl(data);
       if (data.action === 'rename') {
         // The owner's title for a profile's conversation (Hub #2025): it replaces any generated title and drops one in flight.
         if (data.taskId !== undefined || data.profile === undefined || data.title === undefined) fail('invalid-request');
@@ -468,6 +547,8 @@ export class AssistantEngine {
       if (data.action === 'cancel') {
         delegated = task.question?.kind === 'delegation' && task.question.answer === null;
         task.status = 'cancelled'; task.generation += 1; task.code = null; this.store.save(task); cancelled = task;
+        // Stop ends the task and holds the conversation's queue until the owner resumes it (Hub #2030, owner decision 5).
+        if (this.store.queue.count(task.conversationId) > 0) this.store.queue.setHold(task.conversationId, {reason: 'stop', code: null, detail: null});
         for (const watch of this.store.confirmations(task.id)) {
           if (watch.follows === undefined) this.store.dropConfirmation(watch.requestId);
         }
@@ -486,6 +567,29 @@ export class AssistantEngine {
       return reply;
     });
   }
+  /**
+   * Withdraw, reorder and Resume queue (Hub #2030), on the queue of the profile's current conversation. Resume queue,
+   * also the Start a restart asks for, releases a held queue and starts its next message now when the conversation has
+   * no unfinished task; a start the module refuses refuses the command and leaves the queue held.
+   */
+  #queueControl(data: AssistantControl): string | undefined {
+    if (data.profile === undefined || data.taskId !== undefined || data.title !== undefined) fail('invalid-request');
+    const conversationId = this.store.conversation(data.profile) ?? fail('not-found');
+    if (data.action === 'resume-queue') {
+      if (data.queuedId !== undefined) fail('invalid-request');
+      if (this.store.queue.hold(conversationId) === null) fail('invalid-state');
+      this.#ready();
+      this.store.queue.setHold(conversationId, null);
+      return this.#dispatch(conversationId, true);
+    }
+    const message = data.queuedId === undefined ? fail('invalid-request') : this.store.queue.message(data.queuedId);
+    if (message === undefined || message.conversationId !== conversationId) fail('not-found');
+    if (data.action === 'withdraw') {this.store.queue.remove(message.id); return undefined;}
+    if (data.beforeId === undefined || data.beforeId === message.id) fail('invalid-request');
+    if (data.beforeId !== null && this.store.queue.message(data.beforeId)?.conversationId !== conversationId) fail('not-found');
+    this.store.queue.move(message.id, data.beforeId);
+    return undefined;
+  }
   stage(request: ModuleUploadRequest): ModuleStagedUpload | ErrorBody {
     if (request.target !== 'assistant' || request.name !== 'input.json' || request.signal.aborted || request.bytes.byteLength > LIMITS.stageBytes) return errorBody('invalid-request');
     try {
@@ -493,13 +597,16 @@ export class AssistantEngine {
       // New conversation (Hub #2029) names its profile and the revision the page read, and nothing else. It runs no work,
       // so it is admitted while conversation is off, as a rename is.
       const fresh = object(value) && value.action === 'new-conversation';
-      if (!fresh) this.#ready();
+      // Editing a queued message (Hub #2030) runs no work either, so it is admitted while conversation is off.
+      if (!fresh && !(object(value) && value.action === 'edit-queued')) this.#ready();
       if (fresh && (Object.keys(value).some(key => !['action', 'profile', 'expectedRevision'].includes(key)) || !profile(value.profile) ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
-      if (!fresh && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId'].includes(key)) ||
-        !profile(value.profile) || !['start', 'answer'].includes(String(value.action)) || typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > LIMITS.inputBytes ||
+      if (!fresh && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'queuedId'].includes(key)) ||
+        !profile(value.profile) || !['start', 'answer', 'queue', 'edit-queued'].includes(String(value.action)) || typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > LIMITS.inputBytes ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
-      if (!fresh && (value.action === 'start' ? value.taskId !== undefined || value.questionId !== undefined : typeof value.taskId !== 'string' || typeof value.questionId !== 'string')) fail('invalid-request');
+      if (!fresh && (value.action === 'answer' ? typeof value.taskId !== 'string' || typeof value.questionId !== 'string' || value.queuedId !== undefined
+        : value.action === 'edit-queued' ? value.taskId !== undefined || value.questionId !== undefined || typeof value.queuedId !== 'string' || !QUEUED_ID.test(value.queuedId)
+          : value.taskId !== undefined || value.questionId !== undefined || value.queuedId !== undefined)) fail('invalid-request');
       const input = (fresh ? {...value, text: ''} : value) as StagedInput;
       this.store.expireStages(this.context.clock.now());
       const previous = this.store.inputFor(request.requestId);
@@ -516,10 +623,28 @@ export class AssistantEngine {
     let titled: {conversationId: string; profile: AssistantProfile; event: TitleEvent} | undefined;
     return this.#admit(command, digest(command.data), () => {
       const staged = this.store.input(command.data.inputRef) ?? fail('invalid-request');
-      if (staged.input.action !== 'new-conversation') this.#ready();
+      if (staged.input.action !== 'new-conversation' && staged.input.action !== 'edit-queued') this.#ready();
       if (staged.requestId !== command.data.requestId) fail('invalid-request');
       if (staged.expires <= this.context.clock.now()) fail('expired');
-      const input = staged.input;
+      const input = staged.input, now = this.context.clock.now();
+      if (input.action === 'queue' || input.action === 'edit-queued') {
+        this.#queueRevision(input.expectedRevision, this.store.conversation(input.profile));
+        this.store.discard(staged.ref);
+        if (input.action === 'edit-queued') {
+          const message = input.queuedId === undefined ? undefined : this.store.queue.message(input.queuedId);
+          if (message === undefined || message.conversationId !== this.store.conversation(input.profile)) fail('not-found');
+          this.store.queue.edit(message.id, input.text, now);
+          return undefined;
+        }
+        // Queue saves the owner's message for after the current task (Hub #2030), keyed by this request ID, so a repeat
+        // queues nothing more. The command completes here: the message is the queue's state, not a stored command.
+        const conversationId = this.store.ensureConversation(input.profile);
+        if (this.#unrecovered.has(conversationId)) fail('unavailable');
+        if (!this.store.queue.room(conversationId)) throw new Fault('capacity', QUEUE_FULL);
+        this.store.queue.add({id: command.data.requestId, conversationId, profile: input.profile, text: input.text, queuedAtMs: now, updatedAtMs: now, traceparent: command.traceparent});
+        // A queue with nothing to wait behind starts its message at once.
+        return this.#dispatch(conversationId);
+      }
       this.#conversationRevision(input.expectedRevision, input.action === 'answer'
         ? input.taskId === undefined ? undefined : this.store.task(input.taskId)?.conversationId : this.store.conversation(input.profile));
       if (input.action === 'new-conversation') {
@@ -528,6 +653,9 @@ export class AssistantEngine {
         // paused or is uncertain. The owner finishes or cancels it first.
         const current = this.store.conversation(input.profile);
         if (current !== undefined && (this.store.unfinishedIn(current) !== undefined || this.#active.has(current))) fail('invalid-state');
+        // Queued messages belong to the current conversation (Hub #2030), so New conversation waits until they start or the
+        // owner withdraws them, as it waits for an unfinished task.
+        if (current !== undefined && this.store.queue.count(current) > 0) fail('invalid-state');
         // An empty conversation, or none yet, has nothing to leave behind, so repeated requests cannot pile up empty ones.
         if (current === undefined || this.store.lastSequence(current) === 0) fail('invalid-state');
         const {previous, conversationId} = this.store.newConversation(input.profile);
@@ -608,6 +736,11 @@ export class AssistantEngine {
           conversations: listed.conversations.map(value => ({...value, title: this.titles.published(value.conversationId, selected)}))};
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify(document))};
       }
+      if (query.view === 'queue') {
+        // The current conversation's queue (Hub #2030): the waiting messages in order, with their text, and the hold.
+        if (Object.keys(query).some(key => !['profile', 'view'].includes(key))) return errorBody('invalid-request');
+        return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.store.queue.document(selected, this.store.conversation(selected))))};
+      }
       if (query.view === 'recent') {
         if (Object.keys(query).some(key => !['profile', 'view', 'before', 'conversationId'].includes(key)) ||
           (query.conversationId !== undefined && !/^[A-Za-z0-9-]{1,128}$/.test(query.conversationId))) return errorBody('invalid-request');
@@ -656,7 +789,7 @@ export class AssistantEngine {
       if (active !== undefined) this.#settle(task, active);
       if (startup) this.#finishRecoveredRun(task);
     }, active?.span.context ?? (traceparent === null ? undefined : {traceparent}));
-    if (active !== undefined && this.#task(taskId).status !== 'running' && this.#active.get(active.conversationId) === active) this.#active.delete(active.conversationId);
+    if (active !== undefined && this.#task(taskId).status !== 'running') this.#release(active);
     await publication;
     // Only a result this run just produced is offered; startup reconciliation never speaks an answer the owner did not just ask for.
     if (active !== undefined && result !== undefined) this.#speak(taskId, `${taskId}-result`, result, active.span.context);
@@ -667,7 +800,13 @@ export class AssistantEngine {
     if (run !== undefined) {run.status = task.status; run.endedAtMs = this.context.clock.now(); this.store.saveRun(run);}
   }
   #launch(taskId: string): void {
-    const task = this.#task(taskId); if (task.runId === null || task.status !== 'running' || this.#active.has(task.conversationId)) return;
+    const task = this.#task(taskId); if (task.runId === null || task.status !== 'running') return;
+    const current = this.#active.get(task.conversationId);
+    if (current !== undefined) {
+      // The slot's earlier run still settles the task that ended as this one started: this run follows it.
+      if (current.taskId !== taskId) this.#deferred.set(task.conversationId, taskId);
+      return;
+    }
     const run = this.store.run(task.runId); if (run === undefined) return;
     const span = startSpan(this.context.trace, 'bunny.assistant.run', {parent: {traceparent: run.traceparent},
       ...(run.previousTraceparent === null ? {} : {links: [{traceparent: run.previousTraceparent}]}), attributes: {'bunny.assistant.task_id': task.id, 'bunny.assistant.run_id': run.id}});
@@ -719,8 +858,16 @@ export class AssistantEngine {
     } finally {
       active.deadline?.();
       this.#log('assistant.run.settled', active); active.span.end(this.#task(active.taskId).code === null ? 'unset' : 'error'); this.context.signal.removeEventListener('abort', abort);
-      if (this.#active.get(active.conversationId) === active) this.#active.delete(active.conversationId);
+      this.#release(active);
     }
+  }
+  /** Frees the conversation's slot from a settled run and launches the task that started behind it, if any. */
+  #release(active: Active): void {
+    if (this.#active.get(active.conversationId) !== active) return;
+    this.#active.delete(active.conversationId);
+    const next = this.#deferred.get(active.conversationId);
+    this.#deferred.delete(active.conversationId);
+    if (next !== undefined && !this.#closed && !this.context.signal.aborted) this.#launch(next);
   }
   #activeFor(taskId: string): Active {
     const active = this.#active.get(this.#task(taskId).conversationId); if (active === undefined || active.taskId !== taskId) return fail('invalid-state');

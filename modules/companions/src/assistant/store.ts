@@ -11,6 +11,7 @@ import type {TranscriptItem} from './provider.js';
 import {RECENT_MESSAGES, type RecentMessage} from './context.js';
 import {HISTORY_ROWS, historyCursor, readHistoryCursor, type ConversationMessage, type RecentConversationPage, type SavedQuestion} from './history-contract.js';
 import {projectionOf, waitsOnOwner, type Reported} from './sessions.js';
+import {MessageQueue} from './queue.js';
 
 /** The conversation graph of Hub #46. Tasks saved by the fixed synthetic graph (`synthetic-1`) stay readable and refuse resume. */
 export const GRAPH_VERSION = 'conversation-1';
@@ -32,8 +33,13 @@ export type Call = {version: 1; id: string; taskId: string; runId: string; ordin
   reservedMs: number; elapsedMs: number | null; traceparent: string};
 export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; endedAtMs: number | null;
   status: AssistantStatus; traceparent: string; previousTraceparent: string | null};
-/** A staged message or answer, or New conversation for the profile (Hub #2029), which carries no text: `text` is empty. */
-export type StagedInput = {action: 'start' | 'answer' | 'new-conversation'; profile: AssistantProfile; text: string; expectedRevision: number; taskId?: string; questionId?: string};
+/**
+ * A staged message or answer, or New conversation for the profile (Hub #2029), which carries no text: `text` is empty. A
+ * `queue` input saves the message in the conversation's queue, and `edit-queued` replaces the text of the queued
+ * message `queuedId` (Hub #2030).
+ */
+export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'queue' | 'edit-queued'; profile: AssistantProfile; text: string; expectedRevision: number;
+  taskId?: string; questionId?: string; queuedId?: string};
 /** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
 export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
 export type Stage = {ref: string; requestId: string; input: StagedInput; expires: number};
@@ -70,6 +76,8 @@ export const unresolved = (calls: readonly Call[]): boolean => calls.some(call =
 /** All writes are synchronous and are called inside the owning outbox's transaction when they change task state. */
 export class AssistantStore {
   readonly messages: Messages;
+  /** Each conversation's message queue (Hub #2030), whose changes the assistant's revisions record. */
+  readonly queue: MessageQueue;
   constructor(readonly database: DatabaseSync) {
     const reported = database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='assistant_reports'").get() !== undefined;
     database.exec(`CREATE TABLE IF NOT EXISTS assistant_meta (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, enabled INTEGER NOT NULL);
@@ -119,6 +127,7 @@ export class AssistantStore {
     // Each companion's context switches (Hub #2029): whether its context holds the owner's knowledge notes. No row is off.
     database.exec('CREATE TABLE IF NOT EXISTS assistant_context_settings (profile TEXT PRIMARY KEY, knowledge INTEGER NOT NULL CHECK(knowledge IN (0,1))) STRICT');
     this.messages = new Messages(database);
+    this.queue = new MessageQueue(database);
   }
   /** Conversations whose tasks changed in the open transaction; the next `bump` records them at its revision. */
   readonly #changed = new Set<string>();
@@ -132,6 +141,7 @@ export class AssistantStore {
     const record = this.database.prepare('INSERT INTO assistant_conversation_changes VALUES (?,?) ON CONFLICT(conversation_id) DO UPDATE SET revision=excluded.revision');
     for (const conversationId of this.#changed) record.run(conversationId, revision);
     this.#changed.clear();
+    this.queue.record(revision);
   }
   /** Counts a change of the conversation other than a task's, such as the owner's rename, at the next `bump`. */
   touch(conversationId: string): void {this.#changed.add(conversationId);}
@@ -144,6 +154,7 @@ export class AssistantStore {
     this.database.prepare(`INSERT INTO assistant_conversation_changes SELECT id,(SELECT revision FROM assistant_meta WHERE id=1)
       FROM (SELECT id FROM assistant_conversations UNION SELECT id FROM companion_conversations) WHERE true
       ON CONFLICT(conversation_id) DO UPDATE SET revision=MAX(revision,excluded.revision)`).run();
+    this.queue.restarted(this.meta().revision);
   }
   /** The assistant revision of the conversation's last change, or 0 before its first. */
   changedAt(conversationId: string): number {

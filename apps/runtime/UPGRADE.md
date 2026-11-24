@@ -250,6 +250,25 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Queued messages (#2030)
+
+The #2030 release lets the owner queue messages while a companion works. It
+adds two tables, created empty at the first start: `assistant_queued_messages`,
+one row per waiting message with its conversation, position, text, times and
+the trace of the command that queued it, and `assistant_queues`, one row per
+conversation whose queue has changed, with the assistant revision of its last
+change and its hold. No record is rewritten. A start holds every queue that
+still holds a message, so after the upgrade and after every later restart
+nothing queued starts until the owner chooses **Start**. The assistant state
+is published as `assistant-state/2.2` while some queue holds messages, and the
+gateway sends the queue's withdraw, reorder and resume as
+`assistant-control/2.2`; both ship with this release's contracts and core.
+
+Returning to the release before needs no step for the tables: it ignores both.
+Messages still queued then never start and are not shown; withdraw them, or
+let them start, before going back. A task a queued message started is an
+ordinary task there. Prefer fixing forward.
+
 ## Recent context and New conversation (#2029)
 
 The #2029 release gives each companion's model calls the recent messages and

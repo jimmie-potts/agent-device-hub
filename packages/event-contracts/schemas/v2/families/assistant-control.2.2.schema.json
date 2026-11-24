@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/assistant-control/2.2",
+  "description": "Version 2.2 (Hub #2030): 2.1 with the message queue's actions. `withdraw` removes one queued message and `reorder` moves one before another, or to the end when `beforeId` is null; each names the `profile` and the message's `queuedId`, the request ID that queued it. `resume-queue` releases the held queue of the profile's current conversation and names only the `profile`. A rename carries `profile` and `title`. The other actions carry no profile, title or queued message.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "expectedRevision",
+    "action"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "expectedRevision": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/revision"
+    },
+    "action": {
+      "enum": [
+        "enable",
+        "disable",
+        "resume",
+        "cancel",
+        "speak",
+        "rename",
+        "withdraw",
+        "reorder",
+        "resume-queue"
+      ]
+    },
+    "taskId": {
+      "$ref": "https://bunny.invalid/events/assistant-control/2.1#/properties/taskId"
+    },
+    "messageId": {
+      "$ref": "https://bunny.invalid/events/assistant-control/2.1#/properties/messageId"
+    },
+    "profile": {
+      "$ref": "https://bunny.invalid/events/assistant-control/2.1#/properties/profile"
+    },
+    "title": {
+      "$ref": "https://bunny.invalid/events/assistant-control/2.1#/properties/title"
+    },
+    "queuedId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "beforeId": {
+      "anyOf": [
+        {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "rename"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "profile",
+          "title"
+        ],
+        "properties": {
+          "profile": true,
+          "title": true,
+          "taskId": false,
+          "messageId": false,
+          "queuedId": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "enum": [
+              "withdraw",
+              "reorder"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "profile",
+          "queuedId"
+        ],
+        "properties": {
+          "profile": true,
+          "queuedId": true,
+          "taskId": false,
+          "messageId": false,
+          "title": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "reorder"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "beforeId"
+        ],
+        "properties": {
+          "beforeId": true
+        }
+      },
+      "else": {
+        "properties": {
+          "beforeId": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "resume-queue"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "profile"
+        ],
+        "properties": {
+          "profile": true,
+          "taskId": false,
+          "messageId": false,
+          "title": false,
+          "queuedId": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "enum": [
+              "enable",
+              "disable",
+              "resume",
+              "cancel",
+              "speak"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "profile": false,
+          "title": false,
+          "queuedId": false
+        }
+      }
+    }
+  ]
+}

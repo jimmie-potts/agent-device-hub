@@ -1,8 +1,10 @@
 # Third-party sources
 
 `src/assistant/titles.ts` adapts code and prompt text from two projects to write
-conversation titles ([Hub #2025](https://github.com/jimmie-potts/agent-device-hub/issues/2025)).
-That file's header names each adapted part and says how it was modified. The
+conversation titles ([Hub #2025](https://github.com/jimmie-potts/agent-device-hub/issues/2025)),
+and `src/assistant/queue.ts` adapts their message queues
+([Hub #2030](https://github.com/jimmie-potts/agent-device-hub/issues/2030)).
+Each file's header names each adapted part and says how it was modified. The
 licenses and notices below apply to those parts.
 
 ## OpenAI Codex (Apache License 2.0)
@@ -10,8 +12,10 @@ licenses and notices below apply to those parts.
 | Source | Revision | Use |
 | --- | --- | --- |
 | [`codex-rs/tui/src/app/thread_title.rs`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/tui/src/app/thread_title.rs) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | `THREAD_TITLE_RECENT_MESSAGES` (line 37), `thread_title_instructions` (lines 336-346), `recent_conversation_messages` (lines 406-491), `recent_conversation_thread_title_prompt` (lines 493-510) and `parse_thread_title` (lines 512-537), translated to TypeScript and modified |
+| [`codex-rs/state/queue_migrations/0001_queued_items.sql`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/state/queue_migrations/0001_queued_items.sql) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | The `queued_items` table and its per-thread order index, as `assistant_queued_messages` in `src/assistant/queue.ts`, modified |
+| [`codex-rs/ext/queue/src/service.rs`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/ext/queue/src/service.rs) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | `dispatch_if_idle` (lines 440-509) and `on_thread_idle` (lines 588-605): the head starts only while its thread is idle, and an interrupt leaves the queue waiting, modified |
 
-Modifications: the instruction first asks whether the current title still fits
+Modifications to the titles: the instruction first asks whether the current title still fits
 the topic, answered by `KEEP`, and keeps a title the owner set unless the topic
 clearly changed ([Hub #2075](https://github.com/jimmie-potts/agent-device-hub/issues/2075)).
 It leads with the GitHub issue reference, describes the conversation instead of
@@ -20,6 +24,11 @@ names the current title, who set it and the latest events before the messages,
 names the owner and the assistant and has its own byte bound. Normalization reads plain text, removes a markdown heading,
 emphasis or a "Title:" label, writes the issue reference in its short form and
 shortens only the description, at a word boundary.
+
+Modifications to the queue: a queued message is keyed by the request ID that
+queued it and keeps its text instead of a payload; its start and its removal
+commit in one transaction instead of one after the other; and a hold is saved
+with its reason (Stop, a restart or a refused start) until the owner releases it.
 
 The project's NOTICE file:
 
@@ -243,9 +252,12 @@ limitations under the License.
 | Source | Revision | Use |
 | --- | --- | --- |
 | [`packages/provider-core/src/server/textGenerationUtils.ts`](https://github.com/pingdotgg/t3code/blob/b4277089795299da077e784f9f3432b3cc1c1c7d/packages/provider-core/src/server/textGenerationUtils.ts) | `b4277089795299da077e784f9f3432b3cc1c1c7d` | `sanitizeThreadTitle`'s JSON title unwrap, first-line rule and empty guard, modified |
+| [`packages/contracts/src/orchestrationV2.ts`](https://github.com/pingdotgg/t3code/blob/b4277089795299da077e784f9f3432b3cc1c1c7d/packages/contracts/src/orchestrationV2.ts) | `b4277089795299da077e784f9f3432b3cc1c1c7d` | `queueHeld` (line 805) and the `queue.resume`, `queued-run.reorder` (its `beforeRunId`, null for the end), `queued-run.cancel` and `queued-run.edit` commands (lines 3625-3660), as the queue's hold and its resume, reorder, withdraw and edit, modified |
 
 Modifications: an empty or placeholder title, such as the literal word "Title",
-is refused instead of replaced with a default.
+is refused instead of replaced with a default. The queue's commands name the
+profile and the queued message's request ID, and the hold records why the queue
+waits.
 
 ```text
 MIT License
