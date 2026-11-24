@@ -70,12 +70,12 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
   };
   const input = (data: {requestId: string; inputRef: string}): Promise<RequestResult> => core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
     dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data}, {requestId: data.requestId, timeoutMs: 5000});
-  const send = async (text: string, profile: AssistantProfile = 'bunny', answer = false): Promise<RequestResult> => {
+  const send = async (text: string, profile: AssistantProfile = 'bunny', answer = false, revision = state().revision): Promise<RequestResult> => {
     const current = task(profile);
-    return input(await staged({action: answer ? 'answer' : 'start', profile, text, ...(answer ? {taskId: current?.taskId, questionId: current?.questionId} : {})}));
+    return input(await staged({action: answer ? 'answer' : 'start', profile, text, expectedRevision: revision, ...(answer ? {taskId: current?.taskId, questionId: current?.questionId} : {})}));
   };
-  const queue = async (text: string, profile: AssistantProfile = 'bunny'): Promise<{id: string; result: RequestResult}> => {
-    const data = await staged({action: 'queue', profile, text});
+  const queue = async (text: string, profile: AssistantProfile = 'bunny', revision = state().revision): Promise<{id: string; result: RequestResult}> => {
+    const data = await staged({action: 'queue', profile, text, expectedRevision: revision});
     return {id: data.requestId, result: await input(data)};
   };
   const edit = async (queuedId: string, text: string, profile: AssistantProfile = 'bunny'): Promise<RequestResult> => input(await staged({action: 'edit-queued', profile, text, queuedId}));
@@ -84,7 +84,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     assert.ok(content !== undefined && !('error' in content), JSON.stringify(content));
     return JSON.parse(Buffer.from(content.bytes).toString()) as T;
   };
-  const queued = (profile: AssistantProfile = 'bunny') => read<QueueDocument>('conversation', {profile, view: 'queue'});
+  const queued = (profile: AssistantProfile = 'bunny', conversationId?: string) => read<QueueDocument>('conversation', {profile, view: 'queue', ...(conversationId === undefined ? {} : {conversationId})});
   const messages = async (profile: AssistantProfile = 'bunny') => (await read<{messages: {taskId: string; role: string; text: string}[]}>('conversation', {profile})).messages;
   return {state, task, control, staged, input, send, queue, edit, queued, messages, observations, states,
     database: () => host.moduleDatabase() ?? assert.fail('open database'),
@@ -247,7 +247,7 @@ void test('Stop with an empty queue holds nothing, and a withdrawn last message 
   await settle(() => w.task()?.status === 'cancelled');
   assert.equal((await w.queued()).held?.reason, 'stop');
   assert.equal((await w.control('withdraw', {profile: 'bunny', queuedId: only.id})).status, 'accepted');
-  assert.deepEqual(await w.queued(), {version: 1, profile: 'bunny', conversationId: w.task()?.conversationId, held: null, messages: []});
+  assert.deepEqual(await w.queued(), {version: 1, profile: 'bunny', conversationId: w.task()?.conversationId, revision: w.state().revision, current: true, held: null, messages: []});
 });
 
 void test('after a restart a waiting queue stays held until Start, and nothing runs at the start', async context => {
@@ -340,6 +340,14 @@ void test('a queued message that would pass the spend limits is refused at start
   assert.match(refused.status === 'rejected' ? refused.error.error.detail ?? '' : '', /daily spend limit/);
   assert.equal((await w.queued()).held?.reason, 'refused');
   assert.equal(provider.calls(), 1);
+  // The refused Resume queue rolled back, so the queue did not change: an unrelated commit leaves a command named
+  // before it current.
+  const read = w.state().revision;
+  assert.equal((await w.control('rename', {profile: 'reachy', title: 'Synthetic other conversation'})).status, 'accepted');
+  assert.ok(w.state().revision > read);
+  const after = await w.queued();
+  assert.equal(after.revision, w.state().revision, 'the queue read names the revision it was read at');
+  assert.equal((await w.control('withdraw', {profile: 'bunny', queuedId: after.messages[0]?.id}, read)).status, 'accepted');
 });
 
 void test('a queued start runs no title check of its own; the finished task before it does', async context => {
@@ -417,4 +425,82 @@ void test('a process exit after the commit that started a queued message leaves 
     assert.deepEqual(resumed.prompts, ['Synthetic process first', 'Synthetic process queued']);
     assert.equal(resumed.state.tasks[0]?.status, 'succeeded');
   } finally {void rm(dir, {recursive: true, force: true});}
+});
+
+void test('a Queue naming a revision read before New conversation is stale, as a Send is', async context => {
+  const provider = gated(), w = await world(context, {provider});
+  await w.control('enable');
+  await w.send('Synthetic earlier topic');
+  await settle(() => provider.pending.length === 1);
+  provider.next().resolve(reply('Synthetic earlier answer'));
+  await settle(() => w.task()?.status === 'succeeded');
+  await quiet();
+  const read = w.state().revision;
+  assert.equal((await w.input(await w.staged({action: 'new-conversation', profile: 'bunny'}))).status, 'accepted');
+  assert.equal(code((await w.queue('Synthetic stale queue', 'bunny', read)).result), 'revision-conflict');
+  assert.equal(code(await w.send('Synthetic stale send', 'bunny', false, read)), 'revision-conflict', 'negative control: a Send naming it is refused too');
+  await quiet();
+  assert.equal(provider.calls(), 1, 'nothing started in the conversation the page never saw');
+  assert.deepEqual(texts(await w.queued()), []);
+  assert.equal((await w.queue('Synthetic current queue')).result.status, 'accepted', 'the current revision is accepted');
+  await settle(() => provider.pending.length === 1);
+});
+
+void test('a Queue naming a revision read before a restart is stale wherever the start changed its conversation, as a Send is', async context => {
+  const provider = gated(), w = await world(context, {provider});
+  await w.control('enable');
+  await w.send('Synthetic request in flight');
+  await settle(() => provider.pending.length === 1);
+  const read = w.state().revision;
+  // No message was ever queued here, so the conversation has no queue row before the start.
+  await w.restart();
+  await quiet();
+  assert.equal(w.task()?.status, 'uncertain');
+  assert.equal(code((await w.queue('Synthetic stale queue after restart', 'bunny', read)).result), 'revision-conflict');
+  assert.equal(code(await w.send('Synthetic stale send after restart', 'bunny', false, read)), 'revision-conflict', 'negative control: a Send naming it is refused too');
+  assert.equal(code(await w.control('cancel', {taskId: w.task()?.taskId}, read)), 'revision-conflict');
+  assert.equal((await w.queue('Synthetic current queue after restart')).result.status, 'accepted');
+});
+
+void test('a Queue naming the revision a start began at is stale when the start reconciled its conversation, as a Send is', async context => {
+  const provider = gated(), w = await world(context, {provider});
+  await w.control('enable');
+  // Reachy's task waits on a question, so the stop publishes nothing and the start reconciles it at a new revision.
+  await w.send('Synthetic waiting request', 'reachy');
+  await settle(() => provider.pending.length === 1);
+  provider.next().resolve(ask('Synthetic question before restart?'));
+  await settle(() => w.task('reachy')?.status === 'waiting');
+  await quiet();
+  const read = w.state().revision;
+  await w.restart();
+  assert.ok(w.state().revision > read, 'the start reconciled the waiting task at a new revision');
+  assert.equal(code((await w.queue('Synthetic stale queue', 'reachy', read)).result), 'revision-conflict');
+  assert.equal(code(await w.send('Synthetic stale answer', 'reachy', true, read)), 'revision-conflict', 'negative control: an answer naming it is refused too');
+  assert.equal((await w.queue('Synthetic current queue', 'reachy')).result.status, 'accepted');
+});
+
+void test('messages an earlier release left in a replaced conversation show held on its read-only view and can only be withdrawn', async context => {
+  const provider = gated(), w = await world(context, {provider});
+  await w.control('enable');
+  await w.send('Synthetic earlier topic');
+  await settle(() => provider.pending.length === 1);
+  provider.next().resolve(reply('Synthetic earlier answer'));
+  await settle(() => w.task()?.status === 'succeeded');
+  await quiet();
+  const earlier = w.task()?.conversationId ?? assert.fail('earlier conversation');
+  assert.equal((await w.input(await w.staged({action: 'new-conversation', profile: 'bunny'}))).status, 'accepted');
+  // The release before this one knew no queue, so its New conversation could leave a queued row behind.
+  w.database().prepare('INSERT INTO assistant_queued_messages VALUES (?,?,?,?,?,?,?,?)')
+    .run('left-behind-1', earlier, 'bunny', 1, 'Synthetic message left behind', 1, 1, '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01');
+  await w.restart();
+  const document = await w.queued('bunny', earlier);
+  assert.deepEqual([document.current, document.held?.reason, texts(document)], [false, 'restart', ['Synthetic message left behind']]);
+  assert.deepEqual(texts(await w.queued()), [], 'the current conversation shows none of them');
+  assert.equal(w.state().queues, undefined, 'nor does the state');
+  assert.equal(code(await w.edit('left-behind-1', 'Synthetic edit')), 'not-found');
+  assert.equal(code(await w.control('reorder', {profile: 'bunny', queuedId: 'left-behind-1', beforeId: null})), 'not-found');
+  assert.equal(code(await w.control('withdraw', {profile: 'reachy', queuedId: 'left-behind-1'})), 'not-found', 'only its own profile can withdraw it');
+  assert.equal((await w.control('withdraw', {profile: 'bunny', queuedId: 'left-behind-1'})).status, 'accepted');
+  assert.deepEqual(texts(await w.queued('bunny', earlier)), []);
+  assert.equal(provider.calls(), 1, 'it never started');
 });

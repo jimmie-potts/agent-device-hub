@@ -258,7 +258,9 @@ export class AssistantEngine {
           try {await this.#recoverUnavailable(task.id, closingReasonOf(error), true);} catch { /* A failed write cannot claim a saved transition. */ }
         }
       }
-      // A queue the start held changed at the start (Hub #2030): a revision records it, so a command read before is stale.
+      // A queue counts as changed wherever its conversation changed at the start (Hub #2030), and a queue the start held
+      // changed at the start: a revision records it, so a queue command read before is stale.
+      this.store.queue.aligned();
       if (this.store.queue.changed()) await this.outbox.transaction(add => {this.#publish(add);});
     } finally {this.#starting = false;}
     for (const watch of this.store.confirmations()) void this.#followConfirmation(watch);
@@ -510,8 +512,7 @@ export class AssistantEngine {
     return this.#admit(command, digest(command.data), add => {
       const data = command.data, queued = data.action === 'withdraw' || data.action === 'reorder' || data.action === 'resume-queue';
       if (data.action === 'enable' || data.action === 'disable') this.#revision(data.expectedRevision);
-      else if (queued) this.#queueRevision(data.expectedRevision, data.profile === undefined ? undefined : this.store.conversation(data.profile));
-      else this.#conversationRevision(data.expectedRevision, data.action === 'rename'
+      else if (!queued) this.#conversationRevision(data.expectedRevision, data.action === 'rename'
         ? data.profile === undefined ? undefined : this.store.conversation(data.profile)
         : data.taskId === undefined ? undefined : this.store.task(data.taskId)?.conversationId);
       if (data.action !== 'speak' && data.messageId !== undefined) fail('invalid-request');
@@ -574,19 +575,25 @@ export class AssistantEngine {
    */
   #queueControl(data: AssistantControl): string | undefined {
     if (data.profile === undefined || data.taskId !== undefined || data.title !== undefined) fail('invalid-request');
-    const conversationId = this.store.conversation(data.profile) ?? fail('not-found');
+    const owner = data.profile, current = this.store.conversation(owner);
     if (data.action === 'resume-queue') {
+      this.#queueRevision(data.expectedRevision, current);
+      if (current === undefined) fail('not-found');
       if (data.queuedId !== undefined) fail('invalid-request');
-      if (this.store.queue.hold(conversationId) === null) fail('invalid-state');
+      if (this.store.queue.hold(current) === null) fail('invalid-state');
       this.#ready();
-      this.store.queue.setHold(conversationId, null);
-      return this.#dispatch(conversationId, true);
+      this.store.queue.setHold(current, null);
+      return this.#dispatch(current, true);
     }
-    const message = data.queuedId === undefined ? fail('invalid-request') : this.store.queue.message(data.queuedId);
-    if (message === undefined || message.conversationId !== conversationId) fail('not-found');
+    const found = data.queuedId === undefined ? fail('invalid-request') : this.store.queue.message(data.queuedId);
+    // A message left in an earlier conversation of the profile, by a release whose New conversation did not know the
+    // queue, can only be withdrawn (see `view=queue` with a conversation ID).
+    const message = found !== undefined && (found.conversationId === current || (data.action === 'withdraw' && this.store.owns(owner, found.conversationId))) ? found : undefined;
+    this.#queueRevision(data.expectedRevision, message?.conversationId ?? current);
+    if (message === undefined || current === undefined) fail('not-found');
     if (data.action === 'withdraw') {this.store.queue.remove(message.id); return undefined;}
     if (data.beforeId === undefined || data.beforeId === message.id) fail('invalid-request');
-    if (data.beforeId !== null && this.store.queue.message(data.beforeId)?.conversationId !== conversationId) fail('not-found');
+    if (data.beforeId !== null && this.store.queue.message(data.beforeId)?.conversationId !== current) fail('not-found');
     this.store.queue.move(message.id, data.beforeId);
     return undefined;
   }
@@ -660,8 +667,9 @@ export class AssistantEngine {
         if (current === undefined || this.store.lastSequence(current) === 0) fail('invalid-state');
         const {previous, conversationId} = this.store.newConversation(input.profile);
         // Both conversations change: a command bound to the earlier one's revision is stale now, as is one naming the profile.
-        if (previous !== undefined) this.store.touch(previous);
-        this.store.touch(conversationId);
+        if (previous !== undefined) {this.store.touch(previous); this.store.queue.touch(previous);}
+        // Both queues change too (Hub #2030): a Queue naming the revision read before is stale, as a Send is.
+        this.store.touch(conversationId); this.store.queue.touch(conversationId);
         this.store.discard(staged.ref);
         return undefined;
       }
@@ -737,9 +745,13 @@ export class AssistantEngine {
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify(document))};
       }
       if (query.view === 'queue') {
-        // The current conversation's queue (Hub #2030): the waiting messages in order, with their text, and the hold.
-        if (Object.keys(query).some(key => !['profile', 'view'].includes(key))) return errorBody('invalid-request');
-        return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.store.queue.document(selected, this.store.conversation(selected))))};
+        // The current conversation's queue (Hub #2030): the waiting messages in order, with their text, the hold and the
+        // revision read. With a conversation ID, an earlier conversation's messages a release before this one left there.
+        if (Object.keys(query).some(key => !['profile', 'view', 'conversationId'].includes(key)) ||
+          (query.conversationId !== undefined && !/^[A-Za-z0-9-]{1,128}$/.test(query.conversationId))) return errorBody('invalid-request');
+        const current = this.store.conversation(selected), requested = query.conversationId ?? current;
+        if (requested !== undefined && requested !== current && !this.store.owns(selected, requested)) return errorBody('not-found');
+        return {type: 'application/json', bytes: Buffer.from(JSON.stringify(this.store.queue.document(selected, requested, this.store.meta().revision, requested === current)))};
       }
       if (query.view === 'recent') {
         if (Object.keys(query).some(key => !['profile', 'view', 'before', 'conversationId'].includes(key)) ||

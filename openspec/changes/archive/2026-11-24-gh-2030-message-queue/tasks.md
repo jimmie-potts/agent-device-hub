@@ -9,7 +9,11 @@
 - [x] 2.2 Module: `queue.ts`, the engine's queue input, edit, withdraw, reorder, resume, Stop and restart holds, dispatch in the ending commit, the deferred launch, the queue read and state summary. Evidence: `assistant-queue.test.js` passes.
 - [x] 2.3 Page: Queue beside Send, the queued list with Edit, Move up, Move down and Withdraw, the hold with Resume queue or Start, cleared drafts, and the transcript's follow when the composer grows. Evidence: `conversation-queue.browser.ts` passes at 1280 and 390 px.
 
-## 3. Documentation and archive
+## 3. Review round 1
 
-- [x] 3.1 Companions README and notices, event contracts README, `docs/development.md` and `apps/runtime/UPGRADE.md`. Evidence: readback.
-- [x] 3.2 Sync and archive this change. Evidence: `npm run check:workflow` passes.
+- [x] 3.1 Queue revisions at New conversation and at each start, change marks that roll back, the queue read's revision for withdraw, reorder and edit, leftover messages of a replaced conversation, the uncertain-task line, the edit box's style, refusal and outrun edit, and the transcript's follow through an approval. Evidence: red runs and the journey in the PR.
+
+## 4. Documentation and archive
+
+- [x] 4.1 Companions README and notices, event contracts README, `docs/development.md` and `apps/runtime/UPGRADE.md`. Evidence: readback.
+- [x] 4.2 Sync and archive this change. Evidence: `npm run check:workflow` passes.

@@ -28,14 +28,20 @@ const COLUMNS = 'id,conversation_id AS conversationId,profile,text,queued_at_ms 
 
 /** All writes are synchronous and run inside the owning outbox's transaction, beside the task change they belong with. */
 export class MessageQueue {
-  /** Conversations whose queue changed in the open transaction; the assistant's next revision records them. */
-  readonly #changed = new Set<string>();
   constructor(readonly database: DatabaseSync) {
     database.exec(`CREATE TABLE IF NOT EXISTS assistant_queued_messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, profile TEXT NOT NULL,
         position INTEGER NOT NULL, text TEXT NOT NULL, queued_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, traceparent TEXT NOT NULL) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_queue_order ON assistant_queued_messages(conversation_id,position);
       CREATE TABLE IF NOT EXISTS assistant_queues (conversation_id TEXT PRIMARY KEY, revision INTEGER NOT NULL,
-        held TEXT CHECK(held IS NULL OR held IN ('stop','restart','refused')), code TEXT, detail TEXT) STRICT;`);
+        held TEXT CHECK(held IS NULL OR held IN ('stop','restart','refused')), code TEXT, detail TEXT,
+        pending INTEGER NOT NULL DEFAULT 0 CHECK(pending IN (0,1))) STRICT;`);
+  }
+  /**
+   * Counts the conversation's queue as changed in the open transaction; the assistant's next revision records it. The
+   * mark is a row in that transaction, so a transaction that rolls back leaves no mark behind.
+   */
+  touch(conversationId: string): void {
+    this.database.prepare('INSERT INTO assistant_queues(conversation_id,revision,pending) VALUES (?,0,1) ON CONFLICT(conversation_id) DO UPDATE SET pending=1').run(conversationId);
   }
   /** The conversation's waiting messages, first to start first. */
   messages(conversationId: string): QueuedMessage[] {
@@ -63,21 +69,21 @@ export class MessageQueue {
     const last = (this.database.prepare('SELECT MAX(position) AS position FROM assistant_queued_messages WHERE conversation_id=?').get(message.conversationId) as {position: number | null}).position ?? 0;
     this.database.prepare('INSERT INTO assistant_queued_messages VALUES (?,?,?,?,?,?,?,?)')
       .run(message.id, message.conversationId, message.profile, last + 1, message.text, message.queuedAtMs, message.updatedAtMs, message.traceparent);
-    this.#changed.add(message.conversationId);
+    this.touch(message.conversationId);
   }
   /** Whether the conversation's queue has room for one more message. */
   room(conversationId: string): boolean {return this.count(conversationId) < LIMITS.queuedMessages;}
   edit(id: string, text: string, atMs: number): void {
     const message = this.message(id); if (message === undefined) return;
     this.database.prepare('UPDATE assistant_queued_messages SET text=?,updated_at_ms=? WHERE id=?').run(text, atMs, id);
-    this.#changed.add(message.conversationId);
+    this.touch(message.conversationId);
   }
   /** Removes a message: the owner withdrew it, or its task started. A queue left empty is no longer held. */
   remove(id: string): void {
     const message = this.message(id); if (message === undefined) return;
     this.database.prepare('DELETE FROM assistant_queued_messages WHERE id=?').run(id);
     if (this.count(message.conversationId) === 0) this.setHold(message.conversationId, null);
-    this.#changed.add(message.conversationId);
+    this.touch(message.conversationId);
   }
   /** Moves a message just before another of its conversation, or to the end when `before` is null. */
   move(id: string, before: string | null): void {
@@ -87,38 +93,50 @@ export class MessageQueue {
     order.splice(at < 0 ? order.length : at, 0, id);
     const update = this.database.prepare('UPDATE assistant_queued_messages SET position=? WHERE id=?');
     order.forEach((entry, index) => {update.run(index + 1, entry);});
-    this.#changed.add(message.conversationId);
+    this.touch(message.conversationId);
   }
   /** Holds the queue for a reason, or releases it with null. */
   setHold(conversationId: string, hold: QueueHold | null): void {
-    this.database.prepare(`INSERT INTO assistant_queues VALUES (?,0,?,?,?) ON CONFLICT(conversation_id) DO UPDATE SET held=excluded.held,code=excluded.code,detail=excluded.detail`)
+    this.database.prepare(`INSERT INTO assistant_queues(conversation_id,revision,held,code,detail,pending) VALUES (?,0,?,?,?,1)
+      ON CONFLICT(conversation_id) DO UPDATE SET held=excluded.held,code=excluded.code,detail=excluded.detail,pending=1`)
       .run(conversationId, hold?.reason ?? null, hold?.code ?? null, hold?.detail ?? null);
-    this.#changed.add(conversationId);
   }
   /** Records the queues changed in this transaction at the assistant revision that publishes them. */
   record(revision: number): void {
-    const record = this.database.prepare('INSERT INTO assistant_queues(conversation_id,revision) VALUES (?,?) ON CONFLICT(conversation_id) DO UPDATE SET revision=excluded.revision');
-    for (const conversationId of this.#changed) record.run(conversationId, revision);
-    this.#changed.clear();
+    this.database.prepare('UPDATE assistant_queues SET revision=?,pending=0 WHERE pending=1').run(revision);
   }
   /**
-   * At each start: every queue counts as changed at the current revision, so a command that names an earlier one is
-   * refused, and every queue that still holds messages and was free is held until the owner starts it (owner decision
-   * 6); a start starts no work. A queue held here changed at the start, so the next revision records it.
+   * At each start: every saved conversation's queue, a profile's current one, an earlier one or a companion exchange,
+   * counts as changed at the current revision, as #2027 raises the conversations' change rows, so a command that names
+   * an earlier revision is refused. Every queue that still holds messages and was free is held until the owner starts it
+   * (owner decision 6); a start starts no work. A queue held here changed at the start, so the next revision records it.
    */
   restarted(revision: number): void {
-    this.database.prepare('UPDATE assistant_queues SET revision=MAX(revision,?)').run(revision);
+    this.database.prepare(`INSERT INTO assistant_queues(conversation_id,revision) SELECT id,? FROM (SELECT id FROM assistant_conversations
+      UNION SELECT id FROM companion_conversations UNION SELECT conversation_id FROM assistant_queued_messages) WHERE true
+      ON CONFLICT(conversation_id) DO UPDATE SET revision=MAX(revision,excluded.revision)`).run(revision);
     const held = this.database.prepare(`SELECT DISTINCT m.conversation_id AS conversationId FROM assistant_queued_messages m
-      LEFT JOIN assistant_queues q ON q.conversation_id=m.conversation_id WHERE q.held IS NULL`).all() as {conversationId: string}[];
+      JOIN assistant_queues q ON q.conversation_id=m.conversation_id WHERE q.held IS NULL`).all() as {conversationId: string}[];
     for (const {conversationId} of held) this.setHold(conversationId, {reason: 'restart', code: null, detail: null});
-    this.database.prepare('UPDATE assistant_queues SET revision=MAX(revision,?)').run(revision);
+  }
+  /**
+   * After the start's reconciliation: a queue counts as changed whenever its conversation changed at the start, such as
+   * by a reconciled task, so a Queue naming a revision read before the start is refused exactly when a Send is.
+   */
+  aligned(): void {
+    this.database.prepare(`UPDATE assistant_queues SET revision=MAX(revision,(SELECT c.revision FROM assistant_conversation_changes c
+      WHERE c.conversation_id=assistant_queues.conversation_id)) WHERE EXISTS (SELECT 1 FROM assistant_conversation_changes c
+      WHERE c.conversation_id=assistant_queues.conversation_id)`).run();
   }
   /** Whether a queue changed since the last recorded revision, such as one the start held. */
-  changed(): boolean {return this.#changed.size > 0;}
-  /** The page's read of one conversation's queue. */
-  document(profile: AssistantProfile, conversationId: string | undefined): QueueDocument {
-    if (conversationId === undefined) return {version: 1, profile, conversationId: null, held: null, messages: []};
-    return {version: 1, profile, conversationId, held: this.hold(conversationId),
+  changed(): boolean {return this.database.prepare('SELECT 1 FROM assistant_queues WHERE pending=1 LIMIT 1').get() !== undefined;}
+  /**
+   * The page's read of one conversation's queue, with the assistant revision it was read at, which the page's commands
+   * on what it shows name.
+   */
+  document(profile: AssistantProfile, conversationId: string | undefined, revision: number, current = true): QueueDocument {
+    if (conversationId === undefined) return {version: 1, profile, conversationId: null, revision, current, held: null, messages: []};
+    return {version: 1, profile, conversationId, revision, current, held: this.hold(conversationId),
       messages: this.messages(conversationId).map(({id, text, queuedAtMs, updatedAtMs}) => ({id, text, queuedAtMs, updatedAtMs}))};
   }
 }

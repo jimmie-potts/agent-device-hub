@@ -21,8 +21,9 @@ function holdOf(value: unknown): QueueHold | null | undefined {
 /** The route's answer for the profile, or undefined for anything else, which the page shows as unknown. */
 export function decodeQueue(value: unknown, profile: AssistantProfile): QueueView | undefined {
   if (!object(value) || value.version !== 1 || value.profile !== profile || !Array.isArray(value.messages) || value.messages.length > LIMITS.queuedMessages) return undefined;
-  const {conversationId} = value, held = holdOf(value.held);
-  if (!(conversationId === null || (typeof conversationId === 'string' && ID.test(conversationId))) || held === undefined) return undefined;
+  const {conversationId, revision, current} = value, held = holdOf(value.held);
+  if (!(conversationId === null || (typeof conversationId === 'string' && ID.test(conversationId))) || held === undefined || !instant(revision) ||
+    typeof current !== 'boolean') return undefined;
   const messages: QueueView['messages'] = [];
   for (const entry of value.messages) {
     if (!object(entry) || typeof entry.id !== 'string' || !ID.test(entry.id) || typeof entry.text !== 'string' || entry.text.trim() === '' ||
@@ -30,7 +31,7 @@ export function decodeQueue(value: unknown, profile: AssistantProfile): QueueVie
     messages.push({id: entry.id, text: entry.text, queuedAtMs: entry.queuedAtMs, updatedAtMs: entry.updatedAtMs});
   }
   if (new Set(messages.map(entry => entry.id)).size !== messages.length || (held !== null && messages.length === 0)) return undefined;
-  return {profile, conversationId, held, messages};
+  return {profile, conversationId, revision, current, held, messages};
 }
 /** What the hold tells the owner, and the control that releases it: Start after a restart, Resume queue otherwise. */
 export function holdText(hold: QueueHold): {text: string; action: 'Start' | 'Resume queue'} {
@@ -38,15 +39,22 @@ export function holdText(hold: QueueHold): {text: string; action: 'Start' | 'Res
   if (hold.reason === 'stop') return {text: 'The queue is held because you stopped the task. Nothing in it starts until you resume it.', action: 'Resume queue'};
   return {text: `The queue is held because its next message could not start${hold.detail === null ? hold.code === null ? '.' : ` (${hold.code}).` : `: ${hold.detail}`}`, action: 'Resume queue'};
 }
-/** Reads the profile's queue once per assistant-state revision while the page is connected; a failed read shows unknown. */
-export function useQueue(api: FrontendContext['api'], ready: boolean, profile: AssistantProfile, revision: number | undefined): QueueView | undefined {
+/**
+ * Reads the profile's queue once per assistant-state revision while the page is connected: the current conversation's,
+ * or with `conversationId` an earlier conversation's leftover messages. A failed read shows unknown.
+ */
+export function useQueue(api: FrontendContext['api'], ready: boolean, profile: AssistantProfile, revision: number | undefined, conversationId?: string): QueueView | undefined {
   const [queue, setQueue] = useState<QueueView>();
   useEffect(() => {
     if (!ready) {setQueue(undefined); return;}
     let active = true;
-    void api.read(`/modules/companions/content/conversation?${new URLSearchParams({profile, view: 'queue'}).toString()}`)
-      .then(value => {if (active) setQueue(decodeQueue(value, profile));}, () => {if (active) setQueue(undefined);});
+    const query = new URLSearchParams({profile, view: 'queue', ...(conversationId === undefined ? {} : {conversationId})});
+    void api.read(`/modules/companions/content/conversation?${query.toString()}`).then(value => {
+      if (!active) return;
+      const read = decodeQueue(value, profile);
+      setQueue(read !== undefined && (conversationId === undefined ? read.current : read.conversationId === conversationId) ? read : undefined);
+    }, () => {if (active) setQueue(undefined);});
     return () => {active = false;};
-  }, [api, ready, profile, revision]);
-  return queue?.profile === profile ? queue : undefined;
+  }, [api, ready, profile, revision, conversationId]);
+  return queue?.profile === profile && (conversationId === undefined || queue.conversationId === conversationId) ? queue : undefined;
 }

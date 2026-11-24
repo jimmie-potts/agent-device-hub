@@ -256,8 +256,9 @@ The #2030 release lets the owner queue messages while a companion works. It
 adds two tables, created empty at the first start: `assistant_queued_messages`,
 one row per waiting message with its conversation, position, text, times and
 the trace of the command that queued it, and `assistant_queues`, one row per
-conversation whose queue has changed, with the assistant revision of its last
-change and its hold. No record is rewritten. A start holds every queue that
+saved conversation from the first start on, with the assistant revision of its
+queue's last change, its hold and a mark for a change its revision has not
+recorded yet. No record is rewritten. A start holds every queue that
 still holds a message, so after the upgrade and after every later restart
 nothing queued starts until the owner chooses **Start**. The assistant state
 is published as `assistant-state/2.2` while some queue holds messages, and the
@@ -267,7 +268,11 @@ gateway sends the queue's withdraw, reorder and resume as
 Returning to the release before needs no step for the tables: it ignores both.
 Messages still queued then never start and are not shown; withdraw them, or
 let them start, before going back. A task a queued message started is an
-ordinary task there. Prefer fixing forward.
+ordinary task there. That release also accepts New conversation while
+messages are queued, so they can stay behind in the conversation it replaced.
+After installing this release again, they never start and each start holds
+them. To clear them, open that conversation from **Details**; its read-only
+view lists them, and **Withdraw** removes each. Prefer fixing forward.
 
 ## Recent context and New conversation (#2029)
 

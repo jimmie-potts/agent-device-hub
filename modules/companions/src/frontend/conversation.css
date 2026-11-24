@@ -502,8 +502,39 @@
   inline-size: 100%;
   box-sizing: border-box;
   min-block-size: 3rem;
+  max-block-size: 30dvh;
+  padding: var(--space-xs) var(--space-s);
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--edge-dense);
+  border-radius: var(--radius, 12px);
+  outline: 0;
   font: inherit;
   resize: vertical;
+}
+
+.conversation-queue-edit textarea:focus-visible {
+  border-color: var(--focus);
+}
+
+.conversation-queue-edit textarea[aria-invalid="true"] {
+  border-color: var(--warning-badge-edge);
+}
+
+.conversation-queue-edit [role="alert"] {
+  margin: 0;
+  color: var(--pending-text);
+  font-size: var(--type-small, 0.875em);
+}
+
+.conversation-queue-lost {
+  display: grid;
+  gap: var(--space-xxs, 0.25rem);
+  padding: var(--space-xs) var(--space-s);
+  border: 1px solid var(--warning-badge-edge);
+  border-radius: var(--radius, 12px);
+  background: var(--warning-badge-bg);
+  color: var(--pending-text);
 }
 
 .conversation-composer-actions > .conversation-queue-button {

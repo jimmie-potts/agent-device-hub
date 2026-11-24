@@ -20,10 +20,11 @@ export function ConversationTranscript({history, status, live, canStart, readLoc
   const pagingFocus = useRef<{button: HTMLButtonElement; anchor: string | undefined}>(undefined);
   const previous = useRef<{id: string | null | undefined; latest: number | undefined}>(undefined);
   const [newMessages, setNewMessages] = useState(false);
-  // Where the last jump to the latest message left the scroll, so its own scroll event, which can arrive after the
-  // composer above grew and shrank the transcript, such as when queued messages load (Hub #2030), does not count as the
+  // Where the last jump to the latest message left the scroll, and the transcript's height then. A scroll event at that
+  // position is the jump's own, and one after the transcript's height changed is the browser fitting the scroll to a
+  // composer that grew or shrank, such as when queued messages load or an approval closes (Hub #2030): neither is the
   // owner scrolling away from the latest message.
-  const jumped = useRef<number>(undefined);
+  const jumped = useRef<{top: number; height: number}>(undefined);
   const latest = history?.windows.at(-1)?.messages.at(-1)?.seq;
   const id = history?.conversationId;
   const remember = useCallback((): void => {
@@ -38,15 +39,18 @@ export function ConversationTranscript({history, status, live, canStart, readLoc
   }, []);
   const showLatest = useCallback((): void => {
     const node = scroll.current;
-    if (node !== null) {node.scrollTop = node.scrollHeight; jumped.current = node.scrollTop;}
+    if (node !== null) {node.scrollTop = node.scrollHeight; jumped.current = {top: node.scrollTop, height: node.clientHeight};}
     remember();
   }, [remember]);
   const scrolled = useCallback((): void => {
-    const node = scroll.current;
-    if (node !== null && jumped.current !== undefined && node.scrollTop === jumped.current) return;
+    const node = scroll.current, last = jumped.current;
+    if (node !== null && last !== undefined && (node.scrollTop === last.top || node.clientHeight !== last.height)) {
+      if (node.scrollTop !== last.top) showLatest();
+      return;
+    }
     jumped.current = undefined;
     remember();
-  }, [remember]);
+  }, [remember, showLatest]);
   const restoreAnchor = useCallback((): void => {
     const node = scroll.current;
     const anchor = position.current.anchor;

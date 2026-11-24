@@ -3383,14 +3383,19 @@ its stale revision and Start; a repeated queue command before and after its
 message starts; the turn end reported before the next turn's start; a start the
 spend limits refuse, which holds the queue; no title check for a queued start,
 with a direct Send as the negative control; New conversation refused while
-messages wait, and the eight-message limit. The child process exits right after
+messages wait, and the eight-message limit; a Queue naming a revision from
+before New conversation or a start, with a Send as the negative control; a
+refused Resume queue that records no change; and messages an earlier release
+left in a replaced conversation, which only Withdraw reaches. The child process exits right after
 the commit that started a queued message, and the restart shows one task for it
 and none queued. After the root build run
 `node --test modules/companions/dist/tests/assistant-queue.test.js modules/companions/dist/tests/conversation-queue.test.js packages/event-contracts/tests/message-queue.test.mjs apps/runtime/dist/tests/gateway.test.js`
 and `node apps/runtime/dashboard/tests/conversation-queue.browser.ts`, which
 `npm run test:companions:browser` also runs: queue while a task works, edit,
 move and withdraw, the next message starting after the task, Stop and Resume
-queue, a restart and Start, and the phone layout at 390 px. They use synthetic
+queue, an edit refused after another page's edit, the transcript following
+through an answer and an approval with a message queued, a restart and Start,
+an edit its message outran, and the phone layout at 390 px. They use synthetic
 data and gated providers only. Existing CI discovery runs them.
 
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,

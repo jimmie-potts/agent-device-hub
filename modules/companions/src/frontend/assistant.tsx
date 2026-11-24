@@ -42,6 +42,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
   // The draft a sent or queued message came from, cleared once its command succeeded, so the composer is ready for the
   // next message while the task runs; a refused or uncertain command keeps it.
   const [submitted, setSubmitted] = useState<{requestId: string; key: string; text: string}>();
+  // The text of a queued message's edit that its message outran: it started, or left the queue, before the edit was saved.
+  const [lost, setLost] = useState<string>();
   const task = state?.tasks.find(value => value.profile === profile);
   // Only this conversation's own unfinished task holds a new message; another conversation's never does (Hub #2027).
   const open = task !== undefined && !finished(task.status);
@@ -69,8 +71,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
   useEffect(() => {
     if (submitted === undefined) return;
     const operation = context.operations.find(value => value.requestId === submitted.requestId);
-    if (operation?.status !== 'completed') return;
-    if (operation.result === 'succeeded' && drafts[submitted.key] === submitted.text) setDraft(submitted.key, '');
+    if (operation === undefined || operation.status === 'sent' || operation.status === 'accepted') return;
+    if (operation.status === 'completed' && operation.result === 'succeeded' && drafts[submitted.key] === submitted.text) setDraft(submitted.key, '');
     setSubmitted(undefined);
   }, [context.operations, drafts, setDraft, submitted]);
   const control = (action: 'resume' | 'cancel', taskId: string): void => {
@@ -132,8 +134,16 @@ function TaskControls({context, command, state, profile, live, question, coding,
         <button type="button" className="secondary" onClick={() => {control('cancel', task.taskId);}}>Cancel task</button>
       </div>}
     </fieldset>
-    {queue !== undefined && state !== undefined && <QueuedMessages context={context} command={command} queue={queue} profile={profile} revision={state.revision}
-      waiting={open} locked={locked} enabled={enabled}/>}
+    {queue !== undefined && state !== undefined && <QueuedMessages context={context} command={command} queue={queue} profile={profile}
+      waiting={open} locked={locked} enabled={enabled} onLost={setLost}/>}
+    {lost !== undefined && <div className="conversation-queue-lost" role="status">
+      <p>The message started before your edit was saved. Your edited text:</p>
+      <p className="conversation-queue-text" dir="auto">{lost}</p>
+      <div className="conversation-queue-actions">
+        <button type="button" className="secondary" onClick={() => {setDraft(draftKey, lost); setLost(undefined);}}>Use in composer</button>
+        <button type="button" className="secondary" onClick={() => {setLost(undefined);}}>Dismiss</button>
+      </div>
+    </div>}
     <ConversationUpload key={draftKey} context={context} locked={locked || !answerable}>{attach => <>
       {showInput && <form id={formId} onSubmit={event => {event.preventDefault(); submit();}}>
         <label className="vh" htmlFor="assistant-input">{pending && answerable ? 'Answer' : 'Message'}</label>
@@ -345,8 +355,10 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   }, [history]);
   const live = connected && !unavailable && state !== undefined && state.available;
   const spend = useSpend(api, connected && historyApi === api, state?.revision);
-  // The current conversation's queued messages (Hub #2030), read again at each assistant-state revision.
+  // The current conversation's queued messages (Hub #2030), read again at each assistant-state revision, and an earlier
+  // conversation's messages that an earlier release left behind.
   const queue = useQueue(api, connected && historyApi === api && viewing === undefined, profile, state?.revision);
+  const leftover = useQueue(api, connected && historyApi === api && viewing !== undefined, profile, state?.revision, viewing);
   // Every profile's new message meets the shared spend limits on a paid provider (Hub #2026); the synthetic one costs nothing.
   const spendLimit = spendNotice(spend);
   // A profile whose persona's audio is not speech shows why in place of Read aloud (Hub #2026).
@@ -466,7 +478,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             </p>}
             {task?.code != null && <p>Task code: {task.code}</p>}
             {spendLimit !== undefined && <p role="status">{spendLimit}</p>}
-            {state?.enabled === true && open && !['waiting', 'paused'].includes(task.status) && <p>This task is working. Queue a message to start it after the task ends, or cancel the task.</p>}
+            {state?.enabled === true && task?.status === 'running' && <p>This task is working. Queue a message to start it after the task ends, or cancel the task.</p>}
+            {state?.enabled === true && task?.status === 'uncertain' && <p>Resume or cancel this task before sending another message. Queued messages start after it ends.</p>}
             {activeClarification !== undefined && <SavedQuestionContext question={activeClarification}/>}
             <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion} coding={connected ? coding : undefined} queue={queue}
               drafts={drafts} setDraft={(key, value) => {setDrafts(prior => ({...prior, [key]: value}));}}
@@ -474,6 +487,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
               voice={<ConversationVoice context={context} speech={speech} open={panel === 'voice'} onOpenChange={setVoiceOpen}
                 stopSpeaking={stopInDrawer ? null : stopSpeaking}/>}/>
             {!routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
+          </div>}
+          {viewing !== undefined && leftover !== undefined && <div className="conversation-compose">
+            <QueuedMessages context={context} command={command} queue={leftover} profile={profile} waiting={false} locked={locked} enabled={state?.enabled === true}/>
           </div>}
           {viewing !== undefined && !routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
         </div>

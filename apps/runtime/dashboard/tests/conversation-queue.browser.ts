@@ -21,6 +21,9 @@ export async function conversationQueueJourney(browser: Browser): Promise<void> 
     if (text.includes('ASK') && !input.transcript.some(item => item.role === 'tool')) {
       return Promise.resolve({text: null, calls: [{id: 'call-ask', name: 'ask_owner', input: {text: 'Which synthetic detail?'}}], stop: 'tool', units: 1});
     }
+    if (text.includes('PROPOSE') && !input.transcript.some(item => item.role === 'tool')) {
+      return Promise.resolve({text: null, calls: [{id: 'call-mode', name: 'set_mode', input: {mode: 'quiet'}}], stop: 'tool', units: 1});
+    }
     return new Promise<Reply>(resolve => {waiting.push({text, resolve}); arrived?.();});
   }};
   const world = await startWorld({companions: true, assistantProvider: provider});
@@ -82,6 +85,28 @@ export async function conversationQueueJourney(browser: Browser): Promise<void> 
     const [queueBox, composerBox] = await Promise.all([queued.boundingBox(), message.boundingBox()]);
     assert.ok(queueBox !== null && composerBox !== null && queueBox.y + queueBox.height <= composerBox.y, 'the queue shows above the composer');
     await shot(page, 'queue-while-running');
+    // An edit left open names the queue it was opened on: another page's edit since refuses it, the text stays and Save
+    // works again.
+    await queued.getByRole('button', {name: 'Edit queued message 1', exact: true}).click();
+    const stale = queued.getByRole('textbox', {name: 'Edit queued message 1', exact: true});
+    await stale.fill('Synthetic queued one, edited here');
+    const other = await context.newPage();
+    other.setDefaultTimeout(12_000);
+    await other.goto(`${world.url}/#/module/companions/assistant`);
+    await feed(other, 'connected');
+    const otherQueue = other.getByRole('region', {name: 'Queued messages', exact: true});
+    await otherQueue.getByRole('button', {name: 'Edit queued message 1', exact: true}).click();
+    await otherQueue.getByRole('textbox', {name: 'Edit queued message 1', exact: true}).fill('Synthetic queued one, from another page');
+    await otherQueue.getByRole('button', {name: 'Save', exact: true}).click();
+    await other.waitForFunction(() => document.querySelectorAll('.conversation-queue-text')[0]?.textContent?.endsWith('from another page') === true);
+    await other.close();
+    await queued.getByRole('button', {name: 'Save', exact: true}).click();
+    await queued.getByText(/^Not saved \(revision-conflict\)\./).waitFor();
+    assert.equal(await stale.inputValue(), 'Synthetic queued one, edited here', 'the refused edit keeps its text');
+    assert.equal(await queued.getByRole('button', {name: 'Save', exact: true}).isDisabled(), false, 'Save works again');
+    await shot(page, 'queue-edit-refused');
+    await queued.getByRole('button', {name: 'Cancel edit', exact: true}).click();
+    await page.waitForFunction(() => document.querySelectorAll('.conversation-queue-text')[0]?.textContent?.endsWith('from another page') === true);
     // Edit the second, move the third up and withdraw the first.
     await queued.getByRole('button', {name: 'Edit queued message 2', exact: true}).click();
     const editor = queued.getByRole('textbox', {name: 'Edit queued message 2', exact: true});
@@ -116,6 +141,40 @@ export async function conversationQueueJourney(browser: Browser): Promise<void> 
     await queued.waitFor({state: 'detached'});
     await answer('Synthetic queued two, edited');
     await transcript('Synthetic reply to: Synthetic queued two, edited').waitFor();
+    await conversation.getByText('Task completed', {exact: true}).waitFor();
+    // Answering a question with a message queued keeps the transcript on its latest message through the reply and the
+    // queued message's start.
+    await message.fill('ASK before a queued message');
+    await send.click();
+    await conversation.getByText('Needs your answer', {exact: true}).waitFor();
+    await conversation.getByRole('textbox', {name: 'Answer', exact: true}).fill('Synthetic queued behind an answer');
+    await queueButton.click();
+    await items.first().waitFor();
+    await conversation.getByRole('textbox', {name: 'Answer', exact: true}).fill('The synthetic detail.');
+    await conversation.getByRole('button', {name: 'Answer', exact: true}).click();
+    await answer('ASK before a queued message');
+    await conversation.locator('li[data-role="owner"]').filter({hasText: 'Synthetic queued behind an answer'}).waitFor();
+    await answer('Synthetic queued behind an answer');
+    await transcript('Synthetic reply to: Synthetic queued behind an answer').waitFor();
+    await page.waitForFunction(() => {const node = document.querySelector('.conversation-transcript'); return node !== null && node.scrollHeight - node.scrollTop - node.clientHeight <= 2;});
+    assert.equal(await conversation.getByRole('button', {name: 'New messages', exact: true}).count(), 0, 'the transcript still follows the latest message');
+    await conversation.getByText('Task completed', {exact: true}).waitFor();
+    // So does approving a proposal with a message queued: only Queue shows during the approval.
+    await message.fill('PROPOSE a synthetic mode');
+    await send.click();
+    const proposal = conversation.getByRole('article', {name: 'Proposed command', exact: true});
+    await proposal.getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
+    assert.equal(await send.count(), 0, 'during an approval only Queue shows');
+    await message.fill('Synthetic queued behind an approval');
+    await queueButton.click();
+    await items.first().waitFor();
+    await proposal.getByRole('button', {name: 'Approve proposal', exact: true}).click();
+    await answer('PROPOSE a synthetic mode');
+    await conversation.locator('li[data-role="owner"]').filter({hasText: 'Synthetic queued behind an approval'}).waitFor();
+    await answer('Synthetic queued behind an approval');
+    await transcript('Synthetic reply to: Synthetic queued behind an approval').waitFor();
+    await page.waitForFunction(() => {const node = document.querySelector('.conversation-transcript'); return node !== null && node.scrollHeight - node.scrollTop - node.clientHeight <= 2;});
+    assert.equal(await conversation.getByRole('button', {name: 'New messages', exact: true}).count(), 0, 'the transcript still follows the latest message');
     await conversation.getByText('Task completed', {exact: true}).waitFor();
     // A queued message waits behind a question across a restart, held until Start.
     await message.fill('ASK a synthetic question');
@@ -159,7 +218,16 @@ export async function conversationQueueJourney(browser: Browser): Promise<void> 
     await shot(page, 'queue-phone');
     await queued.getByRole('button', {name: 'Move queued message 2 up', exact: true}).click();
     await page.waitForFunction(() => document.querySelectorAll('.conversation-queue-text')[0]?.textContent?.endsWith('Synthetic second phone message') === true);
+    // An edit whose message starts before it is saved keeps its text for the owner.
+    await queued.getByRole('button', {name: 'Edit queued message 1', exact: true}).click();
+    await queued.getByRole('textbox', {name: 'Edit queued message 1', exact: true}).fill('Synthetic second phone message, edited too late');
     await answer('Synthetic phone task');
+    const lost = conversation.getByRole('status').filter({hasText: 'The message started before your edit was saved.'});
+    await lost.waitFor();
+    await shot(page, 'queue-edit-outran');
+    await lost.getByRole('button', {name: 'Use in composer', exact: true}).click();
+    assert.equal(await message.inputValue(), 'Synthetic second phone message, edited too late');
+    await message.fill('');
     await conversation.locator('li[data-role="owner"]').filter({hasText: 'Synthetic second phone message'}).waitFor();
     await shot(page, 'queue-phone-auto-start');
     assert.deepEqual(errors, []);

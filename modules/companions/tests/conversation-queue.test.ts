@@ -7,10 +7,12 @@ import {LIMITS} from '../src/assistant/limits.js';
 import {decodeQueue, holdText} from '../src/frontend/conversation-queue-read.js';
 
 const message = (id: string, text = `Synthetic ${id}`) => ({id, text, queuedAtMs: 1, updatedAtMs: 2});
-const document = (extra: Record<string, unknown> = {}) => ({version: 1, profile: 'bunny', conversationId: 'conversation-1', held: null, messages: [message('queued-1')], ...extra});
+const document = (extra: Record<string, unknown> = {}) => ({version: 1, profile: 'bunny', conversationId: 'conversation-1', revision: 7, current: true, held: null, messages: [message('queued-1')], ...extra});
 
 void test('the queue document decodes only as the module writes it', () => {
-  assert.deepEqual(decodeQueue(document(), 'bunny'), {profile: 'bunny', conversationId: 'conversation-1', held: null, messages: [message('queued-1')]});
+  assert.deepEqual(decodeQueue(document(), 'bunny'), {profile: 'bunny', conversationId: 'conversation-1', revision: 7, current: true, held: null, messages: [message('queued-1')]});
+  assert.equal(decodeQueue(document({revision: -1}), 'bunny'), undefined, 'the read names the revision it was read at');
+  assert.equal(decodeQueue(document({current: 'yes'}), 'bunny'), undefined);
   assert.deepEqual(decodeQueue(document({conversationId: null, messages: []}), 'bunny')?.messages, []);
   assert.equal(decodeQueue(document({held: {reason: 'stop', code: null, detail: null}}), 'bunny')?.held?.reason, 'stop');
   assert.equal(decodeQueue(document(), 'reachy'), undefined, 'another profile\'s queue');

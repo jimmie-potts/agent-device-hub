@@ -381,8 +381,20 @@ and `resume-queue` actions of `assistant-control/2.2`. Each names the
 Each queue command is checked against the conversation's queue revision: the
 assistant revision of the queue's last change. The running task's steps never
 make a queue command stale. A message that started, moved or changed since
-does. Each start counts every queue as changed. Editing, withdrawing and
-reordering run no work, so they are admitted while conversation is off.
+does. New conversation counts both conversations' queues as changed. Each
+start counts every saved conversation's queue as changed, and again wherever
+the start changed the conversation itself. So a Queue naming a revision read
+before New conversation or a start is refused exactly when a Send is. A
+command that is refused and rolls back records no change. Editing,
+withdrawing and reordering run no work, so they are admitted while
+conversation is off.
+
+The page's withdraw, reorder and Resume queue name the revision at which the
+shown queue was read, and an edit names the revision at which it opened. An
+edit left open therefore cannot overwrite a change made on another page since,
+and a move never acts on an order the page no longer shows. A refused edit
+keeps its text, says why and allows Save again. If the message starts before
+its edit is saved, the page shows the edited text with **Use in composer**.
 
 `assistant-state/2.2` lists each profile's current conversation whose queue
 holds messages, as `queues`: the conversation and profile, how many messages
@@ -391,9 +403,18 @@ carries no message text. A state without such a queue keeps version 2.0, or
 2.1 for the full tool list. After each assistant-state revision, the page
 reads the texts from
 `GET /modules/companions/content/conversation?profile=<profile>&view=queue`.
-The answer is `{version: 1, profile, conversationId, held, messages}`. `held`
-is `{reason, code, detail}` or null, and each message has `id`, `text`,
+The answer is `{version: 1, profile, conversationId, revision, current, held,
+messages}`. `revision` is the assistant revision it was read at. `held` is
+`{reason, code, detail}` or null, and each message has `id`, `text`,
 `queuedAtMs` and `updatedAtMs`.
+
+A release before this one did not know the queue, so its New conversation
+could leave queued messages in the conversation it replaced (see
+`apps/runtime/UPGRADE.md`). They never start and are not in public state. Each
+start holds them. Add `conversationId=<id>` to the read for an earlier
+conversation's messages, with `current: false`. The earlier conversation's
+read-only view lists them, and **Withdraw**, the only action there, removes
+them.
 
 The queue is modelled on Codex's durable queue and T3 Code's queue commands;
 `THIRD-PARTY-NOTICES.md` names the adapted parts and holds their licenses.
