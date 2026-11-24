@@ -277,8 +277,8 @@ at the conversation's next observation.
 ## Reachy and MicroDuck on the configured model (#2026)
 
 The #2026 release gives Reachy and MicroDuck the companions section's provider
-and model. The one provider, model, effort, title model, key and prices now
-serve B.U.N.N.Y., Reachy and MicroDuck. It adds no table, column or section key
+and model: its one provider, model, effort, title model, key and prices now
+serve all three profiles. It adds no table, column or section key
 and rewrites no record.
 
 An installation whose section names only B.U.N.N.Y.'s model needs no change.
@@ -290,8 +290,8 @@ workspace's monthly limit, so expect more paid calls once the companions are
 used. A section without a provider, or with `synthetic`, keeps all three
 profiles on the synthetic provider. A Reachy or MicroDuck task that the
 synthetic provider left waiting continues on the configured model when it is
-answered or resumed; cancel it first to start afresh. MicroDuck's English text
-is never spoken from this release on.
+answered or resumed; cancel it first to start afresh. From this release on,
+MicroDuck's English text is never spoken.
 
 Returning to the release before needs no step and loses no data; prefer fixing
 forward. That release answers Reachy and MicroDuck with the synthetic provider

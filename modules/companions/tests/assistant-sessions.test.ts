@@ -17,6 +17,7 @@ import {RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
 import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
+import {SyntheticProvider} from '../src/assistant/synthetic.js';
 import {
   changesOf, eventsOf, observationDraft, observationOf, projectionOf, titleObservationOf, waitsOnOwner, type ProjectedTask, type Projection,
 } from '../src/assistant/sessions.js';
@@ -307,9 +308,9 @@ void test('a restart while a call is unanswered reports the task uncertain once 
 });
 
 void test('each profile\'s conversation is its own session, titled by its persona', {timeout: 20_000}, async context => {
-  const w = await world(context, {provider: scripted([])});
+  // Reachy gets the synthetic provider here, which asks its fixed question first; the owner cancels it, and a B.U.N.N.Y. task runs.
+  const w = await world(context, {provider: scripted([]), profileProviders: {reachy: new SyntheticProvider()}});
   await control(w, 'enable');
-  // Reachy's synthetic provider asks its fixed question first; the owner cancels it, and a B.U.N.N.Y. task runs.
   await input(w, 'synthetic reachy request', false, 'reachy');
   await w.observed(3);
   await control(w, 'cancel', w.module().inspectAssistant()?.tasks.find(task => task.profile === 'reachy')?.taskId);
@@ -369,11 +370,11 @@ void test('a task running when this release first starts reports only its recove
 });
 
 void test('a task waiting on its owner when this release first starts is reported at once, whole, and an ended one stays silent', {timeout: 20_000}, async context => {
-  const w = await world(context, {provider: scripted([reply('Synthetic answer.')])});
+  const w = await world(context, {provider: scripted([reply('Synthetic answer.')]), profileProviders: {reachy: new SyntheticProvider()}});
   await control(w, 'enable');
   await input(w, 'synthetic request');
   await w.observed(2);
-  // Reachy's synthetic provider asks its fixed question, so its task waits on the owner.
+  // Reachy gets the synthetic provider here, which asks its fixed question, so its task waits on the owner.
   await input(w, 'synthetic reachy request', false, 'reachy');
   await w.observed(5);
   const before = w.seen.length;

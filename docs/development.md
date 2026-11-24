@@ -3331,13 +3331,14 @@ They use fake providers and transports only. Existing CI discovery runs them.
 
 Reachy and MicroDuck on the configured model (#2026) extend `assistant.test.js`,
 `configure.test.js`, `conversation-titles.test.js`, `assistant-spend.test.js`
-and `conversation-rail.test.js`. A section that names only B.U.N.N.Y.'s model,
-behind a fake transport, gives both companions that model, their own personas,
-prompt caching, titles and their cost in the shared spend ledger; an explicit
-synthetic provider sends nothing. A scripted fake provider covers the
-companions' topic-following titles with each turn and check in the ledger,
-the spend limit refusing a companion's new message, and MicroDuck's
-quacks-only rule, with Reachy's spoken reply as its negative control. After
+and `conversation-rail.test.js`. Behind a fake transport, a section that names
+only B.U.N.N.Y.'s model sends both companions' turns to that model with their
+own personas and prompt caching, titles both conversations and counts every
+call in the shared spend ledger. An explicit synthetic provider sends nothing.
+Scripted fake providers cover the companions' topic-following titles and their
+ledger rows, the spend limit refusing a companion's new message, and
+MicroDuck's quacks-only rule, with Reachy's spoken reply as the negative
+control. After
 the root build run
 `node --test modules/companions/dist/tests/assistant.test.js modules/companions/dist/tests/configure.test.js modules/companions/dist/tests/conversation-titles.test.js modules/companions/dist/tests/assistant-spend.test.js modules/companions/dist/tests/conversation-rail.test.js`,
 then `node apps/runtime/dashboard/tests/conversation-rail.browser.ts`,

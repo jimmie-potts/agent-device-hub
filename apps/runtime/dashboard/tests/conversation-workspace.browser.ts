@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser} from 'playwright';
 import {feed, startWorld} from './harness.ts';
 import {chooseConversation, conversationLink, destinationLink, destinationNames, openDeviceMenu, showRail} from './navigation-helpers.ts';
@@ -176,6 +177,46 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await details.waitFor({state: 'hidden'});
     await page.setViewportSize({width: 1440, height: 1000});
     assert.deepEqual(posts, [], 'layout, the Devices menu, choosing a profile in the rail, Details and the jump palette send no command, sync or endpoint registration');
+    // MicroDuck's audio is quacks only (Hub #2026): its English text is its intended meaning, so each of its replies
+    // says so in place of Read aloud. B.U.N.N.Y.'s replies keep Read aloud.
+    const receipts = process.env.DASHBOARD_RECEIPTS;
+    if (receipts !== undefined) await mkdir(receipts, {recursive: true});
+    const intended = transcript.getByText('Intended meaning. MicroDuck\'s audio is quacks only, so this text is never read aloud.', {exact: true});
+    const readAloud = transcript.getByRole('button', {name: /^Read aloud/});
+    assert.ok(await readAloud.count() > 0, 'B.U.N.N.Y.\'s saved replies offer Read aloud');
+    await chooseConversation(page, 'microduck');
+    await header.getByRole('heading', {name: 'MicroDuck', exact: true}).waitFor();
+    assert.equal(await header.locator('small').count(), 0, 'MicroDuck has no Demo label');
+    await message.fill('Synthetic duck request');
+    await send.click();
+    await answer.fill('Duck answer');
+    await assistant.getByRole('button', {name: 'Answer', exact: true}).click();
+    await transcript.getByText(/Synthetic result: Duck answer/).waitFor();
+    assert.equal(await intended.count(), 2, 'the question and the result each say they are intended meaning');
+    assert.equal(await readAloud.count(), 0, 'MicroDuck offers no Read aloud');
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/microduck-intended-meaning-1440.png`});
+    await assistant.getByRole('button', {name: 'Details', exact: true}).click();
+    await details.getByRole('heading', {name: 'Conversation details', exact: true}).waitFor();
+    assert.equal(await details.locator('.conversation-details-profile').innerText(), 'MicroDuck', 'Details names the profile with no Demo label');
+    await details.getByText('Conversation settings', {exact: true}).click();
+    await details.getByText(/The synthetic provider answers them locally and makes no paid calls\./).waitFor();
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/microduck-details-1440.png`});
+    await details.getByRole('button', {name: 'Close details', exact: true}).click();
+    await details.waitFor({state: 'hidden'});
+    await page.setViewportSize({width: 390, height: 844});
+    await page.locator('.shell>aside').waitFor({state: 'hidden'});
+    assert.equal(await intended.count(), 2);
+    const overflow = await page.locator('html').evaluate(node => node.scrollWidth - innerWidth);
+    assert.ok(overflow <= 1, `the intended-meaning notes fit the phone width (${String(overflow)})`);
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/microduck-intended-meaning-390.png`});
+    await page.setViewportSize({width: 1440, height: 1000});
+    await chooseConversation(page, 'bunny');
+    await transcript.getByText(/Synthetic result: Short answer/).waitFor();
+    assert.ok(await readAloud.count() > 0, 'B.U.N.N.Y. still offers Read aloud');
+    if (receipts !== undefined) {
+      await showRail(page);
+      await page.screenshot({path: `${receipts}/rail-conversations-1440.png`});
+    }
     // On the Conversation page the rail boxes the open conversation, and Companions is marked lightly above it.
     const companionsRow = navigation.getByRole('link', {name: 'Companions', exact: true});
     assert.equal(await companionsRow.getAttribute('aria-current'), 'page');
