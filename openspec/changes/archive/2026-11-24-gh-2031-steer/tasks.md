@@ -12,4 +12,4 @@
 ## 3. Documentation and archive
 
 - [x] 3.1 Companions README and notices, event contracts README, `docs/development.md` and `apps/runtime/UPGRADE.md`. Evidence: readback.
-- [ ] 3.2 Sync and archive this change. Evidence: `npm run check:workflow` passes.
+- [x] 3.2 Sync and archive this change. Evidence: `npm run check:workflow` passes.
