@@ -100,8 +100,16 @@ export class KnowledgeLibrary {
       SELECT SUM(length(CAST(record AS BLOB))) FROM companion_removals)`).get() as {bytes: number | null};
     if ((bytes.bytes ?? 0) > ARCHIVE_BYTES) fail('capacity');
     return {schema: 'companion-archive/1.0', knowledge: this.entries.entries(), preferences: this.preferences.library(),
-      voices: this.profiles().map(({id, voiceRef}) => ({id, voiceRef})), conversations: this.assistant.store.messages.conversations(),
+      voices: this.profiles().map(({id, voiceRef}) => ({id, voiceRef})), conversations: this.#exported(),
       messages: this.assistant.store.messages.all(), removals: this.assistant.store.messages.removals()};
+  }
+  /**
+   * The conversations in archive order (Hub #2029): each profile's earlier conversations in saved order, then the current
+   * ones, so an import into a store without a current conversation takes the export's current one as its own.
+   */
+  #exported(): Archive['conversations'] {
+    const all = this.assistant.store.messages.conversations(), current = this.assistant.store.currentConversations();
+    return [...all.filter(conversation => !current.has(conversation.id)), ...all.filter(conversation => current.has(conversation.id))];
   }
   capacity(): void {if (Buffer.byteLength(JSON.stringify(this.archive())) > ARCHIVE_BYTES) fail('capacity');}
   apply(input: KnowledgeInput, now: number): void {

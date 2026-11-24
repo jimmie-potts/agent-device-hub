@@ -56,7 +56,7 @@ function titleOrigin(title: ConversationTitle, profileName: string, synthetic: b
 export function ConversationDetails({
   id, open, overlay, onClose, stopSpeaking,
   Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, goTo, setEnabled, title, rename,
-  conversations, viewing, openConversation,
+  conversations, viewing, openConversation, showOlder,
 }: {
   id: string; open: boolean; overlay: boolean; onClose: () => void; stopSpeaking: React.JSX.Element | null;
   Facts: FrontendUi['Facts']; profile: AssistantProfile; profileName: string;
@@ -75,6 +75,8 @@ export function ConversationDetails({
    * shows, if any; `openConversation` shows one, the current one included.
    */
   conversations: readonly ConversationListEntry[] | undefined; viewing: string | undefined; openConversation: (conversationId: string) => void;
+  /** Lists the next page of older conversations, or undefined when every one is listed. */
+  showOlder: (() => void) | undefined;
 }): React.JSX.Element {
   const renameId = useId();
   const [draftTitle, setDraftTitle] = useState('');
@@ -191,6 +193,7 @@ export function ConversationDetails({
                 : <button type="button" className="secondary" onClick={() => {openConversation(value.conversationId);}}>{value.current ? 'Show current conversation' : 'Open'}</button>}
             </li>;
           })}</ul>}
+        {conversations !== undefined && showOlder !== undefined && <button type="button" className="secondary" onClick={showOlder}>Show older conversations</button>}
         <p>New conversation starts a fresh conversation with its own session and title. Earlier conversations stay readable here, and their messages no longer reach the model.</p>
       </details>
       <details>

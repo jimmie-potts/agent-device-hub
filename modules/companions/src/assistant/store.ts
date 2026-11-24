@@ -157,7 +157,7 @@ export class AssistantStore {
    * one is unfinished, so none of them can change what a conversation reports.
    */
   latest(): Task[] {
-    const current = new Set((this.database.prepare('SELECT id FROM assistant_conversations').all() as {id: string}[]).map(row => row.id));
+    const current = this.currentConversations();
     return this.database.prepare('SELECT record FROM assistant_tasks WHERE seq IN (SELECT MAX(seq) FROM assistant_tasks GROUP BY profile) ORDER BY seq').all()
       .map(row => JSON.parse(row.record as string) as Task).filter(task => current.has(task.conversationId));
   }
@@ -206,14 +206,29 @@ export class AssistantStore {
   /**
    * The recent conversation a task's context may hold (Hub #2029): the conversation's saved owner messages, replies and
    * tool results up to `through`, the sequence saved when the task started, so none of the task's own; the newest
-   * `RECENT_MESSAGES` of them oldest first, and how many there are in all. Only this one conversation is read, so no other conversation or profile can enter; a removed
-   * message is no longer saved, and a correction's meaning is the saved text. A tool result names its tool from its
-   * task's saved transcript when that still holds it; an artwork attachment keeps its request identity.
+   * `RECENT_MESSAGES` of them oldest first, and how many there are in all. Only this one conversation is read, so no other
+   * conversation can enter, and only the messages the profile may read in it, as the history page reads them, so a crafted
+   * archive's message between other companions cannot either. A removed message is no longer saved, and a correction's
+   * meaning is the saved text. Three kinds of saved row stay out:
+   * - an imported message, which stays historical until the owner selects it for a copied context;
+   * - a tool result of a task whose owner message, its opening message or an answer, the owner removed (the task's reply
+   *   stays unless the owner removes it too);
+   * - a row without a companion record other than a tool result.
+   * A tool result names its tool from its task's saved transcript when that still holds it; an artwork attachment keeps
+   * its request identity.
    */
-  recentContext(conversationId: string, through: number): {messages: RecentMessage[]; total: number} {
-    const filter = 'msg.conversation_id=? AND msg.seq<=?';
-    const total = (this.database.prepare(`SELECT COUNT(*) AS count FROM assistant_messages msg WHERE ${filter}`).get(conversationId, through) as {count: number}).count;
-    const rows = (this.database.prepare(`${messagesWithAttachments} WHERE ${filter} ORDER BY msg.seq DESC LIMIT ?`).all(conversationId, through, RECENT_MESSAGES) as MessageRow[]).reverse();
+  recentContext(profile: AssistantProfile, conversationId: string, through: number): {messages: RecentMessage[]; total: number} {
+    const bound = this.messages.conversation(conversationId)?.profile === profile ? 1 : 0;
+    const filter = `msg.conversation_id=? AND msg.seq<=?
+      AND (CASE WHEN msg.record IS NULL THEN msg.role='tool' ELSE json_extract(msg.record,'$.speakerId')=?
+        OR EXISTS (SELECT 1 FROM json_each(msg.record,'$.recipientIds') WHERE value=?)
+        OR (json_type(msg.record,'$.recipientIds')='null' AND ?=1) END)
+      AND COALESCE(json_extract(msg.record,'$.provenance.imported'),0)=0
+      AND NOT (msg.role='tool' AND EXISTS (SELECT 1 FROM companion_removals removed
+        WHERE removed.id=msg.task_id || '-prompt' OR (removed.id LIKE msg.task_id || '-q%' AND removed.id LIKE '%-answer')))`;
+    const params = [conversationId, through, profile, profile, bound];
+    const total = (this.database.prepare(`SELECT COUNT(*) AS count FROM assistant_messages msg WHERE ${filter}`).get(...params) as {count: number}).count;
+    const rows = (this.database.prepare(`${messagesWithAttachments} WHERE ${filter} ORDER BY msg.seq DESC LIMIT ?`).all(...params, RECENT_MESSAGES) as MessageRow[]).reverse();
     const tools = new Map<string, Map<string, string>>();
     const toolOf = (owner: string, id: string): string | undefined => {
       let names = tools.get(owner);
@@ -239,19 +254,24 @@ export class AssistantStore {
     this.database.prepare('INSERT INTO assistant_context_settings VALUES (?,?) ON CONFLICT(profile) DO UPDATE SET knowledge=excluded.knowledge').run(profile, enabled ? 1 : 0);
   }
   /**
-   * The profile's conversations, newest first, 16 a page (Hub #2029): the current one and each earlier one New conversation
-   * replaced. `older` is the cursor of the next page.
+   * The profile's conversations, 16 a page (Hub #2029): the current one first, then each earlier one by its last message,
+   * newest first, and one without messages last. `older` is the offset of the next page.
    */
-  conversations(profile: AssistantProfile, before?: number): {conversations: ConversationSummary[]; older: number | null} {
-    const current = this.conversation(profile);
-    const rows = this.database.prepare(`SELECT c.rowid AS row,c.id AS id,COUNT(m.seq) AS messages,MIN(m.at_ms) AS firstAtMs,MAX(m.at_ms) AS lastAtMs
+  conversations(profile: AssistantProfile, after = 0): {conversations: ConversationSummary[]; older: number | null} {
+    const current = this.conversation(profile) ?? null;
+    const rows = this.database.prepare(`SELECT c.id AS id,COUNT(m.seq) AS messages,MIN(m.at_ms) AS firstAtMs,MAX(m.at_ms) AS lastAtMs
       FROM companion_conversations c LEFT JOIN assistant_messages m ON m.conversation_id=c.id
-      WHERE json_extract(c.record,'$.profile')=? AND c.rowid<? GROUP BY c.rowid ORDER BY c.rowid DESC LIMIT 17`)
-      .all(profile, before ?? Number.MAX_SAFE_INTEGER) as {row: number; id: string; messages: number; firstAtMs: number | null; lastAtMs: number | null}[];
+      WHERE json_extract(c.record,'$.profile')=? GROUP BY c.rowid
+      ORDER BY c.id IS ? DESC, MAX(m.at_ms) IS NULL, MAX(m.at_ms) DESC, c.rowid DESC LIMIT 17 OFFSET ?`)
+      .all(profile, current, after) as {id: string; messages: number; firstAtMs: number | null; lastAtMs: number | null}[];
     const conversations = rows.slice(0, 16).map(({id, messages, firstAtMs, lastAtMs}) => ({conversationId: id, current: id === current, messages, firstAtMs, lastAtMs}));
     // The current conversation is listed first even before its first message has saved its record.
-    if (current !== undefined && before === undefined && !conversations.some(value => value.current)) conversations.unshift({conversationId: current, current: true, messages: 0, firstAtMs: null, lastAtMs: null});
-    return {conversations, older: rows.length > 16 ? rows[15]?.row ?? null : null};
+    if (current !== null && after === 0 && !conversations.some(value => value.current)) conversations.unshift({conversationId: current, current: true, messages: 0, firstAtMs: null, lastAtMs: null});
+    return {conversations, older: rows.length > 16 ? after + 16 : null};
+  }
+  /** The conversations that are a profile's current one, for an export that lists each profile's current one last. */
+  currentConversations(): Set<string> {
+    return new Set((this.database.prepare('SELECT id FROM assistant_conversations').all() as {id: string}[]).map(row => row.id));
   }
   message(task: Task, id: string, role: ConversationMessage['role'], text: string, atMs: number, follows?: string): void {
     if (this.messages.removal(id) !== undefined) return;

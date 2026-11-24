@@ -164,9 +164,10 @@ export function decodeConversationList(value: unknown, profile: AssistantProfile
   return {version: 1, profile, conversations, older: value.older};
 }
 
-/** Reads the newest page of the profile's conversations. */
-export async function readConversationList(read: Read, profile: AssistantProfile, signal: AbortSignal): Promise<ConversationList> {
-  const response = await read(`/modules/companions/content/conversation?${new URLSearchParams({profile, view: 'list'}).toString()}`, signal);
+/** Reads a page of the profile's conversations: the first, or the one at the `older` offset an earlier page returned. */
+export async function readConversationList(read: Read, profile: AssistantProfile, signal: AbortSignal, after?: number): Promise<ConversationList> {
+  const query = new URLSearchParams({profile, view: 'list', ...(after === undefined ? {} : {after: String(after)})});
+  const response = await read(`/modules/companions/content/conversation?${query.toString()}`, signal);
   signal.throwIfAborted();
   return decodeConversationList(response, profile);
 }

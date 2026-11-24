@@ -511,6 +511,8 @@ export class AssistantEngine {
         // paused or is uncertain. The owner finishes or cancels it first.
         const current = this.store.conversation(input.profile);
         if (current !== undefined && (this.store.unfinishedIn(current) !== undefined || this.#active.has(current))) fail('invalid-state');
+        // An empty conversation, or none yet, has nothing to leave behind, so repeated requests cannot pile up empty ones.
+        if (current === undefined || this.store.lastSequence(current) === 0) fail('invalid-state');
         const {previous, conversationId} = this.store.newConversation(input.profile);
         // Both conversations change: a command bound to the earlier one's revision is stale now, as is one naming the profile.
         if (previous !== undefined) this.store.touch(previous);
@@ -580,10 +582,11 @@ export class AssistantEngine {
     if (request?.signal.aborted === true || !profile(selected)) return errorBody('invalid-request');
     try {
       if (query.view === 'list') {
-        // The profile's conversations (Hub #2029), newest first, with each one's title as its session shows it.
-        const before = query.before === undefined ? undefined : Number(query.before);
-        if (Object.keys(query).some(key => !['profile', 'view', 'before'].includes(key)) || (before !== undefined && (!Number.isSafeInteger(before) || before <= 0))) return errorBody('invalid-request');
-        const listed = this.store.conversations(selected, before);
+        // The profile's conversations (Hub #2029), the current one first, then the rest newest first, each with its title as
+        // its session shows it. `after` is the offset of a later page.
+        const after = query.after === undefined ? 0 : Number(query.after);
+        if (Object.keys(query).some(key => !['profile', 'view', 'after'].includes(key)) || !Number.isSafeInteger(after) || after < 0) return errorBody('invalid-request');
+        const listed = this.store.conversations(selected, after);
         const document: ConversationList = {version: 1, profile: selected, older: listed.older,
           conversations: listed.conversations.map(value => ({...value, title: this.titles.published(value.conversationId, selected)}))};
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify(document))};
@@ -722,7 +725,7 @@ export class AssistantEngine {
    */
   #context(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>): PromptContext {
     const persona = PROFILES.find(value => value.id === task.profile) ?? fail('internal');
-    const recent = task.contextThrough === undefined ? {messages: [], total: 0} : this.store.recentContext(task.conversationId, task.contextThrough);
+    const recent = task.contextThrough === undefined ? {messages: [], total: 0} : this.store.recentContext(task.profile, task.conversationId, task.contextThrough);
     return buildContext({profile: task.profile, persona: {name: persona.name, character: persona.character},
       knowledge: {enabled: this.store.knowledgeEnabled(task.profile), entries: (this.options.knowledge?.() ?? []).map(entry => ({title: entry.title, text: entry.text}))},
       preferences: (this.options.preferences?.() ?? []).map(entry => ({title: entry.title, text: entry.text})),

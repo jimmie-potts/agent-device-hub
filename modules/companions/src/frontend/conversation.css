@@ -566,6 +566,7 @@
 /* New conversation (Hub #2029) sits before Details at the header row's end. */
 .conversation-header .conversation-new {
   flex: none;
+  align-self: stretch;
   min-block-size: 2.5rem;
   padding-inline: 0.7rem;
   margin-inline-start: auto;

@@ -2,7 +2,7 @@
 
 ### Requirement: Active-only use
 
-Normal retrieval and manual copying SHALL include only current active entries. Management and export SHALL retain inactive entries and history. Preferences SHALL grant no permissions or device-state authority. Only currently active entries SHALL enter the assistant's model prompt, read from the current records at each model call and rendered as owner data that grants no tool or permission; inactive entries and history SHALL never enter it, and no other automatic insertion into model context SHALL occur. The active entries SHALL fill the prompt's preferences section, in order, up to its 32 KiB budget; entries beyond it SHALL be left out with a stated count in the section, never silently ([Hub #2029](https://github.com/jimmie-potts/agent-device-hub/issues/2029)).
+Normal retrieval and manual copying SHALL include only current active entries. Management and export SHALL retain inactive entries and history. Preferences SHALL grant no permissions or device-state authority. Only currently active entries SHALL enter the assistant's model prompt, read from the current records at each model call and rendered as owner data that grants no tool or permission; inactive entries and history SHALL never enter it, and no other automatic insertion into model context SHALL occur. The active entries SHALL fill the prompt's preferences section, in order, up to its 32 KiB budget; entries beyond it SHALL be left out with a stated count in the section, never silently, and the Preferences page SHALL say how many active entries are left out ([Hub #2029](https://github.com/jimmie-potts/agent-device-hub/issues/2029)).
 
 #### Scenario: Copy selected preferences
 
@@ -17,4 +17,4 @@ Normal retrieval and manual copying SHALL include only current active entries. M
 #### Scenario: Entries beyond the budget
 
 - **WHEN** the active entries render larger than the preferences section's budget
-- **THEN** the prompt carries the entries that fit and states how many more were left out, and the call is sent
+- **THEN** the prompt carries the entries that fit and states how many more were left out, the call is sent, and the Preferences page notes how many active entries each model call leaves out

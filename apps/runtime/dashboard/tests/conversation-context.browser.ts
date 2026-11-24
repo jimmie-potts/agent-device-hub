@@ -41,11 +41,17 @@ export async function conversationContextJourney(browser: Browser): Promise<void
       await conversation.getByText(reply, {exact: true}).last().waitFor();
     };
     await conversation.getByRole('button', {name: 'Enable conversation', exact: true}).click();
+    // An empty conversation has nothing to leave behind: New conversation waits for its first message and says why.
+    const fresh = conversation.getByRole('button', {name: 'New conversation', exact: true});
+    const emptyNote = conversation.getByText('This conversation is empty. Send a message first.', {exact: true});
+    await emptyNote.waitFor();
+    assert.equal(await fresh.isDisabled(), true);
+    assert.equal(await fresh.getAttribute('aria-describedby'), await emptyNote.getAttribute('id'));
     await send('Synthetic first topic', 'Synthetic reply. Earlier messages in context: 0.');
+    await emptyNote.waitFor({state: 'detached'});
     // The follow-up's context holds the first exchange: the owner's message and the reply.
     await send('Synthetic follow-up', 'Synthetic reply. Earlier messages in context: 2.');
     // While a task waits on the owner, New conversation is disabled and says why.
-    const fresh = conversation.getByRole('button', {name: 'New conversation', exact: true});
     await message.fill('ASK a synthetic question');
     await conversation.getByRole('button', {name: 'Send', exact: true}).click();
     await conversation.getByText('Needs your answer', {exact: true}).waitFor();
@@ -61,6 +67,8 @@ export async function conversationContextJourney(browser: Browser): Promise<void
     await fresh.click();
     await conversation.getByRole('heading', {name: 'What’s on your mind?', exact: true}).waitFor();
     assert.equal(await conversation.getByText('Synthetic first topic', {exact: true}).count(), 0);
+    await emptyNote.waitFor();
+    assert.equal(await fresh.isDisabled(), true, 'the new, empty conversation holds New conversation too');
     await send('Synthetic fresh topic', 'Synthetic reply. Earlier messages in context: 0.');
     await shot(page, 'new-conversation-fresh');
     // The earlier conversation stays readable from Details, read only.
@@ -91,6 +99,10 @@ export async function conversationContextJourney(browser: Browser): Promise<void
       return [...node.querySelectorAll('button')].every(button => {const box = button.getBoundingClientRect(); return box.left >= rect.left - 1 && box.right <= rect.right + 1;});
     });
     assert.equal(header, true, 'the header buttons stay inside it');
+    const [plus, detailsBox] = await Promise.all([fresh.boundingBox(), conversation.getByRole('button', {name: 'Details', exact: true}).boundingBox()]);
+    assert.ok(plus !== null && detailsBox !== null);
+    assert.equal(Math.round(plus.height), Math.round(detailsBox.height), `the plus sign is as tall as Details: ${JSON.stringify([plus, detailsBox])}`);
+    assert.ok(Math.abs(plus.y - detailsBox.y) <= 1, 'they share one row');
     await shot(page, 'new-conversation-phone');
     await page.setViewportSize({width: 1280, height: 900});
     // The Knowledge page's model context preview shows the builder's sections for the current conversation.

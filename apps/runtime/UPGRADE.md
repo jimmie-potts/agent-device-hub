@@ -262,11 +262,16 @@ upgrade have none and keep an empty recent section if resumed. Active
 preferences over the preferences section's 32 KiB budget are now trimmed with
 a stated count instead of refusing the turn. Expect larger model requests,
 bounded by the section budgets, about 132 KiB in all; each is reserved and
-counted in the shared spend limits as before. No record is rewritten.
+counted in the shared spend limits as before. The system prompt is now sent
+as two blocks with a breakpoint after the stable sections, so the first call
+after the upgrade writes a new cache entry. Messages that an earlier release
+imported from an archive stay out of every model call. No record is rewritten.
 
 New conversation moves a profile's row in `assistant_conversations` to a new
 conversation ID; the earlier conversation stays in `companion_conversations`
-with its messages, and its session goes idle.
+with its messages, and its session goes idle. Archive exports now list each
+profile's current conversation after its earlier ones, in the same
+`companion-archive/1.0` format.
 
 Returning to the release before needs no step for the tables: it ignores
 `assistant_context_settings` and `contextThrough`. Two differences remain for a

@@ -38,7 +38,7 @@ Messages SHALL retain stable IDs, explicit or unknown recipients, meaning/proven
 - **THEN** the whole operation is refused until the task finishes or is cancelled, without rewriting checkpoints or replaying calls
 
 ### Requirement: Additive private recovery
-The owner SHALL export/import a closed versioned private archive atomically. Existing entries, history, active state, local voice selections and message corrections SHALL win. Missing knowledge/preferences SHALL arrive inactive, and imported messages SHALL remain historical and require explicit context selection. Known removals SHALL defeat imported content and exports SHALL contain removal metadata without deleted text. An archive MAY hold several conversations of one profile, its current one and earlier ones; an import SHALL NOT move a profile's current conversation, and a profile without one SHALL take the archive's latest ([Hub #2029](https://github.com/jimmie-potts/agent-device-hub/issues/2029)).
+The owner SHALL export/import a closed versioned private archive atomically. Existing entries, history, active state, local voice selections and message corrections SHALL win. Missing knowledge/preferences SHALL arrive inactive, and imported messages SHALL remain historical and require explicit context selection. Known removals SHALL defeat imported content and exports SHALL contain removal metadata without deleted text. An archive MAY hold several conversations of one profile, its current one and earlier ones; an export SHALL list each profile's current conversation after its earlier ones, an import SHALL NOT move a profile's current conversation, and a profile without one SHALL take the archive's last conversation of that profile ([Hub #2029](https://github.com/jimmie-potts/agent-device-hub/issues/2029)). Imported messages SHALL stay out of a companion's model context.
 
 #### Scenario: Repeated old and current archives
 - **WHEN** an archive is imported into the same or an empty store, repeated, or followed by an older archive
@@ -51,7 +51,7 @@ The owner SHALL export/import a closed versioned private archive atomically. Exi
 
 #### Scenario: Earlier conversations of a profile
 - **WHEN** an archive holding a profile's earlier and current conversations is imported into an empty store and into its own store
-- **THEN** both are accepted, the earlier conversation is readable in each, and the current conversation is the archive's latest in the empty store and unchanged in its own
+- **THEN** both are accepted, the earlier conversation is readable in each, and the current conversation is the archive's current one in the empty store and unchanged in its own, and no imported message reaches a model call
 
 ### Requirement: Source portability and management
 The existing authenticated dashboard SHALL expose knowledge, persona inspection, bounded history, explicit context copy and private files with keyboard, narrow layout, read-only and disconnected behavior. Shared state, commands, outcomes and diagnostics SHALL exclude prose. Two fake adapters and a test-only replacement client SHALL consume the public private-content contract.

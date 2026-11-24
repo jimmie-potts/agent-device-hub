@@ -18,7 +18,7 @@ import {InProcessBus, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore} from '../src/assistant/store.js';
-import {buildContext, RECENT_MESSAGES, SECTION_BUDGETS, SECTION_ORDER, sectionOf, type ContextSource, type SectionName} from '../src/assistant/context.js';
+import {buildContext, entriesLeftOut, RECENT_MESSAGES, SECTION_BUDGETS, SECTION_ORDER, sectionOf, type ContextSource, type SectionName} from '../src/assistant/context.js';
 import type {ContextPreview, ConversationList, RecentConversationPage} from '../src/assistant/history-contract.js';
 import type {Archive, DuckWidget, HistoryPage} from '../src/knowledge/model.js';
 import type {ModelProvider, TurnInput, TurnReply} from '../src/assistant/provider.js';
@@ -126,6 +126,8 @@ void test('the builder keeps the fixed order, keeps each section to its budget a
   const notes = sectionOf(built, 'knowledge');
   assert.equal(notes.state, 'included'); assert.equal(notes.included, 8); assert.equal(notes.trimmed, 4);
   assert.match(notes.text ?? '', /\n- Note 7: k+\n4 more notes were left out to fit the 32 KiB budget\.$/);
+  // The Preferences and Companion knowledge pages count what is left out by the same rule (Hub #2029).
+  assert.deepEqual([entriesLeftOut('knowledge', source.knowledge.entries), entriesLeftOut('preferences', source.preferences), entriesLeftOut('preferences', [])], [4, 0, 0]);
   // The newest messages fit; the 22 older ones the store held back count with them in the stated trim.
   const recent = sectionOf(built, 'recent');
   assert.equal(recent.included, RECENT_MESSAGES); assert.equal(recent.trimmed, 22);
@@ -177,30 +179,97 @@ void test('a follow-up task holds its conversation\'s earlier messages and tool 
   three.resolve(reply('Done.'));
 });
 
-void test('no other companion\'s conversation or companion exchange enters a prompt', async context => {
+void test('no other companion\'s conversation, earlier conversation or companion exchange enters a prompt', async context => {
   const w = await world(context);
   accepted(await w.control('enable'));
-  await exchange(w, 'PRIVATE-BUNNY-ONLY message', reply('PRIVATE-BUNNY-REPLY'));
+  // Every other conversation is saved before the checked one's last message, so a missing conversation filter would leak it.
+  await exchange(w, 'PRIVATE-BUNNY-EARLIER message', reply('PRIVATE-BUNNY-EARLIER reply'));
+  accepted(await w.fresh('bunny'));
   accepted(await w.knowledge({action: 'fixture'}));
-  accepted(await w.send('reachy', 'Synthetic Reachy question'));
+  accepted(await w.send('reachy', 'PRIVATE-REACHY first'));
+  (await w.providers.reachy.next()).resolve(reply('PRIVATE-REACHY reply'));
+  await settle(() => w.task('reachy')?.status === 'succeeded');
+  await exchange(w, 'PRIVATE-BUNNY-CURRENT message', reply('PRIVATE-BUNNY-CURRENT reply'));
+  accepted(await w.send('reachy', 'Reachy follow-up'));
   const reachy = await w.providers.reachy.next();
   const seen = JSON.stringify(reachy.input);
   for (const leaked of ['PRIVATE-BUNNY', 'imaginary pond', 'garden adventure']) assert.equal(seen.includes(leaked), false, leaked);
-  assert.equal(sectionOf(reachy.input.context, 'recent').state, 'empty');
+  assert.match(text(reachy.input, 'recent'), /PRIVATE-REACHY first[\s\S]*PRIVATE-REACHY reply/);
   assert.equal(reachy.input.context.profile, 'reachy');
-  reachy.resolve(reply('Synthetic Reachy answer'));
+  reachy.resolve(reply('Reachy answer'));
   await settle(() => w.task('reachy')?.status === 'succeeded');
-  accepted(await w.send('bunny', 'Next'));
+  accepted(await w.send('bunny', 'Bunny follow-up'));
   const bunny = await w.providers.bunny.next();
   const prompt = JSON.stringify(bunny.input);
-  for (const leaked of ['Synthetic Reachy', 'imaginary pond']) assert.equal(prompt.includes(leaked), false, leaked);
-  assert.match(text(bunny.input, 'recent'), /PRIVATE-BUNNY-ONLY message/);
+  for (const leaked of ['PRIVATE-REACHY', 'Reachy follow-up', 'imaginary pond', 'PRIVATE-BUNNY-EARLIER']) assert.equal(prompt.includes(leaked), false, leaked);
+  assert.match(text(bunny.input, 'recent'), /PRIVATE-BUNNY-CURRENT message[\s\S]*PRIVATE-BUNNY-CURRENT reply/);
   bunny.resolve(reply('Done'));
+});
+
+void test('a message another companion may not read stays out, even inside the profile\'s own conversation', async context => {
+  const w = await world(context);
+  accepted(await w.control('enable'));
+  await exchange(w, 'Synthetic opening', reply('Synthetic reply'));
+  // A row between Reachy and MicroDuck in B.U.N.N.Y.'s conversation, as only a crafted record could save it.
+  const store = w.store(), conversationId = store.conversation('bunny') ?? assert.fail('conversation');
+  store.messages.put({schema: 'companion-message/1.0', messageId: 'crafted-row', conversationId, turnId: null, speakerId: 'reachy', recipientIds: ['microduck'],
+    createdAtMs: w.now(), revision: 1, ordering: {authority: 'companions', epoch: conversationId, sequence: 99}, meaning: {kind: 'literal', text: 'PRIVATE-CROSS-PROFILE', language: 'en'},
+    provenance: {kind: 'synthetic', imported: false}, deliveryRefs: [], taskId: null});
+  const preview = await w.preview('bunny');
+  assert.equal(JSON.stringify(preview).includes('PRIVATE-CROSS-PROFILE'), false);
+  assert.equal(previewed(preview, 'recent').included, 2);
+  accepted(await w.send('bunny', 'Next'));
+  const next = await w.providers.bunny.next();
+  assert.equal(JSON.stringify(next.input).includes('PRIVATE-CROSS-PROFILE'), false);
+  next.resolve(reply('Done'));
+});
+
+void test('imported messages stay historical: an imported conversation\'s rows never reach the model', async context => {
+  const source = await world(context);
+  accepted(await source.control('enable'));
+  await exchange(source, 'PRIVATE-IMPORTED owner message', reply('PRIVATE-IMPORTED reply'));
+  const archive = await source.content<Archive>('companion-archive');
+  const target = await world(context);
+  accepted(await target.control('enable'));
+  accepted(await target.knowledge({action: 'import-archive', archive}));
+  assert.equal(previewed(await target.preview('bunny'), 'recent').state, 'empty');
+  accepted(await target.send('bunny', 'A message after the import'));
+  const call = await target.providers.bunny.next();
+  assert.equal(JSON.stringify(call.input).includes('PRIVATE-IMPORTED'), false);
+  call.resolve(reply('After the import'));
+  await settle(() => target.task('bunny')?.status === 'succeeded');
+  // The imported rows stay readable on the page.
+  assert.match(JSON.stringify((await target.recent('bunny')).messages), /PRIVATE-IMPORTED owner message/);
+  accepted(await target.send('bunny', 'Again'));
+  const again = await target.providers.bunny.next();
+  assert.equal(JSON.stringify(again.input).includes('PRIVATE-IMPORTED'), false);
+  assert.match(text(again.input, 'recent'), /A message after the import[\s\S]*After the import/);
+  again.resolve(reply('Done'));
+});
+
+void test('removing a task\'s owner message also drops that task\'s tool results, and its reply stays until removed', async context => {
+  const w = await world(context);
+  accepted(await w.control('enable'));
+  const first = await exchange(w, 'PRIVATE-REMOVED question', call('read_fixture', {}, 'call-read'), reply('PRIVATE-KEPT reply'));
+  await exchange(w, 'PRIVATE-OTHER question', call('read_fixture', {}, 'call-read-2'), reply('PRIVATE-OTHER reply'));
+  accepted(await w.knowledge({action: 'delete-message', messageId: `${first}-prompt`}));
+  const recent = previewed(await w.preview('bunny'), 'recent').text ?? '';
+  assert.equal(recent.includes('PRIVATE-REMOVED'), false);
+  assert.equal(recent.includes(`[message ${first}-step-`), false, 'the removed message\'s task has no tool result in context');
+  assert.match(recent, /PRIVATE-KEPT reply/);
+  assert.match(recent, /PRIVATE-OTHER question\n\[message [^\]]+\] Tool result \(read_fixture\): Read-only fixture/);
+  accepted(await w.knowledge({action: 'delete-message', messageId: `${first}-result`}));
+  assert.equal((previewed(await w.preview('bunny'), 'recent').text ?? '').includes('PRIVATE-KEPT'), false);
 });
 
 void test('New conversation is refused while the current conversation\'s task is unfinished, and then starts a fresh one', async context => {
   const w = await world(context);
   accepted(await w.control('enable'));
+  // A profile without a conversation, or with an empty one, has nothing to leave behind: New conversation is refused.
+  assert.equal(code(await w.fresh('microduck')), 'invalid-state');
+  accepted(await w.send('reachy', 'Synthetic Reachy topic'));
+  (await w.providers.reachy.next()).resolve(reply('Synthetic Reachy reply'));
+  await settle(() => w.task('reachy')?.status === 'succeeded');
   await exchange(w, 'PRIVATE-EARLIER topic', reply('PRIVATE-EARLIER reply'));
   const earlier = w.task('bunny')?.conversationId ?? assert.fail('conversation');
   accepted(await w.send('bunny', 'Still working'));
@@ -225,6 +294,9 @@ void test('New conversation is refused while the current conversation\'s task is
   assert.equal(code(await w.control('rename', {profile: 'bunny', title: 'Synthetic title'}, read)), 'revision-conflict');
   const store = w.store(), current = store.conversation('bunny') ?? assert.fail('current conversation');
   assert.notEqual(current, earlier);
+  // The new conversation is empty, so another New conversation is refused until its first message.
+  assert.equal(code(await w.fresh('bunny')), 'invalid-state');
+  assert.equal(store.conversation('bunny'), current);
   // Both conversations changed at New conversation's revision: their own change rows (Hub #2027).
   assert.equal(store.changedAt(current), w.state().revision); assert.equal(store.changedAt(earlier), w.state().revision);
   // The profile has no task in its new conversation, and its recent history starts empty.
@@ -543,4 +615,54 @@ void test('on one configured provider each companion gets its own sections, and 
     next.resolve(reply('Done'));
     await settle(() => w.task(profile)?.status === 'succeeded');
   }
+});
+
+void test('an archive round trip keeps each profile\'s current conversation current, wherever it was created', async context => {
+  // Store X: B.U.N.N.Y.'s conversations A, then B, which is current.
+  const x = await world(context);
+  accepted(await x.control('enable'));
+  await exchange(x, 'Synthetic conversation A', reply('Reply A'));
+  accepted(await x.fresh('bunny'));
+  x.advance(60_000);
+  await exchange(x, 'Synthetic conversation B', reply('Reply B'));
+  const fromX = await x.content<Archive>('companion-archive');
+  // Store Z: its own current conversation C, created before it imports X's A and B.
+  const z = await world(context);
+  accepted(await z.control('enable'));
+  await exchange(z, 'Synthetic conversation C', reply('Reply C'));
+  const c = z.store().conversation('bunny') ?? assert.fail('conversation C');
+  accepted(await z.knowledge({action: 'import-archive', archive: fromX}));
+  assert.equal(z.store().conversation('bunny'), c, 'an import never moves the current conversation');
+  // The current conversation is listed first, then the rest by their last message, newest first.
+  const listed = (await z.content<ConversationList>('conversation', {profile: 'bunny', view: 'list'})).conversations;
+  const texts = await Promise.all(listed.map(async value => (await z.recent('bunny', value.conversationId)).messages[0]?.text));
+  assert.deepEqual([listed.map(value => value.current), texts], [[true, false, false], ['Synthetic conversation C', 'Synthetic conversation B', 'Synthetic conversation A']]);
+  // Z's export lists C last for its profile, so a fresh store restores C as current.
+  const fromZ = await z.content<Archive>('companion-archive');
+  assert.equal(fromZ.conversations.filter(value => value.profile === 'bunny').at(-1)?.id, c);
+  const w = await world(context);
+  accepted(await w.knowledge({action: 'import-archive', archive: fromZ}));
+  assert.equal(w.store().conversation('bunny'), c);
+});
+
+void test('Details lists every conversation in pages: the current one first, then by last activity', async context => {
+  const w = await world(context);
+  const store = w.store(), ids: string[] = [];
+  for (let index = 0; index < 18; index += 1) {
+    if (index > 0) store.newConversation('bunny');
+    const task = store.newTask('bunny', `Synthetic conversation ${String(index)}`);
+    task.status = 'succeeded'; store.save(task);
+    store.message(task, `${task.id}-prompt`, 'owner', task.prompt, 1000 + index);
+    ids.push(task.conversationId);
+  }
+  // Conversation 2 gets the newest message of all the earlier ones, as a late confirmation would.
+  const late = {...store.newTask('bunny', 'Synthetic late'), conversationId: ids[2] ?? assert.fail('conversation 2')};
+  store.message(late, 'synthetic-late-message', 'assistant', 'Synthetic late confirmation', 5000);
+  const first = await w.content<ConversationList>('conversation', {profile: 'bunny', view: 'list'});
+  assert.equal(first.conversations.length, 16); assert.equal(first.older, 16);
+  assert.deepEqual(first.conversations.slice(0, 3).map(value => value.conversationId), [ids[17], ids[2], ids[16]]);
+  const second = await w.content<ConversationList>('conversation', {profile: 'bunny', view: 'list', after: String(first.older)});
+  assert.deepEqual([second.conversations.map(value => value.conversationId), second.older], [[ids[1], ids[0]], null]);
+  assert.equal(new Set([...first.conversations, ...second.conversations].map(value => value.conversationId)).size, 18);
+  assert.equal(await w.refusal('conversation', {profile: 'bunny', view: 'list', after: '-1'}), 'invalid-request');
 });

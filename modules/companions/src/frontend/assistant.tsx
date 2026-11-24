@@ -156,6 +156,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   // An earlier conversation of this profile the owner opened from Details (Hub #2029), read only; undefined shows the current one.
   const [viewing, setViewing] = useState<string>();
   const [conversations, setConversations] = useState<readonly ConversationListEntry[]>();
+  // The offset of the next page of the profile's conversations, or null when every one is listed.
+  const [olderConversations, setOlderConversations] = useState<number | null>(null);
   const historyRef = useRef<ConversationHistory>(undefined);
   const historyAttempt = useRef<HistoryAttempt>(undefined);
   const [historyStatus, setHistoryStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
@@ -294,10 +296,18 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
     if (!connected || historyApi !== api || !listed) return;
     const controller = new AbortController();
     void readConversationList(path => api.read(path), profile, controller.signal).then(list => {
-      if (!controller.signal.aborted) setConversations(list.conversations);
+      if (!controller.signal.aborted) {setConversations(list.conversations); setOlderConversations(list.older);}
     }, () => {if (!controller.signal.aborted) setConversations(undefined);});
     return () => {controller.abort();};
   }, [api, connected, historyApi, listed, profile, state?.revision]);
+  const showOlderConversations = (): void => {
+    const after = olderConversations;
+    if (after === null || conversations === undefined) return;
+    void readConversationList(path => api.read(path), profile, new AbortController().signal, after).then(list => {
+      setConversations(prior => prior === undefined ? prior : [...prior, ...list.conversations.filter(next => !prior.some(value => value.conversationId === next.conversationId))]);
+      setOlderConversations(list.older);
+    }, () => {setOlderConversations(after);});
+  };
   // The rail marks a conversation that needs the owner. The page shares the kind of question it has already read.
   useEffect(() => {
     const task = history?.currentTask;
@@ -346,7 +356,11 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           data: {action, expectedRevision: state.revision}});
       };
       // New conversation (Hub #2029): the module refuses it while this conversation's task is unfinished, so the page does too.
-      const canStartNew = state !== undefined && !locked && !open && viewing === undefined;
+      // An empty current conversation has nothing to leave behind, so New conversation waits for its first message.
+      const empty = viewing === undefined && visibleHistory !== undefined && !visibleHistory.earlier && task === undefined &&
+        !visibleHistory.windows.some(window => window.messages.length > 0);
+      const held = viewing !== undefined ? undefined : open ? 'Finish or cancel this conversation\'s task first.' : empty ? 'This conversation is empty. Send a message first.' : undefined;
+      const canStartNew = state !== undefined && !locked && held === undefined && viewing === undefined;
       const startNew = (): void => {
         if (!canStartNew) return;
         void command.run({family: 'assistant-input', target: 'assistant', requestId: crypto.randomUUID(),
@@ -359,7 +373,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
               <h2>{profiles[profile].name}</h2>
               {/* A phone header shows a plus sign; the button's name stays "New conversation". */}
               <button type="button" className="secondary conversation-new" disabled={!canStartNew} aria-label="New conversation" title="New conversation"
-                aria-describedby={open && viewing === undefined ? `${detailsId}-new-held` : undefined} onClick={startNew}>
+                aria-describedby={held === undefined ? undefined : `${detailsId}-new-held`} onClick={startNew}>
                 <span className="conversation-new-wide" aria-hidden="true">New conversation</span><span className="conversation-new-narrow" aria-hidden="true">+</span></button>
               <button type="button" className="secondary conversation-details-trigger" ref={detailsTrigger}
                 aria-expanded={detailsOpen} aria-controls={detailsId} onClick={() => {
@@ -367,7 +381,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                   else setPanel('details');
                 }}>Details</button>
             </header>
-            {open && viewing === undefined && <p id={`${detailsId}-new-held`} className="conversation-new-held">Finish or cancel this conversation's task first.</p>}
+            {held !== undefined && <p id={`${detailsId}-new-held`} className="conversation-new-held">{held}</p>}
             {viewing !== undefined && <div className="conversation-earlier" role="note">
               <p>{earlier === undefined ? '' : <><strong>{earlier.title.value}</strong> · </>}Earlier conversation, read only. New messages go to the current conversation.</p>
               <button type="button" className="secondary" onClick={() => {setViewing(undefined);}}>Back to current conversation</button>
@@ -439,7 +453,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             conversationRail.select(owner);
             if (detailsOverlay) closeDetails();
           }} setEnabled={present}
-          conversations={conversations} viewing={viewing} openConversation={id => {
+          conversations={conversations} viewing={viewing} showOlder={olderConversations === null ? undefined : showOlderConversations} openConversation={id => {
             setViewing(conversations?.find(value => value.conversationId === id)?.current === true ? undefined : id);
             if (detailsOverlay) closeDetails();
           }}

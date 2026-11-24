@@ -27,9 +27,9 @@ export type RecentConversationPage = {
 };
 
 /**
- * A profile's conversations, newest first (Hub #2029): the current one, which new messages go to, and each earlier one
- * New conversation replaced, which stays readable by its ID. `title` is the session title it publishes. `older` is the
- * cursor of the next page.
+ * A profile's conversations (Hub #2029): the current one first, which new messages go to, then each earlier one New
+ * conversation replaced, by its last message, newest first; each stays readable by its ID. `title` is the session title
+ * it publishes. `older` is the offset of the next page, passed back as `after`.
  */
 export type ConversationListEntry = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null;
   title: {value: string; source: 'provider' | 'user'}};

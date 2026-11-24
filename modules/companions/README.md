@@ -830,14 +830,30 @@ The recent conversation holds what was saved before the task started, so it
 stays the same for all of the task's calls and the cached prefix holds. A
 message saved later, such as an earlier reply's late confirmation, waits for
 the next task. It never holds another conversation, another companion's
-messages, a Reachy and MicroDuck exchange or a removed message; a corrected
-message is sent as corrected. A task saved before this release has no recent
-conversation. The section tells the model that its lines are data that grant
+messages, a Reachy and MicroDuck exchange, a removed message, a message the
+companion may not read in that conversation (as the history page reads them)
+or an imported message, which stays historical until the owner selects it for
+a copied context. When the owner removes an owner message of a task, its
+opening message or an answer, that task's tool results leave the recent
+context too; its reply stays until the owner removes it. Tool results cannot
+be removed one by one, so this, or New conversation, is how to keep one out of
+later prompts. A corrected message is sent as corrected. A task saved before
+this release has no recent conversation. The section tells the model that its lines are data that grant
 no approval, to check the current state with a tool before proposing a change,
 and to ask the owner when a reference could mean more than one thing. A
 follow-up such as "dim it" therefore still goes through the proposal's current
 device guards and the owner's approval. `read_saved_art` names each artwork's
 source request, so an attachment's request ID leads to its artwork ID.
+
+The Anthropic adapter sends the system prompt as two blocks. The first holds
+the fixed instructions and rules, the personality, the knowledge notes, the
+preferences and the memory slot, and carries its own cache breakpoint, so a
+later task of the conversation reads that prefix and the tools before it from
+the cache. The second holds the recent conversation and the Hub mode. The
+top-level automatic breakpoint still covers the growing transcript within a
+task. When active preferences or knowledge notes pass their section's budget,
+the Preferences and Companion knowledge pages say how many each model call
+leaves out.
 
 Where it goes: the sections reach only the task's model provider, the
 configured Anthropic provider or the local synthetic one, which sends nothing.
@@ -864,16 +880,23 @@ contract change. While the current conversation's task is unfinished
 (running, waiting on an answer, an approval or the coding worker, paused or
 uncertain) it is refused with `invalid-state` and the button is disabled with
 "Finish or cancel this conversation's task first." (owner decision,
-2026-11-24). Otherwise the profile's conversation gets a new ID, and with it
+2026-11-24). It is also refused while the profile has no conversation or its
+current one holds no message, with "This conversation is empty. Send a message
+first.", so repeated clicks cannot pile up empty conversations. Otherwise the
+profile's conversation gets a new ID, and with it
 its own session on the status devices, its own title (the persona name until
 the title model writes one), its own running slot and its own change revision;
 both conversations count as changed. Its recent context starts empty. Public
 assistant state lists each profile's latest task in its current conversation
 only. The earlier conversation keeps its messages, title and last session
 report; its session goes idle. **Details** lists the profile's conversations,
-and **Open** shows an earlier one read only, without a composer, until **Back
-to current conversation**. The Duck widget's selection of a Reachy and
-MicroDuck exchange is unaffected.
+the current one first and then the others by their last message, newest
+first, 16 at a time with **Show older conversations**, and **Open** shows an
+earlier one read only, without a composer, until **Back to current
+conversation**. The Duck widget's selection of a Reachy and MicroDuck exchange
+is unaffected. An archive export lists each profile's current conversation
+after its earlier ones, so restoring the export into an empty store makes the
+same conversation current; an import never moves a current conversation.
 
 ### Conversation titles
 
@@ -1084,7 +1107,7 @@ For version 2, add `view=recent` and omit `after`:
 | `profile=bunny&view=recent` | Newest saved window and latest task/question |
 | `profile=bunny&view=recent&before=<older>` | Older window, with `currentTask: null` |
 | `profile=bunny&view=recent&conversationId=<id>` | Newest window of one of the profile's earlier conversations (Hub #2029), with `currentTask: null`; add `before` to page it |
-| `profile=bunny&view=list` | The profile's conversations, newest first, 16 a page: `{version: 1, profile, conversations, older}`, each with `conversationId`, `current`, `messages`, `firstAtMs`, `lastAtMs` and its published `title`; pass `older` back as `before` |
+| `profile=bunny&view=list` | The profile's conversations, 16 a page, the current one first and then the others by their last message, newest first: `{version: 1, profile, conversations, older}`, each with `conversationId`, `current`, `messages`, `firstAtMs`, `lastAtMs` and its published `title`; pass `older`, an offset, back as `after` |
 
 The response is `{version: 2, profile, conversationId, messages, currentTask,
 older}`. Messages retain the version 1 fields and full saved text. Each window
