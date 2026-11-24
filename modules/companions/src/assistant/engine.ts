@@ -48,8 +48,11 @@ export type AssistantOptions = {
    * the owner asked for (Hub #500). `line` is the message's conversation, which keeps one waiting reply (Hub #2027).
    */
   speak?: (reply: SpokenReply, key: string, parent: TraceContext, line: string) => void;
-  /** Whether a coding worker can take a task now, and the revision a delegation proposal binds to (Hub #502). */
-  coding?: () => {available: boolean; endpointId: string | null; revision: number};
+  /**
+   * Whether a coding worker is connected, the revision a delegation proposal binds to (Hub #502) and whether the
+   * companion's own slot is busy, so an approved hand-off would wait for it (Hub #2028).
+   */
+  coding?: (profile: AssistantProfile) => {available: boolean; endpointId: string | null; revision: number; busy?: boolean};
   /** Hands an approved delegation to the core's tracked dispatcher; the worker's result comes back through `deliver`. */
   delegate?: Delegate;
   /** The owner cancelled a task whose delegation is still running; the module asks the worker to stop. */
@@ -71,9 +74,13 @@ export type AssistantOptions = {
    */
   profileProviders?: Partial<Readonly<Record<AssistantProfile, ModelProvider>>>;
 };
-/** An approved delegation as the module dispatches it, bound to the coding state revision the proposal saw. */
-export type Delegation = {requestId: string; taskId: string; repository: string; brief: string; expectedRevision: number};
-export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSignal) => Promise<RequestResult>;
+/**
+ * An approved delegation as the module dispatches it, bound to the coding worker revision the proposal saw and tagged
+ * with the companion whose slot it needs (Hub #2028).
+ */
+export type Delegation = {requestId: string; taskId: string; companion: AssistantProfile; repository: string; brief: string; expectedRevision: number};
+/** The core's answer for a hand-off sent now, or `waiting` when the companion's slot is busy and it waits for it (Hub #2028). */
+export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSignal) => Promise<RequestResult | {status: 'waiting'; requestId: string}>;
 /** An engine refusal; `closingReason` is fixed text for the owner, such as the spend limit a new turn met. */
 class Fault extends Error {constructor(readonly code: ErrorCode, readonly closingReason?: string) {super(code);}}
 /** What one call answered: its text, its reported usage total, and a paid provider's usage by price class. */
@@ -743,7 +750,8 @@ export class AssistantEngine {
     if (call.name === DELEGATE_CODING) {
       const {repository, brief} = call.input;
       if (typeof repository !== 'string' || !REPOSITORY.test(repository) || repository.length > 64 || typeof brief !== 'string' || brief.trim() === '' || textBytes(brief) > BRIEF_BYTES) return undefined;
-      const coding = this.options.coding?.();
+      // A busy slot still proposes: an approved hand-off waits for it (Hub #2028). Only a missing worker refuses.
+      const coding = this.options.coding?.(this.#task(taskId).profile);
       if (coding === undefined || !coding.available || coding.endpointId === null) return undefined;
       const proposal: Proposal = {family: 'coding-dispatch', target: 'assistant', data: {repository, brief: brief.trim()}, expectedRevision: coding.revision};
       return {id, text: `Delegate to the coding worker in ${repository}: ${proposal.data.brief}`.slice(0, 1024), answer: null, kind: 'approval', call: call.id, proposal};
@@ -905,9 +913,13 @@ export class AssistantEngine {
       const pending: Question = {id: `${state.taskId}-delegation-${String(state.step)}`, text: `Delegated to the coding worker in ${proposal.data.repository}: ${proposal.data.brief}`.slice(0, 1024),
         answer: null, kind: 'delegation', call: question.call, proposal: null};
       delegation = pending;
-      result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, repository: proposal.data.repository, brief: proposal.data.brief,
+      // A hand-off whose companion's slot is busy waits for it; it was approved and is sent once when the slot frees.
+      const companion = PROFILES.find(entry => entry.id === task.profile)?.name ?? task.profile;
+      result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, companion: task.profile, repository: proposal.data.repository, brief: proposal.data.brief,
         expectedRevision: proposal.expectedRevision}, active.span.context, signal)
-        .then(answer => settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)), (current, call) => {current.question = pending; call.action = action;});
+        .then(answer => answer.status === 'waiting'
+          ? {text: `accepted: the coding worker is busy with another ${companion} hand-off, so this one waits for ${companion}'s slot as operation ${id}; it is sent when the slot frees, and its structured result arrives as this tool's later result`, units: 0}
+          : settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)), (current, call) => {current.question = pending; call.action = action;});
     }
     const accepted = result.startsWith('accepted');
     const confirmation = this.store.confirmation(id);

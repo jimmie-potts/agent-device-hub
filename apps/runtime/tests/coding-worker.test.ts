@@ -18,7 +18,8 @@ const configuration = (repository: string) => ({schema: 'coding-worker/1.0', edg
   // No real `claude`: a worker started without a fake harness probes this path for readiness and finds nothing (Hub #1743).
   claude: {executable: '/nonexistent/claude', permissionMode: 'acceptEdits', allowedTools: DEFAULT_ALLOWED_TOOLS}});
 const command = (data: CodingWork, source = 'bunny/modules/companions'): Command<CodingWork> => ({specversion: '1.0', bunnyprofile: '2.0', id: `cmd-${data.requestId}`, source, kind: 'command',
-  type: 'org.bunny.coding.work.requested', subject: 'worker-endpoint-1', time: new Date().toISOString(), datacontenttype: 'application/json', dataschema: 'https://bunny.invalid/events/coding-work/2.0',
+  type: 'org.bunny.coding.work.requested', subject: 'worker-endpoint-1', time: new Date().toISOString(), datacontenttype: 'application/json',
+  dataschema: `https://bunny.invalid/events/coding-work/${'companion' in data ? '2.1' : '2.0'}`,
   traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', expiresat: new Date(Date.now() + 5000).toISOString(), data});
 async function until(check: () => boolean, seen: () => unknown = () => undefined): Promise<void> {
   for (let i = 0; i < 400; i += 1) {if (check()) return; await new Promise(resolve => setTimeout(resolve, 10));}
@@ -35,21 +36,25 @@ async function repository(t: TestContext): Promise<string> {
   return work;
 }
 function fakeEdge() {
-  const requests: {family: string; data: unknown}[] = [], progress: CodingProgress[] = [];
+  const requests: {family: string; data: unknown; dataschema?: string}[] = [], progress: CodingProgress[] = [];
+  // Which endpoint each report went out on, so a run's report after its endpoint closed is seen to go nowhere.
+  const reportedOn: string[] = [];
   let responder: ((command: Command<CodingWork>) => Reply) | undefined, closed = 0, opened = 0, refuse = 0, disconnected = 0, onClosed: (() => void) | undefined, onDiagnostic: ((diagnostic: {event: string}) => void) | undefined;
-  let held: Promise<void> | undefined, releaseClose = (): void => {};
+  let held: Promise<void> | undefined, releaseClose = (): void => {}, current = '';
   const endpoint: RemoteEndpoint = {id: 'worker-endpoint-1', close: () => {closed += 1; const closing = held ?? Promise.resolve(); held = undefined; return closing;},
-    publish: (family, draft) => {progress.push(draft.data as CodingProgress); return Promise.resolve({} as never);},
+    publish: (family, draft) => {progress.push(draft.data as CodingProgress); reportedOn.push(current); return Promise.resolve({} as never);},
     request: (family, draft) => {
-      requests.push({family, data: draft.data});
+      requests.push({family, data: draft.data, dataschema: draft.dataschema});
       if (refuse > 0) {refuse -= 1; return Promise.resolve({status: 'rejected', requestId: 'r', error: errorBody('invalid-state')} as never);}
       return Promise.resolve({status: 'accepted', requestId: 'r', reply: {} as never});
     }};
   const participant = {openEndpoint: <T extends object>(options: RemoteEndpointOptions<T>) => {
-    opened += 1; responder = options.respond as unknown as (command: Command<CodingWork>) => Reply; onClosed = options.onClosed; return Promise.resolve({...endpoint, id: `worker-endpoint-${String(opened)}`});
+    opened += 1; responder = options.respond as unknown as (command: Command<CodingWork>) => Reply; onClosed = options.onClosed;
+    const id = `worker-endpoint-${String(opened)}`;
+    return Promise.resolve({...endpoint, id, publish: (family: string, draft: {data: unknown}) => {current = id; return endpoint.publish(family as never, draft as never);}});
   }, close: () => {disconnected += 1; return Promise.resolve();}} as unknown as RemoteParticipant;
   const connect = (options: {onDiagnostic?: (diagnostic: {event: string}) => void}) => {onDiagnostic = options.onDiagnostic; return Promise.resolve(participant);};
-  return {connect: connect as unknown as typeof connectRemote, requests, progress, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed, opened: () => opened, disconnected: () => disconnected,
+  return {connect: connect as unknown as typeof connectRemote, requests, progress, reportedOn, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed, opened: () => opened, disconnected: () => disconnected,
     refuseNextEnable: () => {refuse += 1;},
     // The next endpoint close waits until released, as one that waits for the edge's answer does.
     holdNextClose: () => {held = new Promise(resolve => {releaseClose = resolve;});}, releaseClose: () => {releaseClose();},
@@ -105,8 +110,8 @@ void test('the worker declares its endpoint, runs one task in a fresh worktree, 
   const start: CodingWork = {requestId: 'op-1', operationId: 'op-1', action: 'start', taskId: 'task-1', repository: 'agent-device-hub', brief: 'Write a file.', bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}};
   assert.deepEqual(edge.respond(command(start, 'bunny/parts/other')), {error: {code: 'forbidden', retryable: false}});
   const other = edge.respond(command({...start, requestId: 'op-x', operationId: 'op-x', repository: 'not-allowed'})); assert.ok('error' in other && other.error.code === 'invalid-request');
-  assert.deepEqual(edge.respond(command(start)), {status: 'accepted'});
-  const busy = edge.respond(command({...start, requestId: 'op-2', operationId: 'op-2'})); assert.ok('error' in busy && busy.error.code === 'capacity');
+  assert.deepEqual(edge.respond(command({...start, companion: 'bunny'})), {status: 'accepted'});
+  const busy = edge.respond(command({...start, companion: 'bunny', requestId: 'op-2', operationId: 'op-2'})); assert.ok('error' in busy && busy.error.code === 'capacity');
   await until(() => edge.progress.length === 2);
   assert.equal(edge.progress[0]?.status, 'started');
   const done = edge.progress[1]; assert.ok(done?.status === 'completed');
@@ -180,5 +185,64 @@ void test('a cancel stops the running harness and the worker reports cancelled; 
   release?.({code: 2, signal: null, stdout: JSON.stringify({result: 'crashed'}), truncated: false});
   await until(() => edge.progress.length === 4);
   const failed = edge.progress[3]; assert.ok(failed?.status === 'failed'); assert.equal(failed.reason, 'exit'); assert.equal(failed.result?.outcome, 'failed');
+  await worker.stop();
+});
+
+// Hub #2028: one slot per companion, three at once. Runs on the same repository each get their own fresh worktree, a
+// cancel or a lost endpoint stops only what it names, and the enable declares the slots.
+void test('the worker declares three slots, runs one task per companion at once on the same repository, each in its own worktree, and refuses a fourth', async t => {
+  const repo = await repository(t), edge = fakeEdge();
+  const releases = new Map<string, () => void>(), cwds: string[] = [];
+  const harness: Harness = {start: (_args, cwd, input, onChild) => new Promise(resolvePromise => {
+    cwds.push(cwd);
+    const finish = (code: number | null, signal: string | null) => {resolvePromise({code, signal, stdout: `${JSON.stringify({type: 'system', subtype: 'init', apiKeySource: 'none'})}\n${JSON.stringify({type: 'result', session_id: 'session-1', num_turns: 1,
+      structured_output: {outcome: 'tested-candidate', summary: `Ran ${input}`, checks: [], findings: [], limitations: []}})}`, truncated: false});};
+    releases.set(input, () => {finish(0, null);});
+    onChild({kill: () => {finish(null, 'SIGTERM'); return true;}} as never);
+  })};
+  const worker = new CodingWorker(parseConfiguration(configuration(repo)), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect);
+  await worker.start();
+  assert.equal(edge.requests[0]?.dataschema, 'https://bunny.invalid/events/coding-endpoint/2.2'); assert.equal((edge.requests[0]?.data as {slots?: number}).slots, 3);
+  const start = (companion: 'bunny' | 'reachy' | 'microduck' | undefined, id: string): CodingWork => ({requestId: id, operationId: id, action: 'start', taskId: `task-${id}`, ...(companion === undefined ? {} : {companion}),
+    repository: 'agent-device-hub', brief: id, bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}});
+  for (const [companion, id] of [['bunny', 'op-b'], ['reachy', 'op-r'], ['microduck', 'op-m']] as const) assert.deepEqual(edge.respond(command(start(companion, id))), {status: 'accepted'});
+  const fourth = edge.respond(command(start('bunny', 'op-b2'))); assert.ok('error' in fourth && fourth.error.code === 'capacity');
+  const untagged = edge.respond(command(start(undefined, 'op-x'))); assert.ok('error' in untagged && untagged.error.code === 'capacity');
+  await until(() => cwds.length === 3, () => ({cwds, progress: edge.progress}));
+  assert.equal(new Set(cwds).size, 3, 'each run has its own worktree');
+  for (const cwd of cwds) assert.match(cwd, /\.local\/worktrees\/bunny-task-op-/);
+  // Cancelling Reachy's run stops that run alone; the others finish with their own results.
+  assert.deepEqual(edge.respond(command({requestId: 'c-r', operationId: 'op-r', action: 'cancel'})), {status: 'accepted'});
+  await until(() => edge.progress.some(entry => entry.operationId === 'op-r' && entry.status === 'cancelled'));
+  // Reachy's slot is free again while the other two still run.
+  assert.deepEqual(edge.respond(command(start('reachy', 'op-r2'))), {status: 'accepted'});
+  await until(() => cwds.length === 4);
+  for (const id of ['op-b', 'op-m', 'op-r2']) releases.get(id)?.();
+  await until(() => ['op-b', 'op-m', 'op-r2'].every(id => edge.progress.some(entry => entry.operationId === id && entry.status === 'completed')), () => edge.progress);
+  const summaries = edge.progress.flatMap(entry => entry.status === 'completed' ? [[entry.operationId, entry.result.summary]] : []);
+  assert.deepEqual(summaries.sort(), [['op-b', 'Ran op-b'], ['op-m', 'Ran op-m'], ['op-r2', 'Ran op-r2']]);
+  assert.equal(git(repo, 'worktree', 'list').split('\n').length, 5, 'four run worktrees beside the checkout');
+  await worker.stop();
+});
+
+void test('a lost endpoint stops every run and frees their slots for the next endpoint; a stopped run reports nothing on the new one', async t => {
+  const repo = await repository(t), edge = fakeEdge();
+  let started = 0;
+  const harness: Harness = {start: (_args, _cwd, _input, onChild) => new Promise(resolvePromise => {
+    started += 1;
+    onChild({kill: () => {resolvePromise({code: null, signal: 'SIGTERM', stdout: '', truncated: false}); return true;}} as never);
+  })};
+  const worker = new CodingWorker(parseConfiguration(configuration(repo)), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect);
+  await worker.start();
+  const start = (companion: 'bunny' | 'reachy' | 'microduck', id: string): CodingWork => ({requestId: id, operationId: id, action: 'start', taskId: `task-${id}`, companion,
+    repository: 'agent-device-hub', brief: id, bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}});
+  for (const [companion, id] of [['bunny', 'op-1'], ['reachy', 'op-2'], ['microduck', 'op-3']] as const) edge.respond(command(start(companion, id)));
+  await until(() => started === 3);
+  edge.lose(); await until(() => edge.requests.length === 2);
+  // Every slot is free on the fresh endpoint at once, while the stopped runs may still be ending.
+  for (const [companion, id] of [['bunny', 'op-4'], ['reachy', 'op-5'], ['microduck', 'op-6']] as const) assert.deepEqual(edge.respond(command(start(companion, id))), {status: 'accepted'}, id);
+  await until(() => started === 6);
+  assert.deepEqual(edge.reportedOn.filter((endpoint, index) => endpoint === 'worker-endpoint-2' && ['op-1', 'op-2', 'op-3'].includes(edge.progress[index]?.operationId ?? '')), [],
+    'a run started on the lost endpoint reports nothing on the new one');
   await worker.stop();
 });

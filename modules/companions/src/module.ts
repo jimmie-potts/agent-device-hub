@@ -160,19 +160,15 @@ class Companions {
     const speak: AssistantOptions['speak'] = this.options.speak ?? ((reply, key, parent, line) => {this.speech?.offerReply(reply, key, parent, this.speech.mark(), line);});
     // The coding coordinator (Hub #502) is built before the engine, which binds proposals to its revision, and started after it, so a
     // responsibility settled at startup reaches a running engine.
-    const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve());
+    // Each run is tagged with the companion whose task asked (Hub #2028), read from the engine's saved task.
+    const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(),
+      taskId => this.assistant?.store.task(taskId)?.profile);
     this.coding = coding;
-    const delegate: AssistantOptions['delegate'] = this.options.delegate ?? ((data, parent) => {
-      const endpoint = coding.endpoint();
-      if (!endpoint.available || endpoint.endpointId === null) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('unavailable', {detail: 'no coding worker is connected'})});
-      if (endpoint.revision !== data.expectedRevision) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('revision-conflict', {detail: 'the coding worker changed since the proposal'})});
-      return context.sdk.request('bunny.cmd.coding-dispatch.assistant', {type: 'org.bunny.coding.dispatch.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-dispatch/2.0',
-        data: {requestId: data.requestId, endpointId: endpoint.endpointId, taskId: data.taskId, repository: data.repository, brief: data.brief, bounds: DEFAULT_CODING_BOUNDS}},
-      {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent});
-    });
+    // An approved hand-off goes to the core now when its companion's slot is free, or waits for it (Hub #2028).
+    const delegate: AssistantOptions['delegate'] = this.options.delegate ?? ((data, parent) => coding.handOff(data, parent));
     this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context),
       retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries, speak,
-      coding: this.options.coding ?? (() => coding.endpoint()), delegate, onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
+      coding: this.options.coding ?? (profile => coding.endpoint(profile)), delegate, onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();
     await this.preferences.start();
