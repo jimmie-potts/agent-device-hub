@@ -49,7 +49,7 @@ const CRASH_WINDOW_MS = 60_000;
 const PART_SOURCE = /^bunny\/parts\/[a-z0-9][a-z0-9-]*$/;
 /** How long a runtime has to stop on SIGTERM before it is killed. */
 const STOP_MS = 8000;
-/** How long a flush or control waits for the child's answer. */
+/** How long a flush or control waits for the child's answer. An unconfirmed control is refused (Hub #1752). */
 const ANSWER_MS = 3000;
 /** The longest a restart may keep the runtime stopped before it starts it again. */
 const MAX_HOLD_MS = 10_000;
@@ -331,14 +331,17 @@ function restart(holdMs = 0, untilReleased = false): Promise<void> {
   });
 }
 
+/** Why the child did not confirm a request: no runtime was connected to take it, or it did not answer within `ANSWER_MS`. */
+type Unconfirmed = {type: 'unconfirmed'; why: 'not-connected' | 'timed-out'};
+
 /** Sends the child a control or a flush and waits for its answer. A run of the shipped runtime has neither. */
-function ask(build: (id: number) => SupervisorMessage): Promise<ChildMessage | undefined> {
+function ask(build: (id: number) => SupervisorMessage): Promise<ChildMessage | Unconfirmed> {
   const child = current;
-  if (!fixtures || child?.connected !== true) return Promise.resolve(undefined);
+  if (!fixtures || child?.connected !== true) return Promise.resolve({type: 'unconfirmed', why: 'not-connected'});
   next += 1;
   const id = next;
   return new Promise(done => {
-    const timer = setTimeout(() => { waiting.delete(id); done(undefined); }, ANSWER_MS);
+    const timer = setTimeout(() => { waiting.delete(id); done({type: 'unconfirmed', why: 'timed-out'}); }, ANSWER_MS);
     waiting.set(id, answer => { clearTimeout(timer); done(answer); });
     tell(child, build(id));
   });
@@ -465,13 +468,22 @@ function advanceOf(value: unknown): number | undefined {
   if (Object.keys(rest).length > 0 || typeof ms !== 'number' || !Number.isSafeInteger(ms) || ms < 0 || ms > MAX_ADVANCE_MS) return undefined;
   return ms;
 }
-async function control(name: Control): Promise<void> {
-  await ask(id => ({type: 'control', id, control: name}));
+/**
+ * A control the child did not confirm (Hub #1752). The harness refuses it rather than answer it as applied: a control
+ * that the child takes after what it was meant to precede changes nothing that a scenario then checks.
+ */
+class Unapplied extends Error {}
+/** Sets a control in the child, named `what` in a refusal, once the child confirms it. */
+async function control(name: Control, what: string = name): Promise<void> {
+  const answer = await ask(id => ({type: 'control', id, control: name}));
+  if (answer.type !== 'unconfirmed') return;
+  throw new Unapplied(answer.why === 'not-connected' ? `${what} was not applied: no runtime was connected`
+    : `${what} was not confirmed: the runtime did not answer within ${ANSWER_MS} ms`);
 }
 async function flush(): Promise<number | undefined> {
   const child = current;
   const answer = await ask(id => ({type: 'flush', id}));
-  return child === current && answer?.type === 'flushed' ? answer.readerStream : undefined;
+  return child === current && answer.type === 'flushed' ? answer.readerStream : undefined;
 }
 
 /** The SQLite files a process has open, from its file descriptors in /proc. */
@@ -608,7 +620,7 @@ const push = (device: string) => async (simulation: DeviceAction): Promise<void>
 async function simulate(request: SimulateRequest): Promise<void> {
   switch (request.device) {
     case 'chime':
-      await control('chime-fault');
+      await control('chime-fault', 'the chime\'s fault-next');
       return;
     case 'sign':
       if (request.action === 'online') signs.online();
@@ -734,10 +746,12 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
 }
 
 const server = createServer((request, response) => {
-  // A caller's body the harness refuses is its refusal. Any other failure is the registry's `internal` with fixed text,
-  // and the error is never quoted.
+  // A caller's body the harness refuses is its refusal, and a control the runtime did not confirm is `unavailable` with
+  // the harness's own fixed text. Any other failure is the registry's `internal` with fixed text, and the error is never
+  // quoted.
   handle(request, response).catch((error: unknown) => {
     if (error instanceof BodyRefusal) answer(response, error.status, refusal(error.code, error.message));
+    else if (error instanceof Unapplied) answer(response, 503, refusal('unavailable', error.message));
     else answer(response, 500, refusal('internal', 'the harness failed'));
   });
 });
