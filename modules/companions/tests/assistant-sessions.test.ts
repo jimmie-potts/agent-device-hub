@@ -1,6 +1,6 @@
 // Native assistant conversations in the shared session model (Hub #505): each profile's conversation is one session and
-// each task in it a turn. Each change commits the observations that move the session, in lifecycle/2.2 from the module's
-// own source with the conversation's one ordering sequence, and nothing else reports. These tests use fake providers and
+// each task in it a turn. Each change commits the observations that move the session, in lifecycle/2.4 from the module's
+// own source with the conversation's one ordering sequence and its companion (Hub #2054), and nothing else reports. These tests use fake providers and
 // the harness's manual clock and scheduler; they wait for messages, never for time.
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
@@ -17,7 +17,9 @@ import {RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
 import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
-import {changesOf, eventsOf, observationDraft, observationOf, projectionOf, waitsOnOwner, type ProjectedTask, type Projection} from '../src/assistant/sessions.js';
+import {
+  changesOf, eventsOf, observationDraft, observationOf, projectionOf, titleObservationOf, waitsOnOwner, type ProjectedTask, type Projection,
+} from '../src/assistant/sessions.js';
 import {summarizeSessions} from '../src/assistant/tools.js';
 
 const NATIVE = {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions'} as const;
@@ -86,7 +88,7 @@ void test('a commit that ends task A and starts task B in one conversation repor
     'a conversation with no reported projection states its task whole');
 });
 
-void test('every observation is a valid lifecycle/2.2 message of the conversation\'s session with the conversation\'s ordering and the persona title', () => {
+void test('every observation is a valid lifecycle/2.4 message of the conversation\'s session with the conversation\'s ordering, the persona title and its companion', () => {
   for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
     const task = {id: `task-${profile}`, conversationId: `conversation-${profile}`, profile};
     const events = eventsOf(undefined, {turn: task.id, work: 'idle', question: {id: 'q1', kind: 'approval'}, result: null});
@@ -98,7 +100,10 @@ void test('every observation is a valid lifecycle/2.2 message of the conversatio
       assert.deepEqual(observation.turn, {status: 'known', id: task.id});
       assert.deepEqual(observation.ordering, {status: 'known', authority: 'companions', epoch: task.conversationId, sequence: index + 1});
       assert.deepEqual(observation.parent, {status: 'top-level'});
-      assert.deepEqual(observation.title, {value: {bunny: 'B.U.N.N.Y.', reachy: 'Reachy', microduck: 'MicroDuck'}[profile], source: 'provider'});
+      const persona = {bunny: 'B.U.N.N.Y.', reachy: 'Reachy', microduck: 'MicroDuck'}[profile];
+      assert.deepEqual(observation.title, {value: persona, source: 'provider'});
+      assert.deepEqual(observation.companions, [{id: profile, name: persona}], 'the conversation\'s companion, by its profile ID and persona name (Hub #2054)');
+      assert.equal(draft.dataschema, 'https://bunny.invalid/events/lifecycle/2.4');
       const message = {specversion: '1.0', bunnyprofile: '2.0', id: `observation-${String(index)}`, source: 'bunny/modules/companions', time: new Date(1_790_000_000_000).toISOString(),
         datacontenttype: 'application/json', traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', ...draft};
       const result = coreValidator().validate(message);
@@ -108,7 +113,24 @@ void test('every observation is a valid lifecycle/2.2 message of the conversatio
   const resumed = observationDraft(observationOf({conversationId: 'conversation-1', profile: 'bunny'}, {turn: 'task-1', event: {kind: 'activity-observed'}}, 9, 1_790_000_000_000));
   const result = coreValidator().validate({specversion: '1.0', bunnyprofile: '2.0', id: 'observation-resume', source: 'bunny/modules/companions', time: new Date(1_790_000_000_000).toISOString(),
     datacontenttype: 'application/json', traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', ...resumed.draft});
-  assert.equal(result.ok, true, 'activity-observed is a lifecycle/2.2 input of the native source');
+  assert.equal(result.ok, true, 'activity-observed is a lifecycle/2.4 input of the native source');
+});
+
+void test('a titled conversation keeps its companion apart from the title, and its title metadata never carries the companion', () => {
+  const at = 1_790_000_000_000;
+  const valid = (draft: ReturnType<typeof observationDraft>['draft']): boolean => coreValidator().validate({specversion: '1.0', bunnyprofile: '2.0', id: 'observation-titled',
+    source: 'bunny/modules/companions', time: new Date(at).toISOString(), datacontenttype: 'application/json',
+    traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', ...draft}).ok;
+  for (const title of [{value: '#2054 Companion metadata', source: 'provider'}, {value: 'Renamed by the owner', source: 'user'}] as const) {
+    const observation = observationOf({conversationId: 'conversation-reachy', profile: 'reachy'}, {turn: 'task-1', event: {kind: 'turn-started'}}, 1, at, title);
+    assert.deepEqual(observation.title, title, 'the title is the conversation\'s own, with no companion name added');
+    assert.deepEqual(observation.companions, [{id: 'reachy', name: 'Reachy'}], 'a generated title or a rename leaves the companion as it is');
+    assert.equal(valid(observationDraft(observation).draft), true);
+    const metadata = observationDraft(titleObservationOf('conversation-reachy', title, at));
+    assert.equal(metadata.draft.dataschema, 'https://bunny.invalid/events/lifecycle/2.3', 'title metadata keeps its lowest version');
+    assert.equal(metadata.draft.data.companions, undefined, 'a title carries no companion');
+    assert.equal(valid(metadata.draft), true);
+  }
 });
 
 void test('a baseline that cannot be written leaves no table, so the next start writes it whole', () => {
@@ -243,7 +265,8 @@ void test('a conversation is one session across its tasks: each task one turn, a
     `turn-started on ${second} #7`, `turn-ended succeeded on ${second} #8`], 'the answer and its new run stay in the first turn; the second task is the next turn');
   for (const message of w.seen) {
     assert.equal(message.source, 'bunny/modules/companions');
-    assert.equal(message.dataschema, 'https://bunny.invalid/events/lifecycle/2.2');
+    assert.equal(message.dataschema, 'https://bunny.invalid/events/lifecycle/2.4');
+    assert.deepEqual(message.data.companions, [{id: 'bunny', name: 'B.U.N.N.Y.'}]);
     assert.deepEqual(message.data.identity, {...NATIVE, sessionId: state.conversationId});
     assert.deepEqual(message.data.ordering, {status: 'known', authority: 'companions', epoch: state.conversationId, sequence: Number(message.data.nativeEventId)});
     assert.equal(message.data.title?.value, 'B.U.N.N.Y.');
@@ -300,6 +323,8 @@ void test('each profile\'s conversation is its own session, titled by its person
     [reachy, 'Reachy', 'turn-started', 1], [reachy, 'Reachy', 'attention-input', 2], [reachy, 'Reachy', 'turn-waiting', 3], [reachy, 'Reachy', 'turn-ended', 4],
     [bunny, 'B.U.N.N.Y.', 'turn-started', 1], [bunny, 'B.U.N.N.Y.', 'turn-ended', 2],
   ], 'each conversation counts its own sequence');
+  assert.deepEqual(w.seen.map(({data}) => data.companions?.map(companion => companion.id).join(',')), ['reachy', 'reachy', 'reachy', 'reachy', 'bunny', 'bunny'],
+    'each conversation names its own companion');
 });
 
 /** Saves the first task as a crash left it: running, with its question answered, and optionally without the report table. */

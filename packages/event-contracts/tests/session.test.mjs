@@ -116,8 +116,8 @@ test('a session/3.0 record that needs the owner stays valid an hour after its la
   }
 });
 
-test('readSession reads session/3.0 and 3.1 state messages and nothing else, and the view is the record', () => {
-  assert.deepEqual(READABLE_SESSION_SCHEMAS, [`${SCHEMA}3.0`, `${SCHEMA}3.1`]);
+test('readSession reads session/3.0, 3.1 and 3.2 state messages and nothing else, and the view is the record', () => {
+  assert.deepEqual(READABLE_SESSION_SCHEMAS, [`${SCHEMA}3.0`, `${SCHEMA}3.1`, `${SCHEMA}3.2`]);
   assert.equal(SESSION_SCHEMA, `${SCHEMA}3.0`);
   const waiting = fixtures['session-3'];
   const root = readSession(waiting);

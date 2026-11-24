@@ -39,6 +39,13 @@ export type SessionRow = {
   name: string;
   /** The project, then the client, such as `agent-device-hub · Claude Code`. */
   where: string;
+  /** The display names of the companions a native conversation session names (Hub #2054), in the record's order. */
+  companions: readonly string[];
+  /**
+   * The companions the face tags: each one whose name is not the session's own name, so an untitled session that shows
+   * its persona never shows the name twice.
+   */
+  companionTags: readonly string[];
   chip: SessionChip;
   chipText: string;
   /** Retained unread evidence, independent of the face's higher-priority attention/activity chip. */
@@ -55,7 +62,8 @@ export type SessionRow = {
    * carries to within `SESSION_LIMITS.evidenceResolutionMs`, one minute (Hub #1947). The page shows its age (`heardAge`).
    */
   lastEvidenceAtMs: number;
-  facts: {source: string; sessionId: string; work: string; read: string; parent: string; children: string};
+  /** `companion` names the session's companions, only when it has any (Hub #2054). */
+  facts: {source: string; sessionId: string; work: string; read: string; parent: string; children: string; companion?: string};
 };
 
 const CLIENTS: Readonly<Record<string, string>> = {'claude/code': 'Claude Code', 'codex/cli': 'Codex CLI', 'codex/desktop': 'Codex Desktop', 'codex/local': 'Codex (local)',
@@ -145,14 +153,19 @@ const parentText = (view: SessionView): string => {
   }
 };
 
+/** The display names of a session's companions (Hub #2054), in the record's order; none for a session without them. */
+const companionNames = (view: Pick<SessionView, 'companions'>): string[] => (view.companions ?? []).map(companion => companion.name);
+
 /** One session as the dashboard shows it, from its view alone. */
 export function sessionRow(view: SessionView): SessionRow {
   const chip = chipOf(view);
   const {identity, work} = view;
   const uncertainty = uncertainOf(view);
+  const name = sessionName(view), companions = companionNames(view);
   return {
-    id: view.id, generation: view.generation, revision: view.revision, label: view.label, name: sessionName(view),
+    id: view.id, generation: view.generation, revision: view.revision, label: view.label, name,
     where: [view.project, clientName(identity)].filter((part): part is string => part !== undefined).join(' · '),
+    companions, companionTags: companions.filter(companion => companion !== name),
     chip, chipText: chipTextOf(view, chip), unread: finishedUnread(view), uncertain: uncertainty !== undefined, uncertainty,
     attention: view.attention.items.map(attentionLine),
     notices: view.outcome.notices.map(notice => ({id: notice.id, turn: notice.turn.status === 'known' ? notice.turn.id : 'unknown turn', acknowledgedBy: notice.acknowledgedBy})),
@@ -161,6 +174,7 @@ export function sessionRow(view: SessionView): SessionRow {
       source: `${identity.hostId} / ${identity.sourceId}`, sessionId: identity.sessionId,
       work: work.confidence === 'confirmed' ? work.state : `${work.state}, unconfirmed (${work.reasons.join(', ')})`, read: view.outcome.read,
       parent: parentText(view), children: `${String(view.relationships.children.working)} working / ${String(view.relationships.children.unconfirmed)} unconfirmed`,
+      ...(companions.length === 0 ? {} : {companion: companions.join(', ')}),
     },
   };
 }
@@ -182,12 +196,12 @@ export function agentSummary(rows: readonly SessionRow[], live: boolean): {worki
   };
 }
 
-/** Whether a session matches the sessions widget's search and provider filter. */
+/** Whether a session matches the sessions widget's search and provider filter, by its label, title, project, session ID or companion. */
 export function matches(view: SessionView, query: string, provider: string): boolean {
   if (provider !== '' && view.identity.provider !== provider) return false;
   if (query === '') return true;
   const needle = query.toLowerCase();
-  return [view.label?.value, view.title?.value, view.project, view.identity.sessionId].some(text => text?.toLowerCase().includes(needle) === true);
+  return [view.label?.value, view.title?.value, view.project, view.identity.sessionId, ...companionNames(view)].some(text => text?.toLowerCase().includes(needle) === true);
 }
 
 /** A duration as the dashboard writes it. */

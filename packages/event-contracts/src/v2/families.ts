@@ -56,6 +56,11 @@ export type Unavailable = {
 };
 export type Label = {value: string; origin: 'user' | 'agent'};
 export type Title = {value: string; source: 'provider' | 'user'};
+/**
+ * One companion a native conversation session belongs to (`session/3.2`, Hub #2054): a stable routing ID, such as the
+ * assistant profile `reachy`, and a display name, such as `Reachy`. It is never the session's title or label.
+ */
+export type Companion = {id: string; name: string};
 
 /** How a turn's task ended, when its producer knows (`session/3.1`, Hub #505). A notice without one proves nothing about success. */
 export type NoticeResult = 'succeeded' | 'failed' | 'cancelled';
@@ -110,12 +115,19 @@ export type Session30Record = {
   status: SessionStatus; work: WorkClaim; attention: AttentionClaim; outcome: OutcomeClaim; relationships: RelationshipsClaim;
   unavailable: Unavailable[]; ordering: Ordering; observedAtMs: number; lastEvidenceAtMs: number;
   label?: Label; title?: Title; project?: string; projectId?: string; hostSessionId?: string;
+  /** `session/3.2` only (Hub #2054): the companions a native conversation session belongs to, each once. */
+  companions?: Companion[];
 };
 /**
  * `org.bunny.session.updated` under `session/3.1` (Hub #505): `session/3.0` with the identity widened to the native
  * assistant source and an optional notice `result`. A `session/3.0` record is one, so the type is the same.
  */
 export type Session31Record = Session30Record;
+/**
+ * `org.bunny.session.updated` under `session/3.2` (Hub #2054): `session/3.1` with the optional `companions` of a native
+ * session. A `session/3.1` record is one, so the type is the same.
+ */
+export type Session32Record = Session30Record;
 export type LifecycleEvent =
   /** Display metadata only: Codex Desktop's archived state or title, and from `lifecycle/2.3` a native conversation's title (Hub #2025). */
   | {kind: 'metadata-observed'; archived?: boolean}
@@ -137,6 +149,8 @@ export type LifecycleObservation = {
   identity: Identity; turn: KnownId; parent: Parent; nativeEventId?: string; event: LifecycleEvent;
   observedAtMs: number; occurredAtMs?: number; ordering: Ordering;
   projectId?: string; label?: Label; title?: Title; project?: string; hostSessionId?: string;
+  /** `lifecycle/2.4` only (Hub #2054): a native session's companions, on a lifecycle observation and never on metadata. */
+  companions?: Companion[];
 };
 /** What every agent occurrence carries. `turn` is the observation's turn. */
 export type AgentOccurrence = {
@@ -318,6 +332,9 @@ function parentage(identity: Identity, parent: Parent): string | undefined {
 const authority = (identity: Identity, ordering: Ordering): string | undefined =>
   ordering.status === 'known' && ordering.authority !== identity.sourceId ? 'payload /ordering/authority not the source' : undefined;
 const repeated = (values: string[]): boolean => new Set(values).size !== values.length;
+// A session names each companion once (Hub #2054), which `uniqueItems` cannot state for objects that differ by name.
+const repeatedCompanion = (companions: readonly Companion[] | undefined): string | undefined =>
+  companions !== undefined && repeated(companions.map(companion => companion.id)) ? 'payload /companions duplicate id' : undefined;
 const entity = (message: Message, id: unknown): string | undefined => message.subject === id ? undefined : 'envelope /subject not the entity';
 
 const sameId = (a: KnownId, b: KnownId): boolean => a.status === b.status && (a.status === 'unknown' || (b.status === 'known' && a.id === b.id));
@@ -343,7 +360,8 @@ const checkSession: PayloadCheck = message => {
 };
 // session/3.0 keeps the record rules of 2.0 and 2.1, drops the freshness rule and adds the status rule (Hub #1865,
 // design decision 3): the published status is the status function of the record's claims. session/3.1 (Hub #505) keeps
-// the same rules; its schema widens the identity and adds the notice result.
+// the same rules; its schema widens the identity and adds the notice result. session/3.2 (Hub #2054) adds the companions,
+// each named once.
 const checkSession30: PayloadCheck = message => {
   const record = message.data as Session30Record;
   if (record.id !== sessionEntityId(record.identity)) return 'payload /id not the identity key';
@@ -357,12 +375,13 @@ const checkSession30: PayloadCheck = message => {
   return entity(message, record.id) ?? parentage(record.identity, record.parent) ?? authority(record.identity, record.ordering) ??
     (repeated(record.outcome.notices.map(notice => notice.id)) ? 'payload /outcome/notices duplicate id' : undefined) ??
     (repeated(record.unavailable.map(item => item.dimension)) ? 'payload /unavailable duplicate dimension' : undefined) ??
+    repeatedCompanion(record.companions) ??
     (status.class === record.status.class && status.detail === record.status.detail ? undefined : 'payload /status not the status of the claims');
 };
 const checkLifecycle: PayloadCheck = message => {
   const observation = message.data as LifecycleObservation;
   if (message.subject !== sessionEntityId(observation.identity)) return 'envelope /subject not the session';
-  return parentage(observation.identity, observation.parent) ?? authority(observation.identity, observation.ordering);
+  return parentage(observation.identity, observation.parent) ?? authority(observation.identity, observation.ordering) ?? repeatedCompanion(observation.companions);
 };
 const checkOccurrence: PayloadCheck = message => {
   const occurrence = message.data as AgentOccurrence;
@@ -453,6 +472,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('session', 'state', 'org.bunny.session.updated', checkSession, '2.1'),
   define('session', 'state', 'org.bunny.session.updated', checkSession30, '3.0'),
   define('session', 'state', 'org.bunny.session.updated', checkSession30, '3.1'),
+  define('session', 'state', 'org.bunny.session.updated', checkSession30, '3.2'),
   define('mode', 'state', 'org.bunny.mode.updated', checkEntity),
   define('mode', 'state', 'org.bunny.mode.updated', message => checkEntity(message) ?? (normalizeModeState(message.data) === undefined ? 'payload mode choices are invalid' : undefined), '2.1'),
   define('automation-rule', 'state', 'org.bunny.automation-rule.updated', checkAutomationDefinition),
@@ -491,6 +511,7 @@ export const coreFamilies: readonly CoreFamily[] = [
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle, '2.2'),
   define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle, '2.3'),
+  define('lifecycle', 'occurrence', 'org.bunny.lifecycle.observed', checkLifecycle, '2.4'),
   define('desktop-metadata', 'occurrence', 'org.bunny.desktop-metadata.observed', checkDesktopMetadata),
   define('volcano-observation', 'occurrence', 'org.bunny.volcano-observation.observed', checkVolcanoObservation),
   define('attention-raised', 'occurrence', 'org.bunny.attention.raised', checkRaised),

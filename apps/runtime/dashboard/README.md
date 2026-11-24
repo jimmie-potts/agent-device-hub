@@ -869,12 +869,18 @@ starting another feed.
 Card faces show the label (then title or native ID), project/client, state and
 how long ago the hub last heard from the session (**Heard 3m ago**, or **3m ago**
 on a closed Home tile, Hub #1947).
+A native conversation's session (Hub #2054) also names its companion: a neutral
+chip such as **Reachy**, read as "Companion: Reachy", leads the first line
+before the client, which then shortens to an ellipsis so the line stays one
+line. An untitled session already named by its persona shows no tag, so the
+name never appears twice. The expanded facts add a **Companion** row, and the
+search matches a companion's name. Sessions without companions look as before.
 The page computes that age against its own clock from the record's
 `lastEvidenceAtMs`, which the core publishes to the minute, so a stuck
 "working" session can be told apart from real work without another read or any
 polling. Approval, input and question attention add amber highlighting and
 text. Native card disclosure repeats the evidence age, attention lines, retained notices and their acknowledgments,
-source/session/work/read/parent/child evidence and optional label editing.
+source/session/work/read/parent/child evidence, any companions and optional label editing.
 Collapse and filtering retain drafts; replacing a generation retires them.
 Read-only callers see the same evidence without label controls. A card is
 uncertain only when the hub's status is unknown, its working status has

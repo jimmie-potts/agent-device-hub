@@ -98,7 +98,7 @@ function mergeMetadata(session: StoredSession, observation: LifecycleObservation
     }
   }
   if (observation.observedAtMs >= (session.metadataObservedAtMs ?? 0)) {
-    const {label, title, project, projectId} = observation;
+    const {label, title, project, projectId, companions} = observation;
     if (label !== undefined && (label.origin === 'user' || session.label === undefined || session.label.origin === 'agent') &&
       (session.label?.value !== label.value || session.label.origin !== label.origin)) {
       session.label = {value: label.value, origin: label.origin};
@@ -116,7 +116,13 @@ function mergeMetadata(session: StoredSession, observation: LifecycleObservation
       session.projectId = projectId;
       changed = true;
     }
-    if (title !== undefined || project !== undefined || label !== undefined || (projectId !== undefined && projectId !== '')) {
+    // A native conversation's companions (Hub #2054): the latest observation that names them replaces them whole.
+    const named = (list: readonly {id: string; name: string}[] | undefined): string => JSON.stringify(list?.map(({id, name}) => [id, name]));
+    if (companions !== undefined && named(session.companions) !== named(companions)) {
+      session.companions = companions.map(({id, name}) => ({id, name}));
+      changed = true;
+    }
+    if (title !== undefined || project !== undefined || label !== undefined || companions !== undefined || (projectId !== undefined && projectId !== '')) {
       if (session.metadataObservedAtMs !== observation.observedAtMs) changed = true;
       session.metadataObservedAtMs = observation.observedAtMs;
     }

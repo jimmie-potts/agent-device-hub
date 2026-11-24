@@ -735,8 +735,9 @@ reader. The OpenSpec change `gh-1865-flat-session-state` holds the design.
 - `src/v2/session.ts` (`./v2/session`) re-exports the view and adds
   `readSession(message)`, which validates a session state message and returns
   its view, or undefined. It reads `session/3.0` and, since Hub #505,
-  `session/3.1` (`READABLE_SESSION_SCHEMAS`), so a reader from an older release,
-  which reads `session/2.x`, finds no record it accepts until it is updated.
+  `session/3.1`, and since Hub #2054 `session/3.2` (`READABLE_SESSION_SCHEMAS`),
+  so a reader from an older release, which reads `session/2.x`, finds no record
+  it accepts until it is updated.
 - `fixtures/v2/session-cases.json` is the shared synthetic case set, and
   `loadSessionCases()` in `./v2/session-cases` expands it into messages, each
   expected record a `session/3.0` state built with `buildSession`, for the
@@ -772,10 +773,11 @@ native source, and each task in it is one turn. The OpenSpec change
   keeps each new schema equal to its predecessor apart from these members.
 - `sessionSchemaOf(record)` and `occurrenceSchemaOf(family, identity)` in
   `session.ts` give the lowest version that expresses a record or an
-  occurrence: `session/3.1` and 2.1 for a native session, `session/3.0` and 2.0
-  for every other session. A reader of an earlier release therefore still
+  occurrence: `session/3.1` and 2.1 for a native session (`session/3.2` once it
+  names its companions, Hub #2054), `session/3.0` and 2.0 for every other
+  session. A reader of an earlier release therefore still
   reads every Codex and Claude record and skips a native one.
-- `readSession` reads `session/3.0` and `3.1` (`READABLE_SESSION_SCHEMAS`).
+- `readSession` reads `session/3.0`, `3.1` and `3.2` (`READABLE_SESSION_SCHEMAS`).
   Status rule 3 details `finished` by the result of the last counting notice
   that has one, and by `turn-ended` otherwise, so a finished turn without a
   result claims no success.
@@ -805,6 +807,34 @@ and the owner can rename it.
   recognizable credential. A rename carries no task or message, and the other
   actions carry no profile or title. The gateway sends a rename as 2.1 and the
   other actions as 2.0.
+
+### Conversation companions (Hub #2054)
+
+A native conversation session names the companions it belongs to, apart from
+its title, so a device can show a companion without parsing the title.
+
+- `session/3.2` is `session/3.1` with an optional `companions` list, and
+  `lifecycle/2.4` is `lifecycle/2.3` with the same optional list. Each entry
+  (`Companion`) is `{id, name}`: a routing ID of at most 64 characters, such as
+  the assistant profile `reachy`, which a reader keys on, and session display
+  text of at most 40 Unicode scalar values, such as `Reachy`, which a reader
+  shows. A list holds 1 to 8 entries, each ID once (the validator refuses a
+  repeated ID), in the producer's order. A companion's own conversation names
+  one; a shared room such as the Apartment (Hub #2032) names every companion
+  in it, so it needs no new shape.
+- Only a native session or observation carries the list; a Claude or Codex one
+  is refused. `metadata-observed` never carries it, so a title or a rename
+  cannot change it. It is never `project`, `label` or `title`, whose meanings
+  and display precedence stay as they were.
+- `sessionSchemaOf` gives `session/3.2` for a record with companions,
+  `session/3.1` for another native record or a notice with a result, and
+  `session/3.0` otherwise. The companions module sends lifecycle observations
+  in 2.4 and title metadata in 2.3; the core binds 2.4 to that producer as it
+  binds 2.2 and 2.3, and the gateway refuses it from every edge credential.
+- `tests/companion-metadata.test.mjs` keeps both schemas equal to their
+  predecessors apart from these members, and checks the bounds, the
+  native-only rule, the version selection, `readSession` and a reader of the
+  previous release, which reads every record but a native one with companions.
 
 ### How 1.x error codes merged
 

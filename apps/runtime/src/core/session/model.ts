@@ -3,8 +3,8 @@
 // (packages/agent-state/src/types.ts), which stays for the retained 1.x owner until #839, with the 2.0 shapes of the
 // `session` family in place of the 1.x ones.
 import {
-  sessionEntityId, type Attention, type Identity, type KnownId, type Label, type Notice, type Ordering, type Parent, type ReadProvenance, type Title,
-  type Unavailable,
+  sessionEntityId, type Attention, type Companion, type Identity, type KnownId, type Label, type Notice, type Ordering, type Parent, type ReadProvenance,
+  type Title, type Unavailable,
 } from '@jimmie-potts/event-contracts/v2/families';
 
 /** The session logic's bounds, as agent-state's `LIMITS` sets them. */
@@ -72,6 +72,11 @@ export type StoredSession = {
   label?: Label; title?: Title; project?: string; projectId?: string;
   /** A root's latest host session ID. Never an identity. */
   hostSessionId?: string;
+  /**
+   * A native conversation's companions (Hub #2054), from the latest lifecycle observation that names them. Title metadata
+   * never carries them, so a title or rename leaves them.
+   */
+  companions?: Companion[];
   /** The producer instant of the last display metadata the session took, so older metadata cannot replace newer. */
   metadataObservedAtMs?: number;
   /**

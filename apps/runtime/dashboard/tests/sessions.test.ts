@@ -123,6 +123,41 @@ void test('only an unknown status or unconfirmed working is uncertain: silence n
   assert.deepEqual(child.facts, {source: 'host-sim / claude-code', sessionId: 'session-sim-1', work: 'idle', read: 'unread', parent: 'parent-1', children: '2 working / 1 unconfirmed'});
 });
 
+// Hub #2054: a native conversation's session names its companions apart from its title. The face shows a tag for each
+// companion whose name the session does not already show, the expanded facts name them, and the search finds them.
+void test('a native session shows its companion apart from the title, once, and other sessions show none', () => {
+  const identity = {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId: 'synthetic-conversation'} as const;
+  const reachy = [{id: 'reachy', name: 'Reachy'}];
+  const titled = sessionRow(view({identity, title: {value: '#2054 Companion metadata', source: 'provider'}, companions: reachy}));
+  assert.equal(titled.name, '#2054 Companion metadata', 'the title is the session\'s name, with no companion added');
+  assert.deepEqual(titled.companions, ['Reachy']);
+  assert.deepEqual(titled.companionTags, ['Reachy'], 'a titled session shows its companion on the face');
+  assert.equal(titled.facts.companion, 'Reachy');
+  const untitled = sessionRow(view({identity, title: {value: 'Reachy', source: 'provider'}, companions: reachy}));
+  assert.equal(untitled.name, 'Reachy');
+  assert.deepEqual(untitled.companionTags, [], 'an untitled session showing its persona does not show the name twice');
+  assert.equal(untitled.facts.companion, 'Reachy', 'its facts still name the companion');
+  const renamed = sessionRow(view({identity, title: {value: 'Kitchen plans', source: 'user'}, label: {value: 'Reachy', origin: 'user'}, companions: reachy}));
+  assert.deepEqual(renamed.companionTags, [], 'nor does a session whose label is the companion\'s name');
+  const room = sessionRow(view({identity, title: {value: 'Apartment', source: 'provider'},
+    companions: [{id: 'bunny', name: 'B.U.N.N.Y.'}, {id: 'reachy', name: 'Reachy'}, {id: 'microduck', name: 'MicroDuck'}]}));
+  assert.deepEqual(room.companionTags, ['B.U.N.N.Y.', 'Reachy', 'MicroDuck'], 'a shared room shows each companion, in the record\'s order');
+  assert.equal(room.facts.companion, 'B.U.N.N.Y., Reachy, MicroDuck');
+  for (const other of [sessionRow(view({title: {value: 'Reachy', source: 'provider'}})), sessionRow(view({identity, title: {value: 'B.U.N.N.Y.', source: 'provider'}}))]) {
+    assert.deepEqual([other.companions, other.companionTags, other.facts.companion], [[], [], undefined], 'a session without companions looks as it did');
+  }
+});
+
+void test('the search finds a session by its companion\'s name', () => {
+  const identity = {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId: 'synthetic-conversation'} as const;
+  const titled = view({identity, title: {value: '#2054 Companion metadata', source: 'provider'}, companions: [{id: 'reachy', name: 'Reachy'}]});
+  assert.equal(matches(titled, 'reachy', ''), true);
+  assert.equal(matches(titled, 'Reach', 'bunny'), true);
+  assert.equal(matches(titled, 'reachy', 'claude'), false, 'within one provider');
+  assert.equal(matches(titled, 'microduck', ''), false);
+  assert.equal(matches(view(), 'reachy', ''), false);
+});
+
 void test('the search matches the label, title, project or session ID, ignoring case, within one provider', () => {
   const labelled = view({label: {value: 'Port the Wall', origin: 'user'}, project: 'agent-device-hub'});
   assert.equal(matches(labelled, 'wall', ''), true);

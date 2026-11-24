@@ -97,7 +97,7 @@ test('only session/3.1 names the native source or a notice result, and it pins t
   assert.equal(hook.dataschema, SESSION_SCHEMA, 'a hook record stays session/3.0');
   assert.equal(valid(hook), true);
   assert.equal(valid({...hook, dataschema: SESSION_31_SCHEMA}), true, 'and is a valid session/3.1 record too');
-  assert.deepEqual(READABLE_SESSION_SCHEMAS, [SESSION_SCHEMA, SESSION_31_SCHEMA]);
+  assert.deepEqual(READABLE_SESSION_SCHEMAS.slice(0, 2), [SESSION_SCHEMA, SESSION_31_SCHEMA], 'session/3.2 follows (Hub #2054)');
   assert.deepEqual(readSession(record()), record().data);
 });
 
@@ -154,8 +154,9 @@ test('a finished task names its result, never success without one, and an owner 
 
 test('a session reader of the previous release reads every hook record as before and skips a native record', () => {
   // The previous release registered every core family but the native source's versions, and read session/3.0 only.
-  // lifecycle/2.3 (Hub #2025) came later still and refers to session/3.1.
-  const NEW = ['session/3.1', 'lifecycle/2.2', 'lifecycle/2.3', 'attention-raised/2.1', 'attention-cleared/2.1', 'turn-ended/2.1'].map(id => `${BASE}${id}`);
+  // lifecycle/2.3 (Hub #2025) came later still and refers to session/3.1, and session/3.2 and lifecycle/2.4 (Hub #2054) later again.
+  const NEW = ['session/3.1', 'session/3.2', 'lifecycle/2.2', 'lifecycle/2.3', 'lifecycle/2.4', 'attention-raised/2.1', 'attention-cleared/2.1', 'turn-ended/2.1']
+    .map(id => `${BASE}${id}`);
   const previous = new MessageValidator();
   registerFamilies(previous, coreFamilies.filter(family => !NEW.includes(family.dataschema)));
   const readPrevious = message => {
