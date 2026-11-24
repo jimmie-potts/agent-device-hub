@@ -753,7 +753,13 @@ try {
     assert.ok(Math.abs((below.get(lamps[2] ?? '')?.top ?? 0) - (below.get(pixoo)?.bottom ?? 0) - 16) <= 1 && Math.abs((below.get(lamps[1] ?? '')?.top ?? 0) - (below.get(lamps[0] ?? '')?.bottom ?? 0) - 16) <= 1, 'a card sits directly below the Pixoo and the light');
     for (const id of [pixoo, lamps[0] ?? '']) {
       const reach = await menuReach(id);if (reach !== 'reachable') failures.push(`${id}@square: ${reach}`);
-      if (id === pixoo) await shot(page, 'b2-pixoo-menu-over-card-1440');
+      if (id === pixoo && receipts !== undefined) {
+        // A full-page picture taller than the window is captured beyond the viewport, and Chromium reports a 1x1 window
+        // meanwhile: the grid unpacks, the Pixoo card redraws in its full face and the open menu is lost (#1826). The
+        // window first grows, in height only, to the page, so the picture fits it and shows the menu still open.
+        await page.setViewportSize({width: 1440, height: Math.max(1000, await page.evaluate(() => document.documentElement.scrollHeight))});
+        await shot(page, 'b2-pixoo-menu-over-card-1440');await page.setViewportSize({width: 1440, height: 1000});
+      }
       // Close it again by pointer on its summary.
       await page.locator(`[data-home-card="${id}"] details.light-options[open] > summary`).click();await expect(page.locator(`[data-home-card="${id}"] details.light-options[open]`)).toHaveCount(0);
     }
