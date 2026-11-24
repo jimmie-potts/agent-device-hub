@@ -195,6 +195,39 @@ void test('a run\'s ready line links the runtime\'s health, so the preview card 
   assert.equal((await fetch(run.readyUrl)).status, 200);
 });
 
+void test('a control the runtime does not confirm is refused, naming it and why, never answered as applied', {timeout: 90_000}, async context => {
+  const run = await startRun(context, await base(context), 'fixtures');
+  const refused = async (route: string, body: unknown): Promise<unknown> => {
+    const response = await post(run, route, body);
+    return [response.status, (await response.json() as {error?: {code?: unknown; detail?: unknown}}).error];
+  };
+  const unavailable = (detail: string): unknown => [503, errorBody('unavailable', {detail}).error];
+  // A stopped runtime takes the control but cannot confirm it within the harness's answer bound (Hub #1752).
+  const [runtime] = children(run.supervisor.pid ?? 0);
+  // Never signal pid 0, which is this test's own process group.
+  if (runtime === undefined || !Number.isSafeInteger(runtime) || runtime <= 0) assert.fail(`the run has no runtime child to stop: ${String(runtime)}`);
+  process.kill(runtime, 'SIGSTOP');
+  try {
+    assert.deepEqual(await refused('simulate', {device: 'chime', action: 'fault-next'}),
+      unavailable('the chime\'s fault-next was not confirmed: the runtime did not answer within 3000 ms'));
+    assert.deepEqual(await refused('lose-acknowledgment', {}),
+      unavailable('lose-acknowledgment was not confirmed: the runtime did not answer within 3000 ms'));
+    assert.deepEqual(await refused('arm-crash', {}), unavailable('arm-crash was not confirmed: the runtime did not answer within 3000 ms'));
+  } finally {
+    process.kill(runtime, 'SIGCONT');
+  }
+  // While a restart holds the runtime stopped, no runtime is there to take a control.
+  const restarted = post(run, 'restart', {holdMs: 8000});
+  // `ps` exits 1 when it lists no process.
+  const stopped = (): boolean => { try { return children(run.supervisor.pid ?? 0).length === 0; } catch { return true; } };
+  await until(stopped, 'the held restart to stop the runtime');
+  assert.deepEqual(await refused('simulate', {device: 'chime', action: 'fault-next'}),
+    unavailable('the chime\'s fault-next was not applied: no runtime was connected'));
+  assert.equal((await restarted).status, 200);
+  // A runtime that answers in time confirms the control as before.
+  assert.deepEqual(await (await post(run, 'simulate', {device: 'chime', action: 'fault-next'})).json(), {status: 'applied'});
+});
+
 void test('overlapping restarts run one after another, and the run keeps one healthy runtime on its port', {timeout: 90_000}, async context => {
   const run = await startRun(context, await base(context), 'fixtures');
   const answers = await Promise.all([post(run, 'restart'), post(run, 'restart'), post(run, 'restart')]);

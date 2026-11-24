@@ -9,7 +9,7 @@ import {LAMP_SCHEMA, switchLamp} from '../../tests/fixtures/lamp.js';
 import {observation, sessionStarted} from '../../tests/fixtures/agents.js';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, SdkError, prepareMessage, publishOnce, type Draft} from '@jimmie-potts/sdk';
-import {REAL_WORK_WITHIN_MS, RESYNC_WITHIN_MS, RunFailure, connectRun, failureOf, readGrants} from '../adapter.js';
+import {REAL_WORK_WITHIN_MS, RESYNC_WITHIN_MS, RunFailure, connectRun, failureOf, harnessRefusal, readGrants} from '../adapter.js';
 import {scenarioProof} from '../plugin.js';
 import {HEALTH_PATH} from '../../src/index.js';
 import {Reader, actionCall, follow, sourceOf} from '../../tests/scenarios/parts.js';
@@ -253,6 +253,16 @@ void test('on virtual time a wait ends only once what the run published has reac
   assert.deepEqual(h.problems(), []);
 });
 
+
+void test('a harness refusal names its status, then the body\'s code and detail where it has them', async () => {
+  const detail = 'the chime\'s fault-next was not confirmed: the runtime did not answer within 3000 ms';
+  assert.equal(harnessRefusal('simulate', 503, errorBody('unavailable', {detail})), `simulate answered 503: unavailable ${detail}`);
+  assert.equal(harnessRefusal('simulate', 503, {error: {code: 'unavailable', retryable: true}}), 'simulate answered 503: unavailable');
+  assert.equal(harnessRefusal('simulate', 503, {error: {}}), 'simulate answered 503');
+  // The adapter reads a body that is not JSON as undefined.
+  const text: unknown = await new Response('the harness failed').json().catch(() => undefined);
+  assert.equal(harnessRefusal('arm-crash', 500, text), 'arm-crash answered 500');
+});
 
 void test('reader delivery matches occurrence source and ID', () => {
   const reader = new Reader([]);

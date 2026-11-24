@@ -49,6 +49,18 @@ export interface RunHarness extends Harness {
 export class RunFailure extends StepFailure {}
 
 /**
+ * How a step names a harness route's refusal: its status, then the registry body's code and detail where it has them.
+ * The harness refuses with its own fixed text, such as a control the runtime did not confirm (Hub #1752), so the step's
+ * failure names what was refused and why. A body without them, or one that is not JSON, leaves the status alone.
+ */
+export function harnessRefusal(route: string, status: number, body: unknown): string {
+  const error = body !== null && typeof body === 'object' ? (body as {error?: unknown}).error : undefined;
+  const fields = error !== null && typeof error === 'object' ? error as Record<string, unknown> : {};
+  const named = [fields.code, fields.detail].filter((field): field is string => typeof field === 'string' && field !== '');
+  return `${route} answered ${status}${named.length === 0 ? '' : `: ${named.join(' ')}`}`;
+}
+
+/**
  * How the adapter names a failure in a step's answer or its problems, which the proof keeps: as a step does, by its own
  * fixed text, an SDK refusal's registry code or the exception's type, never by the exception's text.
  */
@@ -615,7 +627,8 @@ class Run implements RunHarness {
     const response = await fetch(new URL(`${HARNESS_PATH}/${route}`, this.#target.harness), {
       method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body),
     });
-    if (!response.ok) throw new RunFailure(`${route} answered ${response.status}`);
+    if (response.ok) return;
+    throw new RunFailure(harnessRefusal(route, response.status, await response.json().catch(() => undefined)));
   }
 
   /**
