@@ -861,7 +861,7 @@ try {
       return {configurationRevision: record.configurationRevision, generation: record.generation};
     }, deviceId);
     // A click that sends nothing names its control (#1789): what each card button looks like now, the pointer and click
-    // events the page saw on the card's buttons with their state at that moment, the result line and the last request.
+    // events and the name or disabled changes the page saw on the card's buttons, the result line and the last request.
     type Pressed = {type: string; label: string; disabled: boolean; at: number};
     await live.evaluate(() => {
       const record = window as Window & {__homeShapesPressed?: Pressed[]};record.__homeShapesPressed = [];
@@ -869,18 +869,34 @@ try {
         const target = event.target instanceof Element ? event.target.closest('[data-home-card] button') : null;
         if (target !== null) record.__homeShapesPressed?.push({type, label: target.getAttribute('aria-label') ?? target.textContent?.trim() ?? '', disabled: (target as HTMLButtonElement).disabled, at: Math.round(performance.now())});
       }, true);
+      // Each change to a card button's name or disabled state, so a miss shows whether the control changed near the click.
+      new MutationObserver(changes => {
+        for (const change of changes) {
+          const target = change.target instanceof Element ? change.target.closest('[data-home-card] button') : null;
+          if (target !== null) record.__homeShapesPressed?.push({type: `changed ${change.attributeName ?? ''}`, label: target.getAttribute('aria-label') ?? target.textContent?.trim() ?? '', disabled: (target as HTMLButtonElement).disabled, at: Math.round(performance.now())});
+        }
+      }).observe(document.body, {subtree: true, attributes: true, attributeFilter: ['disabled', 'aria-label']});
     });
     const missed = async (scope: Locator, name: string, double: boolean): Promise<string> => {
       const card = await scope.evaluate(root => ({
         buttons: [...root.querySelectorAll('button')].map(node => ({label: node.getAttribute('aria-label') ?? node.textContent.trim(), disabled: node.disabled,
           ariaDisabled: node.getAttribute('aria-disabled'), ariaBusy: node.getAttribute('aria-busy')})),
         result: root.querySelector('.pixoo-compact-result')?.textContent ?? null,
-        events: ((window as Window & {__homeShapesPressed?: Pressed[]}).__homeShapesPressed ?? []).slice(-8), now: Math.round(performance.now())}));
+        events: ((window as Window & {__homeShapesPressed?: Pressed[]}).__homeShapesPressed ?? []).slice(-30), now: Math.round(performance.now())}));
       return `${name}${double ? ' (double click)' : ''} sent no command request: expected ${String(mark + 1)} requests, saw ${String(bodies.length)}. `
         + `Card buttons now ${JSON.stringify(card.buttons)}; result line ${JSON.stringify(card.result)}; last events on card buttons ${JSON.stringify(card.events)} `
         + `(page time ${String(card.now)}); last request ${JSON.stringify(bodies.at(-1))}`;
     };
+    // A started item's command completes with its upload, and the module saves the item as playing before it publishes
+    // that: until then the display record says loading, and its change makes the card read the player again with every
+    // control disabled for the read. A click as that read starts sends nothing (#1789), so a press waits for it.
+    const playback = async (): Promise<string> => live.evaluate(async id => {
+      const data = await (await fetch('/api/v2/snapshot?families=pixoo-display&owner=bunny/modules/pixoo')).json() as {records: {'pixoo-display': {id: string; player: {state: string}}[]}};
+      const record = data.records['pixoo-display'].find(value => value.id === id);if (record === undefined) throw new Error('pixoo-display-record');
+      return record.player.state;
+    }, deviceId);
     const press = async (scope: Locator, name: string, family: string, data: Record<string, unknown>, double = false): Promise<void> => {
+      await expect.poll(playback).not.toBe('loading');
       await settled(scope, name);const guard = await device();mark = bodies.length;
       const button = scope.getByRole('button', {name, exact: true});
       if (double) await button.dblclick();else await button.click();
