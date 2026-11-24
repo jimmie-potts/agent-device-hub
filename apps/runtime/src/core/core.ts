@@ -166,7 +166,7 @@ function sessionsTool(records: () => Promise<{revision: number; sessions: readon
   return {
     name: 'sessions',
     description: 'Read the agent sessions the core holds, optionally only one provider\'s and those whose label, title, project or session ID contains q, ignoring case. '
-      + 'Each is a session/3.0 record, or session/3.1 for a native B.U.N.N.Y. assistant conversation (provider bunny), whose status is the hub\'s shared status, a class (needs-owner, working, finished, quiet or unknown) with a detail, '
+      + 'Each is a session/3.0 record, or session/3.1 for a native B.U.N.N.Y. assistant conversation (provider bunny) and session/3.2 when it also names its companions, whose status is the hub\'s shared status, a class (needs-owner, working, finished, quiet or unknown) with a detail, '
       + 'beside its work, attention, outcome and relationship claims, each confirmed or unconfirmed. Each record carries its revision, which approval recovery '
       + 'takes as expectedRevision. Reading changes nothing, acknowledges nothing and proves no readership.',
     input: {type: 'object', additionalProperties: false, properties: {q: {type: 'string', maxLength: MAX_QUERY}, provider: {enum: [...PROVIDERS]}}},
@@ -328,7 +328,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
 
 /**
  * The native assistant source's binding (Hub #505): only its producer, the companions module, may name it, that producer
- * names no other provider, and only it sends `lifecycle/2.2` and `lifecycle/2.3`, whose inputs no hook sends. A native
+ * names no other provider, and only it sends `lifecycle/2.2`, `2.3` and `2.4` (Hub #2054), whose inputs no hook sends. A native
  * session is never ended by a runtime end: its conversation and tasks are durable, and only expiry removes its monitoring
  * record. The schemas already refuse, as `invalid-message`, a native identity with another host or source ID and one in a
  * lifecycle version before 2.2, and a native `metadata-observed` before 2.3 or without a title (Hub #2025), so this
@@ -339,7 +339,7 @@ export function nativeBinding(message: Pick<Message<Lifecycle21Observation>, 'so
   if (native !== producer || (NATIVE_SCHEMAS.includes(message.dataschema) && !producer)) return 'forbidden';
   return native && message.data.event.kind === 'runtime-ended' ? 'invalid-request' : undefined;
 }
-const NATIVE_SCHEMAS: readonly string[] = ['https://bunny.invalid/events/lifecycle/2.2', 'https://bunny.invalid/events/lifecycle/2.3'];
+const NATIVE_SCHEMAS: readonly string[] = ['2.2', '2.3', '2.4'].map(version => `https://bunny.invalid/events/lifecycle/${version}`);
 /** The sources whose `metadata-observed` the core takes: Codex Desktop's metadata, and the native producer's conversation titles (Hub #2025). */
 const METADATA_SOURCES: readonly string[] = ['bunny/modules/codex-desktop', NATIVE_SOURCE.producer];
 

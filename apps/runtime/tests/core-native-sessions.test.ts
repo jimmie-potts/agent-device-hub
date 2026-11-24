@@ -1,6 +1,7 @@
 // The native assistant source in the core (Hub #505): its source binding at the core's intake and at the gateway, the
 // version each record and occurrence is published in, no companion opportunity for a native conversation, and native
-// conversations under the session limit. A native session is a profile's conversation and each turn one task in it.
+// conversations under the session limit, and a conversation's companions (Hub #2054). A native session is a profile's
+// conversation and each turn one task in it.
 // Every conversation, task, session and host here is synthetic. The runtime tests wait for messages and
 // records, never for time; the store tests run on the manual clock.
 import assert from 'node:assert/strict';
@@ -18,6 +19,8 @@ import {contextOf, fixture, it, manualClock, run} from './support.js';
 const BASE = 'https://bunny.invalid/events/';
 const NATIVE = `${BASE}lifecycle/2.2`;
 const TITLES = `${BASE}lifecycle/2.3`;
+const COMPANIONS = `${BASE}lifecycle/2.4`;
+const REACHY = [{id: 'reachy', name: 'Reachy'}];
 const TRACE = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
 const conversation = (sessionId: string): Identity => ({provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId});
 const claude = (sessionId: string): Identity => ({provider: 'claude', client: 'code', hostId: 'synthetic-host', sourceId: 'claude-hooks', sessionId});
@@ -49,6 +52,11 @@ it('only the companions module names the native source, it names no other, only 
   assert.equal(at(conversation('c'), 'bunny/modules/codex-desktop', TITLES, {kind: 'metadata-observed'}), 'forbidden');
   assert.equal(at(claude('c'), 'bunny/parts/hook', TITLES), 'forbidden', 'no hook sends lifecycle/2.3');
   assert.equal(edge(TITLES)?.error.code, 'forbidden', 'nor does an edge credential');
+  // lifecycle/2.4 carries a native conversation's companions (Hub #2054): the same binding holds.
+  assert.equal(at(conversation('c'), 'bunny/modules/companions', COMPANIONS), undefined);
+  assert.equal(at(claude('c'), 'bunny/parts/hook', COMPANIONS), 'forbidden', 'no hook sends lifecycle/2.4');
+  assert.equal(at(conversation('c'), 'bunny/modules/codex-desktop', COMPANIONS, {kind: 'metadata-observed'}), 'forbidden');
+  assert.equal(edge(COMPANIONS)?.error.code, 'forbidden', 'nor does an edge credential');
 });
 
 /** A native conversation's title as display metadata, in lifecycle/2.3. */
@@ -134,10 +142,68 @@ it('the companions module titles its conversation\'s session with display metada
   assert.equal(records().length, 3);
 });
 
+it('the core keeps a conversation\'s companions on its session/3.2 record, and a title or rename never changes them', async context => {
+  const w = await nativeRun(context);
+  const now = Date.now(), entity = sessionEntityId(conversation('synthetic-companion'));
+  const records = () => w.seen.filter(message => message.source === 'bunny/core' && message.type === 'org.bunny.session.updated' && message.subject === entity);
+  await publish(w.companions, {...observation(conversation('synthetic-companion'), 'task-1', {kind: 'turn-started'}, 1, now), title: {value: 'Reachy', source: 'provider'},
+    companions: REACHY}, COMPANIONS);
+  await w.until(() => records().length === 1);
+  assert.equal(records()[0]?.dataschema, `${BASE}session/3.2`);
+  assert.deepEqual((records()[0]?.data as {companions?: unknown}).companions, REACHY);
+  await publish(w.companions, titleObservation(conversation('synthetic-companion'), '#2054 Companion metadata', 'provider', now + 5), TITLES);
+  await publish(w.companions, titleObservation(conversation('synthetic-companion'), 'Renamed by the owner', 'user', now + 9), TITLES);
+  await w.until(() => records().length === 3);
+  for (const record of records().slice(1)) {
+    assert.equal(record.dataschema, `${BASE}session/3.2`);
+    assert.deepEqual((record.data as {companions?: unknown}).companions, REACHY, 'a generated title or a rename leaves the companions');
+  }
+  assert.deepEqual(records().map(record => (record.data as {title?: {value: string}}).title?.value), ['Reachy', '#2054 Companion metadata', 'Renamed by the owner'],
+    'no title names the companion unless it is the persona fallback');
+  // An observation the module sent before this release, in lifecycle/2.2 and without companions, keeps them too.
+  await publish(w.companions, {...observation(conversation('synthetic-companion'), 'task-1', {kind: 'turn-ended', result: 'succeeded'}, 2, now + 10),
+    title: {value: 'Renamed by the owner', source: 'user'}});
+  await w.until(() => records().length === 4);
+  assert.deepEqual((records()[3]?.data as {companions?: unknown}).companions, REACHY);
+  // A hook session carries none and stays session/3.0.
+  const hookSession = sessionEntityId(claude('synthetic-claude-companion'));
+  await publish(w.hook, observation(claude('synthetic-claude-companion'), 'p1', {kind: 'turn-started'}, 0, now), `${BASE}lifecycle/2.0`);
+  await w.until(() => w.seen.some(message => message.type === 'org.bunny.session.updated' && message.subject === hookSession));
+  const hook = w.seen.find(message => message.type === 'org.bunny.session.updated' && message.subject === hookSession);
+  assert.equal(hook?.dataschema, `${BASE}session/3.0`);
+  assert.equal((hook?.data as {companions?: unknown}).companions, undefined);
+});
+
 const DAY = 86_400_000, START = 1_000_000_000_000;
 const quiet = (db: DatabaseSync): DatabaseSync => { db.exec('PRAGMA synchronous = OFF'); return db; };
 const nativeMessage = (data: LifecycleObservation, atMs: number): Message<LifecycleObservation> =>
   ({...lifecycleMessage(data, atMs), source: 'bunny/modules/companions', dataschema: NATIVE});
+
+it('a stored conversation keeps its companions across a restart, and the latest observation that names them wins', async context => {
+  const world = await World.open(context, {clock: manualClock(START), wrap: quiet});
+  const identity = conversation('synthetic-stored-companion');
+  const take = (data: LifecycleObservation) => world.take({...nativeMessage(data, world.clock.now()), dataschema: COMPANIONS});
+  const shown = () => world.store.records().find(record => record.identity.sessionId === identity.sessionId);
+  assert.equal((await take({...observation(identity, 'task-1', {kind: 'turn-started'}, 1, world.clock.now()), companions: REACHY})).ok, true);
+  assert.deepEqual(shown()?.companions, REACHY);
+  await world.crashAndRestart();
+  assert.deepEqual(shown()?.companions, REACHY, 'the store keeps them');
+  world.clock.advance(1);
+  const apartment = [{id: 'bunny', name: 'B.U.N.N.Y.'}, {id: 'reachy', name: 'Reachy'}, {id: 'microduck', name: 'MicroDuck'}];
+  await take({...observation(identity, 'task-1', {kind: 'turn-waiting'}, 2, world.clock.now()), companions: apartment});
+  assert.deepEqual(shown()?.companions, apartment);
+  world.clock.advance(1);
+  await take(observation(identity, 'task-1', {kind: 'activity-observed'}, 3, world.clock.now()));
+  assert.deepEqual(shown()?.companions, apartment, 'an observation without companions leaves them');
+  // An observation newer in the ordering but older than the session's last display metadata names other companions: the
+  // newer-metadata guard keeps the list, as it keeps the title and label.
+  const older = {...observation(identity, 'task-1', {kind: 'turn-waiting'}, 4, world.clock.now() - 5), companions: REACHY};
+  const result = await take(older);
+  assert.ok(result.ok && result.outcome === 'applied', 'the observation itself applies');
+  assert.deepEqual(shown()?.companions, apartment, 'an older observation does not replace the companions');
+  const published = world.since(0).filter(message => message.type === 'org.bunny.session.updated');
+  assert.ok(published.length > 0 && published.every(message => message.dataschema === `${BASE}session/3.2`));
+});
 
 it('native conversations share the session limit: a new one displaces a finished child, the next is refused, and it appears at its next change', async context => {
   const world = await World.open(context, {clock: manualClock(START), wrap: quiet});

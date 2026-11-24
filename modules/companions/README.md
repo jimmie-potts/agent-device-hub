@@ -748,8 +748,15 @@ turn; only the next task starts a new turn, which supersedes the earlier task's
 notice as a new Claude prompt does. The source is `bunny`/`assistant` on the
 core host. The session is titled by the conversation's title (see
 [Conversation titles](#conversation-titles)), or by the persona until one
-exists: `B.U.N.N.Y.`, `Reachy` or `MicroDuck`. Every
-transaction that changes a task also adds the `lifecycle/2.2` observations that
+exists: `B.U.N.N.Y.`, `Reachy` or `MicroDuck`. Apart from the title, each
+observation names the conversation's companion in `companions`, its profile ID
+and persona name, such as `{id: 'reachy', name: 'Reachy'}` (Hub #2054). No
+title ever carries the companion's name except the persona fallback, and title
+metadata carries no companion, so a generated title or a rename never changes
+it. The dashboard's session tile shows it as a tag in place of the client when
+the session's name is not already the persona; the other devices receive it in the
+`session/3.2` record and show it only in their own later stories. Every
+transaction that changes a task also adds the `lifecycle/2.4` observations that
 move its conversation's session there, from the module's own source and on the
 conversation's one ordering sequence, and records the last state it reported
 in `assistant_reports`, one row per conversation. When one transaction ends a

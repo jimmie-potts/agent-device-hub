@@ -8,7 +8,8 @@ import type {Notice} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {loadSessionCases} from '@jimmie-potts/event-contracts/v2/session-cases';
 import {
-  CHIP_TEXT, agentSummary, needsAttention, age, chipOf, chipTextOf, clientName, faceText, finishedUnread, heardAge, matches, sessionName, sessionRow, uncertainOf,
+  CHIP_TEXT, agentSummary, needsAttention, age, chipOf, chipTextOf, clientName, faceText, finishedUnread, heardAge, matches, moreLabel, moreText, sessionName, sessionRow,
+  uncertainOf,
 } from '../src/sessions.ts';
 
 const NOTICE = 'a'.repeat(64);
@@ -121,6 +122,61 @@ void test('only an unknown status or unconfirmed working is uncertain: silence n
   assert.equal(working.facts.work, 'active, unconfirmed (restart)');
   const child = sessionRow(view({parent: {status: 'known', identity: {...record().identity, sessionId: 'parent-1'}}, children: {working: 2, unconfirmed: 1}, read: 'unread'}));
   assert.deepEqual(child.facts, {source: 'host-sim / claude-code', sessionId: 'session-sim-1', work: 'idle', read: 'unread', parent: 'parent-1', children: '2 working / 1 unconfirmed'});
+});
+
+// Hub #2054: a native conversation's session names its companions apart from its title. The face tags the first
+// companion whose name the session does not already show, followed by a count of the others (owner decision B), and then
+// leaves out the client, which the expanded facts keep (owner decision A). The facts name every companion, and the search
+// finds a session by a companion's name or ID.
+void test('a native session tags its companion apart from the title, once, and other sessions show none', () => {
+  const identity = {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId: 'synthetic-conversation'} as const;
+  const reachy = [{id: 'reachy', name: 'Reachy'}];
+  const titled = sessionRow(view({identity, title: {value: '#2054 Companion metadata', source: 'provider'}, companions: reachy}));
+  assert.equal(titled.name, '#2054 Companion metadata', 'the title is the session\'s name, with no companion added');
+  assert.deepEqual(titled.companions, ['Reachy']);
+  assert.deepEqual(titled.companionTag, {id: 'reachy', name: 'Reachy'}, 'a titled session tags its companion on the face');
+  assert.deepEqual(titled.companionMore, []);
+  assert.equal(titled.facts.companion, 'Reachy');
+  assert.equal(titled.facts.client, 'B.U.N.N.Y. assistant', 'the face leaves out the client beside a tag, and the facts keep it');
+  const untitled = sessionRow(view({identity, title: {value: 'Reachy', source: 'provider'}, companions: reachy}));
+  assert.equal(untitled.name, 'Reachy');
+  assert.equal(untitled.companionTag, undefined, 'an untitled session showing its persona does not show the name twice');
+  assert.equal(untitled.facts.companion, 'Reachy', 'its facts still name the companion');
+  assert.equal(untitled.facts.client, undefined, 'and its face keeps the client');
+  const renamed = sessionRow(view({identity, title: {value: 'Kitchen plans', source: 'user'}, label: {value: 'Reachy', origin: 'user'}, companions: reachy}));
+  assert.equal(renamed.companionTag, undefined, 'nor does a session whose label is the companion\'s name');
+  for (const other of [sessionRow(view({title: {value: 'Reachy', source: 'provider'}})), sessionRow(view({identity, title: {value: 'B.U.N.N.Y.', source: 'provider'}}))]) {
+    assert.deepEqual([other.companions, other.companionTag, other.companionMore, other.facts.companion, other.facts.client], [[], undefined, [], undefined, undefined],
+      'a session without companions looks as it did');
+  }
+});
+
+void test('a session with several companions tags the first and counts the others, and its facts list them all', () => {
+  const identity = {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId: 'synthetic-room'} as const;
+  const apartment = [{id: 'bunny', name: 'B.U.N.N.Y.'}, {id: 'reachy', name: 'Reachy'}, {id: 'microduck', name: 'MicroDuck'}];
+  const room = sessionRow(view({identity, title: {value: 'Apartment', source: 'provider'}, companions: apartment}));
+  assert.deepEqual(room.companionTag, {id: 'bunny', name: 'B.U.N.N.Y.'}, 'the first companion, in the record\'s order');
+  assert.deepEqual(room.companionMore, [{id: 'reachy', name: 'Reachy'}, {id: 'microduck', name: 'MicroDuck'}]);
+  assert.equal(moreText(room.companionMore), '+2');
+  assert.equal(moreLabel(room.companionMore), 'and 2 more companions: Reachy, MicroDuck');
+  assert.equal(moreLabel(room.companionMore.slice(0, 1)), 'and 1 more companion: Reachy');
+  assert.equal(room.facts.companion, 'B.U.N.N.Y., Reachy, MicroDuck');
+  // A companion the session's name already shows is neither tagged nor counted.
+  const persona = sessionRow(view({identity, title: {value: 'B.U.N.N.Y.', source: 'provider'}, companions: apartment}));
+  assert.deepEqual([persona.companionTag?.id, persona.companionMore.map(companion => companion.id)], ['reachy', ['microduck']]);
+});
+
+void test('the search finds a session by its companion\'s name or ID', () => {
+  const identity = {provider: 'bunny', client: 'assistant', hostId: 'core', sourceId: 'companions', sessionId: 'synthetic-conversation'} as const;
+  const titled = view({identity, title: {value: '#2054 Companion metadata', source: 'provider'}, companions: [{id: 'reachy', name: 'Reachy'}]});
+  assert.equal(matches(titled, 'reachy', ''), true);
+  assert.equal(matches(titled, 'Reach', 'bunny'), true);
+  assert.equal(matches(titled, 'reachy', 'claude'), false, 'within one provider');
+  assert.equal(matches(titled, 'microduck', ''), false);
+  assert.equal(matches(view(), 'reachy', ''), false);
+  const bunny = view({identity, title: {value: '#2054 Companion metadata', source: 'provider'}, companions: [{id: 'bunny', name: 'B.U.N.N.Y.'}]});
+  assert.equal(matches(bunny, 'bunny', ''), true, 'the plain word finds B.U.N.N.Y. by its ID');
+  assert.equal(matches(bunny, 'B.U.N.N.Y', ''), true, 'and the name still does');
 });
 
 void test('the search matches the label, title, project or session ID, ignoring case, within one provider', () => {

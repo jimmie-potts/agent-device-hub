@@ -84,6 +84,9 @@ test('each family has one kind and one type, and its schema is built from the sh
       || (family === 'lifecycle' && dataschema === 'https://bunny.invalid/events/lifecycle/2.2')
       // The native source's title metadata (Hub #2025).
       || (family === 'lifecycle' && dataschema === 'https://bunny.invalid/events/lifecycle/2.3')
+      // A native session's companions (Hub #2054).
+      || (family === 'session' && dataschema === 'https://bunny.invalid/events/session/3.2')
+      || (family === 'lifecycle' && dataschema === 'https://bunny.invalid/events/lifecycle/2.4')
       || (['attention-raised', 'attention-cleared', 'turn-ended'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.1`));
     assert.ok(usesBlocks(schema), `${family} uses the blocks`);
     for (const uri of refs(schema)) assert.ok(profile(uri) || coreFamilies.some(other => other.dataschema === uri), `${family}: ${uri}`);

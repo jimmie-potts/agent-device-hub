@@ -3167,6 +3167,16 @@ build to isolate approved still and GIF creation, playback and reopened history
 with the synthetic art provider. Run the companion, art, event contract and
 runtime suites for the tracked command, private history and media boundaries.
 
+A conversation session's companion (#2054) uses the same companions browser
+suite. After the root build, run
+`node apps/runtime/dashboard/tests/companion-session.browser.ts` to isolate the
+session tile's companion tag in place of the client, the untitled-persona rule,
+a simulated shared room's first tag and count, the Companion and Client facts,
+the companion search by name and ID, and the one-line face of unchanged height
+at 1280 and 390 px; `DASHBOARD_RECEIPTS` keeps its screenshots private. Run
+the event contract, companions, runtime and dashboard unit suites for
+`session/3.2`, `lifecycle/2.4`, the module's reports and the core's retention.
+
 Browser speech (#1097) uses the existing companion unit discovery and
 `test:companions:browser` journey. After the root build, run
 `node --test modules/companions/dist/tests/speech-driver.test.js` for bounded

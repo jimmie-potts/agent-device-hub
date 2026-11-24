@@ -20,6 +20,20 @@
 .agent-meta{display:flex;align-items:baseline;gap:var(--space-s);min-width:0}
 .agent-meta .agent-client{flex:1 1 auto;min-width:0}
 .agent-heard{flex:none;color:var(--muted-dense);font-size:var(--type-small);font-variant-numeric:tabular-nums;white-space:nowrap}
+/*
+ * A native conversation's companion (Hub #2054) leads the line as a chip, with a "+N" count of any others, in place of the
+ * client (owner decisions A and B). The tag gives way to an ellipsis so the evidence age always stays whole, and a
+ * negative block margin keeps the chips from making the line taller than a line without them, so neighbouring tiles'
+ * headings line up.
+ */
+.agent-meta :is(.agent-companion,.agent-companion-more){align-self:center;margin-block:-4px}
+.agent-meta .agent-companion{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.agent-meta .agent-companion-more{flex:none}
+.agent-meta :is(.agent-companion,.agent-companion-more)~.agent-heard{margin-left:auto}
+/* A neutral chip, as an idle one: the state chips' dark fill (shell.css) is for status colors. */
+.shell .agent-meta :is(.chip.agent-companion,.chip.agent-companion-more){background:var(--inset)}
+.agent-status-card:has(.agent-companion) :is(.agent-disclosure,.agent-face){min-width:0}
+.agent-companion-word{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .agent-caret{margin-left:auto;font-size:1.5rem;line-height:1;transition:transform .15s ease}
 .agent-disclosure[open] .agent-caret{transform:rotate(90deg)}
 .agent-evidence{padding:var(--space-m);border-top:1px solid var(--edge-dense);overflow-wrap:anywhere;animation:agent-reveal .15s ease-out}

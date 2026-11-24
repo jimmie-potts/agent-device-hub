@@ -250,6 +250,30 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Conversation companions (#2054)
+
+The #2054 release names each conversation's companion in its session: the
+companions module sends `lifecycle/2.4` observations with a `companions` list,
+and the core keeps it in the session JSON in `core_sessions` and publishes the
+record as `session/3.2`, which history keeps. It changes no table and rewrites
+no record. An upgrade loads every stored session as it was; a native session
+gains its companions at its next lifecycle observation, and until then the
+dashboard shows it as before.
+
+Returning to the release before is safe and loses no data; prefer fixing
+forward. That release loads the stored sessions and ignores their `companions`
+member. Its start refreshes the records before it serves any sync: the refresh
+rebuilds every record from the stored sessions, finds each native record that
+carried companions changed, and republishes it at a new revision as
+`session/3.1` without companions, which its readers read. If that refresh
+fails, as on a full disk, syncs answer `unavailable` until a later one
+succeeds, so no reader is served a record it refuses. The stored session JSON
+keeps the member, and records and history rows that this release published as
+`session/3.2` stay as they are. One change can be delayed: a `lifecycle/2.4`
+observation still in the companions outbox at the switch is refused by the
+earlier core as `unsupported-version`, so that change reaches the session only
+at the conversation's next observation.
+
 ## Conversations running at once (#2027)
 
 The #2027 release lets each assistant conversation run its own task at the

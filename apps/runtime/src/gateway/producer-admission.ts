@@ -21,12 +21,13 @@ export function checkKeyFamily(message: Message, key: string): ErrorBody | undef
 }
 
 /**
- * The native assistant source travels only in-process (Hub #505): no edge credential publishes `lifecycle/2.2` or
- * `lifecycle/2.3` (Hub #2025), the lifecycle versions that can name it, so a remote caller is refused before the bus
- * instead of silently at the core.
+ * The native assistant source travels only in-process (Hub #505): no edge credential publishes `lifecycle/2.2`,
+ * `lifecycle/2.3` (Hub #2025) or `lifecycle/2.4` (Hub #2054), the lifecycle versions that can name it, so a remote caller
+ * is refused before the bus instead of silently at the core.
  */
+const NATIVE_LIFECYCLE_SCHEMAS: readonly string[] = ['2.2', '2.3', '2.4'].map(version => `${SCHEMA_BASE}lifecycle/${version}`);
 export function checkNativeIdentity(message: Message): ErrorBody | undefined {
-  return message.dataschema === `${SCHEMA_BASE}lifecycle/2.2` || message.dataschema === `${SCHEMA_BASE}lifecycle/2.3`
+  return NATIVE_LIFECYCLE_SCHEMAS.includes(message.dataschema)
     ? errorBody('forbidden', {detail: 'the native assistant source is reported only by its in-process producer'}) : undefined;
 }
 

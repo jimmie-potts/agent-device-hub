@@ -74,7 +74,7 @@ const confidenceOf = (unavailable: readonly Unavailable[], dimension: Unavailabl
  * core builds every record it publishes from its stored sessions with `buildSession`, and tests build theirs the same way.
  */
 export type SessionFacts = Pick<Session30Record, 'id' | 'revision' | 'generation' | 'identity' | 'parent' | 'turn' | 'unavailable' | 'ordering' |
-  'observedAtMs' | 'lastEvidenceAtMs' | 'label' | 'title' | 'project' | 'projectId' | 'hostSessionId'> & {
+  'observedAtMs' | 'lastEvidenceAtMs' | 'label' | 'title' | 'project' | 'projectId' | 'hostSessionId' | 'companions'> & {
   work: WorkClaim['state'];
   /** Why running work is unconfirmed without evidence saying so: the core restarted. Silence alone never does (Hub #1947). */
   unconfirmed?: 'restart';
@@ -110,12 +110,13 @@ export function buildSession(facts: SessionFacts): Session30Record {
     relationships: {children: facts.children, confidence: confidenceOf(unavailable, 'parent')},
     unavailable,
   };
-  const {label, title, project, projectId, hostSessionId} = facts;
+  const {label, title, project, projectId, hostSessionId, companions} = facts;
   return {
     id: facts.id, revision: facts.revision, generation: facts.generation, identity: facts.identity, parent: facts.parent,
     status: statusOf(claims), ...claims, ordering: facts.ordering, observedAtMs: facts.observedAtMs, lastEvidenceAtMs: facts.lastEvidenceAtMs,
     ...(label === undefined ? {} : {label}), ...(title === undefined ? {} : {title}), ...(project === undefined ? {} : {project}),
     ...(projectId === undefined ? {} : {projectId}), ...(hostSessionId === undefined ? {} : {hostSessionId}),
+    ...(companions === undefined ? {} : {companions}),
   };
 }
 

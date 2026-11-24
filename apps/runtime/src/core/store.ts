@@ -830,7 +830,8 @@ function prepare(db: DatabaseSync): Statements {
 const familyOf = (draft: Draft<object>): string => draft.dataschema.slice('https://bunny.invalid/events/'.length).split('/')[0] ?? '';
 
 function stateDraft(record: Session30Record): Draft<Session30Record> {
-  // The lowest version that expresses the record (Hub #505): native records are session/3.1, every other one 3.0.
+  // The lowest version that expresses the record (Hub #505, #2054): native records are session/3.1, or 3.2 once they name
+  // their companions, every other one 3.0.
   return {kind: 'state', type: 'org.bunny.session.updated', subject: record.id, dataschema: sessionSchemaOf(record), data: record};
 }
 

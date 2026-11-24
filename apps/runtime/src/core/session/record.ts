@@ -17,7 +17,7 @@ export function publicRecords(sessions: Iterable<StoredSession>, revision: numbe
   const stored = [...sessions];
   const children = countChildren(stored);
   return new Map(stored.map(session => {
-    const {label, title, project, projectId, readReceipt} = session;
+    const {label, title, project, projectId, readReceipt, companions} = session;
     const hostSessionId = session.parent.status === 'known' ? undefined : session.hostSessionId;
     const record = buildSession({
       id: session.id, revision, generation: session.generation, identity: structuredClone(session.identity), parent: structuredClone(session.parent),
@@ -37,6 +37,7 @@ export function publicRecords(sessions: Iterable<StoredSession>, revision: numbe
       ...(project === undefined ? {} : {project}),
       ...(projectId === undefined ? {} : {projectId}),
       ...(hostSessionId === undefined ? {} : {hostSessionId}),
+      ...(companions === undefined ? {} : {companions: companions.map(({id, name}) => ({id, name}))}),
     });
     return [record.id, record];
   }));

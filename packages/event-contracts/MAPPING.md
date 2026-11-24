@@ -78,7 +78,10 @@ step 9 the core publishes `session/3.0`. Since
 [Hub #505](https://github.com/jimmie-potts/agent-device-hub/issues/505) it
 publishes a native assistant conversation's record as `session/3.1`, which adds the
 native identity and a notice `result`, and every other record as `session/3.0`.
-The shared read function `readSession` reads those two versions. Nothing converts `session/2.x` records
+Since [Hub #2054](https://github.com/jimmie-potts/agent-device-hub/issues/2054) a
+native record that names its companions is `session/3.2`, which adds the
+optional `companions` list; it has no 1.x or 2.x source.
+The shared read function `readSession` reads those three versions. Nothing converts `session/2.x` records
 at runtime: `session/2.0` and `2.1` stay registered for retained documents, and
 a reader from an older release finds no record it accepts until it is updated.
 The core builds each record from its stored session with `buildSession`
@@ -144,6 +147,10 @@ alone selects no turn and creates no activity, read or notice evidence.
 
 Hub #2025 adds `lifecycle/2.3`, which also allows `metadata-observed` for the
 native assistant source. It carries a conversation's title only, has no 1.x
+equivalent and is accepted only from `bunny/modules/companions`.
+
+Hub #2054 adds `lifecycle/2.4`, which adds an optional `companions` list to a
+native lifecycle observation and never to `metadata-observed`. It has no 1.x
 equivalent and is accepted only from `bunny/modules/companions`.
 
 Hub #567 adds the separate `desktop-metadata/2.0` family, which also has no
