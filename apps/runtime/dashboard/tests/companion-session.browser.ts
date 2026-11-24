@@ -15,13 +15,14 @@ async function oneLine(tile: Locator, label: string): Promise<void> {
   const box = await tile.locator('.agent-meta').evaluate(meta => {
     const rect = (node: Element | null) => node === null ? null : node.getBoundingClientRect();
     const face = rect(meta.closest('.agent-face')), line = rect(meta), tag = rect(meta.querySelector('.agent-companion'));
-    const client = rect(meta.querySelector('.agent-client')), heard = meta.querySelector('.agent-heard') as HTMLElement | null;
-    return {viewport: window.innerWidth, face, line, tag, client, heardWhole: heard !== null && heard.scrollWidth <= heard.clientWidth + 1, height: parseFloat(getComputedStyle(meta).lineHeight)};
+    const client = rect(meta.querySelector('.agent-client')), heard = meta.querySelector<HTMLElement>('.agent-heard');
+    return {viewport: window.innerWidth, face, line, tag, client, heardWhole: heard !== null && heard.scrollWidth <= heard.clientWidth + 1};
   });
   assert.ok(box.face !== null && box.line !== null && box.client !== null, label);
   assert.ok(box.line.left >= box.face.left && box.line.right <= box.face.right + 1, `${label}: the line stays inside the tile`);
   assert.ok(box.face.right <= box.viewport + 1, `${label}: the tile stays inside the page`);
-  assert.ok(box.line.height < 2 * (Number.isNaN(box.height) ? 20 : box.height) + 8, `${label}: the line does not wrap (${String(box.line.height)}px)`);
+  // One line is the chip's height, 20 px; a wrapped client made it 32 px.
+  assert.ok(box.line.height <= 24, `${label}: the line does not wrap (${String(box.line.height)}px)`);
   if (box.tag !== null) {
     assert.ok(Math.abs(box.tag.top + box.tag.height / 2 - (box.client.top + box.client.height / 2)) < 6, `${label}: the tag sits on the client's line`);
     assert.ok(box.tag.right <= box.client.left + 1, `${label}: the tag leads the client`);
@@ -60,7 +61,7 @@ export async function companionSessionJourney(browser: Browser): Promise<void> {
     assert.equal(await persona.locator('.agent-companion').count(), 0, 'an untitled session showing its persona does not show the name twice');
     assert.equal(await persona.locator('.agent-client').textContent(), 'B.U.N.N.Y. assistant');
     await persona.locator('summary.agent-face').click();
-    const facts = (card: Locator) => card.locator('.agent-evidence dl.strip > div').evaluateAll(rows => rows.map(row =>
+    const facts = (card: Locator): Promise<[string, string][]> => card.locator('.agent-evidence dl.strip > div').evaluateAll(rows => rows.map((row): [string, string] =>
       [row.querySelector('dt')?.textContent ?? '', row.querySelector('dd')?.textContent ?? '']));
     assert.deepEqual((await facts(persona)).find(([term]) => term === 'Companion'), ['Companion', 'B.U.N.N.Y.'], 'its facts still name the companion');
     await persona.locator('summary.agent-face').click();
