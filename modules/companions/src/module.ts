@@ -171,7 +171,9 @@ class Companions {
       {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent});
     });
     this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context),
-      retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries, speak,
+      retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries,
+      // The owner's knowledge notes reach a companion's context only once the owner turns them on for it (Hub #2029).
+      knowledge: () => this.knowledge?.store.active().entries ?? [], speak,
       coding: this.options.coding ?? (() => coding.endpoint()), delegate, onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();

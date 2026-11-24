@@ -24,14 +24,14 @@ export function archiveOf(value: unknown): Archive {
   for (const voice of value.voices) {
     if (!object(voice) || !exact(voice, ['id', 'voiceRef']) || !persona(voice.id) || voices.has(voice.id) || (voice.voiceRef !== null && !id(voice.voiceRef))) fail('invalid-request'); voices.add(voice.id);
   }
-  const conversations = new Map<string, {epoch: string; participants: string[]}>(), profiles = new Set<string>();
+  const conversations = new Map<string, {epoch: string; participants: string[]}>();
   for (const conversation of value.conversations) {
     if (!object(conversation) || !exact(conversation, ['id', 'participants', 'epoch', 'profile']) || !id(conversation.id) || conversations.has(conversation.id) ||
       !id(conversation.epoch) || !Array.isArray(conversation.participants) || conversation.participants.length === 0 || conversation.participants.length > 3 ||
       !conversation.participants.every(persona) || new Set(conversation.participants).size !== conversation.participants.length ||
-      (conversation.profile !== null && (!persona(conversation.profile) || !conversation.participants.includes(conversation.profile) || profiles.has(conversation.profile)))) fail('invalid-request');
+      // A profile may have several conversations since New conversation (Hub #2029): its current one and earlier ones.
+      (conversation.profile !== null && (!persona(conversation.profile) || !conversation.participants.includes(conversation.profile)))) fail('invalid-request');
     conversations.set(conversation.id, {epoch: conversation.epoch, participants: conversation.participants});
-    if (conversation.profile !== null) profiles.add(conversation.profile);
   }
   const known = new Set<string>(), positions = new Set<string>();
   for (const row of [...value.messages as unknown[], ...value.removals as unknown[]]) {
@@ -58,7 +58,9 @@ export function archiveOf(value: unknown): Archive {
 export type KnowledgeInput = PreferenceInput | ({expectedRevision: number} & (
   {action: 'select-duck-conversation'; conversationId: string | null} |
   {action: 'fixture'} | {action: 'correct-message'; messageId: string; meaning: Meaning} | {action: 'delete-message'; messageId: string} |
-  {action: 'set-voice'; persona: PersonaId; voiceRef: string | null} | {action: 'import-archive'; archive: Archive}
+  {action: 'set-voice'; persona: PersonaId; voiceRef: string | null} | {action: 'import-archive'; archive: Archive} |
+  /** Whether the companion's context holds the owner's knowledge notes (Hub #2029). */
+  {action: 'set-context-knowledge'; persona: PersonaId; enabled: boolean}
 ));
 export function inputOf(value: unknown): KnowledgeInput {
   if (!object(value) || !integer(value.expectedRevision)) fail('invalid-request');
@@ -71,6 +73,7 @@ export function inputOf(value: unknown): KnowledgeInput {
     case 'delete-message': if (!exact(value, ['action', 'expectedRevision', 'messageId']) || !id(value.messageId)) fail('invalid-request'); break;
     case 'set-voice': if (!exact(value, ['action', 'expectedRevision', 'persona', 'voiceRef']) || !persona(value.persona) || (value.voiceRef !== null && !id(value.voiceRef))) fail('invalid-request'); break;
     case 'import-archive': if (!exact(value, ['action', 'expectedRevision', 'archive'])) fail('invalid-request'); archiveOf(value.archive); break;
+    case 'set-context-knowledge': if (!exact(value, ['action', 'expectedRevision', 'persona', 'enabled']) || !persona(value.persona) || typeof value.enabled !== 'boolean') fail('invalid-request'); break;
     case 'import': {
       if (!object(value.library) || value.library.schema !== 'knowledge-library/1.0') fail('unsupported-version');
       return preferenceInputOf({...value, library: {...value.library, schema: 'preference-library/1.0'}});

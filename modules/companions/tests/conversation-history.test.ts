@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {historyCursor, type CurrentTask, type RecentConversationPage} from '../src/assistant/history-contract.js';
-import {decodeConversationWindow, loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from '../src/frontend/conversation-history.js';
+import {decodeConversationList, decodeConversationWindow, loadEarlierConversationHistory, refreshConversationHistory, type ConversationHistory} from '../src/frontend/conversation-history.js';
 
 const profile = 'bunny';
 const conversationId = 'synthetic-thread';
@@ -65,4 +65,28 @@ void test('profile changes and aborts fence late results and response identity',
   ]) assert.throws(() => decodeConversationWindow(value, {profile, before: cursor(7)}), /Invalid conversation window/);
   assert.throws(() => decodeConversationWindow(page([1], null), {profile: 'reachy'}), /Invalid conversation window/);
   assert.throws(() => decodeConversationWindow(page(Array.from({length: 17}, (_, index) => index + 1), null), {profile}), /Invalid conversation window/);
+});
+
+void test('an earlier conversation is read by its ID, stays read only and pages within itself (Hub #2029)', async () => {
+  const paths: string[] = [];
+  const read = (response: unknown) => (path: string): Promise<unknown> => {paths.push(path); return Promise.resolve(response);};
+  const opened = await refreshConversationHistory(read(page([3, 4], cursor(3))), profile, signal(), undefined, conversationId);
+  assert.deepEqual([opened.earlier, opened.conversationId, opened.currentTask], [true, conversationId, null]);
+  const paged = await loadEarlierConversationHistory(read(page([1, 2], null)), opened, cursor(3), signal());
+  assert.deepEqual(sequences(paged), [[1, 2, 3, 4]]);
+  assert.deepEqual(paths, [`/modules/companions/content/conversation?profile=bunny&view=recent&conversationId=${conversationId}`,
+    `/modules/companions/content/conversation?profile=bunny&view=recent&before=${cursor(3)}&conversationId=${conversationId}`]);
+  // A page for another conversation, or one that claims a current task, is refused.
+  await assert.rejects(refreshConversationHistory(read({...page([3], null), conversationId: 'another-thread'}), profile, signal(), undefined, conversationId));
+  await assert.rejects(refreshConversationHistory(read(page([3], null, currentTask)), profile, signal(), undefined, conversationId));
+  // The current conversation's read starts fresh rather than merging into an earlier one's windows.
+  const current = await refreshConversationHistory(read(page([5], null, currentTask)), profile, signal(), paged);
+  assert.deepEqual([current.earlier, sequences(current)], [false, [[5]]]);
+});
+
+void test('the conversation list is checked before the page shows it', () => {
+  const entry = {conversationId: 'c-2', current: true, messages: 0, firstAtMs: null, lastAtMs: null, title: {value: 'B.U.N.N.Y.', source: 'provider'}};
+  assert.deepEqual(decodeConversationList({version: 1, profile, older: null, conversations: [entry]}, profile).conversations, [entry]);
+  assert.throws(() => decodeConversationList({version: 1, profile: 'reachy', older: null, conversations: [entry]}, profile));
+  assert.throws(() => decodeConversationList({version: 1, profile, older: null, conversations: [{...entry, title: {value: 'x', source: 'model'}}]}, profile));
 });

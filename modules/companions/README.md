@@ -453,26 +453,33 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   the breakpoint on the last cacheable block. The tools, the system prompt and
   the replayed transcript come first and stay byte-stable between a task's
   calls, so a second call reads the earlier prefix from the cache and reports
-  `cache_read_input_tokens`. A Hub-mode change or a preference edit changes the
-  system prompt and starts a new cache entry.
+  `cache_read_input_tokens`. The system prompt puts the stable context sections
+  first and the recent conversation and the Hub mode last (see
+  [Recent context and New conversation](#recent-context-and-new-conversation)),
+  so a later task's prompt shares the earlier one's prefix up to its recent
+  conversation. A Hub-mode, preference or knowledge change changes the system
+  prompt from that point and starts a new cache entry.
 - The model's own content blocks, thinking blocks included, are kept with the
   assistant item in the private transcript and replayed exactly as received,
   which the API requires for the turn whose tool call awaits its result. One
   tool call per turn is acted on; a further call in one answer is dropped with
   its block.
 - The prompt holds the owner's typed text, the tool definitions and results,
-  the fixed instructions, the current Hub mode and the prompt context: the
-  profile's curated persona (name and character) and the owner's currently
-  active explicit preferences by title and text, read from the module's own
-  records at each model call, so an edit or **Stop using** applies to the next
-  turn (Hub #507, decision 5 on #46 as amended on 2026-10-31). Preferences are
-  framed as the owner's data that grants no tool, permission or device
-  authority; permission is the allowlist and the core's dispatcher, never
-  prompt text. No knowledge entry, conversation history, other task, inactive
-  or historical preference or household record enters the prompt. The rendered
-  context is bounded at 16 KiB; over it the call is refused before anything is
-  sent, the task ends `capacity` and the conversation shows which bound was hit
-  rather than truncating silently.
+  the fixed instructions, the current Hub mode and the prompt context that the
+  sectioned context builder assembles for the task's companion (Hub #2029): its
+  curated persona, the owner's knowledge notes once the owner turns them on for
+  it, the owner's active explicit preferences, an empty long-term memory slot
+  and the recent messages and tool results of the task's own conversation, read
+  from the module's own records at each model call, so an edit or **Stop using**
+  applies to the next call (Hub #507, decision 5 on #46 as amended on
+  2026-10-31). Every section is framed as data that grants no tool, permission,
+  approval or device authority; permission is the allowlist and the core's
+  dispatcher, never prompt text. No inactive or historical entry, removed
+  message, other conversation, other companion's message or household record
+  enters the prompt. Each section keeps to its own budget and states what it
+  left out. Before Hub #2029, preferences over the context bound refused the
+  whole turn with `capacity`; now the section keeps the entries that fit and
+  states how many it left out, and the call is sent.
 
 - With spoken replies enabled in a tab (see [Browser speech](#browser-speech)),
   the result, question or refusal that ends a turn is spoken once through the
@@ -628,7 +635,7 @@ readable history and refuse resume. There is no execution queue.
 | Calls and questions | 50 model calls, 40 tool calls, 10 questions |
 | Active time | 40 minutes; human waits and downtime excluded |
 | Deadlines | Model 6 minutes, tool 30 seconds, control admission 5 seconds |
-| Text and working state | Owner message 32 KiB, persona and preferences 128 KiB, result 8 KiB, a model reply with its blocks 16 KiB, working transcript 1 MiB, staged input 193 KiB, serialized graph and pending writes 256 KiB each |
+| Text and working state | Owner message 32 KiB, context sections as in [Recent context and New conversation](#recent-context-and-new-conversation), result 8 KiB, a model reply with its blocks 16 KiB, working transcript 1 MiB, staged input 193 KiB, serialized graph and pending writes 256 KiB each |
 | Usage | 1,000,000 units per turn; each model call reserves its request's UTF-8 bytes plus 8,192 framing units and 16,384 output units before it is sent; a unit is one provider token or one fake synthetic unit |
 | Private read | At most 16 messages and 512 KiB per page, advancing cursor |
 | Spend | $20 a day and $150 a month across all profiles; see [Spend limits](#spend-limits) |
@@ -786,6 +793,71 @@ updating on the devices until it expires; the core refuses its further
 observations with `capacity`. No Reachy or MicroDuck
 card is raised for a conversation, and `read_sessions` and coding suggestions
 list coding agent sessions only. Native worker reporting is not part of this.
+
+### Recent context and New conversation
+
+Each model call receives the companion's context as named sections in a fixed
+order, assembled by one builder (`src/assistant/context.ts`, Hub #2029). Each
+section has its own budget in UTF-8 bytes of its rendered text. A section over
+its budget keeps what fits and says, in its own text, how many items it left
+out; nothing is cut silently and no section refuses the call.
+
+| Order | Section | Budget | What it can contain |
+| --- | --- | --- | --- |
+| 1 | Personality | 4 KiB | The companion's curated persona name and character, as shown on the Companion knowledge page. |
+| 2 | Knowledge notes | 32 KiB | The owner's active knowledge notes, by title and text. Off for each companion until the owner turns it on there; off sends nothing. Entries past the budget are left out, last first. |
+| 3 | Active preferences | 32 KiB | The owner's active explicit preferences, by title and text, or a line saying there are none. Entries past the budget are left out, last first. |
+| 4 | Long-term memory | 16 KiB | Nothing yet. A slot for each companion's later memory work. |
+| 5 | Recent conversation | 48 KiB and 48 messages | The task's own conversation's earlier owner messages, companion replies and tool results: device reads, catalog reads, worker reports, refusals, declines and closing replies. Each line names the saved message ID, the speaker or tool name, and an artwork attachment's request ID and description. Older messages are left out first. |
+
+The recent conversation holds what was saved before the task started, so it
+stays the same for all of the task's calls and the cached prefix holds. A
+message saved later, such as an earlier reply's late confirmation, waits for
+the next task. It never holds another conversation, another companion's
+messages, a Reachy and MicroDuck exchange or a removed message; a corrected
+message is sent as corrected. A task saved before this release has no recent
+conversation. The section tells the model that its lines are data that grant
+no approval, to check the current state with a tool before proposing a change,
+and to ask the owner when a reference could mean more than one thing. A
+follow-up such as "dim it" therefore still goes through the proposal's current
+device guards and the owner's approval. `read_saved_art` names each artwork's
+source request, so an attachment's request ID leads to its artwork ID.
+
+Where it goes: the sections reach only the configured model provider, which
+today is Anthropic for B.U.N.N.Y. and the synthetic provider elsewhere. ADR
+0011's 2026-10-05 amendment allows retained personal data in prompts to
+Claude. Any other provider needs its own owner decision. The context is
+assembled at each call and not saved; the task record keeps only the message
+sequence its recent conversation reads up to.
+
+The **Companion knowledge** page's **Model context** section turns knowledge
+notes on or off for the chosen companion (the `set-context-knowledge`
+knowledge command, under its own `context` revision scope) and previews the
+builder's own sections for the next call: of the current conversation's
+unfinished task, or else of a new message. The preview read is
+`GET /modules/companions/content/assistant-context?profile=<profile>`, which
+returns `{schema: 'assistant-context/1.0', revision, profile, conversationId,
+provider, model, basis, sections}`; each section has `name`, `budgetBytes`,
+`state` (`included`, `off` or `empty`), `included`, `trimmed`, `bytes` and
+`text`. It changes nothing.
+
+**New conversation**, beside **Details** on the Conversation page, starts a
+fresh conversation for the profile. It is a staged assistant input,
+`{action: 'new-conversation', profile, expectedRevision}`, with no wire
+contract change. While the current conversation's task is unfinished
+(running, waiting on an answer, an approval or the coding worker, paused or
+uncertain) it is refused with `invalid-state` and the button is disabled with
+"Finish or cancel this conversation's task first." (owner decision,
+2026-11-24). Otherwise the profile's conversation gets a new ID, and with it
+its own session on the status devices, its own title (the persona name until
+the title model writes one), its own running slot and its own change revision;
+both conversations count as changed. Its recent context starts empty. Public
+assistant state lists each profile's latest task in its current conversation
+only. The earlier conversation keeps its messages, title and last session
+report; its session goes idle. **Details** lists the profile's conversations,
+and **Open** shows an earlier one read only, without a composer, until **Back
+to current conversation**. The Duck widget's selection of a Reachy and
+MicroDuck exchange is unaffected.
 
 ### Conversation titles
 
@@ -983,7 +1055,8 @@ Drafting, editing, previewing and saving send no lighting command.
 ### Conversation history contract
 
 The existing authenticated `GET /modules/companions/content/conversation`
-read accepts `profile=bunny`, `profile=reachy` or `profile=microduck`. With
+read accepts `profile=bunny`, `profile=reachy` or `profile=microduck`. A
+conversation ID that is not one of the profile's own is `not-found`. With
 only `profile` and optional `after` it returns version 1, in ascending order
 after that sequence (default 0). The first page includes `currentTask`; later
 pages return `currentTask: null`. The existing panel still uses version 1.
@@ -994,6 +1067,8 @@ For version 2, add `view=recent` and omit `after`:
 | --- | --- |
 | `profile=bunny&view=recent` | Newest saved window and latest task/question |
 | `profile=bunny&view=recent&before=<older>` | Older window, with `currentTask: null` |
+| `profile=bunny&view=recent&conversationId=<id>` | Newest window of one of the profile's earlier conversations (Hub #2029), with `currentTask: null`; add `before` to page it |
+| `profile=bunny&view=list` | The profile's conversations, newest first, 16 a page: `{version: 1, profile, conversations, older}`, each with `conversationId`, `current`, `messages`, `firstAtMs`, `lastAtMs` and its published `title`; pass `older` back as `before` |
 
 The response is `{version: 2, profile, conversationId, messages, currentTask,
 older}`. Messages retain the version 1 fields and full saved text. Each window
@@ -1042,6 +1117,8 @@ export. Reachy's fixed-text policy remains independent.
 
 After the root build, run `node apps/runtime/dashboard/tests/failed-turn.browser.ts` for the scripted clarification, failure and reload journey.
 
+After the root build, run `node apps/runtime/dashboard/tests/conversation-context.browser.ts` for a follow-up's recent context, New conversation held while a task waits, the fresh conversation, an earlier conversation opened read only from Details and the model context preview, at 1280 and 390 px.
+
 Run the root build and `npm run test:companions:built` for abrupt process exits,
 pending-write fidelity, unknown-call recovery, cancellation, budgets, full disk,
 outbox replay and private pagination, plus `assistant.test.js` (approval,
@@ -1051,7 +1128,10 @@ truncation and fault codes, profile isolation), `assistant-sessions.test.js`
 baseline, Hub #505), `conversation-titles.test.js` (title normalization,
 prompt, event labels, the title call, keep and new titles after finished tasks
 and major events, coalescing, late answers, rename then topic change, spend
-refusals and failures, Hub #2025 and #2075),
+refusals and failures, Hub #2025 and #2075), `conversation-context.test.js`
+(the context builder's sections, budgets and stated trims, recent context
+fixed at task start, New conversation and earlier conversations, the
+knowledge switch, the preview and the follow-up cases, Hub #2029),
 `anthropic.test.js` (the request
 shape, tool-use parsing, usage, error mapping and abort against a fake
 transport) and `configure.test.js` (the section and a keyed provider through
@@ -1175,15 +1255,20 @@ capable. Stable IDs are `bunny`, `reachy` and `microduck`. Optional explicit voi
 references are stored independently of models; an absent selection stays absent.
 A saved persona reference does not qualify or enable the separate spoken-alert endpoint.
 
-Choose a persona, optionally choose a conversation and up to 16 messages, then
-**Preview current context** or **Copy current context**. Each click reads current
-active knowledge/preferences and the selected permitted messages. Other personas'
-private conversations, inactive entries and historical knowledge snapshots are
-excluded. Corrections and removals affect the next read. A large context is
-refused rather than silently truncated. No knowledge entry or conversation
-message enters the assistant graph automatically; the curated persona and
-active preferences reach the model prompt only as the conversation section
-describes. Copied data grants no permission or current location evidence.
+**Model context** turns knowledge notes on or off for the chosen companion's
+model and previews exactly what its next model call sends, as
+[Recent context and New conversation](#recent-context-and-new-conversation)
+describes. Knowledge notes reach no model until the owner turns them on for
+that companion.
+
+To copy context elsewhere, choose a persona, optionally choose a conversation
+and up to 16 messages, then **Preview context to copy** or **Copy current
+context**. Each click reads current active knowledge/preferences and the
+selected permitted messages. Other personas' private conversations, inactive
+entries and historical knowledge snapshots are excluded. Corrections and
+removals affect the next read. A large copy is refused rather than silently
+truncated. Copying sends nothing to a model. Copied data grants no permission
+or current location evidence.
 
 ### Conversation records
 

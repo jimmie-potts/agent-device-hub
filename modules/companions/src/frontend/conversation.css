@@ -567,3 +567,47 @@
   border: 0;
   padding: 0;
 }
+
+/* New conversation (Hub #2029) sits before Details at the header row's end. */
+.conversation-header .conversation-new {
+  flex: none;
+  min-block-size: 2.5rem;
+  padding-inline: 0.7rem;
+  margin-inline-start: auto;
+}
+
+.conversation-header .conversation-new + .conversation-details-trigger {
+  margin-inline-start: 0;
+}
+
+.conversation-earlier {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-s);
+}
+
+.conversation-earlier p {
+  margin: 0;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.conversation-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-s);
+}
+
+.conversation-list li {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: start;
+}
+
+.conversation-list-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

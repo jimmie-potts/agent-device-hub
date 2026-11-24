@@ -24,9 +24,9 @@ export async function knowledgeJourney(world: World, page: Page, context: Browse
   await entry.getByRole('button', {name: 'Reactivate', exact: true}).click(); await entry.getByText('Active', {exact: true}).waitFor();
   for (const id of ['bunny', 'reachy', 'microduck']) {
     await region.getByLabel('Companion', {exact: true}).selectOption(id);
-    await region.getByRole('button', {name: 'Preview current context', exact: true}).click();
-    await region.getByRole('textbox', {name: 'Current context', exact: true}).waitFor();
-    copied = JSON.parse(await region.getByRole('textbox', {name: 'Current context', exact: true}).inputValue()) as ContextDocument;
+    await region.getByRole('button', {name: 'Preview context to copy', exact: true}).click();
+    await region.getByRole('textbox', {name: 'Context to copy', exact: true}).waitFor();
+    copied = JSON.parse(await region.getByRole('textbox', {name: 'Context to copy', exact: true}).inputValue()) as ContextDocument;
     assert.equal(copied.persona.id, id); assert.equal(copied.knowledge.length, 4); assert.equal(copied.persona.voiceRef, null);
   }
   await region.getByRole('button', {name: 'Create synthetic Reachy–Duck exchange', exact: true}).click();
@@ -69,10 +69,10 @@ export async function knowledgeJourney(world: World, page: Page, context: Browse
   await region.getByRole('article', {name: 'reachy message 20', exact: true}).waitFor();
   await older.getByRole('checkbox').uncheck();
   for (let index = 0; index < 16; index += 1) await region.getByRole('article', {name: `reachy message ${index + 5}`, exact: true}).getByRole('checkbox').check();
-  for (const action of ['Preview current context', 'Copy current context']) {
+  for (const action of ['Preview context to copy', 'Copy current context']) {
     await region.getByRole('button', {name: action, exact: true}).click();
-    await region.getByRole('textbox', {name: 'Current context', exact: true}).waitFor();
-    copied = JSON.parse(await region.getByRole('textbox', {name: 'Current context', exact: true}).inputValue()) as ContextDocument;
+    await region.getByRole('textbox', {name: 'Context to copy', exact: true}).waitFor();
+    copied = JSON.parse(await region.getByRole('textbox', {name: 'Context to copy', exact: true}).inputValue()) as ContextDocument;
     assert.deepEqual(copied.messages.map(value => value.messageId), selectedIds);
     if (action === 'Copy current context') {
       await region.getByText('Copied current companion context.', {exact: true}).waitFor();

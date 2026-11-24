@@ -8,6 +8,7 @@ import {isErrorCode, type ErrorCode} from '@jimmie-potts/event-contracts/v2/erro
 import type {AssistantProfile, AssistantStatus, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
 
 import type {TranscriptItem} from './provider.js';
+import {RECENT_MESSAGES, type RecentMessage} from './context.js';
 import {HISTORY_ROWS, historyCursor, readHistoryCursor, type ConversationMessage, type RecentConversationPage, type SavedQuestion} from './history-contract.js';
 import {projectionOf, waitsOnOwner, type Reported} from './sessions.js';
 
@@ -19,13 +20,22 @@ export type Question = SavedQuestion & {call: string};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
-  traceparent: string | null; transcript: TranscriptItem[]};
+  traceparent: string | null; transcript: TranscriptItem[];
+  /**
+   * The conversation's last saved message sequence when the task started (Hub #2029): the recent conversation section of
+   * each of its calls holds the conversation's messages up to it, so the section stays fixed for the task. A task saved
+   * before this field has no recent conversation.
+   */
+  contextThrough?: number};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; result: string | null; units: number | null; reservedUnits: number;
   reservedMs: number; elapsedMs: number | null; traceparent: string};
 export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; endedAtMs: number | null;
   status: AssistantStatus; traceparent: string; previousTraceparent: string | null};
-export type StagedInput = {action: 'start' | 'answer'; profile: AssistantProfile; text: string; expectedRevision: number; taskId?: string; questionId?: string};
+/** A staged message or answer, or New conversation for the profile (Hub #2029), which carries no text: `text` is empty. */
+export type StagedInput = {action: 'start' | 'answer' | 'new-conversation'; profile: AssistantProfile; text: string; expectedRevision: number; taskId?: string; questionId?: string};
+/** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
+export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
 export type Stage = {ref: string; requestId: string; input: StagedInput; expires: number};
 export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: Question | null} | null; next: number | null};
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
@@ -106,6 +116,8 @@ export class AssistantStore {
     // stale only when its own conversation changed after the revision it names. The engine's start raises every row with
     // `restarted`.
     database.exec('CREATE TABLE IF NOT EXISTS assistant_conversation_changes (conversation_id TEXT PRIMARY KEY, revision INTEGER NOT NULL) STRICT');
+    // Each companion's context switches (Hub #2029): whether its context holds the owner's knowledge notes. No row is off.
+    database.exec('CREATE TABLE IF NOT EXISTS assistant_context_settings (profile TEXT PRIMARY KEY, knowledge INTEGER NOT NULL CHECK(knowledge IN (0,1))) STRICT');
     this.messages = new Messages(database);
   }
   /** Conversations whose tasks changed in the open transaction; the next `bump` records them at its revision. */
@@ -139,7 +151,16 @@ export class AssistantStore {
   }
   enable(enabled: boolean): void {this.database.prepare('UPDATE assistant_meta SET enabled=? WHERE id=1').run(enabled ? 1 : 0);}
   task(id: string): Task | undefined {return parsed<Task>(this.database.prepare('SELECT record FROM assistant_tasks WHERE id=?').get(id) as RecordRow | undefined);}
-  latest(): Task[] {return this.database.prepare('SELECT record FROM assistant_tasks WHERE seq IN (SELECT MAX(seq) FROM assistant_tasks GROUP BY profile) ORDER BY seq').all().map(row => JSON.parse(row.record as string) as Task);}
+  /**
+   * Each profile's latest task in its current conversation. After New conversation (Hub #2029) a profile has none until
+   * its first message there: the earlier conversation's tasks have all finished, since New conversation is refused while
+   * one is unfinished, so none of them can change what a conversation reports.
+   */
+  latest(): Task[] {
+    const current = new Set((this.database.prepare('SELECT id FROM assistant_conversations').all() as {id: string}[]).map(row => row.id));
+    return this.database.prepare('SELECT record FROM assistant_tasks WHERE seq IN (SELECT MAX(seq) FROM assistant_tasks GROUP BY profile) ORDER BY seq').all()
+      .map(row => JSON.parse(row.record as string) as Task).filter(task => current.has(task.conversationId));
+  }
   /** Every conversation's unfinished task, oldest first: each conversation has at most one (Hub #2027). */
   unfinished(): Task[] {return this.database.prepare("SELECT record FROM assistant_tasks WHERE status NOT IN ('succeeded','failed','cancelled') ORDER BY seq").all().map(row => JSON.parse(row.record as string) as Task);}
   /** The conversation's unfinished task, if it has one. */
@@ -156,11 +177,81 @@ export class AssistantStore {
     this.database.prepare('INSERT OR IGNORE INTO assistant_conversations VALUES (?,?)').run(profile, conversationId);
     return conversationId;
   }
+  /**
+   * New conversation (Hub #2029): the profile's current conversation becomes a fresh one, with its own ID and so its own
+   * session, title, running slot and change row. The earlier one keeps its messages, title and session report and stays
+   * readable by its ID; both are listed among the profile's conversations. The caller refuses it while a task is unfinished.
+   */
+  newConversation(profile: AssistantProfile): {previous: string | undefined; conversationId: string} {
+    const previous = this.conversation(profile), conversationId = randomUUID();
+    if (previous !== undefined) this.messages.ensure(previous, [profile], profile);
+    this.database.prepare('INSERT INTO assistant_conversations VALUES (?,?) ON CONFLICT(profile) DO UPDATE SET id=excluded.id').run(profile, conversationId);
+    this.messages.ensure(conversationId, [profile], profile);
+    return {previous, conversationId};
+  }
+  /** Whether a saved conversation is one of the profile's own: its current one, or an earlier one New conversation replaced. */
+  owns(profile: AssistantProfile, conversationId: string): boolean {
+    return this.conversation(profile) === conversationId || this.messages.conversation(conversationId)?.profile === profile;
+  }
+  /** The conversation's last saved message sequence, or 0 before its first message. */
+  lastSequence(conversationId: string): number {
+    return (this.database.prepare('SELECT MAX(seq) AS seq FROM assistant_messages WHERE conversation_id=?').get(conversationId) as {seq: number | null}).seq ?? 0;
+  }
   newTask(profile: AssistantProfile, prompt: string): Task {
     const conversationId = this.ensureConversation(profile);
     return {version: 1, graphVersion: GRAPH_VERSION, tracksApprovals: true, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
       generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null,
-      transcript: [{role: 'owner', text: prompt}]};
+      transcript: [{role: 'owner', text: prompt}], contextThrough: this.lastSequence(conversationId)};
+  }
+  /**
+   * The recent conversation a task's context may hold (Hub #2029): the conversation's saved owner messages, replies and
+   * tool results up to `through`, the sequence saved when the task started, so none of the task's own; the newest
+   * `RECENT_MESSAGES` of them oldest first, and how many there are in all. Only this one conversation is read, so no other conversation or profile can enter; a removed
+   * message is no longer saved, and a correction's meaning is the saved text. A tool result names its tool from its
+   * task's saved transcript when that still holds it; an artwork attachment keeps its request identity.
+   */
+  recentContext(conversationId: string, through: number): {messages: RecentMessage[]; total: number} {
+    const filter = 'msg.conversation_id=? AND msg.seq<=?';
+    const total = (this.database.prepare(`SELECT COUNT(*) AS count FROM assistant_messages msg WHERE ${filter}`).get(conversationId, through) as {count: number}).count;
+    const rows = (this.database.prepare(`${messagesWithAttachments} WHERE ${filter} ORDER BY msg.seq DESC LIMIT ?`).all(conversationId, through, RECENT_MESSAGES) as MessageRow[]).reverse();
+    const tools = new Map<string, Map<string, string>>();
+    const toolOf = (owner: string, id: string): string | undefined => {
+      let names = tools.get(owner);
+      if (names === undefined) {
+        names = new Map();
+        for (const item of this.task(owner)?.transcript ?? []) if (item.role === 'tool' && 'effect' in item && typeof item.effect === 'string') names.set(item.effect, item.name);
+        tools.set(owner, names);
+      }
+      return names.get(id);
+    };
+    const messages = rows.map(row => {
+      const saved = messageOf(row), tool = saved.role === 'tool' ? toolOf(saved.taskId, saved.id) : undefined;
+      return {id: saved.id, role: saved.role, text: saved.text, ...(tool === undefined ? {} : {tool}),
+        ...(saved.attachment === undefined ? {} : {attachment: {kind: saved.attachment.kind, requestId: saved.attachment.requestId, description: saved.attachment.description}})};
+    });
+    return {messages, total};
+  }
+  /** Whether the owner turned on knowledge notes for the companion's context (Hub #2029); off until the owner does. */
+  knowledgeEnabled(profile: AssistantProfile): boolean {
+    return (this.database.prepare('SELECT knowledge FROM assistant_context_settings WHERE profile=?').get(profile) as {knowledge: number} | undefined)?.knowledge === 1;
+  }
+  setKnowledge(profile: AssistantProfile, enabled: boolean): void {
+    this.database.prepare('INSERT INTO assistant_context_settings VALUES (?,?) ON CONFLICT(profile) DO UPDATE SET knowledge=excluded.knowledge').run(profile, enabled ? 1 : 0);
+  }
+  /**
+   * The profile's conversations, newest first, 16 a page (Hub #2029): the current one and each earlier one New conversation
+   * replaced. `older` is the cursor of the next page.
+   */
+  conversations(profile: AssistantProfile, before?: number): {conversations: ConversationSummary[]; older: number | null} {
+    const current = this.conversation(profile);
+    const rows = this.database.prepare(`SELECT c.rowid AS row,c.id AS id,COUNT(m.seq) AS messages,MIN(m.at_ms) AS firstAtMs,MAX(m.at_ms) AS lastAtMs
+      FROM companion_conversations c LEFT JOIN assistant_messages m ON m.conversation_id=c.id
+      WHERE json_extract(c.record,'$.profile')=? AND c.rowid<? GROUP BY c.rowid ORDER BY c.rowid DESC LIMIT 17`)
+      .all(profile, before ?? Number.MAX_SAFE_INTEGER) as {row: number; id: string; messages: number; firstAtMs: number | null; lastAtMs: number | null}[];
+    const conversations = rows.slice(0, 16).map(({id, messages, firstAtMs, lastAtMs}) => ({conversationId: id, current: id === current, messages, firstAtMs, lastAtMs}));
+    // The current conversation is listed first even before its first message has saved its record.
+    if (current !== undefined && before === undefined && !conversations.some(value => value.current)) conversations.unshift({conversationId: current, current: true, messages: 0, firstAtMs: null, lastAtMs: null});
+    return {conversations, older: rows.length > 16 ? rows[15]?.row ?? null : null};
   }
   message(task: Task, id: string, role: ConversationMessage['role'], text: string, atMs: number, follows?: string): void {
     if (this.messages.removal(id) !== undefined) return;
@@ -272,13 +363,19 @@ export class AssistantStore {
     if (rows.length > page.messages.length) page.next = page.messages.at(-1)?.seq ?? after;
     return page;
   }
-  recentPage(profile: AssistantProfile, before: string | undefined): RecentConversationPage | 'invalid-request' | 'capacity' {
-    const conversationId = this.conversation(profile) ?? null;
+  /**
+   * The recent view of the profile's current conversation, or of an earlier one by its ID (Hub #2029), which has no
+   * current task. An ID that is not one of the profile's conversations is not found.
+   */
+  recentPage(profile: AssistantProfile, before: string | undefined, requested?: string): RecentConversationPage | 'invalid-request' | 'capacity' | 'not-found' {
+    const current = this.conversation(profile) ?? null;
+    if (requested !== undefined && !this.owns(profile, requested)) return 'not-found';
+    const conversationId = requested ?? current;
     const page: RecentConversationPage = {version: 2, profile, conversationId, currentTask: null, messages: [], older: null};
     const cursor = before === undefined ? undefined : readHistoryCursor(before, profile);
     if (before !== undefined && (cursor === undefined || cursor.conversationId !== conversationId)) return 'invalid-request';
     if (conversationId === null) return page;
-    if (cursor === undefined) {
+    if (cursor === undefined && conversationId === current) {
       const task = parsed<Task>(this.database.prepare('SELECT record FROM assistant_tasks WHERE profile=? ORDER BY seq DESC LIMIT 1').get(profile) as RecordRow | undefined);
       if (task !== undefined && task.conversationId === conversationId) {
         const question = task.question;

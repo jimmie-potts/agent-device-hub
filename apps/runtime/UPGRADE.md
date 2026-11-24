@@ -250,6 +250,34 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Recent context and New conversation (#2029)
+
+The #2029 release gives each companion's model calls the recent messages and
+tool results of their own conversation, through a sectioned context builder,
+and adds New conversation. It adds the `assistant_context_settings` table,
+created empty, which holds each companion's knowledge switch; no row means
+off, so knowledge notes still reach no model after the upgrade. New task
+records gain an optional `contextThrough` field; tasks saved before the
+upgrade have none and keep an empty recent section if resumed. Active
+preferences over the preferences section's 32 KiB budget are now trimmed with
+a stated count instead of refusing the turn. Expect larger model requests,
+bounded by the section budgets, about 132 KiB in all; each is reserved and
+counted in the shared spend limits as before. No record is rewritten.
+
+New conversation moves a profile's row in `assistant_conversations` to a new
+conversation ID; the earlier conversation stays in `companion_conversations`
+with its messages, and its session goes idle.
+
+Returning to the release before needs no step for the tables: it ignores
+`assistant_context_settings` and `contextThrough`. Two differences remain for a
+profile that used New conversation. That release lists the profile's latest
+task even when it belongs to the earlier conversation, so the page can show a
+finished task's status above the new, empty conversation until its next
+message. Its archive check refuses an archive with two conversations of one
+profile, so an export of such a store cannot be imported there; keep the
+export and import it after installing this release again. Prefer fixing
+forward.
+
 ## Conversation companions (#2054)
 
 The #2054 release names each conversation's companion in its session: the

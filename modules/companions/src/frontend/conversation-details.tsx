@@ -4,6 +4,7 @@ import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import type {FrontendUi} from '@jimmie-potts/sdk/frontend';
 import {LIMITS} from '../assistant/limits.js';
 import type {SpendView} from '../assistant/spend-contract.js';
+import type {ConversationListEntry} from '../assistant/history-contract.js';
 import {priceText, spendText} from './conversation-spend.js';
 import {profiles} from './conversation-rail.js';
 
@@ -54,6 +55,7 @@ function titleOrigin(title: ConversationTitle, profileName: string, synthetic: b
 export function ConversationDetails({
   id, open, overlay, onClose, stopSpeaking,
   Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, goTo, setEnabled, title, rename,
+  conversations, viewing, openConversation,
 }: {
   id: string; open: boolean; overlay: boolean; onClose: () => void; stopSpeaking: React.JSX.Element | null;
   Facts: FrontendUi['Facts']; profile: AssistantProfile; profileName: string;
@@ -67,6 +69,11 @@ export function ConversationDetails({
   unfinished: readonly AssistantProfile[]; goTo: (profile: AssistantProfile) => void;
   setEnabled: (action: 'enable' | 'disable') => void;
   title: ConversationTitle | undefined; rename: (title: string) => void;
+  /**
+   * The profile's conversations, newest first (Hub #2029), or undefined while unread. `viewing` is the earlier one the page
+   * shows, if any; `openConversation` shows one, the current one included.
+   */
+  conversations: readonly ConversationListEntry[] | undefined; viewing: string | undefined; openConversation: (conversationId: string) => void;
 }): React.JSX.Element {
   const renameId = useId();
   const [draftTitle, setDraftTitle] = useState('');
@@ -167,6 +174,21 @@ export function ConversationDetails({
         <p>This month's figure is a local estimate. The Anthropic Console holds the real monthly limit and spend.</p>
       </details>
       <details>
+        <summary>Conversations</summary>
+        {conversations === undefined ? <p>The list of conversations is unavailable.</p> : conversations.length === 0 ? <p>No conversation saved for {profileName} yet.</p>
+          : <ul className="conversation-list" aria-label={`${profileName} conversations`}>{conversations.map(value => {
+            const shown = value.current ? viewing === undefined : viewing === value.conversationId;
+            const when = value.lastAtMs === null ? 'No messages yet' : `${String(value.messages)} ${value.messages === 1 ? 'message' : 'messages'}, last ${new Date(value.lastAtMs).toLocaleString()}`;
+            return <li key={value.conversationId}>
+              <span className="conversation-list-title">{value.title.value}</span>
+              <small>{value.current ? 'Current. ' : 'Earlier, read only. '}{when}</small>
+              {shown ? <small aria-current="true">Shown now</small>
+                : <button type="button" className="secondary" onClick={() => {openConversation(value.conversationId);}}>{value.current ? 'Show current conversation' : 'Open'}</button>}
+            </li>;
+          })}</ul>}
+        <p>New conversation starts a fresh conversation with its own session and title. Earlier conversations stay readable here, and their messages no longer reach the model.</p>
+      </details>
+      <details>
         <summary>Conversation settings</summary>
         {enabled === undefined ? <p>Conversation settings are unavailable.</p> : <>
           <p>{lastKnown ? 'Last known setting: ' : 'Conversation is '}{enabled ? 'on' : 'off'}.</p>
@@ -195,7 +217,7 @@ export function ConversationDetails({
         </form>
         <p>{synthetic ? 'This profile has no title model, so it keeps its persona name until you rename it.'
           : 'The title model writes a short title after the first message and checks it after each finished task and major event, such as an approval or a coding hand-off. Your name replaces it, and the model keeps your name unless the topic clearly changes.'}</p>
-        <p>Submitted messages and answers are saved in private Conversation history and passed to this profile's selected model. The Demo profiles run locally and make no paid calls.</p>
+        <p>Submitted messages and answers are saved in private Conversation history and passed to this profile's selected model, with the recent messages and tool results of this conversation as context. The Companion knowledge page previews that context. The Demo profiles run locally and make no paid calls.</p>
         <p>Unsent drafts stay in this page until reload. Submitted drafts also stay in the composer. Review saved history before sending the same text again.</p>
         <ul className="conversation-settings-links">
           <li><a href="#/module/companions/preferences">Preferences</a></li>
