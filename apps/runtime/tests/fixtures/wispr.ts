@@ -9,7 +9,18 @@ export type WisprFixture = {
   readonly observation: 'fresh' | 'stale' | 'missing';
   readonly exposeToDashboard?: boolean;
   readonly language?: boolean;
+  /**
+   * Report in the whole-hour UTC offset whose calendar day began within the hour before the observation, rather than in
+   * UTC, so the producer's Today window stays open for at least 23 hours whatever the wall-clock time (#2063).
+   */
+  readonly wholeDay?: boolean;
 };
+
+/** The offset in hours, within the IANA fixed-offset range, at which `atMs` falls in the first hour of a local day. */
+function dayStartOffset(atMs: number): number {
+  const hour = new Date(atMs).getUTCHours();
+  return hour <= 12 ? -hour : 24 - hour;
+}
 
 /** Select only files in this fresh disposable run's private configuration folder, before its runtime starts. */
 export async function prepareWisprFixture(configDir: string, observedAtMs: number, fixture: WisprFixture): Promise<WisprConfig> {
@@ -21,10 +32,14 @@ export async function prepareWisprFixture(configDir: string, observedAtMs: numbe
   };
   if (fixture.observation === 'missing') return config;
   const time = new Date(observedAtMs - (fixture.observation === 'stale' ? 3_600_000 : 0));
-  const now = time.toISOString(), date = now.slice(0, 10);
-  const snapshot = emptySnapshot({namespace: randomUUID(), generation: randomUUID(), now, timezone: 'UTC'});
+  // Etc/GMT names carry the opposite sign: Etc/GMT-3 is three hours ahead of UTC.
+  const offset = fixture.wholeDay === true ? dayStartOffset(time.getTime()) : 0;
+  const timezone = offset === 0 ? 'UTC' : `Etc/GMT${offset > 0 ? '-' : '+'}${String(Math.abs(offset))}`;
+  const local = new Date(time.getTime() + offset * 3_600_000);
+  const now = time.toISOString(), date = local.toISOString().slice(0, 10);
+  const snapshot = emptySnapshot({namespace: randomUUID(), generation: randomUUID(), now, timezone});
   snapshot.health = 'ok'; snapshot.revision = 1; snapshot.lastSuccessAt = now; snapshot.latestSourceDate = date;
-  const cell = {...emptyTotals(), date, hour: time.getUTCHours(), weekday: time.getUTCDay(),
+  const cell = {...emptyTotals(), date, hour: local.getUTCHours(), weekday: local.getUTCDay(),
     app: 'chatgpt' as const, category: 'ai-prompts' as const, archived: false,
     words: 120, dictations: 3, speechSeconds: 60, speechWords: 120, speechSamples: 3};
   snapshot.numeric.cells = [cell];

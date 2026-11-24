@@ -96,8 +96,11 @@ export type WorldOptions = {
   roborock?: boolean;
   /** The real Volcano module and its store over a synthetic feed: no radio. */
   volcano?: boolean;
-  /** The actual file reader on explicitly selected private synthetic collector files. */
-  wispr?: {exposeToDashboard?: boolean; shareTextAggregates?: boolean};
+  /**
+   * The actual file reader on explicitly selected private synthetic collector files. `wholeDay` reports them in a zone
+   * whose day has just begun, so their Today window cannot close during a journey (#2063).
+   */
+  wispr?: {exposeToDashboard?: boolean; shareTextAggregates?: boolean; wholeDay?: boolean};
   /** The real Pixoo module with a fresh library and an in-memory device. */
   pixooPages?: boolean;
   pixooReadback?: {label: string; reading: () => Promise<number | undefined>};
@@ -297,7 +300,7 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
   const nanoleafToken = join(configDir, 'nanoleaf-token');
   if (options.nanoleaf === true) await writePrivate(nanoleafToken, NANOLEAF_TOKEN);
   const wisprConfig = options.wispr === undefined ? undefined : await prepareWisprFixture(configDir, now(), {
-    observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true,
+    observation: 'fresh', exposeToDashboard: options.wispr.exposeToDashboard ?? false, language: true, wholeDay: options.wispr.wholeDay ?? false,
   });
   const moduleConfig = {
     ...(options.art === true ? {art: options.artRecentLimit === undefined ? {} : {recentLimit: options.artRecentLimit}} : {}),
