@@ -106,3 +106,56 @@ test('progress 2.1 adds usage-limit, which carries the reported limit or unknown
   invalid(withData('coding-progress', limited));
   invalid(withData('coding-progress', {operationId: 'op', status: 'completed', result: {...result(), outcome: 'waiting-for-owner'}}));
 });
+
+// Hub #2028: one worker with a slot per companion. `coding-endpoint/2.2` declares the slots, `coding-work/2.1` tags a
+// start with the companion that asked, and `coding-state/2.2` lists every active run and every hand-off waiting for a
+// slot. The earlier versions are unchanged and refuse the new members.
+const at = (name, version, data) => ({...family(name), dataschema: `https://bunny.invalid/events/${name}/${version}`, data});
+
+test('an enable in 2.2 declares how many runs the worker holds, with or without readiness; a disable never does, and 2.1 refuses it', () => {
+  valid(fixtures.valid['coding-endpoint-slots']);
+  valid(at('coding-endpoint', '2.2', {requestId: 'r-1', action: 'enable', slots: 3}));
+  valid(at('coding-endpoint', '2.2', {requestId: 'r-1', action: 'enable'}));
+  valid(at('coding-endpoint', '2.2', {requestId: 'r-1', action: 'disable'}));
+  for (const slots of [0, 9, 1.5, '3']) invalid(at('coding-endpoint', '2.2', {requestId: 'r-1', action: 'enable', slots}));
+  invalid(at('coding-endpoint', '2.2', {requestId: 'r-1', action: 'disable', slots: 3}));
+  invalid(at('coding-endpoint', '2.2', {requestId: 'r-1', action: 'disable', readiness: readiness()}));
+  invalid(v21('coding-endpoint', {requestId: 'r-1', action: 'enable', slots: 3}));
+});
+
+test('a start in work 2.1 names the asking companion; a cancel does not, and 2.0 refuses the member', () => {
+  const tagged = fixtures.valid['coding-work-companion'];
+  valid(tagged);
+  for (const companion of ['bunny', 'reachy', 'microduck']) valid({...tagged, data: {...tagged.data, companion}});
+  const {companion: _companion, ...untagged} = tagged.data;
+  invalid({...tagged, data: untagged});
+  invalid({...tagged, data: {...tagged.data, companion: 'codex'}});
+  valid(at('coding-work', '2.1', {requestId: 'c-1', operationId: 'op', action: 'cancel'}));
+  invalid(at('coding-work', '2.1', {requestId: 'c-1', operationId: 'op', action: 'cancel', companion: 'bunny'}));
+  invalid(withData('coding-work', tagged.data));
+  valid(withData('coding-work', untagged));
+});
+
+test('the coding state 2.2 lists every run and waiting hand-off once, one run per companion, with active as the oldest run', () => {
+  const slots = fixtures.valid['coding-state-slots'];
+  valid(slots);
+  const data = structuredClone(slots.data);
+  valid({...slots, data: {...data, endpointId: null, availability: 'off', active: null, readiness: null, slots: null, runs: [], waiting: []}});
+  // An old worker declares no slots; the state still lists its one run.
+  valid({...slots, data: {...data, slots: null, runs: data.runs.slice(0, 1)}});
+  const run = data.runs[0];
+  for (const changed of [
+    {runs: [run, {...data.runs[1], companion: 'bunny'}]},
+    {waiting: [{operationId: run.operationId, taskId: 'task-bunny-3', companion: 'bunny'}]},
+    {active: {operationId: data.runs[1].operationId, taskId: data.runs[1].taskId, status: 'dispatching'}},
+    {active: null},
+    {runs: [{...run, status: 'uncertain'}]},
+    {runs: [{...run, companion: 'codex'}]},
+    {waiting: [{...data.waiting[0], brief: 'private'}]},
+    {slots: 0},
+  ]) invalid({...slots, data: {...data, ...changed}});
+  const {runs: _runs, ...withoutRuns} = data;
+  invalid({...slots, data: withoutRuns});
+  invalid(v21('coding-state', data));
+  valid(v21('coding-state', {id: data.id, revision: data.revision, endpointId: data.endpointId, availability: data.availability, active: data.active, readiness: null}));
+});

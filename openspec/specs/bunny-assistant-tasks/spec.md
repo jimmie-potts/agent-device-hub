@@ -187,15 +187,19 @@ The companions module SHALL discover the tools a turn may call from its own stat
 
 ### Requirement: Owner approval of proposed commands
 
-Every state-changing command SHALL go through the existing question interrupt as an approval proposal bound to the exact family, target, value and the revision it was proposed against: the synced Hub-mode revision for `mode-set`, the coding state revision for a delegation, and the configuration revision and generation for each LIFX write. The owner SHALL answer an approval only with the literal decisions approve or decline. An approved command SHALL be dispatched once through the core's tracked dispatcher; a dispatch whose bound revision has moved SHALL be refused and reported to the model as refused; a decline SHALL send nothing and say so. An approved delegation SHALL leave the task waiting on a delegation that only the worker's result answers; the owner's input SHALL be refused for it, it SHALL count no owner question, and cancelling the task SHALL ask the worker to stop.
+Every state-changing command SHALL go through the existing question interrupt as an approval proposal bound to the exact family, target, value and the revision it was proposed against: the synced Hub-mode revision for `mode-set`, the coding worker's endpoint revision for a delegation, which moves only when a worker endpoint is selected, disabled or lost and never when a run starts or ends, and the configuration revision and generation for each LIFX write. A delegation SHALL be proposed while a coding worker is connected, even when the asking companion's slot is busy. The owner SHALL answer an approval only with the literal decisions approve or decline. An approved command SHALL be dispatched once through the core's tracked dispatcher; a dispatch whose bound revision has moved SHALL be refused and reported to the model as refused; a decline SHALL send nothing and say so. An approved delegation SHALL leave the task waiting on a delegation that only the worker's result answers, whether it was sent at once or waits for its companion's busy slot, in which case the tool result SHALL say the coding worker is busy and the hand-off waits for that companion's slot, the conversation SHALL say it waits to delegate, and say it was delegated once the hand-off is sent; the owner's input SHALL be refused for it, it SHALL count no owner question, and cancelling the task SHALL ask the worker to stop or, for a hand-off still waiting, remove it unsent.
 
 #### Scenario: Approved mode change
 - **WHEN** the owner approves a proposed `set_mode` and the Hub mode has not changed since the proposal
 - **THEN** one tracked `mode-set` operation is sent with the recorded expected revision, the saved mode changes, and the task's final text reports the accepted result without claiming device effects
 
 #### Scenario: Declined or stale proposal
-- **WHEN** the owner declines, or approves after the Hub mode or the coding worker's state changed
+- **WHEN** the owner declines, or approves after the Hub mode changed or the coding worker's endpoint changed
 - **THEN** no command is sent for a decline; a stale approval is refused with `revision-conflict` and the conversation reports it; neither path starts a duplicate command
+
+#### Scenario: Another companion's run
+- **WHEN** a delegation is proposed in one conversation and another companion's hand-off starts or ends before the owner approves it
+- **THEN** the approval is not refused and the hand-off is sent or waits by its own companion's slot
 
 #### Scenario: Approval after restart
 - **WHEN** the runtime restarts while an approval question is waiting
@@ -204,6 +208,10 @@ Every state-changing command SHALL go through the existing question interrupt as
 #### Scenario: Delegation answered by the worker
 - **WHEN** an approved delegation is accepted and the worker later reports its result
 - **THEN** the task resumes with that result as the tool's result, the next turn reports it, and an owner answer sent meanwhile is refused as invalid state
+
+#### Scenario: Delegation that waits for a busy slot
+- **WHEN** the owner approves a delegation while the companion's slot is busy
+- **THEN** the tool result says the coding worker is busy and the hand-off waits for that slot, the conversation says it waits to delegate and then that it delegated once the hand-off is sent, the title check for an accepted hand-off runs once, and no reply says no coding worker is connected
 
 ### Requirement: Core admission of assistant commands
 
@@ -219,7 +227,7 @@ The core SHALL answer an `assistant-dispatch` command only from `bunny/modules/c
 
 ### Requirement: Conversation panel
 
-The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assistant` page: the provider and model, allowed and unavailable tools, the coding worker's availability, reported usage in hosted tokens or synthetic units, and unknown when usage is unreported, today's shared spend against the daily limit and this month's local estimate, the saved conversation with owner, assistant and tool messages, and explicit send, answer, approve, decline, resume and cancel controls. It SHALL carry the speech endpoint controls as spoken replies (enable in this tab, mute, stop speaking, playback and tracked operation) and a Read aloud control beside each saved assistant message within the spoken bound, stating that enabling makes the tab the one speaker and that stopping speech does not cancel the task. A delegation proposal SHALL show its repository, brief and bound revision; a waiting delegation SHALL say it waits for the worker and offer cancel, not an answer box. It SHALL label the synthetic provider as making no paid calls, preserve written context and saved questions on reload, and distinguish control receipts from task state. Disconnection SHALL be visible and prevent mutation against stale state. Assistant activation SHALL default off without affecting fixed-text Reachy or coding-session lifecycle ownership.
+The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assistant` page: the provider and model, allowed and unavailable tools, the coding worker's availability with how many of its slots are busy and how many hand-offs wait, the conversation companion's own slot, the shared plan usage windows the worker's readiness reported with their use, reset and when they were observed, or why there are none, reported usage in hosted tokens or synthetic units, and unknown when usage is unreported, today's shared spend against the daily limit and this month's local estimate, the saved conversation with owner, assistant and tool messages, and explicit send, answer, approve, decline, resume and cancel controls. It SHALL carry the speech endpoint controls as spoken replies (enable in this tab, mute, stop speaking, playback and tracked operation) and a Read aloud control beside each saved assistant message within the spoken bound, stating that enabling makes the tab the one speaker and that stopping speech does not cancel the task. A delegation proposal SHALL show its repository, brief and bound revision and, while the companion's slot is busy, that an approved hand-off waits for it; a waiting delegation SHALL say it waits for the worker, worded as busy and unsent while its hand-off waits for a slot, and offer cancel, not an answer box. It SHALL label the synthetic provider as making no paid calls, preserve written context and saved questions on reload, and distinguish control receipts from task state. Disconnection SHALL be visible and prevent mutation against stale state. Assistant activation SHALL default off without affecting fixed-text Reachy or coding-session lifecycle ownership.
 
 #### Scenario: Approval by keyboard
 - **WHEN** a task waits for approval and the owner reloads the page and operates it by keyboard
@@ -236,6 +244,14 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 #### Scenario: Delegation on the page
 - **WHEN** the model proposes a delegation and the owner approves it by keyboard
 - **THEN** the proposal shows the repository, brief and bound revision, the page then shows the delegated work waiting for the worker with cancel available, and the worker's result appears as a tool message
+
+#### Scenario: Busy slot on the page
+- **WHEN** a companion's slot is busy and its conversation proposes a delegation that the owner approves
+- **THEN** the proposal says the hand-off will wait, the delegated work says the coding worker is busy and nothing has been sent, the details show the busy slots and the waiting hand-off, and the card changes to the ordinary wait once the hand-off is sent
+
+#### Scenario: Plan usage
+- **WHEN** the selected worker's readiness carries limit windows from its latest run
+- **THEN** the details list each window with its use, status and reset and when they were observed, and say "Not reported yet" before any run reported one
 
 #### Scenario: Open, refresh and page through recent history
 - **WHEN** a dashboard consumer opens a profile with the recent reader, refreshes it as new messages arrive, or explicitly loads an earlier page

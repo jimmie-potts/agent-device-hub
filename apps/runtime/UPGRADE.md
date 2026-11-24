@@ -250,6 +250,67 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Coding-worker slots (#2028)
+
+The #2028 release lets the coding worker run one task per companion, three at
+once. It changes both sides of the worker's connection:
+
+- The core's companions module publishes `coding-state/2.2`, binds a delegation
+  proposal to the worker's connection only, and keeps an approved hand-off
+  whose companion's slot is busy waiting in the new `companion_coding_waiting`
+  table, which it creates at start. The `companion_coding` table and its rows
+  are unchanged, and no record is rewritten.
+- The worker declares three slots with `coding-endpoint/2.2` and takes starts
+  tagged with the asking companion (`coding-work/2.1`).
+
+Upgrade the core first, then the worker. The worker is its own process on the
+Mac, started from the reviewed release (see the
+[coding worker guide](../../docs/coding-worker.md)); its update joins the same
+installation batch.
+
+**An older worker with this core** works. The core records no slots for it and
+counts it as one slot shared by every companion. It sends that worker the
+untagged 2.0 start it knows. A second companion's approved hand-off then waits
+for the running one to end instead of being refused, and the page shows it as
+waiting.
+
+**This worker with an older core** cannot declare. The older core refuses
+`coding-endpoint/2.2` as `unsupported-version`, so the worker's first start
+ends with `coding-worker-enable-refused: unsupported-version` and status 1, and under
+launchd every restart is refused the same way. No run starts and nothing is
+lost. Upgrade the core, or start the worker from its earlier release.
+
+**Runs in flight at the switch** end as at any restart:
+
+- When the core restarts, the worker's stream drops and the worker stops each
+  run it holds. At start the core settles each unanswered run as uncertain and
+  tells its task, without a title check. Nothing is resent. Once the stopped
+  runs have ended, or after fifteen seconds, the worker declares a fresh
+  endpoint; a run still alive then keeps only its companion's slot busy until it
+  ends.
+- When the worker is replaced, stopping it declares its endpoint off and the
+  core settles each of its runs as uncertain. To cut no run, replace the worker
+  while Conversation details say the coding worker is connected and idle.
+- A run whose worker stays connected but never reports again is given up as
+  uncertain about 34 minutes after its start report (twenty minutes of wall
+  clock, two of grace and twelve for git setup that waits for other runs on
+  the same repository). Before this release that took 22 minutes.
+- An approved hand-off still waiting keeps its place through either switch and
+  is sent once when a worker is connected and its slot is free. One whose
+  dispatch had left without its acceptance recorded is ended uncertain at the
+  next start and never sent again.
+
+Returning the core below this release is safe for stored data; prefer fixing
+forward. Return the worker first, since the earlier core refuses its
+declaration. The earlier core ignores `companion_coding_waiting`, so a hand-off
+waiting there would never be sent and its task would keep waiting on the
+delegation. Before returning, wait until Conversation details show no hand-off
+waiting, or cancel the tasks whose hand-offs wait, which removes them unsent.
+If this release is installed again, a row left behind is sent only while its
+task still waits on that hand-off; one whose task was cancelled or ended in the
+meantime is dropped unsent. A row caught mid-dispatch at the return is ended
+uncertain at the first start and is never sent.
+
 ## Conversation companions (#2054)
 
 The #2054 release names each conversation's companion in its session: the

@@ -80,6 +80,8 @@ void test('a generated title never repeats text the prompt carried, and the owne
   // The approval question words the hand-off as "Delegate to"; a declined or refused hand-off is checked the same way.
   assert.equal(generatedTitle('#2025 Fix the stale session title shown on the hallway Tidbyt after a rename',
     [assistant(`Delegate to the coding worker in agent-device-hub: ${titleBrief}`)]), undefined, '#N and an approval\'s brief');
+  // A hand-off waiting for its companion's busy slot is worded "Waiting to delegate to" until it is sent (Hub #2028).
+  assert.equal(generatedTitle('Fix the timer test', [assistant('Waiting to delegate to the coding worker in agent-device-hub: Fix the timer test.')]), undefined, 'a waiting hand-off\'s brief');
   // Uncut answers, which only the brief rules can catch: equality with the approval's brief, and a six-word run of it.
   assert.equal(generatedTitle('Fix the timer test', [assistant('Delegate to the coding worker in agent-device-hub: Fix the timer test.')]), undefined,
     'a short answer equal to an approval\'s brief');
@@ -709,6 +711,25 @@ void test('an accepted coding hand-off starts a check whose prompt carries the b
   assert.ok(after.some(call => call.events?.includes('A coding hand-off was accepted.') === true && call.outcome === 'kept'), JSON.stringify(after.map(call => [call.events, call.outcome])));
   assert.ok(provider.prompts.slice(-1).every(prompt => prompt.startsWith('Current title, set by the owner: Timer work\n')));
   assert.deepEqual(w.titles.map(message => titleOf(message)?.value), ['Timer question', '#2041 Flaky timer test', 'Timer work']);
+});
+
+void test('a hand-off that waits for its companion\'s busy slot is an accepted hand-off for the title, checked once (Hub #2028)', {timeout: 20_000}, async context => {
+  const turnModel: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: input => Promise.resolve(input.transcript.every(item => item.role === 'owner')
+    ? {text: null, calls: [{id: 'call-1', name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: 'Fix the flaky timer test from issue #2041.'}}], stop: 'tool', units: 10}
+    : done('Handed off.'))};
+  const provider = titler([titled('Timer question'), titled('#2041 Flaky timer test')]);
+  const w = await world(context, {provider: turnModel, titleProvider: provider, tools: ['delegate_coding'],
+    coding: () => ({available: true, endpointId: 'worker', revision: 1}),
+    delegate: data => Promise.resolve({status: 'waiting' as const, requestId: data.requestId})});
+  await w.start('Can the worker look at the flaky timer test?');
+  await w.titled(1);
+  await w.until(() => w.status()?.status === 'waiting' && w.status()?.questionId !== null && w.status()?.hasAnswer === false);
+  await w.answer('approve');
+  await w.until(() => w.status()?.status === 'waiting' && w.status()?.questionId?.includes('delegation') === true);
+  await w.titled(2);
+  await turns();
+  const calls = await w.settled(provider.prompts.length);
+  assert.equal(calls.filter(call => call.events?.includes('A coding hand-off was accepted.') === true).length, 1, JSON.stringify(calls.map(call => call.events)));
 });
 
 void test('a coding hand-off\'s result starts a check labelled with its outcome alone; the worker\'s text never reaches the title model', {timeout: 20_000}, async context => {

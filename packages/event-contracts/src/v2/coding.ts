@@ -3,6 +3,7 @@
 // occurrences, and the module settles the operation. The worker never gets device or dashboard authority: its
 // credential carries the `coding-worker` role, which grants exactly these families on its endpoint.
 import type {Message, MessageValidator} from './index.js';
+import type {AssistantProfile} from './assistant.js';
 import {defineFamily, registerFamilies, routedSubject} from './registry.js';
 
 /** The source the worker's credential acts as; the gateway binds the role to it. */
@@ -23,9 +24,17 @@ export type CodingReadiness = {
   tool: 'claude-code'; installed: 'yes' | 'no' | 'unknown'; version: string | null; signedIn: 'yes' | 'no' | 'unknown'; plan: string | null;
   limits: CodingLimitWindow[] | null; limitsObservedAtMs: number | null; checkedAtMs: number;
 };
-/** Version 2.0 declares availability; 2.1 lets an enable carry the worker's readiness, and an enable from the selected endpoint refreshes it. */
-export type CodingEndpointControl = {requestId: string; action: 'enable' | 'disable'; readiness?: CodingReadiness};
-export type CodingWork = {requestId: string; operationId: string} & ({action: 'start'; taskId: string; repository: string; brief: string; bounds: CodingBounds} | {action: 'cancel'});
+/** The companion a run belongs to (Hub #2028): one worker slot each for B.U.N.N.Y., Reachy and MicroDuck. */
+export type CodingCompanion = AssistantProfile;
+/** How many runs a worker from Hub #2028 declares it can hold at once: one slot per companion. */
+export const CODING_WORKER_SLOTS = 3;
+/**
+ * Version 2.0 declares availability; 2.1 lets an enable carry the worker's readiness, and an enable from the selected
+ * endpoint refreshes it; 2.2 (Hub #2028) lets an enable declare how many runs the worker holds at once.
+ */
+export type CodingEndpointControl = {requestId: string; action: 'enable' | 'disable'; readiness?: CodingReadiness; slots?: number};
+/** Version 2.1 (Hub #2028) tags a start with the companion that asked; a 2.0 start has no companion. */
+export type CodingWork = {requestId: string; operationId: string} & ({action: 'start'; taskId: string; companion?: CodingCompanion; repository: string; brief: string; bounds: CodingBounds} | {action: 'cancel'});
 export type CodingCheck = {name: string; status: 'passed' | 'failed' | 'skipped' | 'unrun' | 'unknown'; detail?: string};
 /** A usage limit the harness reported: the window it named and when it resets, each null when the tool did not say. */
 export type CodingLimit = {window: string | null; resetsAtMs: number | null};
@@ -46,9 +55,19 @@ export type CodingProgress = {operationId: string} & (
   | {status: 'failed' | 'cancelled' | 'uncertain'; reason: CodingProgressReason; result?: CodingResult | null}
 );
 export type CodingLost = {id: string};
-/** Version 2.1 adds the selected worker's latest `readiness`, null while none is selected or it reported none. */
+/** One run the worker holds for a companion's slot, from dispatch to its end. */
+export type CodingRunEntry = {operationId: string; taskId: string; companion: CodingCompanion; status: 'dispatching' | 'started' | 'cancelling'};
+/** One approved hand-off waiting for its companion's slot, never sent yet. */
+export type CodingWaiting = {operationId: string; taskId: string; companion: CodingCompanion};
+/**
+ * Version 2.1 adds the selected worker's latest `readiness`, null while none is selected or it reported none. Version
+ * 2.2 (Hub #2028) adds the selected worker's declared `slots` (null for a worker that declares none, which holds one
+ * run), every active run in `runs` and the approved hand-offs waiting for a slot in `waiting`, oldest first; `active`
+ * stays the oldest run for older readers.
+ */
 export type CodingState = {id: 'coding'; revision: number; endpointId: string | null; availability: 'off' | 'available' | 'unavailable';
-  active: {operationId: string; taskId: string; status: 'dispatching' | 'started' | 'cancelling' | 'uncertain'} | null; readiness?: CodingReadiness | null};
+  active: {operationId: string; taskId: string; status: 'dispatching' | 'started' | 'cancelling' | 'uncertain'} | null; readiness?: CodingReadiness | null;
+  slots?: number | null; runs?: CodingRunEntry[]; waiting?: CodingWaiting[]};
 
 const codingSubject = (message: Message): string | undefined => message.subject === 'coding' ? undefined : 'envelope /subject must be coding';
 const assistantSubject = (message: Message): string | undefined => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant';
@@ -74,21 +93,37 @@ function checkEndpoint(message: Message): string | undefined {
   const routed = routedSubject('routing')(message);
   if (routed !== undefined) return routed;
   const data = message.data as CodingEndpointControl;
-  return data.action === 'disable' && data.readiness !== undefined ? 'payload readiness goes with enable only' : undefined;
+  if (data.action === 'disable' && data.readiness !== undefined) return 'payload readiness goes with enable only';
+  return data.action === 'disable' && data.slots !== undefined ? 'payload slots go with enable only' : undefined;
+}
+
+/** A 2.2 state lists each operation once, at most one run per companion, and `active` as the oldest run. */
+function checkState(message: Message): string | undefined {
+  const subject = codingSubject(message);
+  if (subject !== undefined) return subject;
+  const data = message.data as Required<CodingState>;
+  const operations = [...data.runs, ...data.waiting].map(entry => entry.operationId);
+  if (new Set(operations).size !== operations.length) return 'payload an operation is listed once';
+  if (new Set(data.runs.map(run => run.companion)).size !== data.runs.length) return 'payload a companion has at most one run';
+  if (data.runs.length > 0 && data.active?.operationId !== data.runs[0]?.operationId) return 'payload active is the oldest run';
+  return undefined;
 }
 
 export const codingFamilies = [
   defineFamily('coding-endpoint', 'command', 'org.bunny.coding.endpoint.requested', routedSubject('routing')),
   defineFamily('coding-endpoint', 'command', 'org.bunny.coding.endpoint.requested', checkEndpoint, '2.1'),
+  defineFamily('coding-endpoint', 'command', 'org.bunny.coding.endpoint.requested', checkEndpoint, '2.2'),
   defineFamily('coding-dispatch', 'command', 'org.bunny.coding.dispatch.requested', assistantSubject),
   defineFamily('coding-run', 'command', 'org.bunny.coding.run.requested', assistantSubject),
   defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork),
+  defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.1'),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.1'),
   defineFamily('coding-lost', 'occurrence', 'org.bunny.coding.endpoint-lost', message =>
     message.subject === (message.data as CodingLost).id ? undefined : 'envelope /subject must name the lost endpoint'),
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', codingSubject),
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', codingSubject, '2.1'),
+  defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', checkState, '2.2'),
 ] as const;
 export const codingSchemas: Readonly<Record<string, object>> = Object.fromEntries(codingFamilies.map(family => [family.dataschema, family.schema]));
 export function registerCodingFamilies(validator: MessageValidator): void { registerFamilies(validator, codingFamilies); }

@@ -1128,10 +1128,32 @@ families. Hub #1743 adds three versions beside the unchanged 2.0 schemas:
   ends `failed` with reason `usage-limit`, or `waiting-for-owner`. A `limit`
   appears with that outcome only.
 
-The worker publishes 2.1 progress and endpoint commands and the companions
-module publishes 2.1 state; a 2.0 message stays valid and refuses the new
-members. The credential role's families are unchanged. `tests/coding.test.mjs`
+The worker publishes 2.1 progress; a 2.0 message stays valid and refuses the
+new members. The credential role's families are unchanged. `tests/coding.test.mjs`
 covers both versions.
+
+### Coding-worker slots (`coding-endpoint/2.2`, `coding-work/2.1`, `coding-state/2.2`)
+
+Hub #2028 gives the worker one slot per companion and adds three versions
+beside the earlier ones:
+
+- `coding-endpoint/2.2`: an `enable` may declare `slots`, an integer from 1 to
+  8; the worker from #2028 declares 3. A `disable` carries neither `slots` nor
+  `readiness`.
+- `coding-work/2.1`: a `start` requires `companion` (`bunny`, `reachy` or
+  `microduck`), the companion whose task asked; a `cancel` is unchanged.
+- `coding-state/2.2`: requires `slots` (the selected worker's declaration, or
+  null), `runs` (every active run with its `operationId`, `taskId`, `companion`
+  and `status` `dispatching`, `started` or `cancelling`, at most 8) and
+  `waiting` (the approved hand-offs waiting for a slot, oldest first, with
+  `operationId`, `taskId` and `companion`, at most 32). Each operation appears
+  once, a companion has at most one run, and `active` is the oldest run, or
+  null with none.
+
+The worker declares with 2.2 and the companions module publishes 2.2 state. The
+module sends a worker that declared slots the 2.1 start, and one that declared
+none the 2.0 start. A 2.1 or 2.0 message stays valid and refuses the new
+members.
 
 ### Music lighting sessions (`music-lighting-*/2.0`)
 

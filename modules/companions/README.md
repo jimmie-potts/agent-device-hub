@@ -337,7 +337,8 @@ their open state while you inspect another panel or resize the page.
 
 - **Capabilities** lists the provider, the model, the tools the open profile's
   model is offered, any listed tools that are B.U.N.N.Y.'s only, unavailable
-  tools and coding worker availability.
+  tools, the coding worker's availability and slots, this companion's coding
+  slot and the plan usage windows.
 - **Task activity** shows the task, conversation and run IDs, status, counters,
   bounds, diagnostic code, saved question and answer, and settled successful
   control receipt. Pending and failed receipts stay beside the controls.
@@ -527,37 +528,59 @@ stays visible without replay.
 [coding worker](../../docs/coding-worker.md) on the owner's computer: the model
 names an allowlisted repository and writes a brief; without a connected worker,
 or with an unusable name or brief, the call is refused as a tool result and
-nothing is proposed. The proposal is bound to the coding state's revision, so
-a worker that connects, disconnects or starts other work between proposal and
-approval refuses the dispatch with `revision-conflict`. An approved delegation
-goes to the core as `coding-dispatch` and through its tracked dispatcher as one
-`coding-run` the module answers: the coding coordinator saves responsibility,
-sends one `coding-work` start to the worker's endpoint, reports the tracked
-outcome succeeded when the worker reports it started (observed), failed when
-the start is refused, and uncertain when no start arrives within twenty
-seconds. The task then waits on a delegation only the worker's word answers;
-the owner's input is refused for it, it counts no owner question, and **Cancel
-task** asks the worker to stop. The worker's completed, failed, cancelled or
-uncertain report settles the responsibility and resumes the task with the
-result as the tool's later word, bounded text naming outcome, git facts, checks,
-findings, limitations and usage (the model sees it as text naming the call,
-since the call's own result was the hand-off acceptance and the Messages API
-takes one result per call, Hub #1360); nothing is resent, and a restart or a lost
-worker leaves the operation uncertain. The worker runs one hand-off at a time,
-whichever conversation asked (#2028 gives each companion its own slot). While
-it is busy, another conversation's delegation is not proposed, and the tool
-result says no coding worker is connected. While it is idle, two conversations
-can each be offered a delegation; if the owner approves both, the first
-dispatch is admitted and the second is refused at dispatch as `unavailable`
-("no coding worker is connected"), and that refusal goes back to its model as
-the tool's result. Both wordings name a busy worker as not connected; #2028
-owns that behavior. The dispatch carries twenty minutes, sixty turns and five dollars as bounds. The page shows
-the worker's availability beside the provider. The worker's readiness (Hub
-#1743: tool version, signed in or not, plan and the latest limit windows, each
-unknown where the tool did not say) arrives on its enable and is published in
-`coding-state/2.1`; a readiness report from the selected worker does not move
-the revision a proposal is bound to. A result may also end `usage-limit`, with
-the limit's window and reset time or unknown, or `waiting-for-owner`, with the
+nothing is proposed. The proposal is bound to the worker's connection: its
+revision moves only when a worker endpoint is selected, disabled or lost, so a
+worker that went away and came back refuses the dispatch with
+`revision-conflict`, and another companion's run starting or ending never does
+(Hub #2028). An approved delegation goes to the core as `coding-dispatch` and
+through its tracked dispatcher as one `coding-run` the module answers: the
+coding coordinator saves responsibility, sends one `coding-work` start to the
+worker's endpoint, reports the tracked outcome succeeded when the worker
+reports it started (observed), failed when the start is refused, and uncertain
+when no start arrives within twenty seconds. The task then waits on a
+delegation only the worker's word answers; the owner's input is refused for it,
+it counts no owner question, and **Cancel task** asks the worker to stop. The
+worker's completed, failed, cancelled or uncertain report settles the
+responsibility and resumes the task with the result as the tool's later word,
+bounded text naming outcome, git facts, checks, findings, limitations and usage
+(the model sees it as text naming the call, since the call's own result was the
+hand-off acceptance and the Messages API takes one result per call, Hub #1360);
+nothing is resent, and a restart or a lost worker leaves each of its operations
+uncertain. The dispatch carries twenty minutes, sixty turns and five dollars as
+bounds.
+
+The worker has one slot per companion (Hub #2028): B.U.N.N.Y., Reachy and
+MicroDuck can each have a run at once, and each run is tagged with the companion
+whose task asked, which the coordinator reads from the task. A worker from
+before #2028 declares no slots and holds one run for every companion. A
+delegation is still proposed while the companion's slot is busy, and the page's
+approval says so. Once approved, such a hand-off waits, saved in the store and
+first in first out per slot, and the tool result says the coding worker is busy
+and the hand-off waits for that companion's slot; it is sent once, through the
+tracked dispatcher with its own request ID, when the slot frees and a worker is
+selected. Until then the conversation says "Waiting to delegate to the coding
+worker in …", and "Delegated to …" once it is sent. **Cancel task** removes a
+waiting hand-off and sends nothing; a hand-off is also sent only while its task
+still waits on it, so a cancel the coordinator missed, as during a stop, still
+sends nothing. A
+waiting hand-off keeps its place across a restart; one whose dispatch had left
+without its acceptance recorded is uncertain at the next start and never sent
+again. A dispatch the core refuses ends the wait and reaches the task as
+`failed (refused: <code>)`. At most 32 hand-offs wait at once. A companion has
+one conversation until New conversation (#2029), so today only an older
+worker's shared slot makes another companion's hand-off wait end to end.
+
+The page shows the worker's availability beside the provider: how many of its
+slots are busy and how many hand-offs wait, the conversation companion's own
+slot, and the plan usage windows. The worker's readiness (Hub #1743: tool
+version, signed in or not, plan and the latest limit windows, each unknown
+where the tool did not say) arrives on its enable and is published in
+`coding-state/2.2`, which also lists the declared slots, every active run with
+its companion and the waiting hand-offs (`active` stays the oldest run); a
+readiness report from the selected worker does not move the revision a proposal
+is bound to. The plan usage windows are shared by every run, and the worker
+reports them only after a run. A result may also end `usage-limit`, with the
+limit's window and reset time or unknown, or `waiting-for-owner`, with the
 worker's question among the findings; neither is retried.
 
 ### Turns, tools and approval

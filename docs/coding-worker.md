@@ -10,9 +10,15 @@ device or dashboard authority. Its credential role grants exactly three
 families on its endpoint: it answers `coding-work`, publishes `coding-progress`
 and declares `coding-endpoint`.
 
+The worker has three slots, one each for B.U.N.N.Y., Reachy and MicroDuck (Hub
+#2028). It runs one task per companion, three at once, and refuses another
+start with `capacity`. Each start names the companion that asked, and runs on
+the same repository each get their own fresh worktree; their fetch and worktree
+setup take turns, so git's locks never race.
+
 ## What a delegated task may do
 
-The worker creates `.local/worktrees/bunny-<task>-<random>` under the
+For each run the worker creates `.local/worktrees/bunny-<task>-<random>` under the
 repository from `origin/main` (after a best-effort `git fetch`), runs the
 harness there with `--permission-mode acceptEdits`, a tool allowlist of file,
 search, build and test tools, the dispatch's turn cap (a private `maxTurns`
@@ -166,8 +172,10 @@ task or a session and without spending: `claude --version` and
 `claude auth status --json`. Each runs with no input, the harness's
 environment, the first allowlisted repository as its working directory and a
 ten-second deadline, after which the probe is killed outright. Its
-declaration (`coding-endpoint/2.1`) carries the record, and the companions
-module publishes it in the coding state (`coding-state/2.1`):
+declaration (`coding-endpoint/2.2`, which also declares its slots) carries the
+record, and the companions module publishes it in the coding state
+(`coding-state/2.2`, which also lists every active run and the hand-offs waiting
+for a slot):
 
 | Field | Value |
 | --- | --- |
@@ -192,8 +200,12 @@ disabled or lost endpoint clears the record.
 ## Install once
 
 Upgrade the core before the worker. A worker from Hub #1743 on declares with
-`coding-endpoint/2.1` and reports `coding-progress/2.1`, and an older core
-refuses both, so such a worker cannot declare until the core knows them.
+`coding-endpoint/2.1` and reports `coding-progress/2.1`, and a worker from Hub
+#2028 on declares with `coding-endpoint/2.2`; an older core refuses them, so
+such a worker cannot declare until the core knows them. Its first start ends
+with `coding-worker-enable-refused: unsupported-version`. A core from #2028 on
+works with an older worker as one slot for every companion (see
+[the runtime upgrade procedure](../apps/runtime/UPGRADE.md)).
 
 1. Grant the credential. Add one entry with the `coding-worker` role to the
    installation's private `edge-credentials/1.0` file, bound to the source
@@ -249,9 +261,18 @@ refuses both, so such a worker cannot declare until the core knows them.
    so a crash or a sign-out restarts it; the worker exits on SIGTERM and
    declares its endpoint off. After a lost stream it reconnects on its own
    and declares a fresh endpoint, trying again with backoff while the core
-   still names the old one, which the core then shows as the new worker; the
-   task that was running is ended uncertain and the task says so, and the
-   worker never resends.
+   still names the old one, which the core then shows as the new worker; each
+   task that was running is ended uncertain and its task says so, and the
+   worker never resends. The worker stops those runs, which keep their slots
+   until they end, and declares the fresh endpoint once they have, or after
+   fifteen seconds (ten until the forced kill, and five more). A run that
+   still has not ended then, such as one whose output a leftover process holds
+   open, keeps only its own companion's slot busy: that companion's next start
+   is refused with `capacity` until it ends, and the other companions' starts
+   are taken. The core does not know that slot is still busy, so that
+   companion's next hand-off is not held to wait: it fails with `capacity`,
+   and its task is told so. A stopped run's report is not sent on the fresh
+   endpoint.
 
 ## One credential, one endpoint
 
@@ -297,9 +318,27 @@ and the coding worker revision it is bound to; approve it. The core tracks the
 hand-off as one operation that completes when the worker reports it started;
 the page then shows the delegated work waiting, with Cancel task asking the
 worker to stop. The worker's result arrives as the tool's later word (the
-model reads it as text naming the call) and the next reply reports it. Only
-one task runs at a time; a second proposal is refused
-until the first ends.
+model reads it as text naming the call) and the next reply reports it.
+
+Each companion has its own slot. A delegation is proposed while the worker is
+connected even when the companion's slot is busy, and the approval says so.
+Approved, it waits, saved, until that slot frees, and the page shows "Waiting
+for the coding worker: it is busy". It is then sent once, without asking again.
+Cancel task removes a waiting hand-off and sends nothing. A waiting hand-off
+keeps its place across a restart of the core. The proposal is bound to the
+worker's connection only, so another companion's run starting or ending never
+refuses it; a worker that disconnected and came back does. The Conversation
+details show the worker's slots, the companion's own slot and the plan usage
+windows the latest run reported, which every run shares. The per-run caps stay
+twenty minutes, sixty turns and five dollars.
+
+A worker that stays connected but never reports again has each of its runs
+given up as uncertain about 34 minutes after the run's start report: the
+twenty-minute wall clock, a two-minute grace, and twelve minutes for git
+setup. The worker reports a start before its fetch and worktree setup, which
+takes turns per repository, so a run may wait for two other runs' setup
+(240 seconds each at most) before its own. A lost worker is different: the
+gateway reports its endpoint lost and its runs end uncertain at once.
 
 Source tests cover the worker over a fake harness and a fake edge, and its real
 entry point as a child process over the SDK's edge with a fake core. They also
