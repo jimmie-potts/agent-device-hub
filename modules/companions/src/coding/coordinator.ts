@@ -94,6 +94,10 @@ export class CodingCoordinator {
     this.#seams = seams;
     this.#store = new CodingStore(context.database());
   }
+  /** Whether a hand-off was accepted as a run, so one that waited is known to have been sent. */
+  accepted(operationId: string): boolean {
+    try {return this.#active.has(operationId) || this.#store.accepted(operationId);} catch {return false;}
+  }
   inspect(): CodingState {
     const runs = [...this.#active.values()].map(active => ({operationId: active.operationId, taskId: active.taskId, companion: active.companion, status: active.phase}));
     const first = runs[0];
@@ -182,8 +186,11 @@ export class CodingCoordinator {
     for (const record of waiting) {
       const slot = this.#slotOf(record.companion);
       if (record.sending || this.#busy(slot)) continue;
-      // A task cancelled or ended while its hand-off waited, even while this coordinator was stopped, sends nothing.
-      if (!this.#awaits(record.taskId)) {
+      // A task cancelled or ended while its hand-off waited, even while this coordinator was stopped, sends nothing. A
+      // task whose state could not be read keeps its hand-off waiting for the next send.
+      const awaits = this.#awaits(record.taskId);
+      if (awaits === undefined) continue;
+      if (!awaits) {
         try {this.#store.unwait(record.operationId); dropped = true;} catch (error) {this.#storageFailure(error, record);}
         continue;
       }
@@ -193,8 +200,8 @@ export class CodingCoordinator {
     }
     if (dropped) this.#changed();
   }
-  #awaits(taskId: string): boolean {
-    try {return this.#seams.awaits?.(taskId) ?? true;} catch {return false;}
+  #awaits(taskId: string): boolean | undefined {
+    try {return this.#seams.awaits?.(taskId) ?? true;} catch (error) {this.#storageFailure(error); return undefined;}
   }
   async #sendWaiting(record: CodingWaitingRecord, slot: string): Promise<void> {
     let answer: RequestResult;

@@ -45,7 +45,7 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
   });
   await core.subscribe<{requestId: string; result: string; evidence: string}>('bunny.event.coding-run.assistant', message => {outcomes.push(message.data);});
   const published: {dataschema: string; data: CodingState}[] = [];
-  const finished = new Set<string>(), sent: string[] = [];
+  const finished = new Set<string>(), unreadable = new Set<string>(), sent: string[] = [];
   await core.subscribe<CodingState>('bunny.state.coding-state.coding', message => {published.push({dataschema: message.dataschema, data: message.data});});
   const dir = await mkdtemp(join(tmpdir(), 'coding-coordinator-'));
   let engine: CodingCoordinator | undefined;
@@ -57,13 +57,13 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     engine = new CodingCoordinator(context, outbox, (taskId, text, given, _evidence, startup) => {deliveries.push({taskId, text, parent: given, startup}); return Promise.resolve();},
       {companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
         // A task waits on its hand-off until the test ends it, as a cancel the coordinator never heard of would.
-        awaits: taskId => !finished.has(taskId), sent: taskId => {sent.push(taskId);}});
+        awaits: taskId => {if (unreadable.has(taskId)) throw new Error('synthetic store read failure'); return !finished.has(taskId);}, sent: taskId => {sent.push(taskId);}});
     await engine.start(); await outbox.republish();
   }, stop: () => engine?.stop() ?? Promise.resolve()}, {bus, stateDir: dir, clock, scheduler});
   let host = make(); await host.start();
   t.after(async () => {await host.stop(); await Promise.all([core.close(), worker.close(), gateway.close(), module.close()]); await rm(dir, {recursive: true, force: true});});
   let n = 0;
-  return {owner: () => engine ?? assert.fail('started'), work, deliveries, outcomes, dispatched, finished, sent, busy: (companion: CodingCompanion) => slotBusy(engine?.inspect(), companion), refuseWork: () => {workReply = 'capacity';}, core: (mode: typeof coreReply) => {coreReply = mode;}, release: () => {release();},
+  return {owner: () => engine ?? assert.fail('started'), work, deliveries, outcomes, dispatched, finished, unreadable, sent, busy: (companion: CodingCompanion) => slotBusy(engine?.inspect(), companion), refuseWork: () => {workReply = 'capacity';}, core: (mode: typeof coreReply) => {coreReply = mode;}, release: () => {release();},
     // An approved hand-off from a companion's task, bound to the endpoint revision the proposal saw.
     handOff: (taskId: string, expectedRevision = engine?.endpoint().revision ?? 0): Promise<HandOffAnswer> => (engine ?? assert.fail('started')).handOff({requestId: `${taskId}-step-1`, taskId,
       companion: /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny', repository: 'agent-device-hub', brief: 'Add a test.', expectedRevision}, parent),
@@ -432,4 +432,23 @@ void test('a waiting hand-off whose run the module accepted keeps its run when t
   await w.progress21({operationId: 'task-bunny-2-step-1', status: 'completed', result: result()});
   await turned(() => w.deliveries.length === 2);
   assert.match(w.deliveries[1]?.text ?? '', /^completed \(tested-candidate\)/);
+});
+
+void test('a waiting hand-off whose task cannot be read keeps its place and is sent at a later send, never dropped', async t => {
+  const w = await world(t); await w.enable22();
+  await w.handOff('task-bunny-1'); await turned(() => starts(w.work).length === 1);
+  assert.equal((await w.handOff('task-bunny-2')).status, 'waiting');
+  w.unreadable.add('task-bunny-2');
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'started'});
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'completed', result: result()});
+  await turned(() => w.deliveries.length === 1); await w.advance();
+  assert.deepEqual(w.owner().inspect().waiting?.map(entry => entry.taskId), ['task-bunny-2'], 'kept while its task cannot be read');
+  assert.equal(w.dispatched.includes('task-bunny-2-step-1'), false);
+  // The read works again; the next send (another companion's run ending) takes it.
+  w.unreadable.clear();
+  await w.handOff('task-reachy-1'); await turned(() => starts(w.work).length === 2);
+  await w.progress21({operationId: 'task-reachy-1-step-1', status: 'started'});
+  await w.progress21({operationId: 'task-reachy-1-step-1', status: 'completed', result: result()});
+  await turned(() => starts(w.work).some(command => command.data.operationId === 'task-bunny-2-step-1'), () => w.owner().inspect());
+  assert.equal(w.dispatched.filter(id => id === 'task-bunny-2-step-1').length, 1);
 });

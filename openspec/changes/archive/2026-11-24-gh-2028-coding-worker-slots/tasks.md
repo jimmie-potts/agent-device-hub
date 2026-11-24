@@ -32,3 +32,11 @@
 - [x] 6.6 A waiting hand-off reads "Waiting to delegate" until it is sent, then "Delegated". Evidence: `coding-slots.test.js` and the browser journey; the module test fails without it.
 - [x] 6.7 A lost answer after the module accepted a waiting hand-off's run keeps the run. Evidence: the coordinator test fails without the check.
 - [x] 6.8 The coordinator's deadline after a start adds the worker's queued git setup bound. Evidence: the timeout test fails without it.
+
+## 7. Review round 2 on PR 2087
+
+- [x] 7.1 The worker waits for stopped runs at most fifteen seconds before it declares again; a run still alive keeps only its companion's slot busy. Evidence: the new worker test fails when the bound never fires (PR).
+- [x] 7.2 `stop()` waits for stopped runs within the same bound, so a test never removes a repository under a running git step. Evidence: the test asserts no git command runs after `stop()` and fails without the wait; 12 repeated runs, three at a time, pass.
+- [x] 7.3 A waiting hand-off whose task cannot be read keeps its place. Evidence: the new coordinator test fails when the row is dropped (PR).
+- [x] 7.4 The 34-minute bound for a connected but silent worker is stated in docs/coding-worker.md and apps/runtime/UPGRADE.md. Evidence: readback.
+- [x] 7.5 A waiting hand-off sent before its line is saved reads "Delegated to" at once. Evidence: the new `coding-slots` test fails without the check (PR).

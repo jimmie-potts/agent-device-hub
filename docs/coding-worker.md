@@ -264,8 +264,12 @@ works with an older worker as one slot for every companion (see
    still names the old one, which the core then shows as the new worker; each
    task that was running is ended uncertain and its task says so, and the
    worker never resends. The worker stops those runs, which keep their slots
-   until they end, and declares the fresh endpoint once they have; a stopped
-   run's report is not sent on it.
+   until they end, and declares the fresh endpoint once they have, or after
+   fifteen seconds (ten until the forced kill, and five more). A run that
+   still has not ended then, such as one whose output a leftover process holds
+   open, keeps only its own companion's slot busy: that companion's next start
+   is refused with `capacity` until it ends, and the other companions' starts
+   are taken. A stopped run's report is not sent on the fresh endpoint.
 
 ## One credential, one endpoint
 
@@ -324,6 +328,14 @@ refuses it; a worker that disconnected and came back does. The Conversation
 details show the worker's slots, the companion's own slot and the plan usage
 windows the latest run reported, which every run shares. The per-run caps stay
 twenty minutes, sixty turns and five dollars.
+
+A worker that stays connected but never reports again has each of its runs
+given up as uncertain about 34 minutes after the run's start report: the
+twenty-minute wall clock, a two-minute grace, and twelve minutes for git
+setup. The worker reports a start before its fetch and worktree setup, which
+takes turns per repository, so a run may wait for two other runs' setup
+(240 seconds each at most) before its own. A lost worker is different: the
+gateway reports its endpoint lost and its runs end uncertain at once.
 
 Source tests cover the worker over a fake harness and a fake edge, and its real
 entry point as a child process over the SDK's edge with a fake core. They also

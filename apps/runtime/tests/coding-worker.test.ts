@@ -11,7 +11,7 @@ import type {CodingProgress, CodingWork} from '@jimmie-potts/event-contracts/v2/
 import type {Command, Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, connectRemote} from '@jimmie-potts/sdk/remote';
-import {CodingWorker, DEFAULT_ALLOWED_TOOLS, DENIED_TOOLS, assembleResult, parseConfiguration, type GitRunner, type Harness} from '../src/worker/coding-worker.js';
+import {CodingWorker, DEFAULT_ALLOWED_TOOLS, DENIED_TOOLS, STOPPED_RUN_MS, assembleResult, parseConfiguration, type GitRunner, type Harness, type ProbeTimer} from '../src/worker/coding-worker.js';
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], {encoding: 'utf8', env: {...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 't@example', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 't@example'}}).trim();
 const configuration = (repository: string) => ({schema: 'coding-worker/1.0', edge: 'http://127.0.0.1:18788', tokenFile: '/private/token', repositories: [{name: 'agent-device-hub', path: repository}],
@@ -257,7 +257,15 @@ void test('a run whose endpoint closes after its last check and before its tool 
     exit = () => {resolvePromise({code: null, signal: 'SIGTERM', stdout: '', truncated: false});};
     onChild({kill: () => {kills += 1; return true;}} as never);
   })};
-  const worker = new CodingWorker(parseConfiguration(configuration(repo)), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect);
+  // Git commands still running in the run's worktree, so the test sees that stop() waits for the run's own git steps.
+  let inGit = 0;
+  const runGit: GitRunner = async (cwd, args, options) => {
+    inGit += 1;
+    try {return await new Promise<string>((resolvePromise, reject) => {
+      execFile('git', ['-C', cwd, ...args], {timeout: options?.timeoutMs ?? 60_000}, (error, stdout) => {if (error === null) resolvePromise(options?.trim === false ? stdout : stdout.trim()); else reject(new Error('git failed', {cause: error}));});
+    });} finally {inGit -= 1;}
+  };
+  const worker = new CodingWorker(parseConfiguration(configuration(repo)), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect, Date.now, runGit);
   await worker.start();
   const start = (id: string): CodingWork => ({requestId: id, operationId: id, action: 'start', taskId: `task-${id}`, companion: 'bunny', repository: 'agent-device-hub', brief: id,
     bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}});
@@ -273,7 +281,10 @@ void test('a run whose endpoint closes after its last check and before its tool 
   await until(() => edge.requests.length === 2, () => edge.requests);
   assert.deepEqual(edge.respond(command(start('op-3'))), {status: 'accepted'}, 'the slot is free once the run ended');
   await until(() => started === 2);
+  // The released run goes on to its own git steps; stopping the worker waits for them, so nothing writes in the
+  // repository when the test removes it.
   exit(); await worker.stop();
+  assert.equal(inGit, 0, 'no git command is still running after stop()');
 });
 
 void test('runs on the same repository take turns at the git setup, each into its own worktree', async t => {
@@ -300,5 +311,44 @@ void test('runs on the same repository take turns at the git setup, each into it
   assert.equal(most, 1, 'one setup step at a time on the shared checkout');
   assert.equal(new Set(cwds).size, 3);
   await until(() => edge.progress.filter(entry => entry.status !== 'started').length === 3);
+  await worker.stop();
+});
+
+void test('a stopped run whose tool never lets go keeps only its companion\'s slot: after a bound the worker declares again for the others', async t => {
+  const repo = await repository(t), edge = fakeEdge();
+  // A leftover process holds the tool's output open, so its run never ends until the test lets it.
+  const exits = new Map<string, () => void>(), started: string[] = [];
+  const harness: Harness = {start: (_args, _cwd, input, onChild) => new Promise(resolvePromise => {
+    started.push(input);
+    exits.set(input, () => {resolvePromise({code: null, signal: 'SIGKILL', stdout: '', truncated: false});});
+    onChild({kill: () => true} as never);
+  })};
+  // The stopped-run bound is a timer the test fires itself; no real time passes.
+  const bounds: {ms: number; fire: () => void}[] = [];
+  const timer: ProbeTimer = (ms, fire) => {const entry = {ms, fire}; bounds.push(entry); return () => {bounds.splice(bounds.indexOf(entry), 1);};};
+  const logs: string[] = [];
+  const worker = new CodingWorker(parseConfiguration(configuration(repo)), 'token-'.padEnd(43, 'x'), harness, line => {logs.push(line);}, edge.connect, Date.now, undefined, timer);
+  await worker.start();
+  const start = (companion: 'bunny' | 'reachy' | 'microduck', id: string): CodingWork => ({requestId: id, operationId: id, action: 'start', taskId: `task-${id}`, companion, repository: 'agent-device-hub', brief: id,
+    bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}});
+  assert.deepEqual(edge.respond(command(start('bunny', 'op-held'))), {status: 'accepted'});
+  await until(() => started.length === 1);
+  edge.lose();
+  await until(() => bounds.some(entry => entry.ms === STOPPED_RUN_MS));
+  assert.equal(edge.requests.length, 1, 'not declared while the stopped run may still end');
+  bounds.find(entry => entry.ms === STOPPED_RUN_MS)?.fire();
+  await until(() => edge.requests.length === 2, () => edge.requests);
+  assert.ok(logs.some(line => line.includes('stopped run op-held has not ended')));
+  // The held companion stays refused; the other two take their starts on the fresh endpoint.
+  const held = edge.respond(command(start('bunny', 'op-b2'))); assert.ok('error' in held && held.error.code === 'capacity', 'B.U.N.N.Y.\'s slot is still held');
+  assert.deepEqual(edge.respond(command(start('reachy', 'op-r'))), {status: 'accepted'});
+  assert.deepEqual(edge.respond(command(start('microduck', 'op-m'))), {status: 'accepted'});
+  await until(() => started.length === 3);
+  // Once the held run ends, its companion's slot is free again.
+  exits.get('op-held')?.();
+  await until(() => !('error' in edge.respond(command(start('bunny', 'op-b3'))) && true));
+  await until(() => started.length === 4);
+  for (const id of ['op-r', 'op-m', 'op-b3']) exits.get(id)?.();
+  await until(() => edge.progress.filter(entry => entry.status !== 'started' && ['op-r', 'op-m', 'op-b3'].includes(entry.operationId)).length === 3);
   await worker.stop();
 });

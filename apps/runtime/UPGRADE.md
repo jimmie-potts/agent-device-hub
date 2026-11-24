@@ -285,10 +285,16 @@ lost. Upgrade the core, or start the worker from its earlier release.
 - When the core restarts, the worker's stream drops and the worker stops each
   run it holds. At start the core settles each unanswered run as uncertain and
   tells its task, without a title check. Nothing is resent. Once the stopped
-  runs have ended, the worker declares a fresh endpoint with every slot free.
+  runs have ended, or after fifteen seconds, the worker declares a fresh
+  endpoint; a run still alive then keeps only its companion's slot busy until it
+  ends.
 - When the worker is replaced, stopping it declares its endpoint off and the
   core settles each of its runs as uncertain. To cut no run, replace the worker
   while Conversation details say the coding worker is connected and idle.
+- A run whose worker stays connected but never reports again is given up as
+  uncertain about 34 minutes after its start report (twenty minutes of wall
+  clock, two of grace and twelve for git setup that waits for other runs on
+  the same repository). Before this release that took 22 minutes.
 - An approved hand-off still waiting keeps its place through either switch and
   is sent once when a worker is connected and its slot is free. One whose
   dispatch had left without its acceptance recorded is ended uncertain at the

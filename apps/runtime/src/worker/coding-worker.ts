@@ -35,6 +35,11 @@ const PROGRESS_SCHEMA = 'https://bunny.invalid/events/coding-progress/2.1';
 const NAME = /^[a-z0-9]+(?:[-._][a-z0-9]+)*$/;
 const SHA = /^[0-9a-f]{40}$/;
 const TOKEN = /^[A-Za-z0-9_-]{20,256}$/;
+/**
+ * How long the worker waits for stopped runs to end before it declares again or finishes stopping: the SIGKILL ten
+ * seconds after SIGTERM, and five more. A run still alive then keeps its companion's slot until it ends.
+ */
+export const STOPPED_RUN_MS = 15_000;
 /** How long after a refused re-declaration the worker tries again, doubling each time, and how often. */
 export const REDECLARE_MS = 500;
 const REDECLARE_ATTEMPTS = 6;
@@ -300,17 +305,33 @@ export class CodingWorker {
   readonly #connect: typeof connectRemote;
   readonly #now: () => number;
   readonly #git: GitRunner;
+  readonly #timer: ProbeTimer;
   /** What the declaration carries: the latest readiness probe and the limit windows the latest run reported. */
   #readiness: CodingReadiness | undefined;
   #limits: {windows: CodingLimitWindow[]; atMs: number} | undefined;
   /** `log` is the process's own line writer, owned by the entry point; the library writes nothing itself. */
   constructor(readonly configuration: WorkerConfiguration, readonly token: string, harness?: Harness, readonly log: (line: string) => void = () => {}, connect: typeof connectRemote = connectRemote,
-    now: () => number = Date.now, runGit: GitRunner = git) {
+    now: () => number = Date.now, runGit: GitRunner = git, timer: ProbeTimer = realTimer) {
     this.#harness = harness ?? claudeHarness(configuration.claude.executable, process.env,
       {...(configuration.claude.environment === undefined ? {} : {environment: configuration.claude.environment}), ...(configuration.repositories[0] === undefined ? {} : {probeCwd: configuration.repositories[0].path})});
     this.#connect = connect;
     this.#now = now;
     this.#git = runGit;
+    this.#timer = timer;
+  }
+  /**
+   * Waits until every stopped run has ended, or for `STOPPED_RUN_MS`, whichever comes first: a tool whose output a
+   * leftover process holds open never ends its run, and must not hold the worker undeclared. A run still alive then
+   * keeps its slot, so its companion's start is refused with `capacity` until it ends; it is logged by operation.
+   */
+  async #stoppedRunsEnded(): Promise<void> {
+    const runs = [...this.#running.values()];
+    if (runs.length === 0) return;
+    let cancel = (): void => {};
+    const bounded = await Promise.race([Promise.all(runs.map(running => running.ended)).then(() => true),
+      new Promise<boolean>(resolvePromise => {cancel = this.#timer(STOPPED_RUN_MS, () => {resolvePromise(false);});})]);
+    cancel();
+    if (!bounded) for (const running of runs) if (this.#running.get(running.operationId) === running) this.log(`coding-worker: stopped run ${running.operationId} has not ended; its slot stays busy until it does`);
   }
   /** The readiness this worker last reported, or would report now if it has not probed yet. */
   get readiness(): CodingReadiness | undefined {return this.#readiness === undefined ? undefined : structuredClone(this.#readiness);}
@@ -361,11 +382,11 @@ export class CodingWorker {
     if (this.#redeclaring) return;
     this.#redeclaring = true;
     try {
+      // The runs the lost endpoint started were stopped and hold their slots until they end. The fresh endpoint is
+      // declared once they have, or after a bound; a run still alive then keeps its companion's slot busy, so no
+      // companion ever has two runs and the other companions are not held without a worker.
+      await this.#stoppedRunsEnded();
       for (let attempt = 0; attempt < REDECLARE_ATTEMPTS && !this.#stopping; attempt += 1) {
-        // The runs the lost endpoint started were stopped and still hold their slots until they end; the fresh endpoint
-        // is declared once they have, so it starts with every slot free and no companion ever has two runs.
-        await Promise.all([...this.#running.values()].map(running => running.ended));
-        if (this.#stopping) return;
         try {await this.#declare(); return;} catch { /* refused, timed out or lost again: wait and try once more */ }
         await new Promise<void>(resolvePromise => {setTimeout(resolvePromise, REDECLARE_MS * 2 ** attempt).unref();});
       }
@@ -411,7 +432,10 @@ export class CodingWorker {
     this.#stopAll();
     try {await this.#endpoint?.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: ENDPOINT_SCHEMA,
       data: {requestId: randomUUID(), action: 'disable'}}, {timeoutMs: 5000});} catch { /* the gateway reports the lost endpoint either way */ }
-    await this.#endpoint?.close(); await this.#participant?.close();
+    await this.#endpoint?.close();
+    // The stopped runs finish their own git steps before the process lets go, within the same bound.
+    await this.#stoppedRunsEnded();
+    await this.#participant?.close();
   }
   #stopAll(): void {for (const running of this.#running.values()) this.#stopRun(running);}
   #stopRun(running: Running): void {

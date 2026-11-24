@@ -187,3 +187,18 @@ void test('a waiting hand-off whose task was cancelled without the coordinator h
   for (let turn = 0; turn < 50; turn += 1) await new Promise(resolve => {setImmediate(resolve);});
   assert.equal(w.starts().length, 1, 'the cancelled hand-off was never sent'); assert.equal(w.dispatched.length, 1);
 });
+
+void test('a waiting hand-off that the module sent before its waiting line was saved reads "Delegated to" at once', {timeout: 30_000}, async context => {
+  // The slot frees and the module sends the hand-off while the engine is still saving its answer: by the time the
+  // line is saved, the module already holds the run.
+  const sent = new Set<string>();
+  const w = await world(context, {coding: () => ({available: true, endpointId: ENDPOINT, revision: 1}),
+    delegate: data => {sent.add(data.requestId); return Promise.resolve({status: 'waiting' as const, requestId: data.requestId});},
+    handedOff: requestId => sent.has(requestId)});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.send('reachy', 'Synthetic reachy request')).status, 'accepted'); await w.approved('reachy');
+  await settle(() => sent.size === 1 && w.task('reachy')?.questionId?.includes('delegation') === true);
+  const text = JSON.stringify(await w.messages('reachy'));
+  assert.match(text, /Delegated to the coding worker in agent-device-hub: Synthetic reachy brief\./);
+  assert.doesNotMatch(text, /Waiting to delegate/);
+});

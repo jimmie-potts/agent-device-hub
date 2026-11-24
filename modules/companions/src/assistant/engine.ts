@@ -55,6 +55,11 @@ export type AssistantOptions = {
   coding?: (profile: AssistantProfile) => {available: boolean; endpointId: string | null; revision: number};
   /** Hands an approved delegation to the core's tracked dispatcher; the worker's result comes back through `deliver`. */
   delegate?: Delegate;
+  /**
+   * Whether the module already sent a hand-off that answered `waiting` (Hub #2028), so a hand-off sent before its waiting
+   * line is saved reads "Delegated to ..." at once.
+   */
+  handedOff?: (requestId: string) => boolean;
   /** The owner cancelled a task whose delegation is still running; the module asks the worker to stop. */
   onCancelled?: (taskId: string) => void;
   /** The private section's prices per model for the spend ledger (Hub #2024); they override the built-in table (Hub #2047). */
@@ -946,9 +951,10 @@ export class AssistantEngine {
     let handedOff = false;
     // A hand-off waiting for its companion's busy slot has not been sent: the conversation says it waits, and says
     // "delegated" once the coordinator reports it sent (Hub #2028).
-    const waits = delegation !== undefined && result.startsWith(WAITING_RECEIPT);
     await this.#append(state.taskId, {role: 'tool', call: question.call, name, result, ok: accepted, effect: id}, active.span.context, current => {
       if (delegation === undefined) return;
+      // Read in the transaction that saves the line: a hand-off the module sent meanwhile is already delegated.
+      const waits = result.startsWith(WAITING_RECEIPT) && this.options.handedOff?.(id) !== true;
       // The conversation says "delegated" only once the core accepted the hand-off; a refused one has no worker's word to wait for, so the answered approval stands again.
       if (accepted) {
         const text = waits ? waitingText(delegation.text) : delegation.text;

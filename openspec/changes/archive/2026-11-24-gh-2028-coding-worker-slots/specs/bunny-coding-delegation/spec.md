@@ -7,7 +7,7 @@
 
 ### Requirement: Worker credential and endpoint
 
-A coding worker SHALL act through a credential with the `coding-worker` role, bound to the `bunny/parts/coding-worker` source with no ordinary scope. The edge SHALL grant that credential exactly one connection-bound endpoint: answering `coding-work`, publishing `coding-progress` and requesting `coding-endpoint`, with no subscription, sync, operator command or other publication. The worker SHALL declare its availability explicitly after connecting, and a worker from Hub #2028 SHALL declare its three slots with it (`coding-endpoint/2.2`); a lost connection SHALL be reported by the gateway as `coding-lost`, and reconnecting SHALL require a fresh declaration. When its endpoint closes, the worker SHALL stop every run that endpoint started, including one whose tool starts after the stop, keep each in its slot, where a cancel or a stop still reaches it, until it ends, declare its next endpoint only once they have ended, and send no report of those runs on another endpoint. The gateway SHALL refuse any direct dispatch of a `coding-*` family.
+A coding worker SHALL act through a credential with the `coding-worker` role, bound to the `bunny/parts/coding-worker` source with no ordinary scope. The edge SHALL grant that credential exactly one connection-bound endpoint: answering `coding-work`, publishing `coding-progress` and requesting `coding-endpoint`, with no subscription, sync, operator command or other publication. The worker SHALL declare its availability explicitly after connecting, and a worker from Hub #2028 SHALL declare its three slots with it (`coding-endpoint/2.2`); a lost connection SHALL be reported by the gateway as `coding-lost`, and reconnecting SHALL require a fresh declaration. When its endpoint closes, the worker SHALL stop every run that endpoint started, including one whose tool starts after the stop, keep each in its slot, where a cancel or a stop still reaches it, until it ends, declare its next endpoint once they have ended or after a bound of fifteen seconds, after which a run still alive keeps only its own companion's slot busy, and send no report of those runs on another endpoint. The gateway SHALL refuse any direct dispatch of a `coding-*` family.
 
 #### Scenario: Endpoint-only authority
 - **WHEN** a credential carries the coding-worker role
@@ -20,6 +20,10 @@ A coding worker SHALL act through a credential with the `coding-worker` role, bo
 #### Scenario: Slots free on the next endpoint
 - **WHEN** the worker's endpoint closes with three runs, one of whose tools starts only after the close
 - **THEN** that tool is stopped as it starts, no second start for its companion is taken while it lives, the fresh endpoint is declared once the stopped runs have ended and accepts a start for each companion, and no report of a stopped run goes out on it
+
+#### Scenario: A stopped run that never ends
+- **WHEN** a stopped run's output stays held open by a leftover process
+- **THEN** the worker declares its fresh endpoint after the bound, refuses that companion's start with `capacity` until the run ends, and accepts the other companions' starts
 
 ### Requirement: Tracked dispatch and one slot per companion
 
