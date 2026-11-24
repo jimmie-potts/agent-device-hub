@@ -16,7 +16,8 @@ import {ConversationUpload} from './conversation-upload.js';
 import {ConversationTranscript} from './conversation-transcript.js';
 import {conversationRail, profiles, unspokenNote} from './conversation-rail.js';
 import {companionName, handOffWaiting, slotBusy} from './coding-status.js';
-import {QueuedMessages} from './conversation-queue.js';
+import {PendingSteers, QueuedMessages} from './conversation-queue.js';
+import {steerMessage, supersededReply} from '../assistant/queue-contract.js';
 import {useQueue, type QueueView} from './conversation-queue-read.js';
 import './conversation.css';
 
@@ -50,8 +51,12 @@ function TaskControls({context, command, state, profile, live, question, coding,
   const open = task !== undefined && !finished(task.status);
   const pending = task !== undefined && task.questionId !== null && !task.hasAnswer && ['waiting', 'paused'].includes(task.status);
   const approval = pending && question?.kind === 'approval';
+  const clarification = pending && question?.kind === 'clarification';
   const unavailableDecision = pending && (question === undefined || (approval && question.proposal === null));
   const delegated = pending && question?.kind === 'delegation';
+  // Send steers a task that works, or that waits on the coding worker (Hub #2031): the task reads the message at its next
+  // model call, after the worker's result. A paused or uncertain task makes no next call, so it only queues.
+  const steerable = open && (pending ? delegated : task.status === 'running' || task.status === 'waiting');
   const enabled = state?.enabled === true;
   const canResume = task !== undefined && enabled && ['paused', 'uncertain', 'waiting'].includes(task.status)
     && (task.questionId === null || task.hasAnswer);
@@ -63,12 +68,17 @@ function TaskControls({context, command, state, profile, live, question, coding,
   const answerable = showInput && !approval && !delegated;
   const tooLong = bytes > LIMITS.inputBytes;
   const locked = command.locked || !live || !context.control || !context.operationsLive;
-  const canSubmit = answerable && !locked && enabled && draft.trim() !== '' && !tooLong && (pending || !open);
+  const ready = !locked && enabled && draft.trim() !== '' && !tooLong;
+  const canSubmit = answerable && ready && (pending || !open);
+  const canSteer = steerable && ready;
+  // Skip question and send, or Decline with message, sets the question aside and steers the task in one step.
+  const setAside = clarification || (approval && question?.proposal !== null && question?.proposal !== undefined);
+  const canSetAside = setAside && ready;
   // Queue saves the message for after the current task; with no task it joins a held queue. A free, empty queue with no
   // task to wait for has nothing to queue behind, so Send alone shows.
   const queued = queue?.messages.length ?? 0;
   const queueable = showInput && (open || queued > 0);
-  const canQueue = queueable && !locked && enabled && draft.trim() !== '' && !tooLong && queued < LIMITS.queuedMessages;
+  const canQueue = queueable && ready && queued < LIMITS.queuedMessages;
   useEffect(() => {
     if (submitted === undefined) return;
     const operation = context.operations.find(value => value.requestId === submitted.requestId);
@@ -82,19 +92,23 @@ function TaskControls({context, command, state, profile, live, question, coding,
     void command.run({family: 'assistant-control', target: 'assistant', requestId,
       data: {action, expectedRevision: state.revision, taskId}});
   };
-  const send = (text: string, action: 'start' | 'answer' | 'queue'): void => {
+  const send = (text: string, action: 'start' | 'answer' | 'queue' | 'steer', questionId?: string): void => {
     if (state === undefined) return;
     // Command retains this identity before staging. The draft remains on refusals and uncertain replies.
     const requestId = crypto.randomUUID();
+    // A steer names the turn it expects: one that reaches that turn after it ended, while it is still the latest, is
+    // queued as the next message, and one aimed at a turn a newer turn followed is refused instead of joining another.
     const input = {action, profile, text, expectedRevision: state.revision,
-      ...(action === 'answer' && task !== undefined ? {taskId: task.taskId, questionId: task.questionId} : {})};
+      ...(action === 'answer' && task !== undefined ? {taskId: task.taskId, questionId: task.questionId} : {}),
+      ...(action === 'steer' && task !== undefined ? {taskId: task.taskId, ...(questionId === undefined ? {} : {questionId})} : {})};
     if (action !== 'answer' || (text !== 'approve' && text !== 'decline')) setSubmitted({requestId, key: draftKey, text});
     void command.run({family: 'assistant-input', target: 'assistant', requestId,
       upload: {name: 'input.json', file: new Blob([JSON.stringify(input)], {type: 'application/json'})}});
   };
-  // Enter sends or answers when it can, and queues while the task runs.
+  // Enter sends, steering a task that works, or answers; during an approval, or while the task is paused, it queues.
   const submit = (): void => {
-    if (canSubmit) send(draft, pending ? 'answer' : 'start');
+    if (steerable) {if (canSteer) send(draft, 'steer');}
+    else if (canSubmit) send(draft, pending ? 'answer' : 'start');
     else if (canQueue && !(pending && answerable)) send(draft, 'queue');
   };
   return <>
@@ -132,11 +146,21 @@ function TaskControls({context, command, state, profile, live, question, coding,
       </article> : null)}
       {task !== undefined && !finished(task.status) && <div className="conversation-task-actions">
         {canResume && <button type="button" className="secondary" onClick={() => {control('resume', task.taskId);}}>Resume task</button>}
+        {/* Sets the question aside with the composer's text and steers the task in one step (Hub #2031). It sits with the
+            task's own controls, so the composer keeps its height and the transcript its reading position. */}
+        {setAside && task.questionId !== null && <button type="button" className="secondary" disabled={!canSetAside}
+          onClick={() => {if (canSetAside && task.questionId !== null) send(draft, 'steer', task.questionId);}}>{approval ? 'Decline with message' : 'Skip question and send'}</button>}
         <button type="button" className="secondary" onClick={() => {control('cancel', task.taskId);}}>Cancel task</button>
       </div>}
     </fieldset>
-    {queue !== undefined && state !== undefined && <QueuedMessages context={context} command={command} queue={queue} profile={profile}
-      waiting={open} locked={locked} enabled={enabled} onLost={(text, reason) => {setLost({text, reason});}}/>}
+    {/* The queued messages and the unread steers share one bounded, scrolling box, so together they never push the
+        transcript out of view (Hub #2031). */}
+    {queue !== undefined && (queue.messages.length > 0 || queue.steers.length > 0) && <div className="conversation-queue-stack">
+      {/* The steers come first: the running task reads them before anything queued starts. */}
+      <PendingSteers queue={queue} waitsOnWorker={delegated}/>
+      {state !== undefined && <QueuedMessages context={context} command={command} queue={queue} profile={profile}
+        waiting={open} locked={locked} enabled={enabled} onLost={(text, reason) => {setLost({text, reason});}}/>}
+    </div>}
     {lost !== undefined && <div className="conversation-queue-lost" role="status">
       <p>{lost.reason === 'changed' ? 'The message was changed on another page before your edit was saved, so your edit was not saved.'
         : 'The message started before your edit was saved.'} Your edited text:</p>
@@ -150,7 +174,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
       {showInput && <form id={formId} onSubmit={event => {event.preventDefault(); submit();}}>
         <label className="vh" htmlFor="assistant-input">{pending && answerable ? 'Answer' : 'Message'}</label>
         <textarea id="assistant-input" rows={2} value={draft} aria-describedby="assistant-input-help"
-          placeholder={pending && answerable ? 'Answer the question' : open ? 'Queue a message for after this task' : `Message ${profiles[profile].name}`} disabled={locked} aria-invalid={tooLong || undefined}
+          placeholder={pending && answerable ? 'Answer the question' : steerable ? 'Steer this task, or queue a message for after it' : open ? 'Queue a message for after this task' : `Message ${profiles[profile].name}`}
+          disabled={locked} aria-invalid={tooLong || undefined}
           onKeyDown={event => {
             if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
             event.preventDefault();
@@ -166,11 +191,12 @@ function TaskControls({context, command, state, profile, live, question, coding,
         {voice}
         {answerable && attach}
         {queueable && <button type="button" className="secondary conversation-queue-button" disabled={!canQueue} onClick={() => {if (canQueue) send(draft, 'queue');}}>Queue</button>}
-        {answerable && <button type="submit" form={formId} disabled={!canSubmit}>{pending ? 'Answer' : 'Send'}</button>}
+        {steerable ? <button type="submit" form={formId} disabled={!canSteer}>Send</button>
+          : answerable && <button type="submit" form={formId} disabled={!canSubmit}>{pending ? 'Answer' : 'Send'}</button>}
       </div>
     </>}</ConversationUpload>
     {showInput && <div id="assistant-input-help" className="conversation-input-help">
-      <p>{pending && answerable ? 'Enter to answer.' : answerable && !open ? 'Enter to send.' : 'Enter to queue.'} Shift+Enter for a new line.</p>
+      <p>{pending && answerable ? 'Enter to answer.' : steerable ? 'Enter to send: the task reads it at its next step.' : answerable && !open ? 'Enter to send.' : 'Enter to queue.'} Shift+Enter for a new line.</p>
       {queued >= LIMITS.queuedMessages && <p>The queue is full. Withdraw a message or wait for one to start.</p>}
       <p>Saved privately. Sent to the selected model.</p>
     </div>}
@@ -450,6 +476,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             }}
             renderMessage={message => <article aria-label={`${message.role} message`}>
               <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
+              {/* A steer joined the running turn, and a reply it superseded was saved but not spoken (Hub #2031). */}
+              {steerMessage(message) && <small className="conversation-steer-note">Sent while working</small>}
+              {supersededReply(message) && <small className="conversation-steer-note">Earlier reply, before your next message</small>}
               {message.follows !== undefined && (visibleMessageIds.has(message.follows)
                 ? <a href={`#conversation-message-${message.follows}`} onClick={event => {
                   event.preventDefault();
@@ -480,7 +509,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             </p>}
             {task?.code != null && <p>Task code: {task.code}</p>}
             {spendLimit !== undefined && <p role="status">{spendLimit}</p>}
-            {state?.enabled === true && task?.status === 'running' && <p>This task is working. Queue a message to save it for after this task, or cancel the task.</p>}
+            {state?.enabled === true && task?.status === 'running' && <p>This task is working. Send steers it at its next step; Queue saves a message for after it.</p>}
             {state?.enabled === true && task?.status === 'uncertain' && <p>Resume or cancel this task before sending another message. Queued messages wait until it ends.</p>}
             {activeClarification !== undefined && <SavedQuestionContext question={activeClarification}/>}
             <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion} coding={connected ? coding : undefined} queue={queue}

@@ -4,6 +4,9 @@
 conversation titles ([Hub #2025](https://github.com/jimmie-potts/agent-device-hub/issues/2025)),
 and `src/assistant/queue.ts` adapts their message queues
 ([Hub #2030](https://github.com/jimmie-potts/agent-device-hub/issues/2030)).
+`src/assistant/queue.ts` and `src/assistant/engine.ts` also follow Codex's
+pending input to steer a running task
+([Hub #2031](https://github.com/jimmie-potts/agent-device-hub/issues/2031)).
 Each file's header names each adapted part and says how it was modified. The
 licenses and notices below apply to those parts.
 
@@ -13,6 +16,9 @@ licenses and notices below apply to those parts.
 | --- | --- | --- |
 | [`codex-rs/tui/src/app/thread_title.rs`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/tui/src/app/thread_title.rs) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | `THREAD_TITLE_RECENT_MESSAGES` (line 37), `thread_title_instructions` (lines 336-346), `recent_conversation_messages` (lines 406-491), `recent_conversation_thread_title_prompt` (lines 493-510) and `parse_thread_title` (lines 512-537), translated to TypeScript and modified |
 | [`codex-rs/state/queue_migrations/0001_queued_items.sql`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/state/queue_migrations/0001_queued_items.sql) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | The `queued_items` table and its per-thread order index, as `assistant_queued_messages` in `src/assistant/queue.ts`, modified |
+| [`codex-rs/core/src/session/turn.rs`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/core/src/session/turn.rs) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | Pending input drained into history before the next model request (lines 565-596) and a follow-up request when pending input exists after sampling (lines 742-757), as the steer drain in a model call's admission and the forced call in `src/assistant/engine.ts`, modified |
+| [`codex-rs/core/src/tasks/mod.rs`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/core/src/tasks/mod.rs) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | `on_task_finished` (lines 776-821): the final input check and the turn's end are atomic with steer admission, as the close that returns unread steers to the queue, modified |
+| [`codex-rs/core/src/session/turn_input.rs`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/core/src/session/turn_input.rs) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | `steer_input` (lines 1036-1107): a steer names its `expected_turn_id` and is refused when no turn is active or another turn is, as the steer's `taskId`, modified |
 | [`codex-rs/ext/queue/src/service.rs`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/ext/queue/src/service.rs) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | `dispatch_if_idle` (lines 440-509) and `on_thread_idle` (lines 588-605): the head starts only while its thread is idle, and an interrupt leaves the queue waiting, modified |
 
 Modifications to the titles: the instruction first asks whether the current title still fits
@@ -24,6 +30,16 @@ names the current title, who set it and the latest events before the messages,
 names the owner and the assistant and has its own byte bound. Normalization reads plain text, removes a markdown heading,
 emphasis or a "Title:" label, writes the issue reference in its short form and
 shortens only the description, at a word boundary.
+
+Modifications to the steering patterns: an unread steer is a durable row in the
+queue store instead of in memory, keyed by the request ID that sent it; it is
+taken into the transcript in the admission transaction of the next model call,
+so a refused call leaves it unread and a replayed graph step never reads it
+twice; whether a final answer is superseded is saved on the call's receipt; at
+the turn's close an unread steer starts as the next queued message instead of
+continuing the turn, and Stop returns it to the queue instead of dropping it;
+and a steer aimed at an ended turn that is still the conversation's latest is
+queued instead of refused.
 
 Modifications to the queue: a queued message is keyed by the request ID that
 queued it and keeps its text instead of a payload; its start and its removal

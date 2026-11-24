@@ -15,12 +15,19 @@ export const ASSISTANT_LEGACY_TOOL_LIMIT = 32;
 export const ASSISTANT_TOOL_LIMIT = 64;
 /** Why a conversation's message queue is held (Hub #2030): the owner stopped its task, the runtime started again, or the next message could not start. */
 export type AssistantQueueHold = 'stop' | 'restart' | 'refused';
-/** One current conversation's message queue in `assistant-state/2.2`: how many messages wait, whether it is held, and the refusal's code. No text. */
+/**
+ * One current conversation's message queue in `assistant-state/2.2`: how many messages wait (1 to 8), whether it is
+ * held, and the refusal's code. No text. `assistant-state/2.3` (Hub #2031) allows up to 16, which only steers a stopped
+ * or closed turn returned to the queue can reach.
+ */
 export type AssistantQueueSummary = {conversationId: string; profile: AssistantProfile; messages: number; held: AssistantQueueHold | null; code: ErrorCode | null};
 export type AssistantState = {id: 'assistant'; revision: number; enabled: boolean; available: boolean;
   /** The configured provider and model, and the tool names the private section allows; never a key, prompt or transcript. */
   provider: AssistantProvider; model: string; tools: string[]; tasks: AssistantTaskSummary[];
-  /** Version 2.2 (Hub #2030): each current conversation whose queue holds messages; absent when none does. */
+  /**
+   * Version 2.2 (Hub #2030): each current conversation whose queue holds messages; absent when none does. Version 2.3
+   * (Hub #2031) is published while a queue holds more than 8, after a stopped turn returned its unread steers.
+   */
   queues?: AssistantQueueSummary[]};
 export type AssistantInput = {requestId: string; inputRef: string};
 /**
@@ -56,5 +63,6 @@ export const assistantFamilies = [
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant'),
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.1'),
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.2'),
+  defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.3'),
 ] as const;
 export function registerAssistantFamilies(validator: MessageValidator): void {registerFamilies(validator, assistantFamilies);}

@@ -70,16 +70,14 @@ export async function conversationQueueJourney(browser: Browser): Promise<void> 
     await message.fill('Synthetic first task');
     await send.click();
     await conversation.getByText('Working', {exact: true}).waitFor();
-    // The composer stays available while the task works: Send waits for the task, Queue saves the message.
+    // The composer stays available while the task works: Send steers it (Hub #2031), Queue saves the message for after it.
     await queueButton.waitFor();
-    assert.equal(await send.isDisabled(), true);
+    assert.equal(await send.isDisabled(), true, 'nothing to send yet');
     assert.equal(await message.isDisabled(), false);
     await queue('Synthetic queued one', 1);
     await queue('Synthetic queued two', 2);
-    // Enter queues while the task works.
-    await message.fill('Synthetic queued three');
-    await message.press('Enter');
-    await items.nth(2).waitFor();
+    // Enter sends a steer while the task works (Hub #2031), so this message is queued with Queue.
+    await queue('Synthetic queued three', 3);
     assert.deepEqual(await texts(), ['Synthetic queued one', 'Synthetic queued two', 'Synthetic queued three']);
     await queued.getByText('Each starts as its own turn, in this order, after the current task ends.', {exact: true}).waitFor();
     const [queueBox, composerBox] = await Promise.all([queued.boundingBox(), message.boundingBox()]);

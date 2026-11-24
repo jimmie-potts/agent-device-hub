@@ -72,7 +72,9 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     assert.equal(work.length, 1); const started = work[0]; assert.ok(started?.action === 'start');
     assert.equal(started.repository, 'agent-device-hub'); assert.equal(started.brief, brief);
     assert.equal(await assistant.getByRole('textbox', {name: 'Answer', exact: true}).count(), 0, 'no answer box while the worker runs');
-    assert.equal(await send.count(), 0, 'no generic Send action while the worker runs');
+    // Send steers the waiting task instead (Hub #2031): the task reads the message after the worker's result.
+    assert.equal(await send.count(), 1, 'Send steers the task while the worker runs');
+    assert.equal(await send.isDisabled(), true, 'with nothing typed, nothing is sent');
     await assistant.getByRole('button', {name: /^Voice /}).waitFor();
     await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data: {operationId: started.operationId, status: 'started'}});
     await detailsToggle.click();

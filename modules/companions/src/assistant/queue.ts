@@ -12,6 +12,12 @@
 // - T3 Code, `packages/contracts/src/orchestrationV2.ts` at b4277089 (MIT): `queueHeld`, `queue.resume` and the
 //   `queued-run.edit`, `queued-run.cancel` and `queued-run.reorder` commands, whose `beforeRunId` (null for the end)
 //   names where a message moves.
+//
+// The same store keeps each running task's unread steers (Hub #2031): messages the owner sent to steer the task, saved
+// at once and taken into the task's own transcript at its next model call. A steer the task never read goes back to the
+// head of its conversation's queue when the turn closes or is stopped, so no steer is dropped. This follows Codex's
+// pending input (`codex-rs/core/src/session/turn.rs` and `codex-rs/core/src/tasks/mod.rs` at a0436d69, Apache-2.0),
+// modified to keep each steer as a durable row instead of in memory.
 import type {DatabaseSync} from 'node:sqlite';
 import type {AssistantProfile, AssistantQueueHold} from '@jimmie-potts/event-contracts/v2/assistant';
 import {LIMITS} from './limits.js';
@@ -25,6 +31,14 @@ export type QueuedMessage = {id: string; conversationId: string; profile: Assist
   traceparent: string};
 type MessageRow = {id: string; conversationId: string; profile: AssistantProfile; text: string; queuedAtMs: number; updatedAtMs: number; traceparent: string};
 const COLUMNS = 'id,conversation_id AS conversationId,profile,text,queued_at_ms AS queuedAtMs,updated_at_ms AS updatedAtMs,traceparent';
+/**
+ * One unread steer of a running task (Hub #2031). Its ID is the request ID of the input command that sent it, as a
+ * queued message's is, so a repeat cannot save it twice and the queued message it may become keeps the same ID.
+ */
+export type Steer = {id: string; taskId: string; conversationId: string; profile: AssistantProfile; text: string; savedAtMs: number;
+  /** The steering command's trace, which a queued start of the steer follows. */
+  traceparent: string};
+const STEER_COLUMNS = 'id,task_id AS taskId,conversation_id AS conversationId,profile,text,saved_at_ms AS savedAtMs,traceparent';
 
 /** All writes are synchronous and run inside the owning outbox's transaction, beside the task change they belong with. */
 export class MessageQueue {
@@ -34,7 +48,10 @@ export class MessageQueue {
       CREATE INDEX IF NOT EXISTS assistant_queue_order ON assistant_queued_messages(conversation_id,position);
       CREATE TABLE IF NOT EXISTS assistant_queues (conversation_id TEXT PRIMARY KEY, revision INTEGER NOT NULL,
         held TEXT CHECK(held IS NULL OR held IN ('stop','restart','refused')), code TEXT, detail TEXT,
-        pending INTEGER NOT NULL DEFAULT 0 CHECK(pending IN (0,1))) STRICT;`);
+        pending INTEGER NOT NULL DEFAULT 0 CHECK(pending IN (0,1))) STRICT;
+      CREATE TABLE IF NOT EXISTS assistant_steers (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, conversation_id TEXT NOT NULL, profile TEXT NOT NULL,
+        position INTEGER NOT NULL, text TEXT NOT NULL, saved_at_ms INTEGER NOT NULL, traceparent TEXT NOT NULL) STRICT;
+      CREATE INDEX IF NOT EXISTS assistant_steer_order ON assistant_steers(task_id,position);`);
   }
   /**
    * Counts the conversation's queue as changed in the open transaction; the assistant's next revision records it. The
@@ -71,8 +88,69 @@ export class MessageQueue {
       .run(message.id, message.conversationId, message.profile, last + 1, message.text, message.queuedAtMs, message.updatedAtMs, message.traceparent);
     this.touch(message.conversationId);
   }
-  /** Whether the conversation's queue has room for one more message. */
+  /**
+   * Whether the conversation's queue has room for one more message: it holds fewer than its limit. A queue that returned
+   * steers took past the limit has none until it is below the limit again (Hub #2031).
+   */
   room(conversationId: string): boolean {return this.count(conversationId) < LIMITS.queuedMessages;}
+  /** The task's unread steers, oldest first. */
+  steers(taskId: string): Steer[] {
+    return this.database.prepare(`SELECT ${STEER_COLUMNS} FROM assistant_steers WHERE task_id=? ORDER BY position`).all(taskId) as Steer[];
+  }
+  steer(id: string): Steer | undefined {return this.database.prepare(`SELECT ${STEER_COLUMNS} FROM assistant_steers WHERE id=?`).get(id) as Steer | undefined;}
+  /** How many unread steers the conversation's task holds. */
+  steerCount(conversationId: string): number {
+    return (this.database.prepare('SELECT COUNT(*) AS count FROM assistant_steers WHERE conversation_id=?').get(conversationId) as {count: number}).count;
+  }
+  /**
+   * Whether the conversation's task can take one more steer: it holds fewer than its limit of unread steers, and the
+   * queue they may return to and the steers together hold fewer than the queue's bound.
+   */
+  steerRoom(conversationId: string): boolean {
+    const steers = this.steerCount(conversationId);
+    return steers < LIMITS.steers && this.count(conversationId) + steers < LIMITS.queueBound;
+  }
+  /** The tasks that hold unread steers, oldest first. */
+  steerTasks(): {taskId: string; conversationId: string}[] {
+    return this.database.prepare('SELECT task_id AS taskId,conversation_id AS conversationId FROM assistant_steers GROUP BY task_id ORDER BY MIN(rowid)').all() as {taskId: string; conversationId: string}[];
+  }
+  /** Saves an unread steer after the task's others; the caller has checked there is room. */
+  addSteer(steer: Steer): void {
+    const last = (this.database.prepare('SELECT MAX(position) AS position FROM assistant_steers WHERE task_id=?').get(steer.taskId) as {position: number | null}).position ?? 0;
+    this.database.prepare('INSERT INTO assistant_steers VALUES (?,?,?,?,?,?,?,?)')
+      .run(steer.id, steer.taskId, steer.conversationId, steer.profile, last + 1, steer.text, steer.savedAtMs, steer.traceparent);
+    this.touch(steer.conversationId);
+  }
+  /** Removes a steer the task read: it is in the task's transcript now. */
+  delivered(id: string): void {
+    const steer = this.steer(id); if (steer === undefined) return;
+    this.database.prepare('DELETE FROM assistant_steers WHERE id=?').run(id);
+    this.touch(steer.conversationId);
+  }
+  /**
+   * Returns the task's unread steers to the head of its conversation's queue, in the order they were sent and before the
+   * messages already queued, as the next messages to start (Hub #2031). They may take the queue past its limit, up to
+   * its bound: nothing the owner wrote is dropped. Returns how many came back.
+   */
+  returnSteers(taskId: string, atMs: number): number {
+    const steers = this.steers(taskId);
+    this.prepend(steers.map(steer => ({id: steer.id, conversationId: steer.conversationId, profile: steer.profile, text: steer.text, queuedAtMs: steer.savedAtMs,
+      updatedAtMs: atMs, traceparent: steer.traceparent})));
+    this.database.prepare('DELETE FROM assistant_steers WHERE task_id=?').run(taskId);
+    return steers.length;
+  }
+  /**
+   * Saves messages of one conversation at the head of its queue, in their order and before the messages already queued:
+   * steers that become the next messages to start (Hub #2031). The caller has checked the queue's bound.
+   */
+  prepend(messages: readonly QueuedMessage[]): void {
+    const first = messages[0];
+    if (first === undefined) return;
+    const head = (this.database.prepare('SELECT MIN(position) AS position FROM assistant_queued_messages WHERE conversation_id=?').get(first.conversationId) as {position: number | null}).position ?? 1;
+    const insert = this.database.prepare('INSERT INTO assistant_queued_messages VALUES (?,?,?,?,?,?,?,?)');
+    messages.forEach((message, index) => {insert.run(message.id, message.conversationId, message.profile, head - messages.length + index, message.text, message.queuedAtMs, message.updatedAtMs, message.traceparent);});
+    this.touch(first.conversationId);
+  }
   edit(id: string, text: string, atMs: number): void {
     const message = this.message(id); if (message === undefined) return;
     this.database.prepare('UPDATE assistant_queued_messages SET text=?,updated_at_ms=? WHERE id=?').run(text, atMs, id);
@@ -135,8 +213,9 @@ export class MessageQueue {
    * on what it shows name.
    */
   document(profile: AssistantProfile, conversationId: string | undefined, revision: number, current = true): QueueDocument {
-    if (conversationId === undefined) return {version: 1, profile, conversationId: null, revision, current, held: null, messages: []};
+    if (conversationId === undefined) return {version: 1, profile, conversationId: null, revision, current, held: null, messages: [], steers: []};
+    const steers = this.database.prepare(`SELECT id,text,saved_at_ms AS savedAtMs FROM assistant_steers WHERE conversation_id=? ORDER BY position`).all(conversationId) as QueueDocument['steers'];
     return {version: 1, profile, conversationId, revision, current, held: this.hold(conversationId),
-      messages: this.messages(conversationId).map(({id, text, queuedAtMs, updatedAtMs}) => ({id, text, queuedAtMs, updatedAtMs}))};
+      messages: this.messages(conversationId).map(({id, text, queuedAtMs, updatedAtMs}) => ({id, text, queuedAtMs, updatedAtMs})), steers};
   }
 }

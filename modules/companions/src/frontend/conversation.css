@@ -193,6 +193,13 @@
   font-weight: 650;
 }
 
+/* A steer the task read while it worked, and an answer a steer superseded (Hub #2031). */
+.conversation-steer-note {
+  display: block;
+  color: var(--muted-dense);
+  font-size: var(--type-small, 0.875em);
+}
+
 .conversation-message-text, .conversation-compose article, .conversation-question {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -384,7 +391,39 @@
   margin-block-start: 0.5rem;
 }
 
-/* Queued messages above the composer (Hub #2030): the waiting messages in the order they start, and the queue's hold. */
+/* The current conversation's steers and queue share one bound, with one scroll (Hub #2031). The page grows with its
+   content, so the bound also leaves 34rem of the window for the rest of the page: the header, the transcript's least
+   height and the composer of a working task. Together they then keep the header and the transcript in view. */
+.conversation-queue-stack {
+  display: grid;
+  align-content: start;
+  gap: var(--space-xs);
+  min-inline-size: 0;
+  max-block-size: min(40dvh, max(6rem, 100dvh - 34rem));
+  overflow-y: auto;
+  /* Its visually hidden labels are positioned absolutely; this box contains them, so its scroll clips them instead of
+     the page growing by the hidden part of the list. */
+  position: relative;
+}
+
+/* A phone's composer takes more of the window, so the shared box keeps to a smaller bound there. */
+@media (max-width: 760px) {
+  .conversation-queue-stack {
+    max-block-size: min(20dvh, max(6rem, 100dvh - 34rem));
+  }
+}
+
+.conversation-queue-stack > .conversation-queue {
+  max-block-size: none;
+  overflow: visible;
+}
+
+.conversation-queue.conversation-steers {
+  border-inline-start: 3px solid var(--accent, var(--edge-faint));
+}
+
+/* Queued messages above the composer (Hub #2030): the waiting messages in the order they start, and the queue's hold.
+   The running task's unread steers (Hub #2031) use the same box, marked by an accent edge. */
 .conversation-queue {
   display: grid;
   gap: var(--space-xs);
@@ -395,6 +434,8 @@
   border: 1px solid var(--edge-faint);
   border-radius: var(--radius, 12px);
   background: var(--raised);
+  /* Contains its visually hidden labels, so a scrolled list never makes the page taller (Hub #2031). */
+  position: relative;
 }
 
 .conversation-queue-header {

@@ -11,4 +11,18 @@ export type QueueHold = {reason: AssistantQueueHold; code: ErrorCode | null; det
  * they never start, and the owner can only withdraw them.
  */
 export type QueueDocument = {version: 1; profile: AssistantProfile; conversationId: string | null; revision: number; current: boolean; held: QueueHold | null;
-  messages: {id: string; text: string; queuedAtMs: number; updatedAtMs: number}[]};
+  messages: {id: string; text: string; queuedAtMs: number; updatedAtMs: number}[];
+  /**
+   * The unread steers of the conversation's running task, oldest first (Hub #2031): each is taken into the task's
+   * transcript at its next model call. A release before #2031 sends none.
+   */
+  steers: {id: string; text: string; savedAtMs: number}[]};
+/** The conversation message of a steer the task read (Hub #2031): saved where the model read it, in the task's turn. */
+export const steerMessageId = (taskId: string, steerId: string): string => `${taskId}-steer-${steerId}`;
+/** The conversation message of a final answer a steer superseded (Hub #2031): saved, never spoken. `stepId` is the call's. */
+export const supersededReplyId = (stepId: string): string => `${stepId}-reply`;
+/** Whether a saved message is a steer the task read while it worked. */
+export const steerMessage = (message: {id: string; taskId: string; role: string}): boolean => message.role === 'owner' && message.id.startsWith(`${message.taskId}-steer-`);
+/** Whether a saved message is an answer a steer superseded. */
+export const supersededReply = (message: {id: string; taskId: string; role: string}): boolean =>
+  message.role === 'assistant' && message.id.startsWith(`${message.taskId}-step-`) && message.id.endsWith('-reply');
