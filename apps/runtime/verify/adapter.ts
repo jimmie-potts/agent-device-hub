@@ -615,7 +615,11 @@ class Run implements RunHarness {
     const response = await fetch(new URL(`${HARNESS_PATH}/${route}`, this.#target.harness), {
       method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body),
     });
-    if (!response.ok) throw new RunFailure(`${route} answered ${response.status}`);
+    if (response.ok) return;
+    // The harness refuses in the registry's error body with its own fixed text, such as a control the runtime did not
+    // confirm (Hub #1752), so the step's failure names what was refused and why.
+    const refusal = (await response.json().catch(() => undefined) as Partial<ErrorBody> | undefined)?.error;
+    throw new RunFailure(`${route} answered ${response.status}${refusal === undefined ? '' : `: ${refusal.code} ${refusal.detail ?? ''}`.trimEnd()}`);
   }
 
   /**
