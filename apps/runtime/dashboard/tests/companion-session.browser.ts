@@ -11,8 +11,10 @@ import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {feed, startWorld} from './harness.ts';
 
 const RENAMED = 'Synthetic kitchen plans';
-// A shared room's companions (Hub #2032), in the room's order.
-const ROOM = [{id: 'bunny', name: 'B.U.N.N.Y.'}, {id: 'reachy', name: 'Reachy'}, {id: 'microduck', name: 'MicroDuck'}];
+// A shared room's companions (Hub #2032), in the room's order. The first has a long synthetic name (40 characters, the
+// contract's limit), so the tag must shrink to keep the evidence age whole.
+const LONG = 'Synthetic companion named at full length';
+const ROOM = [{id: 'synthetic-long', name: LONG}, {id: 'reachy', name: 'Reachy'}, {id: 'microduck', name: 'MicroDuck'}];
 
 /**
  * The face's first line at the page's width: one line inside the tile, with the evidence age whole and inside it, the
@@ -137,12 +139,12 @@ export async function companionSessionJourney(browser: Browser): Promise<void> {
     await renamed.locator('.agent-companion-more, .agent-companion:nth-child(2)').first().waitFor();
     await oneLine(renamed, 'room, desktop');
     assert.equal(await renamed.locator('.agent-companion').count(), 1, 'a room tags only its first companion');
-    assert.equal(await renamed.locator('.agent-companion').textContent(), 'Companion: B.U.N.N.Y.');
+    assert.equal(await renamed.locator('.agent-companion').textContent(), `Companion: ${LONG}`);
     assert.equal(await more.locator('[aria-hidden=true]').textContent(), '+2', 'and counts the others');
     assert.equal(await more.locator('.agent-companion-word').textContent(), 'and 2 more companions: Reachy, MicroDuck', 'with an accessible name');
     await shot(page, 'companion-session-room-desktop');
     await renamed.locator('summary.agent-face').click();
-    assert.deepEqual((await facts(renamed)).find(([term]) => term === 'Companions'), ['Companions', 'B.U.N.N.Y., Reachy, MicroDuck'], 'the facts list every companion');
+    assert.deepEqual((await facts(renamed)).find(([term]) => term === 'Companions'), ['Companions', `${LONG}, Reachy, MicroDuck`], 'the facts list every companion');
     await renamed.locator('summary.agent-face').click();
     await page.setViewportSize({width: 390, height: 844});
     await renamed.scrollIntoViewIfNeeded();

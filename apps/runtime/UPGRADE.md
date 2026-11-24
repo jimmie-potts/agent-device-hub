@@ -260,10 +260,15 @@ no record. An upgrade loads every stored session as it was; a native session
 gains its companions at its next lifecycle observation, and until then the
 dashboard shows it as before.
 
-Returning to the release before is safe; prefer fixing forward. That release
-loads the stored sessions, ignores the `companions` member and, at its first
-start, republishes each native record as `session/3.1` without companions,
-which its readers read. Records and history rows that this release published as
+Returning to the release before is safe and loses no data; prefer fixing
+forward. That release loads the stored sessions and ignores their `companions`
+member. Its start refreshes the records before it serves any sync: the refresh
+rebuilds every record from the stored sessions, finds each native record that
+carried companions changed, and republishes it at a new revision as
+`session/3.1` without companions, which its readers read. If that refresh
+fails, as on a full disk, syncs answer `unavailable` until a later one
+succeeds, so no reader is served a record it refuses. The stored session JSON
+keeps the member, and records and history rows that this release published as
 `session/3.2` stay as they are. One change can be delayed: a `lifecycle/2.4`
 observation still in the companions outbox at the switch is refused by the
 earlier core as `unsupported-version`, so that change reaches the session only

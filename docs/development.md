@@ -3173,9 +3173,9 @@ suite. After the root build, run
 session tile's companion tag in place of the client, the untitled-persona rule,
 a simulated shared room's first tag and count, the Companion and Client facts,
 the companion search by name and ID, and the one-line face of unchanged height
-at 1280 and 390 px; `DASHBOARD_RECEIPTS` keeps its screenshots private. Run the event contract, companions, runtime and
-dashboard unit suites for `session/3.2`, `lifecycle/2.4`, the module's reports
-and the core's retention.
+at 1280 and 390 px; `DASHBOARD_RECEIPTS` keeps its screenshots private. Run
+the event contract, companions, runtime and dashboard unit suites for
+`session/3.2`, `lifecycle/2.4`, the module's reports and the core's retention.
 
 Browser speech (#1097) uses the existing companion unit discovery and
 `test:companions:browser` journey. After the root build, run
