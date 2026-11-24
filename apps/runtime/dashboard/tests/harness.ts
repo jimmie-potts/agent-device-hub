@@ -40,6 +40,7 @@ type ArtworkFetch = NonNullable<NonNullable<PlaybackModuleOptions['artwork']>['f
 import {createWisprModule} from '@jimmie-potts/wispr';
 import {prepareWisprFixture} from '../../dist/tests/fixtures/wispr.js';
 import {editorFixture} from './editor-fixture.ts';
+import {waitForFeed} from './feed-wait.ts';
 import {INSTALLED_PORTS, PortAllocationError, startWorldRuntime, worldDeadline} from './world-runtime.ts';
 export {INSTALLED_PORTS} from './world-runtime.ts';
 
@@ -627,9 +628,12 @@ export function changes(page: Page, sent: string[] = []): string[] {
   return sent;
 }
 
-/** Waits for the dashboard's main region to show `feed`. */
+/**
+ * Waits for the dashboard's main region to show `feed`, within the page's default timeout. An expired wait says which
+ * `data-feed` values the page showed, its `data-copies` and `data-syncs`, and how its latest SDK streams stood (#2068).
+ */
 export async function feed(page: Page, value: string): Promise<void> {
-  await page.locator(`main#main[data-feed="${value}"]`).waitFor();
+  await waitForFeed(page, value);
 }
 
 /**
