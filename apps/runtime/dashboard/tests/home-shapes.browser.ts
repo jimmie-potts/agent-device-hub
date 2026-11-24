@@ -942,6 +942,28 @@ try {
       };
       for (const kind of ['attribute', 'hidden', 'class']) assert.ok((await churn(kind)).length > 0, `a per-frame ${kind} flip and restore is reported`);
       assert.deepEqual(await churn('same-value'), [], 'a write of the value an attribute already has is not reported');
+      // #2097: the one-second clock writes a session's whole-minute age into `.agent-heard`'s text and its `title` at the
+      // same tick, so a minute boundary inside a window is not paging. Any other write there or elsewhere still is.
+      await probe.setContent('<div class="home-layout-grid"><div data-home-card="sessions"><article class="session"><span class="agent-client" title="Claude">Claude</span>'
+        + '<span class="agent-heard" data-age="0" title="Heard 0m ago"><span class="agent-heard-word">Heard </span>0m ago</span></article></div></div>');
+      const tick = async (kind: string): Promise<string[]> => {
+        const seen = idleChanges(probe, 500, ['sessions']);
+        await probe.evaluate(() => 0);
+        await probe.evaluate(kind => {
+          const heard = document.querySelector<HTMLElement>('.agent-heard'), client = document.querySelector('.agent-client');if (heard === null || client === null) return;
+          // As React renders the next minute: the label's text node and its title, in one commit.
+          if (kind === 'heard-minute') {const text = heard.lastChild;if (text instanceof Text) text.data = text.data === '1m ago' ? '2m ago' : '1m ago';heard.title = `Heard ${text?.textContent ?? ''}`;}
+          else if (kind === 'other-title') client.setAttribute('title', 'Codex');
+          else if (kind === 'word-title') heard.firstElementChild?.setAttribute('title', 'Heard');
+          else if (kind === 'heard-child') heard.append(document.createElement('b'));
+          else if (kind === 'heard-class') heard.classList.add('late');
+          else heard.dataset.age = '1';
+        }, kind);
+        await probe.clock.runFor(500);
+        return seen;
+      };
+      assert.deepEqual(await tick('heard-minute'), [], 'the heard age crossing a minute, in its text and its title, is not reported');
+      for (const kind of ['other-title', 'word-title', 'heard-child', 'heard-class', 'heard-data']) assert.ok((await tick(kind)).length > 0, `a ${kind} change is still reported`);
     } finally {await closeProbe();}
   }
 
@@ -960,6 +982,21 @@ try {
     }
     await page.setViewportSize({width: 1440, height: 1000});
     assert.deepEqual(busy, [], 'list cards stay still while nobody acts');
+    // #2097: a window that holds a minute boundary. On a page clock of its own, every session tile's heard age moves on
+    // a minute, in its text and its title, and the recorder reports none of it. Narrower than the loop above: this one
+    // window has no second, so a one-off record change in its real seconds (evidence turning stale) is the loop's to
+    // judge, not this check's; it looks only for the heard age's own writes.
+    const {page: aging, close: closeAging} = await clocked();
+    try {
+      await aging.goto(world.url);await feed(aging, 'connected');
+      const heard = aging.locator('[data-home-card="sessions"] .agent-heard');await heard.first().waitFor();await measure(aging);
+      const titles = async (): Promise<string[]> => heard.evaluateAll(nodes => nodes.map(node => node.getAttribute('title') ?? ''));
+      const before = await titles();
+      const seen = await idleFor(aging, 61_000, ['sessions']);
+      assert.deepEqual(seen.filter(change => change.includes('title on span.agent-heard')), [], 'the session tiles\' heard age crossing a minute is not reported');
+      const after = await titles();
+      assert.ok(after.every((title, index) => title !== before[index]), `every heard age moved on a minute: ${before.join(' | ')} -> ${after.join(' | ')}`);
+    } finally {await closeAging();}
   }
 
   if (receipts !== undefined && part('shots')) {
