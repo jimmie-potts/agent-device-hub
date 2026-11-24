@@ -10,7 +10,7 @@ import {promisify} from 'node:util';
 import {Outcome} from '../../packages/sdk/dist/src/index.js';
 import {reconcileOperation, withOperation} from '../bunny-operations.mjs';
 import * as realOperator from '../bunny.mjs';
-import {agents, installDiagnostics, installSignin, plist} from '../mac-host-install.mjs';
+import {agents, installDiagnostics, installSignin, plist, serveScript} from '../mac-host-install.mjs';
 import {engineWait, healthWait, operatorFor, startAtSignIn, startGate} from '../mac-signin.mjs';
 
 const revision = 'a'.repeat(40);
@@ -160,13 +160,16 @@ test('the serve agent keeps a shell as the app binary\'s parent and forwards a s
   const [runtime, forwarder, serve] = agents({home: '/Users/owner', node: '/node'});
   const [shell, flag, script, binary, ...rest] = serve.program;
   assert.deepEqual([shell, flag, binary, rest], ['/bin/sh', '-c', tailscale, []]);
+  assert.equal(script, serveScript);
   assert.doesNotMatch(script, /\bexec\b/);
   assert.ok(!script.includes(tailscale), 'the binary is an argument, not shell text');
-  assert.match(script, /"\$0" serve --https=443 http:\/\/127\.0\.0\.1:18789 &/);
-  // Until the pid is recorded a stop is only noted, then forwarded; from then on the trap forwards it itself.
-  assert.match(script, /^stop=; trap 'stop=1' TERM INT; "\$0" serve [^;]* & c=\$!; trap /);
-  assert.match(script, /trap 'kill -TERM "\$c" 2>\/dev\/null; wait "\$c"; exit "\$\?"' TERM INT; \[ -z "\$stop" \] \|\| kill -TERM "\$c" 2>\/dev\/null; wait/);
-  assert.match(script, /wait "\$c"$/);
+  assert.match(script, /\n"\$0" serve --https=443 http:\/\/127\.0\.0\.1:18789 & c=\$!\n/);
+  // Until `end` is the trap a stop is only noted; one noted before the fork starts no serve.
+  assert.match(script, /^stop=; trap 'stop=1' TERM INT\n\[ -z "\$stop" \] \|\| exit 143\n"\$0" serve /);
+  assert.match(script, /\ntrap end TERM INT\n\[ -z "\$stop" \] \|\| end\nwait "\$c"$/);
+  // `end` cannot be interrupted, re-sends a bounded number of TERMs and exits with the serve's status.
+  assert.match(script, /end\(\) \{ q=\$\?; trap '' TERM INT; \(n=0; while \[ "\$n" -lt 5 \] && kill -TERM "\$c" 2>\/dev\/null; do sleep 1;/);
+  assert.match(script, /wait "\$c"; s=\$\?; kill -KILL "\$r" 2>\/dev\/null; \[ "\$s" -ne 127 \] \|\| s=\$q; exit "\$s"; \}/);
   assert.equal(runtime.program[0], '/node');
   assert.deepEqual(forwarder.program, ['/bin/sh', '/Users/owner/.config/bunny/private-access/start-forwarder.sh']);
 });
@@ -179,18 +182,26 @@ const waitFor = async (check, limit = 10_000) => {
   return assert.fail('timed out');
 };
 const alive = pid => {try {process.kill(pid, 0); return true;} catch {return false;}};
+// A deadline that only a failing run reaches: a lost stop or a fake that never opens the FIFO leaves the shell
+// waiting, which would otherwise surface as the whole test's timeout.
+const settled = (exited, what) => new Promise((done, fail) => {
+  const deadline = setTimeout(() => fail(new Error(`the shell did not exit within 10 s ${what}`)), 10_000);
+  exited.then(value => {clearTimeout(deadline); done(value);});
+});
 
 // launchd runs /bin/sh, which is bash on macOS; dash (Ubuntu's /bin/sh) and zsh run the same script where installed.
 const shells = ['/bin/sh', '/bin/bash', '/bin/dash', '/bin/zsh'].filter(path => existsSync(path));
-test('the serve agent\'s shell is the binary\'s parent, ends it on a stop and exits with it', {timeout: 60_000, skip: process.platform === 'win32'}, async t => {
+test('the serve agent\'s shell is the binary\'s parent, ends it on a stop and exits with it', {timeout: 120_000, skip: process.platform === 'win32'}, async t => {
   const [, , serve] = agents({home: '/Users/owner', node: '/node'});
   for (const interpreter of shells) await t.test(interpreter, async t => {
     const home = await fixture(t);
     const fake = join(home, 'Tailscale');
     // Records its parent and arguments, then runs until a TERM, as the serve does, and exits with a chosen status.
-    // The trap comes first, so a TERM after `started` always reaches it rather than killing the fake by signal.
+    // Its trap comes first, so a TERM after `started` always reaches it rather than killing it by signal. With
+    // `swallow`, its first TERM has no effect, as one that reaches a forked child before it has exec'd the binary.
     await writeFile(fake, `#!/bin/sh
-trap 'echo terminated > "${home}/stopped"; exit "$(cat "${home}/on-term")"' TERM
+end() { echo terminated > "${home}/stopped"; exit "$(cat "${home}/on-term")"; }
+if [ -f "${home}/swallow" ]; then trap 'echo lost > "${home}/swallowed"; trap end TERM' TERM; else trap end TERM; fi
 echo "$$ $PPID $*" > "${home}/started"
 [ -p "${home}/ready" ] && echo ready > "${home}/ready"
 [ -f "${home}/exit-now" ] && exit 3
@@ -201,74 +212,96 @@ while :; do sleep 0.05; done
     assert.equal(program[0], '/bin/sh');
     program[0] = interpreter;
     assert.ok(!program.some(arg => /tailscale\.app/i.test(arg)));
+    const script = program[2];
     // A failing run must not leave the fake looping, which would also hold the test runner open.
     const spawned = [];
     t.after(() => spawned.forEach(pid => {try {process.kill(pid, 'SIGKILL');} catch {/* already gone */}}));
-    const run = (args = program) => {
-      const shell = spawn(args[0], args.slice(1), {stdio: 'ignore'});
+    const run = (text = script) => {
+      const shell = spawn(program[0], [program[1], text, ...program.slice(3)], {stdio: 'ignore'});
       spawned.push(shell.pid);
       const exited = new Promise(done => shell.on('exit', (code, signal) => done({code, signal})));
       return {shell, exited};
     };
-    const stopped = async (status, exited, child) => {
+    const file = name => join(home, name);
+    const started = () => readFile(file('started'), 'utf8').then(text => text.trim().split(' '), () => undefined);
+    const stopped = async (status, outcome, child) => {
       // The serve's own status, never the interrupted wait's 143, a lost child's 127 or an empty wait's 1 or 2.
-      assert.deepEqual(await exited, {code: status, signal: null});
-      assert.equal(await readFile(join(home, 'stopped'), 'utf8'), 'terminated\n');
+      assert.deepEqual(outcome, {code: status, signal: null});
+      assert.equal(await readFile(file('stopped'), 'utf8'), 'terminated\n');
       assert.equal(alive(Number(child)), false, 'the serve outlived its job');
     };
-    const prepare = async status => {
-      await rm(join(home, 'started'), {force: true});
-      await rm(join(home, 'stopped'), {force: true});
-      await writeFile(join(home, 'on-term'), String(status));
+    const prepare = async (status, {swallow = false} = {}) => {
+      for (const name of ['started', 'stopped', 'swallowed', 'swallow']) await rm(file(name), {force: true});
+      if (swallow) await writeFile(file('swallow'), '');
+      await writeFile(file('on-term'), String(status));
     };
     const stop = async status => {
       await prepare(status);
       const {shell, exited} = run();
-      const [child, parent, ...args] = (await waitFor(() => readFile(join(home, 'started'), 'utf8'))).trim().split(' ');
+      const [child, parent, ...args] = await waitFor(started);
       spawned.push(Number(child));
       assert.notEqual(Number(parent), 1);
       assert.equal(Number(parent), shell.pid);
       assert.deepEqual(args, ['serve', '--https=443', 'http://127.0.0.1:18789']);
       shell.kill('SIGTERM');
-      await stopped(status, exited, child);
+      await stopped(status, await settled(exited, 'after a stop'), child);
     };
     await stop(0);
     await stop(7);
 
-    // A stop can arrive at any point once the serve is forked, including before the shell has recorded its pid.
-    // Each case holds the shell at one command boundary until the fake has set its trap, then has the shell
-    // signal itself there, so the TERM lands in that window every time.
-    const ready = join(home, 'ready');
+    const fork = script.indexOf(' & ');
+    const points = boundaries(script);
+    // From the fork on, a stop can land at any command boundary, including before the shell has recorded the pid, and
+    // the first TERM the serve receives can be lost. Each case holds the shell at one boundary until the fake is ready,
+    // using a FIFO, has the shell signal itself there and has the fake swallow its first TERM. Only a shell that
+    // re-sends the stop ends that serve.
+    const after = points.filter(at => at > fork);
+    assert.equal(after[0], fork + 3, 'the first case lands before the pid is recorded');
+    const ready = file('ready');
     await promisify(execFile)('mkfifo', [ready]);
-    const after = boundaries(program[2]).filter(at => at > program[2].indexOf(' & '));
-    assert.equal(after[0], program[2].indexOf(' & ') + 3, 'the first case lands before the pid is recorded');
     for (const at of after) {
-      await prepare(5);
-      const script = `${program[2].slice(0, at)}read r < "${ready}"; kill -TERM $$; ${program[2].slice(at)}`;
+      await prepare(5, {swallow: true});
+      const where = JSON.stringify(script.slice(at, at + 24));
+      const outcome = await settled(run(`${script.slice(0, at)}read r < "${ready}"; kill -TERM $$; ${script.slice(at)}`).exited,
+        `after a stop before ${where}: it lost the stop, or the fake never opened the FIFO`)
+        .finally(async () => spawned.push(Number((await started())?.[0])));
       // The fake has written `started` before it opens the FIFO, so it is there once the shell has exited.
-      const status = await run([program[0], program[1], script, ...program.slice(3)]).exited;
-      const [child] = (await readFile(join(home, 'started'), 'utf8')).trim().split(' ');
-      spawned.push(Number(child));
-      await stopped(5, status, child);
+      const [child] = await started();
+      assert.equal(await readFile(file('swallowed'), 'utf8'), 'lost\n', `no TERM reached the fake before ${where}`);
+      await stopped(5, outcome, child);
     }
     await rm(ready);
 
+    // A stop noted before the fork starts no serve.
+    await prepare(5);
+    const check = script.indexOf('[ -z "$stop" ] || exit 143');
+    assert.ok(points.includes(check), 'the shell checks for a noted stop before it forks');
+    const early = await settled(run(`${script.slice(0, check)}kill -TERM $$; ${script.slice(check)}`).exited, 'after an early stop')
+      .finally(async () => spawned.push(Number((await started())?.[0])));
+    assert.deepEqual(early, {code: 143, signal: null});
+    assert.equal(await started(), undefined, 'a serve started after the stop');
+
     // When the serve exits by itself, so does the job, which lets KeepAlive restart it.
-    await writeFile(join(home, 'exit-now'), '');
-    assert.deepEqual(await run().exited, {code: 3, signal: null});
+    await prepare(5);
+    await writeFile(file('exit-now'), '');
+    assert.deepEqual(await settled(run().exited, 'after the serve exited'), {code: 3, signal: null});
   });
 });
 
-// Where a new top-level command starts: after each `; ` or `& ` outside quotes, never inside an `||` or `&&` list.
+// Where a new top-level command starts: after each newline, `; ` or `& ` outside quotes, parentheses and braces,
+// never inside an `||` or `&&` list.
 function boundaries(script) {
   const found = [];
-  let quote = '';
+  let quote = '', depth = 0;
   for (let at = 0; at < script.length; at += 1) {
     const char = script[at];
     if (quote) {
       if (char === quote) quote = '';
     } else if (char === '\'' || char === '"') quote = char;
-    else if ((char === ';' || char === '&') && script[at + 1] === ' ' && script[at - 1] !== '&') found.push(at + 2);
+    else if (char === '(' || char === '{') depth += 1;
+    else if (char === ')' || char === '}') depth -= 1;
+    else if (depth === 0 && char === '\n') found.push(at + 1);
+    else if (depth === 0 && (char === ';' || char === '&') && script[at + 1] === ' ' && script[at - 1] !== '&') found.push(at + 2);
   }
   return found;
 }

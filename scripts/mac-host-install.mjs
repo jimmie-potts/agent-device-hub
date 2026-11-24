@@ -52,6 +52,27 @@ ${background ? '  <key>ProcessType</key>\n  <string>Background</string>\n' : ''}
 `;
 }
 
+// The serve agent's shell, POSIX sh only (macOS /bin/sh is bash 3.2). A stop (TERM, or INT) can land at any point:
+// - before the trap: the shell dies by default and no serve has started;
+// - before the fork: it is noted and the shell exits 143 without starting a serve;
+// - from the fork until `end` is the trap: it is noted, and `end` runs once the serve's pid is in `c`;
+// - after that: the trap runs `end`.
+// A forked child keeps the shell's signal handler until it resets it and execs, and a TERM it receives then is lost, so
+// `end` cannot trust one forwarded TERM. It ignores further stops, so its wait returns only the serve's own status, and
+// re-sends TERM once a second, at most 5 times, while the serve is there: the lost window lasts only until the exec, a
+// serve that stops within a second gets one TERM, and the last re-send comes well before launchd's 20 s ExitTimeOut.
+// It exits with the serve's status. If the main wait had already collected it, the wait in `end` can report 127, and
+// `end` keeps the status that `$?` held when it began.
+export const serveScript = [
+  'stop=; trap \'stop=1\' TERM INT',
+  '[ -z "$stop" ] || exit 143',
+  '"$0" serve --https=443 http://127.0.0.1:18789 & c=$!',
+  'end() { q=$?; trap \'\' TERM INT; (n=0; while [ "$n" -lt 5 ] && kill -TERM "$c" 2>/dev/null; do sleep 1; n=$((n + 1)); done) & r=$!; wait "$c"; s=$?; kill -KILL "$r" 2>/dev/null; [ "$s" -ne 127 ] || s=$q; exit "$s"; }',
+  'trap end TERM INT',
+  '[ -z "$stop" ] || end',
+  'wait "$c"',
+].join('\n');
+
 export function agents({home, node, project = 'bunny-mac-personal'}) {
   const signin = join(home, '.local', 'share', 'bunny', 'signin');
   const route = join(home, '.config', 'bunny', 'private-access');
@@ -65,12 +86,9 @@ export function agents({home, node, project = 'bunny-mac-personal'}) {
       program: ['/bin/sh', join(route, 'start-forwarder.sh')], log: join(route, 'forwarder.log')},
     // The app binary starts as the GUI, logs a CLIError and exits 0 without a terminal unless TAILSCALE_BE_CLI is set, and
     // even then whenever its parent is launchd. So a shell stays its parent: no exec, the binary as $0 rather than shell
-    // text, a stop forwarded and waited for, and the job ending with the serve so KeepAlive restarts it. The trap exits
-    // with the serve's status: a bare exit there keeps the interrupted wait's 143 in dash, as POSIX specifies. A stop
-    // that lands before `c=$!` records the serve's pid only sets `stop`; it is forwarded once the pid is known, since a
-    // trap with an empty `$c` would leave the serve running and exit with the failed wait's 1 (bash) or 2 (dash).
+    // text, a stop forwarded and waited for, and the job ending with the serve so KeepAlive restarts it. See serveScript.
     {label: 'org.bunny.private-serve', keepAlive: true, path, environment: {TAILSCALE_BE_CLI: '1'}, workingDirectory: route,
-      program: ['/bin/sh', '-c', `stop=; trap 'stop=1' TERM INT; "$0" serve --https=443 http://127.0.0.1:18789 & c=$!; trap 'kill -TERM "$c" 2>/dev/null; wait "$c"; exit "$?"' TERM INT; [ -z "$stop" ] || kill -TERM "$c" 2>/dev/null; wait "$c"`, tailscale],
+      program: ['/bin/sh', '-c', serveScript, tailscale],
       log: join(route, 'serve.log')},
   ];
 }

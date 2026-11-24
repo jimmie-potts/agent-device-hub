@@ -109,8 +109,10 @@ GUI, logs a `CLIError` and exits 0 instead of serving. `TAILSCALE_BE_CLI=1` isn'
 enough under launchd, because the binary still starts as the GUI whenever its
 parent is launchd. So the serve agent sets the variable and runs the binary from a
 `/bin/sh` that stays its parent. The shell passes a stop on to it, including one
-that arrives while the serve is starting, and exits with its status when it does, so
-launchd restarts it. To stop the route, boot out both agents; it returns at the
+that arrives while the serve is starting, and sends it again once a second, up to five
+times, while the serve is still running. It exits with the serve's status when the serve
+exits, so launchd restarts it. A stop that arrives before the serve starts ends the
+shell without starting it. To stop the route, boot out both agents; it returns at the
 next sign-in unless you also delete their plists. Never run a manual copy beside them. The route holds no state and sends no device command, and its
 authentication is unchanged.
 
