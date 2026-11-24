@@ -20,7 +20,8 @@ function holdOf(value: unknown): QueueHold | null | undefined {
 }
 /** The route's answer for the profile, or undefined for anything else, which the page shows as unknown. */
 export function decodeQueue(value: unknown, profile: AssistantProfile): QueueView | undefined {
-  if (!object(value) || value.version !== 1 || value.profile !== profile || !Array.isArray(value.messages) || value.messages.length > LIMITS.queuedMessages) return undefined;
+  // Steers a stopped turn returned may take a queue past its limit, up to its bound (Hub #2031).
+  if (!object(value) || value.version !== 1 || value.profile !== profile || !Array.isArray(value.messages) || value.messages.length > LIMITS.queueBound) return undefined;
   const {conversationId, revision, current} = value, held = holdOf(value.held);
   if (!(conversationId === null || (typeof conversationId === 'string' && ID.test(conversationId))) || held === undefined || !instant(revision) ||
     typeof current !== 'boolean') return undefined;
@@ -31,7 +32,16 @@ export function decodeQueue(value: unknown, profile: AssistantProfile): QueueVie
     messages.push({id: entry.id, text: entry.text, queuedAtMs: entry.queuedAtMs, updatedAtMs: entry.updatedAtMs});
   }
   if (new Set(messages.map(entry => entry.id)).size !== messages.length || (held !== null && messages.length === 0)) return undefined;
-  return {profile, conversationId, revision, current, held, messages};
+  // The running task's unread steers (Hub #2031); a release before them sends none.
+  const listed: unknown = value.steers ?? [];
+  if (!Array.isArray(listed) || listed.length > LIMITS.steers) return undefined;
+  const steers: QueueView['steers'] = [];
+  for (const entry of listed as unknown[]) {
+    if (!object(entry) || typeof entry.id !== 'string' || !ID.test(entry.id) || typeof entry.text !== 'string' || entry.text.trim() === '' || !instant(entry.savedAtMs)) return undefined;
+    steers.push({id: entry.id, text: entry.text, savedAtMs: entry.savedAtMs});
+  }
+  if (new Set(steers.map(entry => entry.id)).size !== steers.length) return undefined;
+  return {profile, conversationId, revision, current, held, messages, steers};
 }
 /** What the hold tells the owner, and the control that releases it: Start after a restart, Resume queue otherwise. */
 export function holdText(hold: QueueHold): {text: string; action: 'Start' | 'Resume queue'} {

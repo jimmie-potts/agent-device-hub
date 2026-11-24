@@ -11,4 +11,9 @@ export type QueueHold = {reason: AssistantQueueHold; code: ErrorCode | null; det
  * they never start, and the owner can only withdraw them.
  */
 export type QueueDocument = {version: 1; profile: AssistantProfile; conversationId: string | null; revision: number; current: boolean; held: QueueHold | null;
-  messages: {id: string; text: string; queuedAtMs: number; updatedAtMs: number}[]};
+  messages: {id: string; text: string; queuedAtMs: number; updatedAtMs: number}[];
+  /**
+   * The unread steers of the conversation's running task, oldest first (Hub #2031): each is taken into the task's
+   * transcript at its next model call. A release before #2031 sends none.
+   */
+  steers: {id: string; text: string; savedAtMs: number}[]};

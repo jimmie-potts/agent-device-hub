@@ -128,9 +128,13 @@ const handOffOutcome = (text: string): 'completed' | 'failed' | 'cancelled' | 'u
   const word = /^[a-z]+/u.exec(text)?.[0];
   return word === 'completed' || word === 'failed' || word === 'cancelled' || word === 'uncertain' ? word : 'unknown';
 };
-/** The state's version: 2.2 while a conversation's queue holds messages (Hub #2030), else 2.1 for the full tool list, else 2.0. */
+/**
+ * The state's version: 2.3 while a queue holds more messages than its limit, which only steers a stopped turn returned
+ * can do (Hub #2031), 2.2 while a conversation's queue holds messages (Hub #2030), else 2.1 for the full tool list, else 2.0.
+ */
 export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as const, type: 'org.bunny.assistant-state.updated', subject: 'assistant',
-  dataschema: `https://bunny.invalid/events/assistant-state/${data.queues !== undefined ? '2.2' : data.tools.length > ASSISTANT_LEGACY_TOOL_LIMIT ? '2.1' : '2.0'}`, data});
+  dataschema: `https://bunny.invalid/events/assistant-state/${data.queues?.some(queue => queue.messages > LIMITS.queuedMessages) === true ? '2.3'
+    : data.queues !== undefined ? '2.2' : data.tools.length > ASSISTANT_LEGACY_TOOL_LIMIT ? '2.1' : '2.0'}`, data});
 export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the evidence the tools return.';
 /** The start of the tool result for a hand-off that waits for its companion's busy slot (Hub #2028). */
 export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this hand-off waits for';
@@ -143,8 +147,15 @@ export const REFUSED = 'The model declined this request.';
 export const UNSPOKEN = 'This companion\'s audio is not speech, so its text is its intended meaning and is never read aloud.';
 /** What a conversation reads when its saved progress could not be restored at a start (Hub #2027); once per failed start. */
 export const RECOVERY_FAILED = 'This conversation\'s saved progress couldn\'t be restored when B.U.N.N.Y. started. You can cancel the task, but new messages here can\'t be sent until B.U.N.N.Y. restarts, which tries the recovery again.';
-/** Why a message is not queued when its conversation's queue is full (Hub #2030). */
-export const QUEUE_FULL = `This conversation's queue holds its limit of ${String(LIMITS.queuedMessages)} messages. Withdraw one or wait for one to start.`;
+/**
+ * Why a message is not queued when its conversation's queue is full (Hub #2030). Steers a stopped turn returned may take
+ * the queue past its limit (Hub #2031), and a new message waits until it is below the limit again.
+ */
+export const QUEUE_FULL = `This conversation's queue holds its limit of ${String(LIMITS.queuedMessages)} messages or more. Withdraw one or wait for one to start.`;
+/** Why a steer is refused when its task holds as many unread steers as it may, or they and the queue fill its bound (Hub #2031). */
+export const STEERS_FULL = 'This task holds as many unread messages as it can take now. Wait for it to read them at its next step, or withdraw a queued message.';
+/** The tool result a clarification the owner skipped answers with (Hub #2031): the owner's new message follows it. */
+export const SKIPPED = 'The owner skipped this question and sent a new message instead; it follows.';
 type Next = 'ask' | 'tool' | 'approve' | 'await' | 'turn' | 'end';
 const shape = Annotation.Root({taskId: Annotation<string>, step: Annotation<number>, next: Annotation<Next>, decision: Annotation<string>, result: Annotation<string>});
 type GraphState = typeof shape.State;
@@ -208,7 +219,8 @@ export class AssistantEngine {
       .addNode('await', state => this.#await(state))
       .addNode('delivered', state => this.#delivered(state))
       .addEdge('__start__', 'turn')
-      .addConditionalEdges('turn', state => state.next, {ask: 'ask', tool: 'tool', approve: 'approve', end: END})
+      // A steer that reached the task while its model was about to finish takes the model node once more (Hub #2031).
+      .addConditionalEdges('turn', state => state.next, {ask: 'ask', tool: 'tool', approve: 'approve', turn: 'turn', end: END})
       .addEdge('ask', 'answered').addEdge('answered', 'turn').addEdge('tool', 'turn').addEdge('approve', 'act')
       // An approved delegation waits for the worker's word before the next turn; every other act goes straight back to the model.
       .addConditionalEdges('act', state => state.next === 'await' ? 'await' : 'turn', {await: 'await', turn: 'turn'})
@@ -247,6 +259,8 @@ export class AssistantEngine {
     // Each conversation's unfinished task is reconciled on its own and none is run. A failed recovery makes only its own
     // conversation unavailable until the next start, and that conversation says so.
     this.store.restarted();
+    // A task saved under the graph before Hub #2031 continues under this one: the graph only gained an edge.
+    this.store.upgradeGraph();
     this.#starting = true;
     try {
       for (const task of this.store.unfinished()) {
@@ -317,7 +331,9 @@ export class AssistantEngine {
       this.store.save(task);
       // A task that ended starts the next queued message of its conversation in the same commit (Hub #2030), so the
       // session report states this turn's end before the next turn's start. Stop, a cancel, never ends a task here.
-      if (!terminal(previous) && terminal(task.status)) {finished = task; next = this.#dispatch(task.conversationId);}
+      // Steers the task never read go back to the head of the queue first (Hub #2031): the close decides, in this commit,
+      // that a steer that reached the task after its last model call starts as the next queued message.
+      if (!terminal(previous) && terminal(task.status)) {finished = task; this.#returnSteers(task); next = this.#dispatch(task.conversationId);}
       this.#publish(add, parent);
     }).then(() => {
       // A finished task asks the title model to check the conversation's title (Hub #2075), once its result is saved. The
@@ -332,6 +348,23 @@ export class AssistantEngine {
    */
   #checkTitle(task: Pick<Task, 'conversationId' | 'profile'>, event: TitleEvent): void {
     if (!this.#closed && !this.#starting && !this.context.signal.aborted) void this.titles.check(task.conversationId, task.profile, event);
+  }
+  /**
+   * Returns the task's unread steers to the head of its conversation's queue in the open transaction (Hub #2031), when
+   * its turn closes or is stopped. Steers a start's reconciliation returns wait in a held queue: a start starts no work.
+   */
+  #returnSteers(task: Task): void {
+    if (this.store.queue.returnSteers(task.id, this.context.clock.now()) === 0) return;
+    if (this.#starting && this.store.queue.hold(task.conversationId) === null) this.store.queue.setHold(task.conversationId, {reason: 'restart', code: null, detail: null});
+  }
+  /**
+   * How many more model calls the turn's limits leave room for (Hub #2031): its count of model calls, its active time at
+   * a model call's deadline and its usage units at the least a call reserves, framing and output units.
+   */
+  #remainingCalls(task: Task): number {
+    const calls = LIMITS.modelCalls - task.modelCalls, time = Math.floor((LIMITS.activeMs - task.activeMs) / LIMITS.modelMs);
+    const units = Math.floor((LIMITS.units - task.reservedUnits) / (LIMITS.overheadUnits + LIMITS.outputUnits));
+    return Math.max(0, Math.min(calls, time, units));
   }
   /** Records which result was visible when the reply committed, in the same transaction. */
   #confirmationReply(taskId: string, messageId: string, reply: string): string {
@@ -548,6 +581,8 @@ export class AssistantEngine {
       if (data.action === 'cancel') {
         delegated = task.question?.kind === 'delegation' && task.question.answer === null;
         task.status = 'cancelled'; task.generation += 1; task.code = null; this.store.save(task); cancelled = task;
+        // Stop returns the steers the task never read to the head of the queue, never dropping them (Hub #2031).
+        this.#returnSteers(task);
         // Stop ends the task and holds the conversation's queue until the owner resumes it (Hub #2030, owner decision 5).
         if (this.store.queue.count(task.conversationId) > 0) this.store.queue.setHold(task.conversationId, {reason: 'stop', code: null, detail: null});
         for (const watch of this.store.confirmations(task.id)) {
@@ -609,11 +644,13 @@ export class AssistantEngine {
       if (fresh && (Object.keys(value).some(key => !['action', 'profile', 'expectedRevision'].includes(key)) || !profile(value.profile) ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
       if (!fresh && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'queuedId'].includes(key)) ||
-        !profile(value.profile) || !['start', 'answer', 'queue', 'edit-queued'].includes(String(value.action)) || typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > LIMITS.inputBytes ||
+        !profile(value.profile) || !['start', 'answer', 'queue', 'edit-queued', 'steer'].includes(String(value.action)) || typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > LIMITS.inputBytes ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
+      // A steer names the turn it expects (Hub #2031), and with a question the one it skips or declines.
       if (!fresh && (value.action === 'answer' ? typeof value.taskId !== 'string' || typeof value.questionId !== 'string' || value.queuedId !== undefined
-        : value.action === 'edit-queued' ? value.taskId !== undefined || value.questionId !== undefined || typeof value.queuedId !== 'string' || !QUEUED_ID.test(value.queuedId)
-          : value.taskId !== undefined || value.questionId !== undefined || value.queuedId !== undefined)) fail('invalid-request');
+        : value.action === 'steer' ? typeof value.taskId !== 'string' || !(value.questionId === undefined || typeof value.questionId === 'string') || value.queuedId !== undefined
+          : value.action === 'edit-queued' ? value.taskId !== undefined || value.questionId !== undefined || typeof value.queuedId !== 'string' || !QUEUED_ID.test(value.queuedId)
+            : value.taskId !== undefined || value.questionId !== undefined || value.queuedId !== undefined)) fail('invalid-request');
       const input = (fresh ? {...value, text: ''} : value) as StagedInput;
       this.store.expireStages(this.context.clock.now());
       const previous = this.store.inputFor(request.requestId);
@@ -651,6 +688,12 @@ export class AssistantEngine {
         this.store.queue.add({id: command.data.requestId, conversationId, profile: input.profile, text: input.text, queuedAtMs: now, updatedAtMs: now, traceparent: command.traceparent});
         // A queue with nothing to wait behind starts its message at once.
         return this.#dispatch(conversationId);
+      }
+      if (input.action === 'steer') {
+        this.store.discard(staged.ref);
+        const steered = this.#steer(input, command, now);
+        if (steered.titled !== undefined) titled = steered.titled;
+        return steered.launch;
       }
       this.#conversationRevision(input.expectedRevision, input.action === 'answer'
         ? input.taskId === undefined ? undefined : this.store.task(input.taskId)?.conversationId : this.store.conversation(input.profile));
@@ -707,6 +750,53 @@ export class AssistantEngine {
       if (titled !== undefined && !('error' in reply)) this.#checkTitle(titled, titled.event);
       return reply;
     });
+  }
+  /**
+   * Steers the conversation's unfinished task with a new message (Hub #2031), in the input's transaction. The steer names
+   * the turn it expects, as Codex's `expected_turn_id`: a steer aimed at a turn that is not the conversation's unfinished
+   * task is refused with `invalid-state`, and nothing retries it. Its text is saved at once and taken into the task's own
+   * transcript just before its next model call; it never bumps the task's generation, so the running call goes on.
+   * During an approval, or when fewer than two model calls remain in the turn's limits, the text is queued instead. With
+   * `questionId`, Skip question and send answers a clarification with `SKIPPED`, and Decline with message declines an
+   * approval, then steers the task, which resumes in the same commit. A steer runs no title check; a declined approval
+   * is still the title's major event.
+   */
+  #steer(input: StagedInput, command: Command<AssistantInput>, now: number): {launch: string | undefined; titled?: {conversationId: string; profile: AssistantProfile; event: TitleEvent}} {
+    // The expected turn, not the conversation's revision, decides whether a steer is stale: the running task's own steps
+    // move that revision. A revision the assistant has not reached is still refused.
+    if (input.expectedRevision > this.store.meta().revision) fail('revision-conflict');
+    const conversationId = this.store.conversation(input.profile), task = input.taskId === undefined ? undefined : this.store.task(input.taskId);
+    if (task === undefined || conversationId === undefined || task.conversationId !== conversationId || task.profile !== input.profile || terminal(task.status)) fail('invalid-state');
+    if (this.#unrecovered.has(conversationId)) fail('unavailable');
+    const asked = task.question !== null && task.question.answer === null ? task.question : null;
+    // The text becomes a queued message, keyed as a steer is by this request ID: it waits for the task to end.
+    const queued = (): void => {
+      if (!this.store.queue.room(conversationId)) throw new Fault('capacity', QUEUE_FULL);
+      this.store.queue.add({id: command.data.requestId, conversationId, profile: task.profile, text: input.text, queuedAtMs: now, updatedAtMs: now, traceparent: command.traceparent});
+    };
+    const steered = (): void => {
+      if (this.#remainingCalls(task) < 2) {queued(); return;}
+      if (!this.store.queue.steerRoom(conversationId)) throw new Fault('capacity', STEERS_FULL);
+      this.store.queue.addSteer({id: command.data.requestId, taskId: task.id, conversationId, profile: task.profile, text: input.text, savedAtMs: now, traceparent: command.traceparent});
+    };
+    if (input.questionId !== undefined) {
+      // A delegation is answered by the worker alone, so only a clarification or an approval can be set aside.
+      if (asked === null || asked.id !== input.questionId || asked.kind === 'delegation' || !['waiting', 'paused'].includes(task.status)) fail('invalid-state');
+      let titled: {conversationId: string; profile: AssistantProfile; event: TitleEvent} | undefined;
+      if (asked.kind === 'approval') {
+        asked.answer = 'decline';
+        this.store.message(task, `${asked.id}-answer`, 'owner', 'decline', now);
+        if (asked.proposal !== null) titled = {conversationId, profile: task.profile, event: {kind: 'approval', tool: proposalTool(asked.proposal), decision: 'declined'}};
+      } else asked.answer = SKIPPED;
+      steered();
+      this.#activate(task, command); this.store.save(task);
+      return {launch: task.id, ...(titled === undefined ? {} : {titled})};
+    }
+    // A paused or uncertain task makes no next call until the owner resumes it: resume or cancel it, or queue the message.
+    if (!['running', 'waiting'].includes(task.status)) fail('invalid-state');
+    // During an approval, free text is queued (owner decision 4); Decline with message declines and steers instead.
+    if (asked?.kind === 'approval') queued(); else steered();
+    return {launch: undefined};
   }
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (ref === 'spend') {
@@ -924,16 +1014,24 @@ export class AssistantEngine {
     const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile), copy = this.#core();
     const id = `${state.taskId}-step-${String(state.step)}`;
     // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
-    const context = this.#context(task);
-    const request: TurnInput = {instructions: INSTRUCTIONS, context, transcript: task.transcript, tools,
-      mode: copy.mode === undefined ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
-    // The call reserves what this request could use: its bytes bound its input tokens, and the output bound its answer's.
-    const inputUnits = inputBound(request), paid = provider.name !== 'synthetic';
-    const text = await this.#call(state.taskId, state.step, 'model', signal => provider.turn(request, signal)
-      .then(reply => ({text: JSON.stringify(reply), units: reply.units, usage: reply.usage ?? null})), undefined,
-    {units: inputUnits + LIMITS.outputUnits, unit: paid ? 'tokens' : 'synthetic units',
-      ...(paid ? {spend: {model: provider.model, inputUnits, outputUnits: LIMITS.outputUnits}} : {})});
+    const context = this.#context(task), paid = provider.name !== 'synthetic';
+    let request: TurnInput | undefined;
+    // The task's unread steers are taken into its transcript in the call's own admission (Hub #2031), after the last
+    // call's tool results, and the request is built from that transcript: a limit that refuses the call leaves them
+    // unread, and a replayed node whose call was admitted takes none again.
+    const text = await this.#call(state.taskId, state.step, 'model', signal => provider.turn(request ?? fail('internal'), signal)
+      .then(reply => ({text: JSON.stringify(reply), units: reply.units, usage: reply.usage ?? null})), undefined, current => {
+      this.#drain(current);
+      request = {instructions: INSTRUCTIONS, context, transcript: current.transcript, tools,
+        mode: copy.mode === undefined ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
+      // The call reserves what this request could use: its bytes bound its input tokens, and the output bound its answer's.
+      const inputUnits = inputBound(request);
+      return {units: inputUnits + LIMITS.outputUnits, unit: paid ? 'tokens' : 'synthetic units',
+        ...(paid ? {spend: {model: provider.model, inputUnits, outputUnits: LIMITS.outputUnits}} : {})};
+    });
     const reply = parseReply(text), call = reply.calls[0];
+    // A steer that reached the task before this call returned supersedes a final answer: the model reads it first.
+    const steered = this.store.call(id)?.steered === true;
     let next: Next = 'end', result = '';
     // The final text is what the owner reads; it keeps the result bound even though a reply with the model's own blocks may be larger.
     if (reply.text !== null && textBytes(reply.text) > LIMITS.toolBytes) throw new Fault('capacity', 'The reply exceeded the text limit.');
@@ -965,16 +1063,34 @@ export class AssistantEngine {
     // A command the module cannot bind to a synced Hub-mode revision, or whose value is not a mode, is refused to the model in the tool node.
     if (next === 'approve' && question === undefined) next = 'tool';
     if (question?.kind === 'clarification') next = 'ask';
+    // The superseded answer is saved and never spoken; only the turn's final reply is (Hub #2031).
+    const forced = next === 'end' && steered;
     const item: Appended = {role: 'assistant', text: reply.text, calls: call === undefined ? [] : [call], effect: id, ...(reply.blocks === undefined ? {} : {blocks: reply.blocks})};
     let asked = false;
     await this.#append(state.taskId, item, active.span.context, current => {
+      if (forced && reply.text !== null && reply.text.trim() !== '') this.store.message(current, `${id}-reply`, 'assistant', reply.text, this.context.clock.now());
       if (question === undefined) return;
       if (current.questions >= LIMITS.questions) throw new Fault('capacity', `This turn reached its limit of ${String(LIMITS.questions)} questions.`);
       current.questions += 1; current.question = question;
       this.store.message(current, question.id, 'assistant', question.text, this.context.clock.now()); asked = true;
     });
     if (asked && question !== undefined) this.#speak(state.taskId, question.id, question.text, active.span.context);
-    return {step: state.step + 1, next, result};
+    return forced ? {step: state.step + 1, next: 'turn', result: ''} : {step: state.step + 1, next, result};
+  }
+  /**
+   * Takes the task's unread steers into its transcript, oldest first, as the owner's text after whatever the last call
+   * produced, and saves each in the conversation where the model read it (Hub #2031). Idempotent: a steer already in the
+   * transcript is not added again. Runs in a model call's admission transaction.
+   */
+  #drain(task: Task): void {
+    for (const steer of this.store.queue.steers(task.id)) {
+      const effect = `steer-${steer.id}`;
+      const item: Appended = {role: 'owner', text: steer.text, effect};
+      if (!task.transcript.some(existing => 'effect' in existing && existing.effect === effect)) task.transcript.push(item);
+      this.store.message(task, `${task.id}-steer-${steer.id}`, 'owner', steer.text, this.context.clock.now());
+      this.store.queue.delivered(steer.id);
+    }
+    if (textBytes(JSON.stringify(task.transcript)) > LIMITS.stateBytes) throw new Fault('capacity', 'This turn reached its working transcript limit.');
   }
   #catalog(): ConversationActions {return this.#catalogActions ??= new ConversationActions(this.context, this.#allowed, this.options.retainedArtwork);}
   #catalogActions: ConversationActions | undefined;
@@ -1256,7 +1372,7 @@ export class AssistantEngine {
    * message naming it. The answer's reported usage replaces the reservations; unreported usage keeps them.
    */
   async #call(taskId: string, ordinal: number, kind: 'model' | 'tool', operation: (signal: AbortSignal, parent: TraceContext) => Promise<Answer>,
-    reserve?: (task: Task, call: Call) => void, budget: Budget = {units: 0, unit: 'units'}): Promise<string> {
+    reserve?: (task: Task, call: Call) => void, budget: Budget | ((task: Task) => Budget) = {units: 0, unit: 'units'}): Promise<string> {
     const active = this.#activeFor(taskId);
     const id = `${taskId}-step-${String(ordinal)}`, saved = this.store.call(id);
     if (saved !== undefined) {
@@ -1264,24 +1380,27 @@ export class AssistantEngine {
       await this.#change(taskId, task => {this.#fence(active); task.nextOrdinal = Math.max(task.nextOrdinal, ordinal + 1);}, active.span.context);
       this.#fence(active); return saved.result;
     }
-    const timeout = kind === 'model' ? LIMITS.modelMs : LIMITS.toolMs, units = budget.units;
+    const timeout = kind === 'model' ? LIMITS.modelMs : LIMITS.toolMs;
     // A model reply carries the provider's own blocks for replay, so it may be larger than a tool result.
     const bound = kind === 'model' ? LIMITS.replyBytes : LIMITS.toolBytes;
     const span = startSpan(this.context.trace, kind === 'model' ? 'bunny.assistant.model' : 'bunny.assistant.tool', {parent: active.span.context,
       attributes: {'bunny.assistant.task_id': taskId, 'bunny.assistant.run_id': active.runId, 'bunny.assistant.effect_id': id}});
     const call: Call = {version: 1, id, taskId, runId: active.runId, ordinal, kind, status: 'admitted', result: null, units: null,
-      reservedUnits: units, reservedMs: timeout, elapsedMs: null, traceparent: span.context.traceparent};
+      reservedUnits: 0, reservedMs: timeout, elapsedMs: null, traceparent: span.context.traceparent};
     const started = this.context.clock.now(); let replied = false, answer: Answer | undefined;
     try {
       await this.#change(taskId, task => {
         this.#fence(active);
         task.activeMs += Math.max(0, started - active.accountedAt);
         if (task.nextOrdinal !== ordinal) throw new Fault('capacity', 'The next step did not match the saved turn.');
-        let limit = this.#limitOf(task, kind, timeout, budget);
-        if (limit === undefined && budget.spend !== undefined) limit = this.spend.reserve({id, purpose: 'task', owner: taskId, ...budget.spend});
+        // A model call's budget is read from the task in this transaction, once its unread steers are in the transcript.
+        const reserved = typeof budget === 'function' ? budget(task) : budget;
+        let limit = this.#limitOf(task, kind, timeout, reserved);
+        if (limit === undefined && reserved.spend !== undefined) limit = this.spend.reserve({id, purpose: 'task', owner: taskId, ...reserved.spend});
         if (limit !== undefined) throw new Fault('capacity', limit);
         if (kind === 'model') task.modelCalls += 1; else task.toolCalls += 1;
-        task.activeMs += timeout; task.reservedUnits += units; reserve?.(task, call); this.store.saveCall(call);
+        call.reservedUnits = reserved.units;
+        task.activeMs += timeout; task.reservedUnits += reserved.units; reserve?.(task, call); this.store.saveCall(call);
       }, span.context);
       this.#fence(active);
       const reply = await this.#wait(active, timeout, bound, () => Promise.resolve().then(() => operation(active.controller.signal, span.context)), call);
@@ -1290,7 +1409,7 @@ export class AssistantEngine {
       if (textBytes(reply.text) > bound) throw new Fault('capacity', kind === 'model' ? 'The model response exceeded its size limit.' : 'The tool result exceeded its size limit.');
       if (reply.units !== null) {
         if (!Number.isSafeInteger(reply.units) || reply.units < 0) throw new Fault('capacity', `The ${kind} reported invalid usage.`);
-        if (reply.units > units) throw new Fault('capacity', `The ${kind} reported usage above its per-call limit.`);
+        if (reply.units > call.reservedUnits) throw new Fault('capacity', `The ${kind} reported usage above its per-call limit.`);
       }
       const elapsed = Math.min(timeout, Math.max(0, this.context.clock.now() - started)); active.accountedAt = this.context.clock.now();
       await this.#change(taskId, task => {
@@ -1298,10 +1417,12 @@ export class AssistantEngine {
         // A fast worker can finish after admission and before the dispatch reply.
         const observed = call.action === undefined ? undefined : this.store.call(id)?.action?.observed;
         if (call.action !== undefined && observed !== undefined) call.action.observed = observed;
+        // Whether a steer reached the task before this model call's answer was saved (Hub #2031); one after it is late.
+        if (kind === 'model' && this.store.queue.steers(taskId).length > 0) call.steered = true;
         this.store.saveCall(call); task.activeMs -= timeout - elapsed;
         if (reply.confirmation !== undefined) this.store.saveConfirmation(reply.confirmation);
         for (const evidence of reply.evidence ?? []) this.store.observeAction(taskId, evidence);
-        if (reply.units !== null) task.reservedUnits -= units - reply.units;
+        if (reply.units !== null) task.reservedUnits -= call.reservedUnits - reply.units;
         this.spend.settle(id, reply.usage ?? null);
         task.nextOrdinal = ordinal + 1;
         if (kind === 'tool') this.store.message(task, id, 'tool', reply.text, this.context.clock.now());

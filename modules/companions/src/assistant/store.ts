@@ -13,8 +13,15 @@ import {HISTORY_ROWS, historyCursor, readHistoryCursor, type ConversationMessage
 import {projectionOf, waitsOnOwner, type Reported} from './sessions.js';
 import {MessageQueue} from './queue.js';
 
-/** The conversation graph of Hub #46. Tasks saved by the fixed synthetic graph (`synthetic-1`) stay readable and refuse resume. */
-export const GRAPH_VERSION = 'conversation-1';
+/**
+ * The conversation graph of Hub #46. `conversation-2` (Hub #2031) adds the model node's edge back to itself, which a
+ * steer that reaches the task while it was about to finish takes for one more model call. Its nodes, state and
+ * checkpoints are those of `conversation-1`, so a task saved under `conversation-1` is upgraded at the first start of
+ * this release (see `upgradeGraph`). Tasks saved by the fixed synthetic graph (`synthetic-1`) stay readable and refuse resume.
+ */
+export const GRAPH_VERSION = 'conversation-2';
+/** The graph version before Hub #2031, whose unfinished tasks the start upgrades to `GRAPH_VERSION`. */
+export const PREVIOUS_GRAPH_VERSION = 'conversation-1';
 import {LIMITS} from './limits.js';
 export {LIMITS} from './limits.js';
 export type Question = SavedQuestion & {call: string};
@@ -30,15 +37,22 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
   contextThrough?: number};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
   status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; result: string | null; units: number | null; reservedUnits: number;
-  reservedMs: number; elapsedMs: number | null; traceparent: string};
+  reservedMs: number; elapsedMs: number | null; traceparent: string;
+  /**
+   * A model call whose answer was saved while the task held an unread steer (Hub #2031): the steer reached the task
+   * before its last call returned, so a final answer is superseded and the task makes one more call.
+   */
+  steered?: true};
 export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; endedAtMs: number | null;
   status: AssistantStatus; traceparent: string; previousTraceparent: string | null};
 /**
  * A staged message or answer, or New conversation for the profile (Hub #2029), which carries no text: `text` is empty. A
  * `queue` input saves the message in the conversation's queue, and `edit-queued` replaces the text of the queued
- * message `queuedId` (Hub #2030).
+ * message `queuedId` (Hub #2030). A `steer` input (Hub #2031) steers the running task `taskId`, the turn the page
+ * expects; with `questionId` it also settles that pending question: Skip question and send for a clarification,
+ * Decline with message for an approval.
  */
-export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'queue' | 'edit-queued'; profile: AssistantProfile; text: string; expectedRevision: number;
+export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'queue' | 'edit-queued' | 'steer'; profile: AssistantProfile; text: string; expectedRevision: number;
   taskId?: string; questionId?: string; queuedId?: string};
 /** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
 export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
@@ -174,6 +188,16 @@ export class AssistantStore {
   }
   /** Every conversation's unfinished task, oldest first: each conversation has at most one (Hub #2027). */
   unfinished(): Task[] {return this.database.prepare("SELECT record FROM assistant_tasks WHERE status NOT IN ('succeeded','failed','cancelled') ORDER BY seq").all().map(row => JSON.parse(row.record as string) as Task);}
+  /**
+   * Upgrades each unfinished task saved under the graph before Hub #2031 to the current one, at a start and before its
+   * reconciliation: the current graph has the same nodes, state and checkpoints and only adds the model node's edge back
+   * to itself, so the task's saved checkpoint continues unchanged. A finished task keeps the version it ran under.
+   * Returns how many were upgraded.
+   */
+  upgradeGraph(): number {
+    return Number(this.database.prepare(`UPDATE assistant_tasks SET record=json_set(record,'$.graphVersion',?)
+      WHERE status NOT IN ('succeeded','failed','cancelled') AND json_extract(record,'$.graphVersion')=?`).run(GRAPH_VERSION, PREVIOUS_GRAPH_VERSION).changes);
+  }
   /** The conversation's unfinished task, if it has one. */
   unfinishedIn(conversationId: string): Task | undefined {return this.unfinished().find(task => task.conversationId === conversationId);}
   /** Saves a task; `changed` false keeps a bookkeeping write, such as a run's trace, from counting as a change of its conversation. */
