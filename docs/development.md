@@ -3400,6 +3400,35 @@ through an answer and an approval with a message queued, a restart and Start,
 an edit its message outran, and the phone layout at 390 px. They use synthetic
 data and gated providers only. Existing CI discovery runs them.
 
+Steering a running task (#2031) adds `assistant-steer.test.js` and its child
+fixture `assistant-steer-child.js` to the companions suite, a delegation case to
+`coding-slots.test.js`, steer cases to `conversation-queue.test.js`, and
+`steered-queue.test.mjs` to the event contracts. Gated fake providers on the
+manual clock cover a steer during tool use, read after the tool result in the
+same turn with no title check or session turn of its own; a forced call whose
+superseded reply is saved and never spoken, with a call without a steer as the
+negative control; a steer after the last call's answer and one after the turn
+ended, each starting as the next queued message, and a held queue's wait; Skip
+question and send; Decline with message and an approval's queued text; few
+calls left, with two calls left as the negative control; Stop returning
+steers past the queue's limit, with Queue refused until fewer than 8 wait and
+`assistant-state/2.3` published; the steer and queue bounds; a forced call the
+limits refuse; stale turns, with a revision from before the task's own steps
+accepted; a restart that keeps a steer; the `conversation-1` upgrade, with a
+`synthetic-1` task as the negative control; and a delegation wait, a hand-off
+waiting for its slot included. The child process exits during the call that
+read a steer, and the restart and cancel show it read once and returned
+nowhere. After the root build run
+`node --test modules/companions/dist/tests/assistant-steer.test.js modules/companions/dist/tests/coding-slots.test.js modules/companions/dist/tests/conversation-queue.test.js modules/companions/dist/tests/assistant-queue.test.js packages/event-contracts/tests/steered-queue.test.mjs`
+and `node apps/runtime/dashboard/tests/conversation-steer.browser.ts`, which
+`npm run test:companions:browser` also runs: a steer during tool use, a forced
+call, a late steer held on the network until its turn ended, Skip question and
+send, Decline with message, a steer during a delegation wait with a fake worker
+on the real gateway, Stop returning steers past the limit, a restart, and the
+phone layout at 390 px. The queue and coding delegation journeys follow Send's
+new steering. They use synthetic data and gated providers only. Existing CI
+discovery runs them.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module

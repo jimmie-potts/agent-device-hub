@@ -1089,7 +1089,8 @@ export class AssistantEngine {
   /**
    * Takes the task's unread steers into its transcript, oldest first, as the owner's text after whatever the last call
    * produced, and saves each in the conversation where the model read it (Hub #2031). Idempotent: a steer already in the
-   * transcript is not added again. Runs in a model call's admission transaction.
+   * transcript is not added again. Runs in a model call's admission transaction. Adapted from Codex's pending-input
+   * drain in `run_turn` (`codex-rs/core/src/session/turn.rs` at a0436d69, Apache-2.0; see THIRD-PARTY-NOTICES.md).
    */
   #drain(task: Task): void {
     for (const steer of this.store.queue.steers(task.id)) {

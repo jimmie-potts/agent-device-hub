@@ -393,7 +393,7 @@
 
 /* Queued messages above the composer (Hub #2030): the waiting messages in the order they start, and the queue's hold.
    The running task's unread steers (Hub #2031) use the same box, marked by an accent edge. */
-.conversation-steers {
+.conversation-queue.conversation-steers {
   border-inline-start: 3px solid var(--accent, var(--edge-faint));
 }
 

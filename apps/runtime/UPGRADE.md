@@ -250,6 +250,30 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Steering a running task (#2031)
+
+The #2031 release lets the owner steer a companion's running task. It adds one
+table, created empty at the first start: `assistant_steers`, one row per steer
+the task has not read yet, with its task, conversation, position, text, time
+and the trace of the command that sent it. The conversation graph becomes
+`conversation-2`, which adds one edge from the model step back to itself. Its
+steps and saved checkpoints are the same as `conversation-1`'s, so each start
+of this release upgrades an unfinished task saved under `conversation-1` in
+place, and the task continues: a question or approval still waits for the
+owner, and a hand-off still waits for its worker. No other record is
+rewritten. Steers a stopped turn returns may take a queue past 8 messages, and
+the assistant state is then published as `assistant-state/2.3`, which ships
+with this release's contracts and core.
+
+Returning to the release before needs a step for unfinished tasks: it treats a
+`conversation-2` task as an unsupported graph, recovers it as unavailable and
+offers only Cancel. Let unfinished tasks finish, or cancel them, before going
+back. That release ignores `assistant_steers`, so a steer its task never read
+is not shown there and never reaches the task; Cancel the task first, which
+returns its unread steers to the queue. That release can publish a queue of
+at most 8 messages, in `assistant-state/2.2`, so withdraw or start messages
+until no queue holds more than 8 before going back. Prefer fixing forward.
+
 ## Queued messages (#2030)
 
 The #2030 release lets the owner queue messages while a companion works. It

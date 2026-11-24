@@ -250,10 +250,11 @@ which makes no network call and no paid usage. Activation defaults to off. The t
 profiles keep separate conversation histories. Each conversation runs its own
 task at the same time as the others (Hub #2027): one unfinished task and one
 graph invocation per conversation, all on the module's one SQLite connection.
-**Send** to a conversation whose own task is unfinished is refused with
-`capacity`, and **Queue** saves the message to start after it (see
-[Queued messages](#queued-messages)); another conversation's task never blocks
-it. A command for one
+A new task in a conversation whose own task is unfinished is refused with
+`capacity`. While that task works, **Send** steers it instead (see
+[Steering a running task](#steering-a-running-task)), and **Queue** saves the
+message to start after it (see [Queued messages](#queued-messages)); another
+conversation's task never blocks either. A command for one
 conversation is refused as stale (`revision-conflict`) only when that
 conversation changed after the revision the page read, so another
 conversation's step never refuses it; enable and disable keep the
@@ -331,15 +332,21 @@ The composer stays available while a conversation's task works or waits (Hub
 #2030). **Queue**, beside **Send**, saves the message for after the current
 task. How the composer behaves depends on the task:
 
-- While the task works, Send waits for it and Enter queues.
-- During a clarifying question, Enter answers it. Queue saves the text as a
-  message instead.
-- During an approval or a coding hand-off, only Queue shows.
+- While the task works or waits on a coding hand-off, Send and Enter steer it
+  (see [Steering a running task](#steering-a-running-task)).
+- During a clarifying question, Enter answers it. **Skip question and send**
+  steers instead, and Queue saves the text as a message.
+- During an approval, Enter and Queue queue the text, and **Decline with
+  message** declines the proposal and steers.
+- While the task is paused or uncertain, only Queue shows.
 - With no task to wait for, Queue shows only beside a held queue and adds to
   it.
 
-Queued messages show above the composer in the order they start, at most 8 per
-conversation. **Edit** changes one's text, **Move up** and **Move down** change
+Queued messages show above the composer in the order they start. Queue takes
+a message while fewer than 8 wait. Steers that a stopped or closed task never
+read go back to the head of the queue even past 8, up to 16, so nothing you
+wrote is dropped (owner decision on #2031); the queue then says so, and Queue
+waits until fewer than 8 are left. **Edit** changes one's text, **Move up** and **Move down** change
 the order, and **Withdraw** removes one. When the task ends, succeeded or
 failed, the first queued message starts as a new task and turn of the same
 conversation. It starts in the commit that ended the task before it, so the
@@ -402,14 +409,16 @@ again.
 `assistant-state/2.2` lists each profile's current conversation whose queue
 holds messages, as `queues`: the conversation and profile, how many messages
 wait, the hold (`stop`, `restart`, `refused` or null) and a refusal's code. It
-carries no message text. A state without such a queue keeps version 2.0, or
-2.1 for the full tool list. After each assistant-state revision, the page
+carries no message text. While a queue holds more than 8, after returned
+steers, the state is `assistant-state/2.3`, which allows up to 16. A state
+without such a queue keeps version 2.0, or 2.1 for the full tool list. After each assistant-state revision, the page
 reads the texts from
 `GET /modules/companions/content/conversation?profile=<profile>&view=queue`.
 The answer is `{version: 1, profile, conversationId, revision, current, held,
-messages}`. `revision` is the assistant revision it was read at. `held` is
-`{reason, code, detail}` or null, and each message has `id`, `text`,
-`queuedAtMs` and `updatedAtMs`.
+messages, steers}`. `revision` is the assistant revision it was read at. `held`
+is `{reason, code, detail}` or null, and each message has `id`, `text`,
+`queuedAtMs` and `updatedAtMs`. `steers` lists the running task's unread
+steers, each with `id`, `text` and `savedAtMs` (Hub #2031).
 
 A release before this one did not know the queue, so its New conversation
 could leave queued messages in the conversation it replaced (see
@@ -421,6 +430,60 @@ them.
 
 The queue is modelled on Codex's durable queue and T3 Code's queue commands;
 `THIRD-PARTY-NOTICES.md` names the adapted parts and holds their licenses.
+
+### Steering a running task
+
+**Send** while a task works steers it (Hub #2031, owner decisions 1, 3, 4 and
+5): the message joins the task's current turn instead of waiting for it. The
+steer is saved at once and shows above the composer under **Steering this
+task** until the task reads it. The task reads its steers at its next model
+call, after the last call's tool results, so the model sees what the tool
+returned and then your message. Once read, the steer appears in the transcript
+at that point, marked **Sent while working**. The running call is never cut
+off, and no title check or session turn of its own follows a steer.
+
+- **A forced call.** If the model was about to finish when the steer arrived,
+  the task makes one more model call so the model reads it. The earlier answer
+  is saved, marked **Earlier reply, before your next message**, and is not
+  spoken; only the turn's final reply is.
+- **A late steer.** A steer that arrives after the last model call becomes the
+  next queued message. The commit that closes the turn decides this, so the
+  message starts as its own turn right after, before the messages already
+  queued. A steer that reaches a turn that has already ended, while it is
+  still the conversation's latest, is queued the same way.
+- **Questions.** During a clarifying question the composer answers it, and
+  **Skip question and send** sets the question aside and steers in one step.
+  During an approval, text is queued, and **Decline with message** declines
+  the proposal and steers in one step. Nothing is dispatched.
+- **Delegation.** While the task waits on the coding worker, including a
+  hand-off that waits for its companion's slot, a steer waits for the worker's
+  result and is read after it.
+- **Limits.** When fewer than two model calls remain in the turn's limits, by
+  model calls, active time or usage units, the message is queued instead. A
+  task holds at most 8 unread steers, and its steers and the queue together at
+  most 16.
+- **Stop.** **Cancel task** returns unread steers to the head of the queue,
+  which it then holds; a failed turn returns them the same way, and the first
+  starts next. A restart starts no work: a task waiting on a question keeps
+  its steers.
+
+A steer is a staged assistant input, `{action: 'steer', profile, text,
+expectedRevision, taskId, questionId?}`. `taskId` names the turn the page
+expects, as Codex's `expected_turn_id`: a steer aimed at a turn that a newer
+turn followed, another conversation's turn or a paused or uncertain task is
+refused with `invalid-state`, and nothing retries it. Only a revision the
+assistant has not reached is a revision conflict; the task's own steps never
+make a steer stale. With `questionId`, the input is Skip question and send for
+a clarification, which answers it with a fixed skipped result, or Decline with
+message for an approval. Unread steers are kept in `assistant_steers`, keyed by
+the steering command's request ID. A model call takes them into the task's
+transcript in its own admission transaction, so a call the limits refuse
+leaves them unread and a replayed graph step never reads one twice. Their text
+reaches only the task's own model calls, and is stored only in the
+conversation, task and queue tables.
+
+Steering follows Codex's pending input and turn close;
+`THIRD-PARTY-NOTICES.md` names the adapted parts and holds the license.
 
 ### Inspect conversation details
 
@@ -766,8 +829,11 @@ continuation. Startup and outbox republication never activate work. A running
 task is recovered as paused, waiting, completed, failed or uncertain from its
 durable evidence. A receipt without a result keeps its reservation and cannot
 be retried automatically; a call the provider answered definitively is failed
-with its code. Tasks saved by the earlier fixed graph (`synthetic-1`) retain
-readable history and refuse resume. There is no execution queue: a queued
+with its code. The graph is `conversation-2` (Hub #2031), whose model step has
+an edge back to itself for a steer that supersedes a final answer. Each start
+upgrades an unfinished task saved under `conversation-1`, which has the same
+steps and checkpoints, before reconciling it. Tasks saved by the earlier fixed
+graph (`synthetic-1`) retain readable history and refuse resume. There is no execution queue: a queued
 message is the owner's saved message, not saved work, and it starts only as a
 new task when the task before it ends or the owner releases its queue (see
 [Queued messages](#queued-messages)).

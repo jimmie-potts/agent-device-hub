@@ -830,6 +830,21 @@ of the same conversation when the task before it ends.
 - `tests/message-queue.test.mjs` covers both versions and keeps the 2.1
   members of `assistant-control/2.2` unchanged.
 
+### Steering a running task (Hub #2031)
+
+Steers that a stopped or closed turn never read go back to the head of its
+conversation's queue, even past the queue's limit of 8, so nothing the owner
+wrote is dropped (owner decision of 2026-11-24).
+
+- `assistant-state/2.3` is 2.2 with a queue's `messages` allowed from 1 to 16:
+  a queue and its task's unread steers together hold at most 16. Every other
+  member is 2.2's, and it carries no message text. The companions module
+  publishes 2.3 only while some queue holds more than 8 messages, and 2.2 or
+  earlier otherwise. A steer itself is a staged assistant input, so
+  `assistant-input` and `assistant-control` are unchanged.
+- `tests/steered-queue.test.mjs` covers the bound in both versions and keeps
+  the other 2.2 members of 2.3 unchanged.
+
 ### Conversation companions (Hub #2054)
 
 A native conversation session names the companions it belongs to, apart from
