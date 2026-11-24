@@ -71,6 +71,11 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
         if (path === '/modules/companions/content/spend') {fixture.spendReads += 1; return spend;}
         // Open Details lists the profile's conversations (Hub #2029); that read is not a history read.
         if (new URL(path, location.href).searchParams.get('view') === 'list') return {version: 1, profile: 'bunny', conversations: [], older: null};
+        // Nor is the read of the conversation's queue (Hub #2030), which is empty here.
+        if (new URL(path, location.href).searchParams.get('view') === 'queue') {
+          const profile = new URL(path, location.href).searchParams.get('profile') ?? 'bunny';
+          return {version: 1, profile, conversationId: null, held: null, messages: []};
+        }
         fixture.reads += 1;
         const profile = new URL(path, location.href).searchParams.get('profile') ?? 'bunny';
         // A companion's conversation has no saved task here; only B.U.N.N.Y.'s holds the fixture's exchange.

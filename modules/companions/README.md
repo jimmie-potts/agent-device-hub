@@ -329,21 +329,26 @@ Disconnected or stale copies retain loaded history and lock mutations.
 
 The composer stays available while a conversation's task works or waits (Hub
 #2030). **Queue**, beside **Send**, saves the message for after the current
-task. While the task works, Send waits for it, and Enter queues; during a
-clarifying question Enter answers and Queue saves the text as a message
-instead; during an approval or a coding hand-off only Queue shows. With no
-task to wait for, Queue shows only beside a held queue, and adds to it.
+task. How the composer behaves depends on the task:
+
+- While the task works, Send waits for it and Enter queues.
+- During a clarifying question, Enter answers it. Queue saves the text as a
+  message instead.
+- During an approval or a coding hand-off, only Queue shows.
+- With no task to wait for, Queue shows only beside a held queue and adds to
+  it.
 
 Queued messages show above the composer in the order they start, at most 8 per
 conversation. **Edit** changes one's text, **Move up** and **Move down** change
 the order, and **Withdraw** removes one. When the task ends, succeeded or
 failed, the first queued message starts as a new task and turn of the same
-conversation, in the commit that ended the task before it, so the session on
-the status devices reports that turn's end before the next turn's start. Its
-recent context holds the finished task. A queued message that starts runs no
-title check of its own; the title model checks the title after the task before
-it finished. A message stays queued while the task waits on an answer, an
-approval or the coding worker, and starts only once that task ends.
+conversation. It starts in the commit that ended the task before it, so the
+session on the status devices reports that turn's end before the next turn's
+start. Its recent context holds the finished task. A queued message that
+starts runs no title check of its own; the title model already checks the
+title after the task before it. A message stays queued while the task waits on
+an answer, an approval or the coding worker, and starts only once that task
+ends.
 
 Some events hold the queue, and nothing in a held queue starts until the
 owner releases it:
@@ -352,7 +357,7 @@ owner releases it:
 | --- | --- | --- |
 | Stop | **Cancel task** while messages are queued (owner decision 5). | **Resume queue** |
 | Restart | B.U.N.N.Y. started while messages were waiting (owner decision 6). A start starts no work. | **Start** |
-| Refused | The next message could not start: conversation is off or unavailable, or a paid profile's spend limits leave too little for its first call (`capacity`, with the limit's own message). The message stays queued. | **Resume queue**, which tries the start again; a start the module still refuses refuses the command and the queue stays held. |
+| Refused | The next message could not start: conversation is off or unavailable, or a paid profile's spend limits leave too little for its first call (`capacity`, with the limit's own message). The message stays queued. | **Resume queue**, which tries the start again. If the start is still refused, the command is refused and the queue stays held. |
 
 Send still starts a task at once beside a held queue; when it ends, the queue
 stays held. Withdrawing the last message releases a hold. New conversation is
@@ -369,24 +374,26 @@ queued, and it starts at most once. Queue and the edit of a queued message are
 staged assistant inputs, `{action: 'queue', profile, text, expectedRevision}`
 and `{action: 'edit-queued', profile, queuedId, text, expectedRevision}`.
 Withdraw, reorder and Resume queue (also Start) are the `withdraw`, `reorder`
-and `resume-queue` actions of `assistant-control/2.2`; each names the
-`profile`, and withdraw and reorder name the `queuedId`, with `beforeId` for a
-reorder, null for the end. Each is checked against the conversation's queue
-revision, the assistant revision of the queue's last change: the running
-task's steps never make it stale, while a message that started, moved or
-changed since does. Each start counts every queue as changed. Editing,
-withdrawing and reordering run no work, so they are admitted while
-conversation is off.
+and `resume-queue` actions of `assistant-control/2.2`. Each names the
+`profile`. Withdraw and reorder also name the `queuedId`, and a reorder names
+`beforeId`, which is null for the end.
+
+Each queue command is checked against the conversation's queue revision: the
+assistant revision of the queue's last change. The running task's steps never
+make a queue command stale. A message that started, moved or changed since
+does. Each start counts every queue as changed. Editing, withdrawing and
+reordering run no work, so they are admitted while conversation is off.
 
 `assistant-state/2.2` lists each profile's current conversation whose queue
 holds messages, as `queues`: the conversation and profile, how many messages
 wait, the hold (`stop`, `restart`, `refused` or null) and a refusal's code. It
 carries no message text. A state without such a queue keeps version 2.0, or
-2.1 for the full tool list. The page reads the texts from
-`GET /modules/companions/content/conversation?profile=<profile>&view=queue`,
-`{version: 1, profile, conversationId, held, messages}`, where `held` is
-`{reason, code, detail}` or null and each message has `id`, `text`,
-`queuedAtMs` and `updatedAtMs`, after each assistant-state revision.
+2.1 for the full tool list. After each assistant-state revision, the page
+reads the texts from
+`GET /modules/companions/content/conversation?profile=<profile>&view=queue`.
+The answer is `{version: 1, profile, conversationId, held, messages}`. `held`
+is `{reason, code, detail}` or null, and each message has `id`, `text`,
+`queuedAtMs` and `updatedAtMs`.
 
 The queue is modelled on Codex's durable queue and T3 Code's queue commands;
 `THIRD-PARTY-NOTICES.md` names the adapted parts and holds their licenses.

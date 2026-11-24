@@ -50,8 +50,9 @@ async function railGroupFixture(browser: Browser): Promise<void> {
       speech: {open: async () => {fixture.speech += 1; throw new Error('no synthetic speech endpoint');}},
       read: async path => {
         const url = new URL(path, location.href), profile = url.searchParams.get('profile');
-        // The page also reads content that is not a conversation; only history reads are counted and failed.
-        if (profile === null) return {};
+        // The page also reads content that is not a conversation's history, such as its queue (Hub #2030); only history
+        // reads are counted and failed.
+        if (profile === null || url.searchParams.get('view') === 'queue') return {};
         fixture.reads.push(profile);
         if (fixture.failReads > 0) {fixture.failReads -= 1; throw new Error('synthetic read failure');}
         const task = tasks[profile], question = questions[profile];
