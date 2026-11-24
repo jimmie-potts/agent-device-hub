@@ -520,3 +520,27 @@ void test('an archive with a profile\'s earlier conversations imports them as ea
   accepted(await source.knowledge({action: 'import-archive', archive}));
   assert.equal(source.store().conversation('bunny'), current);
 });
+
+void test('on one configured provider each companion gets its own sections, and the preview names that provider for all three (Hub #2026)', async context => {
+  const shared = Object.assign(gated(), {name: 'anthropic' as const, model: 'model-a'});
+  const w = await world(context, {provider: shared, profileProviders: {}, prices: {'model-a': {input: 1, output: 1, cacheWrite: 1, cacheRead: 1}}});
+  accepted(await w.control('enable'));
+  for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
+    accepted(await w.send(profile, `PRIVATE-${profile} first`));
+    (await shared.next()).resolve(reply(`PRIVATE-${profile} reply`));
+    await settle(() => w.task(profile)?.status === 'succeeded');
+  }
+  for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
+    const preview = await w.preview(profile);
+    assert.deepEqual([preview.provider, preview.model], ['anthropic', 'model-a']);
+    accepted(await w.send(profile, `PRIVATE-${profile} follow-up`));
+    const next = await shared.next();
+    assert.deepEqual(next.input.context.sections, preview.sections, `${profile}: the preview is the next call`);
+    assert.equal(next.input.context.profile, profile);
+    const recent = text(next.input, 'recent');
+    assert.match(recent, new RegExp(`PRIVATE-${profile} first`));
+    for (const other of ['bunny', 'reachy', 'microduck'].filter(value => value !== profile)) assert.equal(JSON.stringify(next.input).includes(`PRIVATE-${other}`), false, `${profile} holds nothing of ${other}`);
+    next.resolve(reply('Done'));
+    await settle(() => w.task(profile)?.status === 'succeeded');
+  }
+});

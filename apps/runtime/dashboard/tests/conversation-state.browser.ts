@@ -23,8 +23,11 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     import {buildSession} from '../../../../packages/event-contracts/src/v2/session-view.ts';
     import {Command} from '../src/command-control.tsx';
     import {Facts, Select} from '../src/ui.tsx';
+    import {conversationRail} from '../../../../modules/companions/src/frontend/conversation-rail.ts';
     import '../src/skins/quiet-glass.css';
     const fixture = window.conversationFixture = {commands: [], reads: 0, spendReads: 0};
+    // Chooses a profile as the rail does (Hub #2026): Reachy and MicroDuck use the same configured provider.
+    fixture.choose = profile => {conversationRail.select(profile);};
     // The shared spend route's answer: synthetic amounts in millionths of a dollar (Hub #2024).
     let spend = {version: 1, day: {period: '2026-11-21', spentMicros: 1234567, limitMicros: 20000000, unreported: 1, unreportedMicros: 340000},
       month: {period: '2026-11', spentMicros: 12500000, limitMicros: 150000000, unreported: 0, unreportedMicros: 0}, paid: null};
@@ -52,6 +55,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
       if (variant === 'paused') task = {...task, status: 'paused'};
       if (variant === 'hosted') {state.provider = 'anthropic'; state.model = 'claude-example-hosted-model'; task = {...task, runId: ${JSON.stringify(longRunId)}, usageUnits: 0, reservedUnits: 16384}; spend = {...spend, paid: {model: 'claude-example-hosted-model', minimumMicros: 368640, prices: 'configured', pricesAsOf: '2026-11-22'}};}
       if (variant === 'unknown-model') spend = {...spend, paid: {...spend.paid, prices: 'dearest'}};
+      if (variant === 'companion-tools') state.tools = ['set_mode', 'set_lifx_power'];
       if (variant === 'spend-limit') spend = {...spend, day: {...spend.day, spentMicros: 20000000, unreported: 0, unreportedMicros: 0}};
       if (variant === 'uncertain') task = {...task, status: 'uncertain', questionId: null, code: 'uncertain-result'};
       if (variant === 'succeeded') {
@@ -68,7 +72,9 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
         // Open Details lists the profile's conversations (Hub #2029); that read is not a history read.
         if (new URL(path, location.href).searchParams.get('view') === 'list') return {version: 1, profile: 'bunny', conversations: [], older: null};
         fixture.reads += 1;
-        const profile = 'bunny';
+        const profile = new URL(path, location.href).searchParams.get('profile') ?? 'bunny';
+        // A companion's conversation has no saved task here; only B.U.N.N.Y.'s holds the fixture's exchange.
+        if (profile !== 'bunny') return {version: 2, profile, conversationId: null, older: null, currentTask: null, messages: []};
         if (empty) return {version: 2, profile, conversationId: null, older: null, currentTask: null, messages: []};
         const conversationId = 'saved-conversation';
         if (new URL(path, location.href).searchParams.has('before')) {
@@ -233,7 +239,29 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Prices', 'Configured for claude-example-hosted-model');
     await page.evaluate("window.conversationFixture.update('spend-limit')");
     await fact(usage, 'Spend today', '$20.00 of $20.00');
-    await page.locator('.conversation-compose').getByText("The daily spend limit of $20.00 is reached. New messages can start after midnight, the runtime host's local time.", {exact: true}).waitFor();
+    const dailyLimit = page.locator('.conversation-compose').getByText("The daily spend limit of $20.00 is reached. New messages can start after midnight, the runtime host's local time.", {exact: true});
+    await dailyLimit.waitFor();
+    // Reachy and MicroDuck use the same configured provider and model (Hub #2026): Details names it, says their calls are
+    // paid and count toward the shared limits, lists only the tools their model is offered, and the spend notice shows.
+    await page.evaluate("window.conversationFixture.update('companion-tools')");
+    await fact(capabilities, 'Allowed tools', 'set_mode, set_lifx_power');
+    for (const [id, name] of [['reachy', 'Reachy'], ['microduck', 'MicroDuck']] as const) {
+      await page.evaluate(`window.conversationFixture.choose('${id}')`);
+      await details.locator('.conversation-details-profile').getByText(name, {exact: true}).waitFor();
+      await fact(capabilities, 'Provider', 'Anthropic');
+      await fact(capabilities, 'Model', 'claude-example-hosted-model');
+      await fact(capabilities, 'Allowed tools', 'set_mode');
+      await fact(capabilities, 'B.U.N.N.Y. only', 'set_lifx_power');
+      await fact(usage, 'Prices', 'Configured for claude-example-hosted-model');
+      await settings.getByText(/They are passed to the configured model, which B\.U\.N\.N\.Y\., Reachy and MicroDuck share, and every conversation's calls count toward the same spend limits\./).waitFor();
+      assert.equal(await details.getByText(/no paid calls/).count(), 0, `${name}'s Details does not claim free calls`);
+      await dailyLimit.waitFor();
+    }
+    await page.evaluate("window.conversationFixture.choose('bunny')");
+    await details.locator('.conversation-details-profile').getByText('B.U.N.N.Y.', {exact: true}).waitFor();
+    await fact(capabilities, 'Allowed tools', 'set_mode, set_lifx_power');
+    assert.equal(await capabilities.getByText('B.U.N.N.Y. only', {exact: true}).count(), 0, 'B.U.N.N.Y. withholds no listed tool');
+    await page.getByRole('list', {name: 'Saved conversation messages'}).getByText('Synthetic retained message', {exact: true}).waitFor();
     assert.ok(await page.evaluate<number>('window.conversationFixture.spendReads') >= 2, 'the spend is read again after a revision');
     await page.evaluate('window.conversationFixture.removeWorker()');
     await fact(capabilities, 'Coding worker', 'Unknown');

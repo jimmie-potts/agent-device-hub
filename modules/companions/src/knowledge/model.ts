@@ -8,6 +8,11 @@ export const PROFILES: readonly Persona[] = [
   {id: 'reachy', name: 'Reachy', character: 'Articulate, expressive and diplomatic. Explain with care.', audio: 'speech', voiceRef: null},
   {id: 'microduck', name: 'MicroDuck', character: 'Cheeky, expressive and capable. English text is intended meaning, never spoken English.', audio: 'quacks-only', voiceRef: null},
 ];
+/**
+ * Whether a profile's saved text may be spoken: its persona's audio is speech. MicroDuck's is quacks only, so its English
+ * text is its intended meaning and never spoken (Hub #2026); an unknown profile is never spoken either.
+ */
+export const spokenAloud = (id: string): boolean => PROFILES.find(persona => persona.id === id)?.audio === 'speech';
 export type Meaning = {kind: 'literal'; text: string; language: string} | {kind: 'emotion'; emotion: string; intensity?: number} | {kind: 'unknown'};
 export type Order = {authority: 'companions'; epoch: string; sequence: number};
 export type Conversation = {id: string; participants: PersonaId[]; epoch: string; profile: PersonaId | null};

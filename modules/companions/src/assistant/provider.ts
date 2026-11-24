@@ -11,15 +11,8 @@ import type {TokenUsage} from './spend-contract.js';
 import type {PromptContext} from './context.js';
 export type {PromptContext} from './context.js';
 
-/** A closed JSON schema for a tool's input, as the Messages API's `input_schema` with `strict` takes it. */
-type ToolProperty = {type: 'string'; description: string; enum?: readonly string[]}
-  | {type: 'boolean' | 'integer'; description: string}
-  | {type: 'array'; items: {type: 'string'}; description: string};
-export type ToolInputSchema = {type: 'object'; properties: Readonly<Record<string, ToolProperty>>;
-  required: readonly string[]; additionalProperties: false};
-/** What a tool does when the model calls it: a question, a read, a private draft edit, or an approved command. */
-export type ToolEffect = 'question' | 'read' | 'draft' | 'command';
-export type ToolDefinition = {readonly name: string; readonly description: string; readonly input: ToolInputSchema; readonly effect: ToolEffect};
+import type {ToolDefinition} from './tool-types.js';
+export type {ToolDefinition, ToolEffect, ToolInputSchema} from './tool-types.js';
 export type ToolCall = {id: string; name: string; input: Readonly<Record<string, unknown>>};
 /**
  * One item of a task's transcript, kept in the task record so a turn can be replayed after restart. An assistant item

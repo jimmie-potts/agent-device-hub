@@ -193,8 +193,7 @@ Conversation page of a running companions module. The shell imports that
 component and `useConversationWaiting` and nothing else of the module's
 conversation. The component emits the rail's own classes and ships no
 stylesheet for them: `rail-label` for the heading, and in each link `rail-mono`
-for the tile, `rail-text` for the name, `rail-tag` for the Demo label,
-`rail-need` for the need's words and `rail-attention` for the dot. `shell.css`
+for the tile, `rail-text` for the name, `rail-need` for the need's words and `rail-attention` for the dot. `shell.css`
 lays them out in the full rail, the icon rail and the drawer. With the
 conversations the full rail needs about 710px to stay in view on a Mac and
 about 730px with the Linux test container's fonts.

@@ -16,7 +16,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {buildContext, type ContextEntry} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
-import {PROFILES} from '../knowledge/model.js';
+import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions, type RetainedArtworkRead} from './catalog-actions.js';
 import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
@@ -30,8 +30,8 @@ export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provid
 /** Sends one approved command through the core's tracked dispatcher; the module binds it to its own participant. */
 export type Dispatch = (data: AssistantDispatch, parent: TraceContext, signal: AbortSignal) => Promise<RequestResult>;
 /**
- * What the module gives the engine (Hub #46, #507): the `bunny` profile's provider (synthetic without one), the
- * allowlisted tool names, the synced copy of the core for reads and proposals, the dispatch path for approved commands,
+ * What the module gives the engine (Hub #46, #507): the configured provider, which every profile uses (Hub #2026), or
+ * the synthetic one without it, the allowlisted tool names, the synced copy of the core for reads and proposals, the dispatch path for approved commands,
  * and the owner's currently active explicit preferences, read at each model call (none without the seam).
  */
 export type AssistantOptions = {
@@ -62,15 +62,15 @@ export type AssistantOptions = {
   /** The time zone whose local day and month the spend limits use: the runtime host's own unless a test names one. */
   timeZone?: string;
   /**
-   * The `bunny` profile's title provider (Hub #2025): the configured hosted model's. A profile without one, Reachy and
-   * MicroDuck, and B.U.N.N.Y. on the synthetic provider, makes no title call and keeps its persona name.
+   * The configured title provider (Hub #2025), which titles every profile's conversations (Hub #2026). Without one, as
+   * on the synthetic provider, no profile makes a title call and each keeps its persona name.
    */
   titleProvider?: TitleProvider;
   /** A test's or harness's title provider for every profile that has none, such as the fixed `SyntheticTitleProvider`. */
   syntheticTitleProvider?: TitleProvider;
   /**
-   * A test's or harness's model provider for a profile that has no configured one: Reachy and MicroDuck, and `bunny`
-   * without `provider`. A profile without either keeps the labelled synthetic provider.
+   * A test's or harness's model provider for one profile, in place of `provider`. The private section never sets it:
+   * every profile uses the configured provider, or the labelled synthetic one without it.
    */
   profileProviders?: Partial<Readonly<Record<AssistantProfile, ModelProvider>>>;
 };
@@ -118,6 +118,8 @@ export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as 
 export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the evidence the tools return.';
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
+/** Why a Speak request is refused for a profile whose audio is not speech, as MicroDuck's is quacks only (Hub #2026). */
+export const UNSPOKEN = 'This companion\'s audio is not speech, so its text is its intended meaning and is never read aloud.';
 /** What a conversation reads when its saved progress could not be restored at a start (Hub #2027); once per failed start. */
 export const RECOVERY_FAILED = 'This conversation\'s saved progress couldn\'t be restored when B.U.N.N.Y. started. You can cancel the task, but new messages here can\'t be sent until B.U.N.N.Y. restarts, which tries the recovery again.';
 type Next = 'ask' | 'tool' | 'approve' | 'await' | 'turn' | 'end';
@@ -164,7 +166,7 @@ export class AssistantEngine {
     this.store = new AssistantStore(context.database());
     this.spend = new SpendLedger(context.database(), options.prices ?? {}, () => context.clock.now(), options.timeZone);
     this.titles = new ConversationTitles(context.database(), {outbox, spend: this.spend, now: () => context.clock.now(), after: (ms, callback) => context.scheduler.after(ms, callback),
-      provider: profile => (profile === 'bunny' ? options.titleProvider : undefined) ?? options.syntheticTitleProvider,
+      provider: () => options.titleProvider ?? options.syntheticTitleProvider,
       messages: conversationId => this.store.titleMessages(conversationId), reported: conversationId => this.store.report(conversationId).sequence > 0,
       metadata: (conversationId, title, observedAtMs) => observationDraft(titleObservationOf(conversationId, title, observedAtMs))});
     this.#allowed = [...(options.tools ?? [])];
@@ -191,9 +193,12 @@ export class AssistantEngine {
     return !this.#closed && !this.context.signal.aborted && this.options.available?.() !== false &&
       tracing.every(key => !['true', '1'].includes(process.env[key]?.toLowerCase() ?? ''));
   }
-  /** The `bunny` profile's configured provider, else a harness's provider for the profile, else the synthetic one. */
+  /**
+   * The provider a profile's turns use (Hub #2026): a harness's provider for the profile, else the configured one, which
+   * serves B.U.N.N.Y., Reachy and MicroDuck alike with each one's curated persona, else the labelled synthetic one.
+   */
   provider(profile: AssistantProfile = 'bunny'): ModelProvider {
-    return (profile === 'bunny' ? this.options.provider : undefined) ?? this.options.profileProviders?.[profile] ?? this.#synthetic;
+    return this.options.profileProviders?.[profile] ?? this.options.provider ?? this.#synthetic;
   }
   inspect(): AssistantState {
     const provider = this.provider();
@@ -371,8 +376,10 @@ export class AssistantEngine {
   #speak(taskId: string, messageId: string, text: string, parent: TraceContext, key = messageId): void {
     if (this.options.speak === undefined || this.#closed || this.context.signal.aborted || text.trim() === '' || text.length > LIMITS.spokenChars) return;
     try {
-      const line = this.#task(taskId).conversationId;
-      this.options.speak({taskId, messageId, text, validUntilMs: this.context.clock.now() + SPOKEN_REPLY_TTL_MS}, key, parent, line);
+      const task = this.#task(taskId);
+      // A quacks-only persona's English text is its intended meaning, never spoken English (Hub #2026).
+      if (!spokenAloud(task.profile)) return;
+      this.options.speak({taskId, messageId, text, validUntilMs: this.context.clock.now() + SPOKEN_REPLY_TTL_MS}, key, parent, task.conversationId);
     }
     catch { /* Speech is an output of the saved message, never a condition of it. */ }
   }
@@ -436,6 +443,7 @@ export class AssistantEngine {
         // A replay reads the saved message; finished tasks qualify, so an old answer can be heard again, and only assistant text is spoken.
         const message = this.store.savedMessage(data.taskId ?? fail('invalid-request'), data.messageId ?? fail('invalid-request')) ?? fail('not-found');
         if (message.role !== 'assistant') fail('invalid-request');
+        if (!spokenAloud(this.#task(data.taskId ?? fail('invalid-request')).profile)) throw new Fault('invalid-request', UNSPOKEN);
         spoken = message; return undefined;
       }
       const task = this.#task(data.taskId ?? fail('invalid-request'));
@@ -734,7 +742,7 @@ export class AssistantEngine {
   }
   async #turn(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
-    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile === 'bunny'), copy = this.#core();
+    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile), copy = this.#core();
     const id = `${state.taskId}-step-${String(state.step)}`;
     // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
     const context = this.#context(task);
@@ -866,7 +874,7 @@ export class AssistantEngine {
     const last = [...task.transcript].reverse().find(item => item.role === 'assistant');
     const call = last?.role === 'assistant' ? last.calls[0] : undefined;
     if (call === undefined) fail('invalid-state');
-    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile === 'bunny');
+    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile);
     const tool = definition(call.name), permitted = tools.some(permittedTool => permittedTool.name === call.name);
     const id = `${state.taskId}-step-${String(state.step)}`;
     if (tool === undefined || !permitted || (tool.effect !== 'read' && tool.effect !== 'draft')) {
@@ -906,7 +914,7 @@ export class AssistantEngine {
       return {step: state.step, next: 'turn'};
     };
     if (state.decision !== 'approve') return refuse('declined', DECLINED);
-    if (!permittedTools(this.#allowed, this.provider(task.profile).name === 'synthetic', task.profile === 'bunny').some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
+    if (!permittedTools(this.#allowed, this.provider(task.profile).name === 'synthetic', task.profile).some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
     const settle = (answer: RequestResult, accepted: string): {text: string; units: number} => {
       // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`; the fate is unknown either way.
       if (answer.status === 'uncertain' || (answer.status === 'rejected' && answer.error.error.code === 'uncertain-result')) throw new Fault('uncertain-result');

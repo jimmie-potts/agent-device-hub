@@ -89,9 +89,9 @@ export async function captureConversationWorkspace(t: CaptureContext): Promise<v
       await menu.click();
       await row(id).waitFor();
     });
-    if (first) await t.expect('the rail labels both demos before one is chosen', async () => {
+    if (first) await t.expect('the rail lists each conversation by its name, with no Demo label', async () => {
       assert.deepEqual(await conversations.getByRole('link').evaluateAll(links => links.map(link => [...link.querySelectorAll('.rail-text > *')].map(part => part.textContent).join(' '))),
-        ['B.U.N.N.Y.', 'Reachy Demo', 'MicroDuck Demo']);
+        ['B.U.N.N.Y.', 'Reachy', 'MicroDuck']);
     });
     await act(row(id), `Choose ${name} in Conversations.`, async () => {
       await row(id).click();
@@ -99,11 +99,11 @@ export async function captureConversationWorkspace(t: CaptureContext): Promise<v
     });
   };
   for (const {name, value, first} of [{name: 'Reachy', value: 'reachy', first: true}, {name: 'MicroDuck', value: 'microduck', first: false}]) {
-    await choose(value, `${name} Demo`, first);
-    await t.expect(`${name} Demo shows an invitation, no saved messages and a blank draft`, async () => {
+    await choose(value, name, first);
+    await t.expect(`${name} shows an invitation, no saved messages and a blank draft`, async () => {
       await invitation.waitFor();
       assert.equal(await openProfile.innerText(), name);
-      assert.equal(await conversation.locator('.conversation-demo-tag').innerText(), 'Demo');
+      assert.equal(await conversation.locator('.conversation-header small').count(), 0, 'no Demo label');
       assert.equal(await conversation.locator('[data-message]').count(), 0);
       assert.equal(await draft.inputValue(), '');
     });
@@ -112,7 +112,7 @@ export async function captureConversationWorkspace(t: CaptureContext): Promise<v
   await reply.waitFor();
   await t.expect('B.U.N.N.Y. restores the original unsent draft and saved reply', async () => {
     assert.equal(await openProfile.innerText(), 'B.U.N.N.Y.');
-    assert.equal(await conversation.locator('.conversation-demo-tag').count(), 0);
+    assert.equal(await conversation.locator('.conversation-header small').count(), 0);
     assert.equal(await invitation.count(), 0);
     assert.equal(await draft.inputValue(), text);
     assert.equal(await send.isEnabled(), true);

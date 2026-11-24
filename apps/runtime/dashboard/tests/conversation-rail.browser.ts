@@ -9,7 +9,7 @@ import {feed, startWorld} from './harness.ts';
 import {chooseConversation, conversationLink, destinationLink, openDeviceMenu, routeCatalog, showRail, type CatalogModule} from './navigation-helpers.ts';
 
 type Row = {name: string; current: boolean; marked: boolean};
-const NAMES = ['B.U.N.N.Y.', 'Reachy Demo', 'MicroDuck Demo'];
+const NAMES = ['B.U.N.N.Y.', 'Reachy', 'MicroDuck'];
 const rows = (page: Page): Promise<Row[]> => page.getByRole('navigation', {name: 'Conversations', exact: true}).getByRole('link').evaluateAll(links => links.map(link => ({
   name: [...link.querySelectorAll('.rail-text > *')].map(part => part.textContent).join(' '), current: link.getAttribute('aria-current') === 'page',
   marked: link.querySelector('.rail-attention') !== null})));
@@ -117,11 +117,11 @@ async function railGroupFixture(browser: Browser): Promise<void> {
     // This page has no shell stylesheet, so the dot has no size: it is looked for in the document, not on the screen.
     const marked = (profile: string) => page.locator(`aside a[data-profile="${profile}"] .rail-attention`);
     const mark = (names: readonly string[], ...which: number[]): Row[] => names.map((name, index) => ({name, current: false, marked: which.includes(index)}));
-    const waitingNames = ['B.U.N.N.Y. Needs your answer', 'Reachy Demo', 'MicroDuck Demo'];
+    const waitingNames = ['B.U.N.N.Y. Needs your answer', 'Reachy', 'MicroDuck'];
 
     await page.getByRole('navigation', {name: 'Conversations', exact: true}).waitFor();
     await call(() => {});
-    assert.deepEqual(await rows(page), plain(), 'three profiles, both demos labelled, none open and none marked');
+    assert.deepEqual(await rows(page), plain(), 'three profiles, each by its name alone with no Demo label, none open and none marked');
     assert.deepEqual([await reads(), await elsewhere()], [[], false], 'a conversation with no question is not read');
 
     // A clarification needs the owner: the group reads that profile's recent history once to learn the question's kind.
@@ -183,8 +183,8 @@ async function railGroupFixture(browser: Browser): Promise<void> {
     await call(fixture => {fixture.touch();});
     await marked('reachy').waitFor({state: 'attached'});
     assert.deepEqual(await reads(), ['bunny', 'bunny', 'bunny', 'reachy', 'reachy'], 'the next state change reads it again');
-    assert.deepEqual(await rows(page), [{name: 'B.U.N.N.Y. Needs your answer', current: false, marked: true}, {name: 'Reachy Demo Needs your answer', current: false, marked: true}, {name: 'MicroDuck Demo', current: false, marked: false}],
-      'a waiting demo keeps its Demo label');
+    assert.deepEqual(await rows(page), [{name: 'B.U.N.N.Y. Needs your answer', current: false, marked: true}, {name: 'Reachy Needs your answer', current: false, marked: true}, {name: 'MicroDuck', current: false, marked: false}],
+      'a waiting companion is named and marked like B.U.N.N.Y.');
     // Saved history that holds another question says nothing about this one.
     await call(fixture => {fixture.stale = true; fixture.ask('microduck', 'q5', 'clarification');});
     await page.waitForFunction(() => (window as unknown as {railFixture: Fixture}).railFixture.reads.length === 6);
@@ -310,45 +310,26 @@ async function railInDashboard(browser: Browser): Promise<void> {
     }), {position: 'static', tallerPage: true, together: true, footAtPageEnd: false}, 'a short window keeps the conversations and the foot directly under the pinned pages');
     await page.setViewportSize({width: 1440, height: 1000});
     await page.waitForFunction(() => document.querySelector('.shell')?.hasAttribute('data-rail-short') === false);
-    // A row is as wide as the rail and no wider. The name and the Demo label share a line where they fit; with a font
-    // too wide for one line the label moves under the name inside the row, and neither is cut. Which of the two a row
-    // shows depends on the computer's fonts: the Linux container's are wider than a Mac's, and "MicroDuck" with its
-    // label does not fit one line there. So `lines` is what each row shows and `room` what its own widths call for.
-    // `room` uses the width of the name's and the label's own text, not of their laid-out boxes, so a style that
-    // stretched the label onto a line of its own would not pass for a label with no room.
-    const fit = (): Promise<{inRail: boolean; whole: boolean; lines: number[]; room: number[]}> => conversations.evaluate(group => {
+    // A row is as wide as the rail and no wider, shows its name alone on one line, and nothing in it is cut, also with
+    // a wider font. No row carries a Demo label (Hub #2026).
+    const fit = (): Promise<{inRail: boolean; whole: boolean; lines: number[]; tags: number}> => conversations.evaluate(group => {
       const inside = group.getBoundingClientRect(), links = [...group.querySelectorAll('a')];
-      const written = (element: Element | null): number => {
-        if (element === null) return 0;
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        return range.getBoundingClientRect().width;
-      };
-      const parts = links.map(link => ({row: link.getBoundingClientRect(), text: link.querySelector('.rail-text'), name: link.querySelector('.rail-text > span')?.getBoundingClientRect(),
-        tag: link.querySelector('.rail-tag')?.getBoundingClientRect(), nameText: written(link.querySelector('.rail-text > span')), tagText: written(link.querySelector('.rail-tag'))}));
       return {inRail: links.every(link => link.getBoundingClientRect().right <= inside.right + 0.5 && link.getBoundingClientRect().width <= inside.width + 0.5),
         whole: links.every(link => link.scrollWidth <= link.clientWidth + 1 && [...link.querySelectorAll('.rail-text > *')].every(part => part.scrollWidth <= part.clientWidth + 1 || getComputedStyle(part).position === 'absolute')),
-        lines: parts.map(({row, name, tag}) => name === undefined ? 0 : tag === undefined ? 1 : tag.top >= name.bottom - 2 && tag.bottom <= row.bottom ? 2 : tag.left >= name.right ? 1 : 0),
-        room: parts.map(({text, name, tag, nameText, tagText}) => {
-          if (text === null || name === undefined) return 0;
-          return tag === undefined || nameText + Number.parseFloat(getComputedStyle(text).columnGap) + tagText <= text.getBoundingClientRect().width + 0.01 ? 1 : 2;
-        })};
+        lines: links.map(link => link.querySelector('.rail-text > span')?.getClientRects().length ?? 0),
+        tags: group.querySelectorAll('.rail-text small').length};
     });
-    const natural = await fit();
-    assert.deepEqual([natural.inRail, natural.whole, natural.lines, natural.lines[0]], [true, true, natural.room, 1],
-      `each conversation row fits the rail, on one line where its name and label have the room: ${JSON.stringify(natural)}`);
+    assert.deepEqual(await fit(), {inRail: true, whole: true, lines: [1, 1, 1], tags: 0}, 'each conversation row fits the rail and shows its name on one line');
     // The page's content security policy refuses an added stylesheet, so the wider font is set on the rows themselves.
     const fontSize = (size: string): Promise<void> => conversations.evaluate((group, value) => {for (const link of group.querySelectorAll('a')) link.style.fontSize = value;}, size);
     await fontSize('1.3rem');
-    const wider = await fit();
-    assert.deepEqual([wider.inRail, wider.whole, wider.lines, wider.lines[0], wider.lines[2]], [true, true, wider.room, 1, 2],
-      `with a wider font the longest name's Demo label moves under it and nothing is cut: ${JSON.stringify(wider)}`);
+    assert.deepEqual(await fit(), {inRail: true, whole: true, lines: [1, 1, 1], tags: 0}, 'with a wider font every name still fits its row and nothing is cut');
     await fontSize('');
 
     // From Home, Rooms and a device page, one click opens that profile with its own history.
     await (await conversationLink(page, 'reachy')).click();
     await header.getByRole('heading', {name: 'Reachy', exact: true}).waitFor();
-    assert.equal(await header.locator('.conversation-demo-tag').innerText(), 'Demo');
+    assert.equal(await header.locator('small').count(), 0, 'the companion\'s header carries no Demo label');
     assert.equal(new URL(page.url()).hash, '#/module/companions/assistant');
     assert.deepEqual((await rows(page)).map(row => row.current), [false, true, false]);
     await assistant.getByRole('button', {name: 'Enable conversation', exact: true}).click();
@@ -410,7 +391,7 @@ async function railInDashboard(browser: Browser): Promise<void> {
     await page.setViewportSize({width: 1440, height: 1000});
     await marked('bunny').waitFor();
     assert.deepEqual(await rows(page), [{name: 'B.U.N.N.Y. Needs your answer', current: false, marked: true}, ...plain().slice(1)], 'the marker is in the rail on Home');
-    // The icon rail shows the profile, its Demo label and the need beside the tile on keyboard focus.
+    // The icon rail shows the profile and its need beside the tile on keyboard focus.
     await page.setViewportSize({width: 1024, height: 800});
     await (await conversationLink(page, 'bunny')).focus();
     await page.keyboard.press('Tab');

@@ -302,6 +302,31 @@ observation still in the companions outbox at the switch is refused by the
 earlier core as `unsupported-version`, so that change reaches the session only
 at the conversation's next observation.
 
+## Reachy and MicroDuck on the configured model (#2026)
+
+The #2026 release gives Reachy and MicroDuck the companions section's provider
+and model: its one provider, model, effort, title model, key and prices now
+serve all three profiles. It adds no table, column or section key
+and rewrites no record.
+
+An installation whose section names only B.U.N.N.Y.'s model needs no change.
+After the upgrade a new Reachy or MicroDuck message goes to that model with the
+companion's own persona, and the conversation gets topic-following titles from
+the title model. Each such turn and title check is reserved and counted in the
+shared $20 daily pacing, the local monthly estimate and the Anthropic
+workspace's monthly limit, so expect more paid calls once the companions are
+used. A section without a provider, or with `synthetic`, keeps all three
+profiles on the synthetic provider. A Reachy or MicroDuck task that the
+synthetic provider left waiting continues on the configured model when it is
+answered or resumed; cancel it first to start afresh. From this release on,
+MicroDuck's English text is never spoken.
+
+Returning to the release before needs no step and loses no data; prefer fixing
+forward. That release answers Reachy and MicroDuck with the synthetic provider
+again and makes no title call for them. Titles written for them stay until the
+owner renames them, the calls already counted stay in the ledger, and that
+release offers MicroDuck's text to the voice again.
+
 ## Conversations running at once (#2027)
 
 The #2027 release lets each assistant conversation run its own task at the

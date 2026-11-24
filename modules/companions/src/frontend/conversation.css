@@ -16,11 +16,6 @@
   gap: 0.5rem 1rem;
 }
 
-.conversation-demo-tag, .conversation-demo-note {
-  color: var(--muted-dense);
-  font-size: var(--type-small);
-}
-
 .conversation-details {
   box-sizing: border-box;
   min-inline-size: 0;
@@ -427,7 +422,7 @@
   }
 }
 
-/* One header row: the profile's name, its Demo label and Details at the row's end. */
+/* One header row: the profile's name and Details at the row's end. */
 .conversation-header {
   min-inline-size: 0;
   display: flex;

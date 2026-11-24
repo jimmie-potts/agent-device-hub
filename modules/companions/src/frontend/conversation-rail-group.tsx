@@ -78,7 +78,7 @@ export function ConversationRail({context}: {context: FrontendContext}): React.J
   return <>
     <p className="rail-label"><span>Conversations</span></p>
     <nav aria-label="Conversations">
-      {(Object.entries(profiles) as [AssistantProfile, {name: string; kind: string}][]).map(([id, {name, kind}]) => {
+      {(Object.entries(profiles) as [AssistantProfile, {name: string}][]).map(([id, {name}]) => {
         const needs = waiting.includes(id);
         return <a key={id} href={CONVERSATION} data-profile={id} aria-current={rail.open && rail.profile === id ? 'page' : undefined} onClick={event => {
           // A modified click opens the page elsewhere, as any link does, and chooses nothing here.
@@ -87,7 +87,7 @@ export function ConversationRail({context}: {context: FrontendContext}): React.J
           window.scrollTo(0, 0);
         }}>
           <span className="rail-mono" aria-hidden="true">{name.slice(0, 1)}{needs && <span className="rail-attention"/>}</span>
-          <span className="rail-text"><span>{name}</span>{id !== 'bunny' && <small className="rail-tag">{kind}</small>}{needs && <span className="rail-need">Needs your answer</span>}</span>
+          <span className="rail-text"><span>{name}</span>{needs && <span className="rail-need">Needs your answer</span>}</span>
         </a>;
       })}
     </nav>
