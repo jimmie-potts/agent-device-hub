@@ -156,9 +156,10 @@ function TaskControls({context, command, state, profile, live, question, coding,
     {/* The queued messages and the unread steers share one bounded, scrolling box, so together they never push the
         transcript out of view (Hub #2031). */}
     {queue !== undefined && (queue.messages.length > 0 || queue.steers.length > 0) && <div className="conversation-queue-stack">
+      {/* The steers come first: the running task reads them before anything queued starts. */}
+      <PendingSteers queue={queue} waitsOnWorker={delegated}/>
       {state !== undefined && <QueuedMessages context={context} command={command} queue={queue} profile={profile}
         waiting={open} locked={locked} enabled={enabled} onLost={(text, reason) => {setLost({text, reason});}}/>}
-      <PendingSteers queue={queue} waitsOnWorker={delegated}/>
     </div>}
     {lost !== undefined && <div className="conversation-queue-lost" role="status">
       <p>{lost.reason === 'changed' ? 'The message was changed on another page before your edit was saved, so your edit was not saved.'

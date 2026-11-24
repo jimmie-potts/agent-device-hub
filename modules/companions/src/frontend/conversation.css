@@ -391,39 +391,26 @@
   margin-block-start: 0.5rem;
 }
 
-/* The current conversation's queue and steers share one bound, with one scroll (Hub #2031). While they show, the
-   composer's row may be shorter than its content and the shared box gives up height first, so together they never
-   push the header or the transcript out of view. */
+/* The current conversation's steers and queue share one bound, with one scroll (Hub #2031). The page grows with its
+   content, so the bound also leaves 34rem of the window for the rest of the page: the header, the transcript's least
+   height and the composer of a working task. Together they then keep the header and the transcript in view. */
 .conversation-queue-stack {
   display: grid;
   align-content: start;
   gap: var(--space-xs);
   min-inline-size: 0;
-  min-block-size: min(6rem, 40dvh);
-  max-block-size: 40dvh;
-  flex: 0 1 auto;
+  max-block-size: min(40dvh, max(6rem, 100dvh - 34rem));
   overflow-y: auto;
   /* Its visually hidden labels are positioned absolutely; this box contains them, so its scroll clips them instead of
      the page growing by the hidden part of the list. */
   position: relative;
 }
 
-/* A phone's page grows with its content instead of filling the window, so the shared box keeps to a smaller bound
-   there and the page, with its header and transcript, still fits the window. */
+/* A phone's composer takes more of the window, so the shared box keeps to a smaller bound there. */
 @media (max-width: 760px) {
   .conversation-queue-stack {
-    max-block-size: 20dvh;
+    max-block-size: min(20dvh, max(6rem, 100dvh - 34rem));
   }
-}
-
-.conversation-main:has(> .conversation-compose .conversation-queue-stack) {
-  grid-template-rows: auto minmax(min-content, 1fr) minmax(0, auto);
-}
-
-.conversation-compose:has(.conversation-queue-stack) {
-  display: flex;
-  flex-direction: column;
-  min-block-size: 0;
 }
 
 .conversation-queue-stack > .conversation-queue {

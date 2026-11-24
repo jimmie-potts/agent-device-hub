@@ -436,9 +436,9 @@ The queue is modelled on Codex's durable queue and T3 Code's queue commands;
 **Send** while a task works steers it (Hub #2031, owner decisions 1, 3, 4 and
 5): the message joins the task's current turn instead of waiting for it. The
 steer is saved at once and shows above the composer under **Steering this
-task** until the task reads it; queued messages and unread steers share one
-box there, which scrolls inside itself so the header and transcript stay in
-view. The task reads its steers at its next model
+task** until the task reads it. Unread steers and queued messages share one
+box there, steers first, which scrolls inside itself so the header and
+transcript stay in view. The task reads its steers at its next model
 call, after the last call's tool results, so the model sees what the tool
 returned and then your message. Once read, the steer appears in the transcript
 at that point, marked **Sent while working**. A steer never cuts off the

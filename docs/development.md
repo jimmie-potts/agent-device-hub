@@ -3429,8 +3429,10 @@ and `node apps/runtime/dashboard/tests/conversation-steer.browser.ts`, which
 call, a late steer held on the network until its turn ended, Skip question and
 send, Decline with message, a steer during a delegation wait with a fake worker
 on the real gateway, Stop returning steers past the limit, a restart, and the
-phone layout at 390 px. With 8 queued messages and 8 steers at 1280x900 and
-390x844, the page does not scroll and the header and transcript stay in view. The queue and coding delegation journeys follow Send's
+phone layout at 390 px. With 8 queued messages and 8 steers at 1280x900,
+1024x768 and 390x844, the page does not scroll, the header and transcript stay
+in view and each new steer shows at the top of the shared box; at 320x640 the
+box keeps to its bound and the header and transcript stay in view. The queue and coding delegation journeys follow Send's
 new steering. They use synthetic data and gated providers only. Existing CI
 discovery runs them.
 

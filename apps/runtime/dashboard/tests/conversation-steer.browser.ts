@@ -78,10 +78,19 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
         await message.fill(`${prefix} queued ${String(index)}`); await queueButton.click();
         await queued.getByRole('listitem').nth(index - 1).waitFor(); await cleared();
       }
-      for (const [index, word] of words.entries()) await steer(`${prefix} returned steer ${word}`, index + 1);
+      for (const [index, word] of words.entries()) {
+        await steer(`${prefix} returned steer ${word}`, index + 1);
+        // The steer just sent is in view inside the shared box, ahead of the full queue.
+        const shown = await page.evaluate(text => {
+          const box = document.querySelector('.conversation-queue-stack')?.getBoundingClientRect();
+          const row = [...document.querySelectorAll('.conversation-steers li')].find(item => item.textContent.endsWith(text))?.getBoundingClientRect();
+          return box !== undefined && row !== undefined && row.top >= box.top - 1 && row.bottom <= box.bottom + 1 && row.bottom <= window.innerHeight;
+        }, `${prefix} returned steer ${word}`);
+        assert.equal(shown, true, `the new steer ${word} is in view`);
+      }
     };
     /** The queue and the steers share one bound: the page does not scroll, and the header and transcript stay in view. */
-    const bounded = async (width: number): Promise<void> => {
+    const bounded = async (width: number, fits = true): Promise<void> => {
       await conversation.locator('.conversation-transcript').evaluate(node => {node.scrollTop = node.scrollHeight;});
       const measured = await page.evaluate(() => {
         const transcript = document.querySelector('.conversation-transcript')?.getBoundingClientRect(), header = document.querySelector('.conversation-header')?.getBoundingClientRect();
@@ -91,10 +100,11 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
           header: header === undefined ? -1 : header.top, stack: stack === null ? 0 : stack.getBoundingClientRect().height, scrolls: stack !== null && stack.scrollHeight > stack.clientHeight};
       });
       process.stderr.write(`steer layout ${String(width)}: ${JSON.stringify(measured)}\n`);
-      assert.ok(measured.overflow <= 1 && measured.scrolled === 0, `the page does not scroll at ${String(width)} px`);
+      if (fits) assert.ok(measured.overflow <= 1 && measured.scrolled === 0, `the page does not scroll at ${String(width)} px`);
       assert.ok(measured.header >= 0, 'the header stays in view');
       assert.ok(measured.transcript >= 80, `the transcript stays in view at ${String(width)} px`);
       assert.ok(measured.scrolls, 'the shared box scrolls inside itself');
+      assert.ok(measured.stack <= Math.max(96, (width <= 760 ? 0.2 : 0.4) * (await page.evaluate(() => window.innerHeight))) + 1, 'the shared box keeps to its bound');
     };
     await conversation.getByRole('button', {name: 'Enable conversation', exact: true}).click();
     await send.waitFor();
@@ -213,6 +223,10 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
     await fill('Synthetic');
     await bounded(1280);
     await shot(page, '08-steers-and-full-queue');
+    await page.setViewportSize({width: 1024, height: 768});
+    await bounded(1024);
+    await shot(page, '08b-steers-and-full-queue-1024');
+    await page.setViewportSize({width: 1280, height: 900});
     await conversation.getByRole('button', {name: 'Cancel task', exact: true}).click();
     await conversation.getByText('Task cancelled', {exact: true}).waitFor();
     stopping.resolve(end('Synthetic reply after the stop'));
@@ -296,6 +310,12 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
     await fill('Synthetic phone');
     await bounded(390);
     await shot(page, '14-phone-queue-and-steers');
+    // At 320x640 a working task's composer, its help and the page's own header already pass the window's height with
+    // nothing queued, so the page scrolls there; the shared box keeps to its bound and adds no more than that.
+    await page.setViewportSize({width: 320, height: 640});
+    await bounded(320, false);
+    await shot(page, '15-small-phone-queue-and-steers');
+    await page.setViewportSize({width: 390, height: 844});
     await conversation.getByRole('button', {name: 'Cancel task', exact: true}).click();
     await conversation.getByText('Task cancelled', {exact: true}).waitFor();
     crowded.resolve(end('Synthetic reply after the stop'));

@@ -4,7 +4,7 @@
 // so an edit left open never overwrites a change made elsewhere and a move never acts on an order the page no longer
 // shows. The list shows what the module saved. An earlier conversation shows only messages an earlier release left
 // there, which never start and can only be withdrawn.
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import type {AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import {LIMITS} from '../assistant/limits.js';
@@ -125,13 +125,19 @@ export function QueuedMessages({context, command, queue, profile, waiting, locke
  * read one shows in the transcript where the model read it.
  */
 export function PendingSteers({queue, waitsOnWorker}: {queue: QueueView; waitsOnWorker: boolean}): React.JSX.Element | null {
+  const list = useRef<HTMLOListElement>(null);
+  const newest = queue.current ? queue.steers.at(-1)?.id : undefined;
+  // A steer the owner just sent comes into view, even when the shared box was scrolled elsewhere.
+  useEffect(() => {
+    if (newest !== undefined) list.current?.lastElementChild?.scrollIntoView({block: 'nearest'});
+  }, [newest]);
   if (!queue.current || queue.steers.length === 0) return null;
   return <section aria-label="Messages for the next step" className="conversation-queue conversation-steers">
     <header className="conversation-queue-header">
       <h3>Steering this task</h3>
       <p>{waitsOnWorker ? 'The task reads these after the coding worker\'s result.' : 'The task reads these at its next step.'} Cancel task moves them to the queue.</p>
     </header>
-    <ol className="conversation-queue-list">
+    <ol className="conversation-queue-list" ref={list}>
       {queue.steers.map((steer, index) => <li key={steer.id} className="conversation-queue-item">
         <p className="conversation-queue-text" dir="auto"><span className="vh">Steering message {index + 1}: </span>{steer.text}</p>
       </li>)}
