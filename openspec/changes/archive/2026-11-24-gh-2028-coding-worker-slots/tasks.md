@@ -40,3 +40,9 @@
 - [x] 7.3 A waiting hand-off whose task cannot be read keeps its place. Evidence: the new coordinator test fails when the row is dropped (PR).
 - [x] 7.4 The 34-minute bound for a connected but silent worker is stated in docs/coding-worker.md and apps/runtime/UPGRADE.md. Evidence: readback.
 - [x] 7.5 A waiting hand-off sent before its line is saved reads "Delegated to" at once. Evidence: the new `coding-slots` test fails without the check (PR).
+
+## 8. Review round 3 on PR 2087
+
+- [x] 8.1 A slot whose oldest waiting hand-off cannot be checked sends nothing else that pass, so its line keeps first in, first out. Evidence: the new coordinator test fails when only that row is skipped (PR).
+- [x] 8.2 A coordinator test covers `accepted()` for an active run and a recorded one. Evidence: it fails with `accepted()` forced false (PR).
+- [x] 8.3 docs/coding-worker.md says a companion whose stopped run outlives the bound has its next hand-off fail with `capacity` rather than wait. Evidence: readback.

@@ -452,3 +452,38 @@ void test('a waiting hand-off whose task cannot be read keeps its place and is s
   await turned(() => starts(w.work).some(command => command.data.operationId === 'task-bunny-2-step-1'), () => w.owner().inspect());
   assert.equal(w.dispatched.filter(id => id === 'task-bunny-2-step-1').length, 1);
 });
+
+void test('a waiting hand-off whose task cannot be read holds its slot\'s line: a later hand-off for that companion never goes first', async t => {
+  const w = await world(t); await w.enable22();
+  await w.handOff('task-bunny-1'); await turned(() => starts(w.work).length === 1);
+  await w.handOff('task-bunny-2'); await w.handOff('task-bunny-3');
+  w.unreadable.add('task-bunny-2');
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'started'});
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'completed', result: result()});
+  await turned(() => w.deliveries.length === 1); await w.advance();
+  assert.deepEqual(w.dispatched, ['task-bunny-1-step-1'], 'nothing goes ahead of the unreadable oldest hand-off');
+  assert.deepEqual(w.owner().inspect().waiting?.map(entry => entry.taskId), ['task-bunny-2', 'task-bunny-3']);
+  // Once its task reads again, the line resumes in order at the next send.
+  w.unreadable.clear();
+  await w.handOff('task-reachy-1'); await turned(() => starts(w.work).length === 2);
+  await w.progress21({operationId: 'task-reachy-1-step-1', status: 'started'});
+  await w.progress21({operationId: 'task-reachy-1-step-1', status: 'completed', result: result()});
+  await turned(() => w.dispatched.includes('task-bunny-2-step-1'));
+  assert.equal(w.dispatched.includes('task-bunny-3-step-1'), false, 'the next one waits for the slot again');
+  assert.deepEqual(w.owner().inspect().waiting?.map(entry => entry.taskId), ['task-bunny-3']);
+});
+
+void test('accepted() knows a hand-off that runs and one that ran, and nothing else', async t => {
+  const w = await world(t); await w.enable22();
+  assert.equal(w.owner().accepted('task-bunny-1-step-1'), false, 'not before it is accepted');
+  await w.handOff('task-bunny-1'); await turned(() => starts(w.work).length === 1);
+  assert.equal(w.owner().accepted('task-bunny-1-step-1'), true, 'an active run');
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'started'});
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'completed', result: result()});
+  await turned(() => w.deliveries.length === 1);
+  assert.deepEqual(w.owner().inspect().runs, []);
+  assert.equal(w.owner().accepted('task-bunny-1-step-1'), true, 'a recorded run that ended');
+  await w.restart();
+  assert.equal(w.owner().accepted('task-bunny-1-step-1'), true, 'still recorded after a restart');
+  assert.equal(w.owner().accepted('task-reachy-1-step-1'), false);
+});

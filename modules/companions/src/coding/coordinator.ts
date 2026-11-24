@@ -183,13 +183,15 @@ export class CodingCoordinator {
     let waiting: CodingWaitingRecord[];
     try {waiting = this.#store.waiting();} catch (error) {this.#storageFailure(error); return;}
     let dropped = false;
+    // A slot whose oldest hand-off could not be checked sends nothing else this pass, so its line keeps its order.
+    const held = new Set<string>();
     for (const record of waiting) {
       const slot = this.#slotOf(record.companion);
-      if (record.sending || this.#busy(slot)) continue;
+      if (record.sending || held.has(slot) || this.#busy(slot)) continue;
       // A task cancelled or ended while its hand-off waited, even while this coordinator was stopped, sends nothing. A
-      // task whose state could not be read keeps its hand-off waiting for the next send.
+      // task whose state could not be read keeps its hand-off waiting, ahead of the rest of its slot's line.
       const awaits = this.#awaits(record.taskId);
-      if (awaits === undefined) continue;
+      if (awaits === undefined) {held.add(slot); continue;}
       if (!awaits) {
         try {this.#store.unwait(record.operationId); dropped = true;} catch (error) {this.#storageFailure(error, record);}
         continue;

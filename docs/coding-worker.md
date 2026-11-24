@@ -269,7 +269,10 @@ works with an older worker as one slot for every companion (see
    still has not ended then, such as one whose output a leftover process holds
    open, keeps only its own companion's slot busy: that companion's next start
    is refused with `capacity` until it ends, and the other companions' starts
-   are taken. A stopped run's report is not sent on the fresh endpoint.
+   are taken. The core does not know that slot is still busy, so that
+   companion's next hand-off is not held to wait: it fails with `capacity`,
+   and its task is told so. A stopped run's report is not sent on the fresh
+   endpoint.
 
 ## One credential, one endpoint
 
