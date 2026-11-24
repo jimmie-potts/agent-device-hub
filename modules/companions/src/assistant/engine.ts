@@ -49,10 +49,10 @@ export type AssistantOptions = {
    */
   speak?: (reply: SpokenReply, key: string, parent: TraceContext, line: string) => void;
   /**
-   * Whether a coding worker is connected, the revision a delegation proposal binds to (Hub #502) and whether the
-   * companion's own slot is busy, so an approved hand-off would wait for it (Hub #2028).
+   * Whether a coding worker is connected and the revision a delegation proposal binds to (Hub #502), which moves only
+   * when the worker's endpoint does (Hub #2028). The profile names the companion whose slot the hand-off would use.
    */
-  coding?: (profile: AssistantProfile) => {available: boolean; endpointId: string | null; revision: number; busy?: boolean};
+  coding?: (profile: AssistantProfile) => {available: boolean; endpointId: string | null; revision: number};
   /** Hands an approved delegation to the core's tracked dispatcher; the worker's result comes back through `deliver`. */
   delegate?: Delegate;
   /** The owner cancelled a task whose delegation is still running; the module asks the worker to stop. */
@@ -120,6 +120,11 @@ const handOffOutcome = (text: string): 'completed' | 'failed' | 'cancelled' | 'u
 };
 export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as const, type: 'org.bunny.assistant-state.updated', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-state/${data.tools.length > ASSISTANT_LEGACY_TOOL_LIMIT ? '2.1' : '2.0'}`, data});
 export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the evidence the tools return.';
+/** The start of the tool result for a hand-off that waits for its companion's busy slot (Hub #2028). */
+export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this hand-off waits for';
+/** How a waiting hand-off is worded in the conversation until it is sent; "Delegated to ..." replaces it then. */
+export const WAITING_PREFIX = 'Waiting to delegate';
+const waitingText = (delegated: string): string => `${WAITING_PREFIX}${delegated.slice('Delegated'.length)}`.slice(0, 1024);
 export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${String(LIMITS.contextBytes / 1024)} KiB prompt bound; stop using some on the Preferences page and start again.`;
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
@@ -926,7 +931,7 @@ export class AssistantEngine {
       result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, companion: task.profile, repository: proposal.data.repository, brief: proposal.data.brief,
         expectedRevision: proposal.expectedRevision}, active.span.context, signal)
         .then(answer => answer.status === 'waiting'
-          ? {text: `accepted: the coding worker is busy, so this hand-off waits for ${companion}'s slot as operation ${id}; it is sent when that slot frees, and its structured result arrives as this tool's later result`, units: 0}
+          ? {text: `${WAITING_RECEIPT} ${companion}'s slot as operation ${id}; it is sent when that slot frees, and its structured result arrives as this tool's later result`, units: 0}
           : settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)), (current, call) => {current.question = pending; call.action = action;});
     }
     const accepted = result.startsWith('accepted');
@@ -939,11 +944,17 @@ export class AssistantEngine {
       result = recorded.result ?? pending(recorded);
     }
     let handedOff = false;
+    // A hand-off waiting for its companion's busy slot has not been sent: the conversation says it waits, and says
+    // "delegated" once the coordinator reports it sent (Hub #2028).
+    const waits = delegation !== undefined && result.startsWith(WAITING_RECEIPT);
     await this.#append(state.taskId, {role: 'tool', call: question.call, name, result, ok: accepted, effect: id}, active.span.context, current => {
       if (delegation === undefined) return;
       // The conversation says "delegated" only once the core accepted the hand-off; a refused one has no worker's word to wait for, so the answered approval stands again.
-      if (accepted) {this.store.message(current, delegation.id, 'assistant', delegation.text, this.context.clock.now()); handedOff = true;}
-      else if (current.question?.kind === 'delegation') current.question = question;
+      if (accepted) {
+        const text = waits ? waitingText(delegation.text) : delegation.text;
+        if (waits && current.question?.kind === 'delegation') current.question.text = text;
+        this.store.message(current, delegation.id, 'assistant', text, this.context.clock.now()); handedOff = true;
+      } else if (current.question?.kind === 'delegation') current.question = question;
     });
     // An accepted coding hand-off, and any other accepted command, which changes state, ask the title model to check the
     // conversation's title (Hub #2025, #2075), so an issue named only in a brief can lead it. The receipt is a tool result
@@ -967,6 +978,20 @@ export class AssistantEngine {
     await this.#append(state.taskId, {role: 'tool', call: question.call, name: DELEGATE_CODING, result: state.decision, ok: state.decision.startsWith('completed'), effect: `${question.id}-result`}, active.span.context,
       current => {this.store.message(current, `${question.id}-result`, 'tool', state.decision, this.context.clock.now());});
     return {step: state.step, next: 'turn'};
+  }
+  /**
+   * A hand-off that waited for its companion's slot was sent (Hub #2028): the delegation now reads as delegated, and the
+   * conversation says so once. A task that no longer waits on that hand-off is left as it is.
+   */
+  async handOffSent(taskId: string, parent: TraceContext): Promise<void> {
+    await this.outbox.transaction(add => {
+      const task = this.store.task(taskId), question = task?.question;
+      if (task === undefined || terminal(task.status) || question === null || question === undefined || question.kind !== 'delegation' || question.answer !== null
+        || !question.text.startsWith(WAITING_PREFIX)) return;
+      question.text = `Delegated${question.text.slice(WAITING_PREFIX.length)}`.slice(0, 1024);
+      this.store.message(task, `${question.id}-sent`, 'assistant', question.text, this.context.clock.now());
+      this.store.save(task); this.#publish(add, parent);
+    });
   }
   /**
    * Delivers the worker's final word to the task waiting on its delegation and resumes it. A task the engine cannot run

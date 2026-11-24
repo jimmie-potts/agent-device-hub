@@ -25,6 +25,16 @@ export type Delivery = (taskId: string, text: string, parent: TraceContext, evid
 export type HandOff = {requestId: string; taskId: string; companion: CodingCompanion; repository: string; brief: string; expectedRevision: number};
 /** The core's answer for a hand-off sent now, or `waiting` for one held until its companion's slot frees. */
 export type HandOffAnswer = RequestResult | {status: 'waiting'; requestId: string};
+/**
+ * What the coordinator asks the engine (Hub #2028): the companion a task belongs to, so a run is tagged with the
+ * companion that asked; whether a task still waits on this delegation, so a waiting hand-off whose task was cancelled
+ * or ended, even while the coordinator was stopped, is dropped unsent; and the news that a waiting hand-off was sent.
+ */
+export type CodingSeams = {
+  companionOf?: (taskId: string) => CodingCompanion | undefined;
+  awaits?: (taskId: string) => boolean;
+  sent?: (taskId: string, parent: TraceContext) => void;
+};
 type Phase = CodingRunEntry['status'];
 type Active = CodingResponsibility & {companion: CodingCompanion; phase: Phase; wallClockMs: number; cancel: Cancel; settling: boolean};
 const noop = (): void => {};
@@ -35,6 +45,12 @@ const noop = (): void => {};
 export const START_MS = 20_000;
 /** Grace after the dispatch's wall clock before an unanswered run is given up as uncertain. */
 export const GRACE_MS = 120_000;
+/**
+ * The worker reports a run started before its git setup, which takes turns per repository (Hub #2028): one setup is
+ * bounded by the worker's own git deadlines (fetch 120 s, rev-parse and worktree add 60 s each), and a run may wait for
+ * every other slot's setup before its own. That time is added to the grace, so queued setup never spends it.
+ */
+export const SETUP_MS = 240_000 * CODING_WORKER_SLOTS;
 /** At most this many approved hand-offs wait for a slot at once; a further one is refused with `capacity`. */
 export const WAITING_LIMIT = 32;
 /** How long the module waits for the core's answer to a hand-off it dispatches. */
@@ -73,8 +89,9 @@ export class CodingCoordinator {
   readonly #cancelled = new Set<string>();
   #closed = false;
   #starting = false;
-  /** `companionOf` names the companion a task belongs to, so a run is tagged with the companion that asked. */
-  constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly deliver: Delivery, readonly companionOf: (taskId: string) => CodingCompanion | undefined = () => undefined) {
+  readonly #seams: CodingSeams;
+  constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly deliver: Delivery, seams: CodingSeams = {}) {
+    this.#seams = seams;
     this.#store = new CodingStore(context.database());
   }
   inspect(): CodingState {
@@ -97,15 +114,10 @@ export class CodingCoordinator {
   /**
    * What a proposal binds to: whether a worker is connected now and the state revision of the last change to the
    * endpoint or its availability (Hub #2028). Runs starting and ending leave it, so another companion's run never
-   * refuses an approval; a readiness report leaves it too. `busy` says the companion's slot is taken or has a line.
+   * refuses an approval; a readiness report leaves it too.
    */
-  endpoint(companion?: CodingCompanion): {available: boolean; endpointId: string | null; revision: number; busy: boolean} {
-    let busy = false;
-    if (companion !== undefined) {
-      const slot = this.#slotOf(companion);
-      try {busy = this.#busy(slot) || this.#store.waiting().some(record => this.#slotOf(record.companion) === slot);} catch {busy = true;}
-    }
-    return {available: this.#connected(), endpointId: this.#state.endpointId, revision: this.#bound, busy};
+  endpoint(): {available: boolean; endpointId: string | null; revision: number} {
+    return {available: this.#connected(), endpointId: this.#state.endpointId, revision: this.#bound};
   }
   async start(): Promise<void> {
     this.#starting = true;
@@ -166,13 +178,23 @@ export class CodingCoordinator {
     if (!this.#connected() || this.#starting) return;
     let waiting: CodingWaitingRecord[];
     try {waiting = this.#store.waiting();} catch (error) {this.#storageFailure(error); return;}
+    let dropped = false;
     for (const record of waiting) {
       const slot = this.#slotOf(record.companion);
       if (record.sending || this.#busy(slot)) continue;
+      // A task cancelled or ended while its hand-off waited, even while this coordinator was stopped, sends nothing.
+      if (!this.#awaits(record.taskId)) {
+        try {this.#store.unwait(record.operationId); dropped = true;} catch (error) {this.#storageFailure(error, record);}
+        continue;
+      }
       try {this.#store.sending(record.operationId);} catch (error) {this.#storageFailure(error); return;}
       this.#reserved.set(slot, record.operationId);
       void this.#sendWaiting(record, slot);
     }
+    if (dropped) this.#changed();
+  }
+  #awaits(taskId: string): boolean {
+    try {return this.#seams.awaits?.(taskId) ?? true;} catch {return false;}
   }
   async #sendWaiting(record: CodingWaitingRecord, slot: string): Promise<void> {
     let answer: RequestResult;
@@ -182,7 +204,12 @@ export class CodingCoordinator {
     // An answer lost to the module's own stop is left to the next start, which finds the hand-off's fate unknown.
     if (this.#closed || this.context.signal.aborted) return;
     // An accepted dispatch is a run now: its acceptance ended the wait. Any other answer ends the wait without a run.
-    if (answer.status === 'accepted') {this.#drain(); return;}
+    // An accepted dispatch is a run now, and so is one whose answer was lost after the module accepted its run: the run's
+    // own progress settles it. The task's conversation now says the hand-off was sent.
+    if (answer.status === 'accepted' || this.#active.has(record.operationId)) {
+      try {this.#seams.sent?.(record.taskId, {traceparent: record.traceparent});} catch { /* the run goes on; only the conversation line is missing */ }
+      this.#drain(); return;
+    }
     const code = answer.error.error.code, uncertain = answer.status === Outcome.uncertain || code === 'uncertain-result';
     await this.#endWait(record, uncertain ? 'uncertain' : 'failed', uncertain ? 'lost' : `refused: ${code}`);
     this.#drain();
@@ -255,12 +282,13 @@ export class CodingCoordinator {
     const data = command.data;
     if (this.#active.has(data.requestId)) return {status: 'accepted'};
     if (!this.#connected() || this.#state.endpointId !== data.endpointId) return errorBody('unavailable', {detail: 'no coding worker endpoint is available for this dispatch'});
-    if (this.#cancelled.delete(data.taskId)) {
+    // The wait's end, which follows this refusal, forgets the cancel and tells the cancelled task nothing.
+    if (this.#cancelled.has(data.taskId)) {
       try {this.#store.unwait(data.requestId);} catch (error) {this.#storageFailure(error);}
       this.#changed();
       return errorBody('invalid-state', {detail: 'the task was cancelled before its hand-off started'});
     }
-    const companion = this.companionOf(data.taskId);
+    const companion = this.#seams.companionOf?.(data.taskId);
     if (companion === undefined) return errorBody('not-found', {detail: 'the dispatch names no companion task'});
     const slot = this.#slotOf(companion), reserved = this.#reserved.get(slot);
     if (reserved !== data.requestId && this.#busy(slot)) return errorBody('capacity', {detail: 'that companion\'s coding slot is busy'});
@@ -302,7 +330,7 @@ export class CodingCoordinator {
       try {await this.#outcome(active, {result: Outcome.succeeded}, 'observed');} catch (error) {this.#storageFailure(error, active);}
       if (active.phase === 'dispatching') active.phase = 'started';
       this.#changed();
-      active.cancel = this.context.scheduler.after(active.wallClockMs + GRACE_MS, () => {void this.#settle(active, 'uncertain', undefined, 'timeout');});
+      active.cancel = this.context.scheduler.after(active.wallClockMs + GRACE_MS + SETUP_MS, () => {void this.#settle(active, 'uncertain', undefined, 'timeout');});
       return;
     }
     if (!active.started) {await this.#settle(active, 'uncertain', progress.status === 'completed' ? progress.result : progress.result ?? undefined, 'lost', {result: Outcome.uncertain}); return;}

@@ -161,14 +161,22 @@ class Companions {
     // The coding coordinator (Hub #502) is built before the engine, which binds proposals to its revision, and started after it, so a
     // responsibility settled at startup reaches a running engine.
     // Each run is tagged with the companion whose task asked (Hub #2028), read from the engine's saved task.
-    const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(),
-      taskId => this.assistant?.store.task(taskId)?.profile);
+    // A waiting hand-off is sent only while its task still waits on it, so a cancel that the coordinator missed, as during
+    // a stop, still sends nothing.
+    const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
+      companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
+      awaits: taskId => {
+        const task = this.assistant?.store.task(taskId);
+        return task !== undefined && !['succeeded', 'failed', 'cancelled'].includes(task.status) && task.question?.kind === 'delegation' && task.question.answer === null;
+      },
+      sent: (taskId, parent) => {void this.assistant?.handOffSent(taskId, parent).catch(() => {});},
+    });
     this.coding = coding;
     // An approved hand-off goes to the core now when its companion's slot is free, or waits for it (Hub #2028).
     const delegate: AssistantOptions['delegate'] = this.options.delegate ?? ((data, parent) => coding.handOff(data, parent));
     this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context),
       retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries, speak,
-      coding: this.options.coding ?? (profile => coding.endpoint(profile)), delegate, onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
+      coding: this.options.coding ?? (() => coding.endpoint()), delegate, onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();
     await this.preferences.start();

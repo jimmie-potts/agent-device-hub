@@ -21,3 +21,14 @@
 
 - [x] 5.1 docs/coding-worker.md, the companions and event-contracts READMEs, docs/development.md and apps/runtime/UPGRADE.md. Evidence: readback.
 - [x] 5.2 Sync and archive this change. Evidence: `npm run check:workflow` passes.
+
+## 6. Review round 1 on PR 2087
+
+- [x] 6.1 A tool that starts after its run was stopped is killed as it appears; stopped runs keep their slots until they end, and the worker declares its next endpoint only then. Evidence: the new worker test fails with the kill removed and with the slots cleared on close (PR).
+- [x] 6.2 A waiting hand-off is sent only while its task still waits on it. Evidence: the coordinator restart test and the module test with a missed cancel fail without the check (PR).
+- [x] 6.3 An older core refuses `coding-endpoint/2.2` as `unsupported-version`; the rollback note covers rows caught mid-dispatch. Evidence: readback.
+- [x] 6.4 Unused `known()` and `busy` removed. Evidence: build and lint.
+- [x] 6.5 Tests for the per-repository git setup order and for a cancel while a waiting hand-off's dispatch is on its way. Evidence: each fails with its code removed (PR).
+- [x] 6.6 A waiting hand-off reads "Waiting to delegate" until it is sent, then "Delegated". Evidence: `coding-slots.test.js` and the browser journey; the module test fails without it.
+- [x] 6.7 A lost answer after the module accepted a waiting hand-off's run keeps the run. Evidence: the coordinator test fails without the check.
+- [x] 6.8 The coordinator's deadline after a start adds the worker's queued git setup bound. Evidence: the timeout test fails without it.

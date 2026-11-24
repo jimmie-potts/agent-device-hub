@@ -220,9 +220,10 @@ const comparable = (value: string): string => collapse(trimQuotes(collapse(value
   .replace(new RegExp(`\\b${HOME_REPOSITORY}#`, 'giu'), '#').toLocaleLowerCase();
 /**
  * A saved coding hand-off message's fixed wrapper, so an echo of the brief alone is caught: the approval question
- * ("Delegate to the coding worker in <repo>: <brief>") and the accepted hand-off ("Delegated to ..."), as the engine words them.
+ * ("Delegate to the coding worker in <repo>: <brief>"), the accepted hand-off ("Delegated to ...") and one waiting for its
+ * companion's busy slot ("Waiting to delegate to ...", Hub #2028), as the engine words them.
  */
-const HANDED_OFF = /^Delegated? to the coding worker in [^:\s]+: /u;
+const HANDED_OFF = /^(?:Delegated? to|Waiting to delegate to) the coding worker in [^:\s]+: /u;
 /** The answer with the prompt's entity escapes undone, so an echo the model copied in escaped form is caught too. */
 const unescaped = (value: string): string => value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');
 /** The words of a text as the echo guard reads them: entity escapes undone, lower case, letters and digits only. */

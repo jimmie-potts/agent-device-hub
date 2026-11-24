@@ -47,10 +47,6 @@ export class CodingStore {
     });
   }
   uncertain(): CodingResponsibility | undefined {return this.records('uncertain').at(-1);}
-  /** Whether this operation was ever accepted, so a waiting hand-off is never recorded twice. */
-  known(operationId: string): boolean {
-    return this.database.prepare('SELECT 1 FROM companion_coding WHERE operation_id=? UNION ALL SELECT 1 FROM companion_coding_waiting WHERE operation_id=?').get(operationId, operationId) !== undefined;
-  }
   wait(record: Omit<CodingWaitingRecord, 'sending'>): void {
     this.database.prepare('INSERT INTO companion_coding_waiting(operation_id,task_id,companion,repository,brief,traceparent) VALUES(?,?,?,?,?,?)')
       .run(record.operationId, record.taskId, record.companion, record.repository, record.brief, record.traceparent);

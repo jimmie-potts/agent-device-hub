@@ -3,13 +3,14 @@ import {test, type TestContext} from 'node:test';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingDispatch, type CodingProgress, type CodingReadiness, type CodingResult, type CodingState, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import {CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingDispatch, type CodingProgress, type CodingReadiness, type CodingResult, type CodingState, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, Outbox, type Command, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import {CodingCoordinator, START_MS, describeResult, type HandOffAnswer} from '../src/coding/coordinator.js';
+import {CodingCoordinator, GRACE_MS, SETUP_MS, START_MS, describeResult, type HandOffAnswer} from '../src/coding/coordinator.js';
 import {initializeRevision} from '../src/revision.js';
+import {slotBusy} from '../src/frontend/coding-status.js';
 const parent = {traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'};
 async function until(check: () => boolean): Promise<void> {
   for (let i = 0; i < 100; i += 1) {if (check()) return; await new Promise(resolve => setTimeout(resolve, 5));}
@@ -26,19 +27,25 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
   let workReply: 'accepted' | 'capacity' = 'accepted';
   await worker.respond<CodingWork>('bunny.cmd.coding-work.*', command => {work.push(command); return workReply === 'accepted' ? {status: 'accepted'} : errorBody('capacity');});
   // The core's dispatcher forwards a dispatch to the module's coding-run responder; a test can make it refuse or never answer.
-  let coreReply: 'forward' | 'refuse' | 'held' = 'forward', release = (): void => {};
+  // 'held' answers by refusal only when released; 'held-forward' forwards when released; 'lost-answer' forwards and then
+  // answers uncertain, as a reply lost after the module accepted the run.
+  let coreReply: 'forward' | 'refuse' | 'held' | 'held-forward' | 'lost-answer' = 'forward', release = (): void => {};
   const dispatched: string[] = [];
   await core.respond<CodingDispatch>('bunny.cmd.coding-dispatch.assistant', async command => {
     dispatched.push(command.data.requestId);
     if (coreReply === 'refuse') return errorBody('unavailable');
     // A held dispatch is answered only when the test releases it, by refusal, after the module that sent it stopped.
     if (coreReply === 'held') {await new Promise<void>(resolve => {release = resolve;}); return errorBody('unavailable');}
+    if (coreReply === 'held-forward') await new Promise<void>(resolve => {release = resolve;});
+    const lost = coreReply === 'lost-answer';
     const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data},
       {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
+    if (lost) return errorBody('uncertain-result');
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
   });
   await core.subscribe<{requestId: string; result: string; evidence: string}>('bunny.event.coding-run.assistant', message => {outcomes.push(message.data);});
   const published: {dataschema: string; data: CodingState}[] = [];
+  const finished = new Set<string>(), sent: string[] = [];
   await core.subscribe<CodingState>('bunny.state.coding-state.coding', message => {published.push({dataschema: message.dataschema, data: message.data});});
   const dir = await mkdtemp(join(tmpdir(), 'coding-coordinator-'));
   let engine: CodingCoordinator | undefined;
@@ -48,13 +55,15 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     const outbox = new Outbox({sdk: context.sdk, database: context.database(), clock, validator, log: context.log, trace: context.trace});
     // A task's companion is in its synthetic ID here; the module reads it from the engine's saved task.
     engine = new CodingCoordinator(context, outbox, (taskId, text, given, _evidence, startup) => {deliveries.push({taskId, text, parent: given, startup}); return Promise.resolve();},
-      taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny');
+      {companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
+        // A task waits on its hand-off until the test ends it, as a cancel the coordinator never heard of would.
+        awaits: taskId => !finished.has(taskId), sent: taskId => {sent.push(taskId);}});
     await engine.start(); await outbox.republish();
   }, stop: () => engine?.stop() ?? Promise.resolve()}, {bus, stateDir: dir, clock, scheduler});
   let host = make(); await host.start();
   t.after(async () => {await host.stop(); await Promise.all([core.close(), worker.close(), gateway.close(), module.close()]); await rm(dir, {recursive: true, force: true});});
   let n = 0;
-  return {owner: () => engine ?? assert.fail('started'), work, deliveries, outcomes, dispatched, refuseWork: () => {workReply = 'capacity';}, core: (mode: typeof coreReply) => {coreReply = mode;}, release: () => {release();},
+  return {owner: () => engine ?? assert.fail('started'), work, deliveries, outcomes, dispatched, finished, sent, busy: (companion: CodingCompanion) => slotBusy(engine?.inspect(), companion), refuseWork: () => {workReply = 'capacity';}, core: (mode: typeof coreReply) => {coreReply = mode;}, release: () => {release();},
     // An approved hand-off from a companion's task, bound to the endpoint revision the proposal saw.
     handOff: (taskId: string, expectedRevision = engine?.endpoint().revision ?? 0): Promise<HandOffAnswer> => (engine ?? assert.fail('started')).handOff({requestId: `${taskId}-step-1`, taskId,
       companion: /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny', repository: 'agent-device-hub', brief: 'Add a test.', expectedRevision}, parent),
@@ -85,7 +94,7 @@ void test('a dispatch reaches the enabled worker once, its start settles the tra
   assert.equal((await w.dispatch()).status, 'accepted');
   await until(() => w.work.length === 1);
   const start = w.work[0]?.data; assert.ok(start?.action === 'start'); assert.equal(start.taskId, 'task-1'); assert.equal(start.brief, 'Add a test.');
-  assert.equal(w.owner().inspect().active?.status, 'dispatching'); assert.equal(w.owner().endpoint().available, true); assert.equal(w.owner().endpoint('bunny').busy, true);
+  assert.equal(w.owner().inspect().active?.status, 'dispatching'); assert.equal(w.owner().endpoint().available, true); assert.equal(w.busy('bunny'), true);
   const busy = await w.dispatch('task-2'); assert.equal(busy.status === 'rejected' && busy.error.error.code, 'capacity');
   await w.progress({operationId: start.operationId, status: 'started'});
   await until(() => w.outcomes.length === 1);
@@ -95,7 +104,7 @@ void test('a dispatch reaches the enabled worker once, its start settles the tra
   await until(() => w.deliveries.length === 1);
   assert.equal(w.deliveries[0]?.taskId, 'task-1'); assert.match(w.deliveries[0]?.text ?? '', /^completed \(tested-candidate\): Added the generator/);
   assert.match(w.deliveries[0]?.text ?? '', /changed files: scripts\/readout\.mjs/); assert.equal(w.outcomes.length, 1, 'the run reports one tracked outcome');
-  assert.equal(w.owner().inspect().active, null); assert.equal(w.owner().endpoint().available, true); assert.equal(w.owner().endpoint('bunny').busy, false);
+  assert.equal(w.owner().inspect().active, null); assert.equal(w.owner().endpoint().available, true); assert.equal(w.busy('bunny'), false);
   await w.progress({operationId: start.operationId, status: 'completed', result: result()}); await w.advance(); assert.equal(w.deliveries.length, 1, 'a late duplicate is ignored');
 });
 
@@ -216,7 +225,7 @@ void test('three companions hand off at once, each run tagged with its companion
   assert.deepEqual(state.runs?.map(run => [run.taskId, run.companion, run.status]), [['task-bunny-1', 'bunny', 'dispatching'], ['task-reachy-1', 'reachy', 'dispatching'], ['task-microduck-1', 'microduck', 'dispatching']]);
   assert.equal(state.active?.taskId, 'task-bunny-1', 'older readers see the oldest run');
   // B.U.N.N.Y.'s second hand-off waits; nothing reaches the core or the worker for it.
-  assert.equal(w.owner().endpoint('bunny').busy, true); assert.equal(w.owner().endpoint('bunny').available, true);
+  assert.equal(w.busy('bunny'), true); assert.equal(w.owner().endpoint().available, true);
   assert.equal((await w.handOff('task-bunny-2')).status, 'waiting');
   assert.deepEqual(w.owner().inspect().waiting, [{operationId: 'task-bunny-2-step-1', taskId: 'task-bunny-2', companion: 'bunny'}]);
   assert.equal(w.dispatched.includes('task-bunny-2-step-1'), false);
@@ -230,6 +239,7 @@ void test('three companions hand off at once, each run tagged with its companion
   await w.progress21({operationId: 'task-bunny-1-step-1', status: 'failed', reason: 'exit', result: null});
   await turned(() => starts(w.work).length === 4, () => w.owner().inspect());
   const next = starts(w.work)[3]?.data; assert.ok(next?.action === 'start'); assert.equal(next.taskId, 'task-bunny-2'); assert.equal(next.companion, 'bunny');
+  await turned(() => w.sent.length === 1); assert.deepEqual(w.sent, ['task-bunny-2'], 'the engine hears the waiting hand-off was sent');
   assert.deepEqual(w.owner().inspect().waiting, []);
   assert.deepEqual(w.owner().inspect().runs?.map(run => run.taskId), ['task-microduck-1', 'task-bunny-2']);
   await w.advance(); assert.equal(w.dispatched.filter(id => id === 'task-bunny-2-step-1').length, 1, 'dispatched once');
@@ -237,12 +247,12 @@ void test('three companions hand off at once, each run tagged with its companion
 
 void test('a proposal binds to the worker connection, so another companion\'s run starting or ending never refuses it; a changed endpoint does', async t => {
   const w = await world(t); await w.enable22();
-  const bound = w.owner().endpoint('bunny').revision;
+  const bound = w.owner().endpoint().revision;
   assert.equal((await w.handOff('task-reachy-1')).status, 'accepted');
   await turned(() => starts(w.work).length === 1);
   await w.progress21({operationId: 'task-reachy-1-step-1', status: 'started'}); await turned(() => w.outcomes.length === 1);
   assert.notEqual(w.owner().inspect().revision, bound, 'the state moved');
-  assert.equal(w.owner().endpoint('bunny').revision, bound, 'what a proposal binds to did not');
+  assert.equal(w.owner().endpoint().revision, bound, 'what a proposal binds to did not');
   assert.equal((await w.handOff('task-bunny-1', bound)).status, 'accepted', 'another companion\'s run never refuses an approval');
   // A worker that went away and came back is another endpoint: an approval bound to the old one is refused.
   await w.lost(); await turned(() => w.owner().inspect().endpointId === null);
@@ -288,7 +298,10 @@ void test('a run that outlives its wall clock ends uncertain alone, and the othe
   // Reachy's run never reported a start: it is uncertain at its start deadline; B.U.N.N.Y.'s keeps its wall clock.
   await turned(() => w.deliveries.length === 1);
   assert.equal(w.deliveries[0]?.taskId, 'task-reachy-1'); assert.deepEqual(w.owner().inspect().runs?.map(run => run.taskId), ['task-bunny-1']);
-  await w.advance(130_000); await turned(() => w.deliveries.length === 2);
+  // Queued git setup on the worker is not charged to the grace (Hub #2028): the plain grace has passed, the run still holds.
+  await w.advance(GRACE_MS + 10_000); await w.advance();
+  assert.equal(w.deliveries.length, 1, 'not given up while queued setup may still run');
+  await w.advance(SETUP_MS); await turned(() => w.deliveries.length === 2);
   assert.match(w.deliveries[1]?.text ?? '', /^uncertain \(timeout\)/); assert.deepEqual(w.owner().inspect().runs, []);
 });
 
@@ -352,7 +365,7 @@ void test('an older worker that declares no slots holds one run for every compan
   assert.equal(w.owner().inspect().slots, null);
   assert.equal((await w.handOff('task-bunny-1')).status, 'accepted'); await turned(() => starts(w.work).length === 1);
   assert.equal(starts(w.work)[0]?.dataschema, 'https://bunny.invalid/events/coding-work/2.0'); assert.equal('companion' in (starts(w.work)[0]?.data ?? {}), false);
-  assert.equal(w.owner().endpoint('reachy').busy, true);
+  assert.equal(w.busy('reachy'), true);
   assert.equal((await w.handOff('task-reachy-1')).status, 'waiting');
   await w.progress({operationId: 'task-bunny-1-step-1', status: 'started'});
   await w.progress({operationId: 'task-bunny-1-step-1', status: 'completed', result: result()});
@@ -369,4 +382,54 @@ void test('the published state is coding-state 2.2 and validates with every run 
   assert.equal(last?.dataschema, 'https://bunny.invalid/events/coding-state/2.2');
   assert.equal(validator.validate({specversion: '1.0', bunnyprofile: '2.0', id: 'state-1', source: 'bunny/modules/companions', kind: 'state', type: 'org.bunny.coding-state.updated', subject: 'coding',
     time: new Date().toISOString(), datacontenttype: 'application/json', dataschema: last?.dataschema, traceparent: parent.traceparent, data: last?.data}).ok, true);
+});
+
+void test('a waiting hand-off whose task ended while the coordinator was stopped is dropped at the next send, never dispatched', async t => {
+  const w = await world(t); await w.enable22();
+  await w.handOff('task-bunny-1'); await turned(() => starts(w.work).length === 1);
+  assert.equal((await w.handOff('task-bunny-2')).status, 'waiting');
+  // The owner's cancel commits on the task while the coordinator is stopped, so its own cancel never runs.
+  await w.host().stop(); w.finished.add('task-bunny-2');
+  await w.restart();
+  await turned(() => w.deliveries.length === 1);
+  assert.deepEqual(w.owner().inspect().waiting?.map(entry => entry.taskId), ['task-bunny-2'], 'kept until a send would take it');
+  await w.enable22(); await w.advance();
+  await turned(() => w.owner().inspect().waiting?.length === 0);
+  assert.equal(w.dispatched.includes('task-bunny-2-step-1'), false, 'never dispatched');
+  assert.equal(starts(w.work).length, 1); assert.equal(w.deliveries.length, 1, 'the ended task hears nothing more');
+});
+
+void test('a cancel while a waiting hand-off\'s dispatch is on its way refuses it on arrival, so nothing runs', async t => {
+  const w = await world(t); await w.enable22();
+  await w.handOff('task-bunny-1'); await turned(() => starts(w.work).length === 1);
+  await w.handOff('task-bunny-2');
+  w.core('held-forward');
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'started'});
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'completed', result: result()});
+  await turned(() => w.dispatched.includes('task-bunny-2-step-1'));
+  w.owner().cancel('task-bunny-2');
+  w.release(); w.core('forward');
+  await turned(() => w.owner().inspect().waiting?.length === 0);
+  await w.advance();
+  assert.equal(starts(w.work).length, 1, 'no start reached the worker');
+  assert.deepEqual(w.owner().inspect().runs, []);
+  assert.deepEqual(w.deliveries.map(delivery => delivery.taskId), ['task-bunny-1'], 'the cancelled task is not told anything');
+  assert.deepEqual(w.sent, []);
+});
+
+void test('a waiting hand-off whose run the module accepted keeps its run when the dispatch answer is lost, and its result still arrives', async t => {
+  const w = await world(t); await w.enable22();
+  await w.handOff('task-bunny-1'); await turned(() => starts(w.work).length === 1);
+  await w.handOff('task-bunny-2');
+  w.core('lost-answer');
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'started'});
+  await w.progress21({operationId: 'task-bunny-1-step-1', status: 'completed', result: result()});
+  await turned(() => starts(w.work).length === 2);
+  await turned(() => w.sent.length === 1);
+  assert.deepEqual(w.deliveries.map(delivery => delivery.taskId), ['task-bunny-1'], 'no uncertain word for the running hand-off');
+  w.core('forward');
+  await w.progress21({operationId: 'task-bunny-2-step-1', status: 'started'});
+  await w.progress21({operationId: 'task-bunny-2-step-1', status: 'completed', result: result()});
+  await turned(() => w.deliveries.length === 2);
+  assert.match(w.deliveries[1]?.text ?? '', /^completed \(tested-candidate\)/);
 });

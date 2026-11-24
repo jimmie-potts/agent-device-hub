@@ -14,7 +14,7 @@ import type {AssistantProfile, AssistantTaskSummary} from '@jimmie-potts/event-c
 import type {CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {InProcessBus, type Command, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import {createCompanionsModule} from '../src/module.js';
+import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
 
 const PROFILES = ['bunny', 'reachy', 'microduck'] as const;
@@ -30,7 +30,7 @@ const delegating = (profile: AssistantProfile): ModelProvider => ({name: 'synthe
 const result = (summary: string): CodingResult => ({outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: [], checks: [],
   findings: [], limitations: [], summary, sessionId: null, usage: null});
 
-async function world(context: TestContext) {
+async function world(context: TestContext, options: CompanionsOptions = {}) {
   let now = Date.parse('2026-11-24T18:00:00Z');
   const timers = new Map<number, {due: number; callback: () => void}>(); let timerId = 0;
   const time = {clock: {now: () => now}, scheduler: {after: (delay: number, callback: () => void) => {const id = ++timerId; timers.set(id, {due: now + delay, callback}); return () => {timers.delete(id);};}}};
@@ -46,7 +46,7 @@ async function world(context: TestContext) {
   });
   await worker.respond<CodingWork>('bunny.cmd.coding-work.*', command => {work.push(command); return {status: 'accepted'};});
   const make = () => {
-    const module = createCompanionsModule({timeZone: 'America/Chicago', tools: ['delegate_coding'], provider: delegating('bunny'), profileProviders: {reachy: delegating('reachy'), microduck: delegating('microduck')}});
+    const module = createCompanionsModule({timeZone: 'America/Chicago', tools: ['delegate_coding'], provider: delegating('bunny'), profileProviders: {reachy: delegating('reachy'), microduck: delegating('microduck')}, ...options});
     return {module, host: new ModuleHarness(module, {bus, stateDir: dir, section: {}, ...time})};
   };
   let {module, host} = make();
@@ -136,6 +136,9 @@ void test('with an older worker\'s one slot, an approved hand-off waits busy, Ca
   const waitingText = JSON.stringify(await w.messages('reachy'));
   assert.match(waitingText, /accepted: the coding worker is busy, so this hand-off waits for Reachy's slot/);
   assert.doesNotMatch(waitingText, /No coding worker is connected/);
+  // The conversation says the hand-off waits; it says "delegated" only once it is sent.
+  assert.match(waitingText, /Waiting to delegate to the coding worker in agent-device-hub: Synthetic reachy brief\./);
+  assert.doesNotMatch(waitingText, /Delegated to the coding worker/);
   assert.equal(w.dispatched.length, 1, 'nothing left for the waiting hand-off');
   // Cancel removes it and sends nothing.
   const reachyTask = w.task('reachy')?.taskId ?? assert.fail('reachy task');
@@ -159,5 +162,28 @@ void test('with an older worker\'s one slot, an approved hand-off waits busy, Ca
   await w.progress({operationId: second.operationId, status: 'started'});
   await w.progress({operationId: second.operationId, status: 'completed', result: result('Synthetic microduck result.')});
   await settle(() => w.task('microduck')?.status === 'succeeded');
-  assert.match(JSON.stringify(await w.messages('microduck')), /Synthetic microduck result/);
+  const microduck = JSON.stringify(await w.messages('microduck'));
+  assert.match(microduck, /Synthetic microduck result/);
+  assert.ok(microduck.indexOf('Waiting to delegate to the coding worker') < microduck.indexOf('Delegated to the coding worker'), 'the line changes from waiting to delegated once sent');
+});
+
+void test('a waiting hand-off whose task was cancelled without the coordinator hearing it is never sent', {timeout: 30_000}, async context => {
+  // The engine commits the cancel; the call that would remove the waiting hand-off is lost, as during a stop.
+  const w = await world(context, {onCancelled: () => {}});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic bunny request')).status, 'accepted'); await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  assert.equal((await w.send('reachy', 'Synthetic reachy request')).status, 'accepted'); await w.approved('reachy');
+  await settle(() => w.coding().waiting?.length === 1);
+  const reachyTask = w.task('reachy')?.taskId ?? assert.fail('reachy task');
+  assert.equal((await w.control('cancel', {taskId: reachyTask})).status, 'accepted');
+  await settle(() => w.task('reachy')?.status === 'cancelled');
+  assert.equal(w.coding().waiting?.length, 1, 'the coordinator never heard the cancel');
+  const bunnyRun = w.starts()[0]?.data.operationId;
+  await w.progress({operationId: bunnyRun, status: 'started'});
+  await w.progress({operationId: bunnyRun, status: 'completed', result: result('Synthetic bunny result.')});
+  await settle(() => w.coding().waiting?.length === 0 && w.task('bunny')?.status === 'succeeded');
+  for (let turn = 0; turn < 50; turn += 1) await new Promise(resolve => {setImmediate(resolve);});
+  assert.equal(w.starts().length, 1, 'the cancelled hand-off was never sent'); assert.equal(w.dispatched.length, 1);
 });

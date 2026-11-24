@@ -558,7 +558,11 @@ approval says so. Once approved, such a hand-off waits, saved in the store and
 first in first out per slot, and the tool result says the coding worker is busy
 and the hand-off waits for that companion's slot; it is sent once, through the
 tracked dispatcher with its own request ID, when the slot frees and a worker is
-selected. **Cancel task** removes a waiting hand-off and sends nothing. A
+selected. Until then the conversation says "Waiting to delegate to the coding
+worker in …", and "Delegated to …" once it is sent. **Cancel task** removes a
+waiting hand-off and sends nothing; a hand-off is also sent only while its task
+still waits on it, so a cancel the coordinator missed, as during a stop, still
+sends nothing. A
 waiting hand-off keeps its place across a restart; one whose dispatch had left
 without its acceptance recorded is uncertain at the next start and never sent
 again. A dispatch the core refuses ends the wait and reaches the task as

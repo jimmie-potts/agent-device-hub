@@ -108,6 +108,9 @@ export async function codingSlotsJourney(browser: Browser, shots?: string): Prom
     const delegated = conversation.getByRole('article', {name: 'Delegated work', exact: true});
     await delegated.getByText(/^Waiting for the coding worker: it is busy, and this hand-off starts when Reachy's slot frees\. Nothing has been sent yet; Cancel task removes it\.$/).waitFor();
     await conversation.getByRole('button', {name: 'Cancel task', exact: true}).waitFor();
+    // The conversation says the hand-off waits; "Delegated" comes only once it is sent.
+    await conversation.getByText('Waiting to delegate to the coding worker in agent-device-hub: Please delegate: another synthetic test for Reachy.', {exact: true}).first().waitFor();
+    assert.equal(await conversation.getByText('Delegated to the coding worker in agent-device-hub: Please delegate: another synthetic test for Reachy.', {exact: true}).count(), 0);
     await detailsToggle.click();
     await details.getByText('Connected, 1 of 1 slot busy; 1 hand-off waiting', {exact: true}).waitFor();
     await shot(page, '04-hand-off-waiting');
@@ -119,6 +122,7 @@ export async function codingSlotsJourney(browser: Browser, shots?: string): Prom
     await report(older, {operationId: bunnyRun.operationId, status: 'completed', result: result('Synthetic older-worker result.')});
     await waitFor(() => starts().length === 4, 'the waiting hand-off was sent when the slot freed');
     await delegated.getByText(/^Waiting for the coding worker on your computer\./).waitFor();
+    await conversation.getByText('Delegated to the coding worker in agent-device-hub: Please delegate: another synthetic test for Reachy.', {exact: true}).first().waitFor();
     const reachyRun = starts()[3] ?? assert.fail('Reachy start');
     assert.equal(reachyRun.brief, 'Please delegate: another synthetic test for Reachy.');
     await report(older, {operationId: reachyRun.operationId, status: 'started'});

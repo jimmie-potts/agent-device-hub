@@ -275,8 +275,8 @@ for the running one to end instead of being refused, and the page shows it as
 waiting.
 
 **This worker with an older core** cannot declare. The older core refuses
-`coding-endpoint/2.2` as `invalid-message`, so the worker's first start ends
-with `coding-worker-enable-refused: invalid-message` and status 1, and under
+`coding-endpoint/2.2` as `unsupported-version`, so the worker's first start
+ends with `coding-worker-enable-refused: unsupported-version` and status 1, and under
 launchd every restart is refused the same way. No run starts and nothing is
 lost. Upgrade the core, or start the worker from its earlier release.
 
@@ -284,8 +284,8 @@ lost. Upgrade the core, or start the worker from its earlier release.
 
 - When the core restarts, the worker's stream drops and the worker stops each
   run it holds. At start the core settles each unanswered run as uncertain and
-  tells its task, without a title check. Nothing is resent. The worker then
-  declares a fresh endpoint with every slot free.
+  tells its task, without a title check. Nothing is resent. Once the stopped
+  runs have ended, the worker declares a fresh endpoint with every slot free.
 - When the worker is replaced, stopping it declares its endpoint off and the
   core settles each of its runs as uncertain. To cut no run, replace the worker
   while Conversation details say the coding worker is connected and idle.
@@ -300,7 +300,10 @@ declaration. The earlier core ignores `companion_coding_waiting`, so a hand-off
 waiting there would never be sent and its task would keep waiting on the
 delegation. Before returning, wait until Conversation details show no hand-off
 waiting, or cancel the tasks whose hand-offs wait, which removes them unsent.
-A row left behind is sent if this release is installed again.
+If this release is installed again, a row left behind is sent only while its
+task still waits on that hand-off; one whose task was cancelled or ended in the
+meantime is dropped unsent. A row caught mid-dispatch at the return is ended
+uncertain at the first start and is never sent.
 
 ## Conversation companions (#2054)
 

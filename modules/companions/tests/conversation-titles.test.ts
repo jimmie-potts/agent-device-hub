@@ -80,6 +80,8 @@ void test('a generated title never repeats text the prompt carried, and the owne
   // The approval question words the hand-off as "Delegate to"; a declined or refused hand-off is checked the same way.
   assert.equal(generatedTitle('#2025 Fix the stale session title shown on the hallway Tidbyt after a rename',
     [assistant(`Delegate to the coding worker in agent-device-hub: ${titleBrief}`)]), undefined, '#N and an approval\'s brief');
+  // A hand-off waiting for its companion's busy slot is worded "Waiting to delegate to" until it is sent (Hub #2028).
+  assert.equal(generatedTitle('Fix the timer test', [assistant('Waiting to delegate to the coding worker in agent-device-hub: Fix the timer test.')]), undefined, 'a waiting hand-off\'s brief');
   // Uncut answers, which only the brief rules can catch: equality with the approval's brief, and a six-word run of it.
   assert.equal(generatedTitle('Fix the timer test', [assistant('Delegate to the coding worker in agent-device-hub: Fix the timer test.')]), undefined,
     'a short answer equal to an approval\'s brief');
@@ -717,7 +719,7 @@ void test('a hand-off that waits for its companion\'s busy slot is an accepted h
     : done('Handed off.'))};
   const provider = titler([titled('Timer question'), titled('#2041 Flaky timer test')]);
   const w = await world(context, {provider: turnModel, titleProvider: provider, tools: ['delegate_coding'],
-    coding: () => ({available: true, endpointId: 'worker', revision: 1, busy: true}),
+    coding: () => ({available: true, endpointId: 'worker', revision: 1}),
     delegate: data => Promise.resolve({status: 'waiting' as const, requestId: data.requestId})});
   await w.start('Can the worker look at the flaky timer test?');
   await w.titled(1);

@@ -203,7 +203,7 @@ Upgrade the core before the worker. A worker from Hub #1743 on declares with
 `coding-endpoint/2.1` and reports `coding-progress/2.1`, and a worker from Hub
 #2028 on declares with `coding-endpoint/2.2`; an older core refuses them, so
 such a worker cannot declare until the core knows them. Its first start ends
-with `coding-worker-enable-refused: invalid-message`. A core from #2028 on
+with `coding-worker-enable-refused: unsupported-version`. A core from #2028 on
 works with an older worker as one slot for every companion (see
 [the runtime upgrade procedure](../apps/runtime/UPGRADE.md)).
 
@@ -263,8 +263,9 @@ works with an older worker as one slot for every companion (see
    and declares a fresh endpoint, trying again with backoff while the core
    still names the old one, which the core then shows as the new worker; each
    task that was running is ended uncertain and its task says so, and the
-   worker never resends. The worker stops those runs and frees their slots for
-   the fresh endpoint at once; a stopped run's report is not sent on it.
+   worker never resends. The worker stops those runs, which keep their slots
+   until they end, and declares the fresh endpoint once they have; a stopped
+   run's report is not sent on it.
 
 ## One credential, one endpoint
 

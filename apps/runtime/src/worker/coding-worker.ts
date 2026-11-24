@@ -96,7 +96,7 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
 
 /** One run in one of the worker's slots, with the companion that asked and the endpoint that started it. */
 type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; child: ChildProcess | undefined; cancelled: boolean;
-  timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean};
+  timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>};
 export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean};
 export type Harness = {
   /**
@@ -278,6 +278,8 @@ export async function projectSettingsRefusal(worktree: string): Promise<string |
   return (await readProjectSettings(worktree)).refusal;
 }
 
+/** Runs one git command in `cwd`; the worker's default, and the seam a test uses to watch the setup's ordering. */
+export type GitRunner = (cwd: string, args: string[], options?: {timeoutMs?: number; trim?: boolean}) => Promise<string>;
 async function git(cwd: string, args: string[], {timeoutMs = 60_000, trim = true}: {timeoutMs?: number; trim?: boolean} = {}): Promise<string> {
   const {stdout} = await run('git', ['-C', cwd, ...args], {timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024});
   return trim ? stdout.trim() : stdout;
@@ -297,16 +299,18 @@ export class CodingWorker {
   readonly #harness: Harness;
   readonly #connect: typeof connectRemote;
   readonly #now: () => number;
+  readonly #git: GitRunner;
   /** What the declaration carries: the latest readiness probe and the limit windows the latest run reported. */
   #readiness: CodingReadiness | undefined;
   #limits: {windows: CodingLimitWindow[]; atMs: number} | undefined;
   /** `log` is the process's own line writer, owned by the entry point; the library writes nothing itself. */
   constructor(readonly configuration: WorkerConfiguration, readonly token: string, harness?: Harness, readonly log: (line: string) => void = () => {}, connect: typeof connectRemote = connectRemote,
-    now: () => number = Date.now) {
+    now: () => number = Date.now, runGit: GitRunner = git) {
     this.#harness = harness ?? claudeHarness(configuration.claude.executable, process.env,
       {...(configuration.claude.environment === undefined ? {} : {environment: configuration.claude.environment}), ...(configuration.repositories[0] === undefined ? {} : {probeCwd: configuration.repositories[0].path})});
     this.#connect = connect;
     this.#now = now;
+    this.#git = runGit;
   }
   /** The readiness this worker last reported, or would report now if it has not probed yet. */
   get readiness(): CodingReadiness | undefined {return this.#readiness === undefined ? undefined : structuredClone(this.#readiness);}
@@ -358,6 +362,10 @@ export class CodingWorker {
     this.#redeclaring = true;
     try {
       for (let attempt = 0; attempt < REDECLARE_ATTEMPTS && !this.#stopping; attempt += 1) {
+        // The runs the lost endpoint started were stopped and still hold their slots until they end; the fresh endpoint
+        // is declared once they have, so it starts with every slot free and no companion ever has two runs.
+        await Promise.all([...this.#running.values()].map(running => running.ended));
+        if (this.#stopping) return;
         try {await this.#declare(); return;} catch { /* refused, timed out or lost again: wait and try once more */ }
         await new Promise<void>(resolvePromise => {setTimeout(resolvePromise, REDECLARE_MS * 2 ** attempt).unref();});
       }
@@ -379,9 +387,9 @@ export class CodingWorker {
     const endpoint = await participant.openEndpoint<CodingWork>({family: 'coding-work', respond: command => this.#work(command), onClosed: () => {
       if (this.#endpoint === opened) this.#endpoint = undefined;
       this.log('coding-worker endpoint closed; the running tasks, if any, are lost to the core and will be stopped');
-      // The core has given these runs up as uncertain, so their slots are free for the next endpoint at once; each run
-      // still ends here, and its report goes nowhere, since the endpoint that started it is gone.
-      this.#stopAll(); this.#running.clear();
+      // The core gives these runs up as uncertain. Each is stopped and keeps its slot, where a cancel or stop() still
+      // reaches it, until it ends; its report goes nowhere, since the endpoint that started it is gone.
+      this.#stopAll();
     }}).catch((error: unknown) => {throw error instanceof SdkError ? new Error(`coding-worker-endpoint-refused: ${error.body.error.code}`) : error;});
     opened = endpoint;
     this.#endpoint = endpoint;
@@ -426,10 +434,13 @@ export class CodingWorker {
     if (data.companion !== undefined && [...this.#running.values()].some(running => running.companion === data.companion)) return errorBody('capacity', {detail: 'that companion\'s slot is busy'});
     const repository = this.configuration.repositories.find(entry => entry.name === data.repository);
     if (repository === undefined) return errorBody('invalid-request', {detail: 'the repository is not on the worker\'s allowlist'});
-    const running: Running = {operationId: data.operationId, companion: data.companion, endpoint: this.#endpoint, child: undefined, cancelled: false, timer: undefined};
+    let end = (): void => {};
+    const running: Running = {operationId: data.operationId, companion: data.companion, endpoint: this.#endpoint, child: undefined, cancelled: false, timer: undefined,
+      ended: new Promise<void>(resolvePromise => {end = resolvePromise;})};
     this.#running.set(running.operationId, running);
     queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds).finally(() => {
       if (this.#running.get(running.operationId) === running) this.#running.delete(running.operationId);
+      end();
       if (running.limitsChanged === true) void this.#refresh();
     });});
     return {status: 'accepted'};
@@ -473,11 +484,11 @@ export class CodingWorker {
       // Runs on the same repository each get their own fresh worktree (Hub #2028); their git setup takes turns.
       ({worktree, base} = await this.#serially(repository.path, async () => {
         await stat(join(repository.path, '.git'));
-        try {await git(repository.path, ['fetch', '--quiet', 'origin', 'main'], {timeoutMs: 120_000});} catch {this.log('coding-worker: fetch failed; using the local origin/main');}
-        const revision = await git(repository.path, ['rev-parse', 'origin/main']), checked = SHA.test(revision) ? revision : null;
+        try {await this.#git(repository.path, ['fetch', '--quiet', 'origin', 'main'], {timeoutMs: 120_000});} catch {this.log('coding-worker: fetch failed; using the local origin/main');}
+        const revision = await this.#git(repository.path, ['rev-parse', 'origin/main']), checked = SHA.test(revision) ? revision : null;
         const root = join(repository.path, '.local', 'worktrees'); await mkdir(root, {recursive: true, mode: 0o700});
         const fresh = join(root, `bunny-${taskId.slice(0, 8)}-${randomUUID().slice(0, 8)}`);
-        await git(repository.path, ['worktree', 'add', '--detach', '--quiet', fresh, checked ?? 'origin/main']);
+        await this.#git(repository.path, ['worktree', 'add', '--detach', '--quiet', fresh, checked ?? 'origin/main']);
         return {worktree: fresh, base: checked};
       }));
     } catch {
@@ -516,6 +527,8 @@ export class CodingWorker {
     };
     const finished = await this.#harness.start(args, worktree, brief, child => {
       running.child = child;
+      // A run stopped after its last check and before the tool started is stopped as soon as the tool exists.
+      if (running.cancelled) {child.kill('SIGTERM'); setTimeout(() => {child.kill('SIGKILL');}, 10_000).unref(); return;}
       running.timer = setTimeout(() => {timedOut = true; child.kill('SIGTERM'); setTimeout(() => {child.kill('SIGKILL');}, 10_000).unref();}, bounds.wallClockMs);
     }, watch);
     if (running.timer !== undefined) {clearTimeout(running.timer); running.timer = undefined;}
@@ -524,11 +537,11 @@ export class CodingWorker {
     if (windows.length > 0) {this.#limits = {windows, atMs: this.#now()}; running.limitsChanged = true;}
     let head: string | null = null, changedFiles: string[] = [];
     try {
-      head = await git(worktree, ['rev-parse', 'HEAD']); if (!SHA.test(head)) head = null;
+      head = await this.#git(worktree, ['rev-parse', 'HEAD']); if (!SHA.test(head)) head = null;
       // Porcelain lines are two status letters, a space and the path; the first line's leading space is part of the status, so the output is not trimmed.
-      const status = await git(worktree, ['status', '--porcelain', '--untracked-files=all'], {trim: false});
+      const status = await this.#git(worktree, ['status', '--porcelain', '--untracked-files=all'], {trim: false});
       changedFiles = status.split('\n').map(line => line.trimEnd()).filter(Boolean).map(line => line.slice(3).trim()).filter(Boolean);
-      if (base !== null && head !== null && head !== base) changedFiles = [...new Set([...(await git(worktree, ['diff', '--name-only', `${base}..${head}`])).split('\n').filter(Boolean), ...changedFiles])];
+      if (base !== null && head !== null && head !== base) changedFiles = [...new Set([...(await this.#git(worktree, ['diff', '--name-only', `${base}..${head}`])).split('\n').filter(Boolean), ...changedFiles])];
     } catch {this.log('coding-worker: git facts unavailable after the run');}
     const settingsChanged = (await readProjectSettings(worktree)).fingerprint !== settingsBefore;
     const assemble = (output: string | ClaudeStream, given?: CodingProgressReason) => assembleResult(repository.name, base, head, changedFiles, output, given, settingsChanged);

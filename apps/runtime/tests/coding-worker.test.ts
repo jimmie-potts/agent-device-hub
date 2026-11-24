@@ -2,7 +2,7 @@
 // a fresh worktree of an allowlisted repository, reports the git facts it observed and the harness's structured result,
 // and stops the harness on cancel. No real `claude`, edge or network.
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
+import {execFile, execFileSync} from 'node:child_process';
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -11,7 +11,7 @@ import type {CodingProgress, CodingWork} from '@jimmie-potts/event-contracts/v2/
 import type {Command, Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, connectRemote} from '@jimmie-potts/sdk/remote';
-import {CodingWorker, DEFAULT_ALLOWED_TOOLS, DENIED_TOOLS, assembleResult, parseConfiguration, type Harness} from '../src/worker/coding-worker.js';
+import {CodingWorker, DEFAULT_ALLOWED_TOOLS, DENIED_TOOLS, assembleResult, parseConfiguration, type GitRunner, type Harness} from '../src/worker/coding-worker.js';
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], {encoding: 'utf8', env: {...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 't@example', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 't@example'}}).trim();
 const configuration = (repository: string) => ({schema: 'coding-worker/1.0', edge: 'http://127.0.0.1:18788', tokenFile: '/private/token', repositories: [{name: 'agent-device-hub', path: repository}],
@@ -22,7 +22,7 @@ const command = (data: CodingWork, source = 'bunny/modules/companions'): Command
   dataschema: `https://bunny.invalid/events/coding-work/${'companion' in data ? '2.1' : '2.0'}`,
   traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', expiresat: new Date(Date.now() + 5000).toISOString(), data});
 async function until(check: () => boolean, seen: () => unknown = () => undefined): Promise<void> {
-  for (let i = 0; i < 400; i += 1) {if (check()) return; await new Promise(resolve => setTimeout(resolve, 10));}
+  for (let i = 0; i < 1000; i += 1) {if (check()) return; await new Promise(resolve => setTimeout(resolve, 10));}
   assert.ok(check(), `expected progress arrived; seen ${JSON.stringify(seen())}`);
 }
 async function repository(t: TestContext): Promise<string> {
@@ -239,10 +239,66 @@ void test('a lost endpoint stops every run and frees their slots for the next en
   for (const [companion, id] of [['bunny', 'op-1'], ['reachy', 'op-2'], ['microduck', 'op-3']] as const) edge.respond(command(start(companion, id)));
   await until(() => started === 3);
   edge.lose(); await until(() => edge.requests.length === 2);
-  // Every slot is free on the fresh endpoint at once, while the stopped runs may still be ending.
+  // The fresh endpoint is declared once the stopped runs have ended, so every slot is free on it.
   for (const [companion, id] of [['bunny', 'op-4'], ['reachy', 'op-5'], ['microduck', 'op-6']] as const) assert.deepEqual(edge.respond(command(start(companion, id))), {status: 'accepted'}, id);
   await until(() => started === 6);
   assert.deepEqual(edge.reportedOn.filter((endpoint, index) => endpoint === 'worker-endpoint-2' && ['op-1', 'op-2', 'op-3'].includes(edge.progress[index]?.operationId ?? '')), [],
     'a run started on the lost endpoint reports nothing on the new one');
+  await worker.stop();
+});
+
+void test('a run whose endpoint closes after its last check and before its tool starts is stopped when the tool appears, and keeps its slot until it ends', async t => {
+  const repo = await repository(t), edge = fakeEdge();
+  let kills = 0, exit = (): void => {}, started = 0;
+  // The endpoint closes inside the tool's start, after the run's own cancel check and before the tool exists.
+  const harness: Harness = {start: (_args, _cwd, _input, onChild) => new Promise(resolvePromise => {
+    started += 1;
+    if (started === 1) edge.lose();
+    exit = () => {resolvePromise({code: null, signal: 'SIGTERM', stdout: '', truncated: false});};
+    onChild({kill: () => {kills += 1; return true;}} as never);
+  })};
+  const worker = new CodingWorker(parseConfiguration(configuration(repo)), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect);
+  await worker.start();
+  const start = (id: string): CodingWork => ({requestId: id, operationId: id, action: 'start', taskId: `task-${id}`, companion: 'bunny', repository: 'agent-device-hub', brief: id,
+    bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}});
+  assert.deepEqual(edge.respond(command(start('op-1'))), {status: 'accepted'});
+  await until(() => started === 1, () => ({started, kills}));
+  // The tool is stopped as it appears, not by a later timer.
+  assert.ok(kills > 0, 'the tool that started after the close was stopped at once');
+  // While the stopped tool still lives, no fresh endpoint is declared, so no second B.U.N.N.Y. start can reach the worker.
+  for (let turn = 0; turn < 20; turn += 1) await new Promise(resolve => {setImmediate(resolve);});
+  assert.equal(edge.requests.length, 1, 'no fresh declaration while the stopped run lives');
+  const second = edge.respond(command(start('op-2'))); assert.ok('error' in second && second.error.code === 'capacity', 'the companion\'s slot is still held');
+  exit();
+  await until(() => edge.requests.length === 2, () => edge.requests);
+  assert.deepEqual(edge.respond(command(start('op-3'))), {status: 'accepted'}, 'the slot is free once the run ended');
+  await until(() => started === 2);
+  exit(); await worker.stop();
+});
+
+void test('runs on the same repository take turns at the git setup, each into its own worktree', async t => {
+  const repo = await repository(t), edge = fakeEdge();
+  let inSetup = 0, most = 0;
+  const setup = new Set(['fetch', 'rev-parse', 'worktree']);
+  // Each setup step on the shared checkout yields a few event-loop turns, so overlapping setups would be seen.
+  const runGit: GitRunner = async (cwd, args, options) => {
+    const shared = cwd === repo && setup.has(args[0] ?? '');
+    if (shared) {inSetup += 1; most = Math.max(most, inSetup); for (let turn = 0; turn < 5; turn += 1) await new Promise(resolve => {setImmediate(resolve);});}
+    try {return await new Promise<string>((resolvePromise, reject) => {
+      execFile('git', ['-C', cwd, ...args], {timeout: options?.timeoutMs ?? 60_000}, (error, stdout) => {if (error === null) resolvePromise(options?.trim === false ? stdout : stdout.trim()); else reject(new Error('git failed', {cause: error}));});
+    });} finally {if (shared) inSetup -= 1;}
+  };
+  const cwds: string[] = [];
+  const harness: Harness = {start: (_args, cwd) => {cwds.push(cwd); return Promise.resolve({code: 0, signal: null, stdout: '', truncated: false});}};
+  const worker = new CodingWorker(parseConfiguration(configuration(repo)), 'token-'.padEnd(43, 'x'), harness, () => {}, edge.connect, Date.now, runGit);
+  await worker.start();
+  for (const [companion, id] of [['bunny', 'op-b'], ['reachy', 'op-r'], ['microduck', 'op-m']] as const) {
+    assert.deepEqual(edge.respond(command({requestId: id, operationId: id, action: 'start', taskId: `task-${id}`, companion, repository: 'agent-device-hub', brief: id,
+      bounds: {wallClockMs: 60000, maxTurns: 5, budgetUsd: 1}})), {status: 'accepted'});
+  }
+  await until(() => cwds.length === 3, () => ({cwds, progress: edge.progress}));
+  assert.equal(most, 1, 'one setup step at a time on the shared checkout');
+  assert.equal(new Set(cwds).size, 3);
+  await until(() => edge.progress.filter(entry => entry.status !== 'started').length === 3);
   await worker.stop();
 });
