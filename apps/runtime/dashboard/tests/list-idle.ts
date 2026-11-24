@@ -7,7 +7,10 @@ import type {Page} from 'playwright/test';
  * children, text and each attribute write that changes the attribute's value, even when a later write restores it (a
  * render loop that ends where it began still counts). A write of the value the attribute already had is not a change
  * and is left out wherever it happens. The shell's one-second clock is not paging and is left out too: it counts up a
- * session's "Last heard" age, in the open evidence and on the face (Hub #1947). `cards` names other cards to watch instead, each by its id or an id prefix (#1672 PR B).
+ * session's "Last heard" age, in the open evidence and on the face (Hub #1947). So are text changes inside
+ * `.agent-evidence` and `.agent-heard`, and the `title` of the `.agent-heard` element itself, which the face writes from
+ * the same whole-minute age at the same tick (#2097). Every other attribute there, a `title` anywhere else and each
+ * child-list change stay reported. `cards` names other cards to watch instead, each by its id or an id prefix (#1672 PR B).
  */
 export async function idleChanges(page: Page, ms = 2000, cards: readonly string[] = ['inbox', 'sessions', 'timeline']): Promise<string[]> {
   return page.evaluate(async ({ms, watched}) => {
@@ -21,6 +24,7 @@ export async function idleChanges(page: Page, ms = 2000, cards: readonly string[
         for (const record of records) {
           const target = record.target instanceof Element ? record.target : record.target.parentElement;
           if (record.type === 'characterData' && (target?.closest('.agent-evidence') !== null || target?.closest('.agent-heard') !== null)) continue;
+          if (record.type === 'attributes' && record.attributeName === 'title' && target?.classList.contains('agent-heard') === true) continue;
           if (record.type === 'attributes' && record.attributeName !== null && target !== null) {
             const byName = writes.get(target) ?? new Map<string, {before: string | null; label: string}[]>();writes.set(target, byName);
             const list = byName.get(record.attributeName) ?? [];byName.set(record.attributeName, list);
