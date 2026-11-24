@@ -329,17 +329,17 @@ owner's rename is no longer permanent. It adds no table, column or section key.
 Title records saved by #2025 keep their count of an appearance's tasks, which
 this release no longer reads or writes. Call records gain the labels of the
 events they answered and the outcome `kept`; earlier records read without them.
-Expect more title calls than under #2025, one for each finished task and major
-event at most, each reserved and counted in the shared spend limits.
+Expect more title calls than under #2025: at most one for each finished task
+and major event. Each is reserved and counted in the shared spend limits.
 
 To return to #2025, no step is needed. That release counts an appearance's
-tasks in the title record. This release leaves the count of a record #2025
-saved as it was and writes none in a record it creates. Within a day of the
+tasks in the title record. This release leaves the count in a record #2025
+saved and writes none in a record it creates. Within a day of the
 conversation's last lifecycle evidence, that release continues from an old
-count; without one it makes no title call at the first task after the return,
-calls the title model at the second, and then counts as before. A title the model wrote over an
-owner's rename stays, with source generated, and an owner's title is permanent
-again there.
+count. Without one, it makes no title call at the first task after the return,
+calls the title model at the second, and then counts as before. A title the
+model wrote over an owner's rename stays, with source generated. In that
+release an owner's title is permanent again.
 
 ## Conversation titles (#2025)
 

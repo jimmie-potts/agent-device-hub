@@ -807,10 +807,10 @@ persona names until the owner renames them. When a profile gets a real model
     the title;
   - a coding hand-off's result arriving.
 
-  No count of tasks and no time since the last message starts a check, and a
-  start after a day without lifecycle evidence is checked only when its task
-  finishes. Startup reconciliation starts none. The check runs beside the task
-  and never delays, fails or rolls back it.
+  No count of tasks and no time since the last message starts a check. A task
+  that starts after a day without lifecycle evidence is checked only when it
+  finishes. Startup reconciliation starts no check. The check runs beside the
+  task and never delays, fails or rolls it back.
 - **One call at a time.** A conversation has at most one title call in flight.
   Triggers that arrive during it are coalesced into one follow-up check, which
   starts when the call settles and carries each distinct event once, oldest
@@ -824,15 +824,15 @@ persona names until the owner renames them. When a profile gets a real model
   so the whole prompt stays within 2 KiB. A label is the module's own text with
   at most a tool identifier, a decision or an outcome word, for example `The
   owner approved set_mode.`, `A tool call changed state: set_mode was
-  accepted.` or `A coding hand-off's result arrived: completed.`. No tool
-  result, dispatch receipt or worker report is sent, nor any preference,
-  knowledge entry or failed turn's closing reply, which is the module's own
-  status text about the turn.
+  accepted.` or `A coding hand-off's result arrived: completed.`. The prompt
+  carries no tool result, dispatch receipt or worker report. It also carries
+  no preference, knowledge entry or failed turn's closing reply, which is the
+  module's own status text about the turn.
 - **What the model answers.** `KEEP` when the current title still fits, or a
-  new title. A title the owner set is described to the model as their choice,
-  to keep unless the topic has clearly changed since. `KEEP`, in any case and
-  with quotes or trailing punctuation, publishes nothing, as does a new title
-  equal to the current one. With no current title, `KEEP` leaves the persona
+  new title. The instruction tells the model that a title the owner set is
+  their choice, to keep unless the topic has clearly changed since. `KEEP`, in
+  any case and with quotes or trailing punctuation, publishes nothing. Neither
+  does a new title equal to the current one. With no current title, `KEEP` leaves the persona
   name.
 - **What is kept.** After the issue reference, the description is cut to 40
   characters at a word boundary. Quotes, markdown, a `Title:` label and
