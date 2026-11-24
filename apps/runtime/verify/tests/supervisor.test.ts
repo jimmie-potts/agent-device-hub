@@ -203,7 +203,9 @@ void test('a control the runtime does not confirm is refused, naming it and why,
   };
   const unavailable = (detail: string): unknown => [503, errorBody('unavailable', {detail}).error];
   // A stopped runtime takes the control but cannot confirm it within the harness's answer bound (Hub #1752).
-  const [runtime = 0] = children(run.supervisor.pid ?? 0);
+  const [runtime] = children(run.supervisor.pid ?? 0);
+  // Never signal pid 0, which is this test's own process group.
+  if (runtime === undefined || !Number.isSafeInteger(runtime) || runtime <= 0) assert.fail(`the run has no runtime child to stop: ${String(runtime)}`);
   process.kill(runtime, 'SIGSTOP');
   try {
     assert.deepEqual(await refused('simulate', {device: 'chime', action: 'fault-next'}),
