@@ -14,8 +14,11 @@ type Props = {
   context: FrontendContext; command: FrontendCommand; queue: QueueView; profile: AssistantProfile;
   /** Whether a task of this conversation is unfinished, so the next message waits for it. */
   waiting: boolean; locked: boolean; enabled: boolean;
-  /** An edit whose message started or left the queue before it was saved: its text, so it is not lost. */
-  onLost?: (text: string) => void;
+  /**
+   * An edit that could not be saved because its message started, left the queue or was changed on another page first:
+   * its text and why, so it is not lost and never overwrites the other change.
+   */
+  onLost?: (text: string, reason: 'started' | 'changed') => void;
 };
 type Editing = {id: string; original: string; text: string; revision: number; requestId?: string | undefined; refused?: string | undefined};
 
@@ -36,13 +39,22 @@ export function QueuedMessages({context, command, queue, profile, waiting, locke
     if (done.ok) setEditing(undefined);
     else setEditing({...editing, requestId: undefined, refused: done.code});
   }, [context, editing]);
-  // A message that started or was withdrawn while open for editing takes its editor with it; changed text goes back to
-  // the owner instead of being dropped.
+  // Each newer read of the queue moves an open edit on. While its message keeps the text the edit opened with, the edit
+  // names the newer revision, so another message queued, moved or started meanwhile never refuses it. A message that
+  // started, was withdrawn or was changed on another page takes the editor with it, and changed text goes back to the
+  // owner instead of being dropped or written over the other change.
   useEffect(() => {
-    if (editing === undefined || queue.messages.some(message => message.id === editing.id)) return;
-    if (editing.text.trim() !== '' && editing.text !== editing.original) onLost?.(editing.text);
+    if (editing === undefined || editing.requestId !== undefined || queue.revision <= editing.revision) return;
+    const message = queue.messages.find(entry => entry.id === editing.id);
+    const typed = editing.text.trim() !== '' && editing.text !== editing.original;
+    if (message !== undefined && message.text === editing.original) {
+      setEditing({...editing, revision: queue.revision, refused: editing.refused === 'revision-conflict' ? undefined : editing.refused});
+      return;
+    }
+    if (message !== undefined && !typed) {setEditing({...editing, original: message.text, text: message.text, revision: queue.revision, refused: undefined}); return;}
+    if (typed) onLost?.(editing.text, message === undefined ? 'started' : 'changed');
     setEditing(undefined);
-  }, [editing, onLost, queue.messages]);
+  }, [editing, onLost, queue]);
   if (queue.messages.length === 0) return null;
   const earlier = !queue.current;
   const control = (data: Record<string, unknown>): void => {
@@ -77,7 +89,7 @@ export function QueuedMessages({context, command, queue, profile, waiting, locke
               onChange={event => {setEditing({...open, text: event.target.value, refused: undefined});}}/>
             {tooLong && <p role="alert">Shorten the text to {LIMITS.inputBytes.toLocaleString('en-US')} UTF-8 bytes.</p>}
             {open.refused !== undefined && <p role="alert">Not saved ({open.refused}). {open.refused === 'revision-conflict'
-              ? 'The queue changed since you opened this edit. Cancel the edit to see it, then edit again.' : 'Your text is kept here.'}</p>}
+              ? 'The queue changed. Your text is kept here while the page reads the queue again.' : 'Your text is kept here.'}</p>}
             <div className="conversation-queue-actions">
               <button type="submit" disabled={locked || draft.trim() === '' || tooLong || draft === message.text || open.requestId !== undefined}>Save</button>
               <button type="button" className="secondary" onClick={() => {setEditing(undefined);}}>Cancel edit</button>

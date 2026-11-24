@@ -390,11 +390,14 @@ withdrawing and reordering run no work, so they are admitted while
 conversation is off.
 
 The page's withdraw, reorder and Resume queue name the revision at which the
-shown queue was read, and an edit names the revision at which it opened. An
-edit left open therefore cannot overwrite a change made on another page since,
-and a move never acts on an order the page no longer shows. A refused edit
-keeps its text, says why and allows Save again. If the message starts before
-its edit is saved, the page shows the edited text with **Use in composer**.
+shown queue was read, so a move never acts on an order the page no longer
+shows. An open edit names the revision of the latest read in which its message
+still had the text the edit opened with. Queuing, moving or starting another
+message therefore never refuses it, and it cannot overwrite a change made to
+its message on another page since. If its message is changed on another page,
+starts or is withdrawn first, the edit closes and the page shows the edited
+text with **Use in composer**. A refused edit keeps its text and allows Save
+again.
 
 `assistant-state/2.2` lists each profile's current conversation whose queue
 holds messages, as `queues`: the conversation and profile, how many messages

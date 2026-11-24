@@ -42,8 +42,9 @@ function TaskControls({context, command, state, profile, live, question, coding,
   // The draft a sent or queued message came from, cleared once its command succeeded, so the composer is ready for the
   // next message while the task runs; a refused or uncertain command keeps it.
   const [submitted, setSubmitted] = useState<{requestId: string; key: string; text: string}>();
-  // The text of a queued message's edit that its message outran: it started, or left the queue, before the edit was saved.
-  const [lost, setLost] = useState<string>();
+  // The text of a queued message's edit that could not be saved: its message started, left the queue or was changed on
+  // another page first.
+  const [lost, setLost] = useState<{text: string; reason: 'started' | 'changed'}>();
   const task = state?.tasks.find(value => value.profile === profile);
   // Only this conversation's own unfinished task holds a new message; another conversation's never does (Hub #2027).
   const open = task !== undefined && !finished(task.status);
@@ -135,12 +136,13 @@ function TaskControls({context, command, state, profile, live, question, coding,
       </div>}
     </fieldset>
     {queue !== undefined && state !== undefined && <QueuedMessages context={context} command={command} queue={queue} profile={profile}
-      waiting={open} locked={locked} enabled={enabled} onLost={setLost}/>}
+      waiting={open} locked={locked} enabled={enabled} onLost={(text, reason) => {setLost({text, reason});}}/>}
     {lost !== undefined && <div className="conversation-queue-lost" role="status">
-      <p>The message started before your edit was saved. Your edited text:</p>
-      <p className="conversation-queue-text" dir="auto">{lost}</p>
+      <p>{lost.reason === 'changed' ? 'The message was changed on another page before your edit was saved, so your edit was not saved.'
+        : 'The message started before your edit was saved.'} Your edited text:</p>
+      <p className="conversation-queue-text" dir="auto">{lost.text}</p>
       <div className="conversation-queue-actions">
-        <button type="button" className="secondary" onClick={() => {setDraft(draftKey, lost); setLost(undefined);}}>Use in composer</button>
+        <button type="button" className="secondary" onClick={() => {setDraft(draftKey, lost.text); setLost(undefined);}}>Use in composer</button>
         <button type="button" className="secondary" onClick={() => {setLost(undefined);}}>Dismiss</button>
       </div>
     </div>}
@@ -478,8 +480,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             </p>}
             {task?.code != null && <p>Task code: {task.code}</p>}
             {spendLimit !== undefined && <p role="status">{spendLimit}</p>}
-            {state?.enabled === true && task?.status === 'running' && <p>This task is working. Queue a message to start it after the task ends, or cancel the task.</p>}
-            {state?.enabled === true && task?.status === 'uncertain' && <p>Resume or cancel this task before sending another message. Queued messages start after it ends.</p>}
+            {state?.enabled === true && task?.status === 'running' && <p>This task is working. Queue a message to save it for after this task, or cancel the task.</p>}
+            {state?.enabled === true && task?.status === 'uncertain' && <p>Resume or cancel this task before sending another message. Queued messages wait until it ends.</p>}
             {activeClarification !== undefined && <SavedQuestionContext question={activeClarification}/>}
             <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion} coding={connected ? coding : undefined} queue={queue}
               drafts={drafts} setDraft={(key, value) => {setDrafts(prior => ({...prior, [key]: value}));}}

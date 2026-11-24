@@ -85,11 +85,17 @@ export async function conversationQueueJourney(browser: Browser): Promise<void> 
     const [queueBox, composerBox] = await Promise.all([queued.boundingBox(), message.boundingBox()]);
     assert.ok(queueBox !== null && composerBox !== null && queueBox.y + queueBox.height <= composerBox.y, 'the queue shows above the composer');
     await shot(page, 'queue-while-running');
-    // An edit left open names the queue it was opened on: another page's edit since refuses it, the text stays and Save
-    // works again.
+    // An open edit moves on with the queue while its message keeps its text: queuing another message meanwhile does not
+    // refuse the Save.
     await queued.getByRole('button', {name: 'Edit queued message 1', exact: true}).click();
-    const stale = queued.getByRole('textbox', {name: 'Edit queued message 1', exact: true});
-    await stale.fill('Synthetic queued one, edited here');
+    await queued.getByRole('textbox', {name: 'Edit queued message 1', exact: true}).fill('Synthetic queued one, edited here');
+    await queue('Synthetic queued four', 4);
+    await queued.getByRole('button', {name: 'Save', exact: true}).click();
+    await queued.getByRole('textbox', {name: 'Edit queued message 1', exact: true}).waitFor({state: 'detached'});
+    await page.waitForFunction(() => document.querySelectorAll('.conversation-queue-text')[0]?.textContent?.endsWith('Synthetic queued one, edited here') === true);
+    // Another page's edit of the same message is never written over: this page's edit closes and offers its text back.
+    await queued.getByRole('button', {name: 'Edit queued message 1', exact: true}).click();
+    await queued.getByRole('textbox', {name: 'Edit queued message 1', exact: true}).fill('Synthetic queued one, edited twice here');
     const other = await context.newPage();
     other.setDefaultTimeout(12_000);
     await other.goto(`${world.url}/#/module/companions/assistant`);
@@ -100,13 +106,18 @@ export async function conversationQueueJourney(browser: Browser): Promise<void> 
     await otherQueue.getByRole('button', {name: 'Save', exact: true}).click();
     await other.waitForFunction(() => document.querySelectorAll('.conversation-queue-text')[0]?.textContent?.endsWith('from another page') === true);
     await other.close();
-    await queued.getByRole('button', {name: 'Save', exact: true}).click();
-    await queued.getByText(/^Not saved \(revision-conflict\)\./).waitFor();
-    assert.equal(await stale.inputValue(), 'Synthetic queued one, edited here', 'the refused edit keeps its text');
-    assert.equal(await queued.getByRole('button', {name: 'Save', exact: true}).isDisabled(), false, 'Save works again');
-    await shot(page, 'queue-edit-refused');
-    await queued.getByRole('button', {name: 'Cancel edit', exact: true}).click();
+    // Save while this page may not have read the other edit yet: either it is refused or the editor has already closed.
+    const save = queued.getByRole('button', {name: 'Save', exact: true});
+    if (await save.count() > 0) await save.click({timeout: 2000}).catch(() => undefined);
+    const changed = conversation.getByRole('status').filter({hasText: 'The message was changed on another page before your edit was saved'});
+    await changed.waitFor();
     await page.waitForFunction(() => document.querySelectorAll('.conversation-queue-text')[0]?.textContent?.endsWith('from another page') === true);
+    await shot(page, 'queue-edit-changed-elsewhere');
+    await changed.getByRole('button', {name: 'Use in composer', exact: true}).click();
+    assert.equal(await message.inputValue(), 'Synthetic queued one, edited twice here', 'the edit that was not saved comes back to the composer');
+    await message.fill('');
+    await queued.getByRole('button', {name: 'Withdraw queued message 4', exact: true}).click();
+    await page.waitForFunction(() => document.querySelectorAll('.conversation-queue-text').length === 3);
     // Edit the second, move the third up and withdraw the first.
     await queued.getByRole('button', {name: 'Edit queued message 2', exact: true}).click();
     const editor = queued.getByRole('textbox', {name: 'Edit queued message 2', exact: true});

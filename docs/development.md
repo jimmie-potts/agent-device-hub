@@ -3386,14 +3386,16 @@ with a direct Send as the negative control; New conversation refused while
 messages wait, and the eight-message limit; a Queue naming a revision from
 before New conversation or a start, with a Send as the negative control; a
 refused Resume queue that records no change; and messages an earlier release
-left in a replaced conversation, which only Withdraw reaches. The child process exits right after
+left in a replaced conversation, which only their own profile's Withdraw
+reaches, with queue reads of another profile's and an unknown conversation. The child process exits right after
 the commit that started a queued message, and the restart shows one task for it
 and none queued. After the root build run
 `node --test modules/companions/dist/tests/assistant-queue.test.js modules/companions/dist/tests/conversation-queue.test.js packages/event-contracts/tests/message-queue.test.mjs apps/runtime/dist/tests/gateway.test.js`
 and `node apps/runtime/dashboard/tests/conversation-queue.browser.ts`, which
 `npm run test:companions:browser` also runs: queue while a task works, edit,
 move and withdraw, the next message starting after the task, Stop and Resume
-queue, an edit refused after another page's edit, the transcript following
+queue, an open edit saved after another message was queued and one closed by
+another page's edit, the transcript following
 through an answer and an approval with a message queued, a restart and Start,
 an edit its message outran, and the phone layout at 390 px. They use synthetic
 data and gated providers only. Existing CI discovery runs them.

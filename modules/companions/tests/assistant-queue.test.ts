@@ -84,9 +84,14 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     assert.ok(content !== undefined && !('error' in content), JSON.stringify(content));
     return JSON.parse(Buffer.from(content.bytes).toString()) as T;
   };
+  /** A queue read's refusal code, or undefined when it answered. */
+  const refusedRead = async (query: Record<string, string>): Promise<string | undefined> => {
+    const content = await module.manifest.content?.('conversation', {query, signal: new AbortController().signal});
+    return content !== undefined && 'error' in content ? content.error.code : undefined;
+  };
   const queued = (profile: AssistantProfile = 'bunny', conversationId?: string) => read<QueueDocument>('conversation', {profile, view: 'queue', ...(conversationId === undefined ? {} : {conversationId})});
   const messages = async (profile: AssistantProfile = 'bunny') => (await read<{messages: {taskId: string; role: string; text: string}[]}>('conversation', {profile})).messages;
-  return {state, task, control, staged, input, send, queue, edit, queued, messages, observations, states,
+  return {state, task, control, staged, input, send, queue, edit, queued, refusedRead, messages, observations, states,
     database: () => host.moduleDatabase() ?? assert.fail('open database'),
     restart: async () => {await host.stop(); ({module, host} = make()); await host.start();}};
 }
@@ -499,8 +504,22 @@ void test('messages an earlier release left in a replaced conversation show held
   assert.equal(w.state().queues, undefined, 'nor does the state');
   assert.equal(code(await w.edit('left-behind-1', 'Synthetic edit')), 'not-found');
   assert.equal(code(await w.control('reorder', {profile: 'bunny', queuedId: 'left-behind-1', beforeId: null})), 'not-found');
+  // Reachy has a current conversation of its own, with a message queued behind its working task.
+  assert.equal((await w.send('Synthetic reachy request', 'reachy')).status, 'accepted');
+  await settle(() => provider.pending.length === 1);
+  const reachyQueued = await w.queue('Synthetic reachy queued message', 'reachy');
+  assert.equal(reachyQueued.result.status, 'accepted');
+  const reachy = w.task('reachy')?.conversationId ?? assert.fail('reachy conversation');
   assert.equal(code(await w.control('withdraw', {profile: 'reachy', queuedId: 'left-behind-1'})), 'not-found', 'only its own profile can withdraw it');
+  assert.equal(code(await w.control('withdraw', {profile: 'bunny', queuedId: reachyQueued.id})), 'not-found', 'nor another profile\'s queued message');
+  assert.equal(code(await w.control('withdraw', {profile: 'bunny', queuedId: 'unknown-queued-message'})), 'not-found');
+  assert.deepEqual(texts(await w.queued('reachy')), ['Synthetic reachy queued message'], 'Reachy\'s message stays queued');
+  // A queue read reaches only the profile's own conversations.
+  assert.equal(await w.refusedRead({profile: 'bunny', view: 'queue', conversationId: reachy}), 'not-found', 'another profile\'s current conversation');
+  assert.equal(await w.refusedRead({profile: 'reachy', view: 'queue', conversationId: earlier}), 'not-found', 'another profile\'s earlier conversation');
+  assert.equal(await w.refusedRead({profile: 'bunny', view: 'queue', conversationId: 'unknown-conversation'}), 'not-found', 'an unknown conversation');
+  assert.equal(await w.refusedRead({profile: 'reachy', view: 'queue', conversationId: reachy}), undefined, 'negative control: the profile\'s own conversation');
   assert.equal((await w.control('withdraw', {profile: 'bunny', queuedId: 'left-behind-1'})).status, 'accepted');
   assert.deepEqual(texts(await w.queued('bunny', earlier)), []);
-  assert.equal(provider.calls(), 1, 'it never started');
+  assert.equal(provider.calls(), 2, 'it never started; the second call is Reachy\'s own');
 });
