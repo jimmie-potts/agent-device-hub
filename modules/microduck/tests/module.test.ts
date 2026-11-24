@@ -5,10 +5,16 @@ import {SimulatedMicroDuck} from '../src/simulated.js';
 import type {MicroDuckTransport} from '../src/transport.js';
 import {TestClock,advanceUntil,fixture,until} from './support.js';
 function adapter(robot:SimulatedMicroDuck,head:MicroDuckTransport['head']):MicroDuckTransport{return {connect:(...a)=>robot.connect(...a),guard:()=>robot.guard(),nowNs:()=>robot.nowNs(),head};}
+/**
+ * A gesture's return must be sent 800 to 900 ms after its first move (#1491). On the real clock, a host stall of more
+ * than 100 ms across the end of the 800 ms hold made the module rightly refuse the late return, so the outcome was
+ * `uncertain` and only one move was written (#1720). These tests check what a gesture writes, not how a loaded host
+ * keeps time, so the module, the bus and the simulator share a test clock that moves only when the test moves it.
+ */
 for(const gesture of ['notice','attention','neutral'] as const)void test(`passive startup and finite manual ${gesture}`,{timeout:10000},async t=>{
-  const robot=new SimulatedMicroDuck(),f=await fixture(t,robot);assert.equal(robot.state().moves,0);assert.equal(f.state().enabled,false);
+  const clock=new TestClock(),robot=new SimulatedMicroDuck(clock),f=await fixture(t,robot,clock);assert.equal(robot.state().moves,0);assert.equal(f.state().enabled,false);
   assert.equal('error'in await f.command('microduck-gesture',{gesture}),true);
-  await f.control('takeover');const id=crypto.randomUUID();assert.equal((await f.command('microduck-gesture',{gesture},id)).status,'accepted');await until(()=>f.outcome(id)!==undefined);
+  await f.control('takeover');const id=crypto.randomUUID();assert.equal((await f.command('microduck-gesture',{gesture},id)).status,'accepted');await advanceUntil(clock,()=>f.outcome(id)!==undefined);
   assert.equal(f.outcome(id)?.result,'succeeded');assert.deepEqual(robot.effects.map(x=>x.yaw),gesture==='neutral'?[0]:[gesture==='notice'?.1:-.1,0]);
   if(robot.effects.length===2){const first=robot.effects[0],second=robot.effects[1];assert.ok(first&&second);const delta=BigInt(second.atNs)-BigInt(first.atNs);assert.ok(delta>=800000000n&&delta<=900000000n);}
   const duplicate=await f.command('microduck-gesture',{gesture},id);assert.equal('error'in duplicate&&duplicate.error.error.code,'duplicate-conflict');
@@ -45,12 +51,13 @@ void test('Quiet, expiry and stale generation fence the return rather than clean
   await f.command('microduck-gesture',{gesture:'neutral',recovered:true,heldRequestId:'quiet'},'recovery');await advanceUntil(clock,()=>f.outcome('recovery')!==undefined);
   await clock.advance(2100);assert.equal((await f.command('microduck-gesture',{gesture:'attention'},'expired',100)).status,'accepted');await until(()=>robot.effects.length===3||f.outcome('expired')!==undefined);await advanceUntil(clock,()=>f.outcome('expired')!==undefined);assert.equal(f.outcome('expired')?.result,'uncertain');assert.equal(robot.effects.at(-1)?.yaw,-.1);
 });
+/** On the test clock for the same reason as the manual gestures: the accepted gesture's return counts as the second write. */
 void test('concurrent admission, cooldown and forbidden operations do not add writes',{timeout:10000},async t=>{
-  const robot=new SimulatedMicroDuck(),f=await fixture(t,robot);await f.control('takeover');
-  const answers=await Promise.all([f.command('microduck-gesture',{gesture:'notice'},'a'),f.command('microduck-gesture',{gesture:'attention'},'b')]);assert.equal(answers.filter(x=>x.status==='accepted').length,1);await until(()=>f.state().active===null);
+  const clock=new TestClock(),robot=new SimulatedMicroDuck(clock),f=await fixture(t,robot,clock);await f.control('takeover');
+  const answers=await Promise.all([f.command('microduck-gesture',{gesture:'notice'},'a'),f.command('microduck-gesture',{gesture:'attention'},'b')]);assert.equal(answers.filter(x=>x.status==='accepted').length,1);await advanceUntil(clock,()=>f.state().active===null);
   assert.equal('error'in await f.command('microduck-gesture',{gesture:'attention'}),true);
   for(const data of [{gesture:'walk'},{gesture:'neutral',yaw:1},{gesture:'neutral',endpoint:'/tmp/socket'}])assert.equal('error'in await f.command('microduck-gesture',data),true);
-  assert.equal('error'in await f.command('microduck-auto',{gesture:'notice',opportunityId:'a'.repeat(64),validUntilMs:Date.now()+5000}),true);assert.equal(robot.effects.length,2);
+  assert.equal('error'in await f.command('microduck-auto',{gesture:'notice',opportunityId:'a'.repeat(64),validUntilMs:clock.now()+5000}),true);assert.equal(robot.effects.length,2);
 });
 void test('failed persistence refuses before effects and restart reports possible writes only',{timeout:10000},async t=>{
   const robot=new SimulatedMicroDuck(),f=await fixture(t,robot);await f.control('takeover');const db=f.host.moduleDatabase();assert.ok(db);
