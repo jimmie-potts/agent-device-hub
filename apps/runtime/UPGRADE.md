@@ -250,6 +250,27 @@ release finds no deadline fields, starts the work deadline
 of running work that a restart did not mark from its last evidence, and writes a
 history row for each session publication again. Prefer fixing forward.
 
+## Configurable monthly spend guard (#2102)
+
+The #2102 release lets the companions section set the local monthly spend
+guard. `assistant.monthlyLimit` is a new, optional key: the guard in US
+dollars, a number from 0.01 to 10000. The release changes no table and
+rewrites no record, and the $20 daily pacing is unchanged.
+
+- **Without the key nothing changes.** The guard stays $150, and Details
+  shows the month as "of $150.00", as before.
+- **The owner sets it to the Console limit.** Set the key to the B.U.N.N.Y.
+  workspace's monthly spend limit in the Anthropic Console; on the
+  established Mac that is $200. Upgrade with the section unchanged, then add
+  `"monthlyLimit": 200` to the companions section's `assistant` through the
+  established private configuration route and restart the runtime. Details
+  then shows "of $200.00", and the local estimate refuses new messages only
+  when it reaches $200. Anthropic's workspace limit stays the real ceiling.
+- **Returning to an earlier release** brings back its fixed $150 guard. An
+  earlier release refuses the key, so first remove `assistant.monthlyLimit`
+  from the section and restart on this release, which accepts the section
+  either way. Then return. Spend already counted stays in the ledger.
+
 ## Steering a running task (#2031)
 
 The #2031 release lets the owner steer a companion's running task. It adds one
@@ -504,8 +525,11 @@ has the details):
 1. Create a dedicated workspace for B.U.N.N.Y. Do not use the default
    workspace: a limit there might not count or stop all usage, and on some
    platforms it cannot be set.
-2. Set that workspace's monthly spend limit to $150 at
-   `platform.claude.com/settings/spend-limits`.
+2. Set that workspace's monthly spend limit, the amount the owner chooses,
+   at `platform.claude.com/settings/spend-limits`. The local monthly guard
+   defaults to $150. From the #2102 release on, set `assistant.monthlyLimit`
+   to the same amount for any other limit (see
+   [Configurable monthly spend guard (#2102)](#configurable-monthly-spend-guard-2102)).
 3. Create an API key in that workspace and store it in the companions key file
    (`secrets.anthropic-api-key`) through the established private configuration
    route, then restart the runtime.

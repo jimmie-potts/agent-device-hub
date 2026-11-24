@@ -6,6 +6,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import type {DatabaseSync} from 'node:sqlite';
 import {test, type TestContext} from 'node:test';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
@@ -16,25 +17,39 @@ import {PROFILES} from '../src/knowledge/model.js';
 // Synthetic prices: the shape the private section takes, not a price list.
 const PRICES = {'claude-opus-5-5': {input: 1, output: 2, cacheWrite: 1.5, cacheRead: 0.1}, 'claude-sonnet-5-5': {input: 0.5, output: 1, cacheWrite: 0.75, cacheRead: 0.05},
   'claude-haiku-5-5': {input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01}};
+/** The local monthly guard when the section sets none (Hub #2102), in millionths of a dollar. */
+const DEFAULT_GUARD = 150_000_000;
+const MONTHLY_LIMIT_REFUSAL = 'assistant.monthlyLimit is the local monthly spend guard in US dollars, from 0.01 to 10000';
 const configured = (section: unknown) => {const result = configureCompanions(section); return 'error' in result ? result.error.code : result.config;};
 
 void test('the section accepts the synthetic default and a keyed hosted provider, and refuses everything else', () => {
   assert.deepEqual(configured({}), {assistant: {provider: 'synthetic', tools: []}});
   assert.deepEqual(configured({assistant: {tools: ['set_mode', 'read_sessions']}}), {assistant: {provider: 'synthetic', tools: ['set_mode', 'read_sessions']}});
   assert.deepEqual(configured({assistant: {provider: 'anthropic', tools: ['read_sessions'], prices: PRICES}, secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/anthropic-api-key'}}),
-    {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: ['read_sessions'], prices: PRICES}});
+    {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: ['read_sessions'], prices: PRICES, monthlyLimitMicros: DEFAULT_GUARD}});
   // A section without a price for the title model is accepted: the ledger prices it at its built-in tiers, or a model the table
   // does not know at the dearest known rate (Hub #2047).
   assert.deepEqual(configured({assistant: {provider: 'anthropic', prices: {'claude-opus-5-5': PRICES['claude-opus-5-5']}}, secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/k'}}),
-    {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: [], prices: {'claude-opus-5-5': PRICES['claude-opus-5-5']}}});
+    {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: [], prices: {'claude-opus-5-5': PRICES['claude-opus-5-5']}, monthlyLimitMicros: DEFAULT_GUARD}});
   assert.deepEqual(configured({assistant: {provider: 'anthropic', model: 'claude-sonnet-5-5', effort: 'low', titleModel: 'claude-sonnet-5-5', prices: PRICES}, secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/k'}}),
-    {assistant: {provider: 'anthropic', model: 'claude-sonnet-5-5', effort: 'low', titleModel: 'claude-sonnet-5-5', tools: [], prices: PRICES}}, 'the title model is configurable (Hub #2025)');
+    {assistant: {provider: 'anthropic', model: 'claude-sonnet-5-5', effort: 'low', titleModel: 'claude-sonnet-5-5', tools: [], prices: PRICES, monthlyLimitMicros: DEFAULT_GUARD}}, 'the title model is configurable (Hub #2025)');
   const key = {[API_KEY_SECRET]: '/run/secrets/bunny/k'}, opus = PRICES['claude-opus-5-5'];
+  // The local monthly guard (Hub #2102): $150 by default, or the section's optional monthlyLimit in US dollars, from $0.01 to $10,000.
+  for (const [monthlyLimit, micros] of [[200, 200_000_000], [0.01, 10_000], [10_000, 10_000_000_000], [199.999_999_6, 200_000_000]] as const) {
+    assert.deepEqual(configured({assistant: {provider: 'anthropic', monthlyLimit}, secrets: key}),
+      {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: [], prices: {}, monthlyLimitMicros: micros}}, String(monthlyLimit));
+  }
+  for (const monthlyLimit of [0, -200, 0.009, 10_000.01, Number.POSITIVE_INFINITY, Number.NaN, '200', null, true, [], {usd: 200}]) {
+    const result = configureCompanions({assistant: {provider: 'anthropic', monthlyLimit}, secrets: key});
+    assert.deepEqual('error' in result ? [result.error.code, result.error.detail] : result.config, ['invalid-request', MONTHLY_LIMIT_REFUSAL], JSON.stringify(monthlyLimit));
+  }
+  const synthetic = configureCompanions({assistant: {monthlyLimit: 200}});
+  assert.deepEqual('error' in synthetic ? [synthetic.error.code, synthetic.error.detail] : synthetic.config, ['invalid-request', 'the synthetic provider takes no model, effort, title model, prices or monthly limit']);
   // Prices are optional (Hub #2024 review): a section without them, or without the hosted model's entry, still starts the
   // module, and the engine refuses that model's paid turns and calls.
-  assert.deepEqual(configured({assistant: {provider: 'anthropic'}, secrets: key}), {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: [], prices: {}}});
+  assert.deepEqual(configured({assistant: {provider: 'anthropic'}, secrets: key}), {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: [], prices: {}, monthlyLimitMicros: DEFAULT_GUARD}});
   assert.deepEqual(configured({assistant: {provider: 'anthropic', prices: {'claude-sonnet-5-5': PRICES['claude-sonnet-5-5']}}, secrets: key}),
-    {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: [], prices: {'claude-sonnet-5-5': PRICES['claude-sonnet-5-5']}}});
+    {assistant: {provider: 'anthropic', model: 'claude-opus-5-5', effort: 'medium', titleModel: 'claude-haiku-5-5', tools: [], prices: {'claude-sonnet-5-5': PRICES['claude-sonnet-5-5']}, monthlyLimitMicros: DEFAULT_GUARD}});
   for (const section of [
     [], {other: true}, {assistant: null}, {assistant: {provider: 'openai'}}, {assistant: {provider: 'anthropic'}}, {assistant: {provider: 'anthropic'}, secrets: {}},
     {assistant: {tools: ['ask_owner']}}, {assistant: {tools: ['read_fixture']}}, {assistant: {tools: ['set_mode', 'set_mode']}}, {assistant: {tools: 'set_mode'}},
@@ -110,12 +125,12 @@ async function hosted(context: TestContext, assistant: Record<string, unknown>, 
   const control = async (requestId: string) => core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
     dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, action: 'enable', expectedRevision: module.inspectAssistant()?.revision}}, {requestId, timeoutMs: 5000});
   assert.equal((await control('hosted-enable')).status, 'accepted');
-  const start = async (text: string) => {
-    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId: 'hosted-start', signal: new AbortController().signal,
+  const start = async (text: string, requestId = 'hosted-start') => {
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
       bytes: Buffer.from(JSON.stringify({action: 'start', profile: 'bunny', expectedRevision: module.inspectAssistant()?.revision, text}))});
     assert.ok(staged !== undefined && !('error' in staged));
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
-      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId: 'hosted-start', ...staged.data}}, {requestId: 'hosted-start', timeoutMs: 5000});
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
   };
   const read = async (ref: string, query: Record<string, string>) => {
     const content = await module.manifest.content?.(ref, {query, signal: new AbortController().signal});
@@ -137,7 +152,8 @@ async function hosted(context: TestContext, assistant: Record<string, unknown>, 
     for (let turn = 0; turn < 2000 && (titleCalls() < count || open()); turn += 1) await new Promise(resolve => {setImmediate(resolve);});
   };
   return {module, sent: () => sent.filter(model => model === turnModel).length, titleCalls, titlesSettled, start, settled,
-    spend: async () => await read('spend', {}) as {day: {spentMicros: number}; paid: unknown},
+    database: () => host.moduleDatabase() ?? assert.fail('open database'),
+    spend: async () => await read('spend', {}) as {day: {period: string; spentMicros: number; limitMicros: number}; month: {period: string; spentMicros: number; limitMicros: number}; paid: unknown},
     said: async () => (await read('conversation', {profile: 'bunny'}) as {messages: {text: string}[]}).messages.map(message => message.text)};
 }
 const answered = () => new Response(JSON.stringify({content: [{type: 'text', text: 'Hello.'}], stop_reason: 'end_turn', usage: {input_tokens: 3, output_tokens: 2}}), {status: 200});
@@ -153,6 +169,44 @@ void test('without configured prices a hosted turn runs at the dated built-in pr
   const spend = await w.spend();
   assert.equal(w.titleCalls(), 2);
   assert.deepEqual([spend.day.spentMicros, spend.paid], [3 * 4 + 2 * 20 + 2 * Math.ceil(3 * 0.1 + 2 * 0.5), {model: 'claude-opus-5-5', minimumMicros: 8192 * 5 + 16_384 * 20, prices: 'built-in', pricesAsOf: '2026-11-22'}]);
+});
+
+/**
+ * Counts `micros` of settled spend this month on another day than today, as earlier days' calls would, so the daily pacing
+ * leaves the month's guard to decide.
+ */
+function countEarlier(database: DatabaseSync, today: string, id: string, micros: number): void {
+  const day = today.endsWith('-01') ? `${today.slice(0, 8)}02` : `${today.slice(0, 8)}01`;
+  database.prepare('INSERT INTO assistant_spend(id,purpose,owner,model,day,month,at_ms,reserved_micros,cost_micros) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(id, 'conversation', 'conversation-earlier', 'claude-opus-5-5', day, today.slice(0, 7), 0, micros, micros);
+}
+
+void test('the section\'s monthly limit sets the local monthly guard that the ledger, the refusal and Details use, and the daily pacing stays $20', async context => {
+  // The default: Details names the $150 guard, and a month counted at $150 refuses a new message naming it.
+  const standard = await hosted(context, {}, answered);
+  const before = await standard.spend();
+  assert.deepEqual([before.day.limitMicros, before.month.limitMicros], [20_000_000, 150_000_000]);
+  countEarlier(standard.database(), before.day.period, 'earlier-default', 150_000_000);
+  const refused = await standard.start('Hi');
+  assert.ok(refused.status === 'rejected');
+  assert.equal(refused.error.error.code, 'capacity');
+  assert.match(refused.error.error.detail ?? '', /^The local estimate of this month's spend has reached its \$150\.00 guard: an estimated \$150\.00 is counted this month\./);
+  assert.equal(standard.sent(), 0);
+  // The owner's Console limit of $200: Details names it, $150 counted no longer refuses, and $200 counted does.
+  const owner = await hosted(context, {monthlyLimit: 200}, answered);
+  const configuredSpend = await owner.spend();
+  assert.deepEqual([configuredSpend.day.limitMicros, configuredSpend.month.limitMicros], [20_000_000, 200_000_000]);
+  countEarlier(owner.database(), configuredSpend.day.period, 'earlier-150', 150_000_000);
+  assert.equal((await owner.start('Hi')).status, 'accepted');
+  assert.equal((await owner.settled()).status, 'succeeded');
+  assert.equal(owner.sent(), 1);
+  await owner.titlesSettled(2);
+  countEarlier(owner.database(), configuredSpend.day.period, 'earlier-50', 50_000_000);
+  const capped = await owner.start('Again', 'hosted-again');
+  assert.ok(capped.status === 'rejected');
+  assert.equal(capped.error.error.code, 'capacity');
+  assert.match(capped.error.error.detail ?? '', /^The local estimate of this month's spend has reached its \$200\.00 guard: an estimated \$200\.\d\d is counted this month\./);
+  assert.equal(owner.sent(), 1, 'nothing more was sent');
 });
 
 void test('a model the built-in table does not know, even one named after an inherited member, is priced at the dearest known rate', async context => {

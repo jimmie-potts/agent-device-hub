@@ -40,3 +40,10 @@ void test('the prices fact names configured, built-in and dearest prices, and th
   assert.equal(spendNotice(view({day: {...day, spentMicros: 20_000_000 - 368_640}})), undefined, 'exactly the smallest call remains');
   assert.equal(spendNotice(view({month: {...month, spentMicros: 150_000_000}})), 'This month\'s local spend estimate has reached its $150.00 guard. New messages can start when the next month begins.');
 });
+
+void test('Details and the notice name the configured monthly guard the route reports (Hub #2102)', () => {
+  const owner = {...month, limitMicros: 200_000_000};
+  assert.equal(spendText(owner), '$12.50 of $200.00');
+  assert.equal(spendNotice({version: 1, day, month: {...owner, spentMicros: 150_000_000}, paid}), undefined, 'the default $150 no longer refuses');
+  assert.equal(spendNotice({version: 1, day, month: {...owner, spentMicros: 200_000_000}, paid}), 'This month\'s local spend estimate has reached its $200.00 guard. New messages can start when the next month begins.');
+});

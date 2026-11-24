@@ -68,6 +68,8 @@ export type AssistantOptions = {
   onCancelled?: (taskId: string) => void;
   /** The private section's prices per model for the spend ledger (Hub #2024); they override the built-in table (Hub #2047). */
   prices?: PriceTable;
+  /** The local monthly spend guard in millionths of a dollar (Hub #2102): the section's `assistant.monthlyLimit`, else $150. */
+  monthlyLimitMicros?: number;
   /** The time zone whose local day and month the spend limits use: the runtime host's own unless a test names one. */
   timeZone?: string;
   /**
@@ -204,7 +206,7 @@ export class AssistantEngine {
   readonly #allowed: readonly string[];
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly options: AssistantOptions = {}) {
     this.store = new AssistantStore(context.database());
-    this.spend = new SpendLedger(context.database(), options.prices ?? {}, () => context.clock.now(), options.timeZone);
+    this.spend = new SpendLedger(context.database(), options.prices ?? {}, () => context.clock.now(), options.timeZone, options.monthlyLimitMicros);
     this.titles = new ConversationTitles(context.database(), {outbox, spend: this.spend, now: () => context.clock.now(), after: (ms, callback) => context.scheduler.after(ms, callback),
       provider: () => options.titleProvider ?? options.syntheticTitleProvider,
       messages: conversationId => this.store.titleMessages(conversationId), reported: conversationId => this.store.report(conversationId).sequence > 0,

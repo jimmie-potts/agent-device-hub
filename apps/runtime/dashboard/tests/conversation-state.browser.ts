@@ -28,9 +28,10 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     const fixture = window.conversationFixture = {commands: [], reads: 0, spendReads: 0};
     // Chooses a profile as the rail does (Hub #2026): Reachy and MicroDuck use the same configured provider.
     fixture.choose = profile => {conversationRail.select(profile);};
-    // The shared spend route's answer: synthetic amounts in millionths of a dollar (Hub #2024).
+    // The shared spend route's answer: synthetic amounts in millionths of a dollar (Hub #2024), with a monthly guard the
+    // section's assistant.monthlyLimit set to $200 in place of the $150 default (Hub #2102).
     let spend = {version: 1, day: {period: '2026-11-21', spentMicros: 1234567, limitMicros: 20000000, unreported: 1, unreportedMicros: 340000},
-      month: {period: '2026-11', spentMicros: 12500000, limitMicros: 150000000, unreported: 0, unreportedMicros: 0}, paid: null};
+      month: {period: '2026-11', spentMicros: 12500000, limitMicros: 200000000, unreported: 0, unreportedMicros: 0}, paid: null};
     const toolText = ${JSON.stringify(toolText)};
     const replyText = ${JSON.stringify(replyText)};
     const coding = {id: 'coding', revision: 1, availability: 'available', endpointId: 'worker', active: null};
@@ -193,7 +194,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Reserved usage', '0 / 1000000 units');
     await fact(usage, 'Paid cost', '0 (synthetic calls)');
     await fact(usage, 'Spend today', '$1.23 of $20.00, including $0.34 reserved for 1 call without reported usage');
-    await fact(usage, 'Spend this month (estimate)', '$12.50 of $150.00');
+    await fact(usage, 'Spend this month (estimate)', '$12.50 of $200.00');
     await usage.getByText('This month\'s figure is a local estimate. The Anthropic Console holds the real monthly limit and spend.', {exact: true}).waitFor();
     await fact(usage, 'Prices', 'Not needed (synthetic calls)');
     await settings.locator('summary').click();

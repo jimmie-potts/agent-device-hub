@@ -19,7 +19,10 @@ export const LIMITS = Object.freeze({modelCalls: 50, toolCalls: 40, questions: 1
    * returns them to never holds more: `assistant-state/2.3` bounds a queue's count by it.
    */
   queueBound: 16});
-/** The shared spend limits across all profiles (Hub #2024), in millionths of a US dollar, by the runtime host's local day and month. */
+/**
+ * The shared spend limits across all profiles (Hub #2024), in millionths of a US dollar, by the runtime host's local day and
+ * month. `monthMicros` is the default local monthly guard; the section's optional `assistant.monthlyLimit` replaces it (Hub #2102).
+ */
 export const SPEND_LIMITS = Object.freeze({dayMicros: 20_000_000, monthMicros: 150_000_000});
 /** Millionths of a dollar as dollars and cents, for limit messages and the page. */
 export const dollars = (micros: number): string => `$${(micros / 1_000_000).toFixed(2)}`;
