@@ -195,6 +195,12 @@ it('a stored conversation keeps its companions across a restart, and the latest 
   world.clock.advance(1);
   await take(observation(identity, 'task-1', {kind: 'activity-observed'}, 3, world.clock.now()));
   assert.deepEqual(shown()?.companions, apartment, 'an observation without companions leaves them');
+  // An observation newer in the ordering but older than the session's last display metadata names other companions: the
+  // newer-metadata guard keeps the list, as it keeps the title and label.
+  const older = {...observation(identity, 'task-1', {kind: 'turn-waiting'}, 4, world.clock.now() - 5), companions: REACHY};
+  const result = await take(older);
+  assert.ok(result.ok && result.outcome === 'applied', 'the observation itself applies');
+  assert.deepEqual(shown()?.companions, apartment, 'an older observation does not replace the companions');
   const published = world.since(0).filter(message => message.type === 'org.bunny.session.updated');
   assert.ok(published.length > 0 && published.every(message => message.dataschema === `${BASE}session/3.2`));
 });

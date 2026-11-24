@@ -18,7 +18,13 @@
 - [x] 4.1 Red: row tests for the tag, the duplicate rule, the Facts value, a shared room's order, sessions without companions and the companion search. Evidence: two tests in `sessions.test.ts` fail before the row change (red run in the PR).
 - [x] 4.2 Tag, Facts row, search and the one-line face. Evidence: `test:runtime-dashboard:built` and `companion-session.browser.ts` pass; with the card reverted the journey fails at the Companion fact (negative control in the PR); screenshots at 1280 and 390 px are kept privately.
 
-## 5. Documentation and archive
+## 5. Review round 1 on PR 2079
 
-- [x] 5.1 Contracts README and MAPPING, companions README, dashboard README. Evidence: readback.
-- [x] 5.2 Sync and archive this change. Evidence: `npm run check:workflow` passes.
+- [x] 5.1 Owner decision B: tag the first companion and count the others, with an accessible count; the line keeps the evidence age whole. Evidence: the journey's three-companion case at 1280 and 390 px fails on the reviewed head (the evidence age leaves the tile) and passes; the count's unit test fails before the change.
+- [x] 5.2 Owner decision A: leave out the client beside a tag and keep it in the facts; the line is as tall as an untagged one. Evidence: the journey's client, Client-fact, line-height and heading checks; the unit test for the Client fact fails before the change.
+- [x] 5.3 Search by companion ID, key the tag by ID, pin the core's newer-metadata guard for companions, and add the upgrade section. Evidence: the search unit test fails before the change; with the companions merge moved outside the guard the core test fails (negative control in the PR); `apps/runtime/UPGRADE.md` readback.
+
+## 6. Documentation and archive
+
+- [x] 6.1 Contracts README and MAPPING, companions README, dashboard README. Evidence: readback.
+- [x] 6.2 Sync and archive this change. Evidence: `npm run check:workflow` passes.

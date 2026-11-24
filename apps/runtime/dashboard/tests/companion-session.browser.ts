@@ -1,7 +1,9 @@
 // A native conversation's session tile names its companion apart from its title (Hub #2054), on the built runtime with
-// the real companions module, a synthetic provider and a synthetic hook. The untitled session shows its persona once, the
-// renamed one tags its companion before the client, the expanded facts name the companion, the search finds it, a Claude
-// session looks as before, and the face's first line stays one line at desktop and phone widths. It contacts no device.
+// the real companions module, a synthetic provider and a synthetic hook. The untitled session shows its persona once; the
+// renamed one tags its companion in place of the client, which its facts keep (owner decision A); a shared room's record
+// tags its first companion and counts the others (owner decision B); the facts name every companion, the search finds
+// one by name or ID, a Claude session looks as before, and the face's first line stays one line, as tall as a line
+// without a tag, at desktop and phone widths. It contacts no device.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser, type Locator, type Page} from 'playwright';
@@ -9,25 +11,36 @@ import {sessionStarted, turnStarted} from '../../dist/tests/fixtures/agents.js';
 import {feed, startWorld} from './harness.ts';
 
 const RENAMED = 'Synthetic kitchen plans';
+// A shared room's companions (Hub #2032), in the room's order.
+const ROOM = [{id: 'bunny', name: 'B.U.N.N.Y.'}, {id: 'reachy', name: 'Reachy'}, {id: 'microduck', name: 'MicroDuck'}];
 
-/** The face's first line at the page's width: one line, inside the tile, with the evidence age whole. */
-async function oneLine(tile: Locator, label: string): Promise<void> {
+/**
+ * The face's first line at the page's width: one line inside the tile, with the evidence age whole and inside it, the
+ * tag and count before the age, and no client beside a tag. Returns the line's height.
+ */
+async function oneLine(tile: Locator, label: string): Promise<number> {
   const box = await tile.locator('.agent-meta').evaluate(meta => {
     const rect = (node: Element | null) => node === null ? null : node.getBoundingClientRect();
-    const face = rect(meta.closest('.agent-face')), line = rect(meta), tag = rect(meta.querySelector('.agent-companion'));
-    const client = rect(meta.querySelector('.agent-client')), heard = meta.querySelector<HTMLElement>('.agent-heard');
-    return {viewport: window.innerWidth, face, line, tag, client, heardWhole: heard !== null && heard.scrollWidth <= heard.clientWidth + 1};
+    const heard = meta.querySelector<HTMLElement>('.agent-heard');
+    return {viewport: window.innerWidth, face: rect(meta.closest('.agent-face')), line: rect(meta), tag: rect(meta.querySelector('.agent-companion')),
+      more: rect(meta.querySelector('.agent-companion-more')), client: rect(meta.querySelector('.agent-client')), heard: rect(heard),
+      heardWhole: heard !== null && heard.scrollWidth <= heard.clientWidth + 1};
   });
-  assert.ok(box.face !== null && box.line !== null && box.client !== null, label);
-  assert.ok(box.line.left >= box.face.left && box.line.right <= box.face.right + 1, `${label}: the line stays inside the tile`);
+  assert.ok(box.face !== null && box.line !== null && box.heard !== null, label);
   assert.ok(box.face.right <= box.viewport + 1, `${label}: the tile stays inside the page`);
-  // One line is the chip's height, 20 px; a wrapped client made it 32 px.
-  assert.ok(box.line.height <= 24, `${label}: the line does not wrap (${String(box.line.height)}px)`);
-  if (box.tag !== null) {
-    assert.ok(Math.abs(box.tag.top + box.tag.height / 2 - (box.client.top + box.client.height / 2)) < 6, `${label}: the tag sits on the client's line`);
-    assert.ok(box.tag.right <= box.client.left + 1, `${label}: the tag leads the client`);
-  }
+  assert.ok(box.heard.left >= box.face.left && box.heard.right <= box.face.right + 1, `${label}: the evidence age stays inside the tile`);
   assert.equal(box.heardWhole, true, `${label}: the evidence age is whole`);
+  assert.ok(box.line.left >= box.face.left && box.line.right <= box.face.right + 1, `${label}: the line stays inside the tile`);
+  assert.ok(box.line.height <= 20, `${label}: the line does not wrap (${String(box.line.height)}px)`);
+  for (const [name, part] of [['tag', box.tag], ['count', box.more]] as const) {
+    if (part === null) continue;
+    assert.ok(part.right <= box.heard.left + 1 && Math.abs(part.top + part.height / 2 - (box.line.top + box.line.height / 2)) <= 2,
+      `${label}: the ${name} sits centred on the line before the age`);
+    assert.ok(part.left >= box.face.left && part.right <= box.face.right, `${label}: the ${name} stays inside the tile`);
+  }
+  if (box.tag !== null && box.more !== null) assert.ok(box.tag.right <= box.more.left + 1, `${label}: the count follows the tag`);
+  assert.equal(box.tag !== null && box.client !== null, false, `${label}: beside a tag the line leaves out the client`);
+  return box.line.height;
 }
 
 export async function companionSessionJourney(browser: Browser): Promise<void> {
@@ -100,33 +113,80 @@ export async function companionSessionJourney(browser: Browser): Promise<void> {
     assert.ok(contrast >= 4.5, `the tag's text is readable on its fill (${contrast.toFixed(2)}:1)`);
     assert.equal(await renamed.getByRole('heading', {level: 3}).textContent(), RENAMED, 'the title holds no companion name');
     assert.equal(await tile('B.U.N.N.Y.').count(), 0);
-    await oneLine(renamed, 'desktop');
-    await oneLine(claude, 'desktop, Claude');
+    // A shared room's record, simulated: no producer names several companions yet (the Apartment room is #2032), so the
+    // page's sync answer gives the renamed session the room's three companions. The page validates nothing more than
+    // the core's own records.
+    let room = true;
+    await page.route('**/api/sdk/v1/sync', async route => {
+      const response = await route.fetch();
+      const body: unknown = await response.json();
+      const walk = (node: unknown): void => {
+        if (Array.isArray(node)) { node.forEach(walk); return; }
+        if (typeof node !== 'object' || node === null) return;
+        const message = node as {type?: unknown; data?: {identity?: {provider?: unknown}; companions?: unknown}};
+        if (room && message.type === 'org.bunny.session.updated' && message.data?.identity?.provider === 'bunny') message.data.companions = ROOM;
+        Object.values(node).forEach(walk);
+      };
+      walk(body);
+      await route.fulfill({response, json: body});
+    });
+    await page.reload();
+    await feed(page, 'connected');
+    const more = renamed.locator('.agent-companion-more');
+    // Wait for the room's record, however the face shows several companions, then check the line first.
+    await renamed.locator('.agent-companion-more, .agent-companion:nth-child(2)').first().waitFor();
+    await oneLine(renamed, 'room, desktop');
+    assert.equal(await renamed.locator('.agent-companion').count(), 1, 'a room tags only its first companion');
+    assert.equal(await renamed.locator('.agent-companion').textContent(), 'Companion: B.U.N.N.Y.');
+    assert.equal(await more.locator('[aria-hidden=true]').textContent(), '+2', 'and counts the others');
+    assert.equal(await more.locator('.agent-companion-word').textContent(), 'and 2 more companions: Reachy, MicroDuck', 'with an accessible name');
+    await shot(page, 'companion-session-room-desktop');
+    await renamed.locator('summary.agent-face').click();
+    assert.deepEqual((await facts(renamed)).find(([term]) => term === 'Companions'), ['Companions', 'B.U.N.N.Y., Reachy, MicroDuck'], 'the facts list every companion');
+    await renamed.locator('summary.agent-face').click();
+    await page.setViewportSize({width: 390, height: 844});
+    await renamed.scrollIntoViewIfNeeded();
+    await oneLine(renamed, 'room, phone');
+    await shot(page, 'companion-session-room-phone');
+    await page.setViewportSize({width: 1280, height: 900});
+    room = false;
+    await page.reload();
+    await feed(page, 'connected');
+    await renamed.waitFor();
+    assert.equal(await more.count(), 0, 'the conversation\'s own record names one companion');
+    // Owner decision A: beside the tag the line leaves out the client, and is exactly as tall as a line without a tag.
+    const tagged = await oneLine(renamed, 'desktop');
+    assert.equal(tagged, await oneLine(claude, 'desktop, Claude'), 'a tag leaves the line\'s height as it is');
+    assert.equal(await claude.locator('.agent-client').textContent(), 'Claude Code', 'a tile without a tag keeps its client');
+    const [taggedHeading, claudeHeading] = await Promise.all([renamed, claude].map(card => card.getByRole('heading', {level: 3}).evaluate(node => node.getBoundingClientRect().top)));
+    assert.equal(taggedHeading, claudeHeading, 'the headings of neighbouring tiles line up');
     await shot(page, 'companion-session-desktop');
     await renamed.locator('summary.agent-face').click();
     assert.deepEqual((await facts(renamed)).find(([term]) => term === 'Companion'), ['Companion', 'B.U.N.N.Y.']);
+    assert.deepEqual((await facts(renamed)).find(([term]) => term === 'Client'), ['Client', 'B.U.N.N.Y. assistant'], 'the facts keep the client');
     await renamed.locator('.agent-evidence dl.strip').scrollIntoViewIfNeeded();
     await shot(page, 'companion-session-desktop-facts');
     await renamed.locator('summary.agent-face').click();
-    // The search finds the session by its companion's name, and not the Claude session.
+    // The search finds the session by its companion's name or ID, and not the Claude session.
     const search = page.getByRole('searchbox', {name: 'Find a session', exact: true});
-    await search.fill('B.U.N.N.Y.');
-    await claude.waitFor({state: 'hidden'});
-    assert.equal(await renamed.isVisible(), true, 'the companion\'s name finds its titled session');
-    await search.fill('');
-    await claude.waitFor();
+    for (const query of ['B.U.N.N.Y.', 'bunny']) {
+      await search.fill(query);
+      await claude.waitFor({state: 'hidden'});
+      assert.equal(await renamed.isVisible(), true, `"${query}" finds the companion's titled session`);
+      await search.fill('');
+      await claude.waitFor();
+    }
     // At phone width the first line stays one line, without horizontal page scroll.
     await page.setViewportSize({width: 390, height: 844});
     await renamed.scrollIntoViewIfNeeded();
-    await oneLine(renamed, 'phone');
-    await oneLine(claude, 'phone, Claude');
+    assert.equal(await oneLine(renamed, 'phone'), await oneLine(claude, 'phone, Claude'));
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, 'no horizontal page scroll');
     await shot(page, 'companion-session-phone');
     await renamed.locator('summary.agent-face').click();
     await renamed.locator('.agent-evidence').scrollIntoViewIfNeeded();
     await shot(page, 'companion-session-phone-facts');
     assert.deepEqual(errors, []);
-    process.stdout.write('Companion session: untitled persona once, renamed tile tagged apart from its title, Companion fact, companion search, Claude unchanged, one-line face at 1280 and 390 px passed.\n');
+    process.stdout.write('Companion session: untitled persona once, renamed tile tagged in place of its client, a room\'s first tag and count, Companion and Client facts, companion search by name and ID, Claude unchanged, one-line face of unchanged height at 1280 and 390 px passed.\n');
   } finally {
     await context.close();
     await world.close();

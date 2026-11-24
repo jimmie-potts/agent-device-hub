@@ -753,8 +753,8 @@ observation names the conversation's companion in `companions`, its profile ID
 and persona name, such as `{id: 'reachy', name: 'Reachy'}` (Hub #2054). No
 title ever carries the companion's name except the persona fallback, and title
 metadata carries no companion, so a generated title or a rename never changes
-it. The dashboard's session tile shows it as a tag before the client when the
-session's name is not already the persona; the other devices receive it in the
+it. The dashboard's session tile shows it as a tag in place of the client when
+the session's name is not already the persona; the other devices receive it in the
 `session/3.2` record and show it only in their own later stories. Every
 transaction that changes a task also adds the `lifecycle/2.4` observations that
 move its conversation's session there, from the module's own source and on the

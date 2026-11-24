@@ -870,11 +870,16 @@ Card faces show the label (then title or native ID), project/client, state and
 how long ago the hub last heard from the session (**Heard 3m ago**, or **3m ago**
 on a closed Home tile, Hub #1947).
 A native conversation's session (Hub #2054) also names its companion: a neutral
-chip such as **Reachy**, read as "Companion: Reachy", leads the first line
-before the client, which then shortens to an ellipsis so the line stays one
-line. An untitled session already named by its persona shows no tag, so the
-name never appears twice. The expanded facts add a **Companion** row, and the
-search matches a companion's name. Sessions without companions look as before.
+chip such as **Reachy**, read as "Companion: Reachy", leads the first line in
+place of the client, which the expanded facts keep as **Client**. A session that
+names several companions, such as a shared room, tags the first and counts the
+others (**+2**, read as "and 2 more companions: Reachy, MicroDuck"). The tag
+shortens to an ellipsis before the evidence age does, so the line stays one
+line, and it is no taller than a line without a tag. An untitled session already
+named by its persona shows no tag, so the name never appears twice. The expanded
+facts add a **Companion** row (**Companions** for several), and the search
+matches a companion's name or ID, so `bunny` finds B.U.N.N.Y. Sessions without
+companions look as before.
 The page computes that age against its own clock from the record's
 `lastEvidenceAtMs`, which the core publishes to the minute, so a stuck
 "working" session can be told apart from real work without another read or any
