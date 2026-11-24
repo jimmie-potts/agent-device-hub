@@ -1,0 +1,23 @@
+## 1. Contracts
+
+- [x] 1.1 Red: `coding.test.mjs` cases for `coding-endpoint/2.2` slots, `coding-work/2.1` companion and `coding-state/2.2` runs and waiting. Evidence: with the three registrations removed, 3 of 11 tests fail; with the payload checks replaced, 2 fail (PR).
+- [x] 1.2 Schemas, types, payload checks and fixtures; `families.test.mjs` version list. Evidence: the event-contract tests pass.
+
+## 2. Coordinator and module
+
+- [x] 2.1 Red: coordinator tests for three companions at once, the connection-only binding, cancel of a waiting hand-off, per-run timeout and loss, restart with a waiting and a sending hand-off, a refused waiting dispatch, an older worker and the 2.2 state. Evidence: negative controls fail the matching tests (PR).
+- [x] 2.2 `coordinator.ts` and `store.ts`: runs by operation, a reservation per slot, the durable waiting line, `handOff`, the drain, per-run settlement and `coding-state/2.2`. Evidence: `coding-coordinator.test.js` passes 16 of 16.
+- [x] 2.3 Engine and module: the delegate seam returns `waiting`, the proposal binds to the worker connection and is offered while the slot is busy, and a run is tagged with its task's companion. Evidence: `coding-slots.test.js` and the waiting title test pass.
+
+## 3. Worker
+
+- [x] 3.1 Three slots, one per companion, the 2.2 declaration, per-run cancel, a lost endpoint freeing every slot, reports only on the starting endpoint and serialized git setup per repository. Evidence: `coding-worker.test.js` passes; negative controls fail (PR).
+
+## 4. Page
+
+- [x] 4.1 Worker slots, the companion's slot, plan usage, the busy approval note and the waiting card. Evidence: `coding-status.test.js` and the `coding-slots` browser journey pass.
+
+## 5. Documentation and archive
+
+- [x] 5.1 docs/coding-worker.md, the companions and event-contracts READMEs, docs/development.md and apps/runtime/UPGRADE.md. Evidence: readback.
+- [x] 5.2 Sync and archive this change. Evidence: `npm run check:workflow` passes.

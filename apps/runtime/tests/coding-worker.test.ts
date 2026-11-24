@@ -51,7 +51,7 @@ function fakeEdge() {
   const participant = {openEndpoint: <T extends object>(options: RemoteEndpointOptions<T>) => {
     opened += 1; responder = options.respond as unknown as (command: Command<CodingWork>) => Reply; onClosed = options.onClosed;
     const id = `worker-endpoint-${String(opened)}`;
-    return Promise.resolve({...endpoint, id, publish: (family: string, draft: {data: unknown}) => {current = id; return endpoint.publish(family as never, draft as never);}});
+    return Promise.resolve({...endpoint, id, publish: (family: string, draft: {data: unknown}) => {current = id; return endpoint.publish(family, draft as never);}});
   }, close: () => {disconnected += 1; return Promise.resolve();}} as unknown as RemoteParticipant;
   const connect = (options: {onDiagnostic?: (diagnostic: {event: string}) => void}) => {onDiagnostic = options.onDiagnostic; return Promise.resolve(participant);};
   return {connect: connect as unknown as typeof connectRemote, requests, progress, reportedOn, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed, opened: () => opened, disconnected: () => disconnected,

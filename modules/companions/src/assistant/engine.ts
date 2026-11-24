@@ -918,7 +918,7 @@ export class AssistantEngine {
       result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, companion: task.profile, repository: proposal.data.repository, brief: proposal.data.brief,
         expectedRevision: proposal.expectedRevision}, active.span.context, signal)
         .then(answer => answer.status === 'waiting'
-          ? {text: `accepted: the coding worker is busy with another ${companion} hand-off, so this one waits for ${companion}'s slot as operation ${id}; it is sent when the slot frees, and its structured result arrives as this tool's later result`, units: 0}
+          ? {text: `accepted: the coding worker is busy, so this hand-off waits for ${companion}'s slot as operation ${id}; it is sent when that slot frees, and its structured result arrives as this tool's later result`, units: 0}
           : settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)), (current, call) => {current.question = pending; call.action = action;});
     }
     const accepted = result.startsWith('accepted');

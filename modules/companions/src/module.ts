@@ -3,7 +3,7 @@ import type {SpeechQualification} from './speech-qualification.js';
 import {replyRefusal, speechRefusal} from './presentation-policy.js';
 import {SpeechCoordinator, speechStateDraft} from './speech/coordinator.js';
 import {CodingCoordinator, codingStateDraft} from './coding/coordinator.js';
-import {DEFAULT_CODING_BOUNDS, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {Knowledge} from './knowledge/engine.js';
 import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './preferences/engine.js';
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';

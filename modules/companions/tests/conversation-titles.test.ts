@@ -682,6 +682,25 @@ void test('an accepted coding hand-off starts a check whose prompt carries the b
   assert.deepEqual(w.titles.map(message => titleOf(message)?.value), ['Timer question', '#2041 Flaky timer test', 'Timer work']);
 });
 
+void test('a hand-off that waits for its companion\'s busy slot is an accepted hand-off for the title, checked once (Hub #2028)', {timeout: 20_000}, async context => {
+  const turnModel: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: input => Promise.resolve(input.transcript.every(item => item.role === 'owner')
+    ? {text: null, calls: [{id: 'call-1', name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: 'Fix the flaky timer test from issue #2041.'}}], stop: 'tool', units: 10}
+    : done('Handed off.'))};
+  const provider = titler([titled('Timer question'), titled('#2041 Flaky timer test')]);
+  const w = await world(context, {provider: turnModel, titleProvider: provider, tools: ['delegate_coding'],
+    coding: () => ({available: true, endpointId: 'worker', revision: 1, busy: true}),
+    delegate: data => Promise.resolve({status: 'waiting' as const, requestId: data.requestId})});
+  await w.start('Can the worker look at the flaky timer test?');
+  await w.titled(1);
+  await w.until(() => w.status()?.status === 'waiting' && w.status()?.questionId !== null && w.status()?.hasAnswer === false);
+  await w.answer('approve');
+  await w.until(() => w.status()?.status === 'waiting' && w.status()?.questionId?.includes('delegation') === true);
+  await w.titled(2);
+  await turns();
+  const calls = await w.settled(provider.prompts.length);
+  assert.equal(calls.filter(call => call.events?.includes('A coding hand-off was accepted.') === true).length, 1, JSON.stringify(calls.map(call => call.events)));
+});
+
 void test('a coding hand-off\'s result starts a check labelled with its outcome alone; the worker\'s text never reaches the title model', {timeout: 20_000}, async context => {
   let turn = 0;
   const turnModel: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: () => {

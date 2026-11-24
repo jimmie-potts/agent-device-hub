@@ -6,6 +6,7 @@ import {LIMITS} from '../assistant/limits.js';
 import type {SpendView} from '../assistant/spend-contract.js';
 import {priceText, spendText} from './conversation-spend.js';
 import {profiles} from './conversation-rail.js';
+import {planUsage, slotStatus, workerAvailability} from './coding-status.js';
 
 /** The longest owner title, as the session label bound (Hub #2025). */
 const TITLE_CHARS = 80;
@@ -25,15 +26,6 @@ export function useDetailsOverlay(): boolean {
 }
 
 const catalog = ['read_sessions', 'set_mode', 'delegate_coding'];
-
-function workerAvailability(coding: CodingState | undefined): string {
-  switch (coding?.availability) {
-    case 'available': return coding.active === null ? 'Connected and idle' : `Running task ${coding.active.taskId.slice(0, 8)} (${coding.active.status})`;
-    case 'unavailable': return 'Lost. Start it again on your computer.';
-    case 'off': return 'Not connected';
-    case undefined: return 'Unknown';
-  }
-}
 
 function toolList(names: readonly string[] | undefined): string {
   if (names === undefined) return 'Unknown';
@@ -131,6 +123,9 @@ export function ConversationDetails({
           ['Allowed tools', toolList(allowed)],
           ['Unavailable tools', toolList(unavailable)],
           ['Coding worker', workerAvailability(coding)],
+          [`${profileName}'s coding slot`, slotStatus(coding, profile)],
+          // The plan's usage windows are shared by every run; the worker reports them after a run (Hub #2028).
+          ['Plan usage', planUsage(coding?.readiness, ms => new Date(ms).toLocaleString()).join('; ')],
         ]}/>
         <p>Reads need no approval. Proposed changes need your approval in the conversation.</p>
       </details>

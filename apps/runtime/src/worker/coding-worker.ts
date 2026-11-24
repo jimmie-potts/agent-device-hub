@@ -471,16 +471,15 @@ export class CodingWorker {
     let worktree: string, base: string | null = null;
     try {
       // Runs on the same repository each get their own fresh worktree (Hub #2028); their git setup takes turns.
-      worktree = await this.#serially(repository.path, async () => {
+      ({worktree, base} = await this.#serially(repository.path, async () => {
         await stat(join(repository.path, '.git'));
         try {await git(repository.path, ['fetch', '--quiet', 'origin', 'main'], {timeoutMs: 120_000});} catch {this.log('coding-worker: fetch failed; using the local origin/main');}
-        base = await git(repository.path, ['rev-parse', 'origin/main']);
-        if (!SHA.test(base)) base = null;
+        const revision = await git(repository.path, ['rev-parse', 'origin/main']), checked = SHA.test(revision) ? revision : null;
         const root = join(repository.path, '.local', 'worktrees'); await mkdir(root, {recursive: true, mode: 0o700});
         const fresh = join(root, `bunny-${taskId.slice(0, 8)}-${randomUUID().slice(0, 8)}`);
-        await git(repository.path, ['worktree', 'add', '--detach', '--quiet', fresh, base ?? 'origin/main']);
-        return fresh;
-      });
+        await git(repository.path, ['worktree', 'add', '--detach', '--quiet', fresh, checked ?? 'origin/main']);
+        return {worktree: fresh, base: checked};
+      }));
     } catch {
       await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'worktree', result: assembleResult(repository.name, base, null, [], '', 'worktree').result}); return;
     }
