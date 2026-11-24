@@ -1,97 +1,142 @@
-// The feed wait's failure says what the page showed and how its stream requests stood (#2068). A fake page stands in for
-// Playwright's, so this runs without a browser; the page-side watch itself runs in every browser journey.
+// The feed wait's failure says what the page showed and how its stream requests stood (#2068). A fake page and a fake
+// clock stand in for Playwright's page and the wall clock, so this runs without a browser and every time is exact; the
+// page-side watch itself runs in every browser journey.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {waitForFeed, type FeedPage, type FeedRequest} from './feed-wait.ts';
 
 const ORIGIN = 'http://127.0.0.1:4100';
+/** The fake clock's reading when each wait begins. */
+const SINCE = 1_800_000_000_000;
 
-function request(path: string, startTime: number, state: {failed?: string; status?: number; ended?: boolean}): FeedRequest {
+type RequestState = {failed?: string; status?: number; ended?: boolean; loads?: boolean; url?: () => string};
+
+function request(path: string, startTime: number, state: RequestState = {}): FeedRequest {
   return {
-    url: () => ORIGIN + path,
+    url: state.url ?? (() => ORIGIN + path),
     failure: () => state.failed === undefined ? null : {errorText: state.failed},
     existingResponse: () => state.status === undefined ? null : {status: () => state.status ?? 0},
     timing: () => ({startTime, responseStart: state.status === undefined ? -1 : 5, responseEnd: state.ended === true ? 9 : -1}),
+    isNavigationRequest: () => state.loads === true,
+    frame: () => ({parentFrame: () => null}),
   };
 }
 
 type Script = {
   wait: (sent: (request: FeedRequest) => void) => Promise<unknown>;
   seen?: unknown;
-  requests?: (since: number) => readonly FeedRequest[];
+  requests?: () => readonly FeedRequest[];
   readFails?: boolean;
 };
 
-function fakePage(script: Script): {page: FeedPage; selectors: string[]} {
+function fakePage(script: Script): {page: FeedPage; selectors: string[]; evaluated: string[]} {
   const selectors: string[] = [];
+  const evaluated: string[] = [];
   const listeners: ((request: FeedRequest) => void)[] = [];
   const sent = (request: FeedRequest): void => { for (const listener of listeners) listener(request); };
-  const since = Date.now();
   const page: FeedPage = {
     on: (_event, listener) => { listeners.push(listener); },
     locator: selector => { selectors.push(selector); return {waitFor: () => script.wait(sent)}; },
     evaluate: <R, Arg>(pageFunction: (arg: Arg) => R): Promise<R> => {
-      if (pageFunction.name === 'watchFeed') return Promise.resolve(undefined as R);
+      evaluated.push(pageFunction.name);
+      if (pageFunction.name === 'watchFeed' || pageFunction.name === 'stopFeedWatch') return Promise.resolve(undefined as R);
       if (script.readFails === true) return Promise.reject(new Error('Execution context was destroyed\nmore'));
       return Promise.resolve(script.seen as R);
     },
-    requests: () => Promise.resolve(script.requests?.(since) ?? []),
+    requests: () => Promise.resolve(script.requests?.() ?? []),
   };
-  return {page, selectors};
+  return {page, selectors, evaluated};
 }
 
-const timeout = (): Promise<never> => Promise.reject(new Error('locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for locator'));
+const ORIGINAL = 'locator.waitFor: Timeout 10000ms exceeded.';
+const timeout = (): Promise<never> => Promise.reject(new Error(`${ORIGINAL}\nCall log:\n  - waiting for locator`));
+const HEAD = `feed(page, 'connected') did not see main#main[data-feed="connected"]: ${ORIGINAL}`;
 
-void test('a connected feed resolves the wait without reading the page further', async () => {
-  const {page, selectors} = fakePage({wait: () => Promise.resolve()});
-  await waitForFeed(page, 'connected');
+async function expired(page: FeedPage, clock: () => number): Promise<Error> {
+  const error = await waitForFeed(page, 'connected', clock).then(() => assert.fail('the wait expired'), (caught: unknown) => caught);
+  assert.ok(error instanceof Error);
+  return error;
+}
+
+void test('a connected feed resolves the wait and then removes the page-side watch', async () => {
+  const {page, selectors, evaluated} = fakePage({wait: () => Promise.resolve()});
+  await waitForFeed(page, 'connected', () => SINCE);
+  await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(selectors, ['main#main[data-feed="connected"]']);
+  assert.deepEqual(evaluated, ['watchFeed', 'stopFeedWatch']);
 });
 
 void test('an expired wait says which feed states the page showed and how its stream requests stood', async () => {
-  const original = new Error('locator.waitFor: Timeout 10000ms exceeded.\nCall log:\n  - waiting for locator');
+  let now = SINCE;
+  const original = new Error(`${ORIGINAL}\nCall log:\n  - waiting for locator`);
   // Playwright reports a start time only for an answered request; the wait records when the others were sent.
-  const stranded = request('/api/sdk/v1/stream', 0, {});
+  const stranded = request('/api/sdk/v1/stream', 0);
   const {page} = fakePage({
-    wait: async sent => { await new Promise(resolve => setTimeout(resolve, 20)); sent(stranded); throw original; },
+    wait: sent => { now = SINCE + 2100; sent(stranded); now = SINCE + 10_000; return Promise.reject(original); },
     seen: {trail: ['connected@+0ms', 'reconnecting@+40ms'], main: {feed: 'reconnecting', copies: 'syncing', syncs: '2'}},
-    requests: since => [
-      request('/api/sdk/v1/stream', 0, {}),
-      request('/api/sdk/v1/stream', since - 1200, {status: 200}),
-      request('/api/sdk/v1/sync', since - 900, {status: 200, ended: true}),
-      request('/api/sdk/v1/stream', since + 30, {failed: 'net::ERR_FAILED'}),
+    requests: () => [
+      request('/api/sdk/v1/stream', 0),
+      request('/api/sdk/v1/stream', SINCE - 1200, {status: 200}),
+      request('/api/sdk/v1/sync', SINCE - 900, {status: 200, ended: true}),
+      request('/api/sdk/v1/stream', SINCE + 30, {failed: 'net::ERR_FAILED'}),
       stranded,
-      request('/api/sdk/v1/sync', since + 2200, {}),
-      request('/app.js', since - 1500, {status: 200, ended: true}),
+      request('/api/sdk/v1/sync', SINCE + 2200),
+      request('/app.js', SINCE - 1500, {status: 200, ended: true}),
     ],
   });
-  const error = await waitForFeed(page, 'connected').then(() => assert.fail('the wait expired'), (caught: unknown) => caught);
-  assert.ok(error instanceof Error);
+  const error = await expired(page, () => now);
   assert.equal(error.cause, original, 'the original timeout stays the cause');
-  const lines = error.message.split('\n').map(line => line.trim());
-  assert.equal(lines.length, 4);
-  assert.deepEqual(lines.slice(0, 3), [
-    'feed(page, \'connected\') did not see main#main[data-feed="connected"]: locator.waitFor: Timeout 10000ms exceeded.',
+  assert.deepEqual(error.message.split('\n').map(line => line.trim()), [
+    HEAD,
     'data-feed during the wait: connected@+0ms -> reconnecting@+40ms',
     'main#main now has data-feed="reconnecting" data-copies="syncing" data-syncs="2"',
+    'stream requests (start relative to the wait): 4, latest (start unknown, before the page\'s first feed wait) no response yet; '
+      + '-1200ms answered 200 5ms after it started (body open); +30ms failed net::ERR_FAILED; +2100ms no response yet; '
+      + 'other SDK requests of this document with no response yet: 1',
   ]);
-  assert.match(lines[3] ?? '', new RegExp('^stream requests \\(start relative to the wait\\): 4, latest '
-    + '\\(start unknown, before the page\'s first feed wait\\) no response yet; -1200ms answered 200 5ms after it started \\(body open\\); '
-    + '\\+30ms failed net::ERR_FAILED; \\+(1\\d|[2-9]\\d|\\d{3})ms no response yet; other SDK requests with no response yet: 1$'));
+});
+
+void test('requests sent before the page\'s latest document load are marked as the previous document\'s', async () => {
+  const {page} = fakePage({
+    wait: timeout,
+    seen: {trail: ['(no main)@+0ms', 'connecting@+300ms'], main: {feed: 'connecting', copies: 'loading', syncs: '0'}},
+    requests: () => [
+      request('/api/sdk/v1/stream', SINCE - 5000, {status: 200}),
+      request('/api/sdk/v1/sync', SINCE - 4000),
+      request('/', SINCE - 100, {status: 200, ended: true, loads: true}),
+      request('/api/sdk/v1/stream', SINCE + 250, {status: 200}),
+    ],
+  });
+  const error = await expired(page, () => SINCE);
+  assert.equal(error.message.split('\n').at(-1)?.trim(), 'stream requests (start relative to the wait): 2, latest '
+    + '-5000ms answered 200 5ms after it started (body open) [previous document]; +250ms answered 200 5ms after it started (body open); '
+    + 'other SDK requests of this document with no response yet: 0');
 });
 
 void test('an expired wait on a page it cannot read still names the wait and says why', async () => {
   const {page} = fakePage({wait: timeout, readFails: true});
-  const error = await waitForFeed(page, 'connected').then(() => assert.fail('the wait expired'), (caught: unknown) => caught);
-  assert.ok(error instanceof Error);
-  assert.match(error.message, /^feed\(page, 'connected'\) did not see main#main\[data-feed="connected"\]: locator\.waitFor: Timeout 10000ms exceeded\.\n/);
-  assert.match(error.message, /\n {2}the page could not be read: Execution context was destroyed\n/);
-  assert.match(error.message, /\n {2}stream requests \(start relative to the wait\): none in the page's recent requests; other SDK requests with no response yet: 0$/);
+  const error = await expired(page, () => SINCE);
+  assert.deepEqual(error.message.split('\n').map(line => line.trim()), [
+    HEAD,
+    'the page could not be read: Execution context was destroyed',
+    'stream requests (start relative to the wait): none in the page\'s recent requests; other SDK requests of this document with no response yet: 0',
+  ]);
+});
+
+void test('a failure while gathering the facts does not replace the original timeout', async () => {
+  const original = new Error(`${ORIGINAL}\nCall log:\n  - waiting for locator`);
+  const {page} = fakePage({
+    wait: () => Promise.reject(original),
+    seen: {trail: null, main: null},
+    requests: () => [request('/api/sdk/v1/stream', 0, {url: () => { throw new TypeError('the request was collected'); }})],
+  });
+  const error = await expired(page, () => SINCE);
+  assert.equal(error.cause, original);
+  assert.deepEqual(error.message.split('\n').map(line => line.trim()), [HEAD, 'the wait\'s facts could not be gathered: the request was collected']);
 });
 
 void test('an absent main region and an unrecorded watch are reported as such', async () => {
   const {page} = fakePage({wait: timeout, seen: {trail: null, main: null}});
-  const error = await waitForFeed(page, 'connected').then(() => assert.fail('the wait expired'), (caught: unknown) => caught);
-  assert.ok(error instanceof Error);
-  assert.match(error.message, /\n {2}data-feed during the wait: \(not observed\)\n {2}main#main is absent\n/);
+  const error = await expired(page, () => SINCE);
+  assert.deepEqual(error.message.split('\n').slice(1, 3).map(line => line.trim()), ['data-feed during the wait: (not observed)', 'main#main is absent']);
 });
