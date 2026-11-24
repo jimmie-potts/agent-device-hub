@@ -4,6 +4,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {chromium, type Browser} from 'playwright';
 import sharp from 'sharp';
 import {changes, feed, startWorld} from './harness.ts';
+import {checkPixooPreview} from './pixoo-preview.ts';
 
 const world = await startWorld({pixooPages: true});
 let browser: Browser | undefined;
@@ -12,6 +13,8 @@ try {
   const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
   try {
     const errors: string[] = []; context.on('weberror', error => {errors.push(error.error().name);});
+    // The preview's bitmap lifetime, on the real component in a page of its own (Hub #1900).
+    await checkPixooPreview(context);
     const page = await context.newPage(); page.setDefaultTimeout(8000);
     const sent = changes(page);
     await page.goto(`${world.url}/#/module/pixoo/library`); await feed(page, 'connected');
