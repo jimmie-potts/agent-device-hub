@@ -89,4 +89,10 @@ void test('the conversation list is checked before the page shows it', () => {
   assert.deepEqual(decodeConversationList({version: 1, profile, older: null, conversations: [entry]}, profile).conversations, [entry]);
   assert.throws(() => decodeConversationList({version: 1, profile: 'reachy', older: null, conversations: [entry]}, profile));
   assert.throws(() => decodeConversationList({version: 1, profile, older: null, conversations: [{...entry, title: {value: 'x', source: 'model'}}]}, profile));
+  // The `older` cursor is the list's keyset cursor or null, and nothing else reaches the next read.
+  assert.equal(decodeConversationList({version: 1, profile, older: '1000:5', conversations: [entry]}, profile).older, '1000:5');
+  assert.equal(decodeConversationList({version: 1, profile, older: '-1:12', conversations: [entry]}, profile).older, '-1:12');
+  for (const older of [16, '16', '1:x', '1:2:3', '', '../x', {last: 1, row: 2}, true]) {
+    assert.throws(() => decodeConversationList({version: 1, profile, older, conversations: [entry]}, profile), JSON.stringify(older));
+  }
 });

@@ -696,3 +696,27 @@ void test('Details lists every conversation in pages: the current one first, the
   assert.deepEqual((await page(cursor)).conversations.map(value => value.conversationId), [ids[0]]);
   for (const bad of ['-1', '16', '1:x', '1:2:3']) assert.equal(await w.refusal('conversation', {profile: 'bunny', view: 'list', after: bad}), 'invalid-request', bad);
 });
+
+void test('conversations that share a last-message time across a page boundary are each listed once', async context => {
+  const w = await world(context);
+  const store = w.store(), ids: string[] = [];
+  // Twenty conversations: every earlier one's last message has the same time, so the page boundary falls inside the tie.
+  for (let index = 0; index < 20; index += 1) {
+    if (index > 0) store.newConversation('bunny');
+    const task = store.newTask('bunny', `Synthetic tied conversation ${String(index)}`);
+    task.status = 'succeeded'; store.save(task);
+    store.message(task, `${task.id}-prompt`, 'owner', task.prompt, index === 19 ? 9000 : 1000);
+    ids.push(task.conversationId);
+  }
+  const listed: string[] = [];
+  let after: string | null | undefined;
+  for (let pages = 0; pages < 5 && after !== null; pages += 1) {
+    const page = await w.content<ConversationList>('conversation', {profile: 'bunny', view: 'list', ...(after === undefined ? {} : {after})});
+    listed.push(...page.conversations.map(value => value.conversationId));
+    after = page.older;
+  }
+  assert.equal(after, null, 'the pages end');
+  assert.equal(listed.length, 20, 'twenty entries in all: none skipped or repeated');
+  assert.deepEqual([...listed].sort(), [...ids].sort(), 'no conversation is skipped');
+  assert.equal(listed[0], ids[19]);
+});
