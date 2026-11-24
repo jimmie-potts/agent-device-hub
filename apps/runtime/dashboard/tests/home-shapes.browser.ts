@@ -983,14 +983,17 @@ try {
     await page.setViewportSize({width: 1440, height: 1000});
     assert.deepEqual(busy, [], 'list cards stay still while nobody acts');
     // #2097: a window that holds a minute boundary. On a page clock of its own, every session tile's heard age moves on
-    // a minute, in its text and its title, and the card still does not page.
+    // a minute, in its text and its title, and the recorder reports none of it. Narrower than the loop above: this one
+    // window has no second, so a one-off record change in its real seconds (evidence turning stale) is the loop's to
+    // judge, not this check's; it looks only for the heard age's own writes.
     const {page: aging, close: closeAging} = await clocked();
     try {
       await aging.goto(world.url);await feed(aging, 'connected');
       const heard = aging.locator('[data-home-card="sessions"] .agent-heard');await heard.first().waitFor();await measure(aging);
       const titles = async (): Promise<string[]> => heard.evaluateAll(nodes => nodes.map(node => node.getAttribute('title') ?? ''));
       const before = await titles();
-      assert.deepEqual(await idleFor(aging, 61_000, ['sessions']), [], 'the session tiles stay still across a minute of their heard age');
+      const seen = await idleFor(aging, 61_000, ['sessions']);
+      assert.deepEqual(seen.filter(change => change.includes('title on span.agent-heard')), [], 'the session tiles\' heard age crossing a minute is not reported');
       const after = await titles();
       assert.ok(after.every((title, index) => title !== before[index]), `every heard age moved on a minute: ${before.join(' | ')} -> ${after.join(' | ')}`);
     } finally {await closeAging();}
