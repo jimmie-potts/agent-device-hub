@@ -156,8 +156,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   // An earlier conversation of this profile the owner opened from Details (Hub #2029), read only; undefined shows the current one.
   const [viewing, setViewing] = useState<string>();
   const [conversations, setConversations] = useState<readonly ConversationListEntry[]>();
-  // The offset of the next page of the profile's conversations, or null when every one is listed.
-  const [olderConversations, setOlderConversations] = useState<number | null>(null);
+  // The cursor of the next page of the profile's conversations, or null when every one is listed.
+  const [olderConversations, setOlderConversations] = useState<string | null>(null);
   const historyRef = useRef<ConversationHistory>(undefined);
   const historyAttempt = useRef<HistoryAttempt>(undefined);
   const [historyStatus, setHistoryStatus] = useState<'loading' | 'ready' | 'failed'>('loading');

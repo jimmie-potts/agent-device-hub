@@ -153,7 +153,7 @@ export async function loadEarlierConversationHistory(read: Read, history: Conver
 /** The profile's conversations as the list read returns them (Hub #2029), checked before the page shows them. */
 export function decodeConversationList(value: unknown, profile: AssistantProfile): ConversationList {
   if (!record(value) || value.version !== 1 || value.profile !== profile || !Array.isArray(value.conversations) || value.conversations.length > 17 ||
-    !(value.older === null || integer(value.older))) return invalidPage();
+    !(value.older === null || (typeof value.older === 'string' && /^(-1|\d{1,15}):\d{1,15}$/.test(value.older)))) return invalidPage();
   const conversations: ConversationListEntry[] = value.conversations.map((entry: unknown) => {
     if (!record(entry) || typeof entry.conversationId !== 'string' || entry.conversationId === '' || typeof entry.current !== 'boolean' || !integer(entry.messages) ||
       !(entry.firstAtMs === null || integer(entry.firstAtMs)) || !(entry.lastAtMs === null || integer(entry.lastAtMs)) || !record(entry.title) ||
@@ -164,9 +164,9 @@ export function decodeConversationList(value: unknown, profile: AssistantProfile
   return {version: 1, profile, conversations, older: value.older};
 }
 
-/** Reads a page of the profile's conversations: the first, or the one at the `older` offset an earlier page returned. */
-export async function readConversationList(read: Read, profile: AssistantProfile, signal: AbortSignal, after?: number): Promise<ConversationList> {
-  const query = new URLSearchParams({profile, view: 'list', ...(after === undefined ? {} : {after: String(after)})});
+/** Reads a page of the profile's conversations: the first, or the one after the `older` cursor an earlier page returned. */
+export async function readConversationList(read: Read, profile: AssistantProfile, signal: AbortSignal, after?: string): Promise<ConversationList> {
+  const query = new URLSearchParams({profile, view: 'list', ...(after === undefined ? {} : {after})});
   const response = await read(`/modules/companions/content/conversation?${query.toString()}`, signal);
   signal.throwIfAborted();
   return decodeConversationList(response, profile);

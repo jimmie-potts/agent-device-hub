@@ -18,7 +18,7 @@ import {InProcessBus, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AssistantStore} from '../src/assistant/store.js';
-import {buildContext, entriesLeftOut, RECENT_MESSAGES, SECTION_BUDGETS, SECTION_ORDER, sectionOf, type ContextSource, type SectionName} from '../src/assistant/context.js';
+import {buildContext, entriesLeftOut, leftOutNote, RECENT_MESSAGES, SECTION_BUDGETS, SECTION_ORDER, sectionOf, type ContextSource, type SectionName} from '../src/assistant/context.js';
 import type {ContextPreview, ConversationList, RecentConversationPage} from '../src/assistant/history-contract.js';
 import type {Archive, DuckWidget, HistoryPage} from '../src/knowledge/model.js';
 import type {ModelProvider, TurnInput, TurnReply} from '../src/assistant/provider.js';
@@ -128,6 +128,8 @@ void test('the builder keeps the fixed order, keeps each section to its budget a
   assert.match(notes.text ?? '', /\n- Note 7: k+\n4 more notes were left out to fit the 32 KiB budget\.$/);
   // The Preferences and Companion knowledge pages count what is left out by the same rule (Hub #2029).
   assert.deepEqual([entriesLeftOut('knowledge', source.knowledge.entries), entriesLeftOut('preferences', source.preferences), entriesLeftOut('preferences', [])], [4, 0, 0]);
+  assert.equal(leftOutNote('knowledge', 1, 9), '1 of the 9 active knowledge notes is left out of a companion\'s model calls while its knowledge notes are on: it doesn\'t fit the 32 KiB context budget, so the last one is not sent.');
+  assert.equal(leftOutNote('preferences', 4, 12), '4 of the 12 active preferences are left out of each model call: they don\'t fit the 32 KiB context budget, so the last ones are not sent.');
   // The newest messages fit; the 22 older ones the store held back count with them in the stated trim.
   const recent = sectionOf(built, 'recent');
   assert.equal(recent.included, RECENT_MESSAGES); assert.equal(recent.trimmed, 22);
@@ -260,6 +262,26 @@ void test('removing a task\'s owner message also drops that task\'s tool results
   assert.match(recent, /PRIVATE-OTHER question\n\[message [^\]]+\] Tool result \(read_fixture\): Read-only fixture/);
   accepted(await w.knowledge({action: 'delete-message', messageId: `${first}-result`}));
   assert.equal((previewed(await w.preview('bunny'), 'recent').text ?? '').includes('PRIVATE-KEPT'), false);
+  // Removing an answer counts too: a task that asks, is answered, reads with a tool and replies loses its tool rows.
+  accepted(await w.send('bunny', 'PRIVATE-ASKED question'));
+  const asked = w.task('bunny')?.taskId ?? assert.fail('asking task');
+  (await w.providers.bunny.next()).resolve(ask('Which sample?'));
+  await settle(() => w.task('bunny')?.status === 'waiting');
+  accepted(await w.send('bunny', 'PRIVATE-ANSWER the blue one', true));
+  (await w.providers.bunny.next()).resolve(call('read_fixture', {}, 'call-read-3'));
+  (await w.providers.bunny.next()).resolve(reply('PRIVATE-ASKED reply'));
+  await settle(() => w.task('bunny')?.taskId === asked && w.task('bunny')?.status === 'succeeded');
+  assert.match(previewed(await w.preview('bunny'), 'recent').text ?? '', new RegExp(`\\[message ${asked}-step-\\d+\\] Tool result \\(read_fixture\\)`));
+  accepted(await w.knowledge({action: 'delete-message', messageId: `${asked}-q1-answer`}));
+  const afterAnswer = previewed(await w.preview('bunny'), 'recent').text ?? '';
+  assert.equal(afterAnswer.includes(`[message ${asked}-step-`), false, 'the answered task has no tool result in context');
+  assert.equal(afterAnswer.includes('PRIVATE-ANSWER'), false);
+  assert.match(afterAnswer, /PRIVATE-ASKED question[\s\S]*Which sample\?[\s\S]*PRIVATE-ASKED reply/);
+  accepted(await w.send('bunny', 'Next'));
+  const next = await w.providers.bunny.next();
+  assert.equal(text(next.input, 'recent'), afterAnswer, 'the call sends what the preview showed');
+  assert.equal(text(next.input, 'recent').includes(`[message ${asked}-step-`), false);
+  next.resolve(reply('Done'));
 });
 
 void test('New conversation is refused while the current conversation\'s task is unfinished, and then starts a fresh one', async context => {
@@ -659,10 +681,18 @@ void test('Details lists every conversation in pages: the current one first, the
   const late = {...store.newTask('bunny', 'Synthetic late'), conversationId: ids[2] ?? assert.fail('conversation 2')};
   store.message(late, 'synthetic-late-message', 'assistant', 'Synthetic late confirmation', 5000);
   const first = await w.content<ConversationList>('conversation', {profile: 'bunny', view: 'list'});
-  assert.equal(first.conversations.length, 16); assert.equal(first.older, 16);
+  assert.equal(first.conversations.length, 16);
   assert.deepEqual(first.conversations.slice(0, 3).map(value => value.conversationId), [ids[17], ids[2], ids[16]]);
-  const second = await w.content<ConversationList>('conversation', {profile: 'bunny', view: 'list', after: String(first.older)});
+  assert.equal(first.conversations.at(-1)?.conversationId, ids[3]);
+  const page = (after: string) => w.content<ConversationList>('conversation', {profile: 'bunny', view: 'list', after});
+  const cursor = first.older ?? assert.fail('a next page');
+  const second = await page(cursor);
   assert.deepEqual([second.conversations.map(value => value.conversationId), second.older], [[ids[1], ids[0]], null]);
   assert.equal(new Set([...first.conversations, ...second.conversations].map(value => value.conversationId)).size, 18);
-  assert.equal(await w.refusal('conversation', {profile: 'bunny', view: 'list', after: '-1'}), 'invalid-request');
+  // The cursor is a key, not an offset: when a page-two conversation gets a message between the reads, the second page
+  // neither repeats a page-one conversation nor skips the other one. An offset would have repeated conversation 3.
+  const moved = {...store.newTask('bunny', 'Synthetic between reads'), conversationId: ids[1] ?? assert.fail('conversation 1')};
+  store.message(moved, 'synthetic-between-reads', 'assistant', 'Synthetic message between reads', 6000);
+  assert.deepEqual((await page(cursor)).conversations.map(value => value.conversationId), [ids[0]]);
+  for (const bad of ['-1', '16', '1:x', '1:2:3']) assert.equal(await w.refusal('conversation', {profile: 'bunny', view: 'list', after: bad}), 'invalid-request', bad);
 });

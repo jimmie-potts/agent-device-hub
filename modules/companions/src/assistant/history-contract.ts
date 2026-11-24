@@ -29,11 +29,11 @@ export type RecentConversationPage = {
 /**
  * A profile's conversations (Hub #2029): the current one first, which new messages go to, then each earlier one New
  * conversation replaced, by its last message, newest first; each stays readable by its ID. `title` is the session title
- * it publishes. `older` is the offset of the next page, passed back as `after`.
+ * it publishes. `older` is the keyset cursor of the next page, passed back as `after`.
  */
 export type ConversationListEntry = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null;
   title: {value: string; source: 'provider' | 'user'}};
-export type ConversationList = {version: 1; profile: AssistantProfile; conversations: ConversationListEntry[]; older: number | null};
+export type ConversationList = {version: 1; profile: AssistantProfile; conversations: ConversationListEntry[]; older: string | null};
 /**
  * The page's context preview (Hub #2029): the context builder's sections, exactly as the next model call for the profile
  * would send them, with each one's budget and what it left out. `basis` says which call: the next one of the current

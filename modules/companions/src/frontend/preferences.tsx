@@ -2,7 +2,7 @@ import React, {useEffect, useState} from 'react';
 import type {PreferenceState} from '@jimmie-potts/event-contracts/v2/companions';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {ActivePreferences, Preference, PreferenceLibrary, PreferenceView} from '../preferences/model.js';
-import {entriesLeftOut, SECTION_BUDGETS} from '../assistant/context.js';
+import {entriesLeftOut, leftOutNote} from '../assistant/context.js';
 
 const endpoint = '/modules/companions/content/preferences';
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -104,7 +104,7 @@ export function EntryLibrary({context, command, view, live, kind = 'preferences'
       </form>
     </fieldset>
     <p role="status">{command.text}</p>
-    {leftOut > 0 && <p role="note">{leftOut} of the {active.length} active {kind} {leftOut === 1 ? 'is' : 'are'} left out of {kind === 'knowledge' ? 'a companion\'s model calls while its knowledge notes are on' : 'each model call'}: they don't fit the {SECTION_BUDGETS[kind] / 1024} KiB context budget, so the last ones are not sent.</p>}
+    {leftOut > 0 && <p role="note">{leftOutNote(kind, leftOut, active.length)}</p>}
     <h3>Saved {kind}</h3>
     {view.entries.length === 0 && <p>No {kind} yet.</p>}
     <div style={{overflowWrap: 'anywhere'}}>{view.entries.map(entry => <article key={entry.id} aria-label={entry.title}>

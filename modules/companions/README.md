@@ -1107,7 +1107,7 @@ For version 2, add `view=recent` and omit `after`:
 | `profile=bunny&view=recent` | Newest saved window and latest task/question |
 | `profile=bunny&view=recent&before=<older>` | Older window, with `currentTask: null` |
 | `profile=bunny&view=recent&conversationId=<id>` | Newest window of one of the profile's earlier conversations (Hub #2029), with `currentTask: null`; add `before` to page it |
-| `profile=bunny&view=list` | The profile's conversations, 16 a page, the current one first and then the others by their last message, newest first: `{version: 1, profile, conversations, older}`, each with `conversationId`, `current`, `messages`, `firstAtMs`, `lastAtMs` and its published `title`; pass `older`, an offset, back as `after` |
+| `profile=bunny&view=list` | The profile's conversations, 16 a page, the current one first and then the others by their last message, newest first: `{version: 1, profile, conversations, older}`, each with `conversationId`, `current`, `messages`, `firstAtMs`, `lastAtMs` and its published `title`; pass `older`, a keyset cursor (`<last message time or -1>:<row>`), back as `after`, so a conversation that changes between page reads never repeats or skips an unchanged one |
 
 The response is `{version: 2, profile, conversationId, messages, currentTask,
 older}`. Messages retain the version 1 fields and full saved text. Each window

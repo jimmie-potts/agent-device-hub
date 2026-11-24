@@ -583,10 +583,10 @@ export class AssistantEngine {
     try {
       if (query.view === 'list') {
         // The profile's conversations (Hub #2029), the current one first, then the rest newest first, each with its title as
-        // its session shows it. `after` is the offset of a later page.
-        const after = query.after === undefined ? 0 : Number(query.after);
-        if (Object.keys(query).some(key => !['profile', 'view', 'after'].includes(key)) || !Number.isSafeInteger(after) || after < 0) return errorBody('invalid-request');
-        const listed = this.store.conversations(selected, after);
+        // its session shows it. `after` is the keyset cursor of a later page, `<last message time or -1>:<row>`.
+        const cursor = query.after === undefined ? undefined : /^(-1|\d{1,15}):(\d{1,15})$/.exec(query.after);
+        if (Object.keys(query).some(key => !['profile', 'view', 'after'].includes(key)) || cursor === null) return errorBody('invalid-request');
+        const listed = this.store.conversations(selected, cursor === undefined ? undefined : {last: Number(cursor[1]), row: Number(cursor[2])});
         const document: ConversationList = {version: 1, profile: selected, older: listed.older,
           conversations: listed.conversations.map(value => ({...value, title: this.titles.published(value.conversationId, selected)}))};
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify(document))};

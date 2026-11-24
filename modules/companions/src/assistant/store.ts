@@ -255,19 +255,30 @@ export class AssistantStore {
   }
   /**
    * The profile's conversations, 16 a page (Hub #2029): the current one first, then each earlier one by its last message,
-   * newest first, and one without messages last. `older` is the offset of the next page.
+   * newest first, and one without messages last. A later page continues after `after`, the keyset cursor `<last>:<row>`
+   * of the previous page's last earlier conversation (its last message time, or -1 without one, and its row), so a
+   * conversation that changes between reads never repeats or hides an unchanged one. `older` is the next page's cursor.
    */
-  conversations(profile: AssistantProfile, after = 0): {conversations: ConversationSummary[]; older: number | null} {
+  conversations(profile: AssistantProfile, after?: {last: number; row: number}): {conversations: ConversationSummary[]; older: string | null} {
     const current = this.conversation(profile) ?? null;
-    const rows = this.database.prepare(`SELECT c.id AS id,COUNT(m.seq) AS messages,MIN(m.at_ms) AS firstAtMs,MAX(m.at_ms) AS lastAtMs
+    const rows = this.database.prepare(`SELECT c.rowid AS row,c.id AS id,COUNT(m.seq) AS messages,MIN(m.at_ms) AS firstAtMs,MAX(m.at_ms) AS lastAtMs,
+        COALESCE(MAX(m.at_ms),-1) AS last
       FROM companion_conversations c LEFT JOIN assistant_messages m ON m.conversation_id=c.id
-      WHERE json_extract(c.record,'$.profile')=? GROUP BY c.rowid
-      ORDER BY c.id IS ? DESC, MAX(m.at_ms) IS NULL, MAX(m.at_ms) DESC, c.rowid DESC LIMIT 17 OFFSET ?`)
-      .all(profile, current, after) as {id: string; messages: number; firstAtMs: number | null; lastAtMs: number | null}[];
-    const conversations = rows.slice(0, 16).map(({id, messages, firstAtMs, lastAtMs}) => ({conversationId: id, current: id === current, messages, firstAtMs, lastAtMs}));
-    // The current conversation is listed first even before its first message has saved its record.
-    if (current !== null && after === 0 && !conversations.some(value => value.current)) conversations.unshift({conversationId: current, current: true, messages: 0, firstAtMs: null, lastAtMs: null});
-    return {conversations, older: rows.length > 16 ? after + 16 : null};
+      WHERE json_extract(c.record,'$.profile')=? AND c.id IS NOT ? GROUP BY c.rowid
+      HAVING ?=1 OR last<? OR (last=? AND c.rowid<?)
+      ORDER BY last DESC, c.rowid DESC LIMIT 17`)
+      .all(profile, current, after === undefined ? 1 : 0, after?.last ?? 0, after?.last ?? 0, after?.row ?? 0) as
+      {row: number; id: string; messages: number; firstAtMs: number | null; lastAtMs: number | null; last: number}[];
+    const first = after === undefined && current !== null ? [this.#summary(current)] : [];
+    const room = 16 - first.length, page = rows.slice(0, room), end = page.at(-1);
+    const conversations = [...first, ...page.map(({id, messages, firstAtMs, lastAtMs}) => ({conversationId: id, current: false, messages, firstAtMs, lastAtMs}))];
+    return {conversations, older: rows.length > room && end !== undefined ? `${String(end.last)}:${String(end.row)}` : null};
+  }
+  /** The current conversation's list entry, with no messages before its first one has saved its record. */
+  #summary(conversationId: string): ConversationSummary {
+    const row = this.database.prepare('SELECT COUNT(*) AS messages,MIN(at_ms) AS firstAtMs,MAX(at_ms) AS lastAtMs FROM assistant_messages WHERE conversation_id=?')
+      .get(conversationId) as {messages: number; firstAtMs: number | null; lastAtMs: number | null};
+    return {conversationId, current: true, ...row};
   }
   /** The conversations that are a profile's current one, for an export that lists each profile's current one last. */
   currentConversations(): Set<string> {
