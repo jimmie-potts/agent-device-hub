@@ -163,15 +163,17 @@ test('the serve agent keeps a shell as the app binary\'s parent and forwards a s
   assert.equal(script, serveScript);
   assert.doesNotMatch(script, /\bexec\b/);
   assert.ok(!script.includes(tailscale), 'the binary is an argument, not shell text');
-  assert.match(script, /\n"\$0" serve --https=443 http:\/\/127\.0\.0\.1:18789 & c=\$!\n/);
-  // Until `end` is the trap a stop is only noted; one noted before the check starts no serve.
-  assert.match(script, /^stop= got=; trap 'stop=1' TERM INT\n\[ -z "\$stop" \] \|\| exit 143\n"\$0" serve /);
-  // The final wait records that it has collected the serve's status, so `end` never has to guess it.
-  assert.match(script, /\ntrap end TERM INT\n\[ -z "\$stop" \] \|\| end\nwait "\$c"; s=\$\? got=1; exit "\$s"$/);
-  // `end` cannot be interrupted, re-sends a bounded number of TERMs, waits for its helper rather than signalling it
-  // and exits with the serve's status.
-  assert.match(script, /end\(\) \{ trap '' TERM INT; \[ -z "\$got" \] \|\| exit "\$s"; \(n=0; while \[ "\$n" -lt 5 \] && kill -TERM "\$c" 2>\/dev\/null; do sleep 1;/);
-  assert.match(script, /& r=\$!; wait "\$c"; s=\$\?; wait "\$r"; exit "\$s"; \}/);
+  assert.match(script, /\n"\$0" serve --https=443 http:\/\/127\.0\.0\.1:18789 & c=\$! r=\n/);
+  // The traps only count stops and start the re-send helper; one counted before the check starts no serve.
+  assert.match(script, /^stop=0; trap 'stop=\$\(\(stop \+ 1\)\)' TERM INT\n\[ "\$stop" -eq 0 \] \|\| exit 143\n"\$0" serve /);
+  assert.match(script, /\ntrap 'stop=\$\(\(stop \+ 1\)\); go' TERM INT\n\[ "\$stop" -eq 0 \] \|\| go\n/);
+  // The helper re-sends a bounded number of TERMs while the serve is there.
+  assert.match(script, /go\(\) \{ \[ -n "\$r" \] \|\| \{ \(n=0; while \[ "\$n" -lt 5 \] && kill -TERM "\$c" 2>\/dev\/null; do sleep 1;/);
+  // The serve's status is collected at one wait, which no trap shares, and the shell waits for the helper rather than
+  // signalling it.
+  assert.equal(script.split('wait "$c"').length, 2, 'one wait collects the serve');
+  assert.match(script, /\n\{ while :; do seen=\$stop; wait "\$c"; s=\$\?; \[ "\$stop" != "\$seen" \] && kill -0 "\$c" 2>\/dev\/null \|\| break; done; \}\n/);
+  assert.match(script, /\ntrap '' TERM INT; \[ -z "\$r" \] \|\| wait "\$r"; exit "\$s"$/);
   assert.doesNotMatch(script, /kill -KILL/);
   assert.equal(runtime.program[0], '/node');
   assert.deepEqual(forwarder.program, ['/bin/sh', '/Users/owner/.config/bunny/private-access/start-forwarder.sh']);
@@ -192,11 +194,12 @@ const settled = (exited, what) => new Promise((done, fail) => {
   exited.then(value => {clearTimeout(deadline); done(value);});
 });
 
-// launchd runs /bin/sh, which is bash on macOS; dash (Ubuntu's /bin/sh) and zsh run the same script where installed.
-const shells = ['/bin/sh', '/bin/bash', '/bin/dash', '/bin/zsh'].filter(path => existsSync(path));
+// launchd runs /bin/sh, which is bash in POSIX mode on macOS; dash (Ubuntu's /bin/sh) and zsh run the same script where
+// installed.
+const shells = [['/bin/sh'], ['/bin/bash'], ['/bin/bash', '--posix'], ['/bin/dash'], ['/bin/zsh']].filter(([path]) => existsSync(path));
 test('the serve agent\'s shell is the binary\'s parent, ends it on a stop and exits with it', {timeout: 120_000, skip: process.platform === 'win32'}, async t => {
   const [, , serve] = agents({home: '/Users/owner', node: '/node'});
-  for (const interpreter of shells) await t.test(interpreter, async t => {
+  for (const [interpreter, ...flags] of shells) await t.test([interpreter, ...flags].join(' '), async t => {
     const home = await fixture(t);
     const fake = join(home, 'Tailscale');
     // Records its parent and arguments, then runs until a TERM, as the serve does, and exits with a chosen status.
@@ -220,7 +223,7 @@ while :; do sleep 0.05; done
     const spawned = [];
     t.after(() => spawned.forEach(pid => {try {process.kill(pid, 'SIGKILL');} catch {/* already gone */}}));
     const run = (text = script) => {
-      const shell = spawn(program[0], [program[1], text, ...program.slice(3)], {stdio: 'ignore'});
+      const shell = spawn(program[0], [...flags, program[1], text, ...program.slice(3)], {stdio: 'ignore'});
       spawned.push(shell.pid);
       const exited = new Promise(done => shell.on('exit', (code, signal) => done({code, signal})));
       return {shell, exited};
@@ -256,19 +259,31 @@ while :; do sleep 0.05; done
 
     const fork = script.indexOf(' & ');
     const points = boundaries(script);
+    // A stop after the serve has exited by itself and its status has been collected still reports that status: right
+    // after the wait that collects it, and at each later boundary. The first case keeps `$?` for the command after it.
+    const collected = script.lastIndexOf('wait "$c"; ') + 'wait "$c"; '.length;
+    const late = [collected, ...points.filter(at => at > collected)];
+    for (const status of [5, 127]) for (const at of late) {
+      await prepare(status);
+      await writeFile(file('exit-now'), String(status));
+      const where = JSON.stringify(script.slice(at, at + 24));
+      const outcome = await settled(run(`${script.slice(0, at)}q=$?; kill -TERM $$; (exit "$q"); ${script.slice(at)}`).exited, `after a stop before ${where}`);
+      assert.deepEqual(outcome, {code: status, signal: null}, `a stop before ${where} once the serve exited ${status}`);
+    }
+    await rm(file('exit-now'));
+
     // From the fork on, a stop can land at any command boundary, including before the shell has recorded the pid, and
     // the first TERM the serve receives can be lost. Each case holds the shell at one boundary until the fake is ready,
     // using a FIFO, has the shell signal itself there and has the fake swallow its first TERM. Only a shell that
     // re-sends the stop ends that serve. The serve exits 127, which the shell must report as it is.
-    const last = script.lastIndexOf('wait "$c"; s=$? got=1');
-    const after = points.filter(at => at > fork && at <= last);
+    const after = points.filter(at => at > fork && at < collected);
     assert.equal(after[0], fork + 3, 'the first case lands before the pid is recorded');
     const ready = file('ready');
     await promisify(execFile)('mkfifo', [ready]);
     for (const at of after) {
       await prepare(127, {swallow: true});
       const where = JSON.stringify(script.slice(at, at + 24));
-      const outcome = await settled(run(`${script.slice(0, at)}read r < "${ready}"; kill -TERM $$; ${script.slice(at)}`).exited,
+      const outcome = await settled(run(`${script.slice(0, at)}read _held < "${ready}"; kill -TERM $$; ${script.slice(at)}`).exited,
         `after a stop before ${where}: it lost the stop, or the fake never opened the FIFO`)
         .finally(async () => spawned.push(Number((await started())?.[0])));
       // The fake has written `started` before it opens the FIFO, so it is there once the shell has exited.
@@ -278,21 +293,10 @@ while :; do sleep 0.05; done
     }
     await rm(ready);
 
-    // A stop after the serve has exited by itself, once the final wait has returned, still reports the serve's status.
-    const late = points.filter(at => at > last);
-    assert.ok(late.length >= 2, 'the final wait records the status it collected');
-    for (const at of late) {
-      await prepare(5);
-      await writeFile(file('exit-now'), '127');
-      const where = JSON.stringify(script.slice(at, at + 24));
-      const outcome = await settled(run(`${script.slice(0, at)}kill -TERM $$; ${script.slice(at)}`).exited, `after a stop before ${where}`);
-      assert.deepEqual(outcome, {code: 127, signal: null}, `a stop before ${where}`);
-    }
-    await rm(file('exit-now'));
 
     // A stop noted before the check starts no serve.
     await prepare(5);
-    const check = script.indexOf('[ -z "$stop" ] || exit 143');
+    const check = script.indexOf('[ "$stop" -eq 0 ] || exit 143');
     assert.ok(points.includes(check), 'the shell checks for a noted stop before it forks');
     const early = await settled(run(`${script.slice(0, check)}kill -TERM $$; ${script.slice(check)}`).exited, 'after an early stop')
       .finally(async () => spawned.push(Number((await started())?.[0])));

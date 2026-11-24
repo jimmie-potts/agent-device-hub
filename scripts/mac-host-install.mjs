@@ -52,28 +52,31 @@ ${background ? '  <key>ProcessType</key>\n  <string>Background</string>\n' : ''}
 `;
 }
 
-// The serve agent's shell, POSIX sh only (macOS /bin/sh is bash 3.2). A stop (TERM, or INT) can land at any point:
-// - before the trap: the shell dies by default and no serve has started;
-// - before the check on the second line: it is noted and the shell exits 143 without starting a serve;
-// - from the check until `end` is the trap: it is noted, and `end` runs once the serve's pid is in `c`. A stop between
-//   the check and the fork therefore starts the serve and then stops it;
-// - after that: the trap runs `end`, unless the final wait has already collected the serve's status (`got`).
+// The serve agent's shell, POSIX sh only (macOS /bin/sh is bash 3.2 in POSIX mode). The traps only count stops (TERM or
+// INT) and, once the serve's pid is in `c`, start the re-send helper; the serve's status is collected at one `wait` alone.
+// - A stop before the first trap kills the shell by default, before any serve has started.
+// - A stop before the check on the second line is counted, and the shell exits 143 without starting a serve.
+// - A stop from the check until the second trap is counted, and the line after that trap starts the helper. A stop
+//   between the check and the fork therefore starts the serve and then stops it.
+// - From then on, the trap starts the helper.
+// The loop waits for the serve. A wait that a stop interrupted returns early, leaving the serve waitable; it is told
+// apart from one that collected the serve, whose status may be over 128 too, by the stop count changing and the pid
+// still answering `kill -0`, and the loop then waits again. The shell then ignores stops, waits for the helper, so it
+// never signals a pid that may have been reused and leaves no `sleep` behind, and exits with the serve's status.
 // A forked child keeps the shell's signal handler until it resets it and execs, and a TERM it receives then is lost, so
-// `end` cannot trust one forwarded TERM. It ignores further stops, so its wait returns only the serve's own status, and
-// a helper re-sends TERM once a second, at most 5 times, while the serve is there: the lost window lasts only until the
-// exec, a serve that stops within a second gets one TERM, and the last re-send comes well before launchd's 20 s
-// ExitTimeOut. `end` waits for the helper rather than signalling it, so it never signals a pid that may have been
-// reused, and the helper leaves no `sleep` behind; a stop therefore takes up to a second longer than the serve does.
-// It exits with the serve's status. A stop in the instant after the final wait returns but before `got` is set relies on
-// the shell reporting the status again to the wait in `end`, as dash and bash 5.2 do.
+// one forwarded TERM is not enough: the helper sends TERM once a second, at most 5 times, while the serve is there. The
+// lost window lasts only until the exec, a serve that stops within a second gets one TERM, and the last re-send comes
+// well before launchd's 20 s ExitTimeOut. After a stop the shell exits up to a second after the serve, when the helper
+// finds it gone.
 export const serveScript = [
-  'stop= got=; trap \'stop=1\' TERM INT',
-  '[ -z "$stop" ] || exit 143',
-  '"$0" serve --https=443 http://127.0.0.1:18789 & c=$!',
-  'end() { trap \'\' TERM INT; [ -z "$got" ] || exit "$s"; (n=0; while [ "$n" -lt 5 ] && kill -TERM "$c" 2>/dev/null; do sleep 1; n=$((n + 1)); done) & r=$!; wait "$c"; s=$?; wait "$r"; exit "$s"; }',
-  'trap end TERM INT',
-  '[ -z "$stop" ] || end',
-  'wait "$c"; s=$? got=1; exit "$s"',
+  'stop=0; trap \'stop=$((stop + 1))\' TERM INT',
+  '[ "$stop" -eq 0 ] || exit 143',
+  '"$0" serve --https=443 http://127.0.0.1:18789 & c=$! r=',
+  'go() { [ -n "$r" ] || { (n=0; while [ "$n" -lt 5 ] && kill -TERM "$c" 2>/dev/null; do sleep 1; n=$((n + 1)); done) & r=$!; }; }',
+  'trap \'stop=$((stop + 1)); go\' TERM INT',
+  '[ "$stop" -eq 0 ] || go',
+  '{ while :; do seen=$stop; wait "$c"; s=$?; [ "$stop" != "$seen" ] && kill -0 "$c" 2>/dev/null || break; done; }',
+  'trap \'\' TERM INT; [ -z "$r" ] || wait "$r"; exit "$s"',
 ].join('\n');
 
 export function agents({home, node, project = 'bunny-mac-personal'}) {
