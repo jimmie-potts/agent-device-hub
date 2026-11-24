@@ -580,6 +580,34 @@
   margin-inline-start: 0;
 }
 
+/* A phone header keeps the profile name on one line beside a plus sign and Details. */
+.conversation-new-narrow {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .conversation-header .conversation-new {
+    min-inline-size: 2.75rem;
+    padding-inline: 0.5rem;
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  .conversation-new-wide {
+    display: none;
+  }
+
+  .conversation-new-narrow {
+    display: inline;
+  }
+}
+
+.conversation-new-held {
+  margin: 0;
+  color: var(--muted-dense);
+  font-size: var(--type-small);
+}
+
 .conversation-earlier {
   display: flex;
   flex-wrap: wrap;

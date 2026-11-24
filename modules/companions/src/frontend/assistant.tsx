@@ -286,16 +286,18 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   }, [profile, viewing]);
   // Another profile opens on its current conversation.
   useLayoutEffect(() => {setViewing(undefined);}, [profile]);
-  // The profile's conversations, current and earlier (Hub #2029), read again at each change of the assistant's state.
+  // The profile's conversations, current and earlier (Hub #2029), read while Details is open or an earlier one is shown,
+  // and again at each change of the assistant's state meanwhile.
+  const listed = detailsOpen || viewing !== undefined;
   useEffect(() => {
     setConversations(undefined);
-    if (!connected || historyApi !== api) return;
+    if (!connected || historyApi !== api || !listed) return;
     const controller = new AbortController();
     void readConversationList(path => api.read(path), profile, controller.signal).then(list => {
       if (!controller.signal.aborted) setConversations(list.conversations);
     }, () => {if (!controller.signal.aborted) setConversations(undefined);});
     return () => {controller.abort();};
-  }, [api, connected, historyApi, profile, state?.revision]);
+  }, [api, connected, historyApi, listed, profile, state?.revision]);
   // The rail marks a conversation that needs the owner. The page shares the kind of question it has already read.
   useEffect(() => {
     const task = history?.currentTask;
@@ -354,8 +356,10 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             <header className="conversation-header">
               <h2>{profiles[profile].name}</h2>
               {profile !== 'bunny' && <small className="conversation-demo-tag">{profiles[profile].kind}</small>}
-              <button type="button" className="secondary conversation-new" disabled={!canStartNew}
-                aria-describedby={open && viewing === undefined ? `${detailsId}-new-held` : undefined} onClick={startNew}>New conversation</button>
+              {/* A phone header shows a plus sign; the button's name stays "New conversation". */}
+              <button type="button" className="secondary conversation-new" disabled={!canStartNew} aria-label="New conversation" title="New conversation"
+                aria-describedby={open && viewing === undefined ? `${detailsId}-new-held` : undefined} onClick={startNew}>
+                <span className="conversation-new-wide" aria-hidden="true">New conversation</span><span className="conversation-new-narrow" aria-hidden="true">+</span></button>
               <button type="button" className="secondary conversation-details-trigger" ref={detailsTrigger}
                 aria-expanded={detailsOpen} aria-controls={detailsId} onClick={() => {
                   if (detailsOpen) closeDetails();
@@ -363,7 +367,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                 }}>Details</button>
             </header>
             {profile !== 'bunny' && <p className="conversation-demo-note">Demo profile. No paid calls.</p>}
-            {open && viewing === undefined && <p id={`${detailsId}-new-held`} className="conversation-demo-note">Finish or cancel this conversation's task first.</p>}
+            {open && viewing === undefined && <p id={`${detailsId}-new-held`} className="conversation-new-held">Finish or cancel this conversation's task first.</p>}
             {viewing !== undefined && <div className="conversation-earlier" role="note">
               <p>{earlier === undefined ? '' : <><strong>{earlier.title.value}</strong> · </>}Earlier conversation, read only. New messages go to the current conversation.</p>
               <button type="button" className="secondary" onClick={() => {setViewing(undefined);}}>Back to current conversation</button>

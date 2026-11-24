@@ -65,6 +65,8 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     const api = {
       read: async path => {
         if (path === '/modules/companions/content/spend') {fixture.spendReads += 1; return spend;}
+        // Open Details lists the profile's conversations (Hub #2029); that read is not a history read.
+        if (new URL(path, location.href).searchParams.get('view') === 'list') return {version: 1, profile: 'bunny', conversations: [], older: null};
         fixture.reads += 1;
         const profile = 'bunny';
         if (empty) return {version: 2, profile, conversationId: null, older: null, currentTask: null, messages: []};
@@ -145,7 +147,7 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await details.locator('.conversation-details-profile').getByText('B.U.N.N.Y.', {exact: true}).waitFor();
     const closeDetails = details.getByRole('button', {name: 'Close details', exact: true});
     assert.equal(await closeDetails.evaluate(node => node === document.activeElement), true);
-    assert.deepEqual(await details.locator('details > summary').allTextContents(), ['Capabilities', 'Task activity', 'Usage', 'Conversation settings']);
+    assert.deepEqual(await details.locator('details > summary').allTextContents(), ['Capabilities', 'Task activity', 'Usage', 'Conversations', 'Conversation settings']);
     assert.equal(await details.locator('details[open]').count(), 0, 'routine sections start collapsed');
     const section = (label: string) => details.locator('.conversation-details-sections > details').filter({has: page.locator('summary', {hasText: label})});
     const capabilities = section('Capabilities');
