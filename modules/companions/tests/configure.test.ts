@@ -57,11 +57,8 @@ void test('a configured hosted provider uses the secret key through the transpor
   const dir = await mkdtemp(join(tmpdir(), 'assistant-configured-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   const headers: Record<string, string>[] = [], models: unknown[] = [];
-  let titled: () => void = () => {};
-  const title = new Promise<void>(resolve => {titled = resolve;});
   const transport: Transport = (_url, init) => {
     headers.push(init.headers); models.push((JSON.parse(init.body) as {model: unknown}).model);
-    if (models.includes('claude-haiku-5-5')) titled();
     return Promise.resolve(new Response(JSON.stringify({content: [{type: 'text', text: 'Hello.'}], stop_reason: 'end_turn', usage: {input_tokens: 3, output_tokens: 2}}), {status: 200}));};
   const module = createCompanionsModule({transport});
   const host = new ModuleHarness(module, {bus, stateDir: dir, section: {assistant: {provider: 'anthropic', tools: ['set_mode'], prices: PRICES}, secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/anthropic-api-key'}}, secrets: {[API_KEY_SECRET]: 'sk-PRIVATE-TEST-KEY\n'}});
@@ -80,19 +77,20 @@ void test('a configured hosted provider uses the secret key through the transpor
   for (let n = 0; n < 100 && module.inspectAssistant()?.tasks[0]?.status !== 'succeeded'; n += 1) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(module.inspectAssistant()?.tasks[0]?.status, 'succeeded');
   assert.equal(module.inspectAssistant()?.tasks[0]?.usageUnits, 5);
-  // The conversation's title call (Hub #2025) goes through the same transport and key with the default title model.
-  await title;
-  assert.deepEqual([...models].sort(), ['claude-haiku-5-5', 'claude-opus-5-5']);
-  const settled = () => host.moduleDatabase()?.prepare("SELECT 1 FROM assistant_title_calls WHERE json_extract(record,'$.status')='admitted'").get() === undefined;
-  for (let turn = 0; turn < 1000 && !settled(); turn += 1) await new Promise(resolve => {setImmediate(resolve);});
+  // The conversation's title checks (Hub #2025, #2075), after the first message and after the finished task, go through
+  // the same transport and key with the default title model.
+  const settled = () => models.filter(model => model === 'claude-haiku-5-5').length === 2 &&
+    host.moduleDatabase()?.prepare("SELECT 1 FROM assistant_title_calls WHERE json_extract(record,'$.status')='admitted'").get() === undefined;
+  for (let turn = 0; turn < 2000 && !settled(); turn += 1) await new Promise(resolve => {setImmediate(resolve);});
+  assert.deepEqual([...models].sort(), ['claude-haiku-5-5', 'claude-haiku-5-5', 'claude-opus-5-5']);
   // The section's prices count the reported usage toward the shared spend limits: 3 input and 2 output tokens at $1 and $2
-  // per million for the task's call, and at $0.10 and $0.50 for the title call, each rounded up to a millionth of a dollar.
+  // per million for the task's call, and at $0.10 and $0.50 for each title call, each rounded up to a millionth of a dollar.
   const spend = await module.manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
   assert.ok(spend !== undefined && !('error' in spend));
   const {day} = JSON.parse(Buffer.from(spend.bytes).toString()) as {day: {spentMicros: number; unreported: number}};
-  assert.deepEqual([day.spentMicros, day.unreported], [9, 0]);
+  assert.deepEqual([day.spentMicros, day.unreported], [7 + 2 + 2, 0]);
   // The secret reader trims the file's trailing newline; the adapter sends the key as read.
-  assert.deepEqual(headers.map(header => header['x-api-key']), ['sk-PRIVATE-TEST-KEY', 'sk-PRIVATE-TEST-KEY']);
+  assert.deepEqual(headers.map(header => header['x-api-key']), ['sk-PRIVATE-TEST-KEY', 'sk-PRIVATE-TEST-KEY', 'sk-PRIVATE-TEST-KEY']);
   assert.equal(JSON.stringify([module.inspectAssistant(), host.logs, host.moduleDatabase()?.prepare('SELECT record FROM assistant_tasks').all()]).includes('PRIVATE-TEST-KEY'), false);
 });
 
@@ -130,7 +128,13 @@ async function hosted(context: TestContext, assistant: Record<string, unknown>, 
     return task;
   };
   const turnModel = typeof assistant.model === 'string' ? assistant.model : 'claude-opus-5-5';
-  return {module, sent: () => sent.filter(model => model === turnModel).length, titleCalls: () => sent.filter(model => model === 'claude-haiku-5-5').length, start, settled,
+  const titleCalls = () => sent.filter(model => model === 'claude-haiku-5-5').length;
+  /** Waits, in event-loop turns, until `count` title requests were sent and none is still waiting for its answer. */
+  const titlesSettled = async (count: number) => {
+    const open = () => host.moduleDatabase()?.prepare("SELECT 1 FROM assistant_title_calls WHERE json_extract(record,'$.status')='admitted'").get() !== undefined;
+    for (let turn = 0; turn < 2000 && (titleCalls() < count || open()); turn += 1) await new Promise(resolve => {setImmediate(resolve);});
+  };
+  return {module, sent: () => sent.filter(model => model === turnModel).length, titleCalls, titlesSettled, start, settled,
     spend: async () => await read('spend', {}) as {day: {spentMicros: number}; paid: unknown},
     said: async () => (await read('conversation', {profile: 'bunny'}) as {messages: {text: string}[]}).messages.map(message => message.text)};
 }
@@ -141,21 +145,21 @@ void test('without configured prices a hosted turn runs at the dated built-in pr
   assert.equal(w.module.inspectAssistant()?.available, true);
   assert.equal((await w.start('Hi')).status, 'accepted');
   assert.equal((await w.settled())?.status, 'succeeded');
-  // 3 input and 2 output tokens at the built-in $4 and $20 per million for claude-opus-5-5, and the conversation's title call
-  // on claude-haiku-5-5 at its built-in lower tier, $0.10 and $0.50.
-  for (let n = 0; n < 100 && w.titleCalls() === 0; n += 1) await new Promise(resolve => setTimeout(resolve, 10));
+  // 3 input and 2 output tokens at the built-in $4 and $20 per million for claude-opus-5-5, and the conversation's two title
+  // checks, after the first message and after the finished task, on claude-haiku-5-5 at its built-in lower tier, $0.10 and $0.50.
+  await w.titlesSettled(2);
   const spend = await w.spend();
-  assert.equal(w.titleCalls(), 1);
-  assert.deepEqual([spend.day.spentMicros, spend.paid], [3 * 4 + 2 * 20 + Math.ceil(3 * 0.1 + 2 * 0.5), {model: 'claude-opus-5-5', minimumMicros: 8192 * 5 + 16_384 * 20, prices: 'built-in', pricesAsOf: '2026-11-22'}]);
+  assert.equal(w.titleCalls(), 2);
+  assert.deepEqual([spend.day.spentMicros, spend.paid], [3 * 4 + 2 * 20 + 2 * Math.ceil(3 * 0.1 + 2 * 0.5), {model: 'claude-opus-5-5', minimumMicros: 8192 * 5 + 16_384 * 20, prices: 'built-in', pricesAsOf: '2026-11-22'}]);
 });
 
 void test('a model the built-in table does not know, even one named after an inherited member, is priced at the dearest known rate', async context => {
   const w = await hosted(context, {model: 'constructor'}, answered);
   assert.equal((await w.start('Hi')).status, 'accepted');
   assert.equal((await w.settled())?.status, 'succeeded');
-  for (let n = 0; n < 100 && w.titleCalls() === 0; n += 1) await new Promise(resolve => setTimeout(resolve, 10));
+  await w.titlesSettled(2);
   const spend = await w.spend();
-  assert.deepEqual([spend.day.spentMicros, (spend.paid as {prices: string}).prices], [3 * 4 + 2 * 20 + Math.ceil(3 * 0.1 + 2 * 0.5), 'dearest'], 'the turn at the dearest rate, the title at Haiku\'s');
+  assert.deepEqual([spend.day.spentMicros, (spend.paid as {prices: string}).prices], [3 * 4 + 2 * 20 + 2 * Math.ceil(3 * 0.1 + 2 * 0.5), 'dearest'], 'the turn at the dearest rate, the titles at Haiku\'s');
 });
 
 void test('an Anthropic spend-limit refusal ends the turn capacity, names the monthly limit in the conversation and sends nothing more', async context => {
@@ -169,7 +173,7 @@ void test('an Anthropic spend-limit refusal ends the turn capacity, names the mo
     assert.equal((await w.start('Hi')).status, 'accepted');
     const task = await w.settled();
     assert.deepEqual([task?.status, task?.code, w.sent()], ['failed', 'capacity', 1], 'one turn request, no retry');
-    assert.ok(w.titleCalls() <= 1, 'at most one title request, which keeps the persona');
+    assert.ok(w.titleCalls() <= 2, 'at most one title request for each of the two checks, which keep the persona');
     assert.ok((await w.said()).at(-1)?.endsWith(SPEND_LIMIT_REACHED) === true, 'the closing reply names the monthly limit');
   }
   // Another 400 or 429 keeps its own code and adds no spend-limit message.

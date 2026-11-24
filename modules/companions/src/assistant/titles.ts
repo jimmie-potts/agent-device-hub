@@ -1,24 +1,32 @@
-// Model-written conversation titles (Hub #2025). After the first owner message of a session appearance, at its third
-// task and when a coding hand-off is accepted, a small model call writes the conversation's title, such as "#1896 Session
-// tracking": the GitHub issue the conversation is about, then a short sentence-case description. Only a profile with a
-// real title model makes the call; the others keep their persona names. The title is stored on the conversation with its
-// source, generated or the owner's, and published as the session title; until one exists the persona name stands. The
-// owner's rename always wins: it advances the conversation's title generation, so a generation in flight is dropped when
-// it lands, and no generated title replaces it. A failed, refused or invalid title leaves the earlier title, or the
-// persona, and never touches a task. Each paid title call reserves its most expensive cost in the shared spend ledger
-// (Hub #2024) before it is sent, as a conversation-level call outside every task's limits, and settles it with the
-// reported usage; a call the spend limits refuse is never sent. Each call is also recorded on the conversation with its
-// outcome and the model's raw answer, kept privately for diagnosis. Nothing is retried (ADR 0012).
+// Model-written conversation titles that follow the conversation's topic (Hub #2025, #2075). A small title model checks
+// the title of a conversation such as "#1896 Session tracking", the GitHub issue the conversation is about and then a
+// short sentence-case description: after the first owner message while the conversation has no title, after each
+// finished task, and after each major event the module knows about, an answered approval, a tool call that changed
+// state, an accepted coding hand-off and a hand-off's result. No task count or time gap starts a check. The model sees
+// the current title and who set it, fixed-form labels of the events and the recent messages, and answers KEEP or a new
+// title. Only a profile with a real title model makes the call; the others keep their persona names. The title is
+// stored on the conversation with its source, generated or the owner's, and published as the session title; until one
+// exists the persona name stands. The owner's rename is not permanent: the model is told the title is the owner's and
+// keeps it unless the topic clearly changed. A rename, and each newer check, advances the conversation's title
+// generation, so an answer that settles after either is dropped; a rename also abandons the call in flight. One call
+// runs per conversation at a time, and the triggers that arrive meanwhile coalesce into one follow-up check. KEEP, and a
+// failed, refused or invalid answer, leave the title as it was, or the persona, and never touch a task. Each paid
+// title call reserves its most expensive cost in the shared spend ledger (Hub #2024) before it is sent, as a
+// conversation-level call outside every task's limits, and settles it with the reported usage; a call the spend limits
+// refuse is never sent. Each call is also recorded on the conversation with its events, its outcome and the model's raw
+// answer, kept privately for diagnosis. Nothing is retried (ADR 0012).
 //
 // Third-party sources (see ../../THIRD-PARTY-NOTICES.md), adapted and modified here:
 // - OpenAI Codex, codex-rs/tui/src/app/thread_title.rs at a0436d69ffd9a6d943d9b56175ba2968c5e698af, Apache License 2.0,
 //   Copyright 2025 OpenAI: `THREAD_TITLE_RECENT_MESSAGES` (line 37), the title instruction (`thread_title_instructions`,
 //   lines 336-346), the recent-conversation prompt (`recent_conversation_messages`, lines 406-491, and
 //   `recent_conversation_thread_title_prompt`, lines 493-510) and the normalization (`parse_thread_title`, lines
-//   512-537), translated to TypeScript. Modified: the instruction leads with the issue reference, describes
-//   instead of starting with a verb and bounds the description at 40 characters; the prompt names the owner and the
-//   assistant and has its own bound; normalization takes plain text, strips a markdown heading, emphasis or a "Title:"
-//   label, canonicalizes the issue reference and truncates the description only, at a word boundary.
+//   512-537), translated to TypeScript. Modified: the instruction asks first whether the current title still fits,
+//   answered by KEEP, and keeps an owner's title unless the topic clearly changed; it leads with the issue reference,
+//   describes instead of starting with a verb and bounds the description at 40 characters; the prompt names the
+//   current title, its source and the latest events before the messages, names the owner and the assistant and has its
+//   own bound; normalization takes plain text, strips a markdown heading, emphasis or a "Title:" label, canonicalizes
+//   the issue reference and truncates the description only, at a word boundary.
 // - T3 Code, packages/provider-core/src/server/textGenerationUtils.ts at b4277089795299da077e784f9f3432b3cc1c1c7d, MIT
 //   License, Copyright (c) 2026 T3 Tools Inc.: `sanitizeThreadTitle`'s JSON `{"title": ...}` unwrap, first-line rule and
 //   empty guard. Modified: an empty or placeholder title such as the literal "Title" is refused instead of replaced.
@@ -41,8 +49,10 @@ export const OWNER_TITLE_CHARS = 80;
 export const TITLE_PROMPT_BYTES = 2048;
 /** How many recent substantive messages the prompt carries, as Codex's `THREAD_TITLE_RECENT_MESSAGES`. */
 export const TITLE_RECENT_MESSAGES = 8;
-/** The task of an appearance whose start refreshes the title: a few turns in. */
-export const TITLE_REFRESH_TURN = 3;
+/** How many distinct event labels a check carries: the latest, oldest first, when triggers coalesce. */
+export const TITLE_EVENTS = 4;
+/** The answer that keeps the current title. */
+export const KEEP = 'KEEP';
 /** How long a title call may take before it is abandoned as uncertain. */
 export const TITLE_DEADLINE_MS = 30_000;
 /** A title whose description shares this many consecutive words with an owner message or a hand-off brief is an echo of it. */
@@ -51,7 +61,7 @@ export const ECHO_RUN_WORDS = 6;
 export const TITLE_ANSWER_BYTES = 1024;
 /** The cap on one title answer's thinking and text, in tokens. */
 export const TITLE_MAX_TOKENS = 1024;
-/** The core removes a session that has had no lifecycle evidence for a day; the next one is a new appearance. */
+/** The core removes a session that has had no lifecycle evidence for a day, so a title published later cannot reach it. */
 export const SESSION_AGE_MS = 86_400_000;
 export const DEFAULT_TITLE_MODEL = 'claude-haiku-5-5';
 /** The fixed title the synthetic provider writes: it never echoes the conversation. */
@@ -67,19 +77,47 @@ const characters = (value: string): number => [...value].length;
 /** Whether a title is session display text of at most `max` characters. */
 export const displayable = (value: string, max = 160): boolean => value.length > 0 && characters(value) <= max && DISPLAY.test(value);
 
-/** The title instruction: Codex's, modified as the header says. */
+/** The title instruction: Codex's, modified as the header says. Fixed text: nothing from a conversation enters it. */
 export const TITLE_INSTRUCTIONS = [
-  'Generate a concise, single-line title for this conversation.',
+  'You keep the title of a conversation in step with its topic.',
+  'You are given the current title and who set it, the latest events in the conversation and its recent messages.',
+  `If there is a current title and it still fits the topic, reply with ${KEEP} and nothing else.`,
+  `A title set by the owner is their choice: reply ${KEEP} unless the topic has clearly changed since they set it.`,
+  'Otherwise generate a concise, single-line title for this conversation.',
   `If the conversation or a coding hand-off in it is about a GitHub issue, start with its reference: #<number> for an issue in ${HOME_REPOSITORY},`,
   'or <repository>#<number>, such as pixoo#14, for an issue in another repository. When several issues appear, use the main one. Never invent an issue number.',
   `After any reference, write a short description of at most ${String(TITLE_DESCRIPTION_CHARS)} characters and under five words where possible.`,
   'Capitalize only the first word unless the owner\'s language, proper nouns, acronyms, or code terms require otherwise.',
-  'Write in the owner\'s language. Do not use quotes, markdown, or trailing punctuation. Do not answer the request. Reply with the title only.',
+  `Write in the owner's language. Do not use quotes, markdown, or trailing punctuation. Do not answer the request. Reply with ${KEEP} or the title only.`,
 ].join(' ');
 const PREFIX = 'Prioritize the current task and latest substantive owner request.\n\nRecent conversation messages:\n';
 
 /** One saved message the prompt may carry. Tool results are not conversation messages. */
 export type TitleMessage = {role: 'owner' | 'assistant'; text: string};
+/** A conversation's stored title and who set it. */
+export type StoredTitle = {value: string; source: 'generated' | 'owner'};
+/**
+ * What happened in the conversation that asks for a check, in the module's own terms: the first owner message of an
+ * untitled conversation, a finished task with its result, a tool call that changed state, an answered approval, an
+ * accepted coding hand-off and a hand-off's result with its outcome. A tool is named by its tool identifier.
+ */
+export type TitleEvent = {kind: 'message'} | {kind: 'task'; result: 'succeeded' | 'failed' | 'cancelled'} | {kind: 'tool'; tool: string}
+  | {kind: 'approval'; tool: string; decision: 'approved' | 'declined'} | {kind: 'hand-off'}
+  | {kind: 'hand-off-result'; outcome: 'completed' | 'failed' | 'cancelled' | 'uncertain' | 'unknown'};
+/** A tool identifier as the tool definitions name it; anything else is never put in a label. */
+const TOOL = /^[a-z][a-z0-9_]{0,63}$/u;
+const toolOf = (tool: string): string => TOOL.test(tool) ? tool : 'a tool';
+/** An event's fixed-form label: the module's own words with a tool identifier, a decision or an outcome, never a tool result. */
+export function eventLabel(event: TitleEvent): string {
+  switch (event.kind) {
+    case 'message': return 'The owner sent a message.';
+    case 'task': return `A task finished: ${event.result}.`;
+    case 'tool': return `A tool call changed state: ${toolOf(event.tool)} was accepted.`;
+    case 'approval': return `The owner ${event.decision} ${toolOf(event.tool)}.`;
+    case 'hand-off': return 'A coding hand-off was accepted.';
+    case 'hand-off-result': return `A coding hand-off's result arrived: ${event.outcome}.`;
+  }
+}
 const escape = (text: string): string => text.trim().replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 /** The longest prefix of `text` within `bytes` UTF-8 bytes that splits no character, and with `entities` no escaped entity. */
 function within(text: string, bytes: number, entities = true): string {
@@ -94,19 +132,24 @@ function within(text: string, bytes: number, entities = true): string {
 }
 
 /**
- * The title prompt from a conversation's saved messages, oldest first: its last eight substantive messages, escaped and
- * wrapped as Codex's `recent_conversation_messages` does, each cut to an even share of the bound when they do not fit;
- * undefined without a substantive message.
+ * The title prompt: the current title and who set it, escaped, or none; the labels of the events that asked for the
+ * check; and the conversation's saved messages, oldest first: its last eight substantive messages, escaped and wrapped as
+ * Codex's `recent_conversation_messages` does, each cut to an even share of what the bound leaves when they do not fit.
+ * Undefined without a substantive message. The title is at most 160 characters and each of at most four labels is short,
+ * so the messages keep most of the 2 KiB.
  */
-export function titlePrompt(messages: readonly TitleMessage[]): string | undefined {
+export function titlePrompt(messages: readonly TitleMessage[], current: StoredTitle | null, events: readonly string[]): string | undefined {
   const recent = messages.filter(message => message.text.trim() !== '').slice(-TITLE_RECENT_MESSAGES).map(message => ({role: message.role, text: escape(message.text)}));
   if (recent.length === 0) return undefined;
+  const title = current === null ? 'Current title: none'
+    : `Current title, ${current.source === 'owner' ? 'set by the owner' : 'written by the title model'}: ${escape(current.value)}`;
+  const header = `${title}\n\nLatest events:\n${events.slice(-TITLE_EVENTS).map(label => `- ${label}`).join('\n')}\n\n`;
   const markup = textBytes('<conversation>\n') + textBytes('\n</conversation>') + (recent.length - 1) +
     recent.reduce((sum, message) => sum + textBytes(`<message role="${message.role}"></message>`), 0);
-  const room = Math.max(0, TITLE_PROMPT_BYTES - textBytes(PREFIX) - markup), share = Math.floor(room / recent.length);
+  const room = Math.max(0, TITLE_PROMPT_BYTES - textBytes(header) - textBytes(PREFIX) - markup), share = Math.floor(room / recent.length);
   const cut = recent.reduce((sum, message) => sum + textBytes(message.text), 0) > room;
   const body = recent.map(message => `<message role="${message.role}">${cut && textBytes(message.text) > share ? within(message.text, share) : message.text}</message>`);
-  return `${PREFIX}<conversation>\n${body.join('\n')}\n</conversation>`;
+  return `${header}${PREFIX}<conversation>\n${body.join('\n')}\n</conversation>`;
 }
 
 const QUOTES = new Set(['"', '\'', '`', '“', '”', '‘', '’', '*', '_']);
@@ -140,7 +183,8 @@ type TitleParts = {title: string; full: string; cut: boolean;
  * credential), is refused.
  */
 export function normalizeTitle(response: string): string | undefined {return titleParts(response)?.title;}
-function titleParts(response: string): TitleParts | undefined {
+/** An answer's first line as normalization reads it: unwrapped, unquoted, without a heading, label or trailing `.?!`. */
+function answerLine(response: string): string {
   let raw = response;
   try {
     const value: unknown = JSON.parse(response.trim());
@@ -149,7 +193,12 @@ function titleParts(response: string): TitleParts | undefined {
   const line = raw.trim().split(/\r?\n/u)[0] ?? '';
   let text = collapse(trimQuotes(line.trim()));
   text = text.replace(/^#{1,6}\s+/u, '').replace(/^title\s*:\s*/iu, '');
-  text = trimQuotes(text).trim().replace(/[.?!]+$/u, '').trimEnd();
+  return trimQuotes(text).trim().replace(/[.?!]+$/u, '').trimEnd();
+}
+/** Whether an answer keeps the current title: KEEP alone on its first line, in any case, normalized as a title is. */
+export function keeps(response: string | null): boolean {return response !== null && answerLine(response).toUpperCase() === KEEP;}
+function titleParts(response: string): TitleParts | undefined {
+  const text = answerLine(response);
   if (text === '' || PLACEHOLDER.test(text)) return undefined;
   const match = REFERENCE.exec(text);
   let reference = '', description = text;
@@ -282,18 +331,24 @@ export class AnthropicTitleProvider implements TitleProvider {
   }
 }
 
-/** A conversation's title and where its next one stands: the title and its source, the generation a rename advances, and the appearance. */
-export type TitleRecord = {version: 1; title: {value: string; source: 'generated' | 'owner'} | null; generation: number;
-  /** Tasks started in this appearance of the session, and the last instant the conversation reported lifecycle evidence. */
-  turns: number; lastActivityMs: number | null};
+/**
+ * A conversation's title and where its next check stands: the title and its source, the generation that a rename and
+ * each admitted check advance, and the last instant the conversation reported lifecycle evidence. A record saved by the
+ * #2025 release may still hold its count of the appearance's tasks, `turns`, which nothing reads.
+ */
+export type TitleRecord = {version: 1; title: StoredTitle | null; generation: number; lastActivityMs: number | null};
 /**
  * One title call: admitted before the request leaves, then settled. An admitted call that never settles, as after a
- * crash, keeps unknown usage, as an uncertain one does. `outcome` says what became of a definitive answer. A call the
- * spend limits refused is recorded failed with `capacity` and was never sent. A paid call's id is its spend ledger id.
+ * crash, keeps unknown usage, as an uncertain one does. `outcome` says what became of a definitive answer: a new title
+ * `applied`, the same title again `unchanged`, KEEP `kept`, no usable title `invalid`, or an answer that settled after a
+ * rename or a newer check `dropped`. A call the spend limits refused is recorded failed with `capacity` and was never
+ * sent. A paid call's id is its spend ledger id.
  */
 export type TitleCall = {version: 1; id: string; conversationId: string; provider: AssistantProvider; model: string; generation: number;
   startedAtMs: number; endedAtMs: number | null; status: 'admitted' | 'succeeded' | 'failed' | 'uncertain'; code?: ErrorCode;
-  outcome: 'applied' | 'unchanged' | 'invalid' | 'dropped' | null; usage: TokenUsage | null; maxTokens: number;
+  outcome: 'applied' | 'unchanged' | 'kept' | 'invalid' | 'dropped' | null; usage: TokenUsage | null; maxTokens: number;
+  /** The labels of the events the check answered, oldest first; absent on a #2025 call. */
+  events?: string[];
   /** The model's raw answer, at most 1 KiB, kept privately for diagnosis; absent before the answer or without text. */
   answer?: string | null};
 
@@ -313,12 +368,16 @@ export type TitleDependencies = {
   /** The metadata observation that carries a title to the conversation's session now. */
   metadata: (conversationId: string, title: Title, observedAtMs: number) => {key: string; draft: object};
 };
-type InFlight = {controller: AbortController; work: Promise<void>};
+/** A conversation's checks: the call in flight, the labels of the triggers waiting for its one follow-up, and the whole run. */
+type InFlight = {controller: AbortController; pending: string[] | undefined; work: Promise<void>};
 const persona = (profile: AssistantProfile): string => PROFILES.find(value => value.id === profile)?.name ?? profile;
+/** The labels with one more, each once, oldest first, keeping the latest `TITLE_EVENTS`. */
+const merged = (labels: readonly string[], label: string): string[] => labels.includes(label) ? [...labels] : [...labels, label].slice(-TITLE_EVENTS);
 
 /** The conversation titles of one companions activation. Every write runs inside the caller's or its own outbox transaction. */
 export class ConversationTitles {
   readonly #inFlight = new Map<string, InFlight>();
+  #stopping = false;
   #closed = false;
   constructor(readonly database: DatabaseSync, readonly deps: TitleDependencies) {
     database.exec(`CREATE TABLE IF NOT EXISTS assistant_titles (conversation_id TEXT PRIMARY KEY, record TEXT NOT NULL);
@@ -332,14 +391,14 @@ export class ConversationTitles {
   #save(conversationId: string, record: TitleRecord): void {
     this.database.prepare('INSERT INTO assistant_titles VALUES (?,?) ON CONFLICT(conversation_id) DO UPDATE SET record=excluded.record').run(conversationId, JSON.stringify(record));
   }
-  #fresh(): TitleRecord {return {version: 1, title: null, generation: 0, turns: 0, lastActivityMs: null};}
+  #fresh(): TitleRecord {return {version: 1, title: null, generation: 0, lastActivityMs: null};}
   call(id: string): TitleCall | undefined {
     const row = this.database.prepare('SELECT record FROM assistant_title_calls WHERE id=?').get(id) as {record: string} | undefined;
     return row === undefined ? undefined : JSON.parse(row.record) as TitleCall;
   }
-  /** The title calls started at or after `sinceMs`, oldest first: the input the spend accounting counts (Hub #2024). */
+  /** The title calls started at or after `sinceMs`, oldest first, in admission order: the input the spend accounting counts (Hub #2024). */
   calls(sinceMs = 0): TitleCall[] {
-    return this.database.prepare('SELECT record FROM assistant_title_calls WHERE started_at_ms>=? ORDER BY started_at_ms, id').all(sinceMs).map(row => JSON.parse(row.record as string) as TitleCall);
+    return this.database.prepare('SELECT record FROM assistant_title_calls WHERE started_at_ms>=? ORDER BY started_at_ms, rowid').all(sinceMs).map(row => JSON.parse(row.record as string) as TitleCall);
   }
   #saveCall(call: TitleCall): void {
     this.database.prepare('INSERT INTO assistant_title_calls VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(call.id, call.conversationId, call.startedAtMs, JSON.stringify(call));
@@ -350,16 +409,10 @@ export class ConversationTitles {
     return title === null ? {value: persona(profile), source: 'provider'} : {value: title.value, source: title.source === 'owner' ? 'user' : 'provider'};
   }
   /**
-   * Counts a task the owner started, in its admission's transaction, and says whether it is due a title: the first of a
-   * new appearance, when the session had no lifecycle evidence for a day or never had any, or the refresh a few turns in.
+   * Whether a task the owner starts asks for a check by itself, read in its admission's transaction: only while the
+   * conversation has no title, so its first message earns one. No count of tasks and no time since the last one counts.
    */
-  started(conversationId: string): boolean {
-    const now = this.deps.now(), record = this.record(conversationId) ?? this.#fresh();
-    const appearing = record.lastActivityMs === null || now - record.lastActivityMs >= SESSION_AGE_MS;
-    record.turns = appearing ? 1 : record.turns + 1;
-    this.#save(conversationId, record);
-    return record.title?.source !== 'owner' && (record.turns === 1 || record.turns === TITLE_REFRESH_TURN);
-  }
+  started(conversationId: string): boolean {return (this.record(conversationId)?.title ?? null) === null;}
   /** Records that the conversation reported lifecycle evidence now, in the transaction that reports it. */
   touched(conversationId: string): void {
     const record = this.record(conversationId) ?? this.#fresh();
@@ -376,8 +429,9 @@ export class ConversationTitles {
     add(key, draft as Parameters<AddMessage>[1]);
   }
   /**
-   * The owner's rename, in its control's transaction: the title and its source, a new generation that drops any title in
-   * flight, and the metadata observation that shows it on the session at once. Call `drop` after the commit.
+   * The owner's rename, in its control's transaction: the title and its source, a new generation that drops any answer
+   * still to settle, and the metadata observation that shows it on the session at once. Call `drop` after the commit.
+   * The title is not permanent: later checks tell the model it is the owner's.
    */
   rename(add: AddMessage, conversationId: string, profile: AssistantProfile, value: string): void {
     const record = this.record(conversationId) ?? this.#fresh();
@@ -385,45 +439,72 @@ export class ConversationTitles {
     this.#save(conversationId, record);
     this.#announce(add, conversationId, record, profile);
   }
-  /** Abandons the conversation's title call in flight, whose answer its generation would drop anyway. */
-  drop(conversationId: string): void {this.#inFlight.get(conversationId)?.controller.abort();}
-  /**
-   * Writes the conversation's title once: admits the call with its generation, sends the prompt, and settles it. A title
-   * that is valid, and still wanted because no rename landed meanwhile, is stored as generated and announced in the same
-   * transaction. Every failure is absorbed: a title never fails, delays or rolls back a task.
-   */
-  generate(conversationId: string, profile: AssistantProfile): Promise<void> {
-    if (this.#closed || this.deps.provider(profile) === undefined) return Promise.resolve();
-    this.drop(conversationId);
-    const controller = new AbortController();
-    const work = this.#generate(conversationId, profile, controller).catch(() => { /* The admitted call keeps the evidence. */ }).finally(() => {
-      if (this.#inFlight.get(conversationId)?.controller === controller) this.#inFlight.delete(conversationId);
-    });
-    this.#inFlight.set(conversationId, {controller, work});
-    return work;
+  /** Abandons the conversation's title call in flight and the follow-up check waiting behind it; the generation drops their answers anyway. */
+  drop(conversationId: string): void {
+    const entry = this.#inFlight.get(conversationId);
+    if (entry === undefined) return;
+    entry.pending = undefined;
+    entry.controller.abort();
   }
-  async #generate(conversationId: string, profile: AssistantProfile, controller: AbortController): Promise<void> {
+  /**
+   * Asks the title model to check the conversation's title after `event`. With no call in flight for the conversation
+   * the check starts now; otherwise the event's label joins the one follow-up check that starts when that call settles.
+   * Resolves once the conversation has no check left to run. Every failure is absorbed: a check never fails, delays or
+   * rolls back a task.
+   */
+  check(conversationId: string, profile: AssistantProfile, event: TitleEvent): Promise<void> {
+    if (this.#stopping || this.deps.provider(profile) === undefined) return Promise.resolve();
+    const label = eventLabel(event), running = this.#inFlight.get(conversationId);
+    if (running !== undefined) {
+      running.pending = merged(running.pending ?? [], label);
+      return running.work;
+    }
+    const entry: InFlight = {controller: new AbortController(), pending: undefined, work: Promise.resolve()};
+    this.#inFlight.set(conversationId, entry);
+    entry.work = this.#run(conversationId, profile, entry, [label]).finally(() => {
+      if (this.#inFlight.get(conversationId) === entry) this.#inFlight.delete(conversationId);
+    });
+    return entry.work;
+  }
+  /** Runs the conversation's checks one at a time: the first, then the coalesced follow-up while triggers keep arriving. */
+  async #run(conversationId: string, profile: AssistantProfile, entry: InFlight, first: string[]): Promise<void> {
+    let events: string[] | undefined = first;
+    while (events !== undefined && !this.#stopping) {
+      await this.#ask(conversationId, profile, entry.controller, events).catch(() => { /* The admitted call keeps the evidence. */ });
+      events = entry.pending; entry.pending = undefined;
+      if (events !== undefined) entry.controller = new AbortController();
+    }
+  }
+  /**
+   * One check: admits the call with a new generation, sends the prompt, and settles it. KEEP leaves the title. A new
+   * title that is valid, and still wanted because no rename or newer check landed meanwhile, is stored as generated and
+   * announced in the same transaction, replacing a generated or an owner's title.
+   */
+  async #ask(conversationId: string, profile: AssistantProfile, controller: AbortController, events: readonly string[]): Promise<void> {
     const provider = this.deps.provider(profile);
     if (provider === undefined) return;
     let call: TitleCall | undefined, prompt: string | undefined, said: TitleMessage[] = [];
     await this.deps.outbox.transaction(() => {
       const record = this.record(conversationId) ?? this.#fresh();
-      if (record.title?.source === 'owner' || controller.signal.aborted) return;
+      if (controller.signal.aborted) return;
       const messages = this.deps.messages(conversationId);
-      prompt = titlePrompt(messages);
+      prompt = titlePrompt(messages, record.title, events);
       if (prompt === undefined) return;
       // The echo guard compares the answer with every message the prompt carried, the owner's and the assistant's.
       said = messages;
-      const admitted: TitleCall = {version: 1, id: randomUUID(), conversationId, provider: provider.name, model: provider.model, generation: record.generation,
-        startedAtMs: this.deps.now(), endedAtMs: null, status: 'admitted', outcome: null, usage: null, maxTokens: TITLE_MAX_TOKENS};
+      const admitted: TitleCall = {version: 1, id: randomUUID(), conversationId, provider: provider.name, model: provider.model, generation: record.generation + 1,
+        startedAtMs: this.deps.now(), endedAtMs: null, status: 'admitted', outcome: null, usage: null, maxTokens: TITLE_MAX_TOKENS, events: [...events]};
       // A paid call reserves its most expensive cost with its receipt, as a conversation-level call; the synthetic one is free.
       const refused = provider.name === 'synthetic' ? undefined : this.deps.spend.reserve({id: admitted.id, purpose: 'conversation', owner: conversationId,
         model: provider.model, inputUnits: inputBound({system: TITLE_INSTRUCTIONS, prompt}), outputUnits: TITLE_MAX_TOKENS});
       if (refused !== undefined) {
-        // The spend limits refuse it: nothing is sent, and the earlier title or the persona stays. Every model is priced (Hub #2047).
-        this.#saveCall({...admitted, endedAtMs: admitted.startedAtMs, status: 'failed', code: 'capacity'});
+        // The spend limits refuse it: nothing is sent, and the title or the persona stays. Every model is priced (Hub #2047).
+        this.#saveCall({...admitted, generation: record.generation, endedAtMs: admitted.startedAtMs, status: 'failed', code: 'capacity'});
         return;
       }
+      // The admitted check is the conversation's newest, so an earlier answer still to settle is dropped.
+      record.generation = admitted.generation;
+      this.#save(conversationId, record);
       call = admitted;
       this.#saveCall(call);
     });
@@ -456,23 +537,28 @@ export class ConversationTitles {
       // The model's own answer, bounded, so an invalid or refused outcome can be diagnosed from the private record; it
       // reaches no log, trace, diagnostic or published record (ADR 0011 allows private retention).
       saved.answer = reply.text === null ? null : within(reply.text, TITLE_ANSWER_BYTES, false);
-      const record = this.record(conversationId) ?? this.#fresh(), title = generatedTitle(reply.text, said);
-      if (record.generation !== saved.generation || record.title?.source === 'owner') saved.outcome = 'dropped';
-      else if (title === undefined) saved.outcome = 'invalid';
-      else if (record.title?.value === title) saved.outcome = 'unchanged';
+      const record = this.record(conversationId) ?? this.#fresh();
+      if (record.generation !== saved.generation) saved.outcome = 'dropped';
+      else if (keeps(reply.text)) saved.outcome = 'kept';
       else {
-        record.title = {value: title, source: 'generated'};
-        this.#save(conversationId, record);
-        this.#announce(add, conversationId, record, profile);
-        saved.outcome = 'applied';
+        const title = generatedTitle(reply.text, said);
+        if (title === undefined) saved.outcome = 'invalid';
+        else if (record.title?.value === title) saved.outcome = 'unchanged';
+        else {
+          record.title = {value: title, source: 'generated'};
+          this.#save(conversationId, record);
+          this.#announce(add, conversationId, record, profile);
+          saved.outcome = 'applied';
+        }
       }
       this.#saveCall(saved);
     });
   }
-  /** Stops every title call in flight and waits for each to settle. */
+  /** Stops every title call in flight and the follow-ups behind them, and waits for each to settle. */
   async stop(): Promise<void> {
+    this.#stopping = true;
     const pending = [...this.#inFlight.values()];
-    for (const item of pending) item.controller.abort();
+    for (const item of pending) {item.pending = undefined; item.controller.abort();}
     await Promise.all(pending.map(item => item.work));
     this.#closed = true;
   }

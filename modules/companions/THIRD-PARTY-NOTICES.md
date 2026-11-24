@@ -11,10 +11,13 @@ licenses and notices below apply to those parts.
 | --- | --- | --- |
 | [`codex-rs/tui/src/app/thread_title.rs`](https://github.com/openai/codex/blob/a0436d69ffd9a6d943d9b56175ba2968c5e698af/codex-rs/tui/src/app/thread_title.rs) | `a0436d69ffd9a6d943d9b56175ba2968c5e698af` | `THREAD_TITLE_RECENT_MESSAGES` (line 37), `thread_title_instructions` (lines 336-346), `recent_conversation_messages` (lines 406-491), `recent_conversation_thread_title_prompt` (lines 493-510) and `parse_thread_title` (lines 512-537), translated to TypeScript and modified |
 
-Modifications: the instruction leads with the GitHub issue reference, describes
-the conversation instead of starting with a verb, and bounds the description at
-40 characters. The prompt names the owner and the assistant and has its own
-byte bound. Normalization reads plain text, removes a markdown heading,
+Modifications: the instruction first asks whether the current title still fits
+the topic, answered by `KEEP`, and keeps a title the owner set unless the topic
+clearly changed ([Hub #2075](https://github.com/jimmie-potts/agent-device-hub/issues/2075)).
+It leads with the GitHub issue reference, describes the conversation instead of
+starting with a verb, and bounds the description at 40 characters. The prompt
+names the current title, who set it and the latest events before the messages,
+names the owner and the assistant and has its own byte bound. Normalization reads plain text, removes a markdown heading,
 emphasis or a "Title:" label, writes the issue reference in its short form and
 shortens only the description, at a word boundary.
 

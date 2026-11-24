@@ -3303,6 +3303,20 @@ keep, would have refused the accepted commands too. After the root build run
 `node --test modules/companions/dist/tests/knowledge-revision-scopes.test.js modules/companions/dist/tests/knowledge.test.js modules/companions/dist/tests/assistant-concurrency.test.js`.
 They use a manual clock and fake providers. Existing CI discovery runs them.
 
+Conversation titles that follow the topic (#2075) extend
+`conversation-titles.test.js`, `configure.test.js` and the concurrency
+qualification test. A scripted fake title provider on the manual clock covers
+the first title after the first message, a check after each finished task and
+each major event (an answered approval, an accepted state-changing tool call,
+an accepted coding hand-off and its result) that answers `KEEP` or a new title,
+an owner's rename that the model keeps until the topic changes, one call per
+conversation with later triggers coalesced, a late answer after a rename or a
+newer check, and spend refusals. As a negative control, a held third task and a
+held task after a day show that neither start makes a title call, as the #2025
+triggers did. After the root build run
+`node --test modules/companions/dist/tests/conversation-titles.test.js modules/companions/dist/tests/configure.test.js modules/companions/dist/tests/assistant-qualification.test.js`.
+They use fake providers and transports only. Existing CI discovery runs them.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module

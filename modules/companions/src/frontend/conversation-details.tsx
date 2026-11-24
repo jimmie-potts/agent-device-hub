@@ -194,7 +194,7 @@ export function ConversationDetails({
           <button type="submit" className="secondary" disabled={!canRename}>Rename</button>
         </form>
         <p>{synthetic ? 'This profile has no title model, so it keeps its persona name until you rename it.'
-          : 'The title model writes a short title after the first message, again a few messages later and after a coding hand-off. Your name replaces it, and the model does not change it again.'}</p>
+          : 'The title model writes a short title after the first message and checks it after each finished task and major event, such as an approval or a coding hand-off. Your name replaces it, and the model keeps your name unless the topic clearly changes.'}</p>
         <p>Submitted messages and answers are saved in private Conversation history and passed to this profile's selected model. The Demo profiles run locally and make no paid calls.</p>
         <p>Unsent drafts stay in this page until reload. Submitted drafts also stay in the composer. Review saved history before sending the same text again.</p>
         <ul className="conversation-settings-links">

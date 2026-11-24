@@ -21,7 +21,7 @@ import {ConversationActions, type RetainedArtworkRead} from './catalog-actions.j
 import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
-import {ConversationTitles, ownerTitle, type TitleProvider} from './titles.js';
+import {ConversationTitles, ownerTitle, type TitleEvent, type TitleProvider} from './titles.js';
 import {chooseDevice, deviceLabel, deviceProposal, deviceProposalText, readDevices} from './devices.js';
 import {ASK_OWNER, BRIEF_BYTES, DELEGATE_CODING, definition, deviceToolOwner, FIXTURE_TEXT, MODES, permittedTools, READ_FIXTURE, READ_SESSIONS, REPOSITORY, SET_MODE, SET_LIFX_POWER, SET_LIFX_BRIGHTNESS, SET_WEMO_POWER, summarizeSessions, type CoreCopy} from './tools.js';
 
@@ -103,6 +103,14 @@ const profiles: readonly AssistantProfile[] = ['bunny', 'reachy', 'microduck'];
 const profile = (value: unknown): value is AssistantProfile => typeof value === 'string' && profiles.includes(value as AssistantProfile);
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+/** The tool an approved proposal runs, by its tool identifier. */
+const proposalTool = (proposal: Proposal): string => proposal.family === 'mode-set' ? SET_MODE : proposal.family === 'coding-dispatch' ? DELEGATE_CODING :
+  proposal.family === 'catalog-action' ? catalogTool(proposal.command) : 'owner' in proposal ? SET_WEMO_POWER : proposal.family === 'power-set' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;
+/** A coding hand-off's outcome as the first word of the worker's final word names it (see `describeResult`), never its text. */
+const handOffOutcome = (text: string): 'completed' | 'failed' | 'cancelled' | 'uncertain' | 'unknown' => {
+  const word = /^[a-z]+/u.exec(text)?.[0];
+  return word === 'completed' || word === 'failed' || word === 'cancelled' || word === 'uncertain' ? word : 'unknown';
+};
 export const assistantStateDraft = (data: AssistantState) => ({kind: 'state' as const, type: 'org.bunny.assistant-state.updated', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-state/${data.tools.length > ASSISTANT_LEGACY_TOOL_LIMIT ? '2.1' : '2.0'}`, data});
 export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the evidence the tools return.';
 export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${String(LIMITS.contextBytes / 1024)} KiB prompt bound; stop using some on the Preferences page and start again.`;
@@ -146,6 +154,8 @@ export class AssistantEngine {
    * answer or new task proceeds on state the engine could not read; other conversations keep working.
    */
   readonly #unrecovered = new Set<string>();
+  /** While startup reconciles saved tasks: a task it finds finished starts no title check, as a start starts no work. */
+  #starting = false;
   readonly #synthetic = new SyntheticProvider();
   readonly #allowed: readonly string[];
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly options: AssistantOptions = {}) {
@@ -192,15 +202,18 @@ export class AssistantEngine {
     // Each conversation's unfinished task is reconciled on its own and none is run. A failed recovery makes only its own
     // conversation unavailable until the next start, and that conversation says so.
     this.store.restarted();
-    for (const task of this.store.unfinished()) {
-      try {
-        if (task.graphVersion !== GRAPH_VERSION || !this.available()) await this.#recoverUnavailable(task.id);
-        else await this.#reconcile(task.id, true);
-      } catch (error) {
-        this.#unrecovered.add(task.conversationId);
-        try {await this.#recoverUnavailable(task.id, closingReasonOf(error), true);} catch { /* A failed write cannot claim a saved transition. */ }
+    this.#starting = true;
+    try {
+      for (const task of this.store.unfinished()) {
+        try {
+          if (task.graphVersion !== GRAPH_VERSION || !this.available()) await this.#recoverUnavailable(task.id);
+          else await this.#reconcile(task.id, true);
+        } catch (error) {
+          this.#unrecovered.add(task.conversationId);
+          try {await this.#recoverUnavailable(task.id, closingReasonOf(error), true);} catch { /* A failed write cannot claim a saved transition. */ }
+        }
       }
-    }
+    } finally {this.#starting = false;}
     for (const watch of this.store.confirmations()) void this.#followConfirmation(watch);
     this.#subscriptions.push(await this.context.sdk.respond<AssistantControl>('bunny.cmd.assistant-control.assistant', command => this.#control(command)));
     this.#subscriptions.push(await this.context.sdk.respond<AssistantInput>('bunny.cmd.assistant-input.assistant', command => this.#input(command)));
@@ -243,6 +256,7 @@ export class AssistantEngine {
     }
   }
   #change(id: string, change: (task: Task) => void, parent?: TraceContext, reason?: string): Promise<void> {
+    let finished: Task | undefined;
     return this.outbox.transaction(add => {
       const task = this.#task(id), previous = task.status;
       change(task);
@@ -253,7 +267,18 @@ export class AssistantEngine {
       }
       this.store.save(task);
       this.#publish(add, parent);
+      if (!terminal(previous) && terminal(task.status)) finished = task;
+    }).then(() => {
+      // A finished task asks the title model to check the conversation's title (Hub #2075), once its result is saved.
+      if (finished !== undefined) this.#checkTitle(finished, {kind: 'task', result: finished.status as 'succeeded' | 'failed' | 'cancelled'});
     });
+  }
+  /**
+   * Asks the title model to check a conversation's title after a task finished or a major event (Hub #2075), beside the
+   * task and after the commit that recorded the event; the check never delays, fails or rolls back the task.
+   */
+  #checkTitle(task: Pick<Task, 'conversationId' | 'profile'>, event: TitleEvent): void {
+    if (!this.#closed && !this.#starting && !this.context.signal.aborted) void this.titles.check(task.conversationId, task.profile, event);
   }
   /** Records which result was visible when the reply committed, in the same transaction. */
   #confirmationReply(taskId: string, messageId: string, reply: string): string {
@@ -380,7 +405,7 @@ export class AssistantEngine {
     } catch (error) {return errorBody(codeOf(error), {detail: error instanceof Fault && error.closingReason !== undefined ? error.closingReason : 'The assistant control was not saved.'});}
   }
   #control(command: Command<AssistantControl>): Promise<Reply> {
-    let spoken: {id: string; text: string} | undefined, delegated = false, renamed: string | undefined;
+    let spoken: {id: string; text: string} | undefined, delegated = false, renamed: string | undefined, cancelled: Task | undefined;
     return this.#admit(command, digest(command.data), add => {
       const data = command.data;
       if (data.action === 'enable' || data.action === 'disable') this.#revision(data.expectedRevision);
@@ -415,7 +440,7 @@ export class AssistantEngine {
       if (terminal(task.status)) fail('invalid-state');
       if (data.action === 'cancel') {
         delegated = task.question?.kind === 'delegation' && task.question.answer === null;
-        task.status = 'cancelled'; task.generation += 1; task.code = null; this.store.save(task);
+        task.status = 'cancelled'; task.generation += 1; task.code = null; this.store.save(task); cancelled = task;
         for (const watch of this.store.confirmations(task.id)) {
           if (watch.follows === undefined) this.store.dropConfirmation(watch.requestId);
         }
@@ -427,6 +452,8 @@ export class AssistantEngine {
       if (renamed !== undefined && !('error' in reply)) this.titles.drop(renamed);
       const active = [...this.#active.values()].find(run => run.taskId === command.data.taskId);
       if (command.data.action === 'cancel' && !('error' in reply) && active !== undefined) active.controller.abort();
+      // A cancelled task has finished, so the title model checks the conversation's title (Hub #2075).
+      if (cancelled !== undefined && !('error' in reply)) this.#checkTitle(cancelled, {kind: 'task', result: 'cancelled'});
       if (command.data.action === 'cancel' && !('error' in reply) && delegated && command.data.taskId !== undefined) {try {this.options.onCancelled?.(command.data.taskId);} catch { /* the worker's own report settles it */ }}
       if (spoken !== undefined && !('error' in reply) && command.data.taskId !== undefined) this.#speak(command.data.taskId, spoken.id, spoken.text, command, `${spoken.id}:${command.data.requestId}`);
       return reply;
@@ -454,7 +481,7 @@ export class AssistantEngine {
     } catch (error) {return errorBody(error instanceof SyntaxError ? 'invalid-request' : codeOf(error));}
   }
   #input(command: Command<AssistantInput>): Promise<Reply> {
-    let titled: {conversationId: string; profile: AssistantProfile} | undefined;
+    let titled: {conversationId: string; profile: AssistantProfile; event: TitleEvent} | undefined;
     return this.#admit(command, digest(command.data), () => {
       this.#ready();
       const staged = this.store.input(command.data.inputRef) ?? fail('invalid-request');
@@ -475,8 +502,8 @@ export class AssistantEngine {
         if (reached !== undefined) throw new Fault('capacity', reached);
         task = this.store.newTask(input.profile, input.text);
         this.store.message(task, `${task.id}-prompt`, 'owner', input.text, this.context.clock.now());
-        // The first message of a session appearance, or a few turns in, earns the conversation a model-written title (Hub #2025).
-        if (this.titles.started(task.conversationId)) titled = {conversationId: task.conversationId, profile: task.profile};
+        // The first message of an untitled conversation earns it a model-written title (Hub #2025, #2075).
+        if (this.titles.started(task.conversationId)) titled = {conversationId: task.conversationId, profile: task.profile, event: {kind: 'message'}};
       } else {
         task = this.#task(input.taskId ?? fail('invalid-request'));
         if (!['waiting', 'paused'].includes(task.status) || task.profile !== input.profile || task.question === null || task.question.id !== input.questionId || task.question.answer !== null) fail('invalid-state');
@@ -485,11 +512,16 @@ export class AssistantEngine {
         if (task.question.kind === 'approval' && !['approve', 'decline'].includes(input.text)) fail('invalid-request');
         task.question.answer = input.text;
         this.store.message(task, `${task.question.id}-answer`, 'owner', input.text, this.context.clock.now());
+        // An answered approval is a major event for the conversation's title (Hub #2075), named by its tool and decision.
+        if (task.question.kind === 'approval' && task.question.proposal !== null) {
+          titled = {conversationId: task.conversationId, profile: task.profile,
+            event: {kind: 'approval', tool: proposalTool(task.question.proposal), decision: input.text === 'approve' ? 'approved' : 'declined'}};
+        }
       }
       this.#activate(task, command); this.store.save(task); this.store.discard(staged.ref); return task.id;
     }).then(reply => {
-      // The title call runs beside the task, after its admission committed; it never delays, fails or rolls back the task.
-      if (titled !== undefined && !('error' in reply) && !this.#closed && !this.context.signal.aborted) void this.titles.generate(titled.conversationId, titled.profile);
+      // The title check runs beside the task, after its admission committed; it never delays, fails or rolls back the task.
+      if (titled !== undefined && !('error' in reply)) this.#checkTitle(titled, titled.event);
       return reply;
     });
   }
@@ -808,8 +840,7 @@ export class AssistantEngine {
   async #act(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
     const question = task.question ?? fail('invalid-state'), proposal = question.proposal ?? fail('invalid-state');
-    const id = `${state.taskId}-step-${String(state.step)}`, name = proposal.family === 'mode-set' ? SET_MODE : proposal.family === 'coding-dispatch' ? DELEGATE_CODING :
-      proposal.family === 'catalog-action' ? catalogTool(proposal.command) : 'owner' in proposal ? SET_WEMO_POWER : proposal.family === 'power-set' ? SET_LIFX_POWER : SET_LIFX_BRIGHTNESS;
+    const id = `${state.taskId}-step-${String(state.step)}`, name = proposalTool(proposal);
     const refuse = async (suffix: string, text: string): Promise<Partial<GraphState>> => {
       // A refusal is a tool result the owner can read too; it reserves no call and sends nothing.
       await this.#append(state.taskId, {role: 'tool', call: question.call, name, result: text, ok: false, effect: `${id}-${suffix}`}, active.span.context,
@@ -894,12 +925,11 @@ export class AssistantEngine {
       if (accepted) {this.store.message(current, delegation.id, 'assistant', delegation.text, this.context.clock.now()); handedOff = true;}
       else if (current.question?.kind === 'delegation') current.question = question;
     });
-    // An accepted coding hand-off refreshes the conversation's title (Hub #2025), so an issue named only in its brief leads
-    // it; a conversation the owner renamed keeps its name. The call runs beside the task and never delays it.
-    if (handedOff && !this.#closed && !this.context.signal.aborted) {
-      const current = this.#task(state.taskId);
-      void this.titles.generate(current.conversationId, current.profile);
-    }
+    // An accepted coding hand-off, and any other accepted command, which changes state, ask the title model to check the
+    // conversation's title (Hub #2025, #2075), so an issue named only in a brief can lead it. The receipt is a tool result
+    // and stays out of the check; the check runs beside the task and never delays it.
+    if (handedOff) this.#checkTitle(task, {kind: 'hand-off'});
+    else if (accepted && proposal.family !== 'coding-dispatch') this.#checkTitle(task, {kind: 'tool', tool: name});
     return {step: state.step + 1, next: proposal.family === 'coding-dispatch' && accepted ? 'await' : 'turn'};
   }
   #await(state: GraphState): Partial<GraphState> {
@@ -923,18 +953,20 @@ export class AssistantEngine {
    * now keeps the answer and waits for the owner's resume; a task that is not waiting on a delegation ignores it.
    */
   async deliver(taskId: string, text: string, parent: TraceContext, evidence: ActionEvidence): Promise<void> {
-    let launch = false;
+    let launch = false, delivered: Task | undefined;
     await this.outbox.transaction(add => {
       const task = this.store.task(taskId);
       if (task === undefined || terminal(task.status)) return;
       const question = task.question;
       if (question === null || question.kind !== 'delegation' || question.answer !== null) return;
       this.store.observeAction(taskId, evidence);
-      question.answer = text.slice(0, LIMITS.toolBytes);
+      question.answer = text.slice(0, LIMITS.toolBytes); delivered = task;
       if (['waiting', 'paused'].includes(task.status) && this.store.meta().enabled && this.available() && !this.#active.has(task.conversationId) && !this.#unrecovered.has(task.conversationId) && !this.#closed) {this.#activate(task, parent); launch = true;}
       this.store.save(task); this.#publish(add, parent);
     });
     if (launch && !this.#closed && !this.context.signal.aborted) this.#launch(taskId);
+    // The hand-off's result is a major event for the title (Hub #2075): its outcome word goes to the check, its text does not.
+    if (delivered !== undefined) this.#checkTitle(delivered, {kind: 'hand-off-result', outcome: handOffOutcome(text)});
   }
   /** The per-turn limit the next call would pass, as the message naming it, or undefined while every bound has room. */
   #limitOf(task: Task, kind: 'model' | 'tool', timeout: number, budget: Budget): string | undefined {
