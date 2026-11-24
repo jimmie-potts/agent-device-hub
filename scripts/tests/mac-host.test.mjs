@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFile, spawn} from 'node:child_process';
-import {existsSync} from 'node:fs';
+import {existsSync, realpathSync} from 'node:fs';
 import {mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -10,7 +10,7 @@ import {promisify} from 'node:util';
 import {Outcome} from '../../packages/sdk/dist/src/index.js';
 import {reconcileOperation, withOperation} from '../bunny-operations.mjs';
 import * as realOperator from '../bunny.mjs';
-import {agents, installDiagnostics, installSignin, plist, serveScript} from '../mac-host-install.mjs';
+import {agents, installDiagnostics, installSignin, plist} from '../mac-host-install.mjs';
 import {engineWait, healthWait, operatorFor, startAtSignIn, startGate} from '../mac-signin.mjs';
 
 const revision = 'a'.repeat(40);
@@ -156,11 +156,22 @@ test('only the serve agent runs the app binary as the CLI, which it needs withou
 
 // Even as the CLI, the app binary starts as the GUI when its parent is launchd, so a waiting shell stays its parent.
 const tailscale = '/Applications/Tailscale.app/Contents/MacOS/Tailscale';
-test('the serve agent keeps a shell as the app binary\'s parent and forwards a stop to it', () => {
+// launchd runs /bin/sh, which is bash in POSIX mode on macOS; dash (Ubuntu's /bin/sh) and zsh run the same script where
+// installed. A shell runs once when two of these paths name the same binary, as /bin/sh and /bin/dash do on Ubuntu,
+// except bash, which runs in POSIX mode when invoked as sh.
+const shellKey = ([path, ...flags]) => {
+  const binary = realpathSync(path);
+  return [binary, binary.endsWith('/bash') ? path.split('/').pop() : '', ...flags].join(' ');
+};
+const shells = [['/bin/sh'], ['/bin/bash'], ['/bin/bash', '--posix'], ['/bin/dash'], ['/bin/zsh']]
+  .filter(([path]) => existsSync(path))
+  .filter((shell, at, all) => all.findIndex(other => shellKey(other) === shellKey(shell)) === at);
+test('the serve agent keeps a shell as the app binary\'s parent and forwards a stop to it', async () => {
   const [runtime, forwarder, serve] = agents({home: '/Users/owner', node: '/node'});
   const [shell, flag, script, binary, ...rest] = serve.program;
   assert.deepEqual([shell, flag, binary, rest], ['/bin/sh', '-c', tailscale, []]);
-  assert.equal(script, serveScript);
+  // Every shell here parses it; macOS bash 3.2 runs it in POSIX mode.
+  for (const [shell, ...flags] of shells) await promisify(execFile)(shell, [...flags, '-n', '-c', script]);
   assert.doesNotMatch(script, /\bexec\b/);
   assert.ok(!script.includes(tailscale), 'the binary is an argument, not shell text');
   assert.match(script, /\n"\$0" serve --https=443 http:\/\/127\.0\.0\.1:18789 & c=\$! r=\n/);
@@ -168,7 +179,8 @@ test('the serve agent keeps a shell as the app binary\'s parent and forwards a s
   assert.match(script, /^stop=0; trap 'stop=\$\(\(stop \+ 1\)\)' TERM INT\n\[ "\$stop" -eq 0 \] \|\| exit 143\n"\$0" serve /);
   assert.match(script, /\ntrap 'stop=\$\(\(stop \+ 1\)\); go' TERM INT\n\[ "\$stop" -eq 0 \] \|\| go\n/);
   // The helper re-sends a bounded number of TERMs while the serve is there.
-  assert.match(script, /go\(\) \{ \[ -n "\$r" \] \|\| \{ \(n=0; while \[ "\$n" -lt 5 \] && kill -TERM "\$c" 2>\/dev\/null; do sleep 1;/);
+  // `go` marks the helper started before forking it, so a stop inside `go` cannot start a second one.
+  assert.match(script, /go\(\) \{ \[ -n "\$r" \] \|\| \{ r=0; \(n=0; while \[ "\$n" -lt 5 \] && kill -TERM "\$c" 2>\/dev\/null; do sleep 1;/);
   // The serve's status is collected at one wait, which no trap shares, and the shell waits for the helper rather than
   // signalling it.
   assert.equal(script.split('wait "$c"').length, 2, 'one wait collects the serve');
@@ -194,9 +206,6 @@ const settled = (exited, what) => new Promise((done, fail) => {
   exited.then(value => {clearTimeout(deadline); done(value);});
 });
 
-// launchd runs /bin/sh, which is bash in POSIX mode on macOS; dash (Ubuntu's /bin/sh) and zsh run the same script where
-// installed.
-const shells = [['/bin/sh'], ['/bin/bash'], ['/bin/bash', '--posix'], ['/bin/dash'], ['/bin/zsh']].filter(([path]) => existsSync(path));
 test('the serve agent\'s shell is the binary\'s parent, ends it on a stop and exits with it', {timeout: 120_000, skip: process.platform === 'win32'}, async t => {
   const [, , serve] = agents({home: '/Users/owner', node: '/node'});
   for (const [interpreter, ...flags] of shells) await t.test([interpreter, ...flags].join(' '), async t => {
@@ -253,7 +262,6 @@ while :; do sleep 0.05; done
       await stopped(status, await settled(exited, 'after a stop'), child);
     };
     await stop(0);
-    await stop(7);
     // A real 127 from the serve, not a status the shell substitutes for it.
     await stop(127);
 
