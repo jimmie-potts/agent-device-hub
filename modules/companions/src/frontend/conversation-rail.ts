@@ -1,5 +1,6 @@
 import type {AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {SavedQuestion} from '../assistant/history-contract.js';
+import {PROFILES, spokenAloud} from '../knowledge/model.js';
 
 /** The chat profiles, in the order the rail lists them. Each uses the configured model (Hub #2026), so none is labelled a demo. */
 export const profiles = {
@@ -7,6 +8,17 @@ export const profiles = {
   reachy: {name: 'Reachy'},
   microduck: {name: 'MicroDuck'},
 } satisfies Record<AssistantProfile, {name: string}>;
+
+/**
+ * The note a profile's saved replies carry in place of Read aloud when its persona's audio is not speech, read from the
+ * persona as the engine's speech rule is (Hub #2026): MicroDuck's English text is its intended meaning. Undefined for a
+ * profile whose replies may be spoken.
+ */
+export function unspokenNote(profile: AssistantProfile): string | undefined {
+  if (spokenAloud(profile)) return undefined;
+  const persona = PROFILES.find(value => value.id === profile);
+  return `Intended meaning. ${persona?.name ?? profiles[profile].name}'s audio is ${persona?.audio === 'quacks-only' ? 'quacks only' : 'not speech'}, so this text is never read aloud.`;
+}
 
 /** A saved question whose kind has been read: the task and question it belongs to, and whether it asks the owner or waits on the coding worker. */
 export type KnownQuestion = {taskId: string; questionId: string; kind: SavedQuestion['kind']};

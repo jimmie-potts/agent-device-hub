@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
 import {test, type TestContext} from 'node:test';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
@@ -277,4 +278,55 @@ void test('an explicit synthetic provider serves every profile without a request
   const spend = await module.manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
   assert.ok(spend !== undefined && !('error' in spend));
   assert.equal((JSON.parse(Buffer.from(spend.bytes).toString()) as {day: {spentMicros: number}}).day.spentMicros, 0);
+});
+
+void test('a companion task the synthetic provider left waiting continues on the configured model after the upgrade, reserved and settled once', async context => {
+  // The upgrade path UPGRADE.md describes (Hub #2026): a synthetic section's waiting Reachy and MicroDuck tasks, then the
+  // same store under an Anthropic section. The restart sends nothing; each answer sends one turn on the configured model.
+  const dir = await mkdtemp(join(tmpdir(), 'assistant-upgrade-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
+  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  const sent: string[] = [];
+  const transport: Transport = (_url, init) => {
+    const model = (JSON.parse(init.body) as {model: string}).model; sent.push(model);
+    const text = model === 'claude-haiku-5-5' ? 'Upgrade check' : 'Synthetic companion answer.';
+    return Promise.resolve(new Response(JSON.stringify({content: [{type: 'text', text}], stop_reason: 'end_turn', usage: {input_tokens: 3, output_tokens: 2}}), {status: 200}));
+  };
+  let module = createCompanionsModule({transport});
+  let host = new ModuleHarness(module, {bus, stateDir: dir, section: {}});
+  context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
+  await host.start();
+  const request = async (family: 'control' | 'input', data: Record<string, unknown>) => {
+    const requestId = randomUUID();
+    if (family === 'control') return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, expectedRevision: module.inspectAssistant()?.revision, ...data}}, {requestId, timeoutMs: 5000});
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({expectedRevision: module.inspectAssistant()?.revision, ...data}))});
+    assert.ok(staged !== undefined && !('error' in staged));
+    return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+  };
+  const task = (profile: string) => module.inspectAssistant()?.tasks.find(value => value.profile === profile);
+  assert.equal((await request('control', {action: 'enable'})).status, 'accepted');
+  for (const profile of ['reachy', 'microduck']) {
+    assert.equal((await request('input', {action: 'start', profile, text: `Synthetic ${profile} request`})).status, 'accepted');
+    await turnsUntil(() => task(profile)?.status === 'waiting', `${profile} waits on the synthetic question`);
+  }
+  await host.stop();
+  module = createCompanionsModule({transport});
+  host = new ModuleHarness(module, {bus, stateDir: dir, section: {assistant: {provider: 'anthropic', model: 'claude-sonnet-5-5', prices: PRICES},
+    secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/anthropic-api-key'}}, secrets: {[API_KEY_SECRET]: 'sk-PRIVATE-TEST-KEY'}});
+  await host.start();
+  assert.deepEqual(sent, [], 'the restart sends nothing');
+  const rows = () => (host.moduleDatabase()?.prepare('SELECT purpose,owner,model,reserved_micros AS reserved,cost_micros AS cost FROM assistant_spend').all() ?? []).map(row => ({...row}));
+  for (const profile of ['reachy', 'microduck']) {
+    const waiting = task(profile) ?? assert.fail(`${profile} task`);
+    assert.equal(waiting.status, 'waiting');
+    assert.equal((await request('input', {action: 'answer', profile, text: 'Synthetic answer', taskId: waiting.taskId, questionId: waiting.questionId})).status, 'accepted');
+    await turnsUntil(() => task(profile)?.status === 'succeeded', `${profile} continues on the configured model`);
+    const turns = rows().filter(row => row.purpose === 'task' && row.owner === waiting.taskId);
+    assert.equal(turns.length, 1, `${profile}: one task call reserved`);
+    assert.equal(turns[0]?.model, 'claude-sonnet-5-5');
+    assert.ok(typeof turns[0]?.cost === 'number' && turns[0].cost <= Number(turns[0].reserved), `${profile}: settled once with its reported cost`);
+  }
+  assert.deepEqual(sent.filter(model => model !== 'claude-haiku-5-5'), ['claude-sonnet-5-5', 'claude-sonnet-5-5'], 'one turn on the configured model for each answer');
 });

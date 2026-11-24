@@ -3344,7 +3344,12 @@ the root build run
 then `node apps/runtime/dashboard/tests/conversation-rail.browser.ts`,
 `node apps/runtime/dashboard/tests/conversation-workspace.browser.ts` and
 `npm run test:companions:browser` for the rail and header without Demo labels
-and MicroDuck's intended-meaning note. They use fake providers and
+and MicroDuck's intended-meaning note. The companions browser entry's
+conversation state journey opens Details on a paid Reachy and MicroDuck: the
+provider, the shared model, the paid-calls wording, the tools their model is
+offered beside those that stay B.U.N.N.Y.'s, and the spend notice.
+`configure.test.js` also restarts a synthetic store's waiting companion tasks
+under an Anthropic section and answers them on the configured model. They use fake providers and
 transports only, and no paid call. Existing CI discovery runs them.
 
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,

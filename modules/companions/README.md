@@ -161,8 +161,9 @@ Acknowledgement and state revision commit together; old speech rows are retained
 Stop and mute clear pending work. Higher-priority attention waits for confirmed
 cancellation before replacing lower-priority output.
 
-The same coordinator and endpoint speak B.U.N.N.Y.'s replies to typed requests
-(Hub #500, first slice). Open **Voice** in the composer toolbar to enable
+The same coordinator and endpoint speak B.U.N.N.Y.'s and Reachy's replies to
+typed requests (Hub #500, first slice); MicroDuck's are never spoken, because
+its audio is quacks only (Hub #2026). Open **Voice** in the composer toolbar to enable
 spoken replies, mute them, inspect readiness or recover an eligible earlier
 operation. Enabling makes this tab the speaker for replies and eligible Reachy
 alerts. **Stop speaking** remains available during local playback, including
@@ -334,8 +335,9 @@ closes Voice.
 Choose a section label to expand it. The sections start collapsed and keep
 their open state while you inspect another panel or resize the page.
 
-- **Capabilities** lists the provider, model, allowed and unavailable tools,
-  and coding worker availability.
+- **Capabilities** lists the provider, the model, the tools the open profile's
+  model is offered, any listed tools that are B.U.N.N.Y.'s only, unavailable
+  tools and coding worker availability.
 - **Task activity** shows the task, conversation and run IDs, status, counters,
   bounds, diagnostic code, saved question and answer, and settled successful
   control receipt. Pending and failed receipts stay beside the controls.
@@ -430,6 +432,12 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   definitions from the list at start and checks membership again when a call
   executes, so a changed section cannot widen an effect. The built-in
   `ask_owner` is always available; the synthetic fixture read is never listed.
+  Device and catalog tools stay B.U.N.N.Y.'s (Hub #2026): Reachy's and
+  MicroDuck's models are offered only the listed tools that are neither, such
+  as `read_sessions`, `set_mode` and `delegate_coding`, and a proposal from them
+  still needs your approval. **Details** lists the tools the open profile's
+  model is offered under **Allowed tools**, and the listed ones it is not under
+  **B.U.N.N.Y. only**.
 - Requests go to `https://api.anthropic.com/v1/messages` through the module's
   own fetch with API version `2026-10-21`, carrying the fixed instructions, the
   current Hub mode, the task's transcript, the tool definitions marked strict,
@@ -720,8 +728,8 @@ goes live:
 **Details** reads the shared totals from the private `spend` content route
 after each assistant-state revision. The route returns the day's and month's
 counted millionths of a dollar, the limits and the count and amount of
-reservations without reported usage. It also names the B.U.N.N.Y. profile's
-paid model, where its prices come from (`configured`, `built-in` or
+reservations without reported usage. It also names the paid model that all
+three profiles share, where its prices come from (`configured`, `built-in` or
 `dearest`) with the built-in table's date, and its smallest possible call. It
 is null for the synthetic provider. It carries no text, call or task identity.
 

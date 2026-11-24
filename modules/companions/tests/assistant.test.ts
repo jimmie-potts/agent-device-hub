@@ -17,8 +17,9 @@ import {AnthropicProvider} from '../src/assistant/anthropic.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
 import {inputBound} from '../src/assistant/spend.js';
-import {assistantStateDraft, CONTEXT_TOO_LARGE, DECLINED, MICRODUCK_UNSPOKEN, REFUSED} from '../src/assistant/engine.js';
+import {assistantStateDraft, CONTEXT_TOO_LARGE, DECLINED, REFUSED, UNSPOKEN} from '../src/assistant/engine.js';
 import {PROFILES} from '../src/knowledge/model.js';
+import {unspokenNote} from '../src/frontend/conversation-rail.js';
 import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
@@ -26,7 +27,8 @@ import type {SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {readDevices} from '../src/assistant/devices.js';
 import {confirmationEvidence, type Confirmation} from '../src/assistant/confirmation.js';
 import {catalogTools} from '../src/assistant/catalog-tools.js';
-import {FIXTURE_TEXT, summarizeSessions} from '../src/assistant/tools.js';
+import {deviceToolOwner, FIXTURE_TEXT, profileTools, summarizeSessions, TOOLS} from '../src/assistant/tools.js';
+import {DEVICE_TOOLS} from '../src/assistant/tool-scope.js';
 
 function deferred<T>() {let resolve: (value: T) => void = () => {}; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
 async function until(check: () => boolean): Promise<void> {
@@ -610,7 +612,8 @@ void test('each model call carries the bunny persona and the owner\'s active pre
 
 void test('Reachy and MicroDuck use the configured provider with their own curated persona, and a harness may still give a profile the synthetic one', async context => {
   const provider = Object.assign(counted(() => reply('Configured answer')), {name: 'anthropic' as const, model: 'model-a'});
-  const w = await world(context, {provider, tools: ['read_sessions']});
+  // A device tool and a catalog tool are allowlisted too; they stay B.U.N.N.Y.'s.
+  const w = await world(context, {provider, tools: ['read_sessions', 'set_lifx_power', 'read_devices'], devices: () => [], readDevice: () => Promise.resolve(undefined)});
   await control(w.core, w.module(), 'enable');
   for (const profile of ['reachy', 'microduck'] as const) {
     assert.equal((await input(w.core, w.module(), `Synthetic ${profile} request`, false, randomUUID(), {profile})).status, 'accepted');
@@ -621,7 +624,13 @@ void test('Reachy and MicroDuck use the configured provider with their own curat
   const persona = (id: string) => PROFILES.find(value => value.id === id) ?? assert.fail(id);
   assert.deepEqual(provider.inputs.map(sent => sent.context.persona), [{name: 'Reachy', character: persona('reachy').character}, {name: 'MicroDuck', character: persona('microduck').character}]);
   assert.match(provider.inputs[1]?.context.persona.character ?? '', /English text is intended meaning, never spoken English\./);
-  for (const sent of provider.inputs) assert.deepEqual(sent.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_sessions'], 'the configured tools, without the synthetic fixture');
+  for (const sent of provider.inputs) assert.deepEqual(sent.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_sessions'], 'the configured tools that are neither device nor catalog tools, without the synthetic fixture');
+  assert.equal((await input(w.core, w.module(), 'Synthetic bunny request')).status, 'accepted');
+  await until(() => w.module().inspectAssistant()?.tasks.find(t => t.profile === 'bunny')?.status === 'succeeded');
+  assert.deepEqual(provider.inputs[2]?.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'read_sessions', 'set_lifx_power'], 'B.U.N.N.Y. is offered every listed tool');
+  assert.deepEqual(['bunny', 'reachy', 'microduck'].map(profile => profileTools(['read_sessions', 'set_lifx_power', 'read_devices', 'set_mode'], profile as 'bunny')),
+    [['read_sessions', 'set_lifx_power', 'read_devices', 'set_mode'], ['read_sessions', 'set_mode'], ['read_sessions', 'set_mode']], 'Details lists the same scope');
+  assert.deepEqual(TOOLS.filter(tool => deviceToolOwner(tool.name) !== undefined).map(tool => tool.name).sort(), [...DEVICE_TOOLS].sort(), 'the shared scope names every device tool');
   assert.equal(w.module().inspectAssistant()?.provider, 'anthropic');
   // A test or harness may still give one profile the labelled synthetic provider; the others keep the configured one.
   const v = await world(context, {provider: counted(() => reply('Configured answer')), profileProviders: {reachy: new SyntheticProvider()}});
@@ -644,7 +653,7 @@ void test('MicroDuck\'s replies are intended meaning: none is offered to speech,
   assert.equal(refused.status, 'rejected');
   if (refused.status === 'rejected') {
     assert.equal(refused.error.error.code, 'invalid-request');
-    assert.equal(refused.error.error.detail, MICRODUCK_UNSPOKEN);
+    assert.equal(refused.error.error.detail, UNSPOKEN);
   }
   assert.equal(offers.length, 0);
   // The negative control: the same reply in Reachy's conversation is offered once, and Speak replays it.
@@ -654,6 +663,25 @@ void test('MicroDuck\'s replies are intended meaning: none is offered to speech,
   assert.deepEqual(offers.map(offer => offer.key), [`${reachy}-result`]);
   assert.equal((await control(w.core, w.module(), 'speak', reachy, randomUUID(), {messageId: `${reachy}-result`})).status, 'accepted');
   assert.equal(offers.length, 2);
+});
+
+void test('the speech rule and the page note follow the persona\'s audio, not a profile name', async context => {
+  // A persona whose audio is not speech is never offered and never replayed, whichever profile it is.
+  assert.deepEqual(['bunny', 'reachy', 'microduck'].map(id => unspokenNote(id as 'bunny')), [undefined, undefined,
+    'Intended meaning. MicroDuck\'s audio is quacks only, so this text is never read aloud.']);
+  const reachy = PROFILES.find(value => value.id === 'reachy') ?? assert.fail('reachy');
+  (reachy as {audio: string}).audio = 'quacks-only';
+  context.after(() => {(reachy as {audio: string}).audio = 'speech';});
+  assert.equal(unspokenNote('reachy'), 'Intended meaning. Reachy\'s audio is quacks only, so this text is never read aloud.');
+  const offers: SpokenReply[] = [];
+  const w = await world(context, {provider: counted(() => reply('Synthetic meaning')), speak: spoken => {offers.push(spoken);}});
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'Synthetic request', false, randomUUID(), {profile: 'reachy'})).status, 'accepted');
+  await until(() => w.module().inspectAssistant()?.tasks.find(t => t.profile === 'reachy')?.status === 'succeeded');
+  const id = w.module().inspectAssistant()?.tasks.find(t => t.profile === 'reachy')?.taskId ?? assert.fail('task');
+  const refused = await control(w.core, w.module(), 'speak', id, randomUUID(), {messageId: `${id}-result`});
+  assert.ok(refused.status === 'rejected');
+  assert.deepEqual([refused.error.error.code, refused.error.error.detail, offers.length], ['invalid-request', UNSPOKEN, 0]);
 });
 
 void test('cancel fences a running call and records a late reply without running the next node', async context => {

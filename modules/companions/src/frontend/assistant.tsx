@@ -14,7 +14,7 @@ import {spendNotice, useSpend} from './conversation-spend.js';
 import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
 import {ConversationUpload} from './conversation-upload.js';
 import {ConversationTranscript} from './conversation-transcript.js';
-import {conversationRail, profiles} from './conversation-rail.js';
+import {conversationRail, profiles, unspokenNote} from './conversation-rail.js';
 import './conversation.css';
 
 const finished = (status: string): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
@@ -290,6 +290,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const spend = useSpend(api, connected && historyApi === api, state?.revision);
   // Every profile's new message meets the shared spend limits on a paid provider (Hub #2026); the synthetic one costs nothing.
   const spendLimit = spendNotice(spend);
+  // A profile whose persona's audio is not speech shows why in place of Read aloud (Hub #2026).
+  const unspoken = unspokenNote(profile);
   const task = state?.tasks.find(value => value.profile === profile);
   const open = task !== undefined && !finished(task.status);
   // Every conversation with an unfinished task: the one switch stays on until each finishes or is cancelled.
@@ -361,8 +363,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
               {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
                 connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
                 artRevision={art?.revision}/>}
-              {message.role === 'assistant' && (profile === 'microduck'
-                ? <small className="conversation-voice-note">Intended meaning. MicroDuck's audio is quacks only, so this text is never read aloud.</small>
+              {message.role === 'assistant' && (unspoken !== undefined
+                ? <small className="conversation-voice-note">{unspoken}</small>
                 : message.text.length > LIMITS.spokenChars
                 ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>
                 : state !== undefined && <button type="button" aria-label={`Read aloud message ${message.seq}`}

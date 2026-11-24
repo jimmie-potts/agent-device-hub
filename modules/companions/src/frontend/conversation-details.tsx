@@ -6,6 +6,7 @@ import {LIMITS} from '../assistant/limits.js';
 import type {SpendView} from '../assistant/spend-contract.js';
 import {priceText, spendText} from './conversation-spend.js';
 import {profiles} from './conversation-rail.js';
+import {profileTools} from '../assistant/tool-scope.js';
 
 /** The longest owner title, as the session label bound (Hub #2025). */
 const TITLE_CHARS = 80;
@@ -104,8 +105,10 @@ export function ConversationDetails({
   // Every profile uses the configured provider and model (Hub #2026).
   const synthetic = state?.provider === 'synthetic';
   const unit = synthetic ? 'units' : 'tokens';
-  const allowed = state?.tools;
-  const unavailable = allowed === undefined ? undefined : catalog.filter(name => !allowed.includes(name));
+  // The tools this profile's model is offered: device and catalog tools stay B.U.N.N.Y.'s (Hub #2026).
+  const allowed = state === undefined ? undefined : profileTools(state.tools, profile);
+  const withheld = state === undefined || allowed === undefined ? [] : state.tools.filter(name => !allowed.includes(name));
+  const unavailable = state === undefined ? undefined : catalog.filter(name => !state.tools.includes(name));
   const lastKnown = state !== undefined && !live;
   const enabled = state?.enabled;
   return <dialog id={id} ref={panelRef} className="conversation-details" aria-labelledby={`${id}-title`}
@@ -130,6 +133,7 @@ export function ConversationDetails({
           ['Provider', synthetic ? 'Synthetic (no paid calls)' : state?.provider === 'anthropic' ? 'Anthropic' : 'Unknown'],
           ['Model', state?.model ?? 'Unknown'],
           ['Allowed tools', toolList(allowed)],
+          ...(withheld.length === 0 ? [] : [['B.U.N.N.Y. only', toolList(withheld)] as const]),
           ['Unavailable tools', toolList(unavailable)],
           ['Coding worker', workerAvailability(coding)],
         ]}/>

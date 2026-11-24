@@ -1,23 +1,20 @@
 // The tools a turn may call (Hub #46): the built-in owner question, the two first permitted tools and the synthetic
 // read fixture. The private section's allowlist selects the permitted ones; the engine checks membership again when a
 // call executes, so a changed section cannot widen an effect.
-import {ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER, type AssistantDeviceOwner} from '@jimmie-potts/event-contracts/v2/assistant';
+import {ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER, type AssistantDeviceOwner, type AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
-import {catalogTools, isCatalogTool} from './catalog-tools.js';
+import {catalogTools} from './catalog-tools.js';
 import {textBytes, TOOL_NAME, type ToolDefinition} from './provider.js';
+import {offeredTo, READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
+export {offeredTo, profileTools, READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
 
 export const ASK_OWNER = 'ask_owner';
 export const READ_SESSIONS = 'read_sessions';
 export const SET_MODE = 'set_mode';
 export const READ_FIXTURE = 'read_fixture';
 export const DELEGATE_CODING = 'delegate_coding';
-export const READ_LIFX = 'read_lifx';
-export const SET_LIFX_POWER = 'set_lifx_power';
-export const SET_LIFX_BRIGHTNESS = 'set_lifx_brightness';
-export const READ_WEMO = 'read_wemo';
-export const SET_WEMO_POWER = 'set_wemo_power';
 export function deviceToolOwner(name: string): AssistantDeviceOwner | undefined {
   switch (name) {
     case READ_LIFX: case SET_LIFX_POWER: case SET_LIFX_BRIGHTNESS: return ASSISTANT_LIGHT_OWNER;
@@ -59,9 +56,9 @@ export const TOOLS: readonly ToolDefinition[] = [
     input: {type: 'object', properties: {repository: {type: 'string', description: 'The repository name from the worker\'s allowlist, such as agent-device-hub.'},
       brief: {type: 'string', description: 'What to change and how to verify it, in a few sentences.'}}, required: ['repository', 'brief'], additionalProperties: false}},
 ];
-/** The permitted tool definitions for one turn: the built-in question plus the allowlisted names, in catalog order. */
-export function permittedTools(allowed: readonly string[], synthetic: boolean, devices = true): ToolDefinition[] {
-  return TOOLS.filter(tool => tool.name === ASK_OWNER || (tool.name === READ_FIXTURE ? synthetic : allowed.includes(tool.name) && (devices || deviceToolOwner(tool.name) === undefined && !isCatalogTool(tool.name))));
+/** The permitted tool definitions for one turn of `profile`: the built-in question plus the allowlisted names it is offered, in catalog order. */
+export function permittedTools(allowed: readonly string[], synthetic: boolean, profile: AssistantProfile = 'bunny'): ToolDefinition[] {
+  return TOOLS.filter(tool => tool.name === ASK_OWNER || (tool.name === READ_FIXTURE ? synthetic : allowed.includes(tool.name) && offeredTo(tool.name, profile)));
 }
 /** Whether `name` is a tool name the private section may list: a permitted tool other than the built-in question and the synthetic fixture. */
 export const allowlistable = (name: unknown): name is string => typeof name === 'string' && TOOL_NAME.test(name) && TOOLS.some(tool => tool.name === name && tool.name !== ASK_OWNER && tool.name !== READ_FIXTURE);

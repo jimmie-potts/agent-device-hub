@@ -15,7 +15,7 @@ import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Append
 import type {Proposal} from './history-contract.js';
 import {contextBytes, ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
-import {PROFILES} from '../knowledge/model.js';
+import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions, type RetainedArtworkRead} from './catalog-actions.js';
 import {catalogCommand, catalogTool, isCatalogTool} from './catalog-tools.js';
@@ -101,8 +101,6 @@ function closingReasonOf(error: unknown): string | undefined {
 }
 const profiles: readonly AssistantProfile[] = ['bunny', 'reachy', 'microduck'];
 const profile = (value: unknown): value is AssistantProfile => typeof value === 'string' && profiles.includes(value as AssistantProfile);
-/** Whether a profile's saved text may be spoken: MicroDuck's audio is quacks only, so its English text never is. */
-const spokenInEnglish = (owner: AssistantProfile): boolean => PROFILES.find(persona => persona.id === owner)?.audio === 'speech';
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 /** The tool an approved proposal runs, by its tool identifier. */
@@ -118,8 +116,8 @@ export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the ev
 export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${String(LIMITS.contextBytes / 1024)} KiB prompt bound; stop using some on the Preferences page and start again.`;
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
-/** Why a Speak request for MicroDuck's message is refused: its audio is quacks only, so its English text is its intended meaning (Hub #2026). */
-export const MICRODUCK_UNSPOKEN = 'MicroDuck\'s audio is quacks only, so its English text is its intended meaning and is never spoken.';
+/** Why a Speak request is refused for a profile whose audio is not speech, as MicroDuck's is quacks only (Hub #2026). */
+export const UNSPOKEN = 'This companion\'s audio is not speech, so its text is its intended meaning and is never read aloud.';
 /** What a conversation reads when its saved progress could not be restored at a start (Hub #2027); once per failed start. */
 export const RECOVERY_FAILED = 'This conversation\'s saved progress couldn\'t be restored when B.U.N.N.Y. started. You can cancel the task, but new messages here can\'t be sent until B.U.N.N.Y. restarts, which tries the recovery again.';
 type Next = 'ask' | 'tool' | 'approve' | 'await' | 'turn' | 'end';
@@ -378,7 +376,7 @@ export class AssistantEngine {
     try {
       const task = this.#task(taskId);
       // A quacks-only persona's English text is its intended meaning, never spoken English (Hub #2026).
-      if (!spokenInEnglish(task.profile)) return;
+      if (!spokenAloud(task.profile)) return;
       this.options.speak({taskId, messageId, text, validUntilMs: this.context.clock.now() + SPOKEN_REPLY_TTL_MS}, key, parent, task.conversationId);
     }
     catch { /* Speech is an output of the saved message, never a condition of it. */ }
@@ -443,7 +441,7 @@ export class AssistantEngine {
         // A replay reads the saved message; finished tasks qualify, so an old answer can be heard again, and only assistant text is spoken.
         const message = this.store.savedMessage(data.taskId ?? fail('invalid-request'), data.messageId ?? fail('invalid-request')) ?? fail('not-found');
         if (message.role !== 'assistant') fail('invalid-request');
-        if (!spokenInEnglish(this.#task(data.taskId ?? fail('invalid-request')).profile)) throw new Fault('invalid-request', MICRODUCK_UNSPOKEN);
+        if (!spokenAloud(this.#task(data.taskId ?? fail('invalid-request')).profile)) throw new Fault('invalid-request', UNSPOKEN);
         spoken = message; return undefined;
       }
       const task = this.#task(data.taskId ?? fail('invalid-request'));
@@ -683,7 +681,7 @@ export class AssistantEngine {
   }
   async #turn(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
-    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile === 'bunny'), copy = this.#core();
+    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile), copy = this.#core();
     const id = `${state.taskId}-step-${String(state.step)}`;
     const context = this.#context(task.profile);
     // Over the bound the call is refused before any usage is reserved or a request leaves: the owner reads why, nothing is truncated.
@@ -818,7 +816,7 @@ export class AssistantEngine {
     const last = [...task.transcript].reverse().find(item => item.role === 'assistant');
     const call = last?.role === 'assistant' ? last.calls[0] : undefined;
     if (call === undefined) fail('invalid-state');
-    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile === 'bunny');
+    const provider = this.provider(task.profile), tools = permittedTools(this.#allowed, provider.name === 'synthetic', task.profile);
     const tool = definition(call.name), permitted = tools.some(permittedTool => permittedTool.name === call.name);
     const id = `${state.taskId}-step-${String(state.step)}`;
     if (tool === undefined || !permitted || (tool.effect !== 'read' && tool.effect !== 'draft')) {
@@ -858,7 +856,7 @@ export class AssistantEngine {
       return {step: state.step, next: 'turn'};
     };
     if (state.decision !== 'approve') return refuse('declined', DECLINED);
-    if (!permittedTools(this.#allowed, this.provider(task.profile).name === 'synthetic', task.profile === 'bunny').some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
+    if (!permittedTools(this.#allowed, this.provider(task.profile).name === 'synthetic', task.profile).some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
     const settle = (answer: RequestResult, accepted: string): {text: string; units: number} => {
       // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`; the fate is unknown either way.
       if (answer.status === 'uncertain' || (answer.status === 'rejected' && answer.error.error.code === 'uncertain-result')) throw new Fault('uncertain-result');
