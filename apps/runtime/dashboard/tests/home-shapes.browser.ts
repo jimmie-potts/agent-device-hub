@@ -860,12 +860,32 @@ try {
       const record = data.records.device.find(value => value.id === id);if (record === undefined) throw new Error('pixoo-record');
       return {configurationRevision: record.configurationRevision, generation: record.generation};
     }, deviceId);
+    // A click that sends nothing names its control (#1789): what each card button looks like now, the pointer and click
+    // events the page saw on the card's buttons with their state at that moment, the result line and the last request.
+    type Pressed = {type: string; label: string; disabled: boolean; at: number};
+    await live.evaluate(() => {
+      const record = window as Window & {__homeShapesPressed?: Pressed[]};record.__homeShapesPressed = [];
+      for (const type of ['pointerdown', 'mousedown', 'click', 'dblclick']) window.addEventListener(type, event => {
+        const target = event.target instanceof Element ? event.target.closest('[data-home-card] button') : null;
+        if (target !== null) record.__homeShapesPressed?.push({type, label: target.getAttribute('aria-label') ?? target.textContent?.trim() ?? '', disabled: (target as HTMLButtonElement).disabled, at: Math.round(performance.now())});
+      }, true);
+    });
+    const missed = async (scope: Locator, name: string, double: boolean): Promise<string> => {
+      const card = await scope.evaluate(root => ({
+        buttons: [...root.querySelectorAll('button')].map(node => ({label: node.getAttribute('aria-label') ?? node.textContent.trim(), disabled: node.disabled,
+          ariaDisabled: node.getAttribute('aria-disabled'), ariaBusy: node.getAttribute('aria-busy')})),
+        result: root.querySelector('.pixoo-compact-result')?.textContent ?? null,
+        events: ((window as Window & {__homeShapesPressed?: Pressed[]}).__homeShapesPressed ?? []).slice(-8), now: Math.round(performance.now())}));
+      return `${name}${double ? ' (double click)' : ''} sent no command request: expected ${String(mark + 1)} requests, saw ${String(bodies.length)}. `
+        + `Card buttons now ${JSON.stringify(card.buttons)}; result line ${JSON.stringify(card.result)}; last events on card buttons ${JSON.stringify(card.events)} `
+        + `(page time ${String(card.now)}); last request ${JSON.stringify(bodies.at(-1))}`;
+    };
     const press = async (scope: Locator, name: string, family: string, data: Record<string, unknown>, double = false): Promise<void> => {
       await settled(scope, name);const guard = await device();mark = bodies.length;
       const button = scope.getByRole('button', {name, exact: true});
       if (double) await button.dblclick();else await button.click();
       // The screen controls unlock once no command for the device is unsettled.
-      await expect.poll(() => bodies.length).toBe(mark + 1);
+      try {await expect.poll(() => bodies.length).toBe(mark + 1);} catch (error) {throw new Error(await missed(scope, name, double), {cause: error});}
       await expect(scope.locator('.light-power button').first()).toBeEnabled();
       await observePageTime(live, 300, () => {
         assert.equal(bodies.length, mark + 1, `${name} sends one request${double ? ' for a double click' : ''}`);
