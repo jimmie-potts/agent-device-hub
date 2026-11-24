@@ -163,9 +163,11 @@ const moduleFailsOthersContinue: Scenario = {
   steps: [
     act('the chime\'s next ring hits a fault it does not handle', h => h.simulate({device: 'chime', action: 'fault-next'})),
     ...theApproval,
+    // A miss names the chime's rings too (Hub #1752): one ring means the fault was not armed when the approval reached the
+    // chime, none means the chime has not handled the approval yet.
     expect('the chime failed, and health says so', async h => {
       const chime = (await h.health()).find(module => module.name === 'chime');
-      return (chime?.state === 'failed' && chime.reason?.detail === 'a handler threw') || `chime ${show(chime)}`;
+      return (chime?.state === 'failed' && chime.reason?.detail === 'a handler threw') || `chime ${show(chime)}, ${h.devices().chime.rings.length} rings`;
     }),
     expect('the core and the lamp keep running', h => running(h, ['core', 'lamp'])),
     act('the operator switches lamp-1 on as req-on', h => dispatchOnce(h, 'operator', 'on', switchLamp('lamp-1', 'on'), 'req-on')),
