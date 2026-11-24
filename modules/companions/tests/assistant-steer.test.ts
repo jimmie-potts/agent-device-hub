@@ -244,16 +244,17 @@ void test('a steer that reaches its turn after the turn ended becomes the next q
   await settle(() => provider.pending.length === 1, 'the late steer started as the next message');
   assert.deepEqual(plain(provider.pending[0]?.input.transcript ?? []), [{role: 'owner', text: 'Synthetic steer after the end'}]);
   assert.notEqual(w.task()?.taskId, ended, 'a turn of its own');
-  // Behind a held queue it waits first in line, and Skip or Decline at an ended turn is stale.
-  await w.queue('Synthetic queued before the stop');
+  // After Stop, with nothing queued, it holds the queue as the steers Stop returns do: Stop never ends in new work.
   await w.control('cancel', {taskId: w.task()?.taskId});
   await settle(() => w.task()?.status === 'cancelled');
   provider.pending.length = 0;
   const stopped = w.task()?.taskId;
+  assert.equal((await w.queued()).held, null, 'nothing queued, nothing held');
   assert.equal(code((await w.steer('Synthetic skip at an ended turn', {taskId: stopped, questionId: 'any-question'})).result), 'invalid-state');
   assert.equal((await w.steer('Synthetic steer after the stop', {taskId: stopped})).result.status, 'accepted');
+  await w.queue('Synthetic queued after the late steer');
   const document = await w.queued();
-  assert.deepEqual(texts(document), ['Synthetic steer after the stop', 'Synthetic queued before the stop']);
+  assert.deepEqual(texts(document), ['Synthetic steer after the stop', 'Synthetic queued after the late steer']);
   assert.equal(document.held?.reason, 'stop');
   await quiet();
   assert.equal(provider.pending.length, 0, 'the held queue started nothing');

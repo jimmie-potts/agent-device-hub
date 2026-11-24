@@ -756,7 +756,8 @@ export class AssistantEngine {
    * Steers the conversation's unfinished task with a new message (Hub #2031), in the input's transaction. The steer names
    * the turn it expects, as Codex's `expected_turn_id`. A steer that reaches that turn after it ended, while it is still
    * the conversation's latest turn, arrived after its last model call, so it becomes the next queued message, as one the
-   * turn's close returned does, and starts at once unless the queue is held. A steer aimed at any other turn, one a newer
+   * turn's close returned does, and starts at once unless the queue is held; after Stop it holds the queue, as the steers
+   * Stop returned do. A steer aimed at any other turn, one a newer
    * turn followed or another conversation's, is stale: it is refused with `invalid-state`, and nothing retries it. Its text is saved at once and taken into the task's own
    * transcript just before its next model call; it never bumps the task's generation, so the running call goes on.
    * During an approval, or when fewer than two model calls remain in the turn's limits, the text is queued instead. With
@@ -775,6 +776,8 @@ export class AssistantEngine {
       if (input.questionId !== undefined || this.store.latest().find(entry => entry.conversationId === conversationId)?.id !== task.id) fail('invalid-state');
       if (this.store.queue.count(conversationId) >= LIMITS.queueBound) throw new Fault('capacity', QUEUE_FULL);
       this.store.queue.prepend([{id: command.data.requestId, conversationId, profile: task.profile, text: input.text, queuedAtMs: now, updatedAtMs: now, traceparent: command.traceparent}]);
+      // After Stop it waits in the held queue, as the steers Stop returned do, so Stop never ends in new work.
+      if (task.status === 'cancelled' && this.store.queue.hold(conversationId) === null) this.store.queue.setHold(conversationId, {reason: 'stop', code: null, detail: null});
       return {launch: this.#dispatch(conversationId)};
     }
     const asked = task.question !== null && task.question.answer === null ? task.question : null;

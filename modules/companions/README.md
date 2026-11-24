@@ -450,7 +450,8 @@ off, and no title check or session turn of its own follows a steer.
   next queued message. The commit that closes the turn decides this, so the
   message starts as its own turn right after, before the messages already
   queued. A steer that reaches a turn that has already ended, while it is
-  still the conversation's latest, is queued the same way.
+  still the conversation's latest, is queued the same way; after **Cancel
+  task** it waits in the held queue.
 - **Questions.** During a clarifying question the composer answers it, and
   **Skip question and send** sets the question aside and steers in one step.
   During an approval, text is queued, and **Decline with message** declines
