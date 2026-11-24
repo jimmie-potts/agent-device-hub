@@ -3420,6 +3420,23 @@ credential and drives a proposal, approval, wait and result on the Conversation
 page. Installing the worker on the Mac is the [worker guide](coding-worker.md);
 source evidence establishes no installed run.
 
+Coding-worker slots (#2028) use the same suites. `coding-coordinator.test.js`
+also covers three companions at once with tagged starts, a proposal bound to
+the worker's connection only, a companion's own further hand-off waiting and
+sent once when its slot frees, cancel of a waiting hand-off, per-run timeout
+and loss, restart with a waiting and with a sending hand-off, a refused waiting
+dispatch, an older worker's one shared slot and the `coding-state/2.2`
+publication. Until New conversation (#2029) a companion has one conversation,
+so `coding-slots.test.js` drives the wait through the module with an older
+worker's shared slot, and three companions at once with a three-slot worker.
+`coding-status.test.js` covers the page's slot and plan usage lines, and
+`coding-worker.test.js` the worker's three slots on one repository, per-run
+cancel and the slots a lost endpoint frees. `coding.test.mjs` covers
+`coding-endpoint/2.2`, `coding-work/2.1` and `coding-state/2.2`. The companions
+browser entry also calls `coding-slots.browser.ts`, which drives two companions
+running at once, the plan usage line, an approved hand-off waiting behind an
+older worker's one slot and its single send, through the real gateway and page.
+
 ## Runtime upgrade operator checks
 
 Use Node 24 and `npm ci`, then run `npm run build`, `npm run typecheck`,

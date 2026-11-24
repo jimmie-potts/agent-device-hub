@@ -13,7 +13,7 @@ import {promisify} from 'node:util';
 import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingEndpointControl, type CodingLimitWindow, type CodingProgress, type CodingProgressReason,
+import {CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingLimitWindow, type CodingProgress, type CodingProgressReason,
   type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
@@ -29,11 +29,17 @@ const MAX_CONFIG_BYTES = 8192;
 const MAX_LINE_CHARS = 4 * 1024 * 1024;
 /** How long each readiness probe (`--version`, `auth status`) may take before its answer counts as unknown. */
 export const PROBE_MS = 10_000;
-const ENDPOINT_SCHEMA = 'https://bunny.invalid/events/coding-endpoint/2.1';
+/** The enable declares the worker's slots (Hub #2028), which only a core that knows `coding-endpoint/2.2` accepts. */
+const ENDPOINT_SCHEMA = 'https://bunny.invalid/events/coding-endpoint/2.2';
 const PROGRESS_SCHEMA = 'https://bunny.invalid/events/coding-progress/2.1';
 const NAME = /^[a-z0-9]+(?:[-._][a-z0-9]+)*$/;
 const SHA = /^[0-9a-f]{40}$/;
 const TOKEN = /^[A-Za-z0-9_-]{20,256}$/;
+/**
+ * How long the worker waits for stopped runs to end before it declares again or finishes stopping: the SIGKILL ten
+ * seconds after SIGTERM, and five more. A run still alive then keeps its companion's slot until it ends.
+ */
+export const STOPPED_RUN_MS = 15_000;
 /** How long after a refused re-declaration the worker tries again, doubling each time, and how often. */
 export const REDECLARE_MS = 500;
 const REDECLARE_ATTEMPTS = 6;
@@ -93,7 +99,9 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
     ...(claude.maxTurns === undefined ? {} : {maxTurns: Number(claude.maxTurns)}), ...(environment === undefined ? {} : {environment: environment as string[]})}};
 }
 
-type Running = {operationId: string; child: ChildProcess | undefined; cancelled: boolean; timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean};
+/** One run in one of the worker's slots, with the companion that asked and the endpoint that started it. */
+type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; child: ChildProcess | undefined; cancelled: boolean;
+  timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>};
 export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean};
 export type Harness = {
   /**
@@ -275,29 +283,55 @@ export async function projectSettingsRefusal(worktree: string): Promise<string |
   return (await readProjectSettings(worktree)).refusal;
 }
 
+/** Runs one git command in `cwd`; the worker's default, and the seam a test uses to watch the setup's ordering. */
+export type GitRunner = (cwd: string, args: string[], options?: {timeoutMs?: number; trim?: boolean}) => Promise<string>;
 async function git(cwd: string, args: string[], {timeoutMs = 60_000, trim = true}: {timeoutMs?: number; trim?: boolean} = {}): Promise<string> {
   const {stdout} = await run('git', ['-C', cwd, ...args], {timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024});
   return trim ? stdout.trim() : stdout;
 }
 
-/** One worker process: connect, declare the endpoint, run at most one task at a time. */
+/**
+ * One worker process: connect, declare the endpoint and its slots, and run at most one task per companion, three at once
+ * (Hub #2028), each in its own fresh worktree.
+ */
 export class CodingWorker {
   #participant: RemoteParticipant | undefined;
   #endpoint: RemoteEndpoint | undefined;
-  #running: Running | undefined;
+  /** The runs in the worker's slots, by operation ID. */
+  readonly #running = new Map<string, Running>();
+  /** Each repository's git setup (fetch and worktree add), one at a time, so runs on the same repository never race git's locks. */
+  readonly #gitSetup = new Map<string, Promise<void>>();
   readonly #harness: Harness;
   readonly #connect: typeof connectRemote;
   readonly #now: () => number;
+  readonly #git: GitRunner;
+  readonly #timer: ProbeTimer;
   /** What the declaration carries: the latest readiness probe and the limit windows the latest run reported. */
   #readiness: CodingReadiness | undefined;
   #limits: {windows: CodingLimitWindow[]; atMs: number} | undefined;
   /** `log` is the process's own line writer, owned by the entry point; the library writes nothing itself. */
   constructor(readonly configuration: WorkerConfiguration, readonly token: string, harness?: Harness, readonly log: (line: string) => void = () => {}, connect: typeof connectRemote = connectRemote,
-    now: () => number = Date.now) {
+    now: () => number = Date.now, runGit: GitRunner = git, timer: ProbeTimer = realTimer) {
     this.#harness = harness ?? claudeHarness(configuration.claude.executable, process.env,
       {...(configuration.claude.environment === undefined ? {} : {environment: configuration.claude.environment}), ...(configuration.repositories[0] === undefined ? {} : {probeCwd: configuration.repositories[0].path})});
     this.#connect = connect;
     this.#now = now;
+    this.#git = runGit;
+    this.#timer = timer;
+  }
+  /**
+   * Waits until every stopped run has ended, or for `STOPPED_RUN_MS`, whichever comes first: a tool whose output a
+   * leftover process holds open never ends its run, and must not hold the worker undeclared. A run still alive then
+   * keeps its slot, so its companion's start is refused with `capacity` until it ends; it is logged by operation.
+   */
+  async #stoppedRunsEnded(): Promise<void> {
+    const runs = [...this.#running.values()];
+    if (runs.length === 0) return;
+    let cancel = (): void => {};
+    const bounded = await Promise.race([Promise.all(runs.map(running => running.ended)).then(() => true),
+      new Promise<boolean>(resolvePromise => {cancel = this.#timer(STOPPED_RUN_MS, () => {resolvePromise(false);});})]);
+    cancel();
+    if (!bounded) for (const running of runs) if (this.#running.get(running.operationId) === running) this.log(`coding-worker: stopped run ${running.operationId} has not ended; its slot stays busy until it does`);
   }
   /** The readiness this worker last reported, or would report now if it has not probed yet. */
   get readiness(): CodingReadiness | undefined {return this.#readiness === undefined ? undefined : structuredClone(this.#readiness);}
@@ -312,7 +346,7 @@ export class CodingWorker {
       limits: this.#limits?.windows ?? null, limitsObservedAtMs: this.#limits?.atMs ?? null, checkedAtMs: this.#now()};
   }
   #enable(readiness: CodingReadiness | undefined): {type: string; dataschema: string; data: CodingEndpointControl} {
-    return {type: 'org.bunny.coding.endpoint.requested', dataschema: ENDPOINT_SCHEMA, data: {requestId: randomUUID(), action: 'enable', ...(readiness === undefined ? {} : {readiness})}};
+    return {type: 'org.bunny.coding.endpoint.requested', dataschema: ENDPOINT_SCHEMA, data: {requestId: randomUUID(), action: 'enable', slots: CODING_WORKER_SLOTS, ...(readiness === undefined ? {} : {readiness})}};
   }
   #stopping = false;
   #redeclaring = false;
@@ -335,7 +369,7 @@ export class CodingWorker {
       }});
     try {await this.#declare(); this.#declared = true;} catch (error) {
       this.#stopping = true;
-      this.#stopChild();
+      this.#stopAll();
       await this.#participant.close().catch(() => {});
       throw error;
     }
@@ -348,6 +382,10 @@ export class CodingWorker {
     if (this.#redeclaring) return;
     this.#redeclaring = true;
     try {
+      // The runs the lost endpoint started were stopped and hold their slots until they end. The fresh endpoint is
+      // declared once they have, or after a bound; a run still alive then keeps its companion's slot busy, so no
+      // companion ever has two runs and the other companions are not held without a worker.
+      await this.#stoppedRunsEnded();
       for (let attempt = 0; attempt < REDECLARE_ATTEMPTS && !this.#stopping; attempt += 1) {
         try {await this.#declare(); return;} catch { /* refused, timed out or lost again: wait and try once more */ }
         await new Promise<void>(resolvePromise => {setTimeout(resolvePromise, REDECLARE_MS * 2 ** attempt).unref();});
@@ -369,8 +407,10 @@ export class CodingWorker {
     let opened: RemoteEndpoint | undefined;
     const endpoint = await participant.openEndpoint<CodingWork>({family: 'coding-work', respond: command => this.#work(command), onClosed: () => {
       if (this.#endpoint === opened) this.#endpoint = undefined;
-      this.log('coding-worker endpoint closed; the running task, if any, is lost to the core and will be stopped');
-      this.#stopChild();
+      this.log('coding-worker endpoint closed; the running tasks, if any, are lost to the core and will be stopped');
+      // The core gives these runs up as uncertain. Each is stopped and keeps its slot, where a cancel or stop() still
+      // reaches it, until it ends; its report goes nowhere, since the endpoint that started it is gone.
+      this.#stopAll();
     }}).catch((error: unknown) => {throw error instanceof SdkError ? new Error(`coding-worker-endpoint-refused: ${error.body.error.code}`) : error;});
     opened = endpoint;
     this.#endpoint = endpoint;
@@ -389,14 +429,16 @@ export class CodingWorker {
   }
   async stop(): Promise<void> {
     this.#stopping = true;
-    this.#stopChild();
+    this.#stopAll();
     try {await this.#endpoint?.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: ENDPOINT_SCHEMA,
       data: {requestId: randomUUID(), action: 'disable'}}, {timeoutMs: 5000});} catch { /* the gateway reports the lost endpoint either way */ }
-    await this.#endpoint?.close(); await this.#participant?.close();
+    await this.#endpoint?.close();
+    // The stopped runs finish their own git steps before the process lets go, within the same bound.
+    await this.#stoppedRunsEnded();
+    await this.#participant?.close();
   }
-  #stopChild(): void {
-    const running = this.#running;
-    if (running === undefined) return;
+  #stopAll(): void {for (const running of this.#running.values()) this.#stopRun(running);}
+  #stopRun(running: Running): void {
     running.cancelled = true;
     if (running.timer !== undefined) {clearTimeout(running.timer); running.timer = undefined;}
     running.child?.kill('SIGTERM');
@@ -406,16 +448,23 @@ export class CodingWorker {
     if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
     const data = command.data;
     if (data.action === 'cancel') {
-      if (this.#running?.operationId !== data.operationId) return errorBody('not-found');
-      this.#stopChild(); return {status: 'accepted'};
+      const running = this.#running.get(data.operationId);
+      if (running === undefined) return errorBody('not-found');
+      this.#stopRun(running); return {status: 'accepted'};
     }
-    if (this.#running !== undefined) return this.#running.operationId === data.operationId ? {status: 'accepted'} : errorBody('capacity', {detail: 'one task at a time'});
+    if (this.#running.has(data.operationId)) return {status: 'accepted'};
+    // One slot per companion, three at once; a start from an older core names no companion and takes any free slot.
+    if (this.#running.size >= CODING_WORKER_SLOTS) return errorBody('capacity', {detail: 'every slot is busy'});
+    if (data.companion !== undefined && [...this.#running.values()].some(running => running.companion === data.companion)) return errorBody('capacity', {detail: 'that companion\'s slot is busy'});
     const repository = this.configuration.repositories.find(entry => entry.name === data.repository);
     if (repository === undefined) return errorBody('invalid-request', {detail: 'the repository is not on the worker\'s allowlist'});
-    const running: Running = {operationId: data.operationId, child: undefined, cancelled: false, timer: undefined};
-    this.#running = running;
+    let end = (): void => {};
+    const running: Running = {operationId: data.operationId, companion: data.companion, endpoint: this.#endpoint, child: undefined, cancelled: false, timer: undefined,
+      ended: new Promise<void>(resolvePromise => {end = resolvePromise;})};
+    this.#running.set(running.operationId, running);
     queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds).finally(() => {
-      if (this.#running === running) this.#running = undefined;
+      if (this.#running.get(running.operationId) === running) this.#running.delete(running.operationId);
+      end();
       if (running.limitsChanged === true) void this.#refresh();
     });});
     return {status: 'accepted'};
@@ -436,30 +485,45 @@ export class CodingWorker {
       if (answer.status !== 'accepted') this.log(`coding-worker readiness ${answer.status}: ${answer.error.error.code} request ${answer.requestId}`);
     } catch {this.log(`coding-worker readiness uncertain: request ${draft.data.requestId}`);}
   }
-  async #progress(data: CodingProgress): Promise<void> {
-    try {await this.#endpoint?.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: PROGRESS_SCHEMA, data});}
+  /** Reports a run's progress on the endpoint that started it, and nowhere once that endpoint is gone. */
+  async #progress(running: Running, data: CodingProgress): Promise<void> {
+    if (running.endpoint === undefined || running.endpoint !== this.#endpoint) {this.log(`coding-worker dropped ${data.status} for ${data.operationId}: its endpoint is gone`); return;}
+    try {await running.endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: PROGRESS_SCHEMA, data});}
     catch {this.log(`coding-worker could not report ${data.status} for ${data.operationId}`);}
   }
+  /** Runs one repository's git setup after any other run's on the same repository has finished its own. */
+  async #serially<T>(path: string, step: () => Promise<T>): Promise<T> {
+    const previous = this.#gitSetup.get(path) ?? Promise.resolve();
+    let done = (): void => {};
+    const mine = new Promise<void>(resolvePromise => {done = resolvePromise;});
+    const chained = previous.then(() => mine);
+    this.#gitSetup.set(path, chained);
+    try {await previous; return await step();}
+    finally {done(); if (this.#gitSetup.get(path) === chained) this.#gitSetup.delete(path);}
+  }
   async #run(running: Running, repository: {name: string; path: string}, taskId: string, brief: string, bounds: CodingBounds): Promise<void> {
-    await this.#progress({operationId: running.operationId, status: 'started'});
+    await this.#progress(running, {operationId: running.operationId, status: 'started'});
     let worktree: string, base: string | null = null;
     try {
-      await stat(join(repository.path, '.git'));
-      try {await git(repository.path, ['fetch', '--quiet', 'origin', 'main'], {timeoutMs: 120_000});} catch {this.log('coding-worker: fetch failed; using the local origin/main');}
-      base = await git(repository.path, ['rev-parse', 'origin/main']);
-      if (!SHA.test(base)) base = null;
-      const root = join(repository.path, '.local', 'worktrees'); await mkdir(root, {recursive: true, mode: 0o700});
-      worktree = join(root, `bunny-${taskId.slice(0, 8)}-${randomUUID().slice(0, 8)}`);
-      await git(repository.path, ['worktree', 'add', '--detach', '--quiet', worktree, base ?? 'origin/main']);
+      // Runs on the same repository each get their own fresh worktree (Hub #2028); their git setup takes turns.
+      ({worktree, base} = await this.#serially(repository.path, async () => {
+        await stat(join(repository.path, '.git'));
+        try {await this.#git(repository.path, ['fetch', '--quiet', 'origin', 'main'], {timeoutMs: 120_000});} catch {this.log('coding-worker: fetch failed; using the local origin/main');}
+        const revision = await this.#git(repository.path, ['rev-parse', 'origin/main']), checked = SHA.test(revision) ? revision : null;
+        const root = join(repository.path, '.local', 'worktrees'); await mkdir(root, {recursive: true, mode: 0o700});
+        const fresh = join(root, `bunny-${taskId.slice(0, 8)}-${randomUUID().slice(0, 8)}`);
+        await this.#git(repository.path, ['worktree', 'add', '--detach', '--quiet', fresh, checked ?? 'origin/main']);
+        return {worktree: fresh, base: checked};
+      }));
     } catch {
-      await this.#progress({operationId: running.operationId, status: 'failed', reason: 'worktree', result: assembleResult(repository.name, base, null, [], '', 'worktree').result}); return;
+      await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'worktree', result: assembleResult(repository.name, base, null, [], '', 'worktree').result}); return;
     }
-    if (running.cancelled) {await this.#progress({operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}); return;}
+    if (running.cancelled) {await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}); return;}
     // The run loads the worktree's project settings, whose `env` and credential helpers could undo the harness
     // environment. They are read as data before the tool starts; one that would is refused, and nothing is spent.
     const {refusal: settings, fingerprint: settingsBefore} = await readProjectSettings(worktree);
     if (settings !== undefined) {
-      await this.#progress({operationId: running.operationId, status: 'failed', reason: 'refused',
+      await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'refused',
         result: refusedResult(assembleResult(repository.name, base, base, [], '', 'refused').result, `The run was refused before the tool started: ${settings}. Workers use only the subscription sign-in.`)});
       return;
     }
@@ -487,6 +551,8 @@ export class CodingWorker {
     };
     const finished = await this.#harness.start(args, worktree, brief, child => {
       running.child = child;
+      // A run stopped after its last check and before the tool started is stopped as soon as the tool exists.
+      if (running.cancelled) {child.kill('SIGTERM'); setTimeout(() => {child.kill('SIGKILL');}, 10_000).unref(); return;}
       running.timer = setTimeout(() => {timedOut = true; child.kill('SIGTERM'); setTimeout(() => {child.kill('SIGKILL');}, 10_000).unref();}, bounds.wallClockMs);
     }, watch);
     if (running.timer !== undefined) {clearTimeout(running.timer); running.timer = undefined;}
@@ -495,29 +561,29 @@ export class CodingWorker {
     if (windows.length > 0) {this.#limits = {windows, atMs: this.#now()}; running.limitsChanged = true;}
     let head: string | null = null, changedFiles: string[] = [];
     try {
-      head = await git(worktree, ['rev-parse', 'HEAD']); if (!SHA.test(head)) head = null;
+      head = await this.#git(worktree, ['rev-parse', 'HEAD']); if (!SHA.test(head)) head = null;
       // Porcelain lines are two status letters, a space and the path; the first line's leading space is part of the status, so the output is not trimmed.
-      const status = await git(worktree, ['status', '--porcelain', '--untracked-files=all'], {trim: false});
+      const status = await this.#git(worktree, ['status', '--porcelain', '--untracked-files=all'], {trim: false});
       changedFiles = status.split('\n').map(line => line.trimEnd()).filter(Boolean).map(line => line.slice(3).trim()).filter(Boolean);
-      if (base !== null && head !== null && head !== base) changedFiles = [...new Set([...(await git(worktree, ['diff', '--name-only', `${base}..${head}`])).split('\n').filter(Boolean), ...changedFiles])];
+      if (base !== null && head !== null && head !== base) changedFiles = [...new Set([...(await this.#git(worktree, ['diff', '--name-only', `${base}..${head}`])).split('\n').filter(Boolean), ...changedFiles])];
     } catch {this.log('coding-worker: git facts unavailable after the run');}
     const settingsChanged = (await readProjectSettings(worktree)).fingerprint !== settingsBefore;
     const assemble = (output: string | ClaudeStream, given?: CodingProgressReason) => assembleResult(repository.name, base, head, changedFiles, output, given, settingsChanged);
-    if (running.cancelled) {await this.#progress({operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: assemble(stream, 'cancelled').result}); return;}
+    if (running.cancelled) {await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: assemble(stream, 'cancelled').result}); return;}
     if (keyRefused !== undefined) {
-      await this.#progress({operationId: running.operationId, status: 'failed', reason: 'refused', result: refusedResult(assemble(stream, 'refused').result,
+      await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'refused', result: refusedResult(assemble(stream, 'refused').result,
         `The run was stopped at its ${stream.apiKeySource === undefined ? 'first work event' : 'first event'}: ${keyRefused}, and workers use only the subscription sign-in.`)});
       return;
     }
-    if (timedOut) {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'timeout', result: assemble(stream, 'timeout').result}); return;}
+    if (timedOut) {await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'timeout', result: assemble(stream, 'timeout').result}); return;}
     // A skipped oversized event matters only when it was the final result.
-    if (finished.truncated && stream.result === undefined) {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'invalid-output', result: assemble('', 'invalid-output').result}); return;}
+    if (finished.truncated && stream.result === undefined) {await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'invalid-output', result: assemble('', 'invalid-output').result}); return;}
     const assembled = assemble(stream);
     if (assembled.result.usage !== null && assembled.result.usage.durationMs === null) assembled.result.usage.durationMs = Date.now() - started;
     // A usage limit keeps its own outcome and the limit the tool reported; every other failure is failed, as before.
-    if (assembled.reason === 'usage-limit') {await this.#progress({operationId: running.operationId, status: 'failed', reason: 'usage-limit', result: assembled.result}); return;}
-    if (finished.code !== 0 || assembled.reason !== undefined) {await this.#progress({operationId: running.operationId, status: 'failed', reason: assembled.reason ?? 'exit', result: {...assembled.result, outcome: Outcome.failed}}); return;}
-    await this.#progress({operationId: running.operationId, status: 'completed', result: assembled.result});
+    if (assembled.reason === 'usage-limit') {await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'usage-limit', result: assembled.result}); return;}
+    if (finished.code !== 0 || assembled.reason !== undefined) {await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: assembled.reason ?? 'exit', result: {...assembled.result, outcome: Outcome.failed}}); return;}
+    await this.#progress(running, {operationId: running.operationId, status: 'completed', result: assembled.result});
   }
 }
 

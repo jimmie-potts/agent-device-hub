@@ -15,6 +15,7 @@ import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
 import {ConversationUpload} from './conversation-upload.js';
 import {ConversationTranscript} from './conversation-transcript.js';
 import {conversationRail, profiles, unspokenNote} from './conversation-rail.js';
+import {companionName, handOffWaiting, slotBusy} from './coding-status.js';
 import './conversation.css';
 
 const finished = (status: string): boolean => ['succeeded', 'failed', 'cancelled'].includes(status);
@@ -30,8 +31,8 @@ function SavedQuestionContext({question}: {question: SavedQuestion}): React.JSX.
   </article>;
 }
 
-function TaskControls({context, command, state, profile, live, question, drafts, setDraft, refreshHistory, historyBusy, voice}: {
-  context: FrontendContext; command: FrontendCommand; state: AssistantState | undefined; profile: AssistantProfile; live: boolean;
+function TaskControls({context, command, state, profile, live, question, coding, drafts, setDraft, refreshHistory, historyBusy, voice}: {
+  context: FrontendContext; command: FrontendCommand; state: AssistantState | undefined; profile: AssistantProfile; live: boolean; coding: CodingState | undefined;
   question: SavedQuestion | undefined; drafts: Record<string, string>; setDraft: (key: string, value: string) => void;
   refreshHistory: () => void; historyBusy: boolean; voice: React.JSX.Element;
 }): React.JSX.Element {
@@ -79,7 +80,9 @@ function TaskControls({context, command, state, profile, live, question, drafts,
     <fieldset className="conversation-task-controls" aria-label="Conversation controls" disabled={locked}>
       {!unavailableDecision && (delegated ? <article aria-label="Delegated work">
         <p>{question?.text}</p>
-        <p>Waiting for the coding worker on your computer. Its structured result ends this wait; Cancel task asks the worker to stop.</p>
+        {handOffWaiting(coding, task?.taskId)
+          ? <p>Waiting for the coding worker: it is busy, and this hand-off starts when {companionName(profile)}'s slot frees. Nothing has been sent yet; Cancel task removes it.</p>
+          : <p>Waiting for the coding worker on your computer. Its structured result ends this wait; Cancel task asks the worker to stop.</p>}
       </article> : approval && question?.proposal !== null && question?.proposal !== undefined ? <article aria-label="Proposed command">
         <strong>Needs approval</strong>
         <p>{question.text}</p>
@@ -87,8 +90,9 @@ function TaskControls({context, command, state, profile, live, question, drafts,
           ? <p>Command: <code>{question.proposal.family}</code> on <code>{question.proposal.target}</code>, mode <strong>{question.proposal.data.mode}</strong>.
             {' '}Bound to Hub-mode revision {String(question.proposal.expectedRevision)}; a mode changed since then refuses it.</p>
           : question.proposal.family === 'coding-dispatch' ? <p>Delegation to the coding worker in repository <strong>{question.proposal.data.repository}</strong>, in a fresh worktree with edits, builds and tests allowed and no push.
-            {' '}Brief: <span style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{question.proposal.data.brief}</span>.
-            {' '}Bound to coding worker revision {String(question.proposal.expectedRevision)}; a worker changed since then refuses it.</p>
+            {' '}Brief: <span style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{question.proposal.data.brief}</span>{/[.!?]$/u.test(question.proposal.data.brief) ? '' : '.'}
+            {' '}Bound to coding worker revision {String(question.proposal.expectedRevision)}; a worker changed since then refuses it.
+            {slotBusy(coding, profile) && <> The coding worker is busy: {companionName(profile)}'s slot is taken, so if you approve, this hand-off waits and starts when the slot frees.</>}</p>
           : question.proposal.family === 'catalog-action'
             ? <details><summary>{question.proposal.command} on {question.proposal.target}</summary>
               <pre style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{JSON.stringify({binding: question.proposal.binding, settings: question.proposal.data}, null, 2)}</pre>
@@ -435,7 +439,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
             {spendLimit !== undefined && <p role="status">{spendLimit}</p>}
             {state?.enabled === true && open && !['waiting', 'paused'].includes(task.status) && <p>Finish or cancel this conversation's task before sending another message.</p>}
             {activeClarification !== undefined && <SavedQuestionContext question={activeClarification}/>}
-            <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion}
+            <TaskControls context={context} command={command} state={state} profile={profile} live={live} question={currentQuestion} coding={connected ? coding : undefined}
               drafts={drafts} setDraft={(key, value) => {setDrafts(prior => ({...prior, [key]: value}));}}
               refreshHistory={() => {readHistory();}} historyBusy={historyStatus === 'loading'}
               voice={<ConversationVoice context={context} speech={speech} open={panel === 'voice'} onOpenChange={setVoiceOpen}

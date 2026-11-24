@@ -720,3 +720,31 @@ void test('conversations that share a last-message time across a page boundary a
   assert.deepEqual([...listed].sort(), [...ids].sort(), 'no conversation is skipped');
   assert.equal(listed[0], ids[19]);
 });
+
+void test('a hand-off waiting for its companion\'s worker slot holds New conversation, and its rows reach the next task\'s context', async context => {
+  // The worker's slot for B.U.N.N.Y. is busy, so the approved hand-off waits unsent (Hub #2028).
+  const w = await world(context, {tools: ['delegate_coding'], coding: () => ({available: true, endpointId: 'worker-1', revision: 1}),
+    delegate: data => Promise.resolve({status: 'waiting' as const, requestId: data.requestId}), handedOff: () => false});
+  accepted(await w.control('enable'));
+  accepted(await w.send('bunny', 'PRIVATE-DELEGATE add a synthetic test'));
+  const task = w.task('bunny')?.taskId ?? assert.fail('task');
+  (await w.providers.bunny.next()).resolve(call('delegate_coding', {repository: 'agent-device-hub', brief: 'PRIVATE-BRIEF Add a synthetic test.'}));
+  await settle(() => w.task('bunny')?.status === 'waiting');
+  accepted(await w.send('bunny', 'approve', true));
+  await settle(() => w.task('bunny')?.questionId?.includes('delegation') === true && w.task('bunny')?.status === 'waiting');
+  assert.match(JSON.stringify((await w.recent('bunny')).messages), /Waiting to delegate to the coding worker in agent-device-hub: PRIVATE-BRIEF/);
+  // Waiting on the worker is unfinished: New conversation is refused.
+  assert.equal(code(await w.fresh('bunny')), 'invalid-state');
+  // The preview of that waiting task holds the earlier rows only; the hand-off's own rows reach the next task once it ends.
+  const preview = await w.preview('bunny');
+  assert.deepEqual(preview.basis, {kind: 'task', taskId: task});
+  assert.equal(previewed(preview, 'recent').state, 'empty');
+  accepted(await w.control('cancel', {taskId: task}));
+  accepted(await w.send('bunny', 'What happened to the hand-off?'));
+  const next = await w.providers.bunny.next();
+  const recent = text(next.input, 'recent');
+  assert.match(recent, /Owner: PRIVATE-DELEGATE add a synthetic test/);
+  assert.match(recent, new RegExp(`\\[message ${task}-step-\\d+\\] Tool result \\(delegate_coding\\): accepted: the coding worker is busy, so this hand-off waits for B\\.U\\.N\\.N\\.Y\\.'s slot`));
+  assert.match(recent, /B\.U\.N\.N\.Y\.: Waiting to delegate to the coding worker in agent-device-hub: PRIVATE-BRIEF Add a synthetic test\./);
+  next.resolve(reply('It was cancelled before it was sent.'));
+});

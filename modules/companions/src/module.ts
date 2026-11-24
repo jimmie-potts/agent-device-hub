@@ -3,7 +3,7 @@ import type {SpeechQualification} from './speech-qualification.js';
 import {replyRefusal, speechRefusal} from './presentation-policy.js';
 import {SpeechCoordinator, speechStateDraft} from './speech/coordinator.js';
 import {CodingCoordinator, codingStateDraft} from './coding/coordinator.js';
-import {DEFAULT_CODING_BOUNDS, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {Knowledge} from './knowledge/engine.js';
 import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './preferences/engine.js';
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
@@ -160,21 +160,25 @@ class Companions {
     const speak: AssistantOptions['speak'] = this.options.speak ?? ((reply, key, parent, line) => {this.speech?.offerReply(reply, key, parent, this.speech.mark(), line);});
     // The coding coordinator (Hub #502) is built before the engine, which binds proposals to its revision, and started after it, so a
     // responsibility settled at startup reaches a running engine.
-    const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve());
-    this.coding = coding;
-    const delegate: AssistantOptions['delegate'] = this.options.delegate ?? ((data, parent) => {
-      const endpoint = coding.endpoint();
-      if (!endpoint.available || endpoint.endpointId === null) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('unavailable', {detail: 'no coding worker is connected'})});
-      if (endpoint.revision !== data.expectedRevision) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('revision-conflict', {detail: 'the coding worker changed since the proposal'})});
-      return context.sdk.request('bunny.cmd.coding-dispatch.assistant', {type: 'org.bunny.coding.dispatch.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-dispatch/2.0',
-        data: {requestId: data.requestId, endpointId: endpoint.endpointId, taskId: data.taskId, repository: data.repository, brief: data.brief, bounds: DEFAULT_CODING_BOUNDS}},
-      {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent});
+    // Each run is tagged with the companion whose task asked (Hub #2028), read from the engine's saved task.
+    // A waiting hand-off is sent only while its task still waits on it, so a cancel that the coordinator missed, as during
+    // a stop, still sends nothing.
+    const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
+      companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
+      awaits: taskId => {
+        const task = this.assistant?.store.task(taskId);
+        return task !== undefined && !['succeeded', 'failed', 'cancelled'].includes(task.status) && task.question?.kind === 'delegation' && task.question.answer === null;
+      },
+      sent: (taskId, parent) => {void this.assistant?.handOffSent(taskId, parent).catch(() => {});},
     });
+    this.coding = coding;
+    // An approved hand-off goes to the core now when its companion's slot is free, or waits for it (Hub #2028).
+    const delegate: AssistantOptions['delegate'] = this.options.delegate ?? ((data, parent) => coding.handOff(data, parent));
     this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context),
       retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries,
       // The owner's knowledge notes reach a companion's context only once the owner turns them on for it (Hub #2029).
       knowledge: () => this.knowledge?.store.active().entries ?? [], speak,
-      coding: this.options.coding ?? (() => coding.endpoint()), delegate, onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
+      coding: this.options.coding ?? (() => coding.endpoint()), delegate, handedOff: this.options.handedOff ?? (requestId => coding.accepted(requestId)), onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();
     await this.preferences.start();

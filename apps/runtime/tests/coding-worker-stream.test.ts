@@ -26,10 +26,10 @@ const FIXTURES = fileURLToPath(new URL('../../tests/fixtures/claude-stream/', im
 const fixture = (name: string): Promise<string> => readFile(join(FIXTURES, name), 'utf8');
 const NOW = Date.parse('2026-01-01T09:00:00.000Z');
 const validator = new MessageValidator(); registerCoreFamilies(validator);
-/** A payload the worker sends, checked against the registered 2.1 schema as the gateway would. */
-function admitted(family: string, kind: 'command' | 'occurrence', type: string, data: object): void {
+/** A payload the worker sends, checked against the registered schema the worker names (2.1, or 2.2 for its declaration since Hub #2028) as the gateway would. */
+function admitted(family: string, kind: 'command' | 'occurrence', type: string, data: object, version = '2.1'): void {
   const message = {specversion: '1.0', bunnyprofile: '2.0', id: 'msg-1', source: 'bunny/parts/coding-worker', type, subject: 'worker-endpoint-1', time: new Date(NOW).toISOString(), kind,
-    datacontenttype: 'application/json', dataschema: `https://bunny.invalid/events/${family}/2.1`, traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data,
+    datacontenttype: 'application/json', dataschema: `https://bunny.invalid/events/${family}/${version}`, traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data,
     ...(kind === 'command' ? {expiresat: new Date(NOW + 5000).toISOString()} : {})};
   const checked = validator.validate(message, {nowMs: NOW});
   assert.ok(checked.ok, JSON.stringify(checked));
@@ -442,7 +442,7 @@ void test('the worker declares with its readiness, reports a recorded question a
   await worker.start();
   const declared = edge.requests[0];
   assert.deepEqual(declared?.readiness, {tool: 'claude-code', installed: 'yes', version: '2.1.292', signedIn: 'yes', plan: 'synthetic', limits: null, limitsObservedAtMs: null, checkedAtMs: NOW});
-  admitted('coding-endpoint', 'command', 'org.bunny.coding.endpoint.requested', declared ?? {});
+  admitted('coding-endpoint', 'command', 'org.bunny.coding.endpoint.requested', declared ?? {}, '2.2');
   assert.deepEqual(edge.respond(start('task-1')), {status: 'accepted'});
   await edge.until(() => edge.progress.length === 2 && edge.requests.length === 2);
   const done = edge.progress[1];

@@ -12,6 +12,7 @@ import {conversationContextJourney} from './conversation-context.browser.ts';
 import {homeSpeechLifetimeJourney, speechJourney, spokenRepliesJourney} from './speech.browser.ts';
 import {lifxConversationJourney, wemoConversationJourney} from './lifx-conversation.browser.ts';
 import {codingDelegationJourney} from './coding-delegation.browser.ts';
+import {codingSlotsJourney} from './coding-slots.browser.ts';
 import {companionCardsCheck} from './companion-cards-journey.ts';
 import {speechReadinessJourney} from './speech-readiness.ts';
 import {suggestionsJourney} from './suggestions.browser.ts';
@@ -46,6 +47,7 @@ try {
   await speechJourney(browser);
   await spokenRepliesJourney(browser);
   await codingDelegationJourney(browser);
+  await codingSlotsJourney(browser);
   await homeSpeechLifetimeJourney(browser);
   await speechReadinessJourney(browser);
   const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
