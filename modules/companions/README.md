@@ -823,9 +823,9 @@ follow-up such as "dim it" therefore still goes through the proposal's current
 device guards and the owner's approval. `read_saved_art` names each artwork's
 source request, so an attachment's request ID leads to its artwork ID.
 
-Where it goes: the sections reach only the configured model provider, which
-today is Anthropic for B.U.N.N.Y. and the synthetic provider elsewhere. ADR
-0011's 2026-10-05 amendment allows retained personal data in prompts to
+Where it goes: the sections reach only the task's model provider, the
+configured Anthropic provider or the local synthetic one, which sends nothing.
+ADR 0011's 2026-10-05 amendment allows retained personal data in prompts to
 Claude. Any other provider needs its own owner decision. The context is
 assembled at each call and not saved; the task record keeps only the message
 sequence its recent conversation reads up to.
