@@ -85,7 +85,7 @@ export function ConversationVoice({context, speech, open, onOpenChange, stopSpea
           <h3 id={titleId}>Spoken replies</h3>
           <button type="button" className="secondary" aria-label="Close spoken replies" onClick={close}>Close</button>
         </header>
-        <p>This tab becomes the one speaker for B.U.N.N.Y.’s replies and eligible Reachy alerts. Voice uses audio output only.</p>
+        <p>This tab becomes the one speaker for B.U.N.N.Y.’s and Reachy’s conversation replies and eligible Reachy alerts. MicroDuck’s replies are never spoken: its audio is quacks only. Voice uses audio output only.</p>
         <p className="conversation-voice-note">Mute before calls or media. The browser cannot detect them.</p>
         <div className="conversation-voice-actions">
           {mayMute

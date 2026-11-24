@@ -84,8 +84,8 @@ Home placement, selection labels, access loss, navigation and keyboard.
 
 `scenario-assistant-task` ends with a 390×844 Conversation capture after its
 synthetic saved reply. It checks that the reply and Send fit in the viewport,
-then browses both labelled demo profiles and returns to the unsent B.U.N.N.Y.
-draft. The capture sends no input command and uses no provider account.
+then browses Reachy and MicroDuck, each named with no Demo label, and returns
+to the unsent B.U.N.N.Y. draft. The capture sends no input command and uses no provider account.
 
 
 `weekly-routines` uses the core and a simulated LIFX consumer. It saves,

@@ -11,9 +11,9 @@ const task = (profile: AssistantProfile, status: AssistantStatus, questionId: st
   modelCalls: 1, toolCalls: 0, questions: questionId === null ? 0 : 1, activeMs: 10, usageUnits: null, reservedUnits: 0});
 const assistant = (...tasks: AssistantTaskSummary[]): AssistantState => ({id: 'assistant', revision: 4, enabled: true, available: true, provider: 'synthetic', model: 'synthetic', tools: [], tasks});
 
-void test('the profiles are listed in the rail\'s order and only B.U.N.N.Y. is not a demo', () => {
-  assert.deepEqual(Object.entries(profiles).map(([id, {name, kind}]) => `${id} ${name} ${kind}`),
-    ['bunny B.U.N.N.Y. Everyday assistant', 'reachy Reachy Demo', 'microduck MicroDuck Demo']);
+void test('the profiles are listed in the rail\'s order, each by its name alone, with no Demo label', () => {
+  // Every profile uses the configured model (Hub #2026), so none is labelled a demo.
+  assert.deepEqual(Object.entries(profiles), [['bunny', {name: 'B.U.N.N.Y.'}], ['reachy', {name: 'Reachy'}], ['microduck', {name: 'MicroDuck'}]]);
 });
 
 void test('the store starts on B.U.N.N.Y., keeps the chosen profile and tells its listeners once for each change', () => {

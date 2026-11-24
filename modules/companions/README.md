@@ -161,8 +161,9 @@ Acknowledgement and state revision commit together; old speech rows are retained
 Stop and mute clear pending work. Higher-priority attention waits for confirmed
 cancellation before replacing lower-priority output.
 
-The same coordinator and endpoint speak B.U.N.N.Y.'s replies to typed requests
-(Hub #500, first slice). Open **Voice** in the composer toolbar to enable
+The same coordinator and endpoint speak B.U.N.N.Y.'s and Reachy's replies to
+typed requests (Hub #500, first slice); MicroDuck's are never spoken, because
+its audio is quacks only (Hub #2026). Open **Voice** in the composer toolbar to enable
 spoken replies, mute them, inspect readiness or recover an eligible earlier
 operation. Enabling makes this tab the speaker for replies and eligible Reachy
 alerts. **Stop speaking** remains available during local playback, including
@@ -172,7 +173,8 @@ changing profiles or resizing leaves the selected endpoint in place. The
 and playback report.
 
 When a turn ends with a result, a question for the owner or a refusal, the engine
-offers that saved message once. **Read aloud** beside a saved assistant message
+offers that saved message once; MicroDuck's English text is never offered,
+because its audio is quacks only. **Read aloud** beside a saved assistant message
 offers it again under its own request identity. The command receipt and playback
 report appear separately. A reply ranks with coding
 attention: it interrupts a notice or social card after confirmed cancellation
@@ -240,9 +242,11 @@ neither installed-client usefulness nor physical acceptance.
 ## Conversation and assistant tasks
 
 The **Conversation** page (`assistant`) is B.U.N.N.Y.'s text conversation beside
-Reachy (Hub #46). The `bunny` profile talks to the provider the private section
-selects; Reachy and MicroDuck keep the labelled synthetic provider, which makes
-no network call and no paid usage. Activation defaults to off. The three
+Reachy (Hub #46). B.U.N.N.Y., Reachy and MicroDuck all talk to the provider and
+model the private section selects (Hub #2026), each with its own curated persona,
+under the same per-turn limits, prompt caching and spend limits. Without a
+provider, or with `synthetic`, all three use the labelled synthetic provider,
+which makes no network call and no paid usage. Activation defaults to off. The three
 profiles keep separate conversation histories. Each conversation runs its own
 task at the same time as the others (Hub #2027): one unfinished task and one
 graph invocation per conversation, all on the module's one SQLite connection.
@@ -260,10 +264,10 @@ and that conversation gets a message saying its saved progress could not be
 restored, that the task can be cancelled but new messages there can't be sent
 until B.U.N.N.Y. restarts, and that the restart tries the recovery again.
 
-Choose the everyday B.U.N.N.Y. assistant or a Reachy or MicroDuck demo under
-**Conversations** in the dashboard's rail, from any page (Hub #1890). On a
-phone, open the menu button first. Both demos are labelled Demo there, and the
-page's one header row names the open profile beside **Details**. A dot on a
+Choose B.U.N.N.Y., Reachy or MicroDuck under **Conversations** in the
+dashboard's rail, from any page (Hub #1890). On a phone, open the menu button
+first. The rail lists each by name, and the page's one header row names the
+open profile beside **Details**. A dot on a
 profile in the rail means that conversation needs your answer or approval. A
 wait on the coding worker shows none, and neither does a conversation whose
 state the page cannot read now. The Reachy and MicroDuck device controls and
@@ -331,8 +335,9 @@ closes Voice.
 Choose a section label to expand it. The sections start collapsed and keep
 their open state while you inspect another panel or resize the page.
 
-- **Capabilities** lists the provider, model, allowed and unavailable tools,
-  and coding worker availability.
+- **Capabilities** lists the provider, the model, the tools the open profile's
+  model is offered, any listed tools that are B.U.N.N.Y.'s only, unavailable
+  tools and coding worker availability.
 - **Task activity** shows the task, conversation and run IDs, status, counters,
   bounds, diagnostic code, saved question and answer, and settled successful
   control receipt. Pending and failed receipts stay beside the controls.
@@ -427,6 +432,12 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   definitions from the list at start and checks membership again when a call
   executes, so a changed section cannot widen an effect. The built-in
   `ask_owner` is always available; the synthetic fixture read is never listed.
+  Device and catalog tools stay B.U.N.N.Y.'s (Hub #2026): Reachy's and
+  MicroDuck's models are offered only the listed tools that are neither, such
+  as `read_sessions`, `set_mode` and `delegate_coding`, and a proposal from them
+  still needs your approval. **Details** lists the tools the open profile's
+  model is offered under **Allowed tools**, and the listed ones it is not under
+  **B.U.N.N.Y. only**.
 - Requests go to `https://api.anthropic.com/v1/messages` through the module's
   own fetch with API version `2026-10-21`, carrying the fixed instructions, the
   current Hub mode, the task's transcript, the tool definitions marked strict,
@@ -480,6 +491,11 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   the provider. **Read aloud** beside a saved assistant message asks to hear it
   again through the `speak` control, whose accepted receipt means the request
   was saved, while the playback report says whether the browser spoke.
+- MicroDuck's audio is quacks only (Hub #2026). Its English text is its
+  intended meaning: it is never offered to the voice, the page shows
+  "Intended meaning. MicroDuck's audio is quacks only, so this text is never
+  read aloud." in place of **Read aloud**, and a `speak` request for one of its
+  messages is refused with `invalid-request`. No quack audio is produced.
 
 ### Artwork in replies
 
@@ -712,8 +728,8 @@ goes live:
 **Details** reads the shared totals from the private `spend` content route
 after each assistant-state revision. The route returns the day's and month's
 counted millionths of a dollar, the limits and the count and amount of
-reservations without reported usage. It also names the B.U.N.N.Y. profile's
-paid model, where its prices come from (`configured`, `built-in` or
+reservations without reported usage. It also names the paid model that all
+three profiles share, where its prices come from (`configured`, `built-in` or
 `dearest`) with the built-in table's date, and its smallest possible call. It
 is null for the synthetic provider. It carries no text, call or task identity.
 
@@ -796,12 +812,12 @@ conversation's topic: the model checks it as the conversation goes on and
 either keeps it or writes a new one (Hub #2075). Until a title exists, the
 persona name stands.
 
-Only a profile with a real title model gets titles: B.U.N.N.Y. on the
-Anthropic provider, with `assistant.titleModel`. Reachy and MicroDuck, and
-B.U.N.N.Y. on the synthetic provider, make no title call and keep their
-persona names until the owner renames them. When a profile gets a real model
-(Hub #2026), it gets titles by the same rule. A test or harness can inject
-`SyntheticTitleProvider`, which writes the fixed title `Synthetic conversation`.
+Every profile on the Anthropic provider gets titles from
+`assistant.titleModel`: B.U.N.N.Y., Reachy and MicroDuck alike (Hub #2026),
+each title check a paid call in the shared spend ledger. On the synthetic
+provider no profile makes a title call, and each keeps its persona name until
+the owner renames it. A test or harness can inject `SyntheticTitleProvider`,
+which writes the fixed title `Synthetic conversation`.
 
 - **When.** An untitled conversation is checked after its first message, so
   it gets its first title while the task runs. After that, the model checks
