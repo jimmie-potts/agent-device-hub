@@ -268,8 +268,8 @@ with this release's contracts and core.
 Returning to the release before needs a step for unfinished tasks: it treats a
 `conversation-2` task as an unsupported graph, recovers it as unavailable and
 offers only Cancel. Let unfinished tasks finish, or cancel them, before going
-back. That release ignores `assistant_steers`, so a steer its task never read
-is not shown there and never reaches the task; Cancel the task first, which
+back. That release also ignores `assistant_steers`, so a steer its task never
+read would not show there or reach the task; cancelling the task here first
 returns its unread steers to the queue. That release can publish a queue of
 at most 8 messages, in `assistant-state/2.2`, so withdraw or start messages
 until no queue holds more than 8 before going back. Prefer fixing forward.

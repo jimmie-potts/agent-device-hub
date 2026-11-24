@@ -439,8 +439,8 @@ steer is saved at once and shows above the composer under **Steering this
 task** until the task reads it. The task reads its steers at its next model
 call, after the last call's tool results, so the model sees what the tool
 returned and then your message. Once read, the steer appears in the transcript
-at that point, marked **Sent while working**. The running call is never cut
-off, and no title check or session turn of its own follows a steer.
+at that point, marked **Sent while working**. A steer never cuts off the
+running call, starts no title check and reports no session turn of its own.
 
 - **A forced call.** If the model was about to finish when the steer arrived,
   the task makes one more model call so the model reads it. The earlier answer
@@ -455,7 +455,7 @@ off, and no title check or session turn of its own follows a steer.
 - **Questions.** During a clarifying question the composer answers it, and
   **Skip question and send** sets the question aside and steers in one step.
   During an approval, text is queued, and **Decline with message** declines
-  the proposal and steers in one step. Nothing is dispatched.
+  the proposal and steers in one step; the declined command is never sent.
 - **Delegation.** While the task waits on the coding worker, including a
   hand-off that waits for its companion's slot, a steer waits for the worker's
   result and is read after it.
