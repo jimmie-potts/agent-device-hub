@@ -224,7 +224,7 @@ export function ConversationDetails({
           : 'The title model writes a short title after the first message and checks it after each finished task and major event, such as an approval or a coding hand-off. Your name replaces it, and the model keeps your name unless the topic clearly changes.'}</p>
         <p>Submitted messages and answers are saved in private Conversation history. {synthetic
           ? 'The synthetic provider answers them locally and makes no paid calls.'
-          : 'They are passed to the configured model, which B.U.N.N.Y., Reachy and MicroDuck share, with the recent messages and tool results of this conversation as context, and every conversation\'s calls count toward the same spend limits.'} The Companion knowledge page previews that context.</p>
+          : 'They are passed to the configured model, which B.U.N.N.Y., Reachy and MicroDuck share, and every conversation\'s calls count toward the same spend limits.'} Each call carries this conversation's recent messages and tool results as context, which the Companion knowledge page previews.</p>
         <p>Unsent drafts stay in this page until reload. Submitted drafts also stay in the composer. Review saved history before sending the same text again.</p>
         <ul className="conversation-settings-links">
           <li><a href="#/module/companions/preferences">Preferences</a></li>
