@@ -3329,6 +3329,23 @@ show that neither start makes a title call, as the #2025 triggers did. After the
 `node --test modules/companions/dist/tests/conversation-titles.test.js modules/companions/dist/tests/configure.test.js modules/companions/dist/tests/assistant-qualification.test.js`.
 They use fake providers and transports only. Existing CI discovery runs them.
 
+Reachy and MicroDuck on the configured model (#2026) extend `assistant.test.js`,
+`configure.test.js`, `conversation-titles.test.js`, `assistant-spend.test.js`
+and `conversation-rail.test.js`. A section that names only B.U.N.N.Y.'s model,
+behind a fake transport, gives both companions that model, their own personas,
+prompt caching, titles and their cost in the shared spend ledger; an explicit
+synthetic provider sends nothing. A scripted fake provider covers the
+companions' topic-following titles with each turn and check in the ledger,
+the spend limit refusing a companion's new message, and MicroDuck's
+quacks-only rule, with Reachy's spoken reply as its negative control. After
+the root build run
+`node --test modules/companions/dist/tests/assistant.test.js modules/companions/dist/tests/configure.test.js modules/companions/dist/tests/conversation-titles.test.js modules/companions/dist/tests/assistant-spend.test.js modules/companions/dist/tests/conversation-rail.test.js`,
+then `node apps/runtime/dashboard/tests/conversation-rail.browser.ts`,
+`node apps/runtime/dashboard/tests/conversation-workspace.browser.ts` and
+`npm run test:companions:browser` for the rail and header without Demo labels
+and MicroDuck's intended-meaning note. They use fake providers and
+transports only, and no paid call. Existing CI discovery runs them.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module

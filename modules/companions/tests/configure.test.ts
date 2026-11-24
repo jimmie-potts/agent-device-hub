@@ -10,6 +10,7 @@ import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {API_KEY_SECRET, configureCompanions, createCompanionsModule} from '../src/module.js';
 import {SPEND_LIMIT_REACHED, type Transport} from '../src/assistant/anthropic.js';
+import {PROFILES} from '../src/knowledge/model.js';
 
 // Synthetic prices: the shape the private section takes, not a price list.
 const PRICES = {'claude-opus-5-5': {input: 1, output: 2, cacheWrite: 1.5, cacheRead: 0.1}, 'claude-sonnet-5-5': {input: 0.5, output: 1, cacheWrite: 0.75, cacheRead: 0.05},
@@ -186,4 +187,94 @@ void test('an Anthropic spend-limit refusal ends the turn capacity, names the mo
     assert.deepEqual([(await w.settled())?.code, w.sent()], [code, 1]);
     assert.equal((await w.said()).some(text => text.includes(SPEND_LIMIT_REACHED)), false);
   }
+});
+
+/** Waits in event-loop turns, never on a clock, until `check` holds. */
+async function turnsUntil(check: () => boolean, what: string): Promise<void> {
+  for (let turn = 0; turn < 5000 && !check(); turn += 1) await new Promise(resolve => {setImmediate(resolve);});
+  assert.ok(check(), what);
+}
+void test('a section that names only B.U.N.N.Y.\'s model gives Reachy and MicroDuck that model, their personas, prompt caching, titles and the shared spend', async context => {
+  // An installation configured before Hub #2026 names one provider, model and key; after the upgrade the same section
+  // serves every profile, so nothing in it changes.
+  const dir = await mkdtemp(join(tmpdir(), 'assistant-companions-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
+  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  const sent: {model: string; system: unknown; cache: unknown; prompt: string}[] = [];
+  const transport: Transport = (_url, init) => {
+    const body = JSON.parse(init.body) as {model: string; system: unknown; cache_control?: unknown; messages: {content: {text?: string}[]}[]};
+    const prompt = body.messages.flatMap(message => message.content.map(block => block.text ?? '')).join('\n');
+    sent.push({model: body.model, system: body.system, cache: body.cache_control, prompt});
+    // A title request answers a title for the conversation it reads; a turn request answers in the persona's words.
+    const text = body.model === 'claude-haiku-5-5' ? prompt.includes('pantry') ? 'Pantry shelf labels' : 'Bath timer' : 'Synthetic companion answer.';
+    return Promise.resolve(new Response(JSON.stringify({content: [{type: 'text', text}], stop_reason: 'end_turn', usage: {input_tokens: 3, output_tokens: 2}}), {status: 200}));
+  };
+  const module = createCompanionsModule({transport});
+  const host = new ModuleHarness(module, {bus, stateDir: dir, section: {assistant: {provider: 'anthropic', model: 'claude-sonnet-5-5', prices: PRICES},
+    secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/anthropic-api-key'}}, secrets: {[API_KEY_SECRET]: 'sk-PRIVATE-TEST-KEY'}});
+  context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
+  await host.start();
+  const requestId = 'companions-enable';
+  assert.equal((await core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
+    dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, action: 'enable', expectedRevision: module.inspectAssistant()?.revision}}, {requestId, timeoutMs: 5000})).status, 'accepted');
+  const open = () => host.moduleDatabase()?.prepare("SELECT 1 FROM assistant_title_calls WHERE json_extract(record,'$.status')='admitted'").get() !== undefined;
+  for (const [profile, text] of [['reachy', 'Help me label the pantry shelf.'], ['microduck', 'Time the bath for me.']] as const) {
+    const id = `companions-${profile}`;
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId: id, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({action: 'start', profile, expectedRevision: module.inspectAssistant()?.revision, text}))});
+    assert.ok(staged !== undefined && !('error' in staged));
+    assert.equal((await core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId: id, ...staged.data}}, {requestId: id, timeoutMs: 5000})).status, 'accepted');
+    await turnsUntil(() => module.inspectAssistant()?.tasks.find(task => task.profile === profile)?.status === 'succeeded', `${profile} succeeded`);
+    // Each conversation is titled after its first message and checked again after its finished task.
+    await turnsUntil(() => sent.filter(request => request.model === 'claude-haiku-5-5').length >= (profile === 'reachy' ? 2 : 4) && !open(), `${profile} titles settled`);
+  }
+  const turns = sent.filter(request => request.model !== 'claude-haiku-5-5'), titles = sent.filter(request => request.model === 'claude-haiku-5-5');
+  assert.deepEqual(turns.map(request => request.model), ['claude-sonnet-5-5', 'claude-sonnet-5-5'], 'both companions use the configured model');
+  assert.equal(titles.length, 4, 'two title checks for each conversation, on the configured title model');
+  for (const [index, name] of ['Reachy', 'MicroDuck'].entries()) {
+    const persona = PROFILES.find(value => value.name === name) ?? assert.fail(name);
+    assert.ok(String(turns[index]?.system).includes(`You are ${name}, the owner's home assistant. ${persona.character}`), `${name}'s curated persona`);
+    assert.deepEqual(turns[index]?.cache, {type: 'ephemeral'}, `${name}'s request asks for prompt caching`);
+  }
+  const record = (profile: string) => {
+    const conversation = module.inspectAssistant()?.tasks.find(task => task.profile === profile)?.conversationId;
+    return (host.moduleDatabase()?.prepare('SELECT record FROM assistant_titles WHERE conversation_id=?').get(String(conversation)) as {record: string} | undefined)?.record;
+  };
+  assert.match(record('reachy') ?? '', /"value":"Pantry shelf labels"/);
+  assert.match(record('microduck') ?? '', /"value":"Bath timer"/);
+  // Every companion turn and title check counts in the shared spend ledger at the section's prices: 3 input and 2 output
+  // tokens at $0.50 and $1 per million for each turn on claude-sonnet-5-5, and at $0.10 and $0.50 for each title check.
+  const spend = await module.manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
+  assert.ok(spend !== undefined && !('error' in spend));
+  const {day} = JSON.parse(Buffer.from(spend.bytes).toString()) as {day: {spentMicros: number; unreported: number}};
+  assert.deepEqual([day.spentMicros, day.unreported], [2 * Math.ceil(3 * 0.5 + 2 * 1) + 4 * Math.ceil(3 * 0.1 + 2 * 0.5), 0]);
+  assert.deepEqual([module.inspectAssistant()?.provider, module.inspectAssistant()?.model], ['anthropic', 'claude-sonnet-5-5']);
+});
+
+void test('an explicit synthetic provider serves every profile without a request', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'assistant-synthetic-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
+  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  let requests = 0;
+  const module = createCompanionsModule({transport: () => {requests += 1; return Promise.reject(new Error('no request expected'));}});
+  const host = new ModuleHarness(module, {bus, stateDir: dir, section: {assistant: {provider: 'synthetic'}}});
+  context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
+  await host.start();
+  assert.equal(module.inspectAssistant()?.provider, 'synthetic');
+  const requestId = 'synthetic-enable';
+  assert.equal((await core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
+    dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, action: 'enable', expectedRevision: module.inspectAssistant()?.revision}}, {requestId, timeoutMs: 5000})).status, 'accepted');
+  for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
+    const id = `synthetic-${profile}`;
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId: id, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({action: 'start', profile, expectedRevision: module.inspectAssistant()?.revision, text: 'Synthetic request'}))});
+    assert.ok(staged !== undefined && !('error' in staged));
+    assert.equal((await core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId: id, ...staged.data}}, {requestId: id, timeoutMs: 5000})).status, 'accepted');
+    // The synthetic script asks its fixed question first.
+    await turnsUntil(() => module.inspectAssistant()?.tasks.find(task => task.profile === profile)?.status === 'waiting', `${profile} waits on the synthetic question`);
+  }
+  assert.equal(requests, 0, 'nothing leaves the module');
+  const spend = await module.manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
+  assert.ok(spend !== undefined && !('error' in spend));
+  assert.equal((JSON.parse(Buffer.from(spend.bytes).toString()) as {day: {spentMicros: number}}).day.spentMicros, 0);
 });

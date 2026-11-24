@@ -119,9 +119,10 @@ void test('unreported usage and a lost answer keep counting their reservations a
   assert.equal(task(w)?.status, 'paused'); assert.equal(provider.calls(), 2);
 });
 
-void test('at a spend limit a new paid turn is refused with capacity naming the limit, while a synthetic profile still starts', async context => {
+void test('at a spend limit a new paid turn is refused with capacity naming the limit in every profile, while a synthetic profile still starts', async context => {
   const provider = paid(() => answer('Never sent.', used(1, 1)));
-  const w = await world(context, {provider});
+  // Reachy and MicroDuck use the configured provider too (Hub #2026); a harness gives MicroDuck the synthetic one here.
+  const w = await world(context, {provider, profileProviders: {microduck: new SyntheticProvider()}});
   await enable(w.core, w.module());
   // A conversation-level call counted $20 today through the same ledger.
   assert.equal(w.ledger().reserve({id: 'title-1', purpose: 'conversation', owner: 'conversation-1', model: 'model-a', inputUnits: 4_000_000, outputUnits: 0}), undefined);
@@ -131,9 +132,14 @@ void test('at a spend limit a new paid turn is refused with capacity naming the 
   assert.equal(refused.error.error.code, 'capacity');
   assert.match(refused.error.error.detail ?? '', /^The daily spend limit of \$20\.00 is reached: \$20\.00 is counted today\./);
   assert.equal(provider.calls(), 0); assert.equal(task(w), undefined);
-  assert.equal((await input(w.core, w.module(), 'Synthetic demo', {profile: 'reachy'})).status, 'accepted', 'the synthetic demo costs nothing');
+  const companion = await input(w.core, w.module(), 'Hello Reachy', {profile: 'reachy'});
+  assert.ok(companion.status === 'rejected', 'a companion on the configured model meets the same limit');
+  assert.equal(companion.error.error.code, 'capacity');
+  assert.match(companion.error.error.detail ?? '', /^The daily spend limit of \$20\.00 is reached/);
+  assert.equal(provider.calls(), 0);
+  assert.equal((await input(w.core, w.module(), 'Synthetic request', {profile: 'microduck'})).status, 'accepted', 'the synthetic provider costs nothing');
   // The next local day starts at zero.
-  await until(() => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'reachy')?.status === 'waiting');
+  await until(() => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'microduck')?.status === 'waiting');
   w.advance(Date.parse('2026-11-22T06:00:00Z') - Date.parse('2026-11-21T18:00:00Z'));
   assert.equal((await spend(w)).day.spentMicros, 0); assert.equal((await spend(w)).month.spentMicros, 20_000_000);
 });

@@ -127,16 +127,14 @@
 .device-menu .device-menu-light{font-size:var(--type-small);font-weight:400}
 .device-menu .device-menu-overview{color:var(--link)}
 /* Conversations (#1890). The companions frontend renders the group and the rail draws it: a heading and one link
-   for each chat profile, with a tile, the name and the Demo label. The dot on a tile says the conversation needs
+   for each chat profile, with a tile and the name. The dot on a tile says the conversation needs
    the owner's answer. The words are part of the link's name, and the icon rail shows them beside the tile on hover
    or focus. On the phone bar the same dot on the menu button says a conversation other than the open one waits. */
 .rail-conversations{display:flex;flex-direction:column;flex:none}
-/* A row is as wide as the rail and no wider. The name and the Demo label share a line where the fonts allow it;
-   where they do not, the label moves under the name inside the same row, so neither is ever cut. */
+/* A row is as wide as the rail and no wider; a name that does not fit wraps inside the same row and is never cut. */
 .shell>aside .rail-conversations nav{gap:2px}
 .shell>aside .rail-conversations nav a{min-block-size:36px;padding-inline-end:6px;border-radius:12px;font-size:var(--type-small)}
 .rail-conversations .rail-text{display:flex;flex-wrap:wrap;align-items:baseline;flex:1;min-inline-size:0;gap:0 var(--space-xs);line-height:1.2}
-.rail-tag{margin-inline-start:auto;color:var(--muted-dense);font-size:.75rem;font-weight:400}
 .rail-need{position:absolute;inline-size:1px;block-size:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .rail-attention{position:absolute;inset-block-start:-3px;inset-inline-end:-3px;inline-size:8px;block-size:8px;border-radius:50%;background:var(--pending);box-shadow:0 0 0 2px var(--shell-rail)}
 .phone-bar .rail-button{position:relative}
@@ -196,9 +194,8 @@
   .shell:not([data-rail-narrow=expanded])>aside .sidebar-foot{justify-items:center}
   .shell:not([data-rail-narrow=expanded]) .rail-foot-row{flex-direction:column}
   .shell:not([data-rail-narrow=expanded]) .rail-conversations .rail-text{flex-wrap:nowrap}
-  .shell:not([data-rail-narrow=expanded]) .rail-conversations .rail-tag{margin:0;color:inherit}
   .shell:not([data-rail-narrow=expanded]) .rail-conversations .rail-need{position:static;inline-size:auto;block-size:auto;margin:0;overflow:visible;clip-path:none}
-  .shell:not([data-rail-narrow=expanded]) .rail-conversations :is(.rail-tag,.rail-need)::before{content:'· '}
+  .shell:not([data-rail-narrow=expanded]) .rail-conversations .rail-need::before{content:'· '}
   .shell:not([data-rail-narrow=expanded])>aside nav :is(a,.rail-devices) .rail-text{position:absolute;top:50%;left:calc(100% + 12px);z-index:20;padding:6px 10px;border-radius:8px;background:var(--text);color:var(--bg);font-size:var(--type-label);font-weight:500;line-height:1.2;white-space:nowrap;opacity:0;pointer-events:none;transform:translate(-4px,-50%)}
   .shell:not([data-rail-narrow=expanded])>aside nav :is(a,.rail-devices):focus-visible .rail-text{opacity:1;transform:translate(0,-50%);transition:opacity 120ms ease-out,transform 120ms ease-out}
 }
@@ -221,9 +218,8 @@
   .shell[data-rail-wide=collapsed]>aside .sidebar-foot{justify-items:center}
   .shell[data-rail-wide=collapsed] .rail-foot-row{flex-direction:column}
   .shell[data-rail-wide=collapsed] .rail-conversations .rail-text{flex-wrap:nowrap}
-  .shell[data-rail-wide=collapsed] .rail-conversations .rail-tag{margin:0;color:inherit}
   .shell[data-rail-wide=collapsed] .rail-conversations .rail-need{position:static;inline-size:auto;block-size:auto;margin:0;overflow:visible;clip-path:none}
-  .shell[data-rail-wide=collapsed] .rail-conversations :is(.rail-tag,.rail-need)::before{content:'· '}
+  .shell[data-rail-wide=collapsed] .rail-conversations .rail-need::before{content:'· '}
   .shell[data-rail-wide=collapsed]>aside nav :is(a,.rail-devices) .rail-text{position:absolute;top:50%;left:calc(100% + 12px);z-index:20;padding:6px 10px;border-radius:8px;background:var(--text);color:var(--bg);font-size:var(--type-label);font-weight:500;line-height:1.2;white-space:nowrap;opacity:0;pointer-events:none;transform:translate(-4px,-50%)}
   .shell[data-rail-wide=collapsed]>aside nav :is(a,.rail-devices):focus-visible .rail-text{opacity:1;transform:translate(0,-50%);transition:opacity 120ms ease-out,transform 120ms ease-out}
 }

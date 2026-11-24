@@ -38,9 +38,9 @@ export type CompanionsModule = BunnyModule & {setArtCatalog(read: RetainedArtwor
 export const API_KEY_SECRET = 'anthropic-api-key';
 /**
  * The companions section of the private runtime configuration (Hub #46): `{assistant?, secrets?}`. `assistant` names the
- * `bunny` profile's provider, `synthetic` without one, with its model, effort, conversation title model (Hub #2025) and
- * the allowlisted tool names; a hosted provider needs its key file under `secrets`. An empty section keeps every default
- * and makes no network call.
+ * provider, `synthetic` without one, with its model, effort, conversation title model (Hub #2025) and the allowlisted
+ * tool names; a hosted provider needs its key file under `secrets`. The one provider and model serve every profile,
+ * B.U.N.N.Y., Reachy and MicroDuck (Hub #2026). An empty section keeps every default and makes no network call.
  */
 export type CompanionsConfig = {readonly assistant: {readonly provider: 'synthetic'; readonly tools: readonly string[]}
   | {readonly provider: 'anthropic'; readonly model: string; readonly effort: Effort; readonly titleModel: string; readonly tools: readonly string[]; readonly prices: PriceTable}};
@@ -215,7 +215,7 @@ class Companions {
     this.#deviceCopies.clear();
     await Promise.all([this.#work, this.#draining]);
   }
-  /** The engine's seams from the section: the `bunny` provider, the allowlist, the synced core copy and the dispatch path. */
+  /** The engine's seams from the section: the provider every profile uses, the allowlist, the synced core copy and the dispatch path. */
   async #assistantOptions(context: ModuleContext): Promise<AssistantOptions> {
     // The runtime gives `config` only as `configureCompanions` returned it; a harness without a section gives undefined.
     const {options} = this, assistant = (context.config as CompanionsConfig | undefined)?.assistant;

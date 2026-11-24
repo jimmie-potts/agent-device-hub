@@ -29,8 +29,8 @@ export type {ModelProvider, TurnInput, TurnReply, TranscriptItem} from './provid
 /** Sends one approved command through the core's tracked dispatcher; the module binds it to its own participant. */
 export type Dispatch = (data: AssistantDispatch, parent: TraceContext, signal: AbortSignal) => Promise<RequestResult>;
 /**
- * What the module gives the engine (Hub #46, #507): the `bunny` profile's provider (synthetic without one), the
- * allowlisted tool names, the synced copy of the core for reads and proposals, the dispatch path for approved commands,
+ * What the module gives the engine (Hub #46, #507): the configured provider, which every profile uses (Hub #2026), or
+ * the synthetic one without it, the allowlisted tool names, the synced copy of the core for reads and proposals, the dispatch path for approved commands,
  * and the owner's currently active explicit preferences, read at each model call (none without the seam).
  */
 export type AssistantOptions = {
@@ -59,15 +59,15 @@ export type AssistantOptions = {
   /** The time zone whose local day and month the spend limits use: the runtime host's own unless a test names one. */
   timeZone?: string;
   /**
-   * The `bunny` profile's title provider (Hub #2025): the configured hosted model's. A profile without one, Reachy and
-   * MicroDuck, and B.U.N.N.Y. on the synthetic provider, makes no title call and keeps its persona name.
+   * The configured title provider (Hub #2025), which titles every profile's conversations (Hub #2026). Without one, as
+   * on the synthetic provider, no profile makes a title call and each keeps its persona name.
    */
   titleProvider?: TitleProvider;
   /** A test's or harness's title provider for every profile that has none, such as the fixed `SyntheticTitleProvider`. */
   syntheticTitleProvider?: TitleProvider;
   /**
-   * A test's or harness's model provider for a profile that has no configured one: Reachy and MicroDuck, and `bunny`
-   * without `provider`. A profile without either keeps the labelled synthetic provider.
+   * A test's or harness's model provider for one profile, in place of `provider`. The private section never sets it:
+   * every profile uses the configured provider, or the labelled synthetic one without it.
    */
   profileProviders?: Partial<Readonly<Record<AssistantProfile, ModelProvider>>>;
 };
@@ -101,6 +101,8 @@ function closingReasonOf(error: unknown): string | undefined {
 }
 const profiles: readonly AssistantProfile[] = ['bunny', 'reachy', 'microduck'];
 const profile = (value: unknown): value is AssistantProfile => typeof value === 'string' && profiles.includes(value as AssistantProfile);
+/** Whether a profile's saved text may be spoken: MicroDuck's audio is quacks only, so its English text never is. */
+const spokenInEnglish = (owner: AssistantProfile): boolean => PROFILES.find(persona => persona.id === owner)?.audio === 'speech';
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 /** The tool an approved proposal runs, by its tool identifier. */
@@ -116,6 +118,8 @@ export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the ev
 export const CONTEXT_TOO_LARGE = `The owner's active preferences exceed the ${String(LIMITS.contextBytes / 1024)} KiB prompt bound; stop using some on the Preferences page and start again.`;
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
+/** Why a Speak request for MicroDuck's message is refused: its audio is quacks only, so its English text is its intended meaning (Hub #2026). */
+export const MICRODUCK_UNSPOKEN = 'MicroDuck\'s audio is quacks only, so its English text is its intended meaning and is never spoken.';
 /** What a conversation reads when its saved progress could not be restored at a start (Hub #2027); once per failed start. */
 export const RECOVERY_FAILED = 'This conversation\'s saved progress couldn\'t be restored when B.U.N.N.Y. started. You can cancel the task, but new messages here can\'t be sent until B.U.N.N.Y. restarts, which tries the recovery again.';
 type Next = 'ask' | 'tool' | 'approve' | 'await' | 'turn' | 'end';
@@ -162,7 +166,7 @@ export class AssistantEngine {
     this.store = new AssistantStore(context.database());
     this.spend = new SpendLedger(context.database(), options.prices ?? {}, () => context.clock.now(), options.timeZone);
     this.titles = new ConversationTitles(context.database(), {outbox, spend: this.spend, now: () => context.clock.now(), after: (ms, callback) => context.scheduler.after(ms, callback),
-      provider: profile => (profile === 'bunny' ? options.titleProvider : undefined) ?? options.syntheticTitleProvider,
+      provider: () => options.titleProvider ?? options.syntheticTitleProvider,
       messages: conversationId => this.store.titleMessages(conversationId), reported: conversationId => this.store.report(conversationId).sequence > 0,
       metadata: (conversationId, title, observedAtMs) => observationDraft(titleObservationOf(conversationId, title, observedAtMs))});
     this.#allowed = [...(options.tools ?? [])];
@@ -189,9 +193,12 @@ export class AssistantEngine {
     return !this.#closed && !this.context.signal.aborted && this.options.available?.() !== false &&
       tracing.every(key => !['true', '1'].includes(process.env[key]?.toLowerCase() ?? ''));
   }
-  /** The `bunny` profile's configured provider, else a harness's provider for the profile, else the synthetic one. */
+  /**
+   * The provider a profile's turns use (Hub #2026): a harness's provider for the profile, else the configured one, which
+   * serves B.U.N.N.Y., Reachy and MicroDuck alike with each one's curated persona, else the labelled synthetic one.
+   */
   provider(profile: AssistantProfile = 'bunny'): ModelProvider {
-    return (profile === 'bunny' ? this.options.provider : undefined) ?? this.options.profileProviders?.[profile] ?? this.#synthetic;
+    return this.options.profileProviders?.[profile] ?? this.options.provider ?? this.#synthetic;
   }
   inspect(): AssistantState {
     const provider = this.provider();
@@ -369,8 +376,10 @@ export class AssistantEngine {
   #speak(taskId: string, messageId: string, text: string, parent: TraceContext, key = messageId): void {
     if (this.options.speak === undefined || this.#closed || this.context.signal.aborted || text.trim() === '' || text.length > LIMITS.spokenChars) return;
     try {
-      const line = this.#task(taskId).conversationId;
-      this.options.speak({taskId, messageId, text, validUntilMs: this.context.clock.now() + SPOKEN_REPLY_TTL_MS}, key, parent, line);
+      const task = this.#task(taskId);
+      // A quacks-only persona's English text is its intended meaning, never spoken English (Hub #2026).
+      if (!spokenInEnglish(task.profile)) return;
+      this.options.speak({taskId, messageId, text, validUntilMs: this.context.clock.now() + SPOKEN_REPLY_TTL_MS}, key, parent, task.conversationId);
     }
     catch { /* Speech is an output of the saved message, never a condition of it. */ }
   }
@@ -434,6 +443,7 @@ export class AssistantEngine {
         // A replay reads the saved message; finished tasks qualify, so an old answer can be heard again, and only assistant text is spoken.
         const message = this.store.savedMessage(data.taskId ?? fail('invalid-request'), data.messageId ?? fail('invalid-request')) ?? fail('not-found');
         if (message.role !== 'assistant') fail('invalid-request');
+        if (!spokenInEnglish(this.#task(data.taskId ?? fail('invalid-request')).profile)) throw new Fault('invalid-request', MICRODUCK_UNSPOKEN);
         spoken = message; return undefined;
       }
       const task = this.#task(data.taskId ?? fail('invalid-request'));

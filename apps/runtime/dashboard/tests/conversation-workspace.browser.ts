@@ -86,7 +86,7 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await showRail(page);
     assert.deepEqual(await destinationNames(page), ['Home', 'Companions', 'Rooms', 'Devices', 'Automation']);
     assert.deepEqual(await conversations.getByRole('link').evaluateAll(links => links.map(link => [...link.querySelectorAll('.rail-text > *')].map(part => part.textContent).join(' '))),
-      ['B.U.N.N.Y.', 'Reachy Demo', 'MicroDuck Demo'], 'both demos are labelled before they are chosen');
+      ['B.U.N.N.Y.', 'Reachy', 'MicroDuck'], 'each conversation is listed by its name, with no Demo label');
     const labelLines = await navigation.locator('a, button').evaluateAll(links => links.map(link => {
       const label = link.querySelector('.rail-text'), text = document.createRange();
       if (label === null) return 0;
@@ -105,7 +105,7 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     const [name, detailsButton] = await Promise.all([header.getByRole('heading', {name: 'B.U.N.N.Y.', exact: true}).boundingBox(), header.getByRole('button', {name: 'Details', exact: true}).boundingBox()]);
     assert.ok(name !== null && detailsButton !== null && name.y + name.height / 2 > detailsButton.y && name.y + name.height / 2 < detailsButton.y + detailsButton.height,
       'the profile name and Details share one row');
-    assert.equal(await header.locator('.conversation-demo-tag').count(), 0, 'the everyday assistant has no Demo label');
+    assert.equal(await header.locator('small').count(), 0, 'the header row carries no Demo label');
     const posts: string[] = [];
     page.on('request', request => {
       if (request.method() !== 'POST') return;
@@ -124,15 +124,17 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await page.locator('.shell>aside').waitFor({state: 'hidden'});
     await layout(1440, 1000);
     assert.equal(await message.inputValue(), 'Draft through resize and menu');
-    // Choosing a demo in the rail shows its own empty history and blank draft, labelled Demo in the header row. The
-    // everyday assistant's draft and saved exchange are there again when it is chosen. None of it sends a command.
+    // Choosing a companion in the rail shows its own empty history and blank draft, with no Demo label: every profile
+    // uses the configured model (Hub #2026). B.U.N.N.Y.'s draft and saved exchange are there again when it is chosen.
+    // None of it sends a command.
     await chooseConversation(page, 'reachy');
-    assert.equal(await header.locator('.conversation-demo-tag').innerText(), 'Demo');
+    await header.getByRole('heading', {name: 'Reachy', exact: true}).waitFor();
+    assert.equal(await header.locator('small').count(), 0, 'the companion has no Demo label');
     assert.equal(await (await conversationLink(page, 'reachy')).getAttribute('aria-current'), 'page');
     assert.equal(await (await conversationLink(page, 'bunny')).getAttribute('aria-current'), null);
-    await assistant.getByText('Demo profile. No paid calls.', {exact: true}).waitFor();
+    assert.equal(await assistant.getByText(/Demo/).count(), 0, 'no Demo note');
     await invitation.waitFor();
-    assert.equal(await assistant.locator('[data-message]').count(), 0, 'a demo has its own history');
+    assert.equal(await assistant.locator('[data-message]').count(), 0, 'a companion has its own history');
     assert.equal(await message.inputValue(), '', 'and its own draft');
     await message.fill('Reachy draft');
     await chooseConversation(page, 'bunny');

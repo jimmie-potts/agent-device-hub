@@ -1,12 +1,12 @@
 import type {AssistantProfile, AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {SavedQuestion} from '../assistant/history-contract.js';
 
-/** The chat profiles, in the order the rail lists them. Reachy and MicroDuck are demos and say so wherever they are named. */
+/** The chat profiles, in the order the rail lists them. Each uses the configured model (Hub #2026), so none is labelled a demo. */
 export const profiles = {
-  bunny: {name: 'B.U.N.N.Y.', kind: 'Everyday assistant'},
-  reachy: {name: 'Reachy', kind: 'Demo'},
-  microduck: {name: 'MicroDuck', kind: 'Demo'},
-} satisfies Record<AssistantProfile, {name: string; kind: string}>;
+  bunny: {name: 'B.U.N.N.Y.'},
+  reachy: {name: 'Reachy'},
+  microduck: {name: 'MicroDuck'},
+} satisfies Record<AssistantProfile, {name: string}>;
 
 /** A saved question whose kind has been read: the task and question it belongs to, and whether it asks the owner or waits on the coding worker. */
 export type KnownQuestion = {taskId: string; questionId: string; kind: SavedQuestion['kind']};

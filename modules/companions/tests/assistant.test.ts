@@ -17,7 +17,8 @@ import {AnthropicProvider} from '../src/assistant/anthropic.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
 import {inputBound} from '../src/assistant/spend.js';
-import {assistantStateDraft, CONTEXT_TOO_LARGE, DECLINED, REFUSED} from '../src/assistant/engine.js';
+import {assistantStateDraft, CONTEXT_TOO_LARGE, DECLINED, MICRODUCK_UNSPOKEN, REFUSED} from '../src/assistant/engine.js';
+import {PROFILES} from '../src/knowledge/model.js';
 import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
@@ -607,15 +608,52 @@ void test('each model call carries the bunny persona and the owner\'s active pre
   assert.equal((await page(w)).messages.at(-1)?.text, CONTEXT_TOO_LARGE);
 });
 
-void test('Reachy and MicroDuck keep the synthetic provider while bunny uses the configured one', async context => {
-  const provider = counted(() => reply('Configured answer'));
-  const w = await world(context, {provider});
+void test('Reachy and MicroDuck use the configured provider with their own curated persona, and a harness may still give a profile the synthetic one', async context => {
+  const provider = Object.assign(counted(() => reply('Configured answer')), {name: 'anthropic' as const, model: 'model-a'});
+  const w = await world(context, {provider, tools: ['read_sessions']});
   await control(w.core, w.module(), 'enable');
-  assert.equal((await input(w.core, w.module(), 'Synthetic reachy', false, randomUUID(), {profile: 'reachy'})).status, 'accepted');
-  await until(() => w.module().inspectAssistant()?.tasks.find(t => t.profile === 'reachy')?.status === 'waiting');
-  assert.equal(provider.calls(), 0);
-  assert.equal((await page(w, 'reachy')).currentTask?.question?.kind, 'clarification');
-  assert.match(JSON.stringify(await page(w, 'reachy')), new RegExp(SYNTHETIC_QUESTION));
+  for (const profile of ['reachy', 'microduck'] as const) {
+    assert.equal((await input(w.core, w.module(), `Synthetic ${profile} request`, false, randomUUID(), {profile})).status, 'accepted');
+    await until(() => w.module().inspectAssistant()?.tasks.find(t => t.profile === profile)?.status === 'succeeded');
+    assert.equal((await page(w, profile)).messages.at(-1)?.text, 'Configured answer');
+  }
+  assert.equal(provider.calls(), 2, 'one call of the configured provider for each companion');
+  const persona = (id: string) => PROFILES.find(value => value.id === id) ?? assert.fail(id);
+  assert.deepEqual(provider.inputs.map(sent => sent.context.persona), [{name: 'Reachy', character: persona('reachy').character}, {name: 'MicroDuck', character: persona('microduck').character}]);
+  assert.match(provider.inputs[1]?.context.persona.character ?? '', /English text is intended meaning, never spoken English\./);
+  for (const sent of provider.inputs) assert.deepEqual(sent.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_sessions'], 'the configured tools, without the synthetic fixture');
+  assert.equal(w.module().inspectAssistant()?.provider, 'anthropic');
+  // A test or harness may still give one profile the labelled synthetic provider; the others keep the configured one.
+  const v = await world(context, {provider: counted(() => reply('Configured answer')), profileProviders: {reachy: new SyntheticProvider()}});
+  await control(v.core, v.module(), 'enable');
+  assert.equal((await input(v.core, v.module(), 'Synthetic reachy', false, randomUUID(), {profile: 'reachy'})).status, 'accepted');
+  await until(() => v.module().inspectAssistant()?.tasks.find(t => t.profile === 'reachy')?.status === 'waiting');
+  assert.match(JSON.stringify(await page(v, 'reachy')), new RegExp(SYNTHETIC_QUESTION));
+});
+
+void test('MicroDuck\'s replies are intended meaning: none is offered to speech, and Speak refuses one, while Reachy\'s reply is spoken', async context => {
+  const offers: {reply: SpokenReply; key: string}[] = [];
+  const w = await world(context, {provider: counted(() => reply('Synthetic quack meaning')), speak: (spoken, key) => {offers.push({reply: spoken, key});}});
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'Synthetic duck request', false, randomUUID(), {profile: 'microduck'})).status, 'accepted');
+  await until(() => w.module().inspectAssistant()?.tasks.find(t => t.profile === 'microduck')?.status === 'succeeded');
+  const duck = w.module().inspectAssistant()?.tasks.find(t => t.profile === 'microduck')?.taskId ?? assert.fail('duck task');
+  assert.equal((await page(w, 'microduck')).messages.at(-1)?.text, 'Synthetic quack meaning', 'the English text stays written');
+  assert.equal(offers.length, 0, 'MicroDuck\'s audio is quacks only, so its English text is never offered to speech');
+  const refused = await control(w.core, w.module(), 'speak', duck, randomUUID(), {messageId: `${duck}-result`});
+  assert.equal(refused.status, 'rejected');
+  if (refused.status === 'rejected') {
+    assert.equal(refused.error.error.code, 'invalid-request');
+    assert.equal(refused.error.error.detail, MICRODUCK_UNSPOKEN);
+  }
+  assert.equal(offers.length, 0);
+  // The negative control: the same reply in Reachy's conversation is offered once, and Speak replays it.
+  assert.equal((await input(w.core, w.module(), 'Synthetic reachy request', false, randomUUID(), {profile: 'reachy'})).status, 'accepted');
+  await until(() => w.module().inspectAssistant()?.tasks.find(t => t.profile === 'reachy')?.status === 'succeeded');
+  const reachy = w.module().inspectAssistant()?.tasks.find(t => t.profile === 'reachy')?.taskId ?? assert.fail('reachy task');
+  assert.deepEqual(offers.map(offer => offer.key), [`${reachy}-result`]);
+  assert.equal((await control(w.core, w.module(), 'speak', reachy, randomUUID(), {messageId: `${reachy}-result`})).status, 'accepted');
+  assert.equal(offers.length, 2);
 });
 
 void test('cancel fences a running call and records a late reply without running the next node', async context => {

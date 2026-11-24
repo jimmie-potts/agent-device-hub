@@ -101,7 +101,8 @@ export function ConversationDetails({
     return () => {document.removeEventListener('keydown', escape);};
   }, [open, overlay, onClose]);
 
-  const synthetic = profile !== 'bunny' || state?.provider === 'synthetic';
+  // Every profile uses the configured provider and model (Hub #2026).
+  const synthetic = state?.provider === 'synthetic';
   const unit = synthetic ? 'units' : 'tokens';
   const allowed = state?.tools;
   const unavailable = allowed === undefined ? undefined : catalog.filter(name => !allowed.includes(name));
@@ -121,13 +122,13 @@ export function ConversationDetails({
       <button type="button" className="secondary" ref={closeRef} onClick={onClose} aria-label="Close details">Close</button>
     </header>
     <div className="conversation-details-sections">
-      <p className="conversation-details-profile"><strong>{profileName}</strong>{profile !== 'bunny' && <small>Demo</small>}</p>
+      <p className="conversation-details-profile"><strong>{profileName}</strong></p>
       <details>
         <summary>Capabilities</summary>
         {lastKnown && <p>Last known provider and tools.</p>}
         <Facts items={[
           ['Provider', synthetic ? 'Synthetic (no paid calls)' : state?.provider === 'anthropic' ? 'Anthropic' : 'Unknown'],
-          ['Model', profile === 'bunny' ? state?.model ?? 'Unknown' : 'synthetic'],
+          ['Model', state?.model ?? 'Unknown'],
           ['Allowed tools', toolList(allowed)],
           ['Unavailable tools', toolList(unavailable)],
           ['Coding worker', workerAvailability(coding)],
@@ -195,7 +196,9 @@ export function ConversationDetails({
         </form>
         <p>{synthetic ? 'This profile has no title model, so it keeps its persona name until you rename it.'
           : 'The title model writes a short title after the first message and checks it after each finished task and major event, such as an approval or a coding hand-off. Your name replaces it, and the model keeps your name unless the topic clearly changes.'}</p>
-        <p>Submitted messages and answers are saved in private Conversation history and passed to this profile's selected model. The Demo profiles run locally and make no paid calls.</p>
+        <p>Submitted messages and answers are saved in private Conversation history. {synthetic
+          ? 'The synthetic provider answers them locally and makes no paid calls.'
+          : 'They are passed to the configured model, which B.U.N.N.Y., Reachy and MicroDuck share, and every conversation\'s calls count toward the same spend limits.'}</p>
         <p>Unsent drafts stay in this page until reload. Submitted drafts also stay in the composer. Review saved history before sending the same text again.</p>
         <ul className="conversation-settings-links">
           <li><a href="#/module/companions/preferences">Preferences</a></li>

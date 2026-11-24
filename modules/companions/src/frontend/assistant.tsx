@@ -288,8 +288,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   }, [history]);
   const live = connected && !unavailable && state !== undefined && state.available;
   const spend = useSpend(api, connected && historyApi === api, state?.revision);
-  // Only a paid profile's new message meets the shared spend limits and the price table; the synthetic demos cost nothing.
-  const spendLimit = profile === 'bunny' ? spendNotice(spend) : undefined;
+  // Every profile's new message meets the shared spend limits on a paid provider (Hub #2026); the synthetic one costs nothing.
+  const spendLimit = spendNotice(spend);
   const task = state?.tasks.find(value => value.profile === profile);
   const open = task !== undefined && !finished(task.status);
   // Every conversation with an unfinished task: the one switch stays on until each finishes or is cancelled.
@@ -328,14 +328,12 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           <div className="conversation-context">
             <header className="conversation-header">
               <h2>{profiles[profile].name}</h2>
-              {profile !== 'bunny' && <small className="conversation-demo-tag">{profiles[profile].kind}</small>}
               <button type="button" className="secondary conversation-details-trigger" ref={detailsTrigger}
                 aria-expanded={detailsOpen} aria-controls={detailsId} onClick={() => {
                   if (detailsOpen) closeDetails();
                   else setPanel('details');
                 }}>Details</button>
             </header>
-            {profile !== 'bunny' && <p className="conversation-demo-note">Demo profile. No paid calls.</p>}
             {!connected ? <p role="status">Disconnected. Saved history remains readable. Last known task state.</p>
               : !live && <p role="status">Stale. Current conversation state is unavailable. Saved history remains readable.</p>}
             {!context.control && <p>Read-only access. Controls require operator authority.</p>}
@@ -363,7 +361,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
               {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
                 connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
                 artRevision={art?.revision}/>}
-              {message.role === 'assistant' && (message.text.length > LIMITS.spokenChars
+              {message.role === 'assistant' && (profile === 'microduck'
+                ? <small className="conversation-voice-note">Intended meaning. MicroDuck's audio is quacks only, so this text is never read aloud.</small>
+                : message.text.length > LIMITS.spokenChars
                 ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>
                 : state !== undefined && <button type="button" aria-label={`Read aloud message ${message.seq}`}
                 className="secondary conversation-read-aloud" disabled={locked}
