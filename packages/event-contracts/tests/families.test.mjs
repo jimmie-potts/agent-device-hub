@@ -78,6 +78,8 @@ test('each family has one kind and one type, and its schema is built from the sh
       || (['moment-play', 'art-auto', 'art-dispatch', 'music-capture-control', 'music-capture-state', 'home-layout', 'assistant-dispatch'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`)
       // Coding-worker slots per companion (Hub #2028).
       || (['coding-endpoint', 'coding-state'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`)
+      // The conversation message queue (Hub #2030).
+      || (['assistant-control', 'assistant-state'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`)
       || (['assistant-dispatch', 'moment-play'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.3`)
       // The session family's new major (Hub #1865), registered beside 2.0 and 2.1.
       || (family === 'session' && dataschema === 'https://bunny.invalid/events/session/3.0')

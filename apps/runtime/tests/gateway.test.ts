@@ -1264,6 +1264,27 @@ it('a conversation rename travels as assistant-control/2.1, the other assistant 
   assertNoToken(g);
 });
 
+it('the message queue\'s withdraw, reorder and resume-queue travel as assistant-control/2.2, and a malformed one is refused before dispatch (Hub #2030)', async context => {
+  const operator = OPERATOR(), core = createCoreModule();
+  const dispatched: Parameters<typeof core.actions.dispatch>[0][] = [];
+  core.actions.dispatch = action => {dispatched.push(action); return Promise.resolve(errorBody('unavailable'));};
+  const g = await gateway(context, [operator], {modules: [core]});
+  const send = (requestId: string, data: Record<string, unknown>) => g.ask(g.url, '/api/v2/commands/assistant-control', {method: 'POST', token: operator.token,
+    body: {target: 'assistant', requestId, data: {expectedRevision: 0, ...data}}});
+  const valid = [{action: 'cancel', taskId: 'task-1'}, {action: 'withdraw', profile: 'bunny', queuedId: 'queued-1'},
+    {action: 'reorder', profile: 'reachy', queuedId: 'queued-2', beforeId: null}, {action: 'resume-queue', profile: 'microduck'}];
+  for (const [index, data] of valid.entries()) {
+    assert.equal(codeOf(await send(`assistant-queue-${String(index)}`, data)), 'unavailable', 'only the inert owner fixture refuses a valid command');
+  }
+  for (const [index, data] of [{action: 'withdraw', profile: 'bunny'}, {action: 'reorder', profile: 'bunny', queuedId: 'queued-1'},
+    {action: 'resume-queue', profile: 'bunny', taskId: 'task-1'}, {action: 'withdraw', queuedId: 'queued-1'}].entries()) {
+    const answer = await send(`assistant-queue-bad-${String(index)}`, data);
+    assert.equal(answer.status, 400); assert.equal(codeOf(answer), 'invalid-request', JSON.stringify(data));
+  }
+  assert.deepEqual(dispatched.map(action => action.draft.dataschema), ['2.0', '2.2', '2.2', '2.2'].map(version => `https://bunny.invalid/events/assistant-control/${version}`));
+  assertNoToken(g);
+});
+
 it('authenticated capture actions preserve canonical 2.0, 2.1 and 2.2 selection', async context => {
   const operator = OPERATOR(), core = createCoreModule();
   const dispatched: Parameters<typeof core.operatorActions.dispatch>[0][] = [];

@@ -250,8 +250,10 @@ which makes no network call and no paid usage. Activation defaults to off. The t
 profiles keep separate conversation histories. Each conversation runs its own
 task at the same time as the others (Hub #2027): one unfinished task and one
 graph invocation per conversation, all on the module's one SQLite connection.
-A new message to a conversation whose own task is unfinished is refused with
-`capacity`; another conversation's task never blocks it. A command for one
+**Send** to a conversation whose own task is unfinished is refused with
+`capacity`, and **Queue** saves the message to start after it (see
+[Queued messages](#queued-messages)); another conversation's task never blocks
+it. A command for one
 conversation is refused as stale (`revision-conflict`) only when that
 conversation changed after the revision the page read, so another
 conversation's step never refuses it; enable and disable keep the
@@ -302,7 +304,8 @@ Use **Send** for a message or **Answer** for a saved question. Enter submits
 and Shift+Enter inserts a line break. Enter during text composition does not
 submit. The composer shows the exact UTF-8 count starting at 26,215 bytes and
 refuses drafts over 32,768 bytes. Each profile and pending question has its own
-draft. Drafts remain after submission and clear on reload. Another
+draft. A draft clears once its message is saved, stays after a refusal or an
+uncertain reply, and clears on reload. Another
 conversation's unfinished task does not hold this one: switch in the rail and
 send to it while the other works or waits.
 
@@ -321,6 +324,103 @@ An approval shows the full scope and the revision it applies to. A command
 receipt reports what happened to the request separately from task completion.
 Disconnected or stale copies retain loaded history and lock mutations.
 **Stop speaking** controls audio only.
+
+### Queued messages
+
+The composer stays available while a conversation's task works or waits (Hub
+#2030). **Queue**, beside **Send**, saves the message for after the current
+task. How the composer behaves depends on the task:
+
+- While the task works, Send waits for it and Enter queues.
+- During a clarifying question, Enter answers it. Queue saves the text as a
+  message instead.
+- During an approval or a coding hand-off, only Queue shows.
+- With no task to wait for, Queue shows only beside a held queue and adds to
+  it.
+
+Queued messages show above the composer in the order they start, at most 8 per
+conversation. **Edit** changes one's text, **Move up** and **Move down** change
+the order, and **Withdraw** removes one. When the task ends, succeeded or
+failed, the first queued message starts as a new task and turn of the same
+conversation. It starts in the commit that ended the task before it, so the
+session on the status devices reports that turn's end before the next turn's
+start. Its recent context holds the finished task. A queued message that
+starts runs no title check of its own; the title model already checks the
+title after the task before it. A message stays queued while the task waits on
+an answer, an approval or the coding worker, and starts only once that task
+ends.
+
+Some events hold the queue, and nothing in a held queue starts until the
+owner releases it:
+
+| Hold | Cause | Release |
+| --- | --- | --- |
+| Stop | **Cancel task** while messages are queued (owner decision 5). | **Resume queue** |
+| Restart | B.U.N.N.Y. started while messages were waiting (owner decision 6). A start starts no work. | **Start** |
+| Refused | The next message could not start: conversation is off or unavailable, or a paid profile's spend limits leave too little for its first call (`capacity`, with the limit's own message). The message stays queued. | **Resume queue**, which tries the start again. If the start is still refused, the command is refused and the queue stays held. |
+
+Send still starts a task at once beside a held queue; when it ends, the queue
+stays held. Withdrawing the last message releases a hold. New conversation is
+refused with `invalid-state` while the current conversation's queue holds a
+message, as it is for an unfinished task, and the page says "Start or withdraw
+the queued messages first."
+
+The queue is the module's own state, not a stored command (ADR 0012): the
+input command that queues a message completes once the message is saved. A
+queued message's ID is that command's request ID, so a repeated command queues
+nothing more, before or after the message starts. Its start and its removal
+from the queue commit together, so a crash never leaves it both started and
+queued, and it starts at most once. Queue and the edit of a queued message are
+staged assistant inputs, `{action: 'queue', profile, text, expectedRevision}`
+and `{action: 'edit-queued', profile, queuedId, text, expectedRevision}`.
+Withdraw, reorder and Resume queue (also Start) are the `withdraw`, `reorder`
+and `resume-queue` actions of `assistant-control/2.2`. Each names the
+`profile`. Withdraw and reorder also name the `queuedId`, and a reorder names
+`beforeId`, which is null for the end.
+
+Each queue command is checked against the conversation's queue revision: the
+assistant revision of the queue's last change. The running task's steps never
+make a queue command stale. A message that started, moved or changed since
+does. New conversation counts both conversations' queues as changed. Each
+start counts every saved conversation's queue as changed, and again wherever
+the start changed the conversation itself. So a Queue naming a revision read
+before New conversation or a start is refused exactly when a Send is. A
+command that is refused and rolls back records no change. Editing,
+withdrawing and reordering run no work, so they are admitted while
+conversation is off.
+
+The page's withdraw, reorder and Resume queue name the revision at which the
+shown queue was read, so a move never acts on an order the page no longer
+shows. An open edit names the revision of the latest read in which its message
+still had the text the edit opened with. Queuing, moving or starting another
+message therefore never refuses it, and it cannot overwrite a change made to
+its message on another page since. If its message is changed on another page,
+starts or is withdrawn first, the edit closes and the page shows the edited
+text with **Use in composer**. A refused edit keeps its text and allows Save
+again.
+
+`assistant-state/2.2` lists each profile's current conversation whose queue
+holds messages, as `queues`: the conversation and profile, how many messages
+wait, the hold (`stop`, `restart`, `refused` or null) and a refusal's code. It
+carries no message text. A state without such a queue keeps version 2.0, or
+2.1 for the full tool list. After each assistant-state revision, the page
+reads the texts from
+`GET /modules/companions/content/conversation?profile=<profile>&view=queue`.
+The answer is `{version: 1, profile, conversationId, revision, current, held,
+messages}`. `revision` is the assistant revision it was read at. `held` is
+`{reason, code, detail}` or null, and each message has `id`, `text`,
+`queuedAtMs` and `updatedAtMs`.
+
+A release before this one did not know the queue, so its New conversation
+could leave queued messages in the conversation it replaced (see
+`apps/runtime/UPGRADE.md`). They never start and are not in public state. Each
+start holds them. Add `conversationId=<id>` to the read for an earlier
+conversation's messages, with `current: false`. The earlier conversation's
+read-only view lists them, and **Withdraw**, the only action there, removes
+them.
+
+The queue is modelled on Codex's durable queue and T3 Code's queue commands;
+`THIRD-PARTY-NOTICES.md` names the adapted parts and holds their licenses.
 
 ### Inspect conversation details
 
@@ -667,7 +767,10 @@ task is recovered as paused, waiting, completed, failed or uncertain from its
 durable evidence. A receipt without a result keeps its reservation and cannot
 be retried automatically; a call the provider answered definitively is failed
 with its code. Tasks saved by the earlier fixed graph (`synthetic-1`) retain
-readable history and refuse resume. There is no execution queue.
+readable history and refuse resume. There is no execution queue: a queued
+message is the owner's saved message, not saved work, and it starts only as a
+new task when the task before it ends or the owner releases its queue (see
+[Queued messages](#queued-messages)).
 
 | Bound | Per task or request |
 | --- | --- |
@@ -903,7 +1006,8 @@ contract change. While the current conversation's task is unfinished
 (running, waiting on an answer, an approval or the coding worker, paused or
 uncertain) it is refused with `invalid-state` and the button is disabled with
 "Finish or cancel this conversation's task first." (owner decision,
-2026-11-24). It is also refused while the profile has no conversation or its
+2026-11-24). It is refused the same way while the conversation's queue holds
+a message (Hub #2030). It is also refused while the profile has no conversation or its
 current one holds no message, with "This conversation is empty. Send a message
 first.", so repeated clicks cannot pile up empty conversations. Otherwise the
 profile's conversation gets a new ID, and with it
@@ -1130,6 +1234,7 @@ For version 2, add `view=recent` and omit `after`:
 | `profile=bunny&view=recent` | Newest saved window and latest task/question |
 | `profile=bunny&view=recent&before=<older>` | Older window, with `currentTask: null` |
 | `profile=bunny&view=recent&conversationId=<id>` | Newest window of one of the profile's earlier conversations (Hub #2029), with `currentTask: null`; add `before` to page it |
+| `profile=bunny&view=queue` | The current conversation's queued messages and hold (Hub #2030); see [Queued messages](#queued-messages) |
 | `profile=bunny&view=list` | The profile's conversations, 16 a page, the current one first and then the others by their last message, newest first: `{version: 1, profile, conversations, older}`, each with `conversationId`, `current`, `messages`, `firstAtMs`, `lastAtMs` and its published `title`; pass `older`, a keyset cursor (`<last message time or -1>:<row>`), back as `after`, so a conversation that changes between page reads never repeats or skips an unchanged one |
 
 The response is `{version: 2, profile, conversationId, messages, currentTask,

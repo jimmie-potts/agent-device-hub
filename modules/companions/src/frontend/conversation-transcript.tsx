@@ -20,6 +20,11 @@ export function ConversationTranscript({history, status, live, canStart, readLoc
   const pagingFocus = useRef<{button: HTMLButtonElement; anchor: string | undefined}>(undefined);
   const previous = useRef<{id: string | null | undefined; latest: number | undefined}>(undefined);
   const [newMessages, setNewMessages] = useState(false);
+  // Where the last jump to the latest message left the scroll, and the transcript's height then. A scroll event at that
+  // position is the jump's own, and one after the transcript's height changed is the browser fitting the scroll to a
+  // composer that grew or shrank, such as when queued messages load or an approval closes (Hub #2030): neither is the
+  // owner scrolling away from the latest message.
+  const jumped = useRef<{top: number; height: number}>(undefined);
   const latest = history?.windows.at(-1)?.messages.at(-1)?.seq;
   const id = history?.conversationId;
   const remember = useCallback((): void => {
@@ -34,9 +39,18 @@ export function ConversationTranscript({history, status, live, canStart, readLoc
   }, []);
   const showLatest = useCallback((): void => {
     const node = scroll.current;
-    if (node !== null) node.scrollTop = node.scrollHeight;
+    if (node !== null) {node.scrollTop = node.scrollHeight; jumped.current = {top: node.scrollTop, height: node.clientHeight};}
     remember();
   }, [remember]);
+  const scrolled = useCallback((): void => {
+    const node = scroll.current, last = jumped.current;
+    if (node !== null && last !== undefined && (node.scrollTop === last.top || node.clientHeight !== last.height)) {
+      if (node.scrollTop !== last.top) showLatest();
+      return;
+    }
+    jumped.current = undefined;
+    remember();
+  }, [remember, showLatest]);
   const restoreAnchor = useCallback((): void => {
     const node = scroll.current;
     const anchor = position.current.anchor;
@@ -77,7 +91,7 @@ export function ConversationTranscript({history, status, live, canStart, readLoc
   }, [restoreAnchor, showLatest]);
   const hasMessages = history?.windows.some(window => window.messages.length > 0) ?? false;
   return <div className="conversation-reading">
-    <div className="conversation-transcript" ref={scroll} tabIndex={-1} onScroll={remember}>
+    <div className="conversation-transcript" ref={scroll} tabIndex={-1} onScroll={scrolled}>
       {hasMessages && <ol key={id} aria-label="Saved conversation messages">
         {history?.windows.flatMap((window, index) => {
           const messages = window.messages.map(message => <li key={`message:${message.id}`} tabIndex={-1} id={`conversation-message-${message.id}`} data-message={message.id} data-role={message.role}>

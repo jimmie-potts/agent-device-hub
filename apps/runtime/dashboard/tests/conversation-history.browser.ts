@@ -56,7 +56,8 @@ export async function conversationHistoryJourney(browser: Browser): Promise<void
     const initialPageReads: string[] = [];
     page.on('request', request => {
       const url = new URL(request.url());
-      if (url.pathname === route) initialPageReads.push(url.search);
+      // The page reads the conversation's queue separately (Hub #2030); only history reads count here.
+      if (url.pathname === route && url.searchParams.get('view') !== 'queue') initialPageReads.push(url.search);
     });
     await page.reload();
     await feed(page, 'connected');

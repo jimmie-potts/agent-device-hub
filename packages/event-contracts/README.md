@@ -808,6 +808,28 @@ and the owner can rename it.
   actions carry no profile or title. The gateway sends a rename as 2.1 and the
   other actions as 2.0.
 
+### Conversation message queue (Hub #2030)
+
+The owner queues messages while a companion works; each starts as a new task
+of the same conversation when the task before it ends.
+
+- `assistant-control/2.2` is 2.1 with three actions on the queue of a
+  profile's current conversation. `withdraw` and `reorder` name the `profile`
+  and the `queuedId`, the request ID of the input that queued the message; a
+  reorder also names `beforeId`, the message it moves in front of, or null for
+  the end. `resume-queue` names only the `profile` and releases a held queue.
+  None carries a task, message or title, and the earlier actions carry no
+  queued message. The gateway sends these three as 2.2, a rename as 2.1 and
+  the other actions as 2.0. Queuing and editing a message stay staged
+  assistant inputs, so `assistant-input` is unchanged.
+- `assistant-state/2.2` is 2.1 with `queues`: one entry for each profile's
+  current conversation whose queue holds messages, with its `conversationId`,
+  `profile`, `messages` (1 to 8), `held` (`stop`, `restart`, `refused` or
+  null) and the refusal's `code`. It carries no message text. The companions
+  module publishes 2.2 only while some queue holds messages.
+- `tests/message-queue.test.mjs` covers both versions and keeps the 2.1
+  members of `assistant-control/2.2` unchanged.
+
 ### Conversation companions (Hub #2054)
 
 A native conversation session names the companions it belongs to, apart from

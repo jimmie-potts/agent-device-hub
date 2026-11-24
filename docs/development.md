@@ -3371,6 +3371,35 @@ knowledge journey, whose context-to-copy controls were renamed.
 `DASHBOARD_RECEIPTS` keeps the journey's screenshots private. They use
 synthetic data and scripted providers only. Existing CI discovery runs them.
 
+Queued messages (#2030) add `assistant-queue.test.js`, its child fixture
+`assistant-queue-child.js` and `conversation-queue.test.js` to the companions
+suite, `message-queue.test.mjs` to the event contracts and a gateway case to
+`gateway.test.js`. Gated fake providers on the manual clock cover queuing
+while a task works and at once with nothing to wait behind; edit, withdraw and
+reorder against the queue's own revision, with a conversation command naming
+the same revision refused as the negative control; a message that waits
+through a question and an approval; Stop and Resume queue; a restart's hold,
+its stale revision and Start; a repeated queue command before and after its
+message starts; the turn end reported before the next turn's start; a start the
+spend limits refuse, which holds the queue; no title check for a queued start,
+with a direct Send as the negative control; New conversation refused while
+messages wait, and the eight-message limit; a Queue naming a revision from
+before New conversation or a start, with a Send as the negative control; a
+refused Resume queue that records no change; and messages an earlier release
+left in a replaced conversation, which only their own profile's Withdraw
+reaches, with queue reads of another profile's and an unknown conversation. The child process exits right after
+the commit that started a queued message, and the restart shows one task for it
+and none queued. After the root build run
+`node --test modules/companions/dist/tests/assistant-queue.test.js modules/companions/dist/tests/conversation-queue.test.js packages/event-contracts/tests/message-queue.test.mjs apps/runtime/dist/tests/gateway.test.js`
+and `node apps/runtime/dashboard/tests/conversation-queue.browser.ts`, which
+`npm run test:companions:browser` also runs: queue while a task works, edit,
+move and withdraw, the next message starting after the task, Stop and Resume
+queue, an open edit saved after another message was queued and one closed by
+another page's edit, the transcript following
+through an answer and an approval with a message queued, a restart and Start,
+an edit its message outran, and the phone layout at 390 px. They use synthetic
+data and gated providers only. Existing CI discovery runs them.
+
 Use Node 24 from the worktree root. `npm run build`, `npm run typecheck`,
 `npm run lint:js` and `npm run test:companions:built` check the optional
 [companions module](../modules/companions/README.md). The core CI module

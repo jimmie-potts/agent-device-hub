@@ -384,6 +384,167 @@
   margin-block-start: 0.5rem;
 }
 
+/* Queued messages above the composer (Hub #2030): the waiting messages in the order they start, and the queue's hold. */
+.conversation-queue {
+  display: grid;
+  gap: var(--space-xs);
+  min-inline-size: 0;
+  max-block-size: 40dvh;
+  overflow-y: auto;
+  padding: var(--space-xs) var(--space-s);
+  border: 1px solid var(--edge-faint);
+  border-radius: var(--radius, 12px);
+  background: var(--raised);
+}
+
+.conversation-queue-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--space-s);
+}
+
+.conversation-queue-header h3 {
+  margin: 0;
+  font-size: var(--type-small, 0.875em);
+  font-weight: 650;
+}
+
+.conversation-queue-header p, .conversation-queue-count {
+  color: var(--muted-dense);
+  font-size: var(--type-small, 0.875em);
+  font-weight: 400;
+}
+
+.conversation-queue-held {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs) var(--space-s);
+  padding: var(--space-xs) var(--space-s);
+  background: var(--warning-badge-bg);
+  border: 1px solid var(--warning-badge-edge);
+  border-radius: var(--radius, 12px);
+  color: var(--pending-text);
+}
+
+.conversation-queue-held p {
+  flex: 1 1 16rem;
+}
+
+.conversation-queue-list {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conversation-queue-position {
+  min-inline-size: 1.25rem;
+  color: var(--muted-dense);
+  font-variant-numeric: tabular-nums;
+}
+
+.conversation-queue-item {
+  min-inline-size: 0;
+  padding-block: var(--space-xxs, 0.25rem);
+}
+
+.conversation-queue-item:not(:has(form)) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xxs, 0.25rem) var(--space-xs);
+}
+
+.conversation-queue-item + .conversation-queue-item {
+  border-block-start: 1px solid var(--edge-faint);
+}
+
+.conversation-queue-text {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.conversation-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xxs, 0.25rem);
+}
+
+.conversation-queue-actions button {
+  padding: 0.2rem 0.5rem;
+  min-block-size: 2rem;
+  font-size: var(--type-small, 0.875em);
+}
+
+.conversation-queue-edit {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.conversation-queue-edit label {
+  font-size: var(--type-small, 0.875em);
+  color: var(--muted-dense);
+}
+
+.conversation-queue-edit textarea {
+  inline-size: 100%;
+  box-sizing: border-box;
+  min-block-size: 3rem;
+  max-block-size: 30dvh;
+  padding: var(--space-xs) var(--space-s);
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--edge-dense);
+  border-radius: var(--radius, 12px);
+  outline: 0;
+  font: inherit;
+  resize: vertical;
+}
+
+.conversation-queue-edit textarea:focus-visible {
+  border-color: var(--focus);
+}
+
+.conversation-queue-edit textarea[aria-invalid="true"] {
+  border-color: var(--warning-badge-edge);
+}
+
+.conversation-queue-edit [role="alert"] {
+  margin: 0;
+  color: var(--pending-text);
+  font-size: var(--type-small, 0.875em);
+}
+
+.conversation-queue-lost {
+  display: grid;
+  gap: var(--space-xxs, 0.25rem);
+  padding: var(--space-xs) var(--space-s);
+  border: 1px solid var(--warning-badge-edge);
+  border-radius: var(--radius, 12px);
+  background: var(--warning-badge-bg);
+  color: var(--pending-text);
+}
+
+.conversation-composer-actions > .conversation-queue-button {
+  margin-inline-start: auto;
+}
+
+.conversation-composer-actions > .conversation-queue-button + button[type="submit"] {
+  margin-inline-start: 0;
+}
+
 @media (min-width: 1120px) {
   .conversation-layout:has(> .conversation-details[open]) {
     grid-template-columns: minmax(0, 1fr) clamp(17rem, 23vw, 20.25rem);

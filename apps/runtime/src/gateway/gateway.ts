@@ -973,8 +973,10 @@ export class Gateway {
     const version = family === 'art-show' && 'guards' in data ? '2.1' :
       family === 'music-capture-control' && typeof data.action === 'string' && ['calibrate', 'cancel-calibration', 'apply-tuning'].includes(data.action) ? '2.2' :
       family === 'music-capture-control' && data.action === 'start' && data.input === 'microphone' ? '2.1' :
-      // A conversation rename is the one action of assistant-control/2.1 (Hub #2025); the others keep 2.0.
-      family === 'assistant-control' && data.action === 'rename' ? '2.1' : '2.0';
+      // A conversation rename is the one action of assistant-control/2.1 (Hub #2025), and the message queue's withdraw,
+      // reorder and resume-queue are those of 2.2 (Hub #2030); the others keep 2.0.
+      family === 'assistant-control' && data.action === 'rename' ? '2.1' :
+      family === 'assistant-control' && typeof data.action === 'string' && ['withdraw', 'reorder', 'resume-queue'].includes(data.action) ? '2.2' : '2.0';
     const dataschema = `${SCHEMA_BASE}${family}/${version}`;
     const now = this.#options.clock.now();
     const checked = this.#options.validator.validate({

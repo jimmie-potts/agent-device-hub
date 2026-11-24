@@ -13,16 +13,24 @@ export type AssistantTaskSummary = {taskId: string; conversationId: string; prof
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; usageUnits: number | null; reservedUnits: number};
 export const ASSISTANT_LEGACY_TOOL_LIMIT = 32;
 export const ASSISTANT_TOOL_LIMIT = 64;
+/** Why a conversation's message queue is held (Hub #2030): the owner stopped its task, the runtime started again, or the next message could not start. */
+export type AssistantQueueHold = 'stop' | 'restart' | 'refused';
+/** One current conversation's message queue in `assistant-state/2.2`: how many messages wait, whether it is held, and the refusal's code. No text. */
+export type AssistantQueueSummary = {conversationId: string; profile: AssistantProfile; messages: number; held: AssistantQueueHold | null; code: ErrorCode | null};
 export type AssistantState = {id: 'assistant'; revision: number; enabled: boolean; available: boolean;
   /** The configured provider and model, and the tool names the private section allows; never a key, prompt or transcript. */
-  provider: AssistantProvider; model: string; tools: string[]; tasks: AssistantTaskSummary[]};
+  provider: AssistantProvider; model: string; tools: string[]; tasks: AssistantTaskSummary[];
+  /** Version 2.2 (Hub #2030): each current conversation whose queue holds messages; absent when none does. */
+  queues?: AssistantQueueSummary[]};
 export type AssistantInput = {requestId: string; inputRef: string};
 /**
  * `org.bunny.assistant.control.requested`. Version 2.1 (Hub #2025) adds `rename`, the owner's title for a profile's
- * conversation, which carries `profile` and `title` and no task or message; the other actions carry neither.
+ * conversation, which carries `profile` and `title` and no task or message; the other actions carry neither. Version 2.2
+ * (Hub #2030) adds the message queue's `withdraw` and `reorder`, which name the `profile` and the `queuedId`, with
+ * `beforeId` for a reorder (null moves it to the end), and `resume-queue`, which names the `profile`.
  */
-export type AssistantControl = {requestId: string; expectedRevision: number; action: 'enable' | 'disable' | 'resume' | 'cancel' | 'speak' | 'rename';
-  taskId?: string; messageId?: string; profile?: AssistantProfile; title?: string};
+export type AssistantControl = {requestId: string; expectedRevision: number; action: 'enable' | 'disable' | 'resume' | 'cancel' | 'speak' | 'rename' | 'withdraw' | 'reorder' | 'resume-queue';
+  taskId?: string; messageId?: string; profile?: AssistantProfile; title?: string; queuedId?: string; beforeId?: string | null};
 /**
  * `org.bunny.assistant.dispatch.requested`: the companions module asks the core to send one approved, allowlisted command
  * through its tracked dispatcher. Version 2.0 carries Hub mode. Version 2.1 carries guarded LIFX commands. Version 2.2 binds Wemo power to its owner.
@@ -40,11 +48,13 @@ export const assistantFamilies = [
   defineFamily('assistant-input', 'command', 'org.bunny.assistant.input.requested'),
   defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested'),
   defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested', undefined, '2.1'),
+  defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested', undefined, '2.2'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.1'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.2'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.3'),
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant'),
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.1'),
+  defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.2'),
 ] as const;
 export function registerAssistantFamilies(validator: MessageValidator): void {registerFamilies(validator, assistantFamilies);}
