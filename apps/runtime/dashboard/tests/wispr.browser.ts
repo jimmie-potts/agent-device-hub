@@ -30,7 +30,9 @@ try {
     } finally { await context.close(); }
   } finally { await hidden.close(); }
 
-  const world = await startWorld({wispr: {exposeToDashboard: true, shareTextAggregates: true}});
+  // The card and the Today word list judge the files' Today window by the real clocks of the page and the runtime: the
+  // files report in a zone whose day has just begun, or a run that crosses UTC midnight would read Stale (#2083, #2063).
+  const world = await startWorld({wispr: {exposeToDashboard: true, shareTextAggregates: true, wholeDay: true}});
   try {
     const context = await browser.newContext({viewport: {width: 1440, height: 1000}, reducedMotion: 'reduce'});
     try {
