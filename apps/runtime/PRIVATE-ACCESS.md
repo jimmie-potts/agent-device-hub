@@ -111,8 +111,9 @@ parent is launchd. So the serve agent sets the variable and runs the binary from
 `/bin/sh` that stays its parent. The shell passes a stop on to it, including one
 that arrives while the serve is starting, and sends it again once a second, up to five
 times, while the serve is still running. It exits with the serve's status when the serve
-exits, so launchd restarts it. A stop that arrives before the serve starts ends the
-shell without starting it. To stop the route, boot out both agents; it returns at the
+exits, so launchd restarts it. A stop that arrives before the shell's check for one
+ends the shell without starting the serve. A stop just after that check starts the
+serve and then stops it. After a stop, the shell exits up to a second after the serve. To stop the route, boot out both agents; it returns at the
 next sign-in unless you also delete their plists. Never run a manual copy beside them. The route holds no state and sends no device command, and its
 authentication is unchanged.
 

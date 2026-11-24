@@ -164,12 +164,15 @@ test('the serve agent keeps a shell as the app binary\'s parent and forwards a s
   assert.doesNotMatch(script, /\bexec\b/);
   assert.ok(!script.includes(tailscale), 'the binary is an argument, not shell text');
   assert.match(script, /\n"\$0" serve --https=443 http:\/\/127\.0\.0\.1:18789 & c=\$!\n/);
-  // Until `end` is the trap a stop is only noted; one noted before the fork starts no serve.
-  assert.match(script, /^stop=; trap 'stop=1' TERM INT\n\[ -z "\$stop" \] \|\| exit 143\n"\$0" serve /);
-  assert.match(script, /\ntrap end TERM INT\n\[ -z "\$stop" \] \|\| end\nwait "\$c"$/);
-  // `end` cannot be interrupted, re-sends a bounded number of TERMs and exits with the serve's status.
-  assert.match(script, /end\(\) \{ q=\$\?; trap '' TERM INT; \(n=0; while \[ "\$n" -lt 5 \] && kill -TERM "\$c" 2>\/dev\/null; do sleep 1;/);
-  assert.match(script, /wait "\$c"; s=\$\?; kill -KILL "\$r" 2>\/dev\/null; \[ "\$s" -ne 127 \] \|\| s=\$q; exit "\$s"; \}/);
+  // Until `end` is the trap a stop is only noted; one noted before the check starts no serve.
+  assert.match(script, /^stop= got=; trap 'stop=1' TERM INT\n\[ -z "\$stop" \] \|\| exit 143\n"\$0" serve /);
+  // The final wait records that it has collected the serve's status, so `end` never has to guess it.
+  assert.match(script, /\ntrap end TERM INT\n\[ -z "\$stop" \] \|\| end\nwait "\$c"; s=\$\? got=1; exit "\$s"$/);
+  // `end` cannot be interrupted, re-sends a bounded number of TERMs, waits for its helper rather than signalling it
+  // and exits with the serve's status.
+  assert.match(script, /end\(\) \{ trap '' TERM INT; \[ -z "\$got" \] \|\| exit "\$s"; \(n=0; while \[ "\$n" -lt 5 \] && kill -TERM "\$c" 2>\/dev\/null; do sleep 1;/);
+  assert.match(script, /& r=\$!; wait "\$c"; s=\$\?; wait "\$r"; exit "\$s"; \}/);
+  assert.doesNotMatch(script, /kill -KILL/);
   assert.equal(runtime.program[0], '/node');
   assert.deepEqual(forwarder.program, ['/bin/sh', '/Users/owner/.config/bunny/private-access/start-forwarder.sh']);
 });
@@ -204,7 +207,7 @@ end() { echo terminated > "${home}/stopped"; exit "$(cat "${home}/on-term")"; }
 if [ -f "${home}/swallow" ]; then trap 'echo lost > "${home}/swallowed"; trap end TERM' TERM; else trap end TERM; fi
 echo "$$ $PPID $*" > "${home}/started"
 [ -p "${home}/ready" ] && echo ready > "${home}/ready"
-[ -f "${home}/exit-now" ] && exit 3
+[ -f "${home}/exit-now" ] && exit "$(cat "${home}/exit-now")"
 while :; do sleep 0.05; done
 `, {mode: 0o755});
     // Swapped wherever it appears, so no shape of the agent can ever run the real app binary here.
@@ -248,19 +251,22 @@ while :; do sleep 0.05; done
     };
     await stop(0);
     await stop(7);
+    // A real 127 from the serve, not a status the shell substitutes for it.
+    await stop(127);
 
     const fork = script.indexOf(' & ');
     const points = boundaries(script);
     // From the fork on, a stop can land at any command boundary, including before the shell has recorded the pid, and
     // the first TERM the serve receives can be lost. Each case holds the shell at one boundary until the fake is ready,
     // using a FIFO, has the shell signal itself there and has the fake swallow its first TERM. Only a shell that
-    // re-sends the stop ends that serve.
-    const after = points.filter(at => at > fork);
+    // re-sends the stop ends that serve. The serve exits 127, which the shell must report as it is.
+    const last = script.lastIndexOf('wait "$c"; s=$? got=1');
+    const after = points.filter(at => at > fork && at <= last);
     assert.equal(after[0], fork + 3, 'the first case lands before the pid is recorded');
     const ready = file('ready');
     await promisify(execFile)('mkfifo', [ready]);
     for (const at of after) {
-      await prepare(5, {swallow: true});
+      await prepare(127, {swallow: true});
       const where = JSON.stringify(script.slice(at, at + 24));
       const outcome = await settled(run(`${script.slice(0, at)}read r < "${ready}"; kill -TERM $$; ${script.slice(at)}`).exited,
         `after a stop before ${where}: it lost the stop, or the fake never opened the FIFO`)
@@ -268,11 +274,23 @@ while :; do sleep 0.05; done
       // The fake has written `started` before it opens the FIFO, so it is there once the shell has exited.
       const [child] = await started();
       assert.equal(await readFile(file('swallowed'), 'utf8'), 'lost\n', `no TERM reached the fake before ${where}`);
-      await stopped(5, outcome, child);
+      await stopped(127, outcome, child);
     }
     await rm(ready);
 
-    // A stop noted before the fork starts no serve.
+    // A stop after the serve has exited by itself, once the final wait has returned, still reports the serve's status.
+    const late = points.filter(at => at > last);
+    assert.ok(late.length >= 2, 'the final wait records the status it collected');
+    for (const at of late) {
+      await prepare(5);
+      await writeFile(file('exit-now'), '127');
+      const where = JSON.stringify(script.slice(at, at + 24));
+      const outcome = await settled(run(`${script.slice(0, at)}kill -TERM $$; ${script.slice(at)}`).exited, `after a stop before ${where}`);
+      assert.deepEqual(outcome, {code: 127, signal: null}, `a stop before ${where}`);
+    }
+    await rm(file('exit-now'));
+
+    // A stop noted before the check starts no serve.
     await prepare(5);
     const check = script.indexOf('[ -z "$stop" ] || exit 143');
     assert.ok(points.includes(check), 'the shell checks for a noted stop before it forks');
@@ -283,7 +301,7 @@ while :; do sleep 0.05; done
 
     // When the serve exits by itself, so does the job, which lets KeepAlive restart it.
     await prepare(5);
-    await writeFile(file('exit-now'), '');
+    await writeFile(file('exit-now'), '3');
     assert.deepEqual(await settled(run().exited, 'after the serve exited'), {code: 3, signal: null});
   });
 });

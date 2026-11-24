@@ -54,23 +54,26 @@ ${background ? '  <key>ProcessType</key>\n  <string>Background</string>\n' : ''}
 
 // The serve agent's shell, POSIX sh only (macOS /bin/sh is bash 3.2). A stop (TERM, or INT) can land at any point:
 // - before the trap: the shell dies by default and no serve has started;
-// - before the fork: it is noted and the shell exits 143 without starting a serve;
-// - from the fork until `end` is the trap: it is noted, and `end` runs once the serve's pid is in `c`;
-// - after that: the trap runs `end`.
+// - before the check on the second line: it is noted and the shell exits 143 without starting a serve;
+// - from the check until `end` is the trap: it is noted, and `end` runs once the serve's pid is in `c`. A stop between
+//   the check and the fork therefore starts the serve and then stops it;
+// - after that: the trap runs `end`, unless the final wait has already collected the serve's status (`got`).
 // A forked child keeps the shell's signal handler until it resets it and execs, and a TERM it receives then is lost, so
 // `end` cannot trust one forwarded TERM. It ignores further stops, so its wait returns only the serve's own status, and
-// re-sends TERM once a second, at most 5 times, while the serve is there: the lost window lasts only until the exec, a
-// serve that stops within a second gets one TERM, and the last re-send comes well before launchd's 20 s ExitTimeOut.
-// It exits with the serve's status. If the main wait had already collected it, the wait in `end` can report 127, and
-// `end` keeps the status that `$?` held when it began.
+// a helper re-sends TERM once a second, at most 5 times, while the serve is there: the lost window lasts only until the
+// exec, a serve that stops within a second gets one TERM, and the last re-send comes well before launchd's 20 s
+// ExitTimeOut. `end` waits for the helper rather than signalling it, so it never signals a pid that may have been
+// reused, and the helper leaves no `sleep` behind; a stop therefore takes up to a second longer than the serve does.
+// It exits with the serve's status. A stop in the instant after the final wait returns but before `got` is set relies on
+// the shell reporting the status again to the wait in `end`, as dash and bash 5.2 do.
 export const serveScript = [
-  'stop=; trap \'stop=1\' TERM INT',
+  'stop= got=; trap \'stop=1\' TERM INT',
   '[ -z "$stop" ] || exit 143',
   '"$0" serve --https=443 http://127.0.0.1:18789 & c=$!',
-  'end() { q=$?; trap \'\' TERM INT; (n=0; while [ "$n" -lt 5 ] && kill -TERM "$c" 2>/dev/null; do sleep 1; n=$((n + 1)); done) & r=$!; wait "$c"; s=$?; kill -KILL "$r" 2>/dev/null; [ "$s" -ne 127 ] || s=$q; exit "$s"; }',
+  'end() { trap \'\' TERM INT; [ -z "$got" ] || exit "$s"; (n=0; while [ "$n" -lt 5 ] && kill -TERM "$c" 2>/dev/null; do sleep 1; n=$((n + 1)); done) & r=$!; wait "$c"; s=$?; wait "$r"; exit "$s"; }',
   'trap end TERM INT',
   '[ -z "$stop" ] || end',
-  'wait "$c"',
+  'wait "$c"; s=$? got=1; exit "$s"',
 ].join('\n');
 
 export function agents({home, node, project = 'bunny-mac-personal'}) {
