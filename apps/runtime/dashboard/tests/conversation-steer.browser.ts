@@ -251,12 +251,12 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
     phone.resolve(tool('call-ask-3', 'ask_owner', {text: 'Which phone detail?'}));
     await conversation.getByText('Needs your answer', {exact: true}).waitFor();
     await answerBox.fill('Synthetic phone skip');
-    const actions = conversation.locator('.conversation-composer-actions');
-    const fits = await actions.evaluate(node => {
+    const fits = await conversation.evaluate(node => {
       const box = node.getBoundingClientRect();
-      return [...node.querySelectorAll('button')].every(button => {const rect = button.getBoundingClientRect(); return rect.left >= box.left - 1 && rect.right <= box.right + 1;});
+      return [...node.querySelectorAll('.conversation-task-actions button, .conversation-composer-actions button')]
+        .every(button => {const rect = button.getBoundingClientRect(); return rect.left >= box.left - 1 && rect.right <= box.right + 1;});
     });
-    assert.equal(fits, true, 'the composer\'s buttons stay inside it');
+    assert.equal(fits, true, 'the task\'s and the composer\'s buttons stay inside the page');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true, 'no horizontal page scroll with the question');
     await shot(page, '12-phone-skip-question');
     await conversation.getByRole('button', {name: 'Skip question and send', exact: true}).click();

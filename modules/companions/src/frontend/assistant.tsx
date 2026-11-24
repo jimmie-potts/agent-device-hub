@@ -145,6 +145,10 @@ function TaskControls({context, command, state, profile, live, question, coding,
       </article> : null)}
       {task !== undefined && !finished(task.status) && <div className="conversation-task-actions">
         {canResume && <button type="button" className="secondary" onClick={() => {control('resume', task.taskId);}}>Resume task</button>}
+        {/* Sets the question aside with the composer's text and steers the task in one step (Hub #2031). It sits with the
+            task's own controls, so the composer keeps its height and the transcript its reading position. */}
+        {setAside && task.questionId !== null && <button type="button" className="secondary" disabled={!canSetAside}
+          onClick={() => {if (canSetAside && task.questionId !== null) send(draft, 'steer', task.questionId);}}>{approval ? 'Decline with message' : 'Skip question and send'}</button>}
         <button type="button" className="secondary" onClick={() => {control('cancel', task.taskId);}}>Cancel task</button>
       </div>}
     </fieldset>
@@ -180,8 +184,6 @@ function TaskControls({context, command, state, profile, live, question, coding,
       <div className="conversation-composer-actions">
         {voice}
         {answerable && attach}
-        {setAside && task !== undefined && task.questionId !== null && <button type="button" className="secondary conversation-set-aside" disabled={!canSetAside}
-          onClick={() => {if (canSetAside && task.questionId !== null) send(draft, 'steer', task.questionId);}}>{approval ? 'Decline with message' : 'Skip question and send'}</button>}
         {queueable && <button type="button" className="secondary conversation-queue-button" disabled={!canQueue} onClick={() => {if (canQueue) send(draft, 'queue');}}>Queue</button>}
         {steerable ? <button type="submit" form={formId} disabled={!canSteer}>Send</button>
           : answerable && <button type="submit" form={formId} disabled={!canSubmit}>{pending ? 'Answer' : 'Send'}</button>}
