@@ -13,3 +13,9 @@
 
 - [x] 3.1 Companions README "Conversation titles" and checks, `THIRD-PARTY-NOTICES.md`, `docs/development.md` and `apps/runtime/UPGRADE.md`. Evidence: readback.
 - [x] 3.2 Sync and archive this change. Evidence: `npm run check:workflow` passes.
+
+## 4. Review round 1 on PR 2078
+
+- [x] 4.1 A trigger that lands after a call's last settle step is never lost: the run leaves its slot in the step that finds no trigger waiting. Evidence: the new microtask-delay test in `conversation-titles.test.js` passes for delays 0 to 40; before the fix it lost the trigger at delay 5 (PR).
+- [x] 4.2 Startup reconciliation that finds a finished turn starts no title check. Evidence: the restart test passes; with the starting guard removed from the built engine it fails, 3 calls instead of 2 (PR).
+- [x] 4.3 A hand-off left pending at the last stop is settled at start without a title check; the coordinator marks that delivery. Evidence: the restart test passes; without the mark it fails with the label "A coding hand-off's result arrived: uncertain." (PR).

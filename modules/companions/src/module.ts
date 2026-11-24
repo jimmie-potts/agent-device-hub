@@ -160,7 +160,7 @@ class Companions {
     const speak: AssistantOptions['speak'] = this.options.speak ?? ((reply, key, parent, line) => {this.speech?.offerReply(reply, key, parent, this.speech.mark(), line);});
     // The coding coordinator (Hub #502) is built before the engine, which binds proposals to its revision, and started after it, so a
     // responsibility settled at startup reaches a running engine.
-    const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence) => this.assistant?.deliver(taskId, text, parent, evidence) ?? Promise.resolve());
+    const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve());
     this.coding = coding;
     const delegate: AssistantOptions['delegate'] = this.options.delegate ?? ((data, parent) => {
       const endpoint = coding.endpoint();

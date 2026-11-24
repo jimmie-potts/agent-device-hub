@@ -951,8 +951,10 @@ export class AssistantEngine {
   /**
    * Delivers the worker's final word to the task waiting on its delegation and resumes it. A task the engine cannot run
    * now keeps the answer and waits for the owner's resume; a task that is not waiting on a delegation ignores it.
+   * `startup` marks the coordinator's settlement at start of a hand-off left pending at the last stop, which starts no
+   * title check, as a start starts no work.
    */
-  async deliver(taskId: string, text: string, parent: TraceContext, evidence: ActionEvidence): Promise<void> {
+  async deliver(taskId: string, text: string, parent: TraceContext, evidence: ActionEvidence, startup = false): Promise<void> {
     let launch = false, delivered: Task | undefined;
     await this.outbox.transaction(add => {
       const task = this.store.task(taskId);
@@ -966,7 +968,7 @@ export class AssistantEngine {
     });
     if (launch && !this.#closed && !this.context.signal.aborted) this.#launch(taskId);
     // The hand-off's result is a major event for the title (Hub #2075): its outcome word goes to the check, its text does not.
-    if (delivered !== undefined) this.#checkTitle(delivered, {kind: 'hand-off-result', outcome: handOffOutcome(text)});
+    if (delivered !== undefined && !startup) this.#checkTitle(delivered, {kind: 'hand-off-result', outcome: handOffOutcome(text)});
   }
   /** The per-turn limit the next call would pass, as the message naming it, or undefined while every bound has room. */
   #limitOf(task: Task, kind: 'model' | 'tool', timeout: number, budget: Budget): string | undefined {

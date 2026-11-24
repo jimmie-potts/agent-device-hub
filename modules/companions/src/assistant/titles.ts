@@ -461,18 +461,25 @@ export class ConversationTitles {
     }
     const entry: InFlight = {controller: new AbortController(), pending: undefined, work: Promise.resolve()};
     this.#inFlight.set(conversationId, entry);
-    entry.work = this.#run(conversationId, profile, entry, [label]).finally(() => {
-      if (this.#inFlight.get(conversationId) === entry) this.#inFlight.delete(conversationId);
-    });
+    entry.work = this.#run(conversationId, profile, entry, [label]);
     return entry.work;
   }
-  /** Runs the conversation's checks one at a time: the first, then the coalesced follow-up while triggers keep arriving. */
+  /**
+   * Runs the conversation's checks one at a time: the first, then the coalesced follow-up while triggers keep arriving.
+   * The run leaves `#inFlight` in the same synchronous step that finds no trigger waiting, so a later trigger starts a
+   * new run instead of joining one that has ended.
+   */
   async #run(conversationId: string, profile: AssistantProfile, entry: InFlight, first: string[]): Promise<void> {
-    let events: string[] | undefined = first;
-    while (events !== undefined && !this.#stopping) {
+    let events: string[] = first;
+    for (;;) {
       await this.#ask(conversationId, profile, entry.controller, events).catch(() => { /* The admitted call keeps the evidence. */ });
-      events = entry.pending; entry.pending = undefined;
-      if (events !== undefined) entry.controller = new AbortController();
+      const next = this.#stopping ? undefined : entry.pending;
+      entry.pending = undefined;
+      if (next === undefined) {
+        if (this.#inFlight.get(conversationId) === entry) this.#inFlight.delete(conversationId);
+        return;
+      }
+      events = next; entry.controller = new AbortController();
     }
   }
   /**

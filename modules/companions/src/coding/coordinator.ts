@@ -14,8 +14,11 @@ import {CodingStore, type CodingResponsibility} from './store.js';
 /** The module publishes `coding-state/2.1`, which adds the selected worker's readiness (Hub #1743). */
 export const codingStateDraft = (data: CodingState) => ({kind: 'state' as const, type: 'org.bunny.coding-state.updated', subject: 'coding',
   dataschema: 'https://bunny.invalid/events/coding-state/2.1', data: {...data, readiness: data.readiness ?? null}});
-/** Delivers the worker's final word to the task that waits for it; the engine turns it into the delegation tool's result. */
-export type Delivery = (taskId: string, text: string, parent: TraceContext, evidence: ActionEvidence) => Promise<void>;
+/**
+ * Delivers the worker's final word to the task that waits for it; the engine turns it into the delegation tool's result.
+ * `startup` marks the settlement, at start, of responsibility still pending at the last stop.
+ */
+export type Delivery = (taskId: string, text: string, parent: TraceContext, evidence: ActionEvidence, startup: boolean) => Promise<void>;
 type Active = CodingResponsibility & {wallClockMs: number; cancel: Cancel; settling: boolean};
 const noop = (): void => {};
 /**
@@ -67,7 +70,7 @@ export class CodingCoordinator {
   async start(): Promise<void> {
     // Responsibility that was pending at the last stop is uncertain now: the worker may have run, nothing is resent, and the task hears so.
     for (const record of this.#store.records('pending')) {
-      await this.#settle(record, 'uncertain', undefined, 'lost', record.started ? undefined : {result: Outcome.uncertain});
+      await this.#settle(record, 'uncertain', undefined, 'lost', record.started ? undefined : {result: Outcome.uncertain}, true);
     }
     this.#subscriptions.push(await this.context.sdk.respond<CodingEndpointControl>('bunny.cmd.coding-endpoint.*', command => this.#control(command)));
     this.#subscriptions.push(await this.context.sdk.respond<CodingRun>('bunny.cmd.coding-run.assistant', command => this.#accept(command)));
@@ -176,7 +179,7 @@ export class CodingCoordinator {
    * delivers the worker's word to the task. A delivery that fails leaves the task to the owner's resume.
    */
   async #settle(record: CodingResponsibility | Active, status: 'completed' | 'failed' | 'cancelled' | 'uncertain', result?: CodingResult | null, reason?: string,
-    outcome?: {result: 'succeeded' | 'failed' | 'uncertain'; code?: string}): Promise<void> {
+    outcome?: {result: 'succeeded' | 'failed' | 'uncertain'; code?: string}, startup = false): Promise<void> {
     const active = 'settling' in record ? record : undefined;
     if (active !== undefined) {if (active.settling || this.#active !== active) return; active.settling = true; active.cancel();}
     try {
@@ -187,7 +190,7 @@ export class CodingCoordinator {
     } catch (error) {this.#storageFailure(error, record);}
     if (active !== undefined) {this.#active = undefined; this.#state.active = null; this.#changed();}
     try {await this.deliver(record.taskId, describeResult(status, result, reason), {traceparent: record.traceparent},
-      {requestId: record.operationId, source: 'effect', text: status === 'uncertain' ? 'the coding worker outcome is unknown' : `the coding worker reported that the task ${status}`});}
+      {requestId: record.operationId, source: 'effect', text: status === 'uncertain' ? 'the coding worker outcome is unknown' : `the coding worker reported that the task ${status}`}, startup);}
     catch (error) {this.#storageFailure(error, record);}
   }
   #outcome(record: CodingResponsibility, outcome: {result: 'succeeded' | 'failed' | 'uncertain'; code?: string}, evidence: 'observed' | 'none'): Promise<void> {

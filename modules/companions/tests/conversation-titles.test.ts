@@ -453,6 +453,33 @@ void test('compare-before-write: an answer settled after a rename advanced the g
   database.close();
 });
 
+void test('a trigger just after a call settles is never lost: at every microtask delay it starts a call or joins one that runs', async () => {
+  const lost: number[] = [];
+  for (let delay = 0; delay <= 40; delay += 1) {
+    const database = new DatabaseSync(':memory:');
+    const outbox = {transaction: <T>(work: (add: (key: string, draft: unknown) => unknown) => T) => Promise.resolve(work(() => undefined))} as unknown as Outbox;
+    const prompts: string[] = [];
+    let release: () => void = () => {};
+    const provider: TitleProvider = {name: 'anthropic', model: 'claude-haiku-5-5', title: prompt => {
+      prompts.push(prompt);
+      return prompts.length === 1 ? new Promise<TitleReply>(resolve => {release = () => {resolve(kept);};}) : Promise.resolve(kept);
+    }};
+    const titles = new ConversationTitles(database, {outbox, spend: {reserve: () => undefined, settle: () => {}}, now: () => 1000, after: () => () => {}, provider: () => provider,
+      messages: () => [{role: 'owner', text: 'Synthetic request.'}], reported: () => true, metadata: (_id, title) => ({key: 'title', draft: title})});
+    const first = titles.check('conversation-1', 'bunny', {kind: 'message'});
+    for (let turn = 0; turn < 20 && prompts.length === 0; turn += 1) await Promise.resolve();
+    assert.equal(prompts.length, 1);
+    // The first answer settles; the next trigger arrives `delay` microtasks later, in or after the run's last steps.
+    release();
+    for (let turn = 0; turn < delay; turn += 1) await Promise.resolve();
+    const second = titles.check('conversation-1', 'bunny', {kind: 'task', result: 'succeeded'});
+    await Promise.all([first, second]);
+    if (titles.calls().length !== 2 || prompts.filter(Boolean).length !== 2) lost.push(delay);
+    database.close();
+  }
+  assert.deepEqual(lost, [], 'the microtask delays whose trigger was never sent');
+});
+
 void test('one title call per conversation: triggers during a call coalesce into one follow-up check with their events', {timeout: 20_000}, async context => {
   let turn = 0;
   const failing: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: () => {
@@ -690,6 +717,100 @@ void test('a coding hand-off\'s result starts a check labelled with its outcome 
   const calls = await w.settled(provider.prompts.length);
   assert.ok(calls.some(call => call.events?.includes('A coding hand-off\'s result arrived: completed.') === true), JSON.stringify(calls.map(call => call.events)));
   for (const prompt of provider.prompts) assert.doesNotMatch(prompt, /WORKER-PRIVATE-SUMMARY|tested-candidate|readout\.test/, 'no worker result text');
+});
+
+/** The module on a bus with a manual clock that can be stopped and started again on the same state, as a restart does. */
+async function restartable(context: TestContext, options: CompanionsOptions) {
+  const now = 1_790_000_000_000;
+  const time = {clock: {now: () => now}, scheduler: {after: () => () => {}}};
+  const dir = await mkdtemp(join(tmpdir(), 'assistant-titles-restart-')), bus = new InProcessBus({now: time.clock.now}), core = bus.connect('bunny/core');
+  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  const make = () => {const module = createCompanionsModule({prices: PRICES, ...options}); return {module, host: new ModuleHarness(module, {bus, stateDir: dir, spans: new RecordedSpans(), section: {}, ...time})};};
+  let {module, host} = make();
+  await host.start();
+  context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
+  const database = () => host.moduleDatabase() ?? assert.fail('open database');
+  const calls = () => new ConversationTitles(database(), {} as ConstructorParameters<typeof ConversationTitles>[1]).calls();
+  const status = () => module.inspectAssistant()?.tasks.find(task => task.profile === 'bunny');
+  const until = async (check: () => boolean): Promise<void> => {
+    for (let turn = 0; turn < 5000 && !check(); turn += 1) await new Promise(resolve => {setImmediate(resolve);});
+    assert.ok(check(), 'the awaited condition holds');
+  };
+  const send = async (data: Record<string, unknown>): Promise<void> => {
+    const requestId = randomUUID();
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({profile: 'bunny', expectedRevision: module.inspectAssistant()?.revision, ...data}))});
+    assert.ok(staged !== undefined && !('error' in staged), JSON.stringify(staged));
+    const reply = await core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+    assert.equal(reply.status, 'accepted', JSON.stringify(reply));
+  };
+  const enable = await core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
+    dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId: 'enable', action: 'enable', expectedRevision: module.inspectAssistant()?.revision}}, {requestId: 'enable', timeoutMs: 5000});
+  assert.equal(enable.status, 'accepted');
+  return {core, bus, database, calls, status, until, module: () => module,
+    start: (text: string) => send({action: 'start', text}),
+    answer: (text: string) => send({action: 'answer', text, taskId: status()?.taskId, questionId: status()?.questionId}),
+    async settled(count: number): Promise<TitleCall[]> {
+      await until(() => calls().length >= count && calls().every(call => call.status !== 'admitted'));
+      return calls();
+    },
+    async restart(): Promise<void> {await host.stop(); ({module, host} = make()); await host.start();},
+  };
+}
+
+void test('startup reconciliation that finds a finished turn starts no title check', {timeout: 20_000}, async context => {
+  const provider = titler([titled('Lamp schedule')]);
+  const w = await restartable(context, {provider: model(), titleProvider: provider});
+  await w.start('When does the lamp turn on?');
+  await w.until(() => w.status()?.status === 'succeeded');
+  await w.settled(2);
+  await turns();
+  assert.equal(provider.prompts.length, 2, 'the first message and the finished task');
+  // A crash after the graph saved its result and before the task's end committed leaves the task running in the store.
+  w.database().prepare("UPDATE assistant_tasks SET status='running', record=json_set(record,'$.status','running')").run();
+  await w.restart();
+  assert.equal(w.status()?.status, 'succeeded', 'startup reconciled the saved result');
+  await turns();
+  assert.equal(provider.prompts.length, 2, 'the restart made no title call');
+  assert.equal(w.calls().length, 2);
+});
+
+void test('a coding hand-off left pending at stop is settled at start without a title check; the resumed task\'s end is checked', {timeout: 20_000}, async context => {
+  let turn = 0;
+  const turnModel: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: () => {
+    turn += 1;
+    return Promise.resolve(turn === 1 ? {text: null, calls: [{id: 'call-1', name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: 'Add a unit test for the readout generator.'}}], stop: 'tool', units: 10}
+      : done('Synthetic summary of the lost hand-off.'));
+  }};
+  const provider = titler([titled('Readout generator test')]);
+  const w = await restartable(context, {provider: turnModel, titleProvider: provider, tools: ['delegate_coding']});
+  const work: {action: string; operationId: string}[] = [], endpointId = 'worker-endpoint-1';
+  await w.core.respond<{requestId: string}>('bunny.cmd.coding-dispatch.assistant', async command => {
+    const answer = await w.core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data},
+      {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
+    return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
+  });
+  const worker = w.bus.connect('bunny/parts/coding-worker');
+  context.after(() => worker.close());
+  await worker.respond<{action: string; operationId: string}>('bunny.cmd.coding-work.*', command => {work.push(command.data); return {status: 'accepted'};});
+  assert.equal((await worker.request(`bunny.cmd.coding-endpoint.${endpointId}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpointId,
+    dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0', data: {requestId: 'enable-1', action: 'enable'}}, {timeoutMs: 5000})).status, 'accepted');
+  await w.until(() => w.module().inspectCoding()?.availability === 'available');
+  await w.start('Please delegate: add a test.');
+  await w.until(() => w.status()?.status === 'waiting');
+  await w.answer('approve');
+  await w.until(() => work.length === 1 && w.status()?.status === 'waiting');
+  await turns();
+  const before = (await w.settled(provider.prompts.length)).length;
+  // The module stops while the worker holds the hand-off; at start the coordinator settles it as an uncertain result.
+  await w.restart();
+  await w.until(() => w.status()?.status === 'succeeded');
+  await turns();
+  const after = (await w.settled(provider.prompts.length)).slice(before);
+  const labels = after.flatMap(call => call.events ?? []);
+  assert.equal(labels.includes('A coding hand-off\'s result arrived: uncertain.'), false, JSON.stringify(labels));
+  assert.deepEqual(labels, [SUCCEEDED], 'only the resumed task\'s end is checked');
 });
 
 void test('a check the spend limits refuse is never sent and leaves the title as it was; without prices the title model is priced at its built-in tier', {timeout: 20_000}, async context => {

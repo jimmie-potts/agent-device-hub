@@ -809,8 +809,11 @@ persona names until the owner renames them. When a profile gets a real model
 
   No count of tasks and no time since the last message starts a check. A task
   that starts after a day without lifecycle evidence is checked only when it
-  finishes. Startup reconciliation starts no check. The check runs beside the
-  task and never delays, fails or rolls it back.
+  finishes. A start of the module starts no check: neither startup
+  reconciliation nor the settlement of a coding hand-off left pending at the
+  last stop, which reaches its task as an uncertain result. A result that
+  arrives after the start is checked. The check runs beside the task and never
+  delays, fails or rolls it back.
 - **One call at a time.** A conversation has at most one title call in flight.
   Triggers that arrive during it are coalesced into one follow-up check, which
   starts when the call settles and carries each distinct event once, oldest
