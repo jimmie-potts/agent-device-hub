@@ -114,7 +114,7 @@ void test('a subframe load or a main-frame navigation that failed or is unanswer
     requests: () => [
       request('/api/sdk/v1/stream', SINCE - 5000, {status: 200}),
       request('/frame.html', SINCE - 3000, {status: 200, ended: true, loads: true, subframe: true}),
-      request('/report.csv', SINCE - 2000, {failed: 'net::ERR_ABORTED', loads: true}),
+      request('/report.csv', SINCE - 2000, {status: 200, failed: 'net::ERR_ABORTED', loads: true}),
       request('/', SINCE - 1000, {loads: true}),
     ],
   });
