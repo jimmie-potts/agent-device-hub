@@ -122,9 +122,13 @@ function outcome(request: FeedRequest): string {
   return `answered ${String(response.status())}${after}${responseEnd < 0 ? ' (body open)' : ' (body ended)'}`;
 }
 
-/** Whether `request` loads a document into the page's main frame, which starts a new document. */
+/**
+ * Whether `request` loaded a document into the page's main frame, which starts a new document. A navigation that
+ * failed, was aborted or has no response yet leaves the current document in place.
+ */
 function loadsDocument(request: FeedRequest): boolean {
-  return request.isNavigationRequest() && request.frame().parentFrame() === null;
+  return request.isNavigationRequest() && request.frame().parentFrame() === null
+    && request.failure() === null && request.existingResponse() !== null;
 }
 
 /**
