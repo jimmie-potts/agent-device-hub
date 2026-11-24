@@ -784,8 +784,10 @@ list coding agent sessions only. Native worker reporting is not part of this.
 
 Each conversation gets a short title that a title model writes, led by the
 GitHub issue it is about, such as `#1896 Session tracking` or `pixoo#14 Boot
-channel` for an issue in another repository (Hub #2025). Until a title exists,
-the persona name stands.
+channel` for an issue in another repository (Hub #2025). The title follows the
+conversation's topic: the model checks it as the conversation goes on and
+either keeps it or writes a new one (Hub #2075). Until a title exists, the
+persona name stands.
 
 Only a profile with a real title model gets titles: B.U.N.N.Y. on the
 Anthropic provider, with `assistant.titleModel`. Reachy and MicroDuck, and
@@ -794,17 +796,47 @@ persona names until the owner renames them. When a profile gets a real model
 (Hub #2026), it gets titles by the same rule. A test or harness can inject
 `SyntheticTitleProvider`, which writes the fixed title `Synthetic conversation`.
 
-- **When.** A title is written after the first message of a session
-  appearance, again at the third task of that appearance, after the first
-  message when the session reappears after a day without lifecycle evidence,
-  and when a coding hand-off is accepted, so an issue named only in the brief
-  can lead the title. The title call runs beside the task and never delays,
-  fails or rolls back it.
-- **What the model sees.** The fixed title instruction as the system prompt
-  and the conversation's last eight owner and assistant messages, escaped and
-  cut to 2 KiB. No tool result, preference or knowledge entry is sent, and no
-  failed turn's closing reply, which is the module's own status text about the
-  turn.
+- **When.** An untitled conversation is checked after its first message, so
+  it gets its first title while the task runs. After that, the model checks
+  the title after each finished task (succeeded, failed or cancelled) and after
+  each major event the module knows about:
+  - an answered approval, approved or declined;
+  - a tool call that changed state, that is, a command the core accepted, such
+    as a Hub mode set;
+  - an accepted coding hand-off, so an issue named only in the brief can lead
+    the title;
+  - a coding hand-off's result arriving.
+
+  No count of tasks and no time since the last message starts a check. A task
+  that starts after a day without lifecycle evidence is checked only when it
+  finishes. A start of the module starts no check: neither startup
+  reconciliation nor the settlement of a coding hand-off left pending at the
+  last stop, which reaches its task as an uncertain result. A result that
+  arrives after the start is checked. The check runs beside the task and never
+  delays, fails or rolls it back.
+- **One call at a time.** A conversation has at most one title call in flight.
+  Triggers that arrive during it are coalesced into one follow-up check, which
+  starts when the call settles and carries each distinct event once, oldest
+  first, up to the latest four (`TITLE_EVENTS`). Other conversations' calls
+  run independently.
+- **What the model sees.** The fixed title instruction as the system prompt.
+  The prompt gives the current title and who set it (`Current title, written
+  by the title model: …`, `Current title, set by the owner: …` or `Current
+  title: none`), the fixed labels of the events that asked for the check, and
+  the conversation's last eight owner and assistant messages, escaped and cut
+  so the whole prompt stays within 2 KiB. A label is the module's own text with
+  at most a tool identifier, a decision or an outcome word, for example `The
+  owner approved set_mode.`, `A tool call changed state: set_mode was
+  accepted.` or `A coding hand-off's result arrived: completed.`. The prompt
+  carries no tool result, dispatch receipt or worker report. It also carries
+  no preference, knowledge entry or failed turn's closing reply, which is the
+  module's own status text about the turn.
+- **What the model answers.** `KEEP` when the current title still fits, or a
+  new title. The instruction tells the model that a title the owner set is
+  their choice, to keep unless the topic has clearly changed since. `KEEP`, in
+  any case and with quotes or trailing punctuation, publishes nothing. Neither
+  does a new title equal to the current one. With no current title, `KEEP` leaves the persona
+  name.
 - **What is kept.** After the issue reference, the description is cut to 40
   characters at a word boundary. Quotes, markdown, a `Title:` label and
   trailing punctuation are removed. An answer that is empty, a placeholder such
@@ -828,7 +860,7 @@ persona names until the owner renames them. When a profile gets a real model
   shorter shared run, or a short title repeating part of a reply behind a new
   issue reference is not detected, and a message of yours that is already
   exactly the right title is refused. A failed, refused or invalid first
-  title leaves the persona name; a failed refresh keeps the earlier title.
+  title leaves the persona name; a later failed check keeps the earlier title.
   Nothing is retried.
 - **Where it goes.** The conversation's recent messages go to Anthropic's
   title model, as the turns' messages go to the turn model. The title is
@@ -844,19 +876,27 @@ persona names until the owner renames them. When a profile gets a real model
   allows to receive session titles. The assistant's own `read_sessions` leaves
   native sessions out.
 - **Diagnosis.** Each title call's record keeps the model's raw answer, at
-  most 1 KiB, privately in `assistant_title_calls`, so an invalid outcome can
-  be explained. It reaches no log, trace, diagnostic or published record.
+  most 1 KiB, and the labels of the events it answered, privately in
+  `assistant_title_calls`, so an outcome can be explained: `applied`,
+  `unchanged`, `kept`, `invalid` or `dropped`. It reaches no log, trace, diagnostic or published record.
 - **Rename.** Open **Details**, then **Conversation settings**, and enter a
   name under **Rename conversation** (at most 80 characters). The page sends
   the `rename` action of `assistant-control/2.1`. The owner's name replaces any
-  generated title, and the model never changes it again. A title call still in
-  flight is abandoned, and an answer that arrives after the rename is
-  dropped. A name that is not display text is refused with `invalid-request`.
-- **Spend.** A paid title call reserves its most expensive cost in the shared
-  spend ledger as a conversation-level call before it is sent, and its
-  reported usage replaces the reservation; a lost or failed answer keeps the
-  reservation counting. A call that the spend limits refuse is not sent, and
-  the persona or earlier title stays. Title calls count toward the shared
+  generated title. It is not permanent: later checks tell the model the title
+  is the owner's, and only when the model judges that the topic clearly
+  changed does a generated title replace it, with source `provider`. A title
+  call still in flight is abandoned with the follow-up check waiting behind
+  it, and an answer that arrives after the rename is dropped. Each admitted
+  check also advances the conversation's title generation, so an answer that
+  settles after a newer check, such as one past the 30 second deadline, is
+  dropped too. A name that is not display text is refused with
+  `invalid-request`.
+- **Spend.** Each check is a paid title call, `KEEP` included. It reserves its
+  most expensive cost in the shared spend ledger as a conversation-level call
+  before it is sent, and its reported usage replaces the reservation; a lost or
+  failed answer keeps the reservation counting. A call that the spend limits
+  refuse is not sent, and the persona or earlier title stays; the next check
+  waits for the next trigger. Title calls count toward the shared
   spend limits and toward no task's limits. The default title model,
   `claude-haiku-5-5`, is priced at its built-in tiers, and a title model the
   table does not know at the dearest known rate, so no title call is refused
@@ -1002,7 +1042,9 @@ decline, stale approval, uncertain dispatch, allowlist refusal, refusal,
 truncation and fault codes, profile isolation), `assistant-sessions.test.js`
 (each conversation's shared-session observations across its tasks, restart and
 baseline, Hub #505), `conversation-titles.test.js` (title normalization,
-prompt, the title call, refresh, rename and failures, Hub #2025),
+prompt, event labels, the title call, keep and new titles after finished tasks
+and major events, coalescing, late answers, rename then topic change, spend
+refusals and failures, Hub #2025 and #2075),
 `anthropic.test.js` (the request
 shape, tool-use parsing, usage, error mapping and abort against a fake
 transport) and `configure.test.js` (the section and a keyed provider through

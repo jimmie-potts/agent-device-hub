@@ -321,6 +321,26 @@ records as `capacity` while the persona name stays. The module still starts.
 The #2024 release has no title calls; to return to it, add a price for the
 configured model first. The workspace's limit stays in force either way.
 
+## Conversation titles that follow the topic (#2075)
+
+The #2075 release lets a conversation's title follow its topic. The title
+model checks the title after each finished task and each major event, and an
+owner's rename is no longer permanent. It adds no table, column or section key.
+Title records saved by #2025 keep their count of an appearance's tasks, which
+this release no longer reads or writes. Call records gain the labels of the
+events they answered and the outcome `kept`; earlier records read without them.
+Expect more title calls than under #2025: at most one for each finished task
+and major event. Each is reserved and counted in the shared spend limits.
+
+To return to #2025, no step is needed. That release counts an appearance's
+tasks in the title record. This release leaves the count in a record #2025
+saved and writes none in a record it creates. Within a day of the
+conversation's last lifecycle evidence, that release continues from an old
+count. Without one, it makes no title call at the first task after the return,
+calls the title model at the second, and then counts as before. A title the
+model wrote over an owner's rename stays, with source generated. In that
+release an owner's title is permanent again.
+
 ## Conversation titles (#2025)
 
 The #2025 release gives each assistant conversation a model-written title and

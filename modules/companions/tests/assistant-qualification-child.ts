@@ -92,7 +92,8 @@ if (mode === 'crash') {
   await settle(() => providers.microduck.pending.length === 1, 'microduck second call in flight');
   const database = host.moduleDatabase() ?? assert.fail('open database');
   const titled = () => (database.prepare("SELECT COUNT(*) AS count FROM assistant_titles WHERE json_extract(record,'$.title') IS NOT NULL").get() as {count: number}).count;
-  await settle(() => titlePrompts.length === 3 && titled() === 3, 'three titles saved');
+  // Each conversation's first message is checked; MicroDuck's cancelled task may already have asked for another check.
+  await settle(() => titlePrompts.length >= 3 && titled() === 3, 'three titles saved');
   // Exit while B.U.N.N.Y.'s and MicroDuck's admitted calls have no answer and Reachy waits on its question, with no orderly
   // module stop: two conversations' runs are lost at once.
   process.stdout.write(JSON.stringify({concurrent, observed: observed()}));
