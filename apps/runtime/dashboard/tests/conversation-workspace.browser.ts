@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
 import {chromium, type Browser} from 'playwright';
 import {feed, startWorld} from './harness.ts';
 import {chooseConversation, conversationLink, destinationLink, destinationNames, openDeviceMenu, showRail} from './navigation-helpers.ts';
@@ -86,7 +87,7 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await showRail(page);
     assert.deepEqual(await destinationNames(page), ['Home', 'Companions', 'Rooms', 'Devices', 'Automation']);
     assert.deepEqual(await conversations.getByRole('link').evaluateAll(links => links.map(link => [...link.querySelectorAll('.rail-text > *')].map(part => part.textContent).join(' '))),
-      ['B.U.N.N.Y.', 'Reachy Demo', 'MicroDuck Demo'], 'both demos are labelled before they are chosen');
+      ['B.U.N.N.Y.', 'Reachy', 'MicroDuck'], 'each conversation is listed by its name, with no Demo label');
     const labelLines = await navigation.locator('a, button').evaluateAll(links => links.map(link => {
       const label = link.querySelector('.rail-text'), text = document.createRange();
       if (label === null) return 0;
@@ -105,7 +106,7 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     const [name, detailsButton] = await Promise.all([header.getByRole('heading', {name: 'B.U.N.N.Y.', exact: true}).boundingBox(), header.getByRole('button', {name: 'Details', exact: true}).boundingBox()]);
     assert.ok(name !== null && detailsButton !== null && name.y + name.height / 2 > detailsButton.y && name.y + name.height / 2 < detailsButton.y + detailsButton.height,
       'the profile name and Details share one row');
-    assert.equal(await header.locator('.conversation-demo-tag').count(), 0, 'the everyday assistant has no Demo label');
+    assert.equal(await header.locator('small').count(), 0, 'the header row carries no Demo label');
     const posts: string[] = [];
     page.on('request', request => {
       if (request.method() !== 'POST') return;
@@ -124,15 +125,17 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await page.locator('.shell>aside').waitFor({state: 'hidden'});
     await layout(1440, 1000);
     assert.equal(await message.inputValue(), 'Draft through resize and menu');
-    // Choosing a demo in the rail shows its own empty history and blank draft, labelled Demo in the header row. The
-    // everyday assistant's draft and saved exchange are there again when it is chosen. None of it sends a command.
+    // Choosing a companion in the rail shows its own empty history and blank draft, with no Demo label: every profile
+    // uses the configured model (Hub #2026). B.U.N.N.Y.'s draft and saved exchange are there again when it is chosen.
+    // None of it sends a command.
     await chooseConversation(page, 'reachy');
-    assert.equal(await header.locator('.conversation-demo-tag').innerText(), 'Demo');
+    await header.getByRole('heading', {name: 'Reachy', exact: true}).waitFor();
+    assert.equal(await header.locator('small').count(), 0, 'the companion has no Demo label');
     assert.equal(await (await conversationLink(page, 'reachy')).getAttribute('aria-current'), 'page');
     assert.equal(await (await conversationLink(page, 'bunny')).getAttribute('aria-current'), null);
-    await assistant.getByText('Demo profile. No paid calls.', {exact: true}).waitFor();
+    assert.equal(await assistant.getByText(/Demo/).count(), 0, 'no Demo note');
     await invitation.waitFor();
-    assert.equal(await assistant.locator('[data-message]').count(), 0, 'a demo has its own history');
+    assert.equal(await assistant.locator('[data-message]').count(), 0, 'a companion has its own history');
     assert.equal(await message.inputValue(), '', 'and its own draft');
     await message.fill('Reachy draft');
     await chooseConversation(page, 'bunny');
@@ -174,6 +177,46 @@ export async function conversationWorkspaceJourney(browser: Browser): Promise<vo
     await details.waitFor({state: 'hidden'});
     await page.setViewportSize({width: 1440, height: 1000});
     assert.deepEqual(posts, [], 'layout, the Devices menu, choosing a profile in the rail, Details and the jump palette send no command, sync or endpoint registration');
+    // MicroDuck's audio is quacks only (Hub #2026): its English text is its intended meaning, so each of its replies
+    // says so in place of Read aloud. B.U.N.N.Y.'s replies keep Read aloud.
+    const receipts = process.env.DASHBOARD_RECEIPTS;
+    if (receipts !== undefined) await mkdir(receipts, {recursive: true});
+    const intended = transcript.getByText('Intended meaning. MicroDuck\'s audio is quacks only, so this text is never read aloud.', {exact: true});
+    const readAloud = transcript.getByRole('button', {name: /^Read aloud/});
+    assert.ok(await readAloud.count() > 0, 'B.U.N.N.Y.\'s saved replies offer Read aloud');
+    await chooseConversation(page, 'microduck');
+    await header.getByRole('heading', {name: 'MicroDuck', exact: true}).waitFor();
+    assert.equal(await header.locator('small').count(), 0, 'MicroDuck has no Demo label');
+    await message.fill('Synthetic duck request');
+    await send.click();
+    await answer.fill('Duck answer');
+    await assistant.getByRole('button', {name: 'Answer', exact: true}).click();
+    await transcript.getByText(/Synthetic result: Duck answer/).waitFor();
+    assert.equal(await intended.count(), 2, 'the question and the result each say they are intended meaning');
+    assert.equal(await readAloud.count(), 0, 'MicroDuck offers no Read aloud');
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/microduck-intended-meaning-1440.png`});
+    await assistant.getByRole('button', {name: 'Details', exact: true}).click();
+    await details.getByRole('heading', {name: 'Conversation details', exact: true}).waitFor();
+    assert.equal(await details.locator('.conversation-details-profile').innerText(), 'MicroDuck', 'Details names the profile with no Demo label');
+    await details.getByText('Conversation settings', {exact: true}).click();
+    await details.getByText(/The synthetic provider answers them locally and makes no paid calls\./).waitFor();
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/microduck-details-1440.png`});
+    await details.getByRole('button', {name: 'Close details', exact: true}).click();
+    await details.waitFor({state: 'hidden'});
+    await page.setViewportSize({width: 390, height: 844});
+    await page.locator('.shell>aside').waitFor({state: 'hidden'});
+    assert.equal(await intended.count(), 2);
+    const overflow = await page.locator('html').evaluate(node => node.scrollWidth - innerWidth);
+    assert.ok(overflow <= 1, `the intended-meaning notes fit the phone width (${String(overflow)})`);
+    if (receipts !== undefined) await page.screenshot({path: `${receipts}/microduck-intended-meaning-390.png`});
+    await page.setViewportSize({width: 1440, height: 1000});
+    await chooseConversation(page, 'bunny');
+    await transcript.getByText(/Synthetic result: Short answer/).waitFor();
+    assert.ok(await readAloud.count() > 0, 'B.U.N.N.Y. still offers Read aloud');
+    if (receipts !== undefined) {
+      await showRail(page);
+      await page.screenshot({path: `${receipts}/rail-conversations-1440.png`});
+    }
     // On the Conversation page the rail boxes the open conversation, and Companions is marked lightly above it.
     const companionsRow = navigation.getByRole('link', {name: 'Companions', exact: true});
     assert.equal(await companionsRow.getAttribute('aria-current'), 'page');

@@ -19,10 +19,10 @@ function isStopCall(request: Request, kind: 'control' | 'receipt'): boolean {
 }
 
 /**
- * At phone width the open profile is named in the conversation's one header row (Hub #1890): the name, the Demo label
- * for a demo, and Details at the row's end. The name is whole, nothing covers it and the page does not overflow.
+ * At phone width the open profile is named in the conversation's one header row (Hub #1890): the name and Details at
+ * the row's end, with no Demo label (Hub #2026). The name is whole, nothing covers it and the page does not overflow.
  */
-async function assertNarrowProfile(page: Page, expected: string, demo = false): Promise<void> {
+async function assertNarrowProfile(page: Page, expected: string): Promise<void> {
   const trigger = page.getByRole('button', {name: 'Details', exact: true});
   assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
   const header = page.locator('.conversation-header');
@@ -33,12 +33,12 @@ async function assertNarrowProfile(page: Page, expected: string, demo = false): 
     text.selectNodeContents(name);
     const box = name.getBoundingClientRect(), button = details.getBoundingClientRect();
     const exposed = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-    return {text: name.textContent, lines: text.getClientRects().length, tag: node.querySelector('.conversation-demo-tag')?.textContent ?? '',
+    return {text: name.textContent, lines: text.getClientRects().length, tag: node.querySelector('small')?.textContent ?? '',
       nameExposed: exposed !== null && name.contains(exposed), sameRow: box.top + box.height / 2 > button.top && box.top + box.height / 2 < button.bottom,
       clear: box.right <= button.left, overflow: document.documentElement.scrollWidth - innerWidth};
   });
   assert.equal(measured.text, expected);
-  assert.equal(measured.tag, demo ? 'Demo' : '');
+  assert.equal(measured.tag, '', 'no Demo label');
   assert.equal(measured.lines, 1, `the profile name is on one line: ${JSON.stringify(measured)}`);
   assert.ok(measured.nameExposed, 'the profile name stays visible');
   assert.ok(measured.sameRow && measured.clear, `the profile name and Details share one row without touching: ${JSON.stringify(measured)}`);
@@ -279,7 +279,7 @@ export async function spokenRepliesJourney(browser: Browser): Promise<void> {
       await assertNarrowProfile(other, 'B.U.N.N.Y.');
       if (receipts !== undefined) await other.screenshot({path: `${receipts}/profile-bunny-voice-unavailable-${width}.png`});
       await chooseConversation(other, 'microduck');
-      await assertNarrowProfile(other, 'MicroDuck', true);
+      await assertNarrowProfile(other, 'MicroDuck');
       if (receipts !== undefined) await other.screenshot({path: `${receipts}/profile-microduck-voice-unavailable-${width}.png`});
       await chooseConversation(other, 'bunny');
     }

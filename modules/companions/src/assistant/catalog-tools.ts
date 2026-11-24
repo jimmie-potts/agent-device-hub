@@ -1,5 +1,5 @@
 import {assistantRoutes, catalogFamily, type CatalogFamily} from '@jimmie-potts/event-contracts/v2/assistant-actions';
-import type {ToolDefinition, ToolInputSchema} from './provider.js';
+import type {ToolDefinition, ToolInputSchema} from './tool-types.js';
 
 export const READ_DEVICES = 'read_devices';
 export const READ_PLAYBACK = 'read_playback';

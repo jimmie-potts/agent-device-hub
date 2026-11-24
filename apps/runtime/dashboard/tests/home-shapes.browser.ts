@@ -15,8 +15,10 @@ import {gifFixture} from '../../../../modules/pixoo/dist/tests/helpers/media-fix
 const receipts = process.env.DASHBOARD_RECEIPTS;
 const only = process.env.HOME_SHAPES_ONLY?.split(',');
 const part = (name: string): boolean => only === undefined || only.includes(name);
+// The main page keeps the browser's real clock (#1712), so the Wispr card judges its Today window by the wall clock: the
+// files report in a zone whose day has just begun, or a run that crosses UTC midnight would read Stale (#2063).
 const world = await startWorld({lighting: true, pixooPages: true, tidbyt: true, wemo: true, roborock: true, volcano: true, companions: true, art: true, inbox: true,
-  wispr: {exposeToDashboard: true}});
+  wispr: {exposeToDashboard: true, wholeDay: true}});
 const browser = await chromium.launch({headless: true});
 const shapes: readonly HomeShape[] = ['square', 'wide', 'tall', 'large-square'];
 const storedSize = {square: 'small', tall: 'small', wide: 'medium', 'large-square': 'medium'} as const;

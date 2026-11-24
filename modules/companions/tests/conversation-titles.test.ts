@@ -578,11 +578,10 @@ void test('a failed, refused, invalid or late title leaves the persona, never to
 });
 
 void test('a profile without a real title model makes no title call and keeps its persona name', {timeout: 20_000}, async context => {
-  // The synthetic B.U.N.N.Y. provider, and Reachy and MicroDuck, have no title model.
-  const w = await world(context, {provider: model()}, true);
-  await w.ask('SYNTHETIC-PRIVATE-REQUEST');
-  for (const profile of ['reachy', 'microduck']) {
-    // The demo profiles' synthetic provider asks its fixed question first; the owner cancels it.
+  // On the synthetic provider no profile has a title model: B.U.N.N.Y., Reachy and MicroDuck alike.
+  const w = await world(context, {}, true);
+  for (const profile of ['bunny', 'reachy', 'microduck']) {
+    // The synthetic provider asks its fixed question first; the owner cancels it.
     await w.start('SYNTHETIC-PRIVATE-REQUEST', profile);
     await w.until(() => w.module.inspectAssistant()?.tasks.find(task => task.profile === profile)?.status === 'waiting');
     assert.equal((await w.control('cancel', {taskId: w.module.inspectAssistant()?.tasks.find(task => task.profile === profile)?.taskId})).status, 'accepted');
@@ -592,6 +591,36 @@ void test('a profile without a real title model makes no title call and keeps it
   assert.deepEqual(w.store().calls(), [], 'no title call is made');
   assert.equal(w.titles.length, 0);
   assert.deepEqual([...new Set(w.seen.map(message => titleOf(message)?.value))].sort(), ['B.U.N.N.Y.', 'MicroDuck', 'Reachy'], 'each keeps its persona name');
+  assert.deepEqual(w.spent(), [], 'and nothing is counted');
+});
+
+void test('Reachy and MicroDuck on the configured model get topic-following titles, and each turn and check counts in the shared spend ledger', {timeout: 20_000}, async context => {
+  // The configured provider and title model serve every profile (Hub #2026), so the companions' conversations are
+  // titled by B.U.N.N.Y.'s rules (Hub #2075): a check after the first message and after each finished task.
+  const provider = titler([titled('Pantry shelf labels'), kept, titled('Bath timer'), kept, titled('Bath playlist')]);
+  const paid: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: () => Promise.resolve({...done('Synthetic companion answer.'), usage: {input: 40, output: 8, cacheWrite: 0, cacheRead: 0}})};
+  const w = await world(context, {provider: paid, titleProvider: provider});
+  await w.ask('Help me label the pantry shelf.', 'reachy');
+  assert.deepEqual(outcomes(await w.settled(2)), ['applied', 'kept']);
+  await w.ask('Time the bath for me.', 'microduck');
+  assert.deepEqual(outcomes(await w.settled(4)), ['applied', 'kept', 'applied', 'kept']);
+  // The duck's topic changes, and its title follows.
+  w.tick(1000); await w.ask('Now pick songs for bath time.', 'microduck');
+  assert.deepEqual(outcomes(await w.settled(5)), ['applied', 'kept', 'applied', 'kept', 'applied']);
+  const reachy = w.conversation('reachy'), duck = w.conversation('microduck');
+  assert.deepEqual(w.titles.map(message => [message.data.identity.sessionId, titleOf(message)?.value]),
+    [[reachy, 'Pantry shelf labels'], [duck, 'Bath timer'], [duck, 'Bath playlist']]);
+  assert.deepEqual(w.store().record(duck)?.title, {value: 'Bath playlist', source: 'generated'});
+  // Every companion turn and every title check is a paid call in the one ledger: three task calls on the turn model and
+  // five conversation-level calls on the title model, each with its reported cost.
+  const spent = w.spent();
+  const profileOf = (id: unknown) => (w.host.moduleDatabase()?.prepare('SELECT profile FROM assistant_tasks WHERE id=?').get(String(id)) as {profile: string} | undefined)?.profile;
+  // The ledger orders rows of one instant by id, so each list is compared sorted.
+  assert.deepEqual(spent.filter(row => row.purpose === 'task').map(row => `${String(profileOf(row.owner))} ${String(row.model)}`).sort(),
+    ['microduck claude-sonnet-5-5', 'microduck claude-sonnet-5-5', 'reachy claude-sonnet-5-5']);
+  assert.deepEqual(spent.filter(row => row.purpose === 'conversation').map(row => `${row.owner === reachy ? 'reachy' : row.owner === duck ? 'microduck' : String(row.owner)} ${String(row.model)}`).sort(),
+    ['microduck claude-haiku-5-5', 'microduck claude-haiku-5-5', 'microduck claude-haiku-5-5', 'reachy claude-haiku-5-5', 'reachy claude-haiku-5-5']);
+  assert.ok(spent.every(row => typeof row.cost === 'number' && row.cost > 0), `each counts its reported usage: ${JSON.stringify(spent)}`);
 });
 
 void test('a harness that injects the fixed synthetic title provider gets its fixed title, which never echoes the conversation', {timeout: 20_000}, async context => {
