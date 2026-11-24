@@ -270,9 +270,17 @@ Returning to the release before needs a step for unfinished tasks: it treats a
 offers only Cancel. Let unfinished tasks finish, or cancel them, before going
 back. That release also ignores `assistant_steers`, so a steer its task never
 read would not show there or reach the task; cancelling the task here first
-returns its unread steers to the queue. That release can publish a queue of
-at most 8 messages, in `assistant-state/2.2`, so withdraw or start messages
-until no queue holds more than 8 before going back. Prefer fixing forward.
+returns its unread steers to the queue.
+
+Before going back, you must also bring every queue down to 8 messages or
+fewer, in this release: withdraw messages or let them start. This step is
+mandatory. That release validates its own state against `assistant-state/2.2`,
+which allows at most 8 messages per queue. With a longer queue, every
+assistant transaction there fails validation and rolls back, Withdraw
+included, and its start can fail, so the queue can no longer be shortened
+there; the only way out is to return to this release. If a task's unread
+steers were left behind anyway, this release returns them to the head of
+their queue at its next start, held until **Start**. Prefer fixing forward.
 
 ## Queued messages (#2030)
 

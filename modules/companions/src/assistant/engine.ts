@@ -273,6 +273,17 @@ export class AssistantEngine {
           try {await this.#recoverUnavailable(task.id, closingReasonOf(error), true);} catch { /* A failed write cannot claim a saved transition. */ }
         }
       }
+      // Unread steers of a task that already finished, which only a return to an earlier release that ignores them can
+      // leave, go back to the head of their queue and wait there held, as a start's reconciliation returns them (Hub #2031).
+      const left = this.store.queue.steerTasks().filter(entry => {const owner = this.store.task(entry.taskId); return owner === undefined || terminal(owner.status);});
+      if (left.length > 0) {
+        await this.outbox.transaction(() => {
+          for (const entry of left) {
+            this.store.queue.returnSteers(entry.taskId, this.context.clock.now());
+            if (this.store.queue.hold(entry.conversationId) === null) this.store.queue.setHold(entry.conversationId, {reason: 'restart', code: null, detail: null});
+          }
+        });
+      }
       // A queue counts as changed wherever its conversation changed at the start (Hub #2030), and a queue the start held
       // changed at the start: a revision records it, so a queue command read before is stale.
       this.store.queue.aligned();

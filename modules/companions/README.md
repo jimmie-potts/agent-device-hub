@@ -436,7 +436,9 @@ The queue is modelled on Codex's durable queue and T3 Code's queue commands;
 **Send** while a task works steers it (Hub #2031, owner decisions 1, 3, 4 and
 5): the message joins the task's current turn instead of waiting for it. The
 steer is saved at once and shows above the composer under **Steering this
-task** until the task reads it. The task reads its steers at its next model
+task** until the task reads it; queued messages and unread steers share one
+box there, which scrolls inside itself so the header and transcript stay in
+view. The task reads its steers at its next model
 call, after the last call's tool results, so the model sees what the tool
 returned and then your message. Once read, the steer appears in the transcript
 at that point, marked **Sent while working**. A steer never cuts off the
@@ -450,8 +452,9 @@ running call, starts no title check and reports no session turn of its own.
   next queued message. The commit that closes the turn decides this, so the
   message starts as its own turn right after, before the messages already
   queued. A steer that reaches a turn that has already ended, while it is
-  still the conversation's latest, is queued the same way; after **Cancel
-  task** it waits in the held queue.
+  still the conversation's latest, is queued the same way, and like a returned
+  steer may take the queue past 8, up to 16; after **Cancel task** it waits in
+  the held queue.
 - **Questions.** During a clarifying question the composer answers it, and
   **Skip question and send** sets the question aside and steers in one step.
   During an approval, text is queued, and **Decline with message** declines
@@ -466,7 +469,8 @@ running call, starts no title check and reports no session turn of its own.
 - **Stop.** **Cancel task** returns unread steers to the head of the queue,
   which it then holds; a failed turn returns them the same way, and the first
   starts next. A restart starts no work: a task waiting on a question keeps
-  its steers.
+  its steers, and unread steers a start finds on a task that already finished
+  go back to the head of the queue, held until **Start**.
 
 A steer is a staged assistant input, `{action: 'steer', profile, text,
 expectedRevision, taskId, questionId?}`. `taskId` names the turn the page
@@ -479,9 +483,12 @@ a clarification, which answers it with a fixed skipped result, or Decline with
 message for an approval. Unread steers are kept in `assistant_steers`, keyed by
 the steering command's request ID. A model call takes them into the task's
 transcript in its own admission transaction, so a call the limits refuse
-leaves them unread and a replayed graph step never reads one twice. Their text
-reaches only the task's own model calls, and is stored only in the
-conversation, task and queue tables.
+leaves them unread and a replayed graph step never reads one twice. An unread
+steer's text reaches only its own task's model calls and is stored only in the
+queue store. Once the task reads it, it is a saved owner message of the
+conversation like any other, and a superseded reply a saved assistant message:
+later turns' recent context and the conversation's title checks read them.
+Steer text never appears in logs, published state or session reports.
 
 Steering follows Codex's pending input and turn close;
 `THIRD-PARTY-NOTICES.md` names the adapted parts and holds the license.

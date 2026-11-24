@@ -110,6 +110,10 @@ export class MessageQueue {
     const steers = this.steerCount(conversationId);
     return steers < LIMITS.steers && this.count(conversationId) + steers < LIMITS.queueBound;
   }
+  /** The tasks that hold unread steers, oldest first. */
+  steerTasks(): {taskId: string; conversationId: string}[] {
+    return this.database.prepare('SELECT task_id AS taskId,conversation_id AS conversationId FROM assistant_steers GROUP BY task_id ORDER BY MIN(rowid)').all() as {taskId: string; conversationId: string}[];
+  }
   /** Saves an unread steer after the task's others; the caller has checked there is room. */
   addSteer(steer: Steer): void {
     const last = (this.database.prepare('SELECT MAX(position) AS position FROM assistant_steers WHERE task_id=?').get(steer.taskId) as {position: number | null}).position ?? 0;

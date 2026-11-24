@@ -71,6 +71,31 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
       await steering.getByRole('listitem').nth(count - 1).waitFor();
       await cleared();
     };
+    const words = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
+    /** Queues eight messages and sends eight steers to the running task, the most a task and its queue hold. */
+    const fill = async (prefix: string): Promise<void> => {
+      for (let index = 1; index <= 8; index += 1) {
+        await message.fill(`${prefix} queued ${String(index)}`); await queueButton.click();
+        await queued.getByRole('listitem').nth(index - 1).waitFor(); await cleared();
+      }
+      for (const [index, word] of words.entries()) await steer(`${prefix} returned steer ${word}`, index + 1);
+    };
+    /** The queue and the steers share one bound: the page does not scroll, and the header and transcript stay in view. */
+    const bounded = async (width: number): Promise<void> => {
+      await conversation.locator('.conversation-transcript').evaluate(node => {node.scrollTop = node.scrollHeight;});
+      const measured = await page.evaluate(() => {
+        const transcript = document.querySelector('.conversation-transcript')?.getBoundingClientRect(), header = document.querySelector('.conversation-header')?.getBoundingClientRect();
+        const stack = document.querySelector('.conversation-queue-stack');
+        return {overflow: document.documentElement.scrollHeight - window.innerHeight, scrolled: window.scrollY,
+          transcript: transcript === undefined ? 0 : Math.min(transcript.bottom, window.innerHeight) - Math.max(transcript.top, 0),
+          header: header === undefined ? -1 : header.top, stack: stack === null ? 0 : stack.getBoundingClientRect().height, scrolls: stack !== null && stack.scrollHeight > stack.clientHeight};
+      });
+      process.stderr.write(`steer layout ${String(width)}: ${JSON.stringify(measured)}\n`);
+      assert.ok(measured.overflow <= 1 && measured.scrolled === 0, `the page does not scroll at ${String(width)} px`);
+      assert.ok(measured.header >= 0, 'the header stays in view');
+      assert.ok(measured.transcript >= 80, `the transcript stays in view at ${String(width)} px`);
+      assert.ok(measured.scrolls, 'the shared box scrolls inside itself');
+    };
     await conversation.getByRole('button', {name: 'Enable conversation', exact: true}).click();
     await send.waitFor();
 
@@ -185,31 +210,31 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
 
     // 7. Stop returns unread steers to the head of the queue, which may pass its limit of 8.
     const stopping = await start('Synthetic long task');
-    for (let index = 1; index <= 8; index += 1) {
-      await message.fill(`Synthetic queued ${String(index)}`); await queueButton.click();
-      await queued.getByRole('listitem').nth(index - 1).waitFor(); await cleared();
-    }
-    await steer('Synthetic returned steer one', 1);
-    await steer('Synthetic returned steer two', 2);
+    await fill('Synthetic');
+    await bounded(1280);
     await shot(page, '08-steers-and-full-queue');
     await conversation.getByRole('button', {name: 'Cancel task', exact: true}).click();
     await conversation.getByText('Task cancelled', {exact: true}).waitFor();
     stopping.resolve(end('Synthetic reply after the stop'));
-    await queued.getByText('10, over the limit of 8', {exact: true}).waitFor();
+    await queued.getByText('16, over the limit of 8', {exact: true}).waitFor();
     await queued.getByText('The queue is held because you stopped the task. Nothing in it starts until you resume it.', {exact: true}).waitFor();
     await queued.getByText('Your unread messages came back from the stopped task. Queue takes a new message once fewer than 8 wait.', {exact: true}).waitFor();
     const order = async (): Promise<string[]> => (await queued.locator('.conversation-queue-text').allTextContents()).map(text => text.replace(/^Queued message \d+: /, ''));
-    assert.deepEqual((await order()).slice(0, 3), ['Synthetic returned steer one', 'Synthetic returned steer two', 'Synthetic queued 1'], 'the steers come back first');
+    assert.deepEqual((await order()).slice(7, 9), ['Synthetic returned steer eight', 'Synthetic queued 1'], 'the steers come back first, in order');
+    assert.deepEqual((await order()).slice(0, 2), ['Synthetic returned steer one', 'Synthetic returned steer two']);
     await message.fill('Synthetic refused while over the limit');
     assert.equal(await queueButton.isDisabled(), true, 'Queue waits until the queue is below its limit');
     await conversation.getByText('The queue is full. Withdraw a message or wait for one to start.', {exact: true}).waitFor();
     await queued.scrollIntoViewIfNeeded();
     await shot(page, '09-stop-returns-steers-past-limit');
-    // Withdraw the eight queued messages, so the two returned steers run next.
-    for (let left = 10; left > 2; left -= 1) {
-      await queued.getByRole('button', {name: 'Withdraw queued message 3', exact: true}).click();
+    // Withdraw the eight queued messages: at 8 Queue still waits. Then withdraw six steers, so two run next.
+    const withdraw = async (position: number, left: number): Promise<void> => {
+      await queued.getByRole('button', {name: `Withdraw queued message ${String(position)}`, exact: true}).click();
       await page.waitForFunction(count => document.querySelectorAll('.conversation-queue .conversation-queue-text').length === count, left - 1);
-    }
+    };
+    for (let left = 16; left > 8; left -= 1) await withdraw(9, left);
+    assert.equal(await queueButton.isDisabled(), true, 'at the limit Queue still waits');
+    for (let left = 8; left > 2; left -= 1) await withdraw(3, left);
     assert.equal(await queueButton.isDisabled(), false, 'below the limit Queue takes a message again');
     await message.fill('');
     await queued.getByRole('button', {name: 'Resume queue', exact: true}).click();
@@ -266,6 +291,19 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
     phoneSkipped.resolve(end('Synthetic phone answer'));
     await completed();
     await shot(page, '13-phone-completed');
+    // A full queue and a full set of steers at phone width share the same bound.
+    const crowded = await start('Synthetic crowded phone request');
+    await fill('Synthetic phone');
+    await bounded(390);
+    await shot(page, '14-phone-queue-and-steers');
+    await conversation.getByRole('button', {name: 'Cancel task', exact: true}).click();
+    await conversation.getByText('Task cancelled', {exact: true}).waitFor();
+    crowded.resolve(end('Synthetic reply after the stop'));
+    for (let left = 16; left > 0; left -= 1) {
+      await queued.getByRole('button', {name: 'Withdraw queued message 1', exact: true}).click();
+      if (left > 1) await page.waitForFunction(count => document.querySelectorAll('.conversation-queue .conversation-queue-text').length === count, left - 1);
+    }
+    await queued.waitFor({state: 'detached'});
     assert.deepEqual(errors, []);
     assert.equal(JSON.stringify(world.logs).includes('Synthetic steer'), false, 'no steer text reaches the logs');
     process.stdout.write('Conversation steer: steer during tool use, forced call, late steer as the next turn, Skip question and send, Decline with message, delegation wait, Stop returning steers past the queue limit, restart and the phone layout passed.\n');

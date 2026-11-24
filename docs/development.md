@@ -3414,18 +3414,23 @@ calls left, with two calls left as the negative control; Stop returning
 steers past the queue's limit, with Queue refused until fewer than 8 wait and
 `assistant-state/2.3` published; the steer and queue bounds; a forced call the
 limits refuse; stale turns, with a revision from before the task's own steps
-accepted; a restart that keeps a steer; the `conversation-1` upgrade, with a
+accepted; a restart that keeps a steer; a start that closes a task with an
+unread steer, and one that finds unread steers on a finished task, each holding
+the queue with `restart`; the usage-units bound of the two-call rule; the
+`conversation-1` upgrade, with a
 `synthetic-1` task as the negative control; and a delegation wait, a hand-off
 waiting for its slot included. The child process exits during the call that
 read a steer, and the restart and cancel show it read once and returned
-nowhere. After the root build run
+nowhere; it also exits after a steered final answer was saved, and the resume
+replays that model step with one forced call and the steer read once. After the root build run
 `node --test modules/companions/dist/tests/assistant-steer.test.js modules/companions/dist/tests/coding-slots.test.js modules/companions/dist/tests/conversation-queue.test.js modules/companions/dist/tests/assistant-queue.test.js packages/event-contracts/tests/steered-queue.test.mjs`
 and `node apps/runtime/dashboard/tests/conversation-steer.browser.ts`, which
 `npm run test:companions:browser` also runs: a steer during tool use, a forced
 call, a late steer held on the network until its turn ended, Skip question and
 send, Decline with message, a steer during a delegation wait with a fake worker
 on the real gateway, Stop returning steers past the limit, a restart, and the
-phone layout at 390 px. The queue and coding delegation journeys follow Send's
+phone layout at 390 px. With 8 queued messages and 8 steers at 1280x900 and
+390x844, the page does not scroll and the header and transcript stay in view. The queue and coding delegation journeys follow Send's
 new steering. They use synthetic data and gated providers only. Existing CI
 discovery runs them.
 

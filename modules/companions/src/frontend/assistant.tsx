@@ -96,7 +96,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
     if (state === undefined) return;
     // Command retains this identity before staging. The draft remains on refusals and uncertain replies.
     const requestId = crypto.randomUUID();
-    // A steer names the turn it expects, so one that reaches a turn already ended is refused instead of joining another.
+    // A steer names the turn it expects: one that reaches that turn after it ended, while it is still the latest, is
+    // queued as the next message, and one aimed at a turn a newer turn followed is refused instead of joining another.
     const input = {action, profile, text, expectedRevision: state.revision,
       ...(action === 'answer' && task !== undefined ? {taskId: task.taskId, questionId: task.questionId} : {}),
       ...(action === 'steer' && task !== undefined ? {taskId: task.taskId, ...(questionId === undefined ? {} : {questionId})} : {})};
@@ -152,9 +153,13 @@ function TaskControls({context, command, state, profile, live, question, coding,
         <button type="button" className="secondary" onClick={() => {control('cancel', task.taskId);}}>Cancel task</button>
       </div>}
     </fieldset>
-    {queue !== undefined && state !== undefined && <QueuedMessages context={context} command={command} queue={queue} profile={profile}
-      waiting={open} locked={locked} enabled={enabled} onLost={(text, reason) => {setLost({text, reason});}}/>}
-    {queue !== undefined && <PendingSteers queue={queue} waitsOnWorker={delegated}/>}
+    {/* The queued messages and the unread steers share one bounded, scrolling box, so together they never push the
+        transcript out of view (Hub #2031). */}
+    {queue !== undefined && (queue.messages.length > 0 || queue.steers.length > 0) && <div className="conversation-queue-stack">
+      {state !== undefined && <QueuedMessages context={context} command={command} queue={queue} profile={profile}
+        waiting={open} locked={locked} enabled={enabled} onLost={(text, reason) => {setLost({text, reason});}}/>}
+      <PendingSteers queue={queue} waitsOnWorker={delegated}/>
+    </div>}
     {lost !== undefined && <div className="conversation-queue-lost" role="status">
       <p>{lost.reason === 'changed' ? 'The message was changed on another page before your edit was saved, so your edit was not saved.'
         : 'The message started before your edit was saved.'} Your edited text:</p>

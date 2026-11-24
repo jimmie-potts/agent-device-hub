@@ -334,6 +334,14 @@ void test('a steer becomes a queued message when fewer than two model calls rema
   rewrite(w.database(), taskId, {modelCalls: 1, activeMs: LIMITS.activeMs - LIMITS.modelMs});
   assert.equal((await w.steer('Synthetic steer with no time left')).result.status, 'accepted');
   assert.deepEqual(texts(await w.queued()), ['Synthetic steer with one call left', 'Synthetic steer with no time left']);
+  // So do the usage units, at the least a call reserves: room for two calls keeps the steer, room for one queues it.
+  const least = LIMITS.overheadUnits + LIMITS.outputUnits;
+  rewrite(w.database(), taskId, {activeMs: 0, reservedUnits: LIMITS.units - 2 * least});
+  assert.equal((await w.steer('Synthetic steer with units for two calls')).result.status, 'accepted');
+  rewrite(w.database(), taskId, {reservedUnits: LIMITS.units - least});
+  assert.equal((await w.steer('Synthetic steer with units for one call')).result.status, 'accepted');
+  assert.deepEqual(steerTexts(await w.queued()), ['Synthetic steer with two calls left', 'Synthetic steer with units for two calls']);
+  assert.deepEqual(texts(await w.queued()), ['Synthetic steer with one call left', 'Synthetic steer with no time left', 'Synthetic steer with units for one call']);
 });
 
 void test('Stop returns unread steers to the head of the queue, which may pass its limit; Queue waits until it is below the limit again', async context => {
@@ -502,6 +510,69 @@ void test('a task saved under the graph before steering is upgraded at the start
   await w.restart();
   assert.deepEqual([w.task()?.status, w.task()?.code], ['paused', 'unavailable']);
   assert.equal(records(w.database()).find(entry => entry.id === old)?.graphVersion, 'synthetic-1');
+});
+
+void test('a start that closes a task with unread steers returns them to the head of the queue and holds it with restart; it starts nothing', async context => {
+  const provider = gated(), w = await world(context, {provider});
+  await w.control('enable');
+  await w.send('Synthetic request that finishes');
+  await settle(() => provider.pending.length === 1);
+  provider.next().resolve(reply('Synthetic finished answer'));
+  await settle(() => w.task()?.status === 'succeeded');
+  // The store as a process exit inside the close leaves it: the graph finished, but the close that ends the task and
+  // returns its unread steer rolled back.
+  const taskId = w.task()?.taskId ?? assert.fail(), conversationId = w.task()?.conversationId ?? assert.fail(), database = w.database();
+  database.prepare("UPDATE assistant_tasks SET status='running',record=json_set(record,'$.status','running') WHERE id=?").run(taskId);
+  database.prepare('INSERT INTO assistant_steers VALUES (?,?,?,?,?,?,?,?)').run('steer-at-close', taskId, conversationId, 'bunny', 1, 'Synthetic steer the close returns', 0,
+    '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01');
+  await w.restart();
+  await quiet();
+  assert.equal(w.task()?.status, 'succeeded', 'the start closed the task');
+  const document = await w.queued();
+  assert.deepEqual([texts(document), document.held?.reason, document.steers], [['Synthetic steer the close returns'], 'restart', []]);
+  assert.equal(provider.calls(), 1, 'the start ran nothing');
+  assert.equal((await w.control('resume-queue', {profile: 'bunny'})).status, 'accepted');
+  await settle(() => provider.pending.length === 1);
+  assert.equal(ownerText(provider.next().input), 'Synthetic steer the close returns');
+});
+
+void test('unread steers a start finds on a finished task go back to the head of the queue, held, and no longer fill the next task\'s room', async context => {
+  const provider = gated(), w = await world(context, {provider});
+  await w.control('enable');
+  await w.send('Synthetic request that finishes');
+  await settle(() => provider.pending.length === 1);
+  provider.next().resolve(reply('Synthetic finished answer'));
+  await settle(() => w.task()?.status === 'succeeded');
+  // A return to an earlier release that ignores steers can leave them on a task it cancelled.
+  const taskId = w.task()?.taskId ?? assert.fail(), conversationId = w.task()?.conversationId ?? assert.fail(), database = w.database();
+  for (let index = 1; index <= LIMITS.steers; index += 1) {
+    database.prepare('INSERT INTO assistant_steers VALUES (?,?,?,?,?,?,?,?)').run(`left-steer-${String(index)}`, taskId, conversationId, 'bunny', index, `Synthetic left steer ${String(index)}`, 0,
+      '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01');
+  }
+  await w.restart();
+  await quiet();
+  const document = await w.queued();
+  assert.deepEqual(texts(document), Array.from({length: LIMITS.steers}, (_, index) => `Synthetic left steer ${String(index + 1)}`));
+  assert.deepEqual([document.held?.reason, document.steers], ['restart', []]);
+  assert.equal(provider.calls(), 1, 'the start ran nothing');
+  assert.equal((await w.send('Synthetic next request')).status, 'accepted');
+  await settle(() => provider.pending.length === 1);
+  assert.equal((await w.steer('Synthetic steer with room')).result.status, 'accepted', 'the left steers no longer count as the new task\'s');
+});
+
+void test('a crash after a steered final answer was saved replays its model step: one forced call, one superseded reply, the steer read once', () => {
+  const child = join(import.meta.dirname, 'assistant-steer-child.js');
+  const run = (dir: string, mode: string) => spawnSync(process.execPath, [child, dir, mode], {encoding: 'utf8', timeout: 60_000});
+  const dir = join(tmpdir(), `assistant-steer-replay-${randomUUID()}`);
+  try {
+    const crashed = run(dir, 'replay-crash');
+    assert.equal(crashed.status, 23, crashed.stderr);
+    assert.deepEqual(JSON.parse(crashed.stdout), {steers: 1, transcriptSteers: 0, messages: 0, superseded: 0, spoken: []}, 'the answer was saved before the step that reads it');
+    const resumed = run(dir, 'replay-resume');
+    assert.equal(resumed.status, 0, resumed.stderr);
+    assert.deepEqual(JSON.parse(resumed.stdout), {status: 'succeeded', steers: 0, transcriptSteers: 1, messages: 1, superseded: 1, spoken: ['Synthetic process final answer'],
+      queued: 0, calls: 1}, 'the replayed step forced one call that read the steer once');
+  } finally {spawnSync('rm', ['-rf', dir]);}
 });
 
 void test('a process exit during the call that read a steer leaves the steer read once and returns nothing at a cancel', () => {
