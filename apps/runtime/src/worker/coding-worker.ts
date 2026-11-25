@@ -873,7 +873,8 @@ export class CodingWorker {
     if (clients.length === 0) return;
     const identity = (cwd: string) => checkoutIdentity(cwd, (path, args) => this.#git(path, args, {trim: false, timeoutMs: 15_000}));
     const original = await identity(worktree).catch(() => undefined);
-    if (original === undefined || endpoint !== this.#endpoint) return;
+    if (original === undefined || endpoint !== this.#endpoint ||
+      (adapter.id === 'codex' && (proof === undefined || !sameCheckout(original, proof.worktree.identity)))) return;
     const build = async (client: CodingNativeClientKind): Promise<NativeTerminalPlan | undefined> => {
       const current = await identity(worktree).catch(() => undefined);
       if (current === undefined || !sameCheckout(original, current) || endpoint !== this.#endpoint) return undefined;
@@ -890,23 +891,23 @@ export class CodingWorker {
         const target = await copyWorktree(proof.worktree, successor, proof.protectedRoot, home, proof.base, git);
         if (target === undefined) return undefined;
         const cwd = target.identity.root, profile = `bunny-native-${randomUUID()}`, env = codexEnvironment(process.env, home);
-        if (!await verifyClaudeWriterBoundary(cwd, worktree) ||
-          !await verifyCodexWriterBoundary(codex.executable, cwd, home, worktree, profile, env) ||
-          !await verifyCodexNativeResume(codex.executable, cwd, worktree, home, profile, sessionId, env)) {
+        if (!await verifyClaudeWriterBoundary(cwd, original.root) ||
+          !await verifyCodexWriterBoundary(codex.executable, cwd, home, original.root, profile, env) ||
+          !await verifyCodexNativeResume(codex.executable, cwd, original.root, home, profile, sessionId, env)) {
           await rm(cwd, {recursive: true, force: true}).catch(() => {});
           return undefined;
         }
-        const args = ['resume', '--no-daemon', '--cd', cwd, ...codexArguments(cwd, profile, home, worktree), sessionId];
-        return {executable: MAC_WRITER_SANDBOX, cwd, env, args: claudeWriterArguments(worktree, codex.executable, args, [proof.worktree.identity.common])};
+        const args = ['resume', '--no-daemon', '--cd', cwd, ...codexArguments(cwd, profile, home, original.root), sessionId];
+        return {executable: MAC_WRITER_SANDBOX, cwd, env, args: claudeWriterArguments(original.root, codex.executable, args, [proof.worktree.identity.common])};
       }
       const {claude} = this.configuration;
-      if (process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined || await projectSettingsRefusal(worktree) !== undefined) return undefined;
+      if (process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined || await projectSettingsRefusal(original.root) !== undefined) return undefined;
       const env = harnessEnvironment(process.env);
       if (client === 'claude-desktop') {
         if (!supportsClaudeDesktop(readiness.version)) return undefined;
-        return {executable: claude.executable, cwd: worktree, args: ['--desktop', '--resume', sessionId], env};
+        return {executable: claude.executable, cwd: original.root, args: ['--desktop', '--resume', sessionId], env};
       }
-      return {executable: claude.executable, cwd: worktree, env, args: ['--resume', sessionId, '--restricted', '--permission-mode', claude.permissionMode,
+      return {executable: claude.executable, cwd: original.root, env, args: ['--resume', sessionId, '--restricted', '--permission-mode', claude.permissionMode,
         ...(claude.allowedTools.length === 0 ? [] : ['--allowedTools', ...claude.allowedTools]), '--disallowedTools', ...DENIED_TOOLS,
         '--strict-mcp-config', '--settings', JSON.stringify({env: Object.fromEntries(BLANKED_SWITCHES.map(name => [name, '']))})]};
     };

@@ -4,8 +4,11 @@
 import assert from 'node:assert/strict';
 import {execFile, execFileSync} from 'node:child_process';
 import {cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile} from 'node:fs/promises';
+import {once} from 'node:events';
+import {createConnection} from 'node:net';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
+import {createInterface} from 'node:readline';
 import {test, type TestContext} from 'node:test';
 import {promisify} from 'node:util';
 import type {CodingAttemptContext, CodingNativeClient, CodingProgress, CodingWork, CodingWorkerProgress} from '@jimmie-potts/event-contracts/v2/coding';
@@ -27,8 +30,8 @@ async function until(check: () => boolean, seen: () => unknown = () => undefined
   for (let i = 0; i < 1000; i += 1) {if (check()) return; await new Promise(resolve => setTimeout(resolve, 10));}
   assert.ok(check(), `expected progress arrived; seen ${JSON.stringify(seen())}`);
 }
-async function repository(t: TestContext): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'coding-worker-'));
+async function repository(t: TestContext, temporary = tmpdir()): Promise<string> {
+  const root = await mkdtemp(join(temporary, 'coding-worker-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   const bare = join(root, 'origin.git'), work = join(root, 'repo');
   execFileSync('git', ['init', '--bare', '--quiet', '-b', 'main', bare]);
@@ -734,3 +737,92 @@ for (const committed of [false, true]) {
       [{operationId: 'clean', clients: ['terminal'], state: 'available'}]);
   });
 }
+
+for (const alias of [false, true]) void test(`a saved Codex launch uses the verified checkout through the Mac repository path (alias: ${String(alias)})`,
+  {skip: process.platform !== 'darwin', timeout: 30_000}, async t => {
+    const standalone = '/opt/homebrew/bin/codex';
+    if (await realpath(standalone).catch(() => undefined) === undefined) {t.skip('standalone Codex unavailable'); return;}
+    const canonical = await repository(t, '/private/tmp'), root = dirname(canonical), edge = fakeEdge();
+    const repo = alias ? canonical.slice('/private'.length) : canonical;
+    assert.equal(await realpath(repo), canonical);
+    const executable = join(root, 'native-codex'), home = join(root, 'profile'), socketPath = join(root, 'native.sock');
+    const sessionId = '7eedd100-0000-4000-8000-000000000001';
+    await mkdir(home, {mode: 0o700});
+    const config = {sqlite_home: join(home, 'sqlite'), log_dir: join(home, 'log'), mcp_servers: {}, plugins: {}, hooks: null,
+      allow_login_shell: false, cli_auth_credentials_store: 'file', forced_login_method: 'chatgpt', model_provider: 'openai',
+      chatgpt_base_url: 'https://chatgpt.com/backend-api/', openai_base_url: 'https://api.openai.com/v1',
+      otel: {exporter: 'none', trace_exporter: 'none', metrics_exporter: 'none', log_user_prompt: false},
+      features: {hooks: false, apps: false, plugins: false, shell_snapshot: false}};
+    await writeFile(executable, `#!${process.execPath}
+const args=process.argv.slice(2);
+if(args[0]==='sandbox') process.exit(require('node:child_process').spawnSync(${JSON.stringify(standalone)},args,{stdio:'inherit'}).status ?? 8);
+if(args[0]==='resume') {
+  console.log(JSON.stringify({cwd:process.cwd(), threadId:args.at(-1), selectedCwd:args[args.indexOf('--cd')+1], home:process.env.CODEX_HOME}));
+  process.exit(0);
+}
+if(args[0]!=='app-server') process.exit(9);
+require('node:readline').createInterface({input:process.stdin}).on('line', line => {
+  const {id,method,params}=JSON.parse(line);
+  if(id===undefined) return;
+  let result={};
+  if(method==='config/read') result={config:${JSON.stringify(config)}};
+  if(method==='account/read') result={requiresOpenaiAuth:true,account:{type:'chatgpt',planType:'plus'}};
+  if(method==='thread/resume') {
+    if(params.threadId!==${JSON.stringify(sessionId)}) process.exit(10);
+    result={thread:{id:params.threadId,cwd:params.cwd},cwd:params.cwd,runtimeWorkspaceRoots:[params.cwd],modelProvider:'openai',
+      approvalPolicy:'never',activePermissionProfile:{id:params.permissions},sandbox:{type:'workspaceWrite',networkAccess:false,writableRoots:[params.cwd]}};
+  } else if(method==='turn/start') process.exit(11);
+  console.log(JSON.stringify({id,result}));
+});
+`, {mode: 0o700});
+    let original: string | undefined, releaseSibling = () => {};
+    const sibling = new Promise<void>(resolve => {releaseSibling = resolve;});
+    const claude: Harness = {
+      async start(_args, _cwd, _brief, _child, observe) {
+        observe?.(JSON.stringify({type: 'system', subtype: 'init', apiKeySource: 'none', session_id: 'sibling-session'}));
+        await sibling;
+        return {code: 0, signal: null, truncated: false};
+      },
+    };
+    const codex: CodingAdapter = {
+      id: 'codex', capabilities: {steering: 'unsupported', resume: 'saved-session', review: true},
+      readiness: () => Promise.resolve({installed: 'yes', signedIn: 'yes', version: '0.163.0', plan: 'plus'}),
+      async run({worktree, session, continuationRoot}) {
+        original = await realpath(worktree);
+        await session(sessionId);
+        return {sessionId, writerStopped: true, writerFence: {root: continuationRoot ?? assert.fail('reserved root'), home},
+          structured: {outcome: 'tested-candidate', summary: 'Synthetic saved result.', checks: [], findings: [], limitations: []}};
+      },
+    };
+    const parsed = parseConfiguration({...configuration(repo), schema: 'coding-worker/1.2', nativeClients: {socket: socketPath, harnesses: ['codex']}});
+    const worker = new CodingWorker(parsed, 'fake-token', claude, undefined, edge.connect, undefined, undefined, undefined, [codex]);
+    // The fixture produces source evidence locally. The real prepare and launch paths then use the fake CLI.
+    parsed.codex = {executable, home};
+    await worker.start();
+    t.after(async () => {releaseSibling(); await worker.stop();});
+    const start = (operationId: string, harness: 'codex' | 'claude-code') => edge.respond(command({action: 'start', requestId: operationId,
+      operationId, taskId: operationId, companion: 'bunny', harness, repository: 'agent-device-hub', brief: 'Synthetic saved attempt.',
+      bounds: {wallClockMs: 60_000, maxTurns: 4, budgetUsd: 1}}));
+    assert.deepEqual(start('sibling', 'claude-code'), {status: 'accepted'});
+    assert.deepEqual(start('native', 'codex'), {status: 'accepted'});
+    await until(() => edge.progress.some(row => row.operationId === 'sibling' && row.sessionId === 'sibling-session') &&
+      edge.progress.some(row => row.operationId === 'native' && row.status === 'completed'));
+    assert.equal(edge.nativeClients.find(row => row.operationId === 'native')?.state, 'available');
+
+    const socket = createConnection(socketPath);
+    t.after(() => {socket.destroy();});
+    const replies = createInterface({input: socket})[Symbol.asyncIterator]();
+    await once(socket, 'connect');
+    socket.write('native\n');
+    assert.equal((await replies.next()).value, 'waiting');
+    const prepare = command({action: 'prepare-native-client', client: 'terminal', requestId: 'prepare-native', operationId: 'native'});
+    assert.deepEqual(await Promise.resolve(edge.respond({...prepare, expiresat: new Date(Date.now() + 25000).toISOString()})), {status: 'accepted'});
+    const launch = command({action: 'open-native-terminal', requestId: 'launch-native', operationId: 'native', intentId: 'prepare-native'});
+    assert.deepEqual(await Promise.resolve(edge.respond(launch)), {status: 'accepted'});
+    const plan = JSON.parse((await replies.next()).value ?? assert.fail('native launch plan')) as {executable: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv};
+    assert.notEqual(plan.cwd, original);
+    assert.equal(await realpath(plan.cwd), plan.cwd);
+    const {stdout} = await promisify(execFile)(plan.executable, plan.args, {cwd: plan.cwd, env: plan.env, timeout: 5000});
+    assert.deepEqual(JSON.parse(stdout), {cwd: plan.cwd, threadId: sessionId, selectedCwd: plan.cwd, home});
+    assert.equal(edge.progress.some(row => row.operationId === 'sibling' && row.status !== 'started'), false);
+  });
