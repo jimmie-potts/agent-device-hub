@@ -478,7 +478,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       if (stopped === true) {
         const confined = dispatched && evidence.uncertain !== true && separated && protectedRoot !== undefined &&
           options.transport === undefined && await verifyCodexWriterBoundary(configuration.executable, cwd, home, protectedRoot, profile, command.env);
-        return {...evidence, writerStopped: true, ...(confined ? {writerHome: home} : {})};
+        return {...evidence, writerStopped: true, ...(confined && protectedRoot !== undefined ? {writerFence: {root: protectedRoot, home}} : {})};
       }
       return stopped === false && dispatched ? {...evidence, uncertain: true} : evidence;
     },

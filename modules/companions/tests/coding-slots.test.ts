@@ -879,53 +879,55 @@ void test('an uncapped attempt uses observed setup deadlines without timing out 
 });
 
 
-void test('an owner-approved Auto job routes from exhausted Claude to Codex and explicitly continues on the same job', {timeout: 30_000}, async context => {
+for (const [origin, destination] of [['codex', 'claude-code'], ['claude-code', 'codex']] as const)
+void test(`an owner-approved Auto job runs on ${origin} and explicitly continues on ${destination}`, {timeout: 30_000}, async context => {
   const brief = 'Exact owner-approved brief. ' + 'x'.repeat(4096 - 'Exact owner-approved brief. '.length);
   const w = await world(context, {provider: delegating('bunny', brief)});
   const claude: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: '2.0',
     limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
   const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus'};
   const exhausted: CodingHarnessReadiness = {...claude, limits: [{window: 'primary', status: 'rejected', resetsAtMs: null, utilization: null}]};
+  const initialSession = `native-${origin}`, resumedSession = `native-${destination}`;
   assert.equal((await w.control('enable')).status, 'accepted');
-  assert.equal((await w.enable('uncapped', [exhausted, codex])).status, 'accepted');
+  assert.equal((await w.enable('uncapped', [origin === 'codex' ? exhausted : claude, codex])).status, 'accepted');
   assert.equal((await w.send('bunny', 'Synthetic partially edited coding task')).status, 'accepted');
   await w.approved('bunny');
   await settle(() => w.starts().length === 1);
   const initial = w.starts()[0]?.data;
-  assert.ok(initial?.action === 'start' && initial.harness === 'codex');
+  assert.ok(initial?.action === 'start' && initial.harness === origin);
   const {operationId} = initial, jobId = `${operationId}-job`;
-  assert.match((await w.jobDetail(jobId)).attempts[0]?.selectionReason ?? '', /Claude Code quota exhausted \(reset unknown\)/);
-  assert.equal((await w.continueJob(jobId, operationId, 'claude-code')).status, 'rejected');
-  await w.progress({operationId, status: 'started', setup: 'ready', harness: 'codex', sessionId: 'native-codex'}, '2.3');
-  await settle(() => w.coding().runs?.some(run => run.sessionId === 'native-codex') === true);
+  if (origin === 'codex') assert.match((await w.jobDetail(jobId)).attempts[0]?.selectionReason ?? '', /Claude Code quota exhausted \(reset unknown\)/);
+  assert.equal((await w.continueJob(jobId, operationId, destination)).status, 'rejected');
+  await w.progress({operationId, status: 'started', setup: 'ready', harness: origin, sessionId: initialSession}, '2.3');
+  await settle(() => w.coding().runs?.some(run => run.sessionId === initialSession) === true);
   assert.equal((await w.stop(jobId, operationId)).status, 'accepted');
   const head = 'a'.repeat(40);
   const stopped = {...result('Synthetic partial work.'), head, changedFiles: ['partial.txt', '/synthetic/absolute', 'C:/synthetic/absolute'], checks: [{name: 'git diff', status: 'passed'}]};
   const handoffToken = randomUUID();
-  await w.progress({operationId, status: 'cancelled', reason: 'cancelled', harness: 'codex', sessionId: 'native-codex', result: stopped, handoffToken}, '2.4');
+  await w.progress({operationId, status: 'cancelled', reason: 'cancelled', harness: origin, sessionId: initialSession, result: stopped, handoffToken}, '2.4');
   await w.waitMessages('bunny', /Synthetic partial work/);
   assert.equal((await w.enable('uncapped', [claude, codex])).status, 'accepted');
-  assert.deepEqual((await w.jobDetail(jobId)).continuation, {fromOperationId: operationId, harness: 'claude-code', head, changedFiles: ['partial.txt']});
+  assert.deepEqual((await w.jobDetail(jobId)).continuation, {fromOperationId: operationId, harness: destination, head, changedFiles: ['partial.txt']});
   const requestId = randomUUID();
-  assert.equal((await w.continueJob(jobId, operationId, 'claude-code', requestId)).status, 'accepted');
-  assert.equal((await w.continueJob(jobId, operationId, 'claude-code', requestId)).status, 'accepted');
+  assert.equal((await w.continueJob(jobId, operationId, destination, requestId)).status, 'accepted');
+  assert.equal((await w.continueJob(jobId, operationId, destination, requestId)).status, 'accepted');
   await settle(() => w.starts().length === 2);
   const resumed = w.starts()[1]?.data;
-  assert.ok(resumed?.action === 'start' && resumed.harness === 'claude-code');
+  assert.ok(resumed?.action === 'start' && resumed.harness === destination);
   assert.deepEqual(resumed.continuation, {fromOperationId: operationId, token: handoffToken});
   assert.equal(resumed.brief, brief);
-  assert.doesNotMatch(resumed.brief, /native-codex|Synthetic partial work/);
+  assert.doesNotMatch(resumed.brief, /native-|Synthetic partial work/);
   assert.equal((await w.jobDetail(jobId)).activeOperationId, resumed.operationId);
-  assert.equal((await w.continueJob(jobId, operationId, 'claude-code')).status, 'rejected');
-  await w.progress({operationId: resumed.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: 'native-claude'}, '2.3');
-  await w.progress({operationId: resumed.operationId, status: 'completed', harness: 'claude-code',
+  assert.equal((await w.continueJob(jobId, operationId, destination)).status, 'rejected');
+  await w.progress({operationId: resumed.operationId, status: 'started', setup: 'ready', harness: destination, sessionId: resumedSession}, '2.3');
+  await w.progress({operationId: resumed.operationId, status: 'completed', harness: destination,
     result: {...result('Synthetic continued work.'), head, changedFiles: ['partial.txt'], checks: [{name: 'unit test', status: 'passed'}]}}, '2.3');
   await w.waitMessages('bunny', /Synthetic continued work/);
   const detail = await w.jobDetail(jobId);
   assert.equal(detail.activeOperationId, null);
   assert.deepEqual(detail.attempts.map(attempt => [attempt.operationId, attempt.harness, attempt.sessionId, attempt.status, attempt.result?.checks[0]?.name]), [
-    [operationId, 'codex', 'native-codex', 'cancelled', 'git diff'],
-    [resumed.operationId, 'claude-code', 'native-claude', 'completed', 'unit test'],
+    [operationId, origin, initialSession, 'cancelled', 'git diff'],
+    [resumed.operationId, destination, resumedSession, 'completed', 'unit test'],
   ]);
   assert.doesNotMatch(JSON.stringify(detail), new RegExp(handoffToken));
 });

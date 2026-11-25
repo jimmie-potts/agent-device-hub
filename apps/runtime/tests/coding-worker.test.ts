@@ -532,8 +532,12 @@ void test('uncapped jobs share only conflicting Git setup and isolate a cancelle
 });
 
 
-for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'restart', 'staged-new', 'untracked', 'changed-during-copy', 'root-replaced-live', 'root-replaced', 'gitdir-replaced', 'gitdir-retargeted'] as const) {
-  void test(`cross-harness handoff verifies writer and exact worktree (${scenario})`, {timeout: 30_000}, async t => {
+const codexHandoffCases = ['continue', 'changed', 'uncertain', 'no-confinement', 'restart', 'staged-new', 'untracked', 'changed-during-copy', 'root-replaced-live', 'root-replaced', 'gitdir-replaced', 'gitdir-retargeted'] as const;
+const claudeHandoffCases = ['continue', 'uncertain', 'no-confinement', 'restart', 'staged-new', 'changed-during-copy'] as const;
+for (const [origin, destination, scenarios] of [
+  ['codex', 'claude-code', codexHandoffCases], ['claude-code', 'codex', claudeHandoffCases],
+] as const) for (const scenario of scenarios) {
+  void test(`cross-harness handoff from ${origin} verifies writer and exact worktree (${scenario})`, {timeout: 30_000}, async t => {
     const repo = await repository(t), edge = fakeEdge();
     const base = git(repo, 'rev-parse', 'HEAD');
     const newFile = 'new-file.test.ts';
@@ -541,50 +545,65 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'r
     const writerHome = join(dirname(repo), 'isolated-writer-home');
     await mkdir(writerHome);
     let priorWorktree: string | undefined, resumed = 0, edited = false;
+    const initialSession = `${origin}-partial-id`, resumedSession = `${destination}-continuation-id`;
+    const partialReport = {outcome: 'incomplete', summary: 'Synthetic partial result.', checks: [{name: 'git diff', status: 'passed'}], findings: [], limitations: []};
+    const completeReport = {outcome: 'tested-candidate', summary: 'Synthetic completion.', checks: [{name: 'unit test', status: 'passed'}], findings: [], limitations: []};
+    const partial = async (worktree: string, signal: AbortSignal, session: () => void | Promise<void>) => {
+      priorWorktree = worktree;
+      await writeFile(join(worktree, 'README.md'), 'partially edited\n');
+      if (scenario === 'staged-new' || scenario === 'untracked') {
+        await writeFile(join(worktree, newFile), 'export const synthetic = true;\n');
+        if (scenario === 'staged-new') git(worktree, 'add', '--', newFile);
+      }
+      await session();
+      const stopped = new Promise<void>(resolve => {if (signal.aborted) resolve(); else signal.addEventListener('abort', () => {resolve();}, {once: true});});
+      edited = true;
+      await stopped;
+    };
+    const complete = async (worktree: string, brief: string) => {
+      resumed += 1;
+      const original = priorWorktree ?? assert.fail('source checkout');
+      assert.notEqual(worktree, await realpath(original));
+      assert.equal(git(worktree, 'rev-parse', 'HEAD'), base);
+      assert.notEqual(git(worktree, 'rev-parse', '--absolute-git-dir'), git(original, 'rev-parse', '--absolute-git-dir'));
+      assert.equal(git(worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir'), join(worktree, '.git'));
+      assert.equal(await readFile(join(worktree, 'README.md'), 'utf8'), 'partially edited\n');
+      assert.ok(brief.endsWith(fullBrief));
+      assert.match(brief.slice(0, -fullBrief.length), /git diff/);
+      assert.ok(!brief.includes(initialSession));
+      if (scenario === 'staged-new') {
+        assert.equal(await readFile(join(worktree, newFile), 'utf8'), 'export const synthetic = true;\n');
+        assert.equal(git(worktree, 'diff', '--cached', '--name-only'), newFile);
+      }
+      await writeFile(join(original, 'README.md'), 'an old watcher wrote only here\n');
+      assert.equal(await readFile(join(worktree, 'README.md'), 'utf8'), 'partially edited\n');
+      await writeFile(join(worktree, 'README.md'), 'finished\n');
+    };
     const codex: CodingAdapter = {
       id: 'codex', capabilities: {steering: 'unsupported', resume: 'saved-session', review: true},
       readiness: () => Promise.resolve({installed: 'yes', signedIn: 'yes', version: 'synthetic', plan: 'plus'}),
-      async run({worktree, session, signal}) {
-        priorWorktree = worktree;
-        await writeFile(join(worktree, 'README.md'), 'partially edited\n');
-        if (scenario === 'staged-new' || scenario === 'untracked') {
-          await writeFile(join(worktree, newFile), 'export const synthetic = true;\n');
-          if (scenario === 'staged-new') git(worktree, 'add', '--', newFile);
+      async run({worktree, session, signal, brief, continuationRoot}) {
+        if (origin !== 'codex') {
+          await complete(worktree, brief);
+          await session(resumedSession);
+          return {writerStopped: true, structured: completeReport};
         }
-        await session('codex-partial-id');
-        const stopped = new Promise<void>(resolve => {if (signal.aborted) resolve(); else signal.addEventListener('abort', () => {resolve();}, {once: true});});
-        edited = true;
-        await stopped;
-        return {reason: 'cancelled', ...(scenario === 'uncertain' ? {uncertain: true} : scenario === 'no-confinement' ? {writerStopped: true} : {writerStopped: true, writerHome}),
-          structured: {outcome: 'tested-candidate', summary: 'Synthetic partial result.',
-            checks: [{name: 'git diff', status: 'passed'}], findings: [], limitations: []}};
+        await partial(worktree, signal, () => session(initialSession));
+        return {reason: 'cancelled', structured: partialReport,
+          ...(scenario === 'uncertain' ? {uncertain: true} : {writerStopped: true}),
+          ...(scenario === 'no-confinement' || continuationRoot === undefined ? {} : {writerFence: {root: continuationRoot, home: writerHome}})};
       },
     };
     const claude: Harness = {
-      async start(_args, worktree, brief) {
-        resumed += 1;
-        const original = priorWorktree ?? assert.fail('source checkout');
-        assert.notEqual(worktree, await realpath(original));
-        assert.equal(git(worktree, 'rev-parse', 'HEAD'), base);
-        assert.notEqual(git(worktree, 'rev-parse', '--absolute-git-dir'), git(original, 'rev-parse', '--absolute-git-dir'));
-        assert.equal(git(worktree, 'rev-parse', '--path-format=absolute', '--git-common-dir'), join(worktree, '.git'));
-        assert.equal(await readFile(join(worktree, 'README.md'), 'utf8'), 'partially edited\n');
-        assert.ok(brief.endsWith(fullBrief));
-        assert.match(brief.slice(0, -fullBrief.length), /git diff/);
-        if (scenario === 'staged-new') {
-          assert.equal(await readFile(join(worktree, newFile), 'utf8'), 'export const synthetic = true;\n');
-          assert.equal(git(worktree, 'diff', '--cached', '--name-only'), newFile);
-        }
-        await writeFile(join(original, 'README.md'), 'an old watcher wrote only here\n');
-        assert.equal(await readFile(join(worktree, 'README.md'), 'utf8'), 'partially edited\n');
-        await writeFile(join(worktree, 'README.md'), 'finished\n');
-        return {code: 0, signal: null, truncated: false, writerStopped: true,
-          stdout: [
-            {type: 'system', subtype: 'init', apiKeySource: 'none', session_id: 'claude-continuation-id'},
-            {type: 'result', session_id: 'claude-continuation-id',
-              structured_output: {outcome: 'tested-candidate', summary: 'Synthetic completion.',
-                checks: [{name: 'unit test', status: 'passed'}], findings: [], limitations: []}},
-          ].map(line => JSON.stringify(line)).join('\n')};
+      async start(_args, worktree, brief, _onChild, onLine, continuation) {
+        const isPartial = origin === 'claude-code';
+        const sessionId = isPartial ? initialSession : resumedSession;
+        onLine?.(JSON.stringify({type: 'system', subtype: 'init', apiKeySource: 'none', session_id: sessionId}));
+        if (isPartial) await partial(worktree, continuation?.signal ?? assert.fail('reserved continuation root'), () => {});
+        else await complete(worktree, brief);
+        onLine?.(JSON.stringify({type: 'result', session_id: sessionId, structured_output: isPartial ? partialReport : completeReport}));
+        return {code: 0, signal: null, truncated: false, writerStopped: scenario !== 'uncertain',
+          ...(isPartial && continuation !== undefined && scenario !== 'no-confinement' ? {fencedRoot: continuation.root} : {})};
       },
     };
     const runGit: GitRunner = async (cwd, args, options) => {
@@ -600,7 +619,7 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'r
     await worker.start();
     t.after(() => worker.stop());
     const initial = {action: 'start' as const, requestId: 'partial', operationId: 'partial', taskId: 'synthetic-task', companion: 'bunny' as const,
-      harness: 'codex', repository: 'agent-device-hub', brief: 'Synthetic approved brief.', bounds: {wallClockMs: 60_000, maxTurns: 4, budgetUsd: 1}};
+      harness: origin, repository: 'agent-device-hub', brief: 'Synthetic approved brief.', bounds: {wallClockMs: 60_000, maxTurns: 4, budgetUsd: 1}};
     assert.deepEqual(edge.respond(command(initial)), {status: 'accepted'});
     await until(() => edited);
     if (scenario === 'root-replaced-live') {
@@ -609,7 +628,7 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'r
       await cp(`${original}-old`, original, {recursive: true});
     }
     const next = (token: string, operationId = 'continuation') => command({...initial, requestId: operationId, operationId,
-      harness: 'claude-code', brief: fullBrief, continuation: {fromOperationId: 'partial', token}});
+      harness: destination, brief: fullBrief, continuation: {fromOperationId: 'partial', token}});
     assert.ok('error' in edge.respond(next('01234567-89ab-4cde-8fab-0123456789ab')));
     assert.deepEqual(edge.respond(command({action: 'cancel', requestId: 'stop-partial', operationId: 'partial'})), {status: 'accepted'});
     await until(() => edge.progress.some(entry => entry.operationId === 'partial' && entry.status !== 'started'));
@@ -619,7 +638,7 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'r
     if (scenario === 'untracked' || scenario === 'no-confinement' || scenario === 'root-replaced-live') {assert.equal(result.handoffToken, undefined); return;}
     const proof = result.handoffToken ?? assert.fail('confirmed stopped partial attempt');
     assert.equal(result.result?.head, base);
-    assert.equal(result.sessionId, 'codex-partial-id');
+    assert.equal(result.sessionId, initialSession);
     const original = priorWorktree ?? assert.fail('worktree');
     if (scenario === 'changed') await writeFile(join(original, 'README.md'), 'external edit\n');
     if (scenario === 'root-replaced') {
@@ -645,6 +664,8 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'r
       assert.equal(resumed, 0);
       return;
     }
+    assert.ok('error' in edge.respond(command({...initial, requestId: 'same-harness', operationId: 'same-harness',
+      continuation: {fromOperationId: 'partial', token: proof}})));
     assert.deepEqual(edge.respond(next(proof)), {status: 'accepted'});
     assert.ok('error' in edge.respond(next(proof, 'simultaneous')));
     await until(() => edge.progress.some(entry => entry.operationId === 'continuation' && entry.status !== 'started'));
@@ -656,7 +677,7 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'r
     } else {
       assert.equal(resumed, 1);
       assert.equal(completed?.status, 'completed');
-      assert.equal(completed?.sessionId, 'claude-continuation-id');
+      assert.equal(completed?.sessionId, resumedSession);
       assert.deepEqual(completed?.result?.checks, [{name: 'unit test', status: 'passed'}]);
     }
   });

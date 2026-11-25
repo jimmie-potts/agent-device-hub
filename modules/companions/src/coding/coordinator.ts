@@ -136,10 +136,10 @@ export class CodingCoordinator {
   }
   #continuation(attempt: CodingAttempt | undefined): CodingJobDetail['continuation'] {
     if (attempt === undefined || attempt.handoffToken === undefined || attempt.selectionId === undefined ||
-      attempt.selectionId !== this.#state.selectionId || attempt.harness !== 'codex' ||
+      attempt.selectionId !== this.#state.selectionId || !codingHarness(attempt.harness) ||
       attempt.result?.head == null || attempt.result.changedFiles.length === 0 ||
       (attempt.status === 'completed' && attempt.result.outcome === 'tested-candidate') || !this.#connected() || !this.#uncapped()) return null;
-    const harness = 'claude-code';
+    const harness = attempt.harness === 'claude-code' ? 'codex' : 'claude-code';
     const choice = chooseCodingHarness(harness, this.#state.harnesses ?? [], this.context.clock.now());
     if (choice.harness === undefined) return null;
     return {fromOperationId: attempt.operationId, harness, head: attempt.result.head, changedFiles: attempt.result.changedFiles};
@@ -162,10 +162,9 @@ export class CodingCoordinator {
     const latest = saved.at(-1), continuation = this.#continuation(latest);
     const activeOperationId = last !== undefined && !this.#store.resultSaved(last.operationId) ? last.operationId : null;
     const continuationReason = continuation !== null || activeOperationId !== null || latest === undefined ? undefined :
-      latest.harness === 'claude-code' ? 'Continuation from Claude Code is unavailable until its writers can be confined to the original checkout.' :
       latest.status === 'uncertain' ? 'The previous writer may still be active.' :
       latest.status === 'completed' && latest.result?.outcome === 'tested-candidate' ? 'The previous attempt completed without a partial result.' :
-      'Continuation requires a stopped, confined Codex writer, an unchanged checkout and an eligible Claude Code subscription.';
+      'Continuation requires a stopped, confined writer, an unchanged checkout and an eligible subscription in the other harness.';
     return {version: 1, jobId, choice: saved[0]?.choice ?? 'auto', activeOperationId, attempts, continuation,
       ...(continuationReason === undefined ? {} : {continuationReason})};
   }

@@ -48,9 +48,11 @@ uses only that subscription. An unknown quota remains unknown. The Hub can
 resolve Auto again while a job is still local and queued. After dispatch,
 slowdown or uncertainty stays with the selected attempt.
 
-A partially completed Codex attempt can continue on Claude Code on a Mac
-when the Codex process has stopped and its native sandbox denies the
-successor path. The worker checks that boundary offline, then creates a
+A partially completed attempt can continue on the other harness on a Mac
+when the first process group has stopped and its native sandbox denies writes
+to the successor path. Claude Code uses a macOS process sandbox inherited by
+its subprocesses. Codex uses its verified native permissions profile. The
+worker checks the boundary offline, then creates a
 distinct checkout and Git store at the accepted revision. It verifies the
 source directory, Git directory, staged index and tracked file contents.
 A staged new source file can travel with the partial work. Git-visible
@@ -59,10 +61,9 @@ build artifacts stay with the previous attempt.
 
 Each attempt keeps its own native session, outcome and checks. The worker
 pairs the exact approved brief with bounded Git and check facts at launch.
-Claude Code can receive a continuation. Continuing from Claude Code requires
-equivalent writer confinement and is currently unavailable. Losing the
-connection, restarting the worker or changing the source checkout invalidates
-the old proof.
+Continuation is unavailable when the worker cannot verify the source sandbox.
+Losing the connection, restarting the worker or changing the source checkout
+invalidates the old proof.
 
 ## Claude Code delegation
 

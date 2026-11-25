@@ -22,6 +22,7 @@ import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, co
 
 import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type CodingAdapter} from './adapter.js';
 import {codexAdapter, type CodexConfiguration} from './codex-adapter.js';
+import {claudeWriterArguments, MAC_WRITER_SANDBOX, verifyClaudeWriterBoundary} from './claude-writer.js';
 
 const run = promisify(execFile);
 const CLAUDE = 'claude-code';
@@ -108,12 +109,12 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
 
 /** One run in one of the worker's slots, with the companion that asked and the endpoint that started it. */
 type WriterHandoff = {
-  operationId: string; endpoint: RemoteEndpoint; repository: string; worktree: WorktreeProof;
-  base: string; writerHome: string; protectedRoot: ProtectedCheckout; checks: ReturnType<typeof continuationChecks>;
+  operationId: string; endpoint: RemoteEndpoint; repository: string; worktree: WorktreeProof; successor: 'claude-code' | 'codex';
+  base: string; writerHome?: string; protectedRoot: ProtectedCheckout; checks: ReturnType<typeof continuationChecks>;
 };
 type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; controller: AbortController};
-export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true; writerStopped?: boolean};
+export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true; writerStopped?: boolean; fencedRoot?: string};
 export type Harness = {
   /**
    * Runs the headless harness in `cwd` with the brief on its standard input and resolves with its exit code; the worker
@@ -121,7 +122,8 @@ export type Harness = {
    * read as an option and it never shows in the process list. Each output line goes to `onLine` as it arrives; output
    * returned as `stdout` instead is read after the run, line by line, the same way.
    */
-  start(args: string[], cwd: string, input: string, onChild: (child: ChildProcess) => void, onLine?: (line: string) => void): Promise<HarnessRun>;
+  start(args: string[], cwd: string, input: string, onChild: (child: ChildProcess) => void, onLine?: (line: string) => void,
+    continuation?: {root: string; signal: AbortSignal}): Promise<HarnessRun>;
   /** Reports the tool's version and sign-in without starting a task or a session; absent means all unknown. */
   readiness?(): Promise<HarnessReadiness>;
   subscriptionRefused?(): Promise<boolean>;
@@ -178,17 +180,26 @@ export type HarnessOptions = {
  * use the same environment.
  */
 export const claudeHarness = (executable: string, environment: NodeJS.ProcessEnv = process.env, options: HarnessOptions = {}): Harness => ({
-  start: (args, cwd, input, onChild, onLine) => new Promise(resolvePromise => {
-    const child = spawn(executable, args, {cwd, detached: true, stdio: ['pipe', 'pipe', 'ignore'], env: harnessEnvironment(environment, options.environment)});
-    onChild(child);
-    child.stdin?.on('error', () => {});
-    child.stdin?.end(input);
-    const decoder = new StringDecoder('utf8');
-    const lines = lineSplitter(line => {onLine?.(line);});
-    child.stdout?.on('data', (chunk: Buffer) => {lines.write(decoder.write(chunk));});
-    child.on('error', () => {resolvePromise({code: null, signal: null, truncated: lines.truncated, spawnFailed: true});});
-    child.on('close', (code, signal) => {lines.end(decoder.end()); resolvePromise({code, signal, truncated: lines.truncated, writerStopped: writerGone(child.pid)});});
-  }),
+  async start(args, cwd, input, onChild, onLine, continuation) {
+    const fencedRoot = continuation !== undefined && await verifyClaudeWriterBoundary(cwd, continuation.root) ? continuation.root : undefined;
+    if (continuation?.signal.aborted === true) return {code: null, signal: null, truncated: false};
+    const launch = fencedRoot === undefined ? executable : MAC_WRITER_SANDBOX;
+    const launchArgs = fencedRoot === undefined ? args : claudeWriterArguments(fencedRoot, executable, args);
+    return new Promise(resolvePromise => {
+      const child = spawn(launch, launchArgs, {cwd, detached: true, stdio: ['pipe', 'pipe', 'ignore'], env: harnessEnvironment(environment, options.environment)});
+      onChild(child);
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(input);
+      const decoder = new StringDecoder('utf8');
+      const lines = lineSplitter(line => {onLine?.(line);});
+      child.stdout?.on('data', (chunk: Buffer) => {lines.write(decoder.write(chunk));});
+      child.on('error', () => {resolvePromise({code: null, signal: null, truncated: lines.truncated, spawnFailed: true});});
+      child.on('close', (code, signal) => {
+        lines.end(decoder.end());
+        resolvePromise({code, signal, truncated: lines.truncated, writerStopped: writerGone(child.pid), ...(fencedRoot === undefined ? {} : {fencedRoot})});
+      });
+    });
+  },
   subscriptionRefused: async () => {
     const result = await probe(executable, ['auth', 'status', '--json'], harnessEnvironment(environment, options.environment),
       options.probeCwd, options.probeMs ?? PROBE_MS, options.probeTimer ?? realTimer);
@@ -545,7 +556,7 @@ export class CodingWorker {
     if (data.continuation !== undefined) {
       proof = this.#handoffs.get(data.continuation.token);
       if (proof === undefined || proof.operationId !== data.continuation.fromOperationId || proof.endpoint !== this.#endpoint ||
-        proof.repository !== repository.name || harness !== CLAUDE || this.configuration.uncapped !== true) {
+        proof.repository !== repository.name || harness !== proof.successor || this.configuration.uncapped !== true) {
         return errorBody('invalid-state', {detail: 'The verified handoff is no longer available.'});
       }
       this.#handoffs.delete(data.continuation.token);
@@ -755,7 +766,7 @@ export class CodingWorker {
       finished = await this.#harness.start(args, worktree, input.brief, process => {
         child = process;
         if (signal.aborted) stop();
-      }, watch);
+      }, watch, input.continuationRoot === undefined ? undefined : {root: input.continuationRoot, signal});
     } finally {
       signal.removeEventListener('abort', stop);
       if (killTimer !== undefined) clearTimeout(killTimer);
@@ -774,13 +785,15 @@ export class CodingWorker {
     const reason = assembled.reason ?? (stream.providers.some(provider => provider !== 'firstParty') ? 'refused' : finished.code === 0 ? undefined : 'exit');
     return {structured: result, windows, usage: result.usage,
       ...(finished.writerStopped === true ? {writerStopped: true} : finished.writerStopped === false ? {uncertain: true} : {}),
+      ...(finished.fencedRoot === undefined || sessionId === undefined ? {} : {writerFence: {root: finished.fencedRoot}}),
       ...(reason === undefined ? {} : {reason}), ...(sessionId === undefined ? {} : {sessionId}),
       ...(result.limit === undefined ? {} : {limit: result.limit})};
   }
   async #runAdapter(running: Running, adapter: CodingAdapter, repository: string, worktree: string, base: string | null, brief: string, bounds: CodingBounds): Promise<void> {
     let timedOut = false, evidence: AdapterEvidence;
     const started = this.#now();
-    const protectedRoot = this.configuration.uncapped === true && adapter.id === 'codex'
+    const successor = adapter.id === CLAUDE ? 'codex' : adapter.id === 'codex' ? CLAUDE : undefined;
+    const protectedRoot = this.configuration.uncapped === true && successor !== undefined && this.#adapters.has(successor)
       ? await realpath(dirname(worktree)).then(parent => mkdtemp(join(parent, '.bunny-continuation-'))).then(protectedCheckout).catch(() => undefined)
       : undefined;
     const sourceIdentity = protectedRoot === undefined ? undefined : await checkoutIdentity(worktree,
@@ -809,7 +822,7 @@ export class CodingWorker {
     const result = assembleAdapterResult(repository, base, head, changedFiles, evidence, reason, running.sessionId, this.#now() - started);
     let handoffToken: string | undefined;
     const endpoint = running.endpoint;
-    if (this.configuration.uncapped === true && adapter.id === 'codex' && sourceIdentity !== undefined && protectedRoot !== undefined && evidence.writerHome !== undefined &&
+    if (successor !== undefined && sourceIdentity !== undefined && protectedRoot !== undefined && evidence.writerFence?.root === protectedRoot.path &&
       evidence.writerStopped === true && evidence.uncertain !== true && endpoint !== undefined &&
       base !== null && head !== null && changedFiles.length > 0 && reason !== 'refused' &&
       (reason !== undefined || result.outcome !== 'tested-candidate')) {
@@ -818,8 +831,9 @@ export class CodingWorker {
       if (fingerprint?.head === head && sameCheckout(fingerprint.identity, sourceIdentity) &&
         reserved?.identity === protectedRoot.identity && this.#endpoint === endpoint) {
         handoffToken = randomUUID();
-        this.#handoffs.set(handoffToken, {operationId: running.operationId, endpoint, repository, worktree: fingerprint, base,
-          writerHome: evidence.writerHome, protectedRoot, checks: continuationChecks(result.checks)});
+        const {home} = evidence.writerFence;
+        this.#handoffs.set(handoffToken, {operationId: running.operationId, endpoint, repository, successor, worktree: fingerprint, base,
+          ...(home === undefined ? {} : {writerHome: home}), protectedRoot, checks: continuationChecks(result.checks)});
       } else if (this.#endpoint === endpoint) {
         result.limitations = [
           'A continuation could not verify this checkout and its Git index. New files must be staged; untracked files and ignored build artifacts are never moved.',

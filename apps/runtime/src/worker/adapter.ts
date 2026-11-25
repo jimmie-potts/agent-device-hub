@@ -29,7 +29,7 @@ export type AdapterEvidence = {
   reason?: CodingProgressReason;
   uncertain?: boolean;
   writerStopped?: true;
-  writerHome?: string;
+  writerFence?: {root: string; home?: string};
   summary?: string;
   limitations?: string[];
 };
