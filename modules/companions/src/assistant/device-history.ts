@@ -97,11 +97,11 @@ export class DeviceHistoryPages {
       : {lastChange: change === null ? null : {atMs: change.atMs, from: change.from, to: change.to}})});
   }
 
-  read(input: Record<string, unknown>, scope: {taskId: string; destination: string; now: number; timeZone: string}, access: FieldAccess): string {
+  read(input: Record<string, unknown>, scope: {taskId: string; destination: string; now: number; requestedAtMs: number; timeZone: string}, access: FieldAccess): string {
     const {cursor, period, source, target, fromAtMs, toAtMs} = input;
     if (period !== '' && period !== 'yesterday') return 'refused: invalid-request';
     if (period === 'yesterday' && (fromAtMs !== 0 || toAtMs !== 0)) return 'refused: invalid-request';
-    const interval = period === 'yesterday' ? localYesterday(scope.now, scope.timeZone) : {fromAtMs, toAtMs};
+    const interval = period === 'yesterday' ? localYesterday(scope.requestedAtMs, scope.timeZone) : {fromAtMs, toAtMs};
     const query = deviceHistoryQuery({source, target, ...interval});
     if (query === undefined || typeof cursor !== 'string') return 'refused: invalid-request';
     if (!access('devices', 'index', query.target) || !access('devices', 'details', query.target) ||

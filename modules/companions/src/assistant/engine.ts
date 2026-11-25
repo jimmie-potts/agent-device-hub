@@ -47,6 +47,7 @@ export type Dispatch = (data: AssistantDispatch, parent: TraceContext, signal: A
  */
 export type AssistantOptions = {
   deviceHistory?: DeviceHistoryRead;
+  historyTimeZone?: string;
   share?: Share;
   provider?: ModelProvider;
   alternateProvider?: ModelProvider;
@@ -251,6 +252,7 @@ export class AssistantEngine {
   readonly titles: ConversationTitles;
   readonly #validator = coreValidator();
   readonly #history = new DeviceHistoryPages(() => this.options.deviceHistory);
+  readonly #historyTimeZone: string;
   readonly #subscriptions: Subscription[] = [];
   readonly #graph;
   readonly #deviceDisplay: DeviceReadDisplay;
@@ -280,6 +282,7 @@ export class AssistantEngine {
   constructor(readonly context: ModuleContext, readonly outbox: Outbox, readonly options: AssistantOptions = {}) {
     this.store = new AssistantStore(context.database());
     this.spend = new SpendLedger(context.database(), options.prices ?? {}, () => context.clock.now(), options.timeZone, options.monthlyLimitMicros, options.provider?.name === 'openai' || options.alternateProvider?.name === 'openai');
+    this.#historyTimeZone = options.historyTimeZone ?? this.spend.timeZone;
     this.titles = new ConversationTitles(context.database(), {outbox, spend: this.spend, now: () => context.clock.now(), after: (ms, callback) => context.scheduler.after(ms, callback),
       provider: () => options.titleProvider ?? options.syntheticTitleProvider,
       previousTitle: (conversationId, profile, title) => {
@@ -709,7 +712,7 @@ export class AssistantEngine {
       return undefined;
     }
     const pin = head.supervisor ?? fail('unavailable');
-    const task = this.store.newTask(head.profile, head.text, pin);
+    const task = this.store.newTask(head.profile, head.text, pin, head.updatedAtMs);
     this.store.message(task, `${task.id}-prompt`, 'owner', head.text, this.context.clock.now());
     this.#activate(task, {traceparent: head.traceparent}, true);
     this.store.save(task);
@@ -1434,7 +1437,7 @@ export class AssistantEngine {
       [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject);
     const historyRequest = purpose === 'supervisor' ? this.store.messages.get(requestId) : undefined;
     const history = historyRequest?.speakerId === 'owner' && historyRequest.conversationId === task.conversationId
-      ? requestedHistory(request, historyRequest.createdAtMs, this.spend.timeZone) : undefined;
+      ? requestedHistory(request, latest?.submittedAtMs ?? historyRequest.createdAtMs, this.#historyTimeZone) : undefined;
     const historyMatches = history === undefined ? [] : configured.filter(({device}) => named(history.subject, device));
     const historyTarget = historyMatches.length === 1 ? historyMatches[0] : undefined;
     let historySummary: DeviceHistorySummary | undefined;
@@ -1682,6 +1685,11 @@ export class AssistantEngine {
         request = {instructions: INSTRUCTIONS, context: this.#context(current, undefined, {prompt: fields, model: modelAccess}), transcript, tools,
           mode: copy.mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
       }
+      request = {...request, transcript: request.transcript.map(item => {
+        if (item.role !== 'owner' || !('submittedAtMs' in item)) return item;
+        const {submittedAtMs: _, ...message} = item;
+        return message;
+      })};
       // The call reserves what this request could use: its bytes bound its input tokens, and the output bound its answer's.
       const inputUnits = provider.inputUnits?.(request) ?? inputBound(request);
       return {units: inputUnits + LIMITS.outputUnits, unit: paid ? 'tokens' : 'synthetic units',
@@ -1804,7 +1812,7 @@ export class AssistantEngine {
   #drain(task: Task): void {
     for (const steer of this.store.queue.steers(task.id)) {
       const effect = `steer-${steer.id}`;
-      const item: Appended = {role: 'owner', text: steer.text, effect};
+      const item: Appended = {role: 'owner', text: steer.text, effect, submittedAtMs: steer.savedAtMs};
       if (!task.transcript.some(existing => 'effect' in existing && existing.effect === effect)) task.transcript.push(item);
       this.store.message(task, steerMessageId(task.id, steer.id), 'owner', steer.text, this.context.clock.now());
       this.store.queue.delivered(steer.id);
@@ -1968,8 +1976,15 @@ export class AssistantEngine {
       if (call.name === READ_HUB_GUIDE) {
         text = deviceHistoryGuide(new Set(tools.map(tool => tool.name)));
       } else if (call.name === READ_DEVICE_HISTORY) {
-        text = scope === undefined ? this.#history.read(call.input, {taskId: task.id, destination: provider.name, now, timeZone: this.spend.timeZone}, access)
-          : this.#history.summary(call.input, scope.fields('conversation', 'request', scope.requestId) ? scope.historySummary : undefined, access);
+        if (scope === undefined) {
+          const owner = task.transcript.filter(item => item.role === 'owner').at(-1);
+          const requestId = owner === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, owner);
+          const request = requestId === undefined ? undefined : this.store.messages.get(requestId);
+          text = this.#history.read(call.input, {taskId: task.id, destination: provider.name, now,
+            requestedAtMs: owner?.submittedAtMs ?? request?.createdAtMs ?? now, timeZone: this.#historyTimeZone}, access);
+        } else {
+          text = this.#history.summary(call.input, scope.fields('conversation', 'request', scope.requestId) ? scope.historySummary : undefined, access);
+        }
       } else if (owner !== undefined) {
         const name = call.input.device;
         if (scope !== undefined && !/\b(?:status|state|power|brightness|list|show|is|are|was|were|on|off)\b/i.test(scope.request)) {

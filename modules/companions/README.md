@@ -674,6 +674,13 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   retained power evidence. History currently covers Wemo and LIFX, reports
   observed on, off and unknown time, and returns bounded evidence pages.
   An expired cursor or restart requires a fresh read.
+- Set `assistant.historyTimeZone` in the private Companions section to use
+  the owner's calendar for relative device-history questions. Use a supported
+  IANA zone such as `America/New_York`. Without it, history uses the runtime
+  host's zone. The setting applies to both supervisors and all companions.
+  Explicit timestamp intervals, spend accounting periods and automation
+  schedules are unchanged. Restart the runtime through its installation
+  procedure after changing the section.
 - Requests go to `https://api.anthropic.com/v1/messages` through the module's
   own fetch with API version `2026-10-21`, carrying the fixed instructions, the
   current Hub mode, the task's transcript, the tool definitions marked strict,

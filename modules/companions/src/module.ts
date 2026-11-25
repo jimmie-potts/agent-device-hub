@@ -47,9 +47,10 @@ export const OPENAI_KEY_SECRET = 'openai-responses-api-key';
  * tool names, prices and local monthly spend guard; a hosted provider needs its key file under `secrets`. The one provider and model serve every profile,
  * B.U.N.N.Y., Reachy and MicroDuck (Hub #2026). An empty section keeps every default and makes no network call.
  */
-export type CompanionsConfig = {readonly sharing?: readonly SharingGrant[]; readonly assistant: {readonly provider: 'synthetic'; readonly tools: readonly string[]}
-  | {readonly provider: 'anthropic' | 'openai'; readonly model: string; readonly effort: Effort; readonly titleModel: string; readonly tools: readonly string[]; readonly prices: PriceTable;
-    readonly monthlyLimitMicros: number; readonly openAI?: {readonly model: string; readonly effort: Effort}}};
+export type CompanionsConfig = {readonly sharing?: readonly SharingGrant[]; readonly assistant: {readonly tools: readonly string[]; readonly historyTimeZone?: string} &
+  ({readonly provider: 'synthetic'} | {readonly provider: 'anthropic' | 'openai'; readonly model: string; readonly effort: Effort;
+    readonly titleModel: string; readonly prices: PriceTable; readonly monthlyLimitMicros: number;
+    readonly openAI?: {readonly model: string; readonly effort: Effort}})};
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const only = (value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean => Object.keys(value).every(key => keys.includes(key));
 const refuse = (detail: string): ErrorBody => errorBody('invalid-request', {detail});
@@ -85,13 +86,26 @@ function monthlyLimitOf(value: unknown): number | string {
   }
   return Math.round(value * 1_000_000);
 }
+function supportedTimeZone(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^[a-z]/iu.test(value)) return false;
+  try {
+    new Intl.DateTimeFormat('en', {timeZone: value});
+    return true;
+  } catch (error) {
+    if (error instanceof RangeError) return false;
+    throw error;
+  }
+}
 export function configureCompanions(section: unknown): Configured<CompanionsConfig> | ErrorBody {
   if (!isObject(section) || !only(section, ['assistant', 'secrets', 'sharing'])) return refuse('the companions section has only assistant, secrets and sharing');
   const grants = parseSharingGrants(section.sharing);
   if (grants === undefined) return refuse('sharing must list valid field grants');
   const configuredSharing = grants.length === 0 ? {} : {sharing: grants};
   const assistant = section.assistant === undefined ? {} : section.assistant;
-  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'titleModel', 'tools', 'prices', 'monthlyLimit', 'openAI'])) return refuse('assistant has only provider, model, effort, titleModel, tools, prices, monthlyLimit and openAI');
+  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'titleModel', 'tools', 'prices', 'monthlyLimit', 'openAI', 'historyTimeZone'])) return refuse('assistant has only provider, model, effort, titleModel, tools, prices, monthlyLimit, openAI and historyTimeZone');
+  const {historyTimeZone} = assistant;
+  if (historyTimeZone !== undefined && !supportedTimeZone(historyTimeZone)) return refuse('assistant.historyTimeZone must name a supported IANA time zone');
+  const history = historyTimeZone === undefined ? {} : {historyTimeZone};
   const provider = assistant.provider ?? 'synthetic';
   if (provider !== 'synthetic' && provider !== 'anthropic' && provider !== 'openai') return refuse('assistant.provider must be synthetic, anthropic or openai');
   const tools = assistant.tools ?? [];
@@ -100,7 +114,7 @@ export function configureCompanions(section: unknown): Configured<CompanionsConf
     if (assistant.model !== undefined || assistant.effort !== undefined || assistant.titleModel !== undefined || assistant.prices !== undefined || assistant.monthlyLimit !== undefined || assistant.openAI !== undefined) {
       return refuse('the synthetic provider takes no model, effort, title model, prices or monthly limit');
     }
-    return {config: {...configuredSharing, assistant: {provider, tools: [...tools]}}};
+    return {config: {...configuredSharing, assistant: {provider, tools: [...tools], ...history}}};
   }
   const model = assistant.model ?? (provider === 'openai' ? OPENAI_MODEL : DEFAULT_MODEL), effort = assistant.effort ?? 'medium';
   const titleModel = assistant.titleModel ?? (provider === 'openai' ? model : DEFAULT_TITLE_MODEL);
@@ -123,7 +137,7 @@ export function configureCompanions(section: unknown): Configured<CompanionsConf
     if (!Object.hasOwn(section.secrets, OPENAI_KEY_SECRET)) return refuse(`OpenAI names its API key file as secrets.${OPENAI_KEY_SECRET}`);
     openAI = {model, effort: effort as Effort};
   }
-  return {config: {...configuredSharing, assistant: {provider, model, effort: effort as Effort, titleModel, tools: [...tools], prices, monthlyLimitMicros,
+  return {config: {...configuredSharing, assistant: {provider, model, effort: effort as Effort, titleModel, tools: [...tools], prices, monthlyLimitMicros, ...history,
     ...(openAI === undefined ? {} : {openAI})}}};
 }
 /** What a test or the runtime gives the module: the engine's seams and, for a hosted provider, the transport behind its fetch. */
@@ -351,7 +365,8 @@ class Companions {
     });
     const prices = options.prices ?? (assistant !== undefined && assistant.provider !== 'synthetic' ? assistant.prices : undefined);
     const monthlyLimitMicros = options.monthlyLimitMicros ?? (assistant !== undefined && assistant.provider !== 'synthetic' ? assistant.monthlyLimitMicros : undefined);
-    return {...(provider === undefined ? {} : {provider}), ...(prices === undefined ? {} : {prices}), ...(monthlyLimitMicros === undefined ? {} : {monthlyLimitMicros}), ...(options.timeZone === undefined ? {} : {timeZone: options.timeZone}),
+    const historyTimeZone = options.historyTimeZone ?? assistant?.historyTimeZone;
+    return {...(historyTimeZone === undefined ? {} : {historyTimeZone}), ...(provider === undefined ? {} : {provider}), ...(prices === undefined ? {} : {prices}), ...(monthlyLimitMicros === undefined ? {} : {monthlyLimitMicros}), ...(options.timeZone === undefined ? {} : {timeZone: options.timeZone}),
       ...(alternateProvider === undefined ? {} : {alternateProvider}), ...(openAITitleProvider === undefined ? {} : {openAITitleProvider}),
       ...(titleProvider === undefined ? {} : {titleProvider}), ...(options.syntheticTitleProvider === undefined ? {} : {syntheticTitleProvider: options.syntheticTitleProvider}),
       ...(options.profileProviders === undefined ? {} : {profileProviders: options.profileProviders}),
