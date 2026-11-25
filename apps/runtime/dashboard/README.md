@@ -1281,23 +1281,58 @@ switches.
 
 ## A card that fails
 
-An error thrown while a card renders, or from one of its effects, stays in that
-card (#2139). Each Home card, each device card on a component page and a module
-page on its route has its own boundary. The failed card keeps its place and
-shows its name, "*Name* failed to show. Its controls are unavailable." and one
-**Retry**, which mounts it again and sends nothing. The rest of the page keeps
-working. A fault in the shell itself (rail, hero, palettes, menus, the lighting
-and playback workspaces) still unmounts the page. Errors in event handlers and
-async work never reach a boundary and, as before, leave the page mounted.
+An error thrown while a part of the page renders, or from one of its effects,
+stays in that part (#2139). These parts have their own boundary:
 
-Each failure is recorded once as `dashboard.card.failed` through the SDK's
-`recordLog`, at ERROR, with `bunny.card`, `bunny.code` `internal` and
-`error.type`; never the message. The page has no diagnostic route to the
-runtime, so the record stays in a bounded in-page log. The page also reports the
-error as a page error, and the failed card carries `data-card-failed`: the
-journey harness's `feed()` fails on a failed card a journey did not expect.
-`tests/card-errors.browser.ts` throws from chosen cards in a test build
-(`tests/card-faults.ts`).
+- each Home card, including the work that picks its content and its compact
+  face's state;
+- each device card on a component page, including the work that picks its card;
+- a module page on its route;
+- the Settings, Companions, Habitat, Timeline, Automation and Connections pages
+  and the device directory (the Devices page);
+- the rail's conversations and the art module's Home backdrop source.
+
+A failed card or page keeps its place and shows its name, "*Name* failed to
+show. Retry draws it again and sends nothing." and one **Retry**; a failed page
+keeps its heading, and the rail and navigation keep working. The device
+directory, mounted on every route, shows its failure on the Devices page and
+draws nothing elsewhere; the backdrop source, which draws nothing, shows nothing.
+A changed identity, such as another module page, starts the boundary again.
+
+Not contained, so these still unmount the whole page:
+
+- a fault in the shell itself: the rail's navigation, pins, menus and foot, the
+  phone bar, the jump palette, the breadcrumb, Home's layout, hero and edit
+  controls, a component or module page's heading, tabs and notices, the not-found and
+  loading pages, and the lighting and playback workspaces;
+- an error thrown from an effect's cleanup as its part leaves the page, for
+  example a Home card's cleanup when the owner leaves Home: React passes it to
+  the nearest boundary that stays mounted, and the part's own boundary leaves
+  with it.
+
+Errors in event handlers and async work never reach a boundary and, as before,
+leave the page mounted.
+
+Each failure forms one `dashboard.card.failed` record through the SDK's
+`recordLog`, at ERROR, with `bunny.card` (the part's identity), `bunny.code`
+`internal` and `error.type`; never the message. The record is formed in the page
+and delivered nowhere yet: the page has no diagnostic route to the runtime, so it
+stays in a bounded in-page log of 64 records and is lost with the page. Its
+delivery through a browser relay, with the event and `bunny.card` registered in
+the diagnostic catalog as the contract requires before a record is exported, is
+a follow-up (follow-up issue to be filed by the coordinator). The page also
+passes the error to the browser's `reportError`, so an owner sees it only in the
+browser's console; a browser without `reportError` gets it through
+`console.error`.
+
+A failed part carries `data-card-failed`, `data-error-type` and
+`data-fault-count`. The journey harness's `feed()` and `copiesSynced()` fail on a
+failed part a journey did not expect, and from a page's first such check the
+harness records each failure as it happens: the world's `close()` fails the run
+on one that no check reported (`tests/card-watch.ts`). A journey that fails parts
+on purpose names them with `expectCardFaults(page, cards)`.
+`tests/card-errors.browser.ts` throws from chosen parts in a test build
+(`tests/card-faults.ts`) and reads the page's records there.
 
 ## Build and checks
 

@@ -1206,6 +1206,11 @@ HTTP status that fits its code.
   Message and request IDs come from Web Crypto, which Node and a browser both
   have. The same entry exports `childOf(parent)` for a page's other HTTP calls:
   put its `traceparent` in the request headers, with `undefined` for a new root.
+  It also exports `recordLog`, `levelOf` and `errorType` with the `LogEvent`,
+  `LogFields` and `Logger` types (Hub #2139), so a page records its own faults
+  at the code table's level, as module and runtime code does; the page supplies
+  the `Logger`. The table's `dashboard.card.failed` (ERROR) is such a page
+  record. A page's record reaches no runtime log until a browser relay exists.
   A browser has no async context, so a page's handler that closes its own
   subscription does so before its first await, or does not await the close.
   When the edge refuses a reconnect with `unauthenticated` or `forbidden`, as
