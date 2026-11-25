@@ -3,7 +3,7 @@
 // and stops the harness on cancel. No real `claude`, edge or network.
 import assert from 'node:assert/strict';
 import {execFile, execFileSync} from 'node:child_process';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
@@ -20,7 +20,7 @@ const configuration = (repository: string) => ({schema: 'coding-worker/1.0', edg
   claude: {executable: '/nonexistent/claude', permissionMode: 'acceptEdits', allowedTools: DEFAULT_ALLOWED_TOOLS}});
 const command = (data: CodingWork, source = 'bunny/modules/companions'): Command<CodingWork> => ({specversion: '1.0', bunnyprofile: '2.0', id: `cmd-${data.requestId}`, source, kind: 'command',
   type: 'org.bunny.coding.work.requested', subject: 'worker-endpoint-1', time: new Date().toISOString(), datacontenttype: 'application/json',
-  dataschema: `https://bunny.invalid/events/coding-work/${'harness' in data ? '2.2' : 'companion' in data ? '2.1' : '2.0'}`,
+  dataschema: `https://bunny.invalid/events/coding-work/${'continuation' in data ? '2.3' : 'harness' in data ? '2.2' : 'companion' in data ? '2.1' : '2.0'}`,
   traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', expiresat: new Date(Date.now() + 5000).toISOString(), data});
 async function until(check: () => boolean, seen: () => unknown = () => undefined): Promise<void> {
   for (let i = 0; i < 1000; i += 1) {if (check()) return; await new Promise(resolve => setTimeout(resolve, 10));}
@@ -529,3 +529,87 @@ void test('uncapped jobs share only conflicting Git setup and isolate a cancelle
   const completed = ended('sibling');
   assert.equal(completed?.status === 'completed' && completed.result.sessionId, 'synthetic-session');
 });
+
+
+for (const scenario of ['continue', 'changed', 'uncertain', 'restart'] as const) {
+  void test(`cross-harness handoff verifies writer and exact worktree (${scenario})`, {timeout: 30_000}, async t => {
+    const repo = await repository(t), edge = fakeEdge();
+    const base = git(repo, 'rev-parse', 'HEAD');
+    let priorWorktree: string | undefined, resumed = 0, edited = false;
+    const codex: CodingAdapter = {
+      id: 'codex', capabilities: {steering: 'unsupported', resume: 'saved-session', review: true},
+      readiness: () => Promise.resolve({installed: 'yes', signedIn: 'yes', version: 'synthetic', plan: 'plus'}),
+      async run({worktree, session, signal}) {
+        priorWorktree = worktree;
+        await writeFile(join(worktree, 'partial.txt'), 'partially edited\n');
+        await session('codex-partial-id');
+        const stopped = new Promise<void>(resolve => {if (signal.aborted) resolve(); else signal.addEventListener('abort', () => {resolve();}, {once: true});});
+        edited = true;
+        await stopped;
+        return {reason: 'cancelled', ...(scenario === 'uncertain' ? {uncertain: true} : {writerStopped: true}),
+          structured: {outcome: 'tested-candidate', summary: 'Synthetic partial result.',
+            checks: [{name: 'git diff', status: 'passed'}], findings: [], limitations: []}};
+      },
+    };
+    const claude: Harness = {
+      async start(_args, worktree, brief) {
+        resumed += 1;
+        assert.equal(worktree, priorWorktree);
+        assert.equal(git(worktree, 'rev-parse', 'HEAD'), base);
+        assert.equal(await readFile(join(worktree, 'partial.txt'), 'utf8'), 'partially edited\n');
+        assert.equal(brief, 'Continue approved work.');
+        await writeFile(join(worktree, 'partial.txt'), 'finished\n');
+        return {code: 0, signal: null, truncated: false, writerStopped: true,
+          stdout: [
+            {type: 'system', subtype: 'init', apiKeySource: 'none', session_id: 'claude-continuation-id'},
+            {type: 'result', session_id: 'claude-continuation-id',
+              structured_output: {outcome: 'tested-candidate', summary: 'Synthetic completion.',
+                checks: [{name: 'unit test', status: 'passed'}], findings: [], limitations: []}},
+          ].map(line => JSON.stringify(line)).join('\n')};
+      },
+    };
+    const make = () => new CodingWorker(parseConfiguration({...configuration(repo), schema: 'coding-worker/1.2'}),
+      'fake-token', claude, undefined, edge.connect, undefined, undefined, undefined, [codex]);
+    const worker = make();
+    await worker.start();
+    t.after(() => worker.stop());
+    const initial = {action: 'start' as const, requestId: 'partial', operationId: 'partial', taskId: 'synthetic-task', companion: 'bunny' as const,
+      harness: 'codex', repository: 'agent-device-hub', brief: 'Synthetic approved brief.', bounds: {wallClockMs: 60_000, maxTurns: 4, budgetUsd: 1}};
+    assert.deepEqual(edge.respond(command(initial)), {status: 'accepted'});
+    await until(() => edited);
+    const next = (token: string, operationId = 'continuation') => command({...initial, requestId: operationId, operationId,
+      harness: 'claude-code', brief: 'Continue approved work.', continuation: {fromOperationId: 'partial', token}});
+    assert.ok('error' in edge.respond(next('01234567-89ab-4cde-8fab-0123456789ab')));
+    assert.deepEqual(edge.respond(command({action: 'cancel', requestId: 'stop-partial', operationId: 'partial'})), {status: 'accepted'});
+    await until(() => edge.progress.some(entry => entry.operationId === 'partial' && entry.status !== 'started'));
+    const result = edge.progress.find(entry => entry.operationId === 'partial' && entry.status !== 'started');
+    if (scenario === 'uncertain') {assert.equal(result?.status, 'uncertain'); assert.equal(result?.handoffToken, undefined); return;}
+    assert.ok(result?.status === 'cancelled');
+    const proof = result.handoffToken ?? assert.fail('confirmed stopped partial attempt');
+    assert.equal(result.result?.head, base);
+    assert.equal(result.sessionId, 'codex-partial-id');
+    if (scenario === 'changed') await writeFile(join(priorWorktree ?? assert.fail('worktree'), 'partial.txt'), 'external edit\n');
+    if (scenario === 'restart') {
+      await worker.stop();
+      const replacement = make();
+      await replacement.start();
+      t.after(() => replacement.stop());
+      assert.ok('error' in edge.respond(next(proof)));
+      assert.equal(resumed, 0);
+      return;
+    }
+    assert.deepEqual(edge.respond(next(proof)), {status: 'accepted'});
+    await until(() => edge.progress.some(entry => entry.operationId === 'continuation' && entry.status !== 'started'));
+    const completed = edge.progress.find(entry => entry.operationId === 'continuation' && entry.status !== 'started');
+    assert.ok('error' in edge.respond(next(proof, 'repeated')));
+    if (scenario === 'changed') {
+      assert.equal(resumed, 0);
+      assert.equal(completed?.status, 'failed');
+    } else {
+      assert.equal(resumed, 1);
+      assert.equal(completed?.status, 'completed');
+      assert.equal(completed?.sessionId, 'claude-continuation-id');
+      assert.deepEqual(completed?.result?.checks, [{name: 'unit test', status: 'passed'}]);
+    }
+  });
+}

@@ -101,7 +101,8 @@ export class CompanionPart implements CorePart {
       if (command.data.harness !== undefined && (selection === undefined || (selection.capacity === 'uncapped' && selectionId === undefined))) {
         return errorBody('unavailable', {detail: 'the selected worker could not be verified'});
       }
-      const version = selectionId === undefined ? command.data.harness === undefined ? '2.0' : '2.1' : '2.2';
+      if (command.data.continuation !== undefined && selectionId === undefined) return errorBody('unavailable');
+      const version = command.data.continuation !== undefined ? '2.3' : selectionId === undefined ? command.data.harness === undefined ? '2.0' : '2.1' : '2.2';
       const answer = await core.dispatch({key: 'bunny.cmd.coding-run.assistant', requestedBy: command.source, requestId: command.data.requestId, parent: command,
         draft: {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-run/${version}`, data: {...command.data, ...(selectionId === undefined ? {} : {selectionId})}}});
       return 'error' in answer ? answer : {status: 'accepted'};

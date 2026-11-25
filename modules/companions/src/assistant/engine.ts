@@ -1,10 +1,11 @@
+import {codingChoice, type CodingChoice} from '../coding/routing.js';
 import {SHOW_SAVE_WINDOW_MS} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {createHash, randomUUID} from 'node:crypto';
 import {Annotation, Command as Resume, END, GraphRecursionError, StateGraph, interrupt} from '@langchain/langgraph';
 import {errorBody, type ErrorBody, type ErrorCode} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {ASSISTANT_LEGACY_TOOL_LIMIT, ASSISTANT_WEMO_OWNER, type AssistantControl, type AssistantDeviceOwner, type AssistantDispatch, type AssistantInput, type AssistantProfile, type AssistantQueueSummary, type AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
+import {ASSISTANT_LEGACY_TOOL_LIMIT, ASSISTANT_WEMO_OWNER, type AssistantControl, type AssistantDeviceOwner, type AssistantDispatch, type AssistantInput, type AssistantProfile, type AssistantQueueSummary, type AssistantState, type ContinueCodingControl} from '@jimmie-potts/event-contracts/v2/assistant';
 import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
@@ -65,6 +66,7 @@ export type AssistantOptions = {
   backgroundCoding?: boolean;
   codingJob?: (operationId: string) => CodingJob | undefined;
   stopCodingJob?: CodingCoordinator['prepareStop'];
+  continueCodingJob?: CodingCoordinator['prepareContinuation'];
   /**
    * Whether the module already sent a hand-off that answered `waiting` (Hub #2028), so a hand-off sent before its waiting
    * line is saved reads "Delegated to ..." at once.
@@ -95,7 +97,7 @@ export type AssistantOptions = {
  * An approved delegation as the module dispatches it, bound to the coding worker revision the proposal saw and tagged
  * with the companion whose slot it needs (Hub #2028).
  */
-export type Delegation = {requestId: string; taskId: string; conversationId: string; companion: AssistantProfile; repository: string; brief: string; expectedRevision: number};
+export type Delegation = {requestId: string; taskId: string; conversationId: string; companion: AssistantProfile; repository: string; brief: string; expectedRevision: number; choice?: CodingChoice};
 /** The core's answer for a hand-off sent now, or `waiting` when the companion's slot is busy and it waits for it (Hub #2028). */
 export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSignal) => Promise<HandOffAnswer>;
 /** An engine refusal; `closingReason` is fixed text for the owner, such as the spend limit a new turn met. */
@@ -304,7 +306,8 @@ export class AssistantEngine {
     } finally {this.#starting = false;}
     if (this.#allowed.includes(READ_WEMO) || this.#allowed.includes(READ_DEVICES)) this.#powerLimits = followPowerLimits(this.context);
     for (const watch of this.store.confirmations()) void this.#followConfirmation(watch);
-    this.#subscriptions.push(await this.context.sdk.respond<AssistantControl>('bunny.cmd.assistant-control.assistant', command => this.#control(command)));
+    this.#subscriptions.push(await this.context.sdk.respond<AssistantControl | ContinueCodingControl>('bunny.cmd.assistant-control.assistant', command =>
+      command.data.action === 'continue-coding-job' ? this.#continueCoding({...command, data: command.data}) : this.#control({...command, data: command.data})));
     this.#subscriptions.push(await this.context.sdk.respond<AssistantInput>('bunny.cmd.assistant-input.assistant', command => this.#input(command)));
   }
   async stop(): Promise<void> {
@@ -567,6 +570,18 @@ export class AssistantEngine {
       return reply;
     } catch (error) {return errorBody(codeOf(error), {detail: error instanceof Fault && error.closingReason !== undefined ? error.closingReason : 'The assistant control was not saved.'});}
   }
+  #continueCoding(command: Command<ContinueCodingControl>): Promise<Reply> {
+    let committed: (() => void) | undefined;
+    return this.#admit(command, digest(command.data), () => {
+      const continuation = this.options.continueCodingJob?.(command.data, command) ?? fail('unavailable');
+      if ('code' in continuation) throw new Fault(continuation.code, continuation.detail);
+      committed = continuation.committed;
+      return undefined;
+    }).then(reply => {
+      if (!('error' in reply)) committed?.();
+      return reply;
+    });
+  }
   #control(command: Command<AssistantControl>): Promise<Reply> {
     let spoken: {id: string; text: string} | undefined, delegated = false, renamed: string | undefined, cancelled: Task | undefined;
     return this.#admit(command, digest(command.data), add => {
@@ -668,12 +683,12 @@ export class AssistantEngine {
       const fresh = object(value) && value.action === 'new-conversation';
       const stoppingJob = object(value) && value.action === 'stop-coding-job';
       if (stoppingJob && (Object.keys(value).some(key => !['action', 'jobId', 'operationId'].includes(key)) ||
-        typeof value.operationId !== 'string' || !QUEUED_ID.test(value.operationId) || value.jobId !== `${value.operationId}-job`)) fail('invalid-request');
+        typeof value.operationId !== 'string' || !QUEUED_ID.test(value.operationId) || typeof value.jobId !== 'string' || !/^[A-Za-z0-9_.-]{1,132}$/u.test(value.jobId))) fail('invalid-request');
       // Editing a queued message (Hub #2030) runs no work either, so it is admitted while conversation is off.
       if (!fresh && !stoppingJob && !(object(value) && value.action === 'edit-queued')) this.#ready();
       if (fresh && (Object.keys(value).some(key => !['action', 'profile', 'expectedRevision'].includes(key)) || !profile(value.profile) ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
-      if (!fresh && !stoppingJob && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'queuedId'].includes(key)) ||
+      if (!fresh && !stoppingJob && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'queuedId', 'harness'].includes(key)) ||
         !profile(value.profile) || !['start', 'answer', 'queue', 'edit-queued', 'steer'].includes(String(value.action)) || typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > LIMITS.inputBytes ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
       // A steer names the turn it expects (Hub #2031), and with a question the one it skips or declines.
@@ -681,6 +696,7 @@ export class AssistantEngine {
         : value.action === 'steer' ? typeof value.taskId !== 'string' || !(value.questionId === undefined || typeof value.questionId === 'string') || value.queuedId !== undefined
           : value.action === 'edit-queued' ? value.taskId !== undefined || value.questionId !== undefined || typeof value.queuedId !== 'string' || !QUEUED_ID.test(value.queuedId)
             : value.taskId !== undefined || value.questionId !== undefined || value.queuedId !== undefined)) fail('invalid-request');
+      if (object(value) && value.harness !== undefined && (value.action !== 'answer' || value.text !== 'approve' || !codingChoice(value.harness))) fail('invalid-request');
       const input = (fresh ? {...value, text: ''} : value) as Stage['input'];
       this.store.expireStages(this.context.clock.now());
       const previous = this.store.inputFor(request.requestId);
@@ -774,6 +790,10 @@ export class AssistantEngine {
         // An approval is answered only by the two literal decisions, so free text can neither apply nor dismiss a proposal; a delegation is answered by the worker alone.
         if (task.question.kind === 'delegation') fail('invalid-state');
         if (task.question.kind === 'approval' && !['approve', 'decline'].includes(input.text)) fail('invalid-request');
+        if (input.harness !== undefined) {
+          if (task.question.proposal?.family !== 'coding-dispatch') fail('invalid-request');
+          task.question.codingChoice = input.harness;
+        }
         task.question.answer = input.text;
         this.store.message(task, `${task.question.id}-answer`, 'owner', input.text, this.context.clock.now());
         // An answered approval is a major event for the conversation's title (Hub #2075), named by its tool and decision.
@@ -1339,7 +1359,7 @@ export class AssistantEngine {
       // A hand-off whose companion's slot is busy waits for it; it was approved and is sent once when the slot frees.
       const companion = PROFILES.find(entry => entry.id === task.profile)?.name ?? task.profile;
       result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, conversationId: task.conversationId, companion: task.profile, repository: proposal.data.repository, brief: proposal.data.brief,
-        expectedRevision: proposal.expectedRevision}, active.span.context, signal)
+        expectedRevision: proposal.expectedRevision, ...(question.codingChoice === undefined ? {} : {choice: question.codingChoice})}, active.span.context, signal)
         .then(answer => {
           if (answer.status === 'queued') {
             job = {jobId: answer.jobId, operationId: answer.requestId, taskId: task.id, conversationId: task.conversationId, repository: proposal.data.repository, brief: proposal.data.brief};
@@ -1459,7 +1479,7 @@ export class AssistantEngine {
     await this.outbox.transaction(add => {
       const task = this.store.task(job.taskId);
       if (task === undefined || task.conversationId !== job.conversationId) return;
-      const id = `${job.jobId}-${kind}`;
+      const id = job.jobId === `${job.operationId}-job` ? `${job.jobId}-${kind}` : `${job.operationId}-${kind}`;
       if (this.store.savedMessage(task.id, id) !== undefined) return;
       this.store.message(task, job.jobId, 'assistant', jobReceipt(job).slice('accepted: '.length), this.context.clock.now());
       this.store.message(task, id, 'assistant', `Coding job ${job.jobId}: ${text}`, this.context.clock.now(), job.jobId);

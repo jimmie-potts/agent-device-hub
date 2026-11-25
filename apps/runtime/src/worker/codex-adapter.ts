@@ -1,3 +1,4 @@
+import {writerGone} from './writer-proof.js';
 import {execFile, spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {lstat, readdir, realpath} from 'node:fs/promises';
@@ -178,6 +179,7 @@ type Wire = {
   request(method: string, params?: object): Promise<unknown>;
   notify(method: string): void;
   close(): void;
+  writerStopped?(): Promise<boolean>;
 };
 export type CodexTransport = (input: {executable: string; args: string[]; cwd: string; env: Record<string, string>; signal: AbortSignal;
   event: (method: string, data: unknown) => void; closed: () => void}) => Wire;
@@ -186,6 +188,9 @@ export type CodexTransport = (input: {executable: string; args: string[]; cwd: s
 export const openCodex: CodexTransport = ({executable, args, cwd, env, signal, event, closed}) => {
   const child = spawn(executable, args, {cwd, env, detached: true, stdio: ['pipe', 'pipe', 'ignore']});
   const pending = new Map<number, {resolve: (value: unknown) => void; reject: (error: Error) => void}>();
+  const closedChild = new Promise<boolean>(resolve => {
+    child.once('close', () => {resolve(writerGone(child.pid));});
+  });
   let next = 0, ended = false;
   let lineBytes = 0;
   const send = (message: object) => {if (!ended) child.stdin.write(JSON.stringify(message) + '\n');};
@@ -241,6 +246,11 @@ export const openCodex: CodexTransport = ({executable, args, cwd, env, signal, e
       send({id, method, params});
     }),
     notify: method => send({method}),
+    writerStopped: () => new Promise<boolean>(resolve => {
+      const timeout = setTimeout(() => {resolve(false);}, 1500);
+      timeout.unref();
+      void closedChild.then(gone => {clearTimeout(timeout); resolve(gone);});
+    }),
     close: () => {
       if (ended) return;
       // EOF gives the app-server time to close its session store.
@@ -377,66 +387,72 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         if (method === 'turn/completed' && turnId !== undefined && turn.id === turnId) {terminal = turn; settle();}
       }, closed: () => {settle();}});
       const refusal = (summary: string): AdapterEvidence => ({reason: 'refused', summary});
-      try {
-        await initialize(wire);
-        if (!await isolatedSettings(wire, cwd, home)) return refusal('Codex did not confirm isolated settings for this worktree.');
-        if (unauthorized) return refusal('Codex reported contrary personal ChatGPT subscription evidence.');
-        const account = codexSignIn(await wire.request('account/read', {refreshToken: false}));
-        if (unauthorized || account.signedIn !== 'yes') return refusal('Codex needs a confirmed personal ChatGPT subscription sign-in.');
-        const initialWindows = await readQuota(wire, revision, account.plan, revoked);
-        if (unauthorized || !quotaAllowed(revision)) return refusal('Codex reported contrary personal ChatGPT subscription evidence.');
-        if (signal.aborted) return {reason: 'cancelled'};
-        if (initialWindows !== undefined && windows.length === 0) windows = initialWindows;
-        const opened = record(await wire.request('thread/start', {cwd, runtimeWorkspaceRoots: [cwd], permissions: profile,
-          modelProvider: 'openai', approvalPolicy: 'never', allowProviderModelFallback: false,
-          developerInstructions: 'Work only on this delegated repository brief. Do not change settings, publish changes or open a pull request. Report checks and limitations. Use waiting-for-owner for an unresolved decision.',
-          ...(configuration.model === undefined ? {} : {model: configuration.model})}));
-        const roots = opened.runtimeWorkspaceRoots;
-        const sandbox = record(opened.sandbox);
-        const writable = sandbox.writableRoots;
-        if (unauthorized || opened.modelProvider !== 'openai' || opened.approvalPolicy !== 'never' || opened.cwd !== cwd ||
-          record(opened.activePermissionProfile).id !== profile || sandbox.type !== 'workspaceWrite' || sandbox.networkAccess !== false ||
-          !Array.isArray(writable) || writable.some(root => root !== cwd) || !Array.isArray(roots) || roots.length !== 1 || roots[0] !== cwd) {
-          return refusal('Codex did not confirm the required worktree, permission profile or first-party provider.');
-        }
-        sessionId = nativeSessionId(record(opened.thread).id);
-        if (sessionId === undefined) return {reason: 'invalid-output', summary: 'Codex returned no valid thread identity.'};
-        await input.session(sessionId);
-        if (input.signal.aborted) return {reason: 'cancelled', sessionId};
-        const latestAccount = codexSignIn(await wire.request('account/read', {refreshToken: false}));
-        if (unauthorized || !quotaAllowed(revision) || latestAccount.signedIn !== 'yes') {
-          return {...refusal('Codex could not confirm personal ChatGPT subscription sign-in immediately before the turn.'), sessionId};
-        }
-        if (input.signal.aborted) return {reason: 'cancelled', sessionId};
-        quotaInterrupts.add(invalidate);
-        dispatched = true;
-        const contrary = (sessionId: string): AdapterEvidence => ({
-          ...refusal('Codex reported a change away from personal ChatGPT subscription sign-in during the run.'), sessionId, uncertain: true,
-        });
-        const started = record(await Promise.race([wire.request('turn/start', {threadId: sessionId,
-          input: [{type: 'text', text: input.brief, text_elements: []}], outputSchema: CODEX_RESULT_SCHEMA}), revoked]));
-        if (unauthorized) return contrary(sessionId);
-        const acceptedTurn = nativeSessionId(record(started.turn).id);
-        if (acceptedTurn === undefined || (turnId !== undefined && turnId !== acceptedTurn)) return {reason: 'invalid-output', uncertain: true, sessionId};
-        turnId = acceptedTurn;
-        await completed;
-        if (unauthorized) return contrary(sessionId);
-        if (terminal === undefined) return {reason: 'lost', uncertain: true, sessionId, windows};
-        const cause = record(terminal.error).codexErrorInfo;
-        if (terminal.status !== 'completed') {
-          if (cause === 'usageLimitExceeded') return {reason: 'usage-limit', limit: limitOf(windows), windows, sessionId};
-          if (cause === 'sessionBudgetExceeded') return {reason: 'budget', windows, sessionId};
-          if (object(cause) && 'responseStreamDisconnected' in cause) return {reason: 'lost', uncertain: true, windows, sessionId};
-          return {reason: 'exit', windows, sessionId};
-        }
-        let structured: unknown;
-        try {structured = JSON.parse(message ?? '');} catch {return {reason: 'invalid-output', windows, sessionId};}
-        if (!validOutput(structured)) return {reason: 'invalid-output', windows, sessionId};
-        return {structured, windows, sessionId, usage: {turns: 1, costUsd: null, durationMs: null},
-          limitations: ['Codex is limited to one turn and does not expose a per-turn dollar cap or subscription cost.']};
-      } catch {
-        return {reason: dispatched ? 'lost' : 'refused', uncertain: dispatched, ...(sessionId === undefined ? {} : {sessionId})};
-      } finally {quotaInterrupts.delete(invalidate); wire.close();}
+      const execute = async (): Promise<AdapterEvidence> => {
+        try {
+          await initialize(wire);
+          if (!await isolatedSettings(wire, cwd, home)) return refusal('Codex did not confirm isolated settings for this worktree.');
+          if (unauthorized) return refusal('Codex reported contrary personal ChatGPT subscription evidence.');
+          const account = codexSignIn(await wire.request('account/read', {refreshToken: false}));
+          if (unauthorized || account.signedIn !== 'yes') return refusal('Codex needs a confirmed personal ChatGPT subscription sign-in.');
+          const initialWindows = await readQuota(wire, revision, account.plan, revoked);
+          if (unauthorized || !quotaAllowed(revision)) return refusal('Codex reported contrary personal ChatGPT subscription evidence.');
+          if (signal.aborted) return {reason: 'cancelled'};
+          if (initialWindows !== undefined && windows.length === 0) windows = initialWindows;
+          const opened = record(await wire.request('thread/start', {cwd, runtimeWorkspaceRoots: [cwd], permissions: profile,
+            modelProvider: 'openai', approvalPolicy: 'never', allowProviderModelFallback: false,
+            developerInstructions: 'Work only on this delegated repository brief. Do not change settings, publish changes or open a pull request. Report checks and limitations. Use waiting-for-owner for an unresolved decision.',
+            ...(configuration.model === undefined ? {} : {model: configuration.model})}));
+          const roots = opened.runtimeWorkspaceRoots;
+          const sandbox = record(opened.sandbox);
+          const writable = sandbox.writableRoots;
+          if (unauthorized || opened.modelProvider !== 'openai' || opened.approvalPolicy !== 'never' || opened.cwd !== cwd ||
+            record(opened.activePermissionProfile).id !== profile || sandbox.type !== 'workspaceWrite' || sandbox.networkAccess !== false ||
+            !Array.isArray(writable) || writable.some(root => root !== cwd) || !Array.isArray(roots) || roots.length !== 1 || roots[0] !== cwd) {
+            return refusal('Codex did not confirm the required worktree, permission profile or first-party provider.');
+          }
+          sessionId = nativeSessionId(record(opened.thread).id);
+          if (sessionId === undefined) return {reason: 'invalid-output', summary: 'Codex returned no valid thread identity.'};
+          await input.session(sessionId);
+          if (input.signal.aborted) return {reason: 'cancelled', sessionId};
+          const latestAccount = codexSignIn(await wire.request('account/read', {refreshToken: false}));
+          if (unauthorized || !quotaAllowed(revision) || latestAccount.signedIn !== 'yes') {
+            return {...refusal('Codex could not confirm personal ChatGPT subscription sign-in immediately before the turn.'), sessionId};
+          }
+          if (input.signal.aborted) return {reason: 'cancelled', sessionId};
+          quotaInterrupts.add(invalidate);
+          dispatched = true;
+          const contrary = (sessionId: string): AdapterEvidence => ({
+            ...refusal('Codex reported a change away from personal ChatGPT subscription sign-in during the run.'), sessionId, uncertain: true,
+          });
+          const started = record(await Promise.race([wire.request('turn/start', {threadId: sessionId,
+            input: [{type: 'text', text: input.brief, text_elements: []}], outputSchema: CODEX_RESULT_SCHEMA}), revoked]));
+          if (unauthorized) return contrary(sessionId);
+          const acceptedTurn = nativeSessionId(record(started.turn).id);
+          if (acceptedTurn === undefined || (turnId !== undefined && turnId !== acceptedTurn)) return {reason: 'invalid-output', uncertain: true, sessionId};
+          turnId = acceptedTurn;
+          await completed;
+          if (unauthorized) return contrary(sessionId);
+          if (terminal === undefined) return {reason: 'lost', uncertain: true, sessionId, windows};
+          const cause = record(terminal.error).codexErrorInfo;
+          if (terminal.status !== 'completed') {
+            if (cause === 'usageLimitExceeded') return {reason: 'usage-limit', limit: limitOf(windows), windows, sessionId};
+            if (cause === 'sessionBudgetExceeded') return {reason: 'budget', windows, sessionId};
+            if (object(cause) && 'responseStreamDisconnected' in cause) return {reason: 'lost', uncertain: true, windows, sessionId};
+            return {reason: 'exit', windows, sessionId};
+          }
+          let structured: unknown;
+          try {structured = JSON.parse(message ?? '');} catch {return {reason: 'invalid-output', windows, sessionId};}
+          if (!validOutput(structured)) return {reason: 'invalid-output', windows, sessionId};
+          return {structured, windows, sessionId, usage: {turns: 1, costUsd: null, durationMs: null},
+            limitations: ['Codex is limited to one turn and does not expose a per-turn dollar cap or subscription cost.']};
+        } catch {
+          return {reason: dispatched ? 'lost' : 'refused', uncertain: dispatched, ...(sessionId === undefined ? {} : {sessionId})};
+        } finally {quotaInterrupts.delete(invalidate); wire.close();}
+      };
+      const evidence = await execute();
+      const stopped = await wire.writerStopped?.();
+      if (stopped === true) return {...evidence, writerStopped: true};
+      return stopped === false && dispatched ? {...evidence, uncertain: true} : evidence;
     },
   };
 }

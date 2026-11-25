@@ -12,7 +12,8 @@ export const CODING_WORKER_SOURCE = 'bunny/parts/coding-worker';
 export const DEFAULT_CODING_BOUNDS: CodingBounds = Object.freeze({wallClockMs: 1_200_000, maxTurns: 60, budgetUsd: 5});
 export type CodingBounds = {wallClockMs: number; maxTurns: number; budgetUsd: number};
 /** What the module asks the core to dispatch, and what the core's tracked operation carries to the module. */
-export type CodingDispatch = {requestId: string; endpointId: string; taskId: string; repository: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId};
+export type CodingContinuation = {fromOperationId: string; token: string};
+export type CodingDispatch = {requestId: string; endpointId: string; taskId: string; repository: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId; continuation?: CodingContinuation};
 export type CodingRun = CodingDispatch & {selectionId?: string};
 /**
  * The worker's readiness (Hub #1743, `coding-endpoint/2.1` and `coding-state/2.1`): what its harness reported without
@@ -37,7 +38,7 @@ export const CODING_WORKER_SLOTS = 3;
  */
 export type CodingEndpointControl = {requestId: string; action: 'enable' | 'disable'; readiness?: CodingReadiness; slots?: number; capacity?: 'uncapped'; harnesses?: CodingHarnessReadiness[]};
 /** Version 2.1 (Hub #2028) tags a start with the companion that asked; a 2.0 start has no companion. */
-export type CodingWork = {requestId: string; operationId: string} & ({action: 'start'; taskId: string; companion?: CodingCompanion; repository: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId} | {action: 'cancel'});
+export type CodingWork = {requestId: string; operationId: string} & ({action: 'start'; taskId: string; companion?: CodingCompanion; repository: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId; continuation?: CodingContinuation} | {action: 'cancel'});
 export type CodingCheck = {name: string; status: 'passed' | 'failed' | 'skipped' | 'unrun' | 'unknown'; detail?: string};
 /** A usage limit the harness reported: the window it named and when it resets, each null when the tool did not say. */
 export type CodingLimit = {window: string | null; resetsAtMs: number | null};
@@ -58,8 +59,8 @@ export const CODING_SETUP_WORK_MS = 270_000;
 export type CodingProgressReason = 'spawn' | 'refused' | 'repository' | 'worktree' | 'exit' | 'timeout' | 'budget' | 'cancelled' | 'lost' | 'invalid-output' | 'usage-limit';
 export type CodingProgress = {operationId: string; harness?: CodingHarnessId; sessionId?: string} & (
   | {status: 'started'; setup?: CodingSetup}
-  | {status: 'completed'; result: CodingResult}
-  | {status: 'failed' | 'cancelled' | 'uncertain'; reason: CodingProgressReason; result?: CodingResult | null}
+  | {status: 'completed'; result: CodingResult; handoffToken?: string}
+  | {status: 'failed' | 'cancelled' | 'uncertain'; reason: CodingProgressReason; result?: CodingResult | null; handoffToken?: string}
 );
 export type CodingLost = {id: string};
 /** One run the worker holds for a companion's slot, from dispatch to its end. */
@@ -135,15 +136,18 @@ export const codingFamilies = [
   defineFamily('coding-endpoint', 'command', 'org.bunny.coding.endpoint.requested', checkEndpoint, '2.4'),
   defineFamily('coding-dispatch', 'command', 'org.bunny.coding.dispatch.requested', assistantSubject),
   defineFamily('coding-dispatch', 'command', 'org.bunny.coding.dispatch.requested', assistantSubject, '2.1'),
+  defineFamily('coding-dispatch', 'command', 'org.bunny.coding.dispatch.requested', assistantSubject, '2.2'),
   defineFamily('coding-run', 'command', 'org.bunny.coding.run.requested', assistantSubject),
   defineFamily('coding-run', 'command', 'org.bunny.coding.run.requested', assistantSubject, '2.1'),
   defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork),
   defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.1'),
   defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.2'),
+  defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.3'),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.1'),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.2'),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.3'),
+  defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.4'),
   defineFamily('coding-lost', 'occurrence', 'org.bunny.coding.endpoint-lost', message =>
     message.subject === (message.data as CodingLost).id ? undefined : 'envelope /subject must name the lost endpoint'),
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', codingSubject),
@@ -152,6 +156,7 @@ export const codingFamilies = [
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', checkState, '2.3'),
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', checkState, '2.4'),
   defineFamily('coding-run', 'command', 'org.bunny.coding.run.requested', assistantSubject, '2.2'),
+  defineFamily('coding-run', 'command', 'org.bunny.coding.run.requested', assistantSubject, '2.3'),
 ] as const;
 export const codingSchemas: Readonly<Record<string, object>> = Object.fromEntries(codingFamilies.map(family => [family.dataschema, family.schema]));
 export function registerCodingFamilies(validator: MessageValidator): void { registerFamilies(validator, codingFamilies); }
