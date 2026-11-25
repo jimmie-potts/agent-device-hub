@@ -235,6 +235,93 @@ void test('an exact tool ID cannot skip the owner choosing between shared catalo
   assert.equal(writes[0]?.target, 'second-screen');
 });
 
+void test('ordinary media requests bind the exact display and action', async context => {
+  const owner = 'bunny/modules/pixoo';
+  const base = light('office-pixoo', 'Office Pixoo');
+  const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities, media: {supported: true as const, actions: ['pause' as const], playlistIds: [], renditionIds: []}}};
+  const writes: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn % 2 === 0 ? reply('Finished.') : call('control_media_control', {
+    owner, target: device.id, arguments: '{"action":"pause"}',
+  }));
+  const w = await world(context, {provider, tools: ['control_media_control'],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const display = w.bus.connect(owner);
+  context.after(() => display.close());
+  await display.serveSync(['device'], () => ({revision: 1, states: [{type: 'org.bunny.device.updated',
+    subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Stop media on the office Pixoo');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(writes.length, 0);
+  await input(w.core, w.module(), 'Pause media on the office Pixoo');
+  await until(() => writes.length === 1);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  assert.equal(writes[0]?.target, device.id);
+  assert.equal(writes[0]?.family === 'catalog-action' ? writes[0].data.action : undefined, 'pause');
+});
+
+void test('ordinary monitor requests and moments dispatch only their named settings', async context => {
+  const owner = 'bunny/modules/pixoo', base = light('office-pixoo', 'Office Pixoo');
+  const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities,
+    moments: {supported: true as const, moods: ['celebrate'], maxDurationMs: 10_000, coversStatus: true}}};
+  const writes: AssistantDispatch[] = [];
+  const instructions = new Map([
+    ['Show Claude sessions on the office Pixoo every 3 seconds', ['control_pixoo_monitor_set', '{"filter":{"provider":"claude"},"cadenceMs":3000}']],
+    ['Hide Now Playing on the office Pixoo', ['control_pixoo_now_playing_set', '{"media":"off"}']],
+    ['Play a celebrate moment on the office Pixoo for 5 seconds', ['control_moment_play', '{}']],
+  ]);
+  const provider = counted(request => {
+    const text = request.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? '';
+    const [name, args] = instructions.get(text) ?? [];
+    return request.transcript.some(item => item.role === 'tool') || name === undefined || args === undefined
+      ? reply('Finished.') : call(name, {owner, target: device.id, arguments: args});
+  });
+  const w = await world(context, {provider, tools: ['control_pixoo_monitor_set', 'control_pixoo_now_playing_set', 'control_moment_play'],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const display = w.bus.connect(owner);
+  context.after(() => display.close());
+  await display.serveSync(['device'], () => ({revision: 1, states: [{type: 'org.bunny.device.updated',
+    subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}]}));
+  await control(w.core, w.module(), 'enable');
+  for (const prompt of instructions.keys()) {
+    const prior = writes.length;
+    await input(w.core, w.module(), prompt);
+    await until(() => writes.length === prior + 1);
+    w.advance(1100);
+    await until(() => status(w) === 'succeeded');
+  }
+  const data = writes.flatMap(write => write.family === 'catalog-action' ? [write.data] : []);
+  assert.deepEqual(data.slice(0, 2), [{filter: {provider: 'claude'}, cadenceMs: 3000}, {media: 'off'}]);
+  assert.equal(data[2]?.mood, 'celebrate');
+  assert.equal(data[2]?.durationMs, 5000);
+  assert.equal(data[2]?.coversStatus, false);
+});
+
+void test('ambiguous device clarification omits choices denied at either destination', async context => {
+  const owner = 'bunny/modules/pixoo';
+  const devices = ['visible-screen', 'owner-denied-screen', 'model-denied-screen']
+    .map(id => ({...light(id, 'Studio Display'), kind: 'pixoo' as const}));
+  const provider = counted(() => call('control_brightness_set', {
+    owner, target: 'visible-screen', arguments: '{"percent":35}',
+  }));
+  const policy = sharing();
+  const w = await world(context, {provider, tools: ['control_brightness_set'], share: query => policy(query)
+    && !(query.destination === 'private-conversation' && query.record === 'owner-denied-screen')
+    && !(query.destination === 'synthetic' && query.record === 'model-denied-screen'),
+    dispatch: () => assert.fail('ambiguous control cannot dispatch')});
+  const display = w.bus.connect(owner);
+  context.after(() => display.close());
+  await display.serveSync(['device'], () => ({revision: 1, states: devices.map(device => ({type: 'org.bunny.device.updated',
+    subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}))}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Set Studio Display brightness to 35%');
+  await until(() => status(w) === 'waiting');
+  const document = await page(w);
+  assert.match(JSON.stringify(document.currentTask?.question), /Give its exact device ID/);
+  assert.doesNotMatch(JSON.stringify(document), /(?:owner|model)-denied-screen/);
+});
+
 void test('showing saved art binds status visibility and the whole display set', () => {
   const proposal = {family: 'catalog-action', command: 'art-show', target: 'hub', binding: {kind: 'fixed', owner: 'bunny/core', target: 'hub'},
     data: {artworkId: 'kite', targets: ['pixoo', 'tidbyt'], coversStatus: false}} as const;
@@ -1839,27 +1926,59 @@ void test('a failed turn closes after clarification without another model call',
   assert.deepEqual((await page(w)).messages, messages);
 });
 
-async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<typeof world>>, generated?: () => string | undefined): Promise<void> {
-  const target = 'display-blue';
+async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<typeof world>>, generated?: () => string | undefined,
+  targets = ['display-blue']): Promise<void> {
   await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
     type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
-    data: {id: 'art', revision: 1, targets: [{target, kind: 'pixoo'}]},
+    data: {id: 'art', revision: 1, targets: targets.map(target => ({target, kind: 'pixoo'}))},
   }]}));
   const pixoo = w.bus.connect('bunny/modules/pixoo'), art = w.bus.connect('bunny/modules/art');
   context.after(async () => {await pixoo.close(); await art.close();});
-  const device = light(target, 'Blue panel');
-  await pixoo.serveSync(['device'], () => ({revision: 1, states: [{
-    type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
-    data: {...device, kind: 'pixoo', capabilities: {...device.capabilities, moments: {supported: true,
-      moods: ['celebrate'], maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png'], maxBytes: 65536}}}},
-  }]}));
+  await pixoo.serveSync(['device'], () => ({revision: 1, states: targets.map(target => {
+    const device = light(target, 'Blue panel');
+    return {type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
+      data: {...device, kind: 'pixoo', capabilities: {...device.capabilities, moments: {supported: true,
+        moods: ['celebrate'], maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png'], maxBytes: 65536}}}}};
+  })}));
   await art.serveSync(['art'], () => ({revision: 1, states: [{
     type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0', data: {id: 'art', revision: 1,
       jobs: generated === undefined ? [] : [{requestId: generated(), artworkId: 'kite', status: 'finished', outcome: 'succeeded'}],
-      artworks: [{artworkId: 'kite', compositions: [{target: 'pixoo', compositionId: 'a'.repeat(64), outcome: 'succeeded',
-        renditions: [{format: 'png', bytes: 128}]}]}]},
+      artworks: [{artworkId: 'kite', compositions: ['pixoo', 'ui'].map(target => ({target, compositionId: 'a'.repeat(64), outcome: 'succeeded',
+        renditions: [{format: 'png', bytes: 128}]}))}]},
   }]}));
 }
+
+void test('an ordinary multi-display show clarifies duplicate labels despite the model supplying an exact ID', async context => {
+  const writes: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn > 2 ? reply('Show result.') : call('control_art_show', {
+    owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: 'kite', targets: [turn === 1 ? 'display-blue' : 'display-green', 'browser']}),
+  }));
+  const w = await world(context, {provider, tools: ['control_art_show'],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await serveKiteDisplay(context, w, undefined, ['display-blue', 'display-green']);
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Show the kite on Blue panel and Browser');
+  await until(() => status(w) === 'waiting');
+  assert.match(JSON.stringify((await page(w)).currentTask?.question), /id:display-blue.*id:display-green/);
+  assert.equal(writes.length, 0);
+  await input(w.core, w.module(), 'id:display-green', true);
+  await until(() => writes.length === 1);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(writes[0]?.family === 'catalog-action' ? writes[0].data.targets : undefined, ['display-green', 'browser']);
+});
+
+void test('saving a show binds the explicitly requested draft revision and immutable version name', () => {
+  const proposal = {family: 'catalog-action', command: 'nanoleaf-show-save', target: 'shows',
+    binding: {kind: 'fixed', owner: 'bunny/modules/nanoleaf', target: 'shows'}, data: {
+      name: 'Dawn test', showId: 'show-synthetic', versionName: 'First version',
+    }} as const;
+  const owners = [['show-synthetic']];
+  const request = 'Save draft Dawn test (show-synthetic) revision 1 as First version';
+  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, false, 1), true);
+  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, false, 2), false);
+  assert.equal(authorizesControl(proposal, request.replace('First version', 'Other version'), '', owners, '', [], false, false, 1), false);
+});
 
 void test('a failed compound turn reports the saved artwork and exact rejected display action', async context => {
   const requests: AssistantDispatch[] = [];

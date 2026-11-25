@@ -15,6 +15,22 @@ For an explicit request by the authorized owner in private Conversation, each co
 - **THEN** Conversation asks for the missing setting or the exact device
 - **AND** the owner's answer completes the original request and one tracked command dispatches without another approval
 
+#### Scenario: Ordinary requests bind typed controls
+
+- **WHEN** the owner asks to pause media on a uniquely named display, clear notices for an exact session or change a named monitor setting
+- **THEN** the matching typed command dispatches once without an approval or a protocol-formatted request
+
+#### Scenario: A display alias matches multiple eligible targets
+
+- **WHEN** the owner asks to show saved art on a shared display alias and another destination, even if the model proposes an exact display ID
+- **THEN** Conversation asks which exact display the owner meant and names only candidates permitted at the reply destination
+- **AND** a valid clarification preserves the rest of the requested destination set
+
+#### Scenario: The owner names a specific draft revision
+
+- **WHEN** a save proposal selects a different draft revision than the one the owner requested, or the draft changes before dispatch
+- **THEN** the save conflicts and no library write is sent
+
 #### Scenario: Matching words alone do not authorize effects
 
 - **WHEN** a model requests brightness using a number the owner supplied for a different property or a relative change

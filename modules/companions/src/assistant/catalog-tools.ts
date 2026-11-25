@@ -35,7 +35,7 @@ export function catalogCommand(name: string): CatalogFamily | undefined {
 }
 
 const draft = text('The exact draft ID from the authoring or preview tool.');
-const draftRevision = integer('The exact revision from the latest draft preview.');
+const draftRevision = integer('The exact draft revision the owner requested, or the previewed revision if the owner did not specify one.');
 const actions = Object.keys(assistantRoutes).filter(catalogFamily).filter(family => family !== 'nanoleaf-show-save' && family !== 'art-request');
 export const catalogTools = [
   define(READ_DEVICES, 'read', 'Find configured devices and observe their status and permitted commands. A named Wemo plug includes its Hub maximum-on timer status and time remaining. Use empty target to list. Return the exact owner and target to use for a control.', {
@@ -68,9 +68,10 @@ export const catalogTools = [
     draftId: draft, revision: draftRevision, versionName: text('Name of this saved version.'),
   }),
   ...actions.map(family => define(catalogTool(family), 'command',
-    family === 'art-show' ? 'Show the requested saved artwork on exact display targets. Use hub and bunny/core, with artworkId and targets.'
+    family === 'art-show' ? 'Show the requested saved artwork on all requested display targets. Use hub and bunny/core, with artworkId and targets. Keep status visible with coversStatus=false when requested.'
       : family === 'music-lighting-control' ? 'Use start-show with showId and version on an eligible Nanoleaf light, or stop, pause-show, resume-show, or seek-show for the current generation. Use bunny/core.'
-      : `Run ${family} on a configured, supported target only when explicitly requested by the owner.`, {
+      : family === 'moment-play' ? 'Play a named mood on a configured display. For an immediate moment, ask only for missing display, mood, or duration. Use {} in arguments for this immediate form.'
+        : `Run ${family} on a configured, supported target only when explicitly requested by the owner.`, {
     owner: text('The exact owner source returned by the read tool.'), target: text('Exact target ID, or its label if unambiguous.'),
     arguments: text(`JSON object with the appropriate owner command fields: ${assistantRoutes[family].fields}. Do not supply revision or generation guards.`),
   })),

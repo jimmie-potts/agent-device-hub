@@ -29,6 +29,7 @@ export {LIMITS} from './limits.js';
 export type Question = SavedQuestion & {call: string};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   control?: BoundControl;
+  clarificationDevices?: readonly string[];
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
   traceparent: string | null; transcript: TranscriptItem[];

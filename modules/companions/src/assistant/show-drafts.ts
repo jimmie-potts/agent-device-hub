@@ -90,9 +90,10 @@ export class ShowDrafts {
     return {text: `Draft ${value.name} (${value.showId}, revision ${String(revision)}), ${String(value.timeline.durationMs)} ms. Preview only.\n${cues.join('\n')}`};
   }
 
-  noteSave(input: Readonly<Record<string, unknown>>, pending: PendingSave): ErrorCode | undefined {
+  noteSave(input: Readonly<Record<string, unknown>>, pending: PendingSave, expectedDraftRevision: number): ErrorCode | undefined {
     const draft = this.read(input.showId);
     if (draft === undefined) return 'not-found';
+    if (draft.revision !== expectedDraftRevision) return 'revision-conflict';
     if (draft.pending !== null) return 'uncertain-result';
     const head = input.expectedVersion;
     if (typeof head !== 'number' || head < draft.value.expectedVersion) return 'revision-conflict';
