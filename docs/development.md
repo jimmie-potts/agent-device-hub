@@ -3495,6 +3495,12 @@ credential and drives a proposal, approval, wait and result on the Conversation
 page. Installing the worker on the Mac is the [worker guide](coding-worker.md);
 source evidence establishes no installed run.
 
+Subscription worker adapters use the existing runtime unit, event contract
+and Companions checks. After the root build, run the coding worker process,
+stream and adapter test entries against their scripted commands. The event
+suite covers the added family versions and older layouts. The worker boundary
+tests use disposable repositories and synthetic accounts.
+
 Coding-worker slots (#2028) use the same suites. `coding-coordinator.test.js`
 also covers three companions at once with tagged starts, a proposal bound to
 the worker's connection only, a companion's own further hand-off waiting and

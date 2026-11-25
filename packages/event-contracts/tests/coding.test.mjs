@@ -159,3 +159,26 @@ test('the coding state 2.2 lists every run and waiting hand-off once, one run pe
   invalid(v21('coding-state', data));
   valid(v21('coding-state', {id: data.id, revision: data.revision, endpointId: data.endpointId, availability: data.availability, active: data.active, readiness: null}));
 });
+
+test('additive worker versions carry harness readiness, selection and early native identity', () => {
+  const {tool: _tool, ...health} = readiness();
+  const capabilities = {steering: 'unsupported', resume: 'saved-session', review: true};
+  const harnesses = [{...health, harness: 'codex', capabilities}, {...health, harness: 'fixture-adapter', capabilities}];
+  const enabled = {...family('coding-endpoint-slots').data, harnesses};
+  valid(at('coding-endpoint', '2.3', enabled));
+  invalid(at('coding-endpoint', '2.2', enabled));
+  invalid(at('coding-endpoint', '2.3', {...enabled, harnesses: [harnesses[0], harnesses[0]]}));
+  invalid(at('coding-endpoint', '2.3', {requestId: 'disable-fixture', action: 'disable', harnesses}));
+  const state = {...family('coding-state-slots').data, harnesses};
+  valid(at('coding-state', '2.3', state));
+  invalid(at('coding-state', '2.2', state));
+  for (const name of ['coding-dispatch', 'coding-run', 'coding-work']) {
+    const data = {...family(name === 'coding-work' ? 'coding-work-companion' : name).data, harness: 'codex'};
+    valid(at(name, name === 'coding-work' ? '2.2' : '2.1', data));
+    invalid(at(name, name === 'coding-work' ? '2.1' : '2.0', data));
+  }
+  const progress = {operationId: 'op-1', status: 'started', harness: 'codex', sessionId: 'native-id'};
+  valid(at('coding-progress', '2.2', progress));
+  invalid(at('coding-progress', '2.1', progress));
+  invalid(at('coding-progress', '2.2', {...progress, sessionId: '/absolute/path'}));
+});

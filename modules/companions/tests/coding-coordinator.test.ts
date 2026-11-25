@@ -3,7 +3,7 @@ import {test, type TestContext} from 'node:test';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingDispatch, type CodingProgress, type CodingReadiness, type CodingResult, type CodingState, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import {CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingDispatch, type CodingHarnessReadiness, type CodingProgress, type CodingReadiness, type CodingResult, type CodingState, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {MessageValidator, errorBody} from '@jimmie-potts/event-contracts/v2';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import {InProcessBus, Outbox, type Command, type ModuleContext, type TraceContext} from '@jimmie-potts/sdk';
@@ -38,7 +38,7 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     if (coreReply === 'held') {await new Promise<void>(resolve => {release = resolve;}); return errorBody('unavailable');}
     if (coreReply === 'held-forward') await new Promise<void>(resolve => {release = resolve;});
     const lost = coreReply === 'lost-answer';
-    const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data},
+    const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-run/${command.data.harness === undefined ? '2.0' : '2.1'}`, data: command.data},
       {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
     if (lost) return errorBody('uncertain-result');
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
@@ -69,14 +69,19 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
       companion: /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny', repository: 'agent-device-hub', brief: 'Add a test.', expectedRevision}, parent),
     enable22: (endpoint = 'worker-1', slots = 3) => worker.request(`bunny.cmd.coding-endpoint.${endpoint}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpoint,
       dataschema: 'https://bunny.invalid/events/coding-endpoint/2.2', data: {requestId: `control-${String(++n)}`, action: 'enable', slots}}, {timeoutMs: 5000}),
+    enableAdapters: (harnesses: CodingHarnessReadiness[], endpoint = 'worker-1') => worker.request(`bunny.cmd.coding-endpoint.${endpoint}`,
+      {type: 'org.bunny.coding.endpoint.requested', subject: endpoint, dataschema: 'https://bunny.invalid/events/coding-endpoint/2.3',
+        data: {requestId: `control-${String(++n)}`, action: 'enable', slots: 3, harnesses}}, {timeoutMs: 5000}),
+    progressAdapters: (data: CodingProgress, endpoint = 'worker-1') => worker.publish(`bunny.event.coding-progress.${endpoint}`,
+      {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpoint, dataschema: 'https://bunny.invalid/events/coding-progress/2.2', data}, {parent}),
     advance: async (ms = 0) => {now += ms; for (const timer of [...timers]) if (timer.at <= now) {timers.delete(timer); timer.run();} await new Promise(resolve => setImmediate(resolve));},
     control: (action: 'enable' | 'disable', endpoint = 'worker-1', readiness?: CodingReadiness) => worker.request(`bunny.cmd.coding-endpoint.${endpoint}`, {type: 'org.bunny.coding.endpoint.requested', subject: endpoint,
       dataschema: `https://bunny.invalid/events/coding-endpoint/${readiness === undefined ? '2.0' : '2.1'}`, data: {requestId: `control-${String(++n)}`, action, ...(readiness === undefined ? {} : {readiness})}}, {timeoutMs: 5000}),
     progress21: (data: CodingProgress, endpoint = 'worker-1') => worker.publish(`bunny.event.coding-progress.${endpoint}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpoint,
       dataschema: 'https://bunny.invalid/events/coding-progress/2.1', data}, {parent}),
     published: published as {dataschema: string; data: CodingState}[],
-    dispatch: (taskId = 'task-1', endpointId = 'worker-1') => module.request('bunny.cmd.coding-dispatch.assistant', {type: 'org.bunny.coding.dispatch.requested', subject: 'assistant',
-      dataschema: 'https://bunny.invalid/events/coding-dispatch/2.0', data: {requestId: `${taskId}-step-1`, endpointId, taskId, repository: 'agent-device-hub', brief: 'Add a test.', bounds: DEFAULT_CODING_BOUNDS}},
+    dispatch: (taskId = 'task-1', endpointId = 'worker-1', harness?: string) => module.request('bunny.cmd.coding-dispatch.assistant', {type: 'org.bunny.coding.dispatch.requested', subject: 'assistant',
+      dataschema: `https://bunny.invalid/events/coding-dispatch/${harness === undefined ? '2.0' : '2.1'}`, data: {requestId: `${taskId}-step-1`, endpointId, taskId, repository: 'agent-device-hub', brief: 'Add a test.', bounds: DEFAULT_CODING_BOUNDS, ...(harness === undefined ? {} : {harness})}},
     {timeoutMs: 5000, requestId: `${taskId}-step-1`, parent}),
     progress: (data: CodingProgress, endpoint = 'worker-1') => worker.publish(`bunny.event.coding-progress.${endpoint}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: endpoint,
       dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data}, {parent}),
@@ -486,4 +491,33 @@ void test('accepted() knows a hand-off that runs and one that ran, and nothing e
   await w.restart();
   assert.equal(w.owner().accepted('task-bunny-1-step-1'), true, 'still recorded after a restart');
   assert.equal(w.owner().accepted('task-reachy-1-step-1'), false);
+});
+
+void test('harness selection requires an advertised adapter and a second started event sets native identity once', async t => {
+  const w = await world(t);
+  assert.equal((await w.enable22()).status, 'accepted');
+  const refused = await w.dispatch('legacy-choice', 'worker-1', 'codex');
+  assert.equal(refused.status === 'rejected' && refused.error.error.code, 'unsupported-capability');
+  assert.equal(w.work.length, 0);
+  const harness: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', version: '0.163.0', signedIn: 'yes', plan: 'plus',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'saved-session', review: true}};
+  assert.equal((await w.enableAdapters([harness])).status, 'accepted');
+  assert.equal((await w.dispatch('codex-choice', 'worker-1', 'codex')).status, 'accepted');
+  await until(() => w.work.length === 1);
+  const work = w.work[0];
+  assert.equal(work?.dataschema, 'https://bunny.invalid/events/coding-work/2.2');
+  assert.ok(work?.data.action === 'start');
+  assert.equal(work.data.harness, 'codex');
+  const {operationId} = work.data;
+  await w.progressAdapters({operationId, harness: 'codex', status: 'started'});
+  await until(() => w.outcomes.length === 1);
+  await w.progressAdapters({operationId, harness: 'codex', status: 'started', sessionId: 'native-first'});
+  await w.progressAdapters({operationId, harness: 'codex', status: 'started', sessionId: 'native-later'});
+  await until(() => w.owner().inspect().runs?.[0]?.sessionId === 'native-first');
+  assert.equal(w.outcomes.length, 1);
+  assert.equal(w.published.at(-1)?.dataschema, 'https://bunny.invalid/events/coding-state/2.3');
+  await w.lost();
+  await until(() => w.deliveries.length === 1);
+  assert.match(w.deliveries[0]?.text ?? '', /^uncertain \(lost\)/);
+  assert.equal(w.work.length, 1);
 });

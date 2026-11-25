@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/coding-state/2.3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "endpointId",
+    "availability",
+    "active",
+    "readiness",
+    "slots",
+    "runs",
+    "waiting"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/id"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/revision"
+    },
+    "endpointId": {
+      "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/endpointId"
+    },
+    "availability": {
+      "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/availability"
+    },
+    "active": {
+      "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/active"
+    },
+    "readiness": {
+      "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/readiness"
+    },
+    "slots": {
+      "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/slots"
+    },
+    "runs": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId",
+          "taskId",
+          "companion",
+          "status"
+        ],
+        "properties": {
+          "operationId": {
+            "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/runs/items/properties/operationId"
+          },
+          "taskId": {
+            "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/runs/items/properties/taskId"
+          },
+          "companion": {
+            "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/runs/items/properties/companion"
+          },
+          "status": {
+            "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/runs/items/properties/status"
+          },
+          "harness": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "sessionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          }
+        }
+      }
+    },
+    "waiting": {
+      "$ref": "https://bunny.invalid/events/coding-state/2.2#/properties/waiting"
+    },
+    "harnesses": {
+      "anyOf": [
+        {
+          "$ref": "https://bunny.invalid/events/coding-endpoint/2.3#/properties/harnesses"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

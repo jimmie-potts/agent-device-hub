@@ -7,15 +7,15 @@ import type {ActionEvidence} from '../assistant/closing-reply.js';
 // companion's slot is busy waits, durably and first in first out, and is dispatched once when that slot frees.
 import {errorBody, isErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
-import {CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingEndpointControl, type CodingLost, type CodingProgress, type CodingResult, type CodingRun,
+import {CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingEndpointControl, type CodingHarnessId, type CodingLost, type CodingProgress, type CodingResult, type CodingRun,
   type CodingRunEntry, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {Outcome, fullDisk, recordLog, type AddMessage, type Cancel, type Command, type ModuleContext, type Outbox, type Reply, type RequestResult, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {advanceRevision} from '../revision.js';
 import {CodingStore, type CodingResponsibility, type CodingWaitingRecord} from './store.js';
 
-/** The module publishes `coding-state/2.2`, which adds the worker's slots, every active run and the waiting hand-offs (Hub #2028). */
+/** Workers offering adapter selection add harness declarations and active session attribution in 2.3. */
 export const codingStateDraft = (data: CodingState) => ({kind: 'state' as const, type: 'org.bunny.coding-state.updated', subject: 'coding',
-  dataschema: 'https://bunny.invalid/events/coding-state/2.2', data: {...data, readiness: data.readiness ?? null, slots: data.slots ?? null, runs: data.runs ?? [], waiting: data.waiting ?? []}});
+  dataschema: `https://bunny.invalid/events/coding-state/${data.harnesses === undefined && data.runs?.some(run => run.harness !== undefined) !== true ? '2.2' : '2.3'}`, data: {...data, readiness: data.readiness ?? null, slots: data.slots ?? null, runs: data.runs ?? [], waiting: data.waiting ?? []}});
 /**
  * Delivers the worker's final word to the task that waits for it; the engine turns it into the delegation tool's result.
  * `startup` marks the settlement, at start, of responsibility still pending at the last stop.
@@ -36,7 +36,7 @@ export type CodingSeams = {
   sent?: (taskId: string, parent: TraceContext) => void;
 };
 type Phase = CodingRunEntry['status'];
-type Active = CodingResponsibility & {companion: CodingCompanion; phase: Phase; wallClockMs: number; cancel: Cancel; settling: boolean};
+type Active = CodingResponsibility & {companion: CodingCompanion; phase: Phase; wallClockMs: number; cancel: Cancel; settling: boolean; harness?: CodingHarnessId; sessionId?: string};
 const noop = (): void => {};
 /**
  * How long the worker may take to report it started once it accepted the work; the tracked outcome is uncertain after
@@ -79,7 +79,7 @@ export class CodingCoordinator {
   readonly #store: CodingStore;
   readonly #validator = coreValidator();
   readonly #subscriptions: Subscription[] = [];
-  #state: Pick<CodingState, 'revision' | 'endpointId' | 'availability' | 'readiness' | 'slots'> = {revision: 0, endpointId: null, availability: 'off', readiness: null, slots: null};
+  #state: Pick<CodingState, 'revision' | 'endpointId' | 'availability' | 'readiness' | 'slots' | 'harnesses'> = {revision: 0, endpointId: null, availability: 'off', readiness: null, slots: null};
   #bound = 0;
   /** Every operation the worker holds, by operation ID, in the order they were accepted. */
   readonly #active = new Map<string, Active>();
@@ -99,7 +99,8 @@ export class CodingCoordinator {
     try {return this.#active.has(operationId) || this.#store.accepted(operationId);} catch {return false;}
   }
   inspect(): CodingState {
-    const runs = [...this.#active.values()].map(active => ({operationId: active.operationId, taskId: active.taskId, companion: active.companion, status: active.phase}));
+    const runs = [...this.#active.values()].map(active => ({operationId: active.operationId, taskId: active.taskId, companion: active.companion, status: active.phase,
+      ...(active.harness === undefined ? {} : {harness: active.harness}), ...(active.sessionId === undefined ? {} : {sessionId: active.sessionId})}));
     const first = runs[0];
     let waiting: CodingState['waiting'] = [];
     try {waiting = this.#store.waiting().map(record => ({operationId: record.operationId, taskId: record.taskId, companion: record.companion}));} catch (error) {this.#storageFailure(error);}
@@ -262,11 +263,15 @@ export class CodingCoordinator {
       if (this.#state.endpointId !== null && this.#state.endpointId !== command.subject) return errorBody('invalid-state', {detail: 'another coding worker endpoint is selected'});
       // An enable from the selected endpoint is accepted again; one that carries readiness (2.1) replaces the recorded one.
       const readiness = command.data.readiness ?? null, slots = command.data.slots ?? null;
+      const harnesses = command.data.harnesses;
       const selected = this.#state.availability === 'available' && this.#state.endpointId === command.subject;
-      if (!selected || JSON.stringify(readiness) !== JSON.stringify(this.#state.readiness ?? null) || slots !== this.#state.slots) {
+      if (!selected || JSON.stringify(readiness) !== JSON.stringify(this.#state.readiness ?? null) || slots !== this.#state.slots
+        || JSON.stringify(harnesses) !== JSON.stringify(this.#state.harnesses)) {
         // The slots are the endpoint's own: an enable from the selected endpoint keeps them unless it declares others.
         this.#state.endpointId = command.subject; this.#state.availability = 'available'; this.#state.readiness = readiness;
         if (!selected || command.data.slots !== undefined) this.#state.slots = slots;
+        if (harnesses === undefined) delete this.#state.harnesses;
+        else this.#state.harnesses = harnesses;
         // A readiness report from the selected worker is published but does not move what a pending proposal is bound to.
         this.#changed(!selected);
         this.#drain();
@@ -279,7 +284,7 @@ export class CodingCoordinator {
   }
   /** The selected endpoint is gone: each of its runs ends uncertain on its own; waiting hand-offs keep their places. */
   #unselect(availability: 'off' | 'unavailable'): void {
-    this.#state.availability = availability; this.#state.endpointId = null; this.#state.readiness = null; this.#state.slots = null;
+    this.#state.availability = availability; this.#state.endpointId = null; this.#state.readiness = null; this.#state.slots = null; delete this.#state.harnesses;
     for (const active of [...this.#active.values()]) if (!active.settling) void this.#settle(active, 'uncertain', undefined, 'lost', active.started ? undefined : {result: Outcome.uncertain});
     this.#changed(true);
   }
@@ -291,6 +296,9 @@ export class CodingCoordinator {
     const data = command.data;
     if (this.#active.has(data.requestId)) return {status: 'accepted'};
     if (!this.#connected() || this.#state.endpointId !== data.endpointId) return errorBody('unavailable', {detail: 'no coding worker endpoint is available for this dispatch'});
+    if (data.harness !== undefined && this.#state.harnesses?.some(entry => entry.harness === data.harness) !== true) {
+      return errorBody('unsupported-capability', {detail: 'the selected coding worker did not declare this harness'});
+    }
     // The wait's end, which follows this refusal, forgets the cancel and tells the cancelled task nothing.
     if (this.#cancelled.has(data.taskId)) {
       try {this.#store.unwait(data.requestId);} catch (error) {this.#storageFailure(error);}
@@ -302,7 +310,8 @@ export class CodingCoordinator {
     const slot = this.#slotOf(companion), reserved = this.#reserved.get(slot);
     if (reserved !== data.requestId && this.#busy(slot)) return errorBody('capacity', {detail: 'that companion\'s coding slot is busy'});
     const active: Active = {operationId: data.requestId, taskId: data.taskId, endpointId: data.endpointId, traceparent: command.traceparent, started: false, status: 'pending',
-      companion, phase: 'dispatching', wallClockMs: data.bounds.wallClockMs, cancel: noop, settling: false};
+      companion, phase: 'dispatching', wallClockMs: data.bounds.wallClockMs, cancel: noop, settling: false,
+      ...(data.harness === undefined ? {} : {harness: data.harness})};
     try {this.#store.accept(active);}
     catch (error) {return errorBody(fullDisk(error) ? 'capacity' : 'internal', {detail: 'coding responsibility could not be saved'});}
     if (reserved === data.requestId) this.#reserved.delete(slot);
@@ -315,11 +324,11 @@ export class CodingCoordinator {
   async #start(active: Active, data: CodingRun): Promise<void> {
     if (this.#active.get(active.operationId) !== active || active.settling) return;
     // A worker that declared slots (2.2) hears which companion asked; an older one gets the 2.0 start it knows.
-    const tagged = this.#state.slots !== null;
+    const tagged = this.#state.slots !== null || data.harness !== undefined;
     try {
       const result = await this.context.sdk.request(`bunny.cmd.coding-work.${active.endpointId}`, {type: 'org.bunny.coding.work.requested', subject: active.endpointId,
-        dataschema: `https://bunny.invalid/events/coding-work/${tagged ? '2.1' : '2.0'}`,
-        data: {requestId: active.operationId, operationId: active.operationId, action: 'start', taskId: data.taskId, ...(tagged ? {companion: active.companion} : {}), repository: data.repository, brief: data.brief, bounds: data.bounds}},
+        dataschema: `https://bunny.invalid/events/coding-work/${data.harness !== undefined ? '2.2' : tagged ? '2.1' : '2.0'}`,
+        data: {requestId: active.operationId, operationId: active.operationId, action: 'start', taskId: data.taskId, ...(tagged ? {companion: active.companion} : {}), repository: data.repository, brief: data.brief, bounds: data.bounds, ...(data.harness === undefined ? {} : {harness: data.harness})}},
       {requestId: active.operationId, timeoutMs: 5000, parent: active});
       if (this.#active.get(active.operationId) !== active || active.settling) return;
       if (result.status === Outcome.uncertain) await this.#settle(active, 'uncertain', undefined, 'lost', {result: Outcome.uncertain});
@@ -331,8 +340,17 @@ export class CodingCoordinator {
     const active = this.#active.get(message.data.operationId);
     if (active === undefined || message.subject !== active.endpointId || active.settling) return;
     const progress = message.data;
+    if (active.harness !== undefined && progress.harness !== active.harness) return;
+    if (progress.harness !== undefined && (progress.harness !== (active.harness ?? 'claude-code') ||
+      this.#state.harnesses?.some(entry => entry.harness === progress.harness) !== true)) return;
+    if (progress.harness !== undefined) active.harness = progress.harness;
+    const freshSession = active.sessionId === undefined && progress.sessionId !== undefined;
+    if (freshSession && progress.sessionId !== undefined) active.sessionId = progress.sessionId;
     if (progress.status === 'started') {
-      if (active.started) return;
+      if (active.started) {
+        if (freshSession) this.#changed();
+        return;
+      }
       active.started = true; active.cancel(); active.status = 'pending';
       try {this.#store.started(active.operationId);} catch (error) {this.#storageFailure(error, active); await this.#settle(active, 'uncertain', undefined, 'lost'); return;}
       // The tracked effect is "handed to the worker": observed, because the worker said so. The run's end is the task's business.
