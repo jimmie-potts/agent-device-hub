@@ -242,8 +242,13 @@ or plugins, enabled hooks, apps, shell snapshots or login shells, or unavailable
 settings evidence prevents a brief from being sent. The worker checks
 the personal ChatGPT account before opening a thread and again before sending
 a turn. An organization plan reported by the account or quota snapshot,
-or a report of a different backend, also refuses the run. The effective settings and account checks do not attest that a
-host or workspace is unmanaged.
+or a report of a different backend, also refuses the run. Each run reads the
+current quota snapshot after checking the account and waits up to two seconds.
+Quota can be unavailable.
+After the adapter observes an organization quota, it requires a fresh personal
+account and matching quota plan before another run. An older probe cannot
+release that refusal. The effective settings and account checks do not attest
+that a host or workspace is unmanaged.
 Sign-in, plan and limit responses contribute only the declared readiness
 fields. The child receives no worker credential or provider API key. Codex
 owns its file-backed sign-in in the dedicated profile. The worker reads no

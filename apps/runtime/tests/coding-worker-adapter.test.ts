@@ -36,14 +36,14 @@ function assertStrictOutputSchema(value: unknown): void {
 
 type Scenario = {
   effectiveConfig?: object; auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; badPermissions?: boolean; changeAuth?: boolean;
-  quotaResponse?: object; quotaEvent?: 'initialize' | 'second-account' | 'pending-turn';
+  quotaResponse?: object; quotaReplies?: readonly (object | Promise<unknown> | Error)[]; quotaEvent?: 'initialize' | 'second-account' | 'pending-turn';
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
 };
 
 function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJS.ProcessEnv = {}) {
   const storage = {sqlite_home: join(home, 'sqlite'), log_dir: join(home, 'log')};
   const requests: string[] = [], sessions: string[] = [];
-  let starts = 0, accounts = 0;
+  let starts = 0, accounts = 0, quotaReads = 0;
   let wireSchema: unknown;
   const transport: CodexTransport = ({args, cwd, env, event, closed}) => {
     assert.ok(args.includes('forced_login_method="chatgpt"'));
@@ -78,7 +78,10 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
             accounts += 1;
             if (accounts === 2 && scenario.quotaEvent === 'second-account') event('account/rateLimits/updated', {rateLimits: {...window, planType: 'team'}});
             return Promise.resolve(accounts === 2 && scenario.laterAuth !== undefined ? scenario.laterAuth : scenario.auth ?? account);
-          case 'account/rateLimits/read': return Promise.resolve(scenario.quotaResponse ?? {rateLimits: window});
+          case 'account/rateLimits/read': {
+            const reply = scenario.quotaReplies?.[quotaReads++] ?? scenario.quotaResponse ?? {rateLimits: window};
+            return reply instanceof Error ? Promise.reject(reply) : Promise.resolve(reply);
+          }
           case 'thread/start': {
             const sent = params as {cwd: string; permissions: string; runtimeWorkspaceRoots: string[]};
             assert.notEqual(sent.cwd, home);
@@ -251,6 +254,52 @@ void test('Codex treats managed-plan quota snapshots as contrary evidence withou
   assert.equal(result.reason, 'refused');
   assert.equal(result.uncertain, true);
   assert.equal(inFlight.starts(), 1);
+});
+
+void test('Codex refuses a new run after readiness observed a managed quota until fresh personal evidence agrees', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const managed = {rateLimits: {...window, planType: 'business'}};
+  const unavailable = new Error('synthetic quota service unavailable');
+  const personal = {rateLimits: {...window, planType: 'plus'}};
+  const account = fixture({quotaReplies: [managed, managed, unavailable, {rateLimits: window}, personal]});
+  assert.equal((await account.adapter.readiness()).signedIn, 'unknown');
+  for (let index = 0; index < 3; index += 1) {
+    assert.equal((await account.run(cwd)).reason, 'refused');
+    assert.equal(account.starts(), 0);
+  }
+  assert.deepEqual((await account.run(cwd)).structured, report);
+  assert.equal(account.starts(), 1);
+
+  const fresh = fixture({quotaReplies: [unavailable]});
+  assert.deepEqual((await fresh.run(cwd)).structured, report);
+  assert.equal(fresh.starts(), 1);
+});
+
+void test('an unanswered optional quota read does not hold a never-contradicted personal account', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const candidate = fixture({quotaReplies: [new Promise(() => {})]});
+  assert.deepEqual((await candidate.run(cwd)).structured, report);
+  assert.equal(candidate.starts(), 1);
+});
+
+void test('an older successful quota probe cannot clear a newer managed quota report', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  let answer: (value: object) => void = () => {};
+  const held = new Promise<object>(resolve => {answer = resolve;});
+  const personal = {rateLimits: {...window, planType: 'plus'}};
+  const candidate = fixture({requireId: false, quotaReplies: [held, {rateLimits: {...window, planType: 'edu'}},
+    new Error('synthetic quota unavailable'), personal]});
+  const older = candidate.adapter.readiness();
+  await t.waitFor(() => {assert.ok(candidate.requests.includes('account/rateLimits/read'));});
+  assert.equal((await candidate.adapter.readiness()).signedIn, 'unknown');
+  answer(personal);
+  assert.equal((await older).signedIn, 'unknown');
+  assert.equal((await candidate.run(cwd)).reason, 'refused');
+  assert.equal(candidate.starts(), 0);
+  assert.equal((await candidate.adapter.readiness()).signedIn, 'yes');
 });
 
 void test('Codex distinguishes plan exhaustion, provider slowdown, unreadable output and loss after start', async t => {

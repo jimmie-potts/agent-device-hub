@@ -15,11 +15,13 @@ const execute = promisify(execFile);
 // Validate independently of the provider's structured-output promise.
 const validOutput = new Ajv2020({strict: true}).compile(CODEX_RESULT_SCHEMA);
 const PROBE_MS = 10_000;
+const QUOTA_MS = 2000;
 const MESSAGE_BYTES = 1024 * 1024;
 const CLOSED = new Error('codex protocol closed');
 const CHATGPT_ORIGIN = 'https://chatgpt.com';
 const CHATGPT_BACKEND = `${CHATGPT_ORIGIN}/backend-api/`;
 const OPENAI_API = 'https://api.openai.com/v1';
+const PERSONAL_PLANS = new Set(['free', 'go', 'plus', 'pro', 'prolite', 'promax']);
 const MANAGED_PLAN = /^(?:team|(?:self_serve_)?business|ent26|enterprise|edu)(?:_|$)/;
 const UNSUPPORTED_RPC_REQUEST = {code: -32601, message: 'Unsupported worker request'};
 export type CodexConfiguration = {executable: string; home: string; model?: string};
@@ -27,9 +29,19 @@ export type CodexConfiguration = {executable: string; home: string; model?: stri
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const record = (value: unknown): Record<string, unknown> => object(value) ? value : {};
 const managedPlan = (plan: unknown): boolean => typeof plan === 'string' && MANAGED_PLAN.test(plan);
-function managedQuota(value: unknown): boolean {
+function quotaPlans(value: unknown): unknown[] {
   const {rateLimits, rateLimitsByLimitId} = record(value);
-  return [rateLimits, ...Object.values(record(rateLimitsByLimitId))].some(snapshot => managedPlan(record(snapshot).planType));
+  return [rateLimits, ...Object.values(record(rateLimitsByLimitId))].map(snapshot => record(snapshot).planType);
+}
+
+function managedQuota(value: unknown): boolean {
+  return quotaPlans(value).some(managedPlan);
+}
+
+function coherentQuota(value: unknown, plan: string | null): boolean {
+  if (plan === null || !PERSONAL_PLANS.has(plan)) return false;
+  const plans = quotaPlans(value).filter(reported => reported !== null && reported !== undefined && reported !== 'unknown');
+  return plans.length > 0 && plans.every(reported => reported === plan);
 }
 
 function contraryAccountEvent(method: string, value: unknown): boolean {
@@ -269,6 +281,34 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
 }): CodingAdapter {
   const environment = options.environment ?? process.env;
   const transport = options.transport ?? openCodex;
+  // All wires in this adapter use the same private profile. Evidence from an older probe cannot clear a newer refusal.
+  let quotaRevision = 0, quotaBlocked = false;
+  const quotaInterrupts = new Set<() => void>();
+  const recordManagedQuota = () => {
+    quotaBlocked = true;
+    quotaRevision += 1;
+    for (const interrupt of quotaInterrupts) interrupt();
+  };
+  const quotaAllowed = (revision: number): boolean => !quotaBlocked && quotaRevision === revision;
+  const observeAccount = (method: string, data: unknown): boolean => {
+    if (!contraryAccountEvent(method, data)) return false;
+    if (method === 'account/rateLimits/updated') recordManagedQuota();
+    return true;
+  };
+  const readQuota = async (wire: Wire, revision: number, plan: string | null, revoked?: Promise<void>): Promise<CodingLimitWindow[] | undefined> => {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      // Keep observing an eventual reply even when the run proceeds without quota windows.
+      const request = wire.request('account/rateLimits/read').then(reply => {
+        if (managedQuota(reply)) recordManagedQuota();
+        else if (quotaBlocked && quotaRevision === revision && coherentQuota(reply, plan)) quotaBlocked = false;
+        return windowsOf(record(reply).rateLimits);
+      });
+      const deadline = new Promise<undefined>(resolve => {timer = setTimeout(() => {resolve(undefined);}, QUOTA_MS);});
+      return await Promise.race([request, deadline, ...(revoked === undefined ? [] : [revoked.then(() => undefined)])]);
+    } catch {return undefined;}
+    finally {if (timer !== undefined) clearTimeout(timer);}
+  };
   const prepare = (home: string, cwd: string, signal: AbortSignal) => {
     const profile = `bunny-worker-${randomUUID()}`;
     const args = ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home)];
@@ -277,6 +317,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
   return {
     id: 'codex', capabilities: {steering: 'unsupported', resume: 'unsupported', review: true},
     async readiness(): Promise<AdapterHealth> {
+      const revision = quotaRevision;
       const signal = AbortSignal.timeout(PROBE_MS);
       let home: string, version: string | null;
       try {
@@ -290,23 +331,19 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       let unauthorized = false;
       try {
         const {command} = prepare(home, home, signal);
-        wire = transport({...command, event: (method, data) => {if (contraryAccountEvent(method, data)) unauthorized = true;}, closed: () => {}});
+        wire = transport({...command, event: (method, data) => {if (observeAccount(method, data)) unauthorized = true;}, closed: () => {}});
         await initialize(wire);
         if (!await isolatedSettings(wire, home, home) || unauthorized) return health;
         const account = codexSignIn(await wire.request('account/read', {refreshToken: false}));
         if (unauthorized) return health;
         if (account.signedIn !== 'yes') return {...health, ...account};
-        let windows: CodingLimitWindow[] | undefined;
-        try {
-          const quota = await wire.request('account/rateLimits/read');
-          if (managedQuota(quota)) unauthorized = true;
-          windows = windowsOf(record(quota).rateLimits);
-        } catch { /* The account can omit this evidence. */ }
-        return unauthorized ? health : {...health, ...account, ...(windows === undefined ? {} : {windows})};
+        const windows = await readQuota(wire, revision, account.plan);
+        return unauthorized || !quotaAllowed(revision) ? health : {...health, ...account, ...(windows === undefined ? {} : {windows})};
       } catch {return health;}
       finally {wire?.close();}
     },
     async run(input: AdapterRun): Promise<AdapterEvidence> {
+      const revision = quotaRevision;
       if (input.signal.aborted) return {reason: 'cancelled'};
       let home: string;
       try {home = await workerHome(configuration.home, environment);}
@@ -322,10 +359,11 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const completed = new Promise<void>(resolve => {settle = resolve;});
       let revoke = (): void => {};
       const revoked = new Promise<void>(resolve => {revoke = resolve;});
+      const invalidate = () => {unauthorized = true; revoke(); settle();};
       const {command, profile} = prepare(home, cwd, signal);
       const wire = transport({...command, event: (method, value) => {
         const data = record(value);
-        if (contraryAccountEvent(method, data)) {unauthorized = true; revoke(); settle(); return;}
+        if (observeAccount(method, data)) {invalidate(); return;}
         if (method === 'account/rateLimits/updated') {const reported = windowsOf(data.rateLimits); if (reported.length > 0) windows = reported; return;}
         if (data.threadId !== sessionId || sessionId === undefined || !dispatched) return;
         if (method === 'turn/started' && turnId === undefined) turnId = nativeSessionId(record(data.turn).id);
@@ -345,6 +383,10 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         if (unauthorized) return refusal('Codex reported contrary personal ChatGPT subscription evidence.');
         const account = codexSignIn(await wire.request('account/read', {refreshToken: false}));
         if (unauthorized || account.signedIn !== 'yes') return refusal('Codex needs a confirmed personal ChatGPT subscription sign-in.');
+        const initialWindows = await readQuota(wire, revision, account.plan, revoked);
+        if (unauthorized || !quotaAllowed(revision)) return refusal('Codex reported contrary personal ChatGPT subscription evidence.');
+        if (signal.aborted) return {reason: 'cancelled'};
+        if (initialWindows !== undefined && windows.length === 0) windows = initialWindows;
         const opened = record(await wire.request('thread/start', {cwd, runtimeWorkspaceRoots: [cwd], permissions: profile,
           modelProvider: 'openai', approvalPolicy: 'never', allowProviderModelFallback: false,
           developerInstructions: 'Work only on this delegated repository brief. Do not change settings, publish changes or open a pull request. Report checks and limitations. Use waiting-for-owner for an unresolved decision.',
@@ -362,10 +404,11 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         await input.session(sessionId);
         if (input.signal.aborted) return {reason: 'cancelled', sessionId};
         const latestAccount = codexSignIn(await wire.request('account/read', {refreshToken: false}));
-        if (unauthorized || latestAccount.signedIn !== 'yes') {
+        if (unauthorized || !quotaAllowed(revision) || latestAccount.signedIn !== 'yes') {
           return {...refusal('Codex could not confirm personal ChatGPT subscription sign-in immediately before the turn.'), sessionId};
         }
         if (input.signal.aborted) return {reason: 'cancelled', sessionId};
+        quotaInterrupts.add(invalidate);
         dispatched = true;
         const contrary = (sessionId: string): AdapterEvidence => ({
           ...refusal('Codex reported a change away from personal ChatGPT subscription sign-in during the run.'), sessionId, uncertain: true,
@@ -393,7 +436,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           limitations: ['Codex is limited to one turn and does not expose a per-turn dollar cap or subscription cost.']};
       } catch {
         return {reason: dispatched ? 'lost' : 'refused', uncertain: dispatched, ...(sessionId === undefined ? {} : {sessionId})};
-      } finally {wire.close();}
+      } finally {quotaInterrupts.delete(invalidate); wire.close();}
     },
   };
 }

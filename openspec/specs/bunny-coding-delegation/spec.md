@@ -155,6 +155,11 @@ run evidence declared by the worker contract.
 - **WHEN** a worker profile resolves into a personal profile, an effective setting redirects storage or routing, or account evidence identifies organization management or non-subscription credentials
 - **THEN** the worker SHALL refuse at the first unsupported boundary, with no model turn or API fallback
 
+#### Scenario: Codex has already observed an organization quota
+
+- **WHEN** a probe or run sees an organization plan in a quota snapshot
+- **THEN** another run SHALL refuse before sending a brief until a fresh personal account report and quota plan agree, and an older probe SHALL NOT release that refusal
+
 #### Scenario: Only explicit plan exhaustion routes as a usage limit
 
 - **WHEN** a harness reports subscription-plan exhaustion without a completed structured result
