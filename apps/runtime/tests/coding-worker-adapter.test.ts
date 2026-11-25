@@ -3,6 +3,7 @@ import {mkdir, mkdtemp, realpath, rm, symlink, writeFile} from 'node:fs/promises
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, test} from 'node:test';
+import type {AdapterRun, AdapterSteer} from '../src/worker/adapter.js';
 import {codexAdapter, codexEnvironment, type CodexTransport} from '../src/worker/codex-adapter.js';
 
 const profileHome = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-profile-')));
@@ -37,6 +38,7 @@ function assertStrictOutputSchema(value: unknown): void {
 type Scenario = {
   effectiveConfig?: object; auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; badPermissions?: boolean; changeAuth?: boolean;
   quotaResponse?: object; quotaReplies?: readonly (object | Promise<unknown> | Error)[]; quotaEvent?: 'initialize' | 'second-account' | 'pending-turn';
+  steerable?: boolean;
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
 };
 
@@ -45,7 +47,12 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
   const requests: string[] = [], sessions: string[] = [];
   let starts = 0, accounts = 0, quotaReads = 0;
   let wireSchema: unknown;
+  let finishTurn: (() => void) | undefined;
   const transport: CodexTransport = ({args, cwd, env, event, closed}) => {
+    finishTurn = () => {
+      event('item/completed', {threadId, turnId, item: {type: 'agentMessage', text: JSON.stringify(report)}});
+      event('turn/completed', {threadId, turn: {id: turnId, status: 'completed'}});
+    };
     assert.ok(args.includes('forced_login_method="chatgpt"'));
     assert.ok(args.includes('model_provider="openai"'));
     assert.ok(args.includes('features.hooks=false'));
@@ -100,6 +107,7 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
               queueMicrotask(() => {event('account/rateLimits/updated', {rateLimits: {...window, planType: 'enterprise'}});});
               return new Promise(() => {});
             }
+            if (scenario.steerable === true) return Promise.resolve({turn: {id: turnId}});
             queueMicrotask(() => {
               if (scenario.terminal === 'lost') {closed(); return;}
               event('turn/started', {threadId, turn: {id: turnId}});
@@ -112,6 +120,17 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
             });
             return Promise.resolve({turn: {id: turnId}});
           }
+          case 'turn/steer': {
+            assert.ok(scenario.steerable);
+            assert.deepEqual(params, {threadId, expectedTurnId: turnId, clientUserMessageId: 'message-1',
+              input: [{type: 'text', text: 'Only add the requested test.', text_elements: []}]});
+            const item = {type: 'userMessage', clientId: 'message-1'};
+            event('item/started', {threadId: 'unrelated', turnId, item});
+            event('item/started', {threadId, turnId: 'older-turn', item});
+            event('item/started', {threadId, turnId, item: {...item, clientId: 'another-message'}});
+            event('item/started', {threadId, turnId, item});
+            return Promise.resolve({turnId});
+          }
           default: assert.fail(`unexpected request ${method}`);
         }
       },
@@ -120,8 +139,8 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
   const adapter = codexAdapter({executable: '/synthetic/codex', home}, {transport, version: () => Promise.resolve('0.163.0'),
     environment: {PATH: '/synthetic/bin', HOME: '/synthetic/home', OPENAI_API_KEY: 'synthetic-key', CODEX_HOME: '/untrusted/config',
       BUNNY_CODING_TOKEN: 'worker-credential', CLAUDE_CODE_OAUTH_TOKEN: 'other-provider-token', ...environment}});
-  const run = (worktree: string) => adapter.run({worktree, brief, bounds, signal: new AbortController().signal, session: id => {sessions.push(id);}});
-  return {adapter, requests, sessions, run, starts: () => starts, output: () => wireSchema};
+  const run = (worktree: string, callbacks?: Pick<AdapterRun, 'steering' | 'observedMessage'>) => adapter.run({worktree, brief, bounds, ...callbacks, signal: new AbortController().signal, session: id => {sessions.push(id);}});
+  return {adapter, requests, sessions, run, starts: () => starts, output: () => wireSchema, finish: () => {finishTurn?.();}};
 }
 
 void test('Codex readiness reports only subscription fields, plan and quota without opening a thread', async () => {
@@ -144,6 +163,27 @@ void test('Codex sends one bounded model turn after confirmed worktree scope and
   assert.equal(evidence.sessionId, threadId);
   assert.deepEqual(evidence.structured, report);
   assert.equal(evidence.usage?.costUsd, null);
+});
+
+void test('Codex steering stays on its current native turn and correlates only the submitted message ID', {timeout: 10_000}, async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-steer-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const fixtureRun = fixture({steerable: true});
+  const observed: string[] = [];
+  let accepting = (_steer: AdapterSteer): void => {};
+  const live = new Promise<AdapterSteer>(resolve => {accepting = resolve;});
+  const settled = fixtureRun.run(cwd, {steering: steer => {if (steer !== undefined) accepting(steer);},
+    observedMessage: messageId => {observed.push(messageId);}});
+  const steer = await live;
+  assert.equal(fixtureRun.adapter.capabilities.steering, 'live');
+  assert.equal(await steer('message-1', 'Only add the requested test.'), 'accepted');
+  assert.deepEqual(observed, ['message-1']);
+  assert.equal(await steer('message-1', 'Only add the requested test.'), 'unavailable');
+  fixtureRun.finish();
+  assert.equal((await settled).sessionId, threadId);
+  assert.equal(await steer('message-2', 'Do not start another turn.'), 'unavailable');
+  assert.equal(fixtureRun.requests.filter(method => method === 'turn/steer').length, 1);
+  assert.equal(fixtureRun.starts(), 1);
 });
 
 void test('Codex refuses effective MCP or plugin configuration before probing auth or opening a thread', async t => {

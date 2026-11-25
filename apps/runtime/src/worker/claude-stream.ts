@@ -1,7 +1,7 @@
 // What the coding worker reads from headless Claude Code (Hub #1743): the `--output-format stream-json` events of a run,
 // the tool's version and sign-in status for readiness, and the environment the harness starts with. Everything here is
 // pure and bounded; it keeps only the values the worker reports and never a path, an account or the brief.
-import {nativeSessionId} from './adapter.js';
+import {nativeSessionId, reportedModel} from './adapter.js';
 import type {CodingLimit, CodingLimitWindow, CodingReadiness} from '@jimmie-potts/event-contracts/v2/coding';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -28,6 +28,7 @@ export class ClaudeStream {
   #limit: CodingLimit | undefined;
   readonly #windows = new Map<string, CodingLimitWindow>();
   #apiKeySource: string | undefined;
+  #model: string | undefined;
   #sessionId: string | undefined;
   #progressed = false;
   #unreadable = 0;
@@ -46,7 +47,10 @@ export class ClaudeStream {
     if (event.type === 'assistant' || event.type === 'result') this.#progressed = true;
     if (event.type === 'system' && event.subtype === 'init' && typeof event.apiKeySource === 'string') {
       this.#apiKeySource = event.apiKeySource;
-      if (event.apiKeySource === 'none') this.#sessionId ??= nativeSessionId(event.session_id);
+      if (event.apiKeySource === 'none') {
+        this.#sessionId ??= nativeSessionId(event.session_id);
+        this.#model ??= reportedModel(event.model);
+      }
     }
     else if (event.type === 'rate_limit_event') this.#rateLimit(event.rate_limit_info, false);
     else if (event.type === 'assistant' && event.api_error === 'usage_limit_reached') this.#rateLimit(isRecord(event.api_error_params) ? event.api_error_params.rate_limit_info : undefined, true);
@@ -83,6 +87,7 @@ export class ClaudeStream {
   get windows(): CodingLimitWindow[] {return [...this.#windows.values()].map(window => ({...window}));}
   /** Where the harness said its API credential came from (`none` for a subscription sign-in), when it said. */
   get apiKeySource(): string | undefined {return this.#apiKeySource;}
+  get model(): string | undefined {return this.#model;}
   get sessionId(): string | undefined {return this.#sessionId ?? nativeSessionId(this.#result?.session_id);}
   /** Whether an assistant or result event has arrived: the run has done work, whatever the events before it said. */
   get progressed(): boolean {return this.#progressed;}

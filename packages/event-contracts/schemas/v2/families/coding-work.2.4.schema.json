@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "$id": "https://bunny.invalid/events/coding-work/2.4",
+  "required": [
+    "requestId",
+    "operationId",
+    "action",
+    "text"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "operationId": {
+      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+    },
+    "action": {
+      "const": "message"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    }
+  }
+}

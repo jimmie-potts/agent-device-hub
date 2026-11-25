@@ -65,6 +65,7 @@ export type AssistantOptions = {
   backgroundCoding?: boolean;
   codingJob?: (operationId: string) => CodingJob | undefined;
   stopCodingJob?: CodingCoordinator['prepareStop'];
+  messageCodingJob?: CodingCoordinator['prepareMessage'];
   /**
    * Whether the module already sent a hand-off that answered `waiting` (Hub #2028), so a hand-off sent before its waiting
    * line is saved reads "Delegated to ..." at once.
@@ -127,6 +128,7 @@ const profiles: readonly AssistantProfile[] = ['bunny', 'reachy', 'microduck'];
 const profile = (value: unknown): value is AssistantProfile => typeof value === 'string' && profiles.includes(value as AssistantProfile);
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 /** A queued message's ID: the request ID that queued it, as the blocks define one. */
+const CODING_JOB_ID = /^[A-Za-z0-9_.-]{1,154}-job$/u;
 const QUEUED_ID = /^[A-Za-z0-9_.-]{1,128}$/u;
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 /** The tool an approved proposal runs, by its tool identifier. */
@@ -666,18 +668,23 @@ export class AssistantEngine {
       // New conversation (Hub #2029) names its profile and the revision the page read, and nothing else. It runs no work,
       // so it is admitted while conversation is off, as a rename is.
       const fresh = object(value) && value.action === 'new-conversation';
-      const stoppingJob = object(value) && value.action === 'stop-coding-job';
-      if (stoppingJob && (Object.keys(value).some(key => !['action', 'jobId', 'operationId'].includes(key)) ||
-        typeof value.operationId !== 'string' || !QUEUED_ID.test(value.operationId) || value.jobId !== `${value.operationId}-job`)) fail('invalid-request');
+      const jobAction = object(value) && (value.action === 'stop-coding-job' || value.action === 'message-coding-job');
+      if (jobAction) {
+        const messaging = value.action === 'message-coding-job';
+        const keys = messaging ? ['action', 'jobId', 'operationId', 'text'] : ['action', 'jobId', 'operationId'];
+        if (Object.keys(value).some(key => !keys.includes(key)) || typeof value.jobId !== 'string' || !CODING_JOB_ID.test(value.jobId) ||
+          typeof value.operationId !== 'string' || !QUEUED_ID.test(value.operationId) || messaging &&
+          (typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > 4096)) fail('invalid-request');
+      }
       // Editing a queued message (Hub #2030) runs no work either, so it is admitted while conversation is off.
-      if (!fresh && !stoppingJob && !(object(value) && value.action === 'edit-queued')) this.#ready();
+      if (!fresh && !jobAction && !(object(value) && value.action === 'edit-queued')) this.#ready();
       if (fresh && (Object.keys(value).some(key => !['action', 'profile', 'expectedRevision'].includes(key)) || !profile(value.profile) ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
-      if (!fresh && !stoppingJob && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'queuedId'].includes(key)) ||
+      if (!fresh && !jobAction && (!object(value) || Object.keys(value).some(key => !['action', 'profile', 'text', 'expectedRevision', 'taskId', 'questionId', 'queuedId'].includes(key)) ||
         !profile(value.profile) || !['start', 'answer', 'queue', 'edit-queued', 'steer'].includes(String(value.action)) || typeof value.text !== 'string' || value.text.trim() === '' || textBytes(value.text) > LIMITS.inputBytes ||
         typeof value.expectedRevision !== 'number' || !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0)) fail('invalid-request');
       // A steer names the turn it expects (Hub #2031), and with a question the one it skips or declines.
-      if (!fresh && !stoppingJob && (value.action === 'answer' ? typeof value.taskId !== 'string' || typeof value.questionId !== 'string' || value.queuedId !== undefined
+      if (!fresh && !jobAction && (value.action === 'answer' ? typeof value.taskId !== 'string' || typeof value.questionId !== 'string' || value.queuedId !== undefined
         : value.action === 'steer' ? typeof value.taskId !== 'string' || !(value.questionId === undefined || typeof value.questionId === 'string') || value.queuedId !== undefined
           : value.action === 'edit-queued' ? value.taskId !== undefined || value.questionId !== undefined || typeof value.queuedId !== 'string' || !QUEUED_ID.test(value.queuedId)
             : value.taskId !== undefined || value.questionId !== undefined || value.queuedId !== undefined)) fail('invalid-request');
@@ -695,16 +702,23 @@ export class AssistantEngine {
   }
   #input(command: Command<AssistantInput>): Promise<Reply> {
     let titled: {conversationId: string; profile: AssistantProfile; event: TitleEvent} | undefined;
-    let stopCommitted: (() => Promise<void>) | undefined;
+    let jobCommitted: (() => Promise<void>) | undefined;
     return this.#admit(command, digest(command.data), () => {
       const staged = this.store.input(command.data.inputRef) ?? fail('invalid-request');
       if (staged.requestId !== command.data.requestId) fail('invalid-request');
       if (staged.expires <= this.context.clock.now()) fail('expired');
       const input = staged.input, now = this.context.clock.now();
+      if (input.action === 'message-coding-job') {
+        const message = this.options.messageCodingJob?.({...input, requestId: command.data.requestId}, command) ?? fail('unavailable');
+        if ('code' in message) fail(message.code);
+        jobCommitted = message.committed;
+        this.store.discard(staged.ref);
+        return undefined;
+      }
       if (input.action === 'stop-coding-job') {
         const stop = this.options.stopCodingJob?.(input.jobId, input.operationId) ?? fail('unavailable');
         if ('code' in stop) fail(stop.code);
-        stopCommitted = stop.committed;
+        jobCommitted = stop.committed;
         this.store.discard(staged.ref);
         return undefined;
       }
@@ -787,7 +801,7 @@ export class AssistantEngine {
       // The title check runs beside the task, after its admission committed; it never delays, fails or rolls back the task.
       if (!('error' in reply)) {
         if (titled !== undefined) this.#checkTitle(titled, titled.event);
-        if (stopCommitted !== undefined) void stopCommitted().catch(() => {
+        if (jobCommitted !== undefined) void jobCommitted().catch(() => {
           recordLog(this.context.log, 'message.received', {'bunny.operation': 'storage', 'bunny.outcome': Outcome.uncertain, 'bunny.code': 'internal'}, command);
         });
       }
@@ -851,6 +865,10 @@ export class AssistantEngine {
     // During an approval, free text is queued (owner decision 4); Decline with message declines and steers instead.
     if (asked?.kind === 'approval') queued(); else steered();
     return {launch: undefined};
+  }
+  canReadCodingJob(profile: AssistantProfile, job: Pick<CodingJob, 'taskId' | 'conversationId' | 'operationId' | 'repository'>): boolean {
+    const task = this.store.task(job.taskId);
+    return task?.profile === profile && task.conversationId === job.conversationId;
   }
   content(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
     if (ref === 'spend') {

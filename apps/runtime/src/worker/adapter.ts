@@ -32,12 +32,17 @@ export type AdapterEvidence = {
   limitations?: string[];
 };
 
+export type AdapterSteer = (messageId: string, text: string) => Promise<'accepted' | 'unsupported' | 'unavailable' | 'uncertain'>;
+
 export type AdapterRun = {
   worktree: string;
   brief: string;
   bounds: CodingBounds;
   signal: AbortSignal;
   session: (id: string) => void | Promise<void>;
+  steering?: (steer: AdapterSteer | undefined) => void;
+  observedMessage?: (messageId: string) => void;
+  reportedModel?: (model: string) => void;
 };
 
 export type CodingAdapter = {
@@ -49,4 +54,8 @@ export type CodingAdapter = {
 
 export function nativeSessionId(value: unknown): string | undefined {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value) ? value : undefined;
+}
+
+export function reportedModel(value: unknown): string | undefined {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value) ? value : undefined;
 }
