@@ -1,3 +1,4 @@
+import {Outcome} from '@jimmie-potts/sdk';
 import {DEVICE_HISTORY_VERSION, type DeviceHistoryEvidence, type DeviceHistoryQuery, type DeviceHistorySnapshot, type DevicePower} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import type {HistoryOpenSpan, HistoryRow} from './history.js';
 
@@ -45,7 +46,7 @@ export function projectDeviceHistory(query: DeviceHistoryQuery, boundary: number
       confirmedThroughMs: Math.max(atMs, heldOpen?.lastConfirmedAtMs ?? atMs), requestIds: [...new Set(requestIds)]};
     evidence.push(prior);
   }
-  evidence.sort((left, right) => left.atMs - right.atMs || left.seq - right.seq);
+  evidence.sort((left, right) => left.atMs === right.atMs ? left.seq - right.seq : left.atMs - right.atMs);
   const durations: Record<DevicePower, number> = {on: 0, off: 0, unknown: query.toAtMs - query.fromAtMs};
   for (const [index, point] of evidence.entries()) {
     if (point.power === 'unknown') continue;
@@ -63,7 +64,7 @@ export function projectDeviceHistory(query: DeviceHistoryQuery, boundary: number
     if (requestId === undefined) return [];
     const steps = rows.filter(row => row.kind === 'operation' && row.requestId === requestId && row.subject === query.target && row.record.command === 'power-set');
     const sent = steps.find(row => row.record.event === 'sent' && row.atMs <= point.atMs);
-    const outcome = steps.find(row => row.record.event === 'outcome' && row.record.result === 'succeeded' && row.record.evidence === 'observed');
+    const outcome = steps.find(row => row.record.event === 'outcome' && row.record.result === Outcome.succeeded && row.record.evidence === Outcome.observed);
     return sent === undefined || outcome === undefined ? [] : [{requestId, observationSeq: point.seq, outcomeSeq: outcome.seq, sentSeq: sent.seq}];
   });
   let lastChange: DeviceHistorySnapshot['lastChange'] = null;
