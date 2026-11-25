@@ -20,15 +20,17 @@ for(const gesture of ['notice','attention','neutral'] as const)void test(`passiv
   const duplicate=await f.command('microduck-gesture',{gesture},id);assert.equal('error'in duplicate&&duplicate.error.error.code,'duplicate-conflict');
 });
 /**
- * Stop must not wait on the vendor's reply, the hold or any module timer, so the module, the bus and the simulator
- * share a test clock and Stop must finish within 500 ms of it. On the real clock a host stall after the Stop counted
- * against the bound although the module waited on nothing (#2095).
+ * Stop must not wait on the vendor's reply, the hold or any module timer. The module, the bus and the simulator share
+ * a test clock that stands still from the Stop to both outcomes, so a Stop that waited on the reply or on any timer
+ * of the module's scheduler, however short, never finishes and fails at `until`'s limit. The earlier bound was 500 ms
+ * of real time, which a host stall after the Stop broke although the module waited on nothing (#2095). A wait on a
+ * timer outside the scheduler is caught only past `until`'s 4 s.
  */
 void test('Stop completes while a vendor reply is pending and never writes neutral',{timeout:10000},async t=>{
   const clock=new TestClock(),robot=new SimulatedMicroDuck(clock);const f=await fixture(t,adapter(robot,async(yaw,signal,before)=>{await robot.head(yaw,signal,before);await new Promise<void>((_resolve,reject)=>{signal.addEventListener('abort',()=>{reject(new Error('synthetic reply ended'));},{once:true});});}),clock);
   await f.control('takeover');const id='pending-head';await f.command('microduck-gesture',{gesture:'notice'},id);await until(()=>robot.effects.length===1);
   const start=clock.now(),stop='priority-stop';assert.equal((await f.command('microduck-stop',{},stop)).status,'accepted');await until(()=>f.outcome(stop)!==undefined&&f.outcome(id)!==undefined);
-  assert.ok(clock.now()-start<500);assert.equal(f.outcome(stop)?.result,'succeeded');assert.equal(f.outcome(id)?.result,'uncertain');assert.equal(f.state().latched,true);assert.deepEqual(robot.effects.map(x=>x.yaw),[.1]);
+  assert.equal(clock.now(),start,'Stop finished without the clock moving');assert.equal(f.outcome(stop)?.result,'succeeded');assert.equal(f.outcome(id)?.result,'uncertain');assert.equal(f.state().latched,true);assert.deepEqual(robot.effects.map(x=>x.yaw),[.1]);
 });
 /**
  * Recovery needs two advancing zero-input samples within 800 ms of its send, and the sensor freshness limit is 500 ms.
