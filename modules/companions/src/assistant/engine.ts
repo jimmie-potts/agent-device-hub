@@ -29,7 +29,7 @@ import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions, deviceClarification, type RetainedArtworkRead} from './catalog-actions.js';
 import {deviceHistoryQuery} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {catalogCommand, catalogTool, isCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
-import {DeviceHistoryPages, deviceHistoryGuide, requestedHistory, sameHistoryQuery, type DeviceHistoryRead, type DeviceHistoryBinding} from './device-history.js';
+import {canReadDeviceHistory, DeviceHistoryPages, deviceHistoryGuide, requestedHistory, sameHistoryQuery, type DeviceHistoryRead, type DeviceHistoryBinding} from './device-history.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
 import {ConversationTitles, ownerTitle, type TitleEvent, type TitleProvider} from './titles.js';
@@ -1418,6 +1418,19 @@ export class AssistantEngine {
   #claudeHistoryBinding(task: Task): DeviceHistoryBinding | undefined {
     return this.#taskProvider(task).name === 'anthropic' ? this.#historyBinding(task) : undefined;
   }
+  #currentClaudeHistory(task: Task, recognized = this.#claudeHistoryBinding(task)): DeviceHistoryBinding | undefined {
+    if (recognized === undefined) return undefined;
+    const pinned = task.claudeHistory;
+    const expected = pinned?.history, current = recognized.history;
+    if (pinned?.requestId !== recognized.requestId || expected === undefined || current === undefined ||
+      !sameHistoryQuery(expected.query, current.query)) return {requestId: recognized.requestId, history: undefined};
+    const target = expected.query.target;
+    const read = this.#fields(task.profile, 'read', 'private-conversation');
+    const discover = this.#fields(task.profile, 'discovery', 'private-conversation');
+    const allowed = discover('devices', 'index', target) && canReadDeviceHistory(read, target) &&
+      canReadDeviceHistory(this.#modelFields(task.profile, 'anthropic'), target);
+    return {requestId: recognized.requestId, history: allowed ? expected : undefined};
+  }
   #toolsFor(task: Task): ReturnType<typeof permittedTools> {
     const provider = this.#taskProvider(task);
     const tools = permittedTools(this.#allowed, provider.name === 'synthetic');
@@ -1644,13 +1657,15 @@ export class AssistantEngine {
     let request: TurnInput | undefined;
     let includesReplay = false;
     let historyEffects: ReadonlySet<string> | undefined;
+    let replaysClaudeHistory = false;
     // The task's unread steers are taken into its transcript in the call's own admission (Hub #2031), after the last
     // call's tool results, and the request is built from that transcript: a limit that refuses the call leaves them
     // unread, and a replayed node whose call was admitted takes none again.
     const text = await this.#call(state.taskId, state.step, 'model', signal => {
       const current = this.#task(task.id), scope = openai ? this.#openAIScope(current) : undefined;
       const allow = scope?.fields ?? promptFields;
-      if (ledger.fields.some(field => !this.#disclosureAllowed(field, allow)) ||
+      if (replaysClaudeHistory && this.#currentClaudeHistory(current)?.history === undefined ||
+        ledger.fields.some(field => !this.#disclosureAllowed(field, allow)) ||
         modelLedger.fields.some(field => !modelFields(field.source, field.field, field.record)) ||
         includesReplay && !this.#replayable(task.id, scope?.fields ?? modelFields, scope?.effects ?? historyEffects) ||
         (ledger.incompleteDisclosures === true || modelLedger.incompleteDisclosures === true) && canRevokeFields(this.options.share)) {
@@ -1702,9 +1717,16 @@ export class AssistantEngine {
           current.claudeHistory = {...bound, replayFrom: current.transcript.length};
         }
         const pinned = current.claudeHistory;
+        if (bound === undefined && pinned !== undefined && latest !== undefined) {
+          pinned.ordinaryFrom ??= current.transcript.lastIndexOf(latest);
+        }
         const eligible = latest === undefined || pinned === undefined ? current.transcript
-          : bound === undefined ? current.transcript.slice(current.transcript.lastIndexOf(latest))
+          : bound === undefined ? current.transcript.slice(pinned.ordinaryFrom)
             : [latest, ...current.transcript.slice(pinned.replayFrom)];
+        replaysClaudeHistory = bound !== undefined && pinned?.history !== undefined && eligible.length > 1;
+        if (replaysClaudeHistory && this.#currentClaudeHistory(current, bound)?.history === undefined) {
+          throw new Fault('forbidden', 'Access to the requested history changed before this turn.');
+        }
         if (pinned !== undefined) historyEffects = new Set(eligible.flatMap(item => 'effect' in item && typeof item.effect === 'string' ? [item.effect] : []));
         includesReplay = this.#replayable(current.id, modelFields, historyEffects) && eligible.every(allows);
         const transcript = includesReplay ? eligible : eligible.filter(item => item.role === 'owner' && allows(item));
@@ -2011,12 +2033,8 @@ export class AssistantEngine {
           const owner = task.transcript.filter(item => item.role === 'owner').at(-1);
           const requestId = owner === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, owner);
           const request = requestId === undefined ? undefined : this.store.messages.get(requestId);
-          const recognized = this.#claudeHistoryBinding(task);
+          const bound = this.#currentClaudeHistory(this.#task(task.id));
           const pinned = task.claudeHistory;
-          const expected = pinned?.history, current = recognized?.history;
-          const bound = recognized === undefined ? undefined : {requestId: recognized.requestId,
-            history: pinned?.requestId === recognized.requestId && expected !== undefined && current !== undefined &&
-              sameHistoryQuery(expected.query, current.query) ? expected : undefined};
           const pagesRead = bound === undefined || pinned === undefined ? 0 : task.transcript.slice(pinned.replayFrom)
             .filter(item => item.role === 'tool' && item.name === READ_DEVICE_HISTORY && item.result.startsWith('{')).length;
           text = this.#history.read(call.input, {taskId: task.id, destination: provider.name, now,

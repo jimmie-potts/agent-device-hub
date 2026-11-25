@@ -85,6 +85,10 @@ function matchesBoundQuery(input: Record<string, unknown>, requested: DeviceHist
     (useBoundInterval || confirmsYesterday || confirmsExact);
 }
 
+export function canReadDeviceHistory(access: FieldAccess, target: string): boolean {
+  return access('devices', 'index', target) && access('devices', 'details', target) && access('devices', 'status', target);
+}
+
 export function sameHistoryQuery(a: DeviceHistoryQuery, b: DeviceHistoryQuery): boolean {
   return a.source === b.source && a.target === b.target && a.fromAtMs === b.fromAtMs && a.toAtMs === b.toAtMs;
 }
@@ -125,8 +129,7 @@ export class DeviceHistoryPages {
     }
     if (query === undefined || typeof cursor !== 'string') return 'refused: invalid-request';
     const {fromAtMs: from, toAtMs: to} = query;
-    if (!access('devices', 'index', query.target) || !access('devices', 'details', query.target) ||
-      !access('devices', 'status', query.target)) return 'refused: forbidden';
+    if (!canReadDeviceHistory(access, query.target)) return 'refused: forbidden';
     for (const [id, page] of this.#cursors) if (page.expires <= scope.now) this.#cursors.delete(id);
     const saved = cursor === '' ? undefined : this.#cursors.get(cursor);
     if (cursor !== '' && (saved === undefined || saved.taskId !== scope.taskId || saved.destination !== scope.destination ||

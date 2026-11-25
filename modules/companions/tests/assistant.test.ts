@@ -3067,7 +3067,7 @@ void test('Claude uses only the owner-bound history tool and two pages from the 
   assert.deepEqual(pages.map(page => page.evidence.length), [12, 12]);
   assert.deepEqual(pages[0]?.evidence[0], {atMs: day - 86_400_000, confirmedThroughMs: day - 86_400_000 + 1,
     kind: 'continuation', power: 'on'});
-  assert.ok(pages[0]?.next);
+  assert.equal(typeof pages[0]?.next, 'string');
   assert.equal(pages[1]?.next, null);
   assert.equal(pages[1]?.capped, true);
   assert.match(JSON.stringify(turns.at(-1)?.transcript), /history page limit reached/u);
@@ -3099,8 +3099,8 @@ void test('Claude keeps the history scope when registry labels change after mode
   await entered.promise;
   target = 'replacement';
   release.resolve(call('read_device_history', {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''}));
-  await until(() => status(w) === 'succeeded');
-  assert.match(JSON.stringify(turns.at(-1)?.transcript), /refused: forbidden/u);
+  await until(() => status(w) === 'failed');
+  assert.equal(turns.length, 1);
 });
 
 void test('Claude keeps a named history question private when the history tool is disabled', async context => {
@@ -3116,7 +3116,39 @@ void test('Claude keeps a named history question private when the history tool i
   const previous = task(w)?.taskId;
   assert.equal((await input(w.core, w.module(), 'How long was Desk Lamp on yesterday?')).status, 'accepted');
   await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
-  assert.ok(turns[0]?.tools.some(tool => tool.name === 'read_devices'));
+  assert.equal(turns[0]?.tools.some(tool => tool.name === 'read_devices'), true);
   assert.deepEqual(turns[1]?.tools, []);
   assert.doesNotMatch(JSON.stringify(turns[1]), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
 });
+
+for (const invalidation of ['device registry remap', 'local owner-message revocation', 'local device status revocation'] as const) {
+  void test(`Claude withholds a saved page on ${invalidation}`, async context => {
+    const source = 'bunny/modules/lifx';
+    const allowed = sharing();
+    const turns: TurnInput[] = [];
+    let invalidated = false, reads = 0;
+    const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: request => {
+      turns.push(request);
+      return Promise.resolve(turns.length === 1
+        ? call('read_device_history', {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''})
+        : reply('Synthetic scoped answer.'));
+    }};
+    const w = await world(context, {provider, tools: ['read_device_history'], timeZone: 'UTC',
+      devices: owner => owner === source ? [light(invalidated && invalidation === 'device registry remap' ? 'replacement' : 'desk', 'Desk Lamp')] : [],
+      share: grant => allowed(grant) && !(invalidated && grant.destination === 'private-conversation' &&
+        (invalidation === 'local owner-message revocation' && grant.source === 'conversation' && grant.field === 'text' && grant.record?.endsWith('-prompt') === true ||
+          invalidation === 'local device status revocation' && grant.source === 'devices' && grant.field === 'status' && grant.record === 'desk')),
+      deviceHistory: query => {
+        invalidated = true;
+        reads += 1;
+        return {schema: DEVICE_HISTORY_VERSION, query, boundary: 4, complete: true, lastChange: null,
+          durations: {on: 1, off: 0, unknown: query.toAtMs - query.fromAtMs - 1}, links: [],
+          evidence: [{seq: 4, messageId: null, kind: 'observation', atMs: query.fromAtMs + 1, confirmedThroughMs: query.fromAtMs + 2, power: 'on'}]};
+      }}, undefined, Date.parse('2026-11-02T01:00:00Z'));
+    await control(w.core, w.module(), 'enable');
+    assert.equal((await input(w.core, w.module(), 'How long was Desk Lamp on yesterday?')).status, 'accepted');
+    await until(() => status(w) === 'succeeded' || status(w) === 'failed');
+    assert.equal(reads, 1);
+    assert.doesNotMatch(JSON.stringify(turns), /device-history\/1\.0/u);
+  });
+}

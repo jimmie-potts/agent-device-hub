@@ -42,7 +42,7 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
   supervisor?: SupervisorIdentity;
   clarificationDevices?: readonly string[];
   /** Query and transcript boundary from the scoped model call's admission. */
-  claudeHistory?: DeviceHistoryBinding & {replayFrom: number};
+  claudeHistory?: DeviceHistoryBinding & {replayFrom: number; ordinaryFrom?: number};
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
   traceparent: string | null; transcript: SavedTranscriptItem[];
