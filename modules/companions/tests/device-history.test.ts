@@ -68,3 +68,43 @@ void test('relative history paging keeps the owner request date across midnight'
   assert.deepEqual(second.query, first.query);
   assert.equal(second.next, null);
 });
+
+void test('owner-bound pages refuse model-selected bounds, omit unrelated metadata and keep the owner request identity', () => {
+  const requestedAtMs = Date.parse('2026-11-02T04:59:00Z');
+  const interval = {fromAtMs: Date.parse('2026-10-31T04:00:00Z'), toAtMs: Date.parse('2026-11-01T04:00:00Z')};
+  const source = 'bunny/modules/wemo', target = 'fixture';
+  let reads = 0;
+  const pages = new DeviceHistoryPages(() => query => {
+    reads += 1;
+    return {schema: DEVICE_HISTORY_VERSION, query, boundary: 17, complete: false,
+      durations: {on: 8, off: 0, unknown: query.toAtMs - query.fromAtMs - 8}, lastChange: null,
+      evidence: Array.from({length: 13}, (_, seq) => ({seq, messageId: 'PRIVATE_RECORD', atMs: query.fromAtMs + seq,
+        confirmedThroughMs: query.fromAtMs + seq, kind: 'observation', power: 'on'})),
+      links: [{requestId: 'PRIVATE_OPERATION', observationSeq: 1, sentAtMs: query.fromAtMs, transmittedAtMs: query.fromAtMs, sentSeq: 1, transmissionOutcomeSeq: 1}]};
+  });
+  const scope = {taskId: 'task-a', destination: 'anthropic', now: requestedAtMs, requestedAtMs, timeZone: 'America/New_York',
+    bound: {requestId: 'owner-a', history: {query: {source, target, ...interval}, kind: 'durations', yesterday: true}}} as const;
+  const general = {taskId: scope.taskId, destination: scope.destination, now: scope.now, requestedAtMs, timeZone: scope.timeZone};
+  const exact = {source, target, period: '', ...interval, cursor: ''};
+  for (const altered of [{...exact, target: 'foreign'}, {...exact, source: 'bunny/modules/lifx'},
+    {...exact, fromAtMs: exact.fromAtMs + 1}]) assert.match(pages.read(altered, scope, () => true), /forbidden/u);
+  assert.equal(reads, 0);
+  const empty = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
+  const first = pages.read(empty, scope, () => true);
+  assert.doesNotMatch(first, /PRIVATE_|"seq"|"links"|"boundary"/u);
+  const parsed = JSON.parse(first) as {query: typeof scope.bound.history.query; next: string; evidence: unknown[]; complete: boolean};
+  assert.deepEqual(parsed.query, scope.bound.history.query);
+  assert.equal(parsed.complete, false);
+  assert.equal(parsed.evidence.length, 12);
+  const second = {...empty, cursor: parsed.next};
+  assert.match(pages.read({...exact, target: 'foreign', cursor: parsed.next}, scope, () => true), /forbidden/u);
+  assert.match(pages.read({...exact, cursor: parsed.next}, general, () => true), /revision-conflict/u);
+  const otherOwner = {...scope, bound: {...scope.bound, requestId: 'owner-b'}};  assert.match(pages.read(second, otherOwner, () => true), /revision-conflict/u);
+  assert.match(pages.read(second, scope, (_source, field) => field !== 'status'), /forbidden/u);
+  const later = JSON.parse(pages.read(second, {...scope, now: requestedAtMs + 120_000}, () => true)) as typeof parsed;
+  assert.deepEqual(later.query, parsed.query);
+  assert.equal(later.evidence.length, 1);
+  assert.equal(later.next, null);
+  assert.equal(reads, 1);
+  assert.doesNotMatch(pages.read(exact, general, () => true), /^refused:/u);
+});

@@ -29,7 +29,7 @@ import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions, deviceClarification, type RetainedArtworkRead} from './catalog-actions.js';
 import {deviceHistoryQuery} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {catalogCommand, catalogTool, isCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
-import {DeviceHistoryPages, deviceHistoryGuide, requestedHistory, type DeviceHistoryRead, type DeviceHistorySummary} from './device-history.js';
+import {canReadDeviceHistory, DeviceHistoryPages, deviceHistoryGuide, requestedHistory, sameHistoryQuery, type DeviceHistoryRead, type DeviceHistoryBinding} from './device-history.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
 import {ConversationTitles, ownerTitle, type TitleEvent, type TitleProvider} from './titles.js';
@@ -1393,9 +1393,49 @@ export class AssistantEngine {
     const localOptionsAllowed = task.clarificationDevices?.every(id => discovery('devices', 'index', id) && read('devices', 'label', id)) ?? true;
     return localOptionsAllowed && this.#callDisclosuresAllowed(task.id, inputs, call => call.ordinal < before) ? undefined : 'grant-denied';
   }
+  #historyDevices() {
+    return ([ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER] as const).flatMap(owner =>
+      (this.options.devices?.(owner) ?? []).map(device => ({owner, device})));
+  }
+  #historyBinding(task: Task, configured?: readonly {owner: AssistantDeviceOwner; device: DeviceRecord}[]): DeviceHistoryBinding | undefined {
+    const latest = task.transcript.filter(item => item.role === 'owner').at(-1);
+    const requestId = latest === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, latest) ?? fail('invalid-state');
+    const saved = this.store.messages.get(requestId);
+    const requestedAt = latest?.submittedAtMs ?? saved?.createdAtMs ?? this.context.clock.now();
+    const request = requestedHistory(latest?.text ?? task.prompt, requestedAt, this.#historyTimeZone);
+    if (request === undefined) return undefined;
+    const local = this.#fields(task.profile, 'read', 'private-conversation');
+    if (saved?.speakerId !== 'owner' || saved.conversationId !== task.conversationId ||
+      this.store.messages.removal(requestId) !== undefined || !local('conversation', 'text', requestId)) {
+      return {requestId, history: undefined};
+    }
+    const matches = (configured ?? this.#historyDevices()).filter(({device}) =>
+      [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === request.subject));
+    const selected = matches.length === 1 ? matches[0] : undefined;
+    const query = selected === undefined || request.interval === undefined ? undefined : deviceHistoryQuery({source: selected.owner, target: selected.device.id, ...request.interval});
+    return {requestId, history: query === undefined ? undefined : {query, kind: request.kind, yesterday: request.yesterday}};
+  }
+  #claudeHistoryBinding(task: Task): DeviceHistoryBinding | undefined {
+    return this.#taskProvider(task).name === 'anthropic' ? this.#historyBinding(task) : undefined;
+  }
+  #currentClaudeHistory(task: Task, recognized = this.#claudeHistoryBinding(task)): DeviceHistoryBinding | undefined {
+    if (recognized === undefined) return undefined;
+    const pinned = task.claudeHistory;
+    const expected = pinned?.history, current = recognized.history;
+    if (pinned?.requestId !== recognized.requestId || expected === undefined || current === undefined ||
+      !sameHistoryQuery(expected.query, current.query)) return {requestId: recognized.requestId, history: undefined};
+    const target = expected.query.target;
+    const read = this.#fields(task.profile, 'read', 'private-conversation');
+    const discover = this.#fields(task.profile, 'discovery', 'private-conversation');
+    const allowed = discover('devices', 'index', target) && canReadDeviceHistory(read, target) &&
+      canReadDeviceHistory(this.#modelFields(task.profile, 'anthropic'), target);
+    return {requestId: recognized.requestId, history: allowed ? expected : undefined};
+  }
   #toolsFor(task: Task): ReturnType<typeof permittedTools> {
     const provider = this.#taskProvider(task);
     const tools = permittedTools(this.#allowed, provider.name === 'synthetic');
+    if (this.#claudeHistoryBinding(task) !== undefined) return tools.filter(tool => tool.name === READ_DEVICE_HISTORY).map(tool => ({...tool,
+      description: 'Read observed power for the exact device and interval in the current owner request. Send empty source, target and period, and zero for both timestamp fields. First send an empty cursor. If the response supplies a next cursor, use it to read the second evidence page before answering. The bounded request allows at most two evidence pages. Say if there is more evidence than this result shows.'}));
     return provider.name !== 'openai' ? tools : tools.filter(tool => {
       const family = catalogCommand(tool.name);
       return tool.name === ASK_OWNER || tool.name === SET_MODE || tool.name === DELEGATE_CODING ||
@@ -1431,23 +1471,11 @@ export class AssistantEngine {
     }
     const subjectForRead = purpose === 'supervisor' ? deviceRequestSubject(request) : undefined;
     const group = deviceGroup(subjectForRead);
-    const configured = purpose === 'supervisor' ? ([ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER] as const).flatMap(owner =>
-      (this.options.devices?.(owner) ?? []).map(device => ({owner, device}))) : [];
+    const configured = purpose === 'supervisor' ? this.#historyDevices() : [];
     const named = (subject: string | undefined, device: DeviceRecord): boolean =>
       [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject);
-    const historyRequest = purpose === 'supervisor' ? this.store.messages.get(requestId) : undefined;
-    const history = historyRequest?.speakerId === 'owner' && historyRequest.conversationId === task.conversationId
-      ? requestedHistory(request, latest?.submittedAtMs ?? historyRequest.createdAtMs, this.#historyTimeZone) : undefined;
-    const historyMatches = history === undefined ? [] : configured.filter(({device}) => named(history.subject, device));
-    const historyTarget = historyMatches.length === 1 ? historyMatches[0] : undefined;
-    let historySummary: DeviceHistorySummary | undefined;
-    if (historyTarget !== undefined && history !== undefined) {
-      const query = deviceHistoryQuery({source: historyTarget.owner, target: historyTarget.device.id, ...history.interval});
-      if (query !== undefined) {
-        historySummary = {query, kind: history.kind, yesterday: history.yesterday};
-        devices.add(query.target);
-      }
-    }
+    const historySummary = purpose === 'supervisor' ? this.#historyBinding(task, configured)?.history : undefined;
+    if (historySummary !== undefined) devices.add(historySummary.query.target);
     const matches = configured.filter(({device}) => named(subjectForRead, device));
     const selected = group !== undefined ? configured.filter(({owner}) => owner === group) : matches.length === 1 ? matches : [];
     for (const {device} of selected) devices.add(device.id);
@@ -1614,7 +1642,8 @@ export class AssistantEngine {
   }
   async #turn(state: GraphState): Promise<Partial<GraphState>> {
     const active = this.#activeFor(state.taskId), task = this.#task(state.taskId);
-    const provider = this.#taskProvider(task), tools = this.#toolsFor(task), copy = this.#core();
+    const provider = this.#taskProvider(task), copy = this.#core();
+    let tools = this.#toolsFor(task);
     const id = `${state.taskId}-step-${String(state.step)}`;
     // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
     const paid = provider.name !== 'synthetic';
@@ -1627,15 +1656,18 @@ export class AssistantEngine {
     if (!openai && !fields('conversation', 'text', task.conversationId)) throw new Fault('forbidden', 'This conversation is not shared with the configured model.');
     let request: TurnInput | undefined;
     let includesReplay = false;
+    let historyEffects: ReadonlySet<string> | undefined;
+    let replaysClaudeHistory = false;
     // The task's unread steers are taken into its transcript in the call's own admission (Hub #2031), after the last
     // call's tool results, and the request is built from that transcript: a limit that refuses the call leaves them
     // unread, and a replayed node whose call was admitted takes none again.
     const text = await this.#call(state.taskId, state.step, 'model', signal => {
       const current = this.#task(task.id), scope = openai ? this.#openAIScope(current) : undefined;
       const allow = scope?.fields ?? promptFields;
-      if (ledger.fields.some(field => !this.#disclosureAllowed(field, allow)) ||
+      if (replaysClaudeHistory && this.#currentClaudeHistory(current)?.history === undefined ||
+        ledger.fields.some(field => !this.#disclosureAllowed(field, allow)) ||
         modelLedger.fields.some(field => !modelFields(field.source, field.field, field.record)) ||
-        includesReplay && !this.#replayable(task.id, scope?.fields ?? modelFields, scope?.effects) ||
+        includesReplay && !this.#replayable(task.id, scope?.fields ?? modelFields, scope?.effects ?? historyEffects) ||
         (ledger.incompleteDisclosures === true || modelLedger.incompleteDisclosures === true) && canRevokeFields(this.options.share)) {
         throw new Fault('forbidden', 'Sharing changed before the configured model could receive this turn.');
       }
@@ -1644,6 +1676,7 @@ export class AssistantEngine {
           ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})}));
     }, undefined, current => {
       this.#drain(current);
+      tools = this.#toolsFor(current);
       if (openai) {
         const scope = this.#openAIScope(current);
         const access = recordDisclosures(scope.fields, ledger);
@@ -1679,11 +1712,31 @@ export class AssistantEngine {
         const ownerInputs = current.transcript.filter(item => item.role === 'owner');
         const latest = ownerInputs.at(-1);
         if (latest !== undefined && !allows(latest)) throw new Fault('forbidden', 'This message is not shared with the configured model.');
-        includesReplay = this.#replayable(current.id, modelFields) && current.transcript.every(allows);
-        const transcript = includesReplay ? current.transcript : ownerInputs.filter(allows);
+        const bound = this.#claudeHistoryBinding(current);
+        if (bound !== undefined && current.claudeHistory?.requestId !== bound.requestId) {
+          current.claudeHistory = {...bound, replayFrom: current.transcript.length};
+        }
+        const pinned = current.claudeHistory;
+        if (bound === undefined && pinned !== undefined && latest !== undefined) {
+          pinned.ordinaryFrom ??= current.transcript.lastIndexOf(latest);
+        }
+        const eligible = latest === undefined || pinned === undefined ? current.transcript
+          : bound === undefined ? current.transcript.slice(pinned.ordinaryFrom)
+            : [latest, ...current.transcript.slice(pinned.replayFrom)];
+        replaysClaudeHistory = bound !== undefined && pinned?.history !== undefined && eligible.length > 1;
+        if (replaysClaudeHistory && this.#currentClaudeHistory(current, bound)?.history === undefined) {
+          throw new Fault('forbidden', 'Access to the requested history changed before this turn.');
+        }
+        if (pinned !== undefined) historyEffects = new Set(eligible.flatMap(item => 'effect' in item && typeof item.effect === 'string' ? [item.effect] : []));
+        includesReplay = this.#replayable(current.id, modelFields, historyEffects) && eligible.every(allows);
+        const transcript = includesReplay ? eligible : eligible.filter(item => item.role === 'owner' && allows(item));
         for (const item of transcript) if (!visible(item, fields, replayFields)) fail('forbidden');
-        request = {instructions: INSTRUCTIONS, context: this.#context(current, undefined, {prompt: fields, model: modelAccess}), transcript, tools,
-          mode: copy.mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
+        const persona = PROFILES.find(value => value.id === current.profile) ?? fail('internal');
+        const context = bound === undefined ? this.#context(current, undefined, {prompt: fields, model: modelAccess})
+          : buildContext({profile: current.profile, persona: {name: persona.name, character: persona.character},
+            knowledge: {enabled: false, entries: []}, preferences: [], recent: {conversationId: null, messages: [], total: 0}});
+        request = {instructions: INSTRUCTIONS, context, transcript, tools,
+          mode: bound !== undefined || copy.mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
       }
       request = {...request, transcript: request.transcript.map(item => {
         if (item.role !== 'owner' || !('submittedAtMs' in item)) return item;
@@ -1980,8 +2033,13 @@ export class AssistantEngine {
           const owner = task.transcript.filter(item => item.role === 'owner').at(-1);
           const requestId = owner === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, owner);
           const request = requestId === undefined ? undefined : this.store.messages.get(requestId);
+          const bound = this.#currentClaudeHistory(this.#task(task.id));
+          const pinned = task.claudeHistory;
+          const pagesRead = bound === undefined || pinned === undefined ? 0 : task.transcript.slice(pinned.replayFrom)
+            .filter(item => item.role === 'tool' && item.name === READ_DEVICE_HISTORY && item.result.startsWith('{')).length;
           text = this.#history.read(call.input, {taskId: task.id, destination: provider.name, now,
-            requestedAtMs: owner?.submittedAtMs ?? request?.createdAtMs ?? now, timeZone: this.#historyTimeZone}, access);
+            requestedAtMs: owner?.submittedAtMs ?? request?.createdAtMs ?? now, timeZone: this.#historyTimeZone,
+            ...(bound === undefined ? {} : {bound, pagesRead})}, access);
         } else {
           text = this.#history.summary(call.input, scope.fields('conversation', 'request', scope.requestId) ? scope.historySummary : undefined, access);
         }

@@ -1,6 +1,7 @@
 import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
 import type {BoundControl} from './control-intent.js';
+import type {DeviceHistoryBinding} from './device-history.js';
 import type {CodingChoice} from '../coding/routing.js';
 import type {MessageCodingInput, OpenNativeClientInput, StopCodingInput} from './history-contract.js';
 import type {Confirmation} from './confirmation.js';
@@ -40,6 +41,8 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
   control?: BoundControl;
   supervisor?: SupervisorIdentity;
   clarificationDevices?: readonly string[];
+  /** Query and transcript boundary from the scoped model call's admission. */
+  claudeHistory?: DeviceHistoryBinding & {replayFrom: number; ordinaryFrom?: number};
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
   traceparent: string | null; transcript: SavedTranscriptItem[];
