@@ -24,7 +24,7 @@ const report = {outcome: 'tested-candidate', summary: 'Reviewed the requested re
 ], findings: [], limitations: []};
 const bounds = {wallClockMs: 120_000, maxTurns: 3, budgetUsd: 2};
 const safeConfig = {mcp_servers: {}, plugins: {}, hooks: null, allow_login_shell: false, cli_auth_credentials_store: 'file',
-  forced_login_method: 'chatgpt', model_provider: 'openai', chatgpt_base_url: 'https://chatgpt.com/backend-api/', openai_base_url: 'https://api.openai.com/v1',
+  forced_login_method: 'chatgpt', model_provider: 'openai', chatgpt_base_url: 'https://chatgpt.com/backend-api/', openai_base_url: 'https://chatgpt.com/backend-api/codex',
   otel: {exporter: 'none', trace_exporter: 'none', metrics_exporter: 'none', log_user_prompt: false},
   features: {hooks: false, apps: false, plugins: false, shell_snapshot: false}};
 
@@ -150,6 +150,11 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
   return {adapter, requests, sessions, run, starts: () => starts, output: () => wireSchema, finish: () => {finishTurn?.();}};
 }
 
+void test('Codex worker startup pins the ChatGPT subscription model route', () => {
+  const args = codexArguments('/synthetic/worktree', 'bunny-fixture', profileHome);
+  assert.deepEqual(args.filter(arg => arg.startsWith('openai_base_url=')), ['openai_base_url="https://chatgpt.com/backend-api/codex"']);
+});
+
 void test('Codex readiness reports only subscription fields, plan and quota without opening a thread', async () => {
   const {adapter, requests} = fixture();
   assert.deepEqual(await adapter.readiness(), {installed: 'yes', signedIn: 'yes', version: '0.163.0', plan: 'plus',
@@ -214,7 +219,7 @@ void test('Codex steering stays on its current native turn and correlates only t
   assert.equal(fixtureRun.starts(), 1);
 });
 
-void test('Codex refuses effective MCP or plugin configuration before probing auth or opening a thread', async t => {
+void test('Codex refuses conflicting isolation settings before probing auth or opening a thread', async t => {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
   t.after(() => rm(cwd, {recursive: true, force: true}));
   for (const effectiveConfig of [
@@ -226,6 +231,8 @@ void test('Codex refuses effective MCP or plugin configuration before probing au
     {...safeConfig, cli_auth_credentials_store: 'keyring'},
     {...safeConfig, model_provider: 'custom'},
     {...safeConfig, chatgpt_base_url: 'https://synthetic.invalid/backend-api/'},
+    {...safeConfig, openai_base_url: 'https://api.openai.com/v1'},
+    {...safeConfig, openai_base_url: 'https://synthetic.invalid/backend-api/codex'},
     {...safeConfig, otel: {exporter: {otlp_http: {endpoint: 'https://synthetic.invalid'}}}},
     {},
   ]) {

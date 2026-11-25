@@ -348,6 +348,10 @@ Use the dedicated ChatGPT login and keep personal credentials in their own profi
 The worker launches the private stdio app-server from that directory with
 both `HOME` and `CODEX_HOME` set to it. It pins the SQLite files and logs to
 the profile's `sqlite` and `log` directories in the launch arguments.
+Fresh app-server threads and saved terminal launches pin the built-in OpenAI
+provider to the ChatGPT subscription model endpoint at
+`https://chatgpt.com/backend-api/codex`. The worker checks that effective setting
+alongside the ChatGPT backend used for the account.
 The process can open its local stores during startup. The worker checks the
 effective configuration before reading the account or opening a thread.
 A reported path or route override, enabled telemetry, configured MCP servers
