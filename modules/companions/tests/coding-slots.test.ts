@@ -1045,7 +1045,7 @@ for (const revoked of ['model input', 'derived input', 'private read'] as const)
     const approval = store.call(waiting.operationId) ?? assert.fail('saved approval call');
     assert.equal(approval.kind, 'tool');
     assert.notEqual(model.id, approval.id);
-    assert.ok(model.disclosures?.some(field => field.source === 'coding' && field.field === 'repository' && field.record === 'agent-device-hub'),
+    assert.equal(model.disclosures?.some(field => field.source === 'coding' && field.field === 'repository' && field.record === 'agent-device-hub'), true,
       'the earlier job receipt disclosed the repository to the supervisor');
     revoke = true;
     await w.restart();
