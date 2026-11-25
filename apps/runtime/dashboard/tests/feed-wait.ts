@@ -154,6 +154,9 @@ function requestFacts(requests: readonly FeedRequest[], since: number, times: We
   return `stream requests (start relative to the wait): ${listed}; other SDK requests of this document with no response yet: ${String(others)}`;
 }
 
+const mainFact = (main: MainState): string => main === null ? 'main#main is absent'
+  : `main#main now has data-feed=${attribute(main.feed)} data-copies=${attribute(main.copies)} data-syncs=${attribute(main.syncs)}`;
+
 /** What the page showed and how its requests stood, from the reads after an expired wait. */
 function describe(seen: {value: Seen} | {problem: string}, requests: {value: readonly FeedRequest[]} | {problem: string},
   since: number, times: WeakMap<FeedRequest, number>): string[] {
@@ -161,7 +164,7 @@ function describe(seen: {value: Seen} | {problem: string}, requests: {value: rea
   if ('value' in seen) {
     const {trail, main} = seen.value;
     facts.push(`data-feed during the wait: ${trail === null || trail.length === 0 ? '(not observed)' : trail.join(' -> ')}`);
-    facts.push(main === null ? 'main#main is absent' : `main#main now has data-feed=${attribute(main.feed)} data-copies=${attribute(main.copies)} data-syncs=${attribute(main.syncs)}`);
+    facts.push(mainFact(main));
   } else {
     facts.push(`the page could not be read: ${seen.problem}`);
   }
@@ -201,4 +204,35 @@ export async function waitForFeed(page: FeedPage, value: string, clock: Clock = 
   }
   // Not awaited, so a successful wait takes no longer; a page that navigated or closed has dropped the record anyway.
   void watching.then(() => page.evaluate(stopFeedWatch, key)).catch(() => {});
+}
+
+/** Runs in the page: the main region's connection attributes now. `_unused` is the argument every page read here takes. */
+function readMain(_unused: null): MainState {
+  const main = document.querySelector('main#main');
+  return main === null ? null : {feed: main.getAttribute('data-feed'), copies: main.getAttribute('data-copies'), syncs: main.getAttribute('data-syncs')};
+}
+
+/**
+ * Waits, with the page's default timeout, for `main#main[data-copies="synced"]`: the page holds a current copy of
+ * every owner's records it follows. A page's feed connects before its copies arrive (ADR 0012), so a card that shows
+ * records is not ready at `data-feed="connected"` (#2123). If the wait expires, its error says the main region's
+ * `data-feed`, `data-copies` and `data-syncs` at expiry and how the page's latest SDK requests stood, as the feed
+ * wait's does. The original error is its `cause`. `clock` times the requests.
+ */
+export async function waitForCopies(page: FeedPage, clock: Clock = Date.now): Promise<void> {
+  const since = clock();
+  const times = startTimes(page, clock);
+  try {
+    await page.locator('main#main[data-copies="synced"]').waitFor();
+  } catch (error) {
+    let facts: string[];
+    try {
+      const [main, requests] = await Promise.all([bounded(() => page.evaluate(readMain, null)), bounded(() => page.requests())]);
+      facts = ['value' in main ? mainFact(main.value) : `the page could not be read: ${main.problem}`,
+        'value' in requests ? requestFacts(requests.value, since, times) : `the page's requests could not be read: ${requests.problem}`];
+    } catch (problem) {
+      facts = [`the wait's facts could not be gathered: ${firstLine(problem)}`];
+    }
+    throw new Error(`copiesSynced(page) did not see main#main[data-copies="synced"]: ${firstLine(error)}\n  ${facts.join('\n  ')}`, {cause: error});
+  }
 }

@@ -1,6 +1,7 @@
 import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
 import type {BoundControl} from './control-intent.js';
+import type {DeviceHistoryBinding} from './device-history.js';
 import type {CodingChoice} from '../coding/routing.js';
 import type {MessageCodingInput, OpenNativeClientInput, StopCodingInput} from './history-contract.js';
 import type {Confirmation} from './confirmation.js';
@@ -30,14 +31,21 @@ export const RESPONSES_GRAPH_VERSION = 'responses-1';
 export const PREVIOUS_GRAPH_VERSION = 'conversation-1';
 import {LIMITS} from './limits.js';
 export {LIMITS} from './limits.js';
+/** Submission time is private task metadata for delayed owner messages. */
+type SavedTranscriptItem = (Extract<TranscriptItem, {role: 'owner'}> & {submittedAtMs?: number})
+  | Exclude<TranscriptItem, {role: 'owner'}>;
 export type Question = SavedQuestion & {call: string; codingChoice?: CodingChoice};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
+  /** Only the private Conversation page renders this receipt, after a fresh exact Jobs lookup. */
+  localJobStatus?: {question: string; visible?: {jobId: string; operationId: string; status: string}};
   control?: BoundControl;
   supervisor?: SupervisorIdentity;
   clarificationDevices?: readonly string[];
+  /** Query and transcript boundary from the scoped model call's admission. */
+  claudeHistory?: DeviceHistoryBinding & {replayFrom: number; ordinaryFrom?: number};
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
-  traceparent: string | null; transcript: TranscriptItem[];
+  traceparent: string | null; transcript: SavedTranscriptItem[];
   /**
    * The conversation's last saved message sequence when the task started (Hub #2029): the recent conversation section of
    * each of its calls holds the conversation's messages up to it, so the section stays fixed for the task. A task saved
@@ -70,11 +78,12 @@ export type ConversationSummary = {conversationId: string; current: boolean; mes
 export type Stage = {ref: string; requestId: string; input: StagedInput | StopCodingInput | MessageCodingInput | OpenNativeClientInput; expires: number};
 export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: Question | null} | null; next: number | null};
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
-export type Appended = TranscriptItem & {effect: string};
+export type Appended = SavedTranscriptItem & {effect: string};
 type RecordRow = {record: string};
 export type MessageSource = Pick<ConversationMessage, 'id' | 'role' | 'taskId'> & {follows?: string | null};
 type MessageVisibility = {
   shows(message: MessageSource): boolean;
+  privateText?(message: MessageSource): string | undefined;
   attachment(requestId: string): boolean;
   task(taskId: string): boolean;
 };
@@ -249,12 +258,12 @@ export class AssistantStore {
   lastSequence(conversationId: string): number {
     return (this.database.prepare('SELECT MAX(seq) AS seq FROM assistant_messages WHERE conversation_id=?').get(conversationId) as {seq: number | null}).seq ?? 0;
   }
-  newTask(profile: AssistantProfile, prompt: string, supervisor?: SupervisorIdentity): Task {
+  newTask(profile: AssistantProfile, prompt: string, supervisor?: SupervisorIdentity, submittedAtMs?: number): Task {
     const conversationId = this.ensureConversation(profile);
     return {version: 1, graphVersion: supervisor?.provider === 'openai' ? RESPONSES_GRAPH_VERSION : GRAPH_VERSION,
       ...(supervisor === undefined ? {} : {supervisor}), tracksApprovals: true, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
       generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null,
-      transcript: [{role: 'owner', text: prompt}], contextThrough: this.lastSequence(conversationId)};
+      transcript: [{role: 'owner', text: prompt, ...(submittedAtMs === undefined ? {} : {submittedAtMs})}], contextThrough: this.lastSequence(conversationId)};
   }
   /**
    * The recent conversation a task's context may hold (Hub #2029): the conversation's saved owner messages, replies and
@@ -391,7 +400,7 @@ export class AssistantStore {
    * about, so it is left out and can never become a title.
    */
   titleMessages(conversationId: string, limit = 8, permits?: (message: MessageSource) => boolean): {role: 'owner' | 'assistant'; text: string}[] {
-    const query = "SELECT id,role,text,task_id AS taskId,follows FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' AND id NOT LIKE task_id || '-step-%-job-%' AND (follows IS NULL OR follows NOT LIKE task_id || '-step-%-job') ORDER BY seq DESC";
+    const query = "SELECT id,role,text,task_id AS taskId,follows FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT IN (task_id || '-private-question', task_id || '-private-status') AND id NOT LIKE task_id || '-closing-%' AND id NOT LIKE task_id || '-step-%-job-%' AND (follows IS NULL OR follows NOT LIKE task_id || '-step-%-job') ORDER BY seq DESC";
     const rows = (permits === undefined ? this.database.prepare(query + ' LIMIT ?').all(conversationId, limit)
       : this.database.prepare(query).all(conversationId)) as (MessageSource & {role: 'owner' | 'assistant'; text: string})[];
     return (permits === undefined ? rows : rows.filter(permits).slice(0, limit)).reverse().map(({role, text}) => ({role, text}));
@@ -489,7 +498,7 @@ export class AssistantStore {
     const follows = followed !== undefined && visibility.shows(followed) ? row.follows : null;
     const visible = row.artRequestId !== null && !visibility.attachment(row.artRequestId)
       ? {...row, artRequestId: null, artDescription: null} : row;
-    return messageOf({...visible, follows});
+    return messageOf({...visible, text: visibility.privateText?.(row) ?? visible.text, follows});
   }
   #visibleQuestion(task: Task, visibility?: MessageVisibility): Question | null {
     const question = task.question;

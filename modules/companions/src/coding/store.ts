@@ -103,7 +103,7 @@ export class CodingStore {
     return this.database.prepare(`WITH current AS (
       SELECT j.*, COALESCE((SELECT a.operation_id FROM companion_coding_attempts a
         WHERE a.job_id=j.job_id ORDER BY a.rowid DESC LIMIT 1), j.operation_id) AS current_operation
-      FROM companion_coding_jobs j WHERE j.job_id > ?
+      FROM companion_coding_jobs j WHERE j.job_id > ? ${jobId === undefined ? '' : 'AND j.job_id=?'}
       )
       SELECT job.job_id, job.current_operation AS operation_id, job.task_id, job.conversation_id, job.repository, COALESCE(waiting.companion, attempt.companion) AS companion,
       COALESCE(attempt.status, run.status) AS status, terminal.text AS terminal_text,
@@ -113,8 +113,8 @@ export class CodingStore {
       LEFT JOIN companion_coding_attempts attempt ON attempt.operation_id=job.current_operation
       LEFT JOIN companion_coding run ON run.operation_id=job.current_operation
       LEFT JOIN companion_coding_job_updates terminal ON terminal.operation_id=job.current_operation AND terminal.kind='result'
-      WHERE (? IS NULL OR job.job_id=?) AND (?=1 OR terminal.operation_id IS NULL)
-      ORDER BY job.job_id LIMIT ?`).all(after, jobId ?? null, jobId ?? null, includeEnded ? 1 : 0, limit).map(row => {
+      WHERE (?=1 OR terminal.operation_id IS NULL)
+      ORDER BY job.job_id LIMIT ?`).all(after, ...(jobId === undefined ? [] : [jobId]), includeEnded ? 1 : 0, limit).map(row => {
       const {job_id: id, operation_id: operationId, task_id: taskId, conversation_id: conversationId, repository, companion,
         status, terminal_text: terminal, latest_update: latestUpdate} = row;
       if (typeof id !== 'string' || typeof operationId !== 'string' || typeof taskId !== 'string' ||

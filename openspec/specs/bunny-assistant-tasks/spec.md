@@ -1133,7 +1133,7 @@ An approved coding delegation SHALL return a stable job ID and let its Conversat
 
 ### Requirement: Bounded device history in Conversation
 
-Conversation SHALL offer supported sources and read operations from the shared device contracts and check current destination grants when returning retained evidence. The core SHALL provide a versioned bounded read over its own history and open observation spans with one device identity and one half-open interval. The read SHALL return on, off and unknown durations and evidence identities, distinguish gaps and removals, and carry observed power through confirmed metadata-only deltas. A link SHALL identify the tracked request, successful transmission and later matching observation as distinct evidence, without claiming exclusive cause. Clock conversion for local yesterday SHALL use the configured time zone. A Conversation cursor SHALL bind its task, destination, normalized query and captured evidence boundary. A stale or foreign cursor SHALL be refused and a denied operation SHALL expose no request link.
+Conversation SHALL offer supported sources and read operations from the shared device contracts and check current destination grants when returning retained evidence. The core SHALL provide a versioned bounded read over its own history and open observation spans with one device identity and one half-open interval. The read SHALL return on, off and unknown durations and evidence identities, distinguish gaps and removals, and carry observed power through confirmed metadata-only deltas. A link SHALL identify the tracked request, successful transmission and later matching observation as distinct evidence, without claiming exclusive cause. Relative device history SHALL use an optional `assistant.historyTimeZone` for both supervisor paths and every companion, falling back to the runtime time zone. An unsupported zone ID SHALL refuse the section with `invalid-request`. The relative interval SHALL use the time the owner submitted the request text, including the latest saved edit to a queued message and the saved time of a steer. Explicit timestamp intervals, spend accounting periods and scheduled routines retain their existing semantics. A Conversation cursor SHALL bind its task, destination, normalized query and captured evidence boundary. A stale or foreign cursor SHALL be refused and a denied operation SHALL expose no request link.
 
 #### Scenario: Power history on a local day
 
@@ -1153,6 +1153,13 @@ Conversation SHALL offer supported sources and read operations from the shared d
 - **AND** raw observations, evidence and operation identifiers, links and cursors stay private
 - **AND** an ambiguous or mismatched query returns no retained facts, and a revoked grant prevents a saved summary from reaching another provider turn or title call
 
+#### Scenario: A Claude supervisor answers a named local-day history question
+
+- **WHEN** the owner asks how long one named Wemo plug or LIFX light was on or off yesterday
+- **THEN** the request fixes the source, device and local-day interval before any model tool call, and each returned page rechecks destination grants
+- **AND** Claude receives at most two pages for the request with observed power, in-window timestamps, coverage and duration totals, while unrelated prompt context, record identifiers and command links remain private
+- **AND** an ambiguous device, mismatched query, expired cursor or cursor from another owner request returns no retained facts
+
 ### Requirement: Separate explicit job instructions from ordinary Conversation
 
 Conversation SHALL give each authorized coding-job receipt an attempt-specific card. An explicit natural-language job instruction SHALL be resolved to an eligible job and its current attempt. When the owner has not identified a unique target the page SHALL request a choice before sending. Ordinary messages and approvals SHALL retain their existing Conversation behavior while the job runs.
@@ -1162,3 +1169,23 @@ Conversation SHALL give each authorized coding-job receipt an attempt-specific c
 - **GIVEN** two jobs for the same companion use the same repository
 - **WHEN** the owner addresses one by a unique name and asks a separate Hub question
 - **THEN** only the named attempt receives the job instruction and the Hub question proceeds in Conversation
+
+### Requirement: Private status of one named coding job
+
+Conversation SHALL answer an owner’s status question about one full coding job ID locally, using the current attempt from the authorized Jobs projection in its originating conversation. Mixed or ambiguous requests SHALL require a separate question. The status question SHALL send no job control or provider request.
+
+#### Scenario: Status while coding continues
+
+- **GIVEN** a readable coding job with an active attempt
+- **WHEN** its owner asks for its status by full ID in the originating conversation
+- **THEN** the answer identifies the attempt and the state Jobs reported at that instant
+- **AND** the worker continues and the owner can send another ordinary message
+
+#### Scenario: Private reply after permission or attempt changes
+
+- **WHEN** the owner reads a saved status reply after restart
+- **THEN** Conversation checks current permission for the conversation and the source job and attempt
+- **AND** a foreign, unknown or inaccessible job reveals no job facts
+- **AND** a changed attempt cannot be presented as the attempt that supplied the saved status
+- **AND** later provider and title prompts receive no job facts from the private question or answer
+- **AND** a request for the last owner message cannot substitute an older message for that private question

@@ -674,6 +674,13 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   retained power evidence. History currently covers Wemo and LIFX, reports
   observed on, off and unknown time, and returns bounded evidence pages.
   An expired cursor or restart requires a fresh read.
+- Set `assistant.historyTimeZone` in the private Companions section to use
+  the owner's calendar for relative device-history questions. Use a supported
+  IANA zone such as `America/New_York`. Without it, history uses the runtime
+  host's zone. The setting applies to both supervisors and all companions.
+  Explicit timestamp intervals, spend accounting periods and automation
+  schedules are unchanged. Restart the runtime through its installation
+  procedure after changing the section.
 - Requests go to `https://api.anthropic.com/v1/messages` through the module's
   own fetch with API version `2026-10-21`, carrying the fixed instructions, the
   current Hub mode, the task's transcript, the tool definitions marked strict,
@@ -808,6 +815,12 @@ or **Codex** on an approval when the worker advertises harness selection.
 For a verified stopped attempt, **Attempts and results** offers continuation
 with the named harness under the same job. If the Hub has a reason to refuse
 continuation, the card shows it.
+
+In the original Conversation, ask “What is the status of coding job ID?” with
+the full Job ID from the card. The reply records the current attempt and its
+reported state. Conversation checks access again when displaying the reply.
+If another attempt has started, ask again for its status. This question runs
+locally and sends no model turn.
 
 Use **Message job** on a card to change instructions for that attempt.
 You can also enter `Message job <name>: <instruction>` or

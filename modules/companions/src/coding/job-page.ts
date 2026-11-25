@@ -3,6 +3,14 @@ import type {CodingCompanion, CodingNativeClient, CodingProgress, CodingResult, 
 import type {CodingChoice, CodingHarness} from './routing.js';
 
 export const CODING_JOB_PAGE_SIZE = 10;
+/** A full job reference stays local even when the rest of the request needs clarification. */
+export function statusQuestion(text: string): string | null | undefined {
+  const match = /\b[\w:-]+-step-\d+-job\b/u.exec(text);
+  if (match === null) return /^(?:what(?: is|'s) (?:the )?(?:current )?status of|(?:show|check) (?:the )?status of) (?:my |the )?coding jobs?\b/iu.test(text.trim()) ? null : undefined;
+  const question = text.trim().replace(match[0], '<job>').replace(/[?!.]?\s*read status only[.!]?$/iu, '').trim();
+  return /^(?:(?:what(?: is|'s)|(?:please )?(?:show|check|read)(?: me)?) (?:the )?(?:current )?(?:status|state|progress) (?:of|for) (?:the )?(?:coding )?(?:job )?<job>|is (?:the )?(?:coding )?job <job> (?:running|finished|done))[.!?]?$/iu.test(question) ? match[0] : null;
+}
+
 export type JobMessage = {
   requestId: string;
   operationId: string;
