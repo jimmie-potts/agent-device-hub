@@ -68,27 +68,31 @@ export function requestedMoment(instruction: string, answer: string): ReturnType
 export function missingCatalogDetail(family: CatalogFamily, instruction: string): string | undefined {
   const words = explicitWords(instruction);
   if (words === undefined) return undefined;
-  switch (family) {
-    case 'media-control':
-      return /^(?:pause|resume|stop|next|previous) (?:the )?(?:media|playback)$/u.test(words) ? 'Which device should I use?' : undefined;
-    case 'pixoo-now-playing-set':
-      return /^show (?:the )?now playing (?:card )?on .+$/u.test(words) ? 'Should Now Playing appear as a popup or full screen?' : undefined;
-    case 'moment-play':
-      if (/^play (?:an? |the )?[a-z]+ moment on .+$/u.test(words) && !/ for \d+ seconds?/u.test(words)) {
-        return 'How many seconds should the moment play?';
-      }
-      return /^play (?:an? |the )?[a-z]+ moment$/u.test(words) ? 'Which display should play the moment, and for how many seconds?' : undefined;
-    case 'home-layout-set':
-      return /^(?:set|change|update) (?:the )?home layout/u.test(words) ? 'Which cards should be on the desktop and phone layouts, and where?' : undefined;
-    case 'lighting-layout-set':
-      return /^(?:set|change|update) (?:the )?lighting layout/u.test(words) ? 'Which rooms, lights and groups should the lighting layout contain?' : undefined;
-    case 'playback-layout-set':
-      return /^(?:set|change|update) (?:the )?playback layout/u.test(words) ? 'Which playback sources should be assigned to each room?' : undefined;
-    case 'nanoleaf-reactive-preset-save':
-      return /^save (?:a |the )?reactive preset/u.test(words) ? 'Which effect and colors should the preset use, and what should it be called?' : undefined;
-    default:
-      return undefined;
+  if (family === 'media-control' && /^(?:pause|resume|stop|next|previous) (?:the )?(?:media|playback)$/u.test(words)) {
+    return 'Which device should I use?';
   }
+  if (family === 'pixoo-now-playing-set' && /^show (?:the )?now playing (?:card )?on .+$/u.test(words)) {
+    return 'Should Now Playing appear as a popup or full screen?';
+  }
+  if (family === 'moment-play') {
+    if (/^play (?:an? |the )?[a-z]+ moment on .+$/u.test(words) && !/ for \d+ seconds?/u.test(words)) {
+      return 'How many seconds should the moment play?';
+    }
+    return /^play (?:an? |the )?[a-z]+ moment$/u.test(words) ? 'Which display should play the moment, and for how many seconds?' : undefined;
+  }
+  if (family === 'home-layout-set' && /^(?:set|change|update) (?:the )?home layout/u.test(words)) {
+    return 'Which cards should be on the desktop and phone layouts, and where?';
+  }
+  if (family === 'lighting-layout-set' && /^(?:set|change|update) (?:the )?lighting layout/u.test(words)) {
+    return 'Which rooms, lights and groups should the lighting layout contain?';
+  }
+  if (family === 'playback-layout-set' && /^(?:set|change|update) (?:the )?playback layout/u.test(words)) {
+    return 'Which playback sources should be assigned to each room?';
+  }
+  if (family === 'nanoleaf-reactive-preset-save' && /^save (?:a |the )?reactive preset/u.test(words)) {
+    return 'Which effect and colors should the preset use, and what should it be called?';
+  }
+  return undefined;
 }
 
 type Setting = {subject?: string; recipients?: readonly string[]};
