@@ -243,10 +243,15 @@ A new coding job SHALL bind approval to Auto or a named harness. Auto SHALL choo
 - **WHEN** the approved Auto job sees a preferred subscription with a rejected quota
 - **THEN** the other eligible subscription can run the job and the reason is visible, including when the rejected quota has no known reset
 
-#### Scenario: Continue a stopped writer
+#### Scenario: Continue a stopped and confined writer
 
-- **WHEN** the owner requests the other harness and the worker has terminal writer evidence and the same known worktree revision and changes
-- **THEN** the job receives a distinct attempt with separate native identity, bounded handoff facts and its own checks
+- **WHEN** the owner requests Claude Code after a stopped Codex attempt on a supported Mac worker, the native sandbox excludes the successor, and the worker confirms the source checkout identity, revision, index and selected files
+- **THEN** the job receives a distinct attempt in a separate checkout and Git store with the same verified state, the full approved brief, bounded Git and check facts, and its own native identity and checks
+
+#### Scenario: Incomplete snapshot or confinement
+
+- **WHEN** the previous writer lacks verified native confinement, or the source identity, revision, index or verified contents differ
+- **THEN** the continuation remains unavailable and no replacement writer starts
 
 #### Scenario: Ambiguous start or stop
 

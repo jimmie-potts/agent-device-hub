@@ -31,8 +31,8 @@ async function settle(check: () => boolean, what = 'expected state arrived'): Pr
   assert.ok(check(), what);
 }
 /** Each profile's model: a task's first call proposes a hand-off, and the call after the worker's word reports it. */
-const delegating = (profile: AssistantProfile): ModelProvider => ({name: 'synthetic', model: 'synthetic', turn: input => Promise.resolve<TurnReply>(input.transcript.every(item => item.role === 'owner')
-  ? {text: null, calls: [{id: `call-${profile}-${String(input.transcript.length)}`, name: 'delegate_coding', input: {repository: 'agent-device-hub', brief: `Synthetic ${profile} brief.`}}], stop: 'tool', units: 10}
+const delegating = (profile: AssistantProfile, brief = `Synthetic ${profile} brief.`): ModelProvider => ({name: 'synthetic', model: 'synthetic', turn: input => Promise.resolve<TurnReply>(input.transcript.every(item => item.role === 'owner')
+  ? {text: null, calls: [{id: `call-${profile}-${String(input.transcript.length)}`, name: 'delegate_coding', input: {repository: 'agent-device-hub', brief}}], stop: 'tool', units: 10}
   : {text: `Synthetic ${profile} report.`, calls: [], stop: 'end', units: 10})});
 const result = (summary: string): CodingResult => ({outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: [], checks: [],
   findings: [], limitations: [], summary, sessionId: null, usage: null});
@@ -937,7 +937,8 @@ void test('an uncapped attempt uses observed setup deadlines without timing out 
 
 
 void test('an owner-approved Auto job routes from exhausted Claude to Codex and explicitly continues on the same job', {timeout: 30_000}, async context => {
-  const w = await world(context);
+  const brief = 'Exact owner-approved brief. ' + 'x'.repeat(4096 - 'Exact owner-approved brief. '.length);
+  const w = await world(context, {provider: delegating('bunny', brief)});
   const claude: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: '2.0',
     limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
   const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus', capabilities: {...claude.capabilities, steering: 'live'}};
@@ -945,7 +946,7 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   assert.equal((await w.control('enable')).status, 'accepted');
   assert.equal((await w.enable('uncapped', [exhausted, codex])).status, 'accepted');
   assert.equal((await w.send('bunny', 'Synthetic partially edited coding task')).status, 'accepted');
-  await w.approved('bunny', 'auto');
+  await w.approved('bunny');
   await settle(() => w.starts().length === 1);
   const initial = w.starts()[0]?.data;
   assert.ok(initial?.action === 'start' && initial.harness === 'codex');
@@ -978,7 +979,7 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   const resumed = w.starts()[1]?.data;
   assert.ok(resumed?.action === 'start' && resumed.harness === 'claude-code');
   assert.deepEqual(resumed.continuation, {fromOperationId: operationId, token: handoffToken});
-  assert.match(resumed.brief, /git diff \(passed\)/);
+  assert.equal(resumed.brief, brief);
   assert.doesNotMatch(resumed.brief, /native-codex|Synthetic partial work/);
   assert.equal((await w.jobDetail(jobId)).activeOperationId, resumed.operationId);
   assert.equal((await w.jobs({jobId})).jobs[0]?.operationId, resumed.operationId);
@@ -1000,6 +1001,10 @@ void test('an owner-approved Auto job routes from exhausted Claude to Codex and 
   await w.waitMessages('bunny', /Synthetic continued work/);
   const detail = await w.jobDetail(jobId);
   assert.equal(detail.activeOperationId, null);
+  assert.equal(detail.continuation, null);
+  assert.match(detail.continuationReason ?? '', /Continuation from Claude Code is unavailable/);
+  assert.equal((await w.continueJob(jobId, resumed.operationId, 'codex')).status, 'rejected');
+  assert.equal(w.starts().length, 2);
   assert.deepEqual(detail.attempts.map(attempt => [attempt.operationId, attempt.harness, attempt.sessionId, attempt.status, attempt.result?.checks[0]?.name]), [
     [operationId, 'codex', 'native-codex', 'cancelled', 'git diff'],
     [resumed.operationId, 'claude-code', 'native-claude', 'completed', 'unit test'],

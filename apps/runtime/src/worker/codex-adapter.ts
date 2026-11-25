@@ -1,7 +1,7 @@
 import {writerGone} from './writer-proof.js';
 import {execFile, spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {lstat, readdir, realpath} from 'node:fs/promises';
+import {lstat, mkdtemp, readdir, realpath, rm, symlink, writeFile} from 'node:fs/promises';
 import {userInfo} from 'node:os';
 import {isAbsolute, join, relative, resolve, sep} from 'node:path';
 import {promisify} from 'node:util';
@@ -156,9 +156,9 @@ async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise
 
 const startupStorage = (home: string) => ({sqlite: join(home, 'sqlite'), logs: join(home, 'log')});
 const configArg = (key: string, value: string | boolean): string[] => ['-c', `${key}=${JSON.stringify(value)}`];
-function codexArguments(cwd: string, profile: string, home: string): string[] {
+export function codexArguments(cwd: string, profile: string, home: string, protectedRoot?: string): string[] {
   const filesystem = {':minimal': 'read', [cwd]: 'write', [join(cwd, '.git')]: 'read',
-    [join(cwd, '.codex')]: 'read', [join(home, 'auth.json')]: 'deny'};
+    [join(cwd, '.codex')]: 'read', [join(home, 'auth.json')]: 'deny', ...(protectedRoot === undefined ? {} : {[protectedRoot]: 'deny'})};
   const rules = Object.entries(filesystem).map(([path, access]) => `${JSON.stringify(path)}=${JSON.stringify(access)}`).join(',');
   const {sqlite, logs} = startupStorage(home);
   return [...configArg('sqlite_home', sqlite), ...configArg('log_dir', logs),
@@ -178,6 +178,28 @@ function codexArguments(cwd: string, profile: string, home: string): string[] {
     ...configArg('default_permissions', profile),
     '-c', `permissions.${profile}.filesystem={${rules}}`,
     ...configArg(`permissions.${profile}.network.enabled`, false)];
+}
+
+/** Exercise the same native profile without a model call before relying on it for a successor. */
+export async function verifyCodexWriterBoundary(executable: string, cwd: string, home: string, protectedRoot: string, profile: string,
+  environment: Record<string, string>): Promise<boolean> {
+  if (process.platform !== 'darwin' || inside(cwd, protectedRoot) || inside(home, protectedRoot) || inside(protectedRoot, cwd) || inside(protectedRoot, home)) return false;
+  let sourceProbe: string | undefined, targetProbe: string | undefined;
+  try {
+    sourceProbe = await mkdtemp(join(cwd, '.bunny-boundary-'));
+    targetProbe = await mkdtemp(join(protectedRoot, 'boundary-'));
+    const target = join(targetProbe, 'exist'), alias = join(sourceProbe, 'alias');
+    await writeFile(target, 'protected', {mode: 0o600});
+    await symlink(target, alias);
+    const script = 'umask 077; /usr/bin/touch "$1/ok" || exit 1; if /usr/bin/touch "$2/out" || /usr/bin/touch "$3" || /bin/ln "$4" "$1/hardlink" || /bin/mv "$2" "$2-moved"; then exit 1; fi';
+    await execute(executable, ['sandbox', '-C', cwd, '-P', profile, ...codexArguments(cwd, profile, home, protectedRoot),
+      '--', '/bin/sh', '-c', script, 'bunny-boundary', sourceProbe, targetProbe, alias, target],
+      {cwd: home, env: environment, timeout: 5000, maxBuffer: 4096});
+    return true;
+  } catch {return false;}
+  finally {
+    await Promise.all([sourceProbe, targetProbe].flatMap(path => path === undefined ? [] : [rm(path, {recursive: true, force: true}).catch(() => {})]));
+  }
 }
 
 type Wire = {
@@ -327,9 +349,9 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
     } catch {return undefined;}
     finally {if (timer !== undefined) clearTimeout(timer);}
   };
-  const prepare = (home: string, cwd: string, signal: AbortSignal) => {
+  const prepare = (home: string, cwd: string, signal: AbortSignal, protectedRoot?: string) => {
     const profile = `bunny-worker-${randomUUID()}`;
-    const args = ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home)];
+    const args = ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, protectedRoot)];
     return {command: {executable: configuration.executable, cwd: home, env: codexEnvironment(environment, home), signal, args}, profile};
   };
   return {
@@ -381,7 +403,9 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       let revoke = (): void => {};
       const revoked = new Promise<void>(resolve => {revoke = resolve;});
       const invalidate = () => {unauthorized = true; revoke(); settle();};
-      const {command, profile} = prepare(home, cwd, signal);
+      const protectedRoot = input.continuationRoot === undefined ? undefined : await realpath(input.continuationRoot).catch(() => undefined);
+      const separated = protectedRoot !== undefined && !inside(home, protectedRoot) && !inside(protectedRoot, home);
+      const {command, profile} = prepare(home, cwd, signal, separated ? protectedRoot : undefined);
       const wire = transport({...command, event: (method, value) => {
         const data = record(value);
         if (observeAccount(method, data)) {invalidate(); return;}
@@ -424,7 +448,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           const writable = sandbox.writableRoots;
           if (unauthorized || opened.modelProvider !== 'openai' || opened.approvalPolicy !== 'never' || opened.cwd !== cwd ||
             record(opened.activePermissionProfile).id !== profile || sandbox.type !== 'workspaceWrite' || sandbox.networkAccess !== false ||
-            !Array.isArray(writable) || writable.some(root => root !== cwd) || !Array.isArray(roots) || roots.length !== 1 || roots[0] !== cwd) {
+            !Array.isArray(writable) || writable.length !== 1 || writable[0] !== cwd || !Array.isArray(roots) || roots.length !== 1 || roots[0] !== cwd) {
             return refusal('Codex did not confirm the required worktree, permission profile or first-party provider.');
           }
           sessionId = nativeSessionId(record(opened.thread).id);
@@ -489,7 +513,11 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       };
       const evidence = await execute();
       const stopped = await wire.writerStopped?.();
-      if (stopped === true) return {...evidence, writerStopped: true};
+      if (stopped === true) {
+        const confined = dispatched && evidence.uncertain !== true && separated && protectedRoot !== undefined &&
+          options.transport === undefined && await verifyCodexWriterBoundary(configuration.executable, cwd, home, protectedRoot, profile, command.env);
+        return {...evidence, writerStopped: true, ...(confined ? {writerHome: home} : {})};
+      }
       return stopped === false && dispatched ? {...evidence, uncertain: true} : evidence;
     },
   };

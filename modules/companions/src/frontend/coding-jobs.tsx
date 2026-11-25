@@ -144,20 +144,22 @@ function AttemptResults({value}: {value: unknown}): React.JSX.Element | null {
 
 function JobAttempts({jobId, revision, read}: {jobId: string; revision: number | undefined; read: (path: string) => Promise<unknown>}): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
-  const [attempts, setAttempts] = useState<readonly unknown[] | null>();
+  const [detail, setDetail] = useState<{attempts: readonly unknown[]; continuationReason?: string} | null>();
   useEffect(() => {
     if (!expanded || revision === undefined) return;
     let current = true;
     void read(`/modules/companions/content/coding-job?${new URLSearchParams({jobId}).toString()}`).then(value => {
       const detail = record(value);
-      if (current) setAttempts(detail?.version === 1 && detail.jobId === jobId && Array.isArray(detail.attempts) ? detail.attempts as unknown[] : null);
-    }, () => {if (current) setAttempts(null);});
+      if (current) setDetail(detail?.version === 1 && detail.jobId === jobId && Array.isArray(detail.attempts)
+        ? {attempts: detail.attempts as unknown[], ...(typeof detail.continuationReason === 'string' ? {continuationReason: detail.continuationReason} : {})} : null);
+    }, () => {if (current) setDetail(null);});
     return () => {current = false;};
   }, [expanded, jobId, read, revision]);
   return <details onToggle={event => {setExpanded(event.currentTarget.open);}}>
     <summary>Attempts and results</summary>
-    {expanded && (attempts === undefined ? <p>Loading attempts…</p> : attempts === null ? <p>Attempts unavailable.</p>
-      : <ol>{attempts.map((attempt, index) => <AttemptResults key={index} value={attempt}/>)}</ol>)}
+    {expanded && (detail === undefined ? <p>Loading attempts…</p> : detail === null ? <p>Attempts unavailable.</p>
+      : <>{detail.continuationReason !== undefined && <p>{detail.continuationReason}</p>}
+        <ol>{detail.attempts.map((attempt, index) => <AttemptResults key={index} value={attempt}/>)}</ol></>)}
   </details>;
 }
 

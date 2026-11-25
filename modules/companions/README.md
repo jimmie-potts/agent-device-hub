@@ -755,7 +755,8 @@ native session as soon as the worker reports it. **Attempts and results**
 shows saved attempts, known usage, decisions that need the owner, checks,
 changed files and limitations. The worktree reference names the worker's
 worktree without exposing its host path. **Open original conversation**
-returns to the exchange that requested the job.
+returns to the exchange that requested the job. When continuation is
+unavailable, **Attempts and results** shows the reason if the Hub has one.
 
 Use **Message job** on a card to change instructions for that attempt.
 You can also enter `Message job <name>: <instruction>` or
