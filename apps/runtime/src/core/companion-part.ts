@@ -2,7 +2,7 @@
 // It also forwards the companions module's approved assistant commands to its tracked dispatcher (Hub #46): only the
 // allowlisted family and target below, only from that module, as one operation the module requested.
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {followCopy, recordLog, SdkError, Outcome, type SyncedCopy} from '@jimmie-potts/sdk';
+import {followCopy, recordLog, SdkError, Outcome, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
 import {ASSISTANT_LIGHT_OWNER, type AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
@@ -41,6 +41,19 @@ export class CompanionPart implements CorePart {
   }
   publishing(message: Message<unknown>): () => void {return this.#eligibility.publishing(message);}
   publicationEnded(change: CoreChange): void {this.#eligibility.ended(change.messages);}
+  /** Starts only after the host verifies that the coding-state owner actually serves sync. */
+  followCodingSelection(sdk: Sdk): void {
+    if (this.#closed || this.#stopCodingCopy !== undefined) return;
+    this.#stopCodingCopy = followCopy<CodingState>(
+      (changed, {onRestarted}) => sdk.sync([CODING_STATE], changed, {owner: COMPANIONS, timeoutMs: 5000, onRestarted}),
+      {
+        changed: change => {if (change.type === 'synced') this.#codingFresh = true;},
+        current: copy => {this.#coding = copy;},
+        restarted: () => {this.#codingFresh = false;},
+        refused: () => {this.#codingFresh = false; this.#coding = undefined;},
+      },
+    );
+  }
   async start(core: CoreHandle): Promise<void> {
     const validator = coreValidator();
     await core.sdk.respond<{requestId:string;target:string;gesture:'notice'|'attention';opportunityId:string;validUntilMs:number;expectedConfigurationRevision:number;expectedGeneration:{epoch:string;sequence:number}}>('bunny.cmd.reachy-dispatch.reachy', async command => {
@@ -74,15 +87,6 @@ export class CompanionPart implements CorePart {
           dataschema: 'https://bunny.invalid/events/companion-speech-play/2.0', data: command.data}});
       return 'error' in answer ? answer : {status: 'accepted'};
     });
-    this.#stopCodingCopy = followCopy<CodingState>(
-      (changed, {onRestarted}) => core.sdk.sync([CODING_STATE], changed, {owner: COMPANIONS, timeoutMs: 5000, onRestarted}),
-      {
-        changed: change => {if (change.type === 'synced') this.#codingFresh = true;},
-        current: copy => {this.#coding = copy;},
-        restarted: () => {this.#codingFresh = false;},
-        refused: () => {this.#codingFresh = false; this.#coding = undefined;},
-      },
-    );
     // A delegation (Hub #502) is one tracked operation the module requested: the core forwards it to the module's own
     // coding-run responder, which hands it to the worker endpoint; the tracked effect is "handed to the worker".
     await core.sdk.respond<CodingDispatch>('bunny.cmd.coding-dispatch.assistant', async command => {
