@@ -225,7 +225,7 @@ void test('adoption draft preserves the complete observed invocation and creates
   const planFile = join(root, 'provenance', 'synthetic-plan.json');
   const seal = async (value: object): Promise<void> => {
     const result = await run(process.execPath, ['--input-type=module', '-e',
-      'import {canonical,sha256} from "./apps/hub/dist/install/files.js";const body=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify({...body,planSha256:sha256(canonical(body))}));', JSON.stringify(value)], {cwd: process.cwd()});
+      'import {canonical,sha256} from "./apps/runtime/dist/src/upgrade-files.js";const body=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify({...body,planSha256:sha256(canonical(body))}));', JSON.stringify(value)], {cwd: process.cwd()});
     await writeFile(planFile, result.stdout, {mode: 0o600});
   };
   await seal(body);

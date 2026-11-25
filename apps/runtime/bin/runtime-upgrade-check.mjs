@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {lstat, open, rename, rm} from 'node:fs/promises';
 import {dirname, isAbsolute, join, relative, resolve} from 'node:path';
 import {validateInstallReceipt} from '@jimmie-potts/device-contracts';
-import {canonical, sha256} from '../../hub/dist/install/files.js';
+import {canonical, sha256} from '../dist/src/upgrade-files.js';
 import {createUpgradeSourceAdapter, verifyRuntimeUpgradeRelease} from './runtime-upgrade-source.mjs';
 import {checkStateDirectory, readPrivateFile} from '../dist/src/state.js';
 import {requireUpgradeLock} from '../dist/src/upgrade-lock.js';
