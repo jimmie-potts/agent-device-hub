@@ -34,7 +34,7 @@ export async function codingSlotsJourney(browser: Browser, shots?: string): Prom
       assert.equal(enabled.status, 'accepted');
       return endpoint;
     };
-    const report = (endpoint: RemoteEndpoint, data: object) => endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.1', data});
+    const report = (endpoint: RemoteEndpoint, data: object, version = '2.1') => endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: `https://bunny.invalid/events/coding-progress/${version}`, data});
     const result = (summary: string) => ({outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: [], checks: [], findings: [], limitations: [], summary, sessionId: null, usage: null});
     const starts = (): Extract<CodingWork, {action: 'start'}>[] => work.flatMap(entry => entry.action === 'start' ? [entry] : []);
     const waitFor = async (check: () => boolean, what: string): Promise<void> => {
@@ -135,7 +135,35 @@ export async function codingSlotsJourney(browser: Browser, shots?: string): Prom
     await shot(page, '05-waited-hand-off-completed');
     assert.equal(starts().filter(entry => entry.operationId === reachyRun.operationId).length, 1, 'sent once');
     assert.equal(JSON.stringify(world.logs).includes('synthetic test for Reachy'), false, 'briefs reach no diagnostic record');
+    const disableOlder = await older.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested',
+      dataschema: 'https://bunny.invalid/events/coding-endpoint/2.0', data: {requestId: randomUUID(), action: 'disable'}}, {timeoutMs: 5000});
+    assert.equal(disableOlder.status, 'accepted');
+    await older.close();
+
+    const uncapped = await open('https://bunny.invalid/events/coding-endpoint/2.4', {capacity: 'uncapped'});
+    await select('bunny', 'B.U.N.N.Y.');
+    for (let index = 0; index < 11; index += 1) {
+      await delegate(`Please delegate: synthetic uncapped job ${String(index)}.`);
+      await approve();
+      await waitFor(() => starts().length === index + 5, 'each job reached the worker while earlier jobs remained active');
+      const entry = starts().at(-1) ?? assert.fail('uncapped start');
+      assert.equal(entry.companion, 'bunny');
+      await report(uncapped, {operationId: entry.operationId, status: 'started', setup: 'ready'}, '2.3');
+    }
+    await detailsToggle.click();
+    await details.getByText('Coding jobs', {exact: true}).click();
+    await details.getByRole('button', {name: 'Next jobs', exact: true}).click();
+    const laterStop = details.getByRole('button', {name: /^Stop coding job .+-job$/});
+    await laterStop.waitFor();
+    assert.equal(await laterStop.count(), 1);
+    const label = await laterStop.getAttribute('aria-label');
+    assert.ok(label?.startsWith('Stop coding job ') === true && label.endsWith('-job'));
+    await laterStop.click();
+    await waitFor(() => stops().length === 2, 'later page stopped exactly one named attempt');
+    assert.equal(stops()[1]?.operationId, label.slice('Stop coding job '.length, -'-job'.length));
+    await details.getByRole('button', {name: 'Previous jobs', exact: true}).click();
+    await details.getByRole('button', {name: 'Next jobs', exact: true}).waitFor();
     assert.deepEqual(errors, []);
   } finally {await worker.close(); await context.close(); await world.close();}
-  process.stdout.write('Coding slots browser: three-slot worker with plan usage, two companions running at once with tagged starts, an owner stop isolated to one attempt, and an older worker\'s one slot making an approved hand-off wait in the background, and its automatic single send when the slot freed passed.\n');
+  process.stdout.write('Coding slots browser: three-slot worker with plan usage, two companions running at once with tagged starts, an owner stop isolated to one attempt, and an older worker\'s one slot making an approved hand-off wait in the background, its automatic single send when the slot freed, and a named stop on the second page of uncapped jobs passed.\n');
 }

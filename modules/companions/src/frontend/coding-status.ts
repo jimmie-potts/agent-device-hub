@@ -14,6 +14,10 @@ const runsOf = (coding: CodingState) => coding.runs ?? (coding.active === null ?
 export function workerAvailability(coding: CodingState | undefined): string {
   switch (coding?.availability) {
     case 'available': {
+      if (coding.capacity === 'uncapped') {
+        const {runs, waiting} = coding.counts ?? {runs: 0, waiting: 0};
+        return `Connected · ${String(runs)} active${waiting === 0 ? '' : ` · ${String(waiting)} waiting to dispatch`}`;
+      }
       const runs = runsOf(coding).length, waiting = coding.waiting?.length ?? 0, slots = coding.slots ?? 1;
       const busy = runs === 0 ? 'connected and idle' : `connected, ${String(runs)} of ${String(slots)} slot${slots === 1 ? '' : 's'} busy`;
       return `${busy[0]?.toUpperCase() ?? ''}${busy.slice(1)}${waiting === 0 ? '' : `; ${String(waiting)} hand-off${waiting === 1 ? '' : 's'} waiting`}`;
@@ -34,7 +38,7 @@ export function slotStatus(coding: CodingState | undefined, profile: AssistantPr
 }
 /** Whether an approved hand-off from this companion would wait now: its slot runs a task or already has a line. */
 export function slotBusy(coding: CodingState | undefined, profile: AssistantProfile): boolean {
-  if (coding === undefined || coding.availability !== 'available') return false;
+  if (coding === undefined || coding.availability !== 'available' || coding.capacity === 'uncapped') return false;
   const own = perCompanion(coding);
   return runsOf(coding).some(run => !own || run.companion === profile) || (coding.waiting ?? []).some(entry => !own || entry.companion === profile);
 }

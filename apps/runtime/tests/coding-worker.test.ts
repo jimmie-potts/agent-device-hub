@@ -405,3 +405,127 @@ void test('the connection-bound worker sends exact Git evidence and early sessio
       {name: 'git diff', status: 'passed', detail: 'Compared the named revision.'}]);
   }
 });
+
+void test('an uncapped worker keeps native identity for several Codex jobs from one companion and a sibling adapter', async t => {
+  const repo = await repository(t), edge = fakeEdge();
+  const sha = git(repo, 'rev-parse', 'HEAD');
+  const invocations: {id: string; brief: string}[] = [];
+  const adapter = (id: string): CodingAdapter => ({
+    id, capabilities: {resume: 'unsupported', steering: 'unsupported', review: true},
+    readiness: () => Promise.resolve({installed: 'yes', version: '1.0.0', signedIn: 'yes', plan: 'test-plan'}),
+    async run({worktree, brief, bounds, session}) {
+      invocations.push({id, brief});
+      assert.notEqual(worktree, repo);
+      assert.ok(worktree.startsWith(join(repo, '.local', 'worktrees')));
+      assert.equal(git(worktree, 'rev-parse', 'HEAD'), sha);
+      assert.equal(bounds.wallClockMs, 120_000);
+      await session(`${id}-native`);
+      await session('unexpected-second-identity');
+      await writeFile(join(worktree, 'review.txt'), 'Synthetic review facts');
+      return {sessionId: 'unexpected-third-identity', structured: {outcome: 'tested-candidate', summary: 'Reviewed the supplied revision.',
+        checks: [{name: 'git status', status: 'passed', ...(id === 'codex' ? {detail: null} : {})},
+          {name: 'git diff', status: 'passed', detail: 'Compared the named revision.'}], findings: [], limitations: ['Fixture only.']}};
+    },
+  });
+  const worker = new CodingWorker(parseConfiguration({...configuration(repo), schema: 'coding-worker/1.2'}), 'fake-token', undefined, undefined, edge.connect,
+    undefined, undefined, undefined, [adapter('codex'), adapter('third-fixture')]);
+  await worker.start();
+  t.after(() => worker.stop());
+  const declared = edge.requests.find(entry => entry.family === 'coding-endpoint');
+  assert.equal(declared?.dataschema, 'https://bunny.invalid/events/coding-endpoint/2.4');
+  assert.deepEqual((declared?.data as {harnesses: {harness: string}[]}).harnesses.map(item => item.harness), ['claude-code', 'codex', 'third-fixture']);
+  const ask = (id: string, companion: 'bunny' | 'reachy', operationId: string) => command({requestId: operationId, operationId,
+    action: 'start', harness: id, companion, taskId: operationId, repository: 'agent-device-hub', brief: `Review exact revision ${sha}`,
+    bounds: {wallClockMs: 120_000, maxTurns: 4, budgetUsd: 2}});
+  assert.equal('error' in edge.respond(ask('missing-harness', 'bunny', 'missing')), true);
+  const operations = Array.from({length: 5}, (_, index) => [`codex-review-${String(index)}`, 'codex'] as const);
+  for (const [operation, id] of operations) assert.deepEqual(edge.respond(ask(id, 'bunny', operation)), {status: 'accepted'});
+  assert.deepEqual(edge.respond(ask('third-fixture', 'reachy', 'third-review')), {status: 'accepted'});
+  await until(() => edge.progress.filter(observed => observed.status === 'completed').length === 6);
+  assert.equal(invocations.length, 6);
+  for (const [operation, id] of [...operations, ['third-review', 'third-fixture']] as const) {
+    assert.ok(invocations.some(item => item.id === id && item.brief === `Review exact revision ${sha}`));
+    const observed = edge.progress.filter(item => item.operationId === operation);
+    assert.ok(observed.every(item => item.harness === id));
+    assert.ok(observed.some(item => item.status === 'started' && item.setup === 'ready'));
+    assert.deepEqual(observed.filter(item => item.sessionId !== undefined).map(item => [item.status, item.sessionId]), [
+      ['started', `${id}-native`], ['completed', `${id}-native`],
+    ]);
+    const completed = observed.find(item => item.status === 'completed');
+    assert.equal(completed?.result.base, sha);
+    assert.equal(completed?.result.head, sha);
+    assert.equal(completed?.result.sessionId, `${id}-native`);
+    assert.deepEqual(completed?.result.changedFiles, ['review.txt']);
+    assert.deepEqual(completed?.result.checks, [{name: 'git status', status: 'passed'},
+      {name: 'git diff', status: 'passed', detail: 'Compared the named revision.'}]);
+  }
+});
+
+void test('uncapped jobs share only conflicting Git setup and isolate a cancelled wait, disk error and spawn failure', async t => {
+  const repo = await repository(t), edge = fakeEdge();
+  const alias = join(repo, '..', 'linked');
+  git(repo, 'worktree', 'add', '--detach', '--quiet', alias, 'origin/main');
+  let release = (): void => {};
+  const hold = new Promise<void>(resolve => {release = resolve;});
+  let inSetup = 0, most = 0, fetches = 0;
+  const worktrees: string[] = [], started: string[] = [];
+  const runGit: GitRunner = async (cwd, args, options) => {
+    const setup = args[0] === 'fetch' || args[0] === 'worktree' || args[1] === 'origin/main';
+    if (setup) {inSetup += 1; most = Math.max(most, inSetup);}
+    try {
+      if (args[0] === 'fetch' && ++fetches === 1) await hold;
+      if (args[0] === 'worktree') {
+        const fresh = args.at(-2) ?? assert.fail('worktree path');
+        worktrees.push(fresh);
+        if (fresh.includes('bunny-disk-')) throw Object.assign(new Error('synthetic disk full'), {code: 'ENOSPC'});
+      }
+      return await new Promise<string>((resolve, reject) => {
+        execFile('git', ['-C', cwd, ...args], {timeout: options?.timeoutMs ?? 60_000}, (error, stdout) => {
+          if (error !== null) reject(new Error('git failed', {cause: error}));
+          else resolve(options?.trim === false ? stdout : stdout.trim());
+        });
+      });
+    } finally {if (setup) inSetup -= 1;}
+  };
+  const harness: Harness = {start: (_args, _cwd, brief) => {
+    started.push(brief);
+    if (brief === 'spawn') return Promise.resolve({code: null, signal: null, truncated: false, spawnFailed: true});
+    const stdout = [
+      {type: 'system', subtype: 'init', apiKeySource: 'none', session_id: 'synthetic-session'},
+      {type: 'result', session_id: 'synthetic-mismatched-session', structured_output: {outcome: 'tested-candidate', summary: 'Synthetic result.', checks: [], findings: [], limitations: []}},
+    ].map(event => JSON.stringify(event)).join('\n');
+    return Promise.resolve({code: 0, signal: null, truncated: false, stdout});
+  }};
+  const worker = new CodingWorker(parseConfiguration({...configuration(repo), schema: 'coding-worker/1.2',
+    repositories: [{name: 'primary', path: repo}, {name: 'linked', path: alias}]}), 'fake-token', harness, undefined, edge.connect, Date.now, runGit);
+  await worker.start();
+  t.after(async () => {release(); await worker.stop();});
+  assert.equal(edge.requests.find(request => request.family === 'coding-endpoint')?.dataschema, 'https://bunny.invalid/events/coding-endpoint/2.4');
+  const start = (operationId: string, repository: string, companion: 'bunny' | 'reachy') => edge.respond(command({
+    requestId: operationId, operationId, taskId: operationId, companion, action: 'start', repository, brief: operationId,
+    bounds: {wallClockMs: 60_000, maxTurns: 5, budgetUsd: 1},
+  }));
+  assert.deepEqual(start('first', 'primary', 'bunny'), {status: 'accepted'});
+  await until(() => fetches === 1);
+  for (const id of ['cancel', 'disk', 'spawn', 'sibling']) assert.deepEqual(start(id, 'linked', 'bunny'), {status: 'accepted'});
+  assert.deepEqual(start('reachy', 'primary', 'reachy'), {status: 'accepted'});
+  await until(() => edge.progress.some(progress => progress.operationId === 'cancel' && progress.status === 'started' && progress.setup === 'waiting'));
+  assert.deepEqual(edge.respond(command({requestId: 'cancel-command', operationId: 'cancel', action: 'cancel'})), {status: 'accepted'});
+  release();
+  await until(() => edge.progress.filter(progress => progress.status !== 'started').length === 6, () => edge.progress);
+  assert.equal(most, 1, 'linked repositories share the same Git setup lock');
+  assert.ok(!worktrees.some(path => path.includes('bunny-cancel-')));
+  assert.deepEqual(started.sort(), ['first', 'reachy', 'sibling', 'spawn']);
+  const ended = (id: string) => edge.progress.find(progress => progress.operationId === id && progress.status !== 'started');
+  assert.equal(ended('cancel')?.status, 'cancelled');
+  const disk = ended('disk'), spawn = ended('spawn');
+  assert.equal(disk?.status === 'failed' && disk.reason, 'worktree');
+  assert.equal(spawn?.status === 'failed' && spawn.reason, 'spawn');
+  assert.equal(ended('sibling')?.status, 'completed');
+  assert.equal(ended('sibling')?.sessionId, 'synthetic-session');
+  const early = edge.progress.findIndex(progress => progress.operationId === 'sibling' && progress.status === 'started' && progress.sessionId === 'synthetic-session');
+  const terminal = edge.progress.findIndex(progress => progress.operationId === 'sibling' && progress.status === 'completed');
+  assert.ok(early >= 0 && early < terminal);
+  const completed = ended('sibling');
+  assert.equal(completed?.status === 'completed' && completed.result.sessionId, 'synthetic-session');
+});

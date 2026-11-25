@@ -10,6 +10,7 @@ import {ConversationVoice, stopSpeakingButton} from './conversation-voice.js';
 
 import type {ConversationListEntry, SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, readConversationList, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
+import {CodingJobs} from './coding-jobs.js';
 import {ConversationDetails, useDetailsOverlay, type ConversationTitle} from './conversation-details.js';
 import {spendNotice, useSpend} from './conversation-spend.js';
 import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
@@ -261,6 +262,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const detailsId = useId();
   const detailsTrigger = useRef<HTMLButtonElement>(null);
   const priorPanel = useRef<typeof panel>(undefined);
+  const readCodingJobs = useCallback((path: string) => api.read(path), [api]);
   const closeDetails = useCallback((): void => {
     setPanel(current => current === 'details' ? undefined : current);
   }, []);
@@ -437,6 +439,11 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   return <section aria-label="B.U.N.N.Y. conversation" className="conversation-page">
     <Command context={context} target="assistant">{command => {
       const locked = command.locked || !live || !context.control || !context.operationsLive;
+      const stopCodingJob = (jobId: string, operationId: string): void => {
+        const input: StopCodingInput = {action: 'stop-coding-job', jobId, operationId};
+        void command.run({family: 'assistant-input', target: 'assistant', requestId: crypto.randomUUID(),
+          upload: {name: 'input.json', file: new Blob([JSON.stringify(input)], {type: 'application/json'})}});
+      };
       const speakReceipt = speakRequest !== undefined && command.requestId === speakRequest;
       const operation = context.operations.find(value => value.target === 'assistant' && value.requestId === command.requestId);
       const routineReceipt = !speakReceipt && !command.locked && (command.requestId === undefined || (
@@ -511,11 +518,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                   : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
                 <p className="conversation-message-text" dir="auto">{message.text}</p>
                 {attempt !== undefined && <button type="button" className="secondary" disabled={locked}
-                  onClick={() => {
-                    const input: StopCodingInput = {action: 'stop-coding-job', jobId: message.id, operationId: attempt.operationId};
-                    void command.run({family: 'assistant-input', target: 'assistant', requestId: crypto.randomUUID(),
-                      upload: {name: 'input.json', file: new Blob([JSON.stringify(input)], {type: 'application/json'})}});
-                  }}>Stop coding job</button>}
+                  onClick={() => {stopCodingJob(message.id, attempt.operationId);}}>Stop coding job</button>}
                 {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
                   connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
                   artRevision={art?.revision}/>}
@@ -556,6 +559,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           {viewing !== undefined && !routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
         </div>
         <ConversationDetails id={detailsId} open={detailsOpen} overlay={detailsOverlay} onClose={closeDetails}
+          codingJobs={coding?.counts === undefined || !detailsOpen ? null : <CodingJobs revision={coding.revision}
+            read={readCodingJobs} stop={stopCodingJob} locked={locked}/>}
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live} spend={spend}
           savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}
