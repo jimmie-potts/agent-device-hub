@@ -571,7 +571,7 @@ void test('explicit uncapped Codex starts share the worker acknowledgement queue
     assert.ok(started?.action === 'start' && started.taskId === taskId && started.harness === 'codex');
   }
   const reachy = w.work[4]?.data;
-  assert.ok(reachy?.action === 'start' && reachy.companion === 'reachy' && reachy.harness === undefined);
+  assert.ok(reachy?.action === 'start' && reachy.companion === 'reachy' && reachy.harness === 'claude-code');
   assert.deepEqual(w.owner().inspect().harnesses, [claude, codex]);
   assert.deepEqual(w.owner().inspect().counts, {runs: 5, waiting: 0});
 });
