@@ -21,7 +21,7 @@ import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
 import {ALL_WEMO_PLUGS, authorizesControl, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
-import {buildContext, type ContextEntry} from './context.js';
+import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
@@ -1240,26 +1240,44 @@ export class AssistantEngine {
    * are now, with the recent conversation held to the messages saved before the task started. A task saved before that
    * boundary existed has no recent conversation.
    */
-  #context(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>, recipient?: FieldAccess, modelAccess = this.#modelFields(task.profile)): PromptContext {
+  #context(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>, recipient?: FieldAccess,
+    capture?: {prompt: FieldAccess; model: FieldAccess}): PromptContext {
     const persona = PROFILES.find(value => value.id === task.profile) ?? fail('internal');
-    const providerFields = this.#fields(task.profile, 'prompt');
+    const providerFields = this.#fields(task.profile, 'prompt'), toolFields = this.#modelFields(task.profile);
     const fields: FieldAccess = (source, field, record) => providerFields(source, field, record) && recipient?.(source, field, record) !== false;
-    const modelFields: FieldAccess = (source, field, record) => modelAccess(source, field, record) && recipient?.(source, field, record) !== false;
+    const modelFields: FieldAccess = (source, field, record) => toolFields(source, field, record) && recipient?.(source, field, record) !== false;
+    const permits = (message: MessageSource, prompt: FieldAccess, model: FieldAccess): boolean =>
+      prompt('conversation', 'text', message.id) &&
+      (message.role === 'owner' || model('conversation', 'text', message.id) &&
+        this.#jobMessageAllowed(message, model) && this.#replayable(message.taskId, model)) &&
+      (message.role !== 'tool' || prompt('conversation', 'details', message.id));
     const recent = task.contextThrough === undefined || !fields('conversation', 'text', task.conversationId)
-      ? {messages: [], total: 0} : this.store.recentContext(task.profile, task.conversationId, task.contextThrough, message =>
-        fields('conversation', 'text', message.id) &&
-        (message.role === 'owner' || this.#jobMessageAllowed(message, modelFields) && this.#replayable(message.taskId, modelFields)) &&
-        (message.role !== 'tool' || fields('conversation', 'details', message.id)));
-    const recentMessages = recent.messages.map(message => {
+      ? {messages: [], total: 0} : this.store.recentContext(task.profile, task.conversationId, task.contextThrough, message => permits(message, fields, modelFields));
+    const recentMessages = recent.messages.map((message): RecentMessage => {
       if (message.attachment === undefined || fields('artwork', 'attachment', message.attachment.requestId)) return message;
       const {attachment: _, ...text} = message;
       return text;
     });
-    return buildContext({profile: task.profile, persona: {name: persona.name, character: persona.character},
-      knowledge: {enabled: this.store.knowledgeEnabled(task.profile) && fields('knowledge', 'text'),
-        entries: (this.options.knowledge?.() ?? []).filter(entry => fields('knowledge', 'label', entry.title) && fields('knowledge', 'text', entry.title))},
-      preferences: (this.options.preferences?.() ?? []).filter(entry => fields('preferences', 'label', entry.title) && fields('preferences', 'text', entry.title)),
+    const eligibleEntry = (access: FieldAccess, source: 'knowledge' | 'preferences', entry: ContextEntry) =>
+      access(source, 'label', entry.title) && access(source, 'text', entry.title);
+    const knowledge = {enabled: this.store.knowledgeEnabled(task.profile) && fields('knowledge', 'text'),
+      entries: (this.options.knowledge?.() ?? []).filter(entry => eligibleEntry(fields, 'knowledge', entry))};
+    const preferences = (this.options.preferences?.() ?? []).filter(entry => eligibleEntry(fields, 'preferences', entry));
+    const context = buildContext({profile: task.profile, persona: {name: persona.name, character: persona.character}, knowledge, preferences,
       recent: {conversationId: task.conversationId, messages: recentMessages, total: recent.total}});
+    if (capture === undefined) return context;
+    const model: FieldAccess = (source, field, record) => capture.model(source, field, record) && capture.prompt(source, field, record);
+    // The builder keeps a bounded suffix. Record its sources after filtering and fitting, so an excluded message
+    // cannot cause a later permission check to refuse an otherwise permitted turn.
+    for (const message of recentMessages.slice(recentMessages.length - sectionOf(context, 'recent').included)) {
+      const source = this.store.messageSource(message.id) ?? fail('invalid-state');
+      if (!permits(source, capture.prompt, model)) fail('forbidden');
+      if (message.attachment !== undefined && !capture.prompt('artwork', 'attachment', message.attachment.requestId)) fail('forbidden');
+    }
+    if (knowledge.enabled) capture.prompt('knowledge', 'text');
+    for (const entry of knowledge.entries.slice(0, sectionOf(context, 'knowledge').included)) eligibleEntry(capture.prompt, 'knowledge', entry);
+    for (const entry of preferences.slice(0, sectionOf(context, 'preferences').included)) eligibleEntry(capture.prompt, 'preferences', entry);
+    return context;
   }
   /**
    * What the builder would send for the profile now (Hub #2029), for the page's context preview: the next call of the
@@ -1280,7 +1298,7 @@ export class AssistantEngine {
     // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
     const paid = provider.name !== 'synthetic';
     const ledger: DisclosureLedger = {fields: []}, modelLedger: DisclosureLedger = {fields: []};
-    const fields = recordDisclosures(this.#fields(task.profile, 'prompt'), ledger);
+    const promptFields = this.#fields(task.profile, 'prompt'), fields = recordDisclosures(promptFields, ledger);
     const modelFields = this.#modelFields(task.profile);
     const modelAccess = recordDisclosures(modelFields, modelLedger);
     if (!fields('conversation', 'text', task.conversationId)) throw new Fault('forbidden', 'This conversation is not shared with the configured model.');
@@ -1303,17 +1321,19 @@ export class AssistantEngine {
     }, undefined, current => {
       this.#drain(current);
       const replayFields: FieldAccess = (source, field, record) => modelAccess(source, field, record) && fields(source, field, record);
-      const visible = (item: TurnInput['transcript'][number]) => {
+      const visible = (item: TurnInput['transcript'][number], prompt: FieldAccess, model: FieldAccess) => {
         const id = conversationMessageId(current.id, item);
-        return fields('conversation', 'text', id) && (id === undefined || item.role === 'owner' ||
-          this.#jobMessageAllowed({id, taskId: current.id, role: item.role}, replayFields));
+        return prompt('conversation', 'text', id) && (id === undefined || item.role === 'owner' ||
+          model('conversation', 'text', id) && this.#jobMessageAllowed({id, taskId: current.id, role: item.role}, model));
       };
+      const allows = (item: TurnInput['transcript'][number]) => visible(item, promptFields, modelFields);
       const ownerInputs = current.transcript.filter(item => item.role === 'owner');
       const latest = ownerInputs.at(-1);
-      if (latest !== undefined && !visible(latest)) throw new Fault('forbidden', 'This message is not shared with the configured model.');
-      includesReplay = this.#replayable(current.id, modelFields) && current.transcript.every(visible);
-      const transcript = includesReplay ? current.transcript : ownerInputs.filter(visible);
-      request = {instructions: INSTRUCTIONS, context: this.#context(current, fields, modelAccess), transcript, tools,
+      if (latest !== undefined && !allows(latest)) throw new Fault('forbidden', 'This message is not shared with the configured model.');
+      includesReplay = this.#replayable(current.id, modelFields) && current.transcript.every(allows);
+      const transcript = includesReplay ? current.transcript : ownerInputs.filter(allows);
+      for (const item of transcript) if (!visible(item, fields, replayFields)) fail('forbidden');
+      request = {instructions: INSTRUCTIONS, context: this.#context(current, undefined, {prompt: fields, model: modelAccess}), transcript, tools,
         mode: copy.mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
       // The call reserves what this request could use: its bytes bound its input tokens, and the output bound its answer's.
       const inputUnits = inputBound(request);

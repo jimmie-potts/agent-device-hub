@@ -939,6 +939,9 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
       if (input.transcript.some(item => item.role === 'owner' && item.text === 'Synthetic pre-revocation message')) {
         return Promise.resolve({text: 'Synthetic response based on the continuation.', calls: [], stop: 'end', units: 10});
       }
+      if (input.transcript.some(item => item.role === 'owner' && item.text.startsWith('Synthetic replay after '))) {
+        return Promise.resolve({text: 'Synthetic replay complete.', calls: [], stop: 'end', units: 10});
+      }
       return delegate.turn(input, signal);
     }},
   });
@@ -1024,20 +1027,39 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   assert.doesNotMatch(restarted, resultText);
   assert.doesNotMatch(restarted, /Synthetic response based on the continuation/u);
   revoked.pop();
-  revoked.push(query => deniesAttempt(query) && query.destination === 'synthetic' && query.purpose === 'read');
-  assert.match(JSON.stringify(await w.messages('bunny', conversation)), resultText, 'the private destination still has its own grant');
-  assert.equal((await w.send('bunny', 'Synthetic next message for replay')).status, 'accepted');
-  await settle(() => inputs.some(input => JSON.stringify(input.transcript).includes('Synthetic next message for replay')));
-  const next = inputs.find(input => JSON.stringify(input.transcript).includes('Synthetic next message for replay'));
-  assert.doesNotMatch(JSON.stringify(next), resultText);
-  assert.doesNotMatch(JSON.stringify(next), /Synthetic response based on the continuation/u);
-  assert.match(JSON.stringify(next), originalText);
-
+  const promptAfterRestart = async (pattern: RegExp, kept: RegExp, label: string) => {
+    await w.restart();
+    const message = `Synthetic replay after ${label}`;
+    assert.equal((await w.send('bunny', message)).status, 'accepted');
+    await settle(() => inputs.some(input => input.transcript.some(item => item.role === 'owner' && item.text === message)), label);
+    const next = inputs.find(input => input.transcript.some(item => item.role === 'owner' && item.text === message));
+    assert.doesNotMatch(JSON.stringify(next), pattern);
+    assert.doesNotMatch(JSON.stringify(next), /Synthetic response based on the continuation/u);
+    assert.match(JSON.stringify(next), kept);
+    await settle(() => w.task('bunny')?.status === 'succeeded', label);
+  };
+  for (const purpose of ['read', 'prompt'] as const) {
+    revoked.push(query => query.destination === 'synthetic' && query.purpose === purpose &&
+      query.source === 'conversation' && query.field === 'text' && query.record === `${resumed.operationId}-result`);
+    assert.match(JSON.stringify(await w.messages('bunny', conversation)), resultText, 'the private destination still has its own grant');
+    await promptAfterRestart(resultText, originalText, `the continuation message lost ${purpose}`);
+    revoked.pop();
+  }
+  revoked.push(query => query.destination === 'synthetic' && query.purpose === 'read' &&
+    query.source === 'conversation' && query.field === 'text' && query.record === `${jobId}-result`);
+  await promptAfterRestart(originalText, resultText, 'the original result lost read');
   revoked.pop();
+  for (const purpose of ['read', 'prompt'] as const) {
+    revoked.push(query => deniesAttempt(query) && query.destination === 'synthetic' && query.purpose === purpose);
+    await promptAfterRestart(resultText, originalText, `the continuation attempt lost ${purpose}`);
+    revoked.pop();
+  }
+
   // The saved association is required even if all grants currently allow the attempt.
   assert.equal(w.database().prepare("DELETE FROM companion_coding_job_updates WHERE operation_id=? AND kind='result'").run(resumed.operationId).changes, 1);
   const missingSource = /Synthetic continued work|Synthetic response based on the continuation/u;
   assert.doesNotMatch(JSON.stringify(await w.messages('bunny', conversation)), missingSource);
+  await promptAfterRestart(resultText, originalText, 'the continuation update disappeared');
   share.revokesFields = false;
   assert.doesNotMatch(JSON.stringify(await w.messages('bunny', conversation)), missingSource);
 });
