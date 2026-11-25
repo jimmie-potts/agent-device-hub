@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {DEFAULT_CODING_BOUNDS, type CodingDispatch, type CodingRun, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {createCoreModule, type CoreHandle} from '../src/core/core.js';
-import {contextOf, fixture, it, run, waitFor} from './support.js';
+import {contextOf, fixture, flush, it, run, waitFor} from './support.js';
 
 const draft = (data: CodingDispatch) => ({type: 'org.bunny.coding.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-dispatch/${data.harness === undefined ? '2.0' : '2.1'}`, data});
 
@@ -35,9 +35,9 @@ it('only companions can dispatch a delegation, tracked as its own operation that
 });
 
 
-it('the public explicit dispatch carries its original uncapped selection through a held core action', async context => {
-  const selection = randomUUID(), replacement = randomUUID();
-  let selected = selection;
+it('a held uncapped Codex dispatch is rejected after a same-name finite worker takes over', async context => {
+  const selection = randomUUID();
+  let selected: string | undefined = selection;
   let entered = (): void => {}, release = (): void => {};
   const held = new Promise<void>(resolve => {release = resolve;});
   const preparing = new Promise<void>(resolve => {entered = resolve;});
@@ -49,35 +49,45 @@ it('the public explicit dispatch carries its original uncapped selection through
     };
     return Promise.resolve();
   }}]});
-  const companions = fixture('companions');
+  let revision = 1, reads = 0;
+  const state = () => ({
+    kind: 'state' as const, type: 'org.bunny.coding-state.updated', subject: 'coding',
+    dataschema: `https://bunny.invalid/events/coding-state/${selected === undefined ? '2.3' : '2.4'}`,
+    data: {id: 'coding', revision, endpointId: 'shared-endpoint', availability: 'available', active: null, readiness: null,
+      slots: selected === undefined ? 3 : null, runs: [], waiting: [],
+      ...(selected === undefined ? {harnesses: null} : {capacity: 'uncapped', counts: {runs: 0, waiting: 0}, selectionId: selected})} satisfies CodingState,
+  });
+  const companions = fixture('companions', async ({sdk}) => {
+    await sdk.serveSync(['coding-state'], () => {reads += 1; return {revision, states: [state()]};});
+  });
   await run(context, {modules: [core, companions]});
+  await waitFor(() => reads > 0);
+  await flush();
   const sdk = contextOf(companions).sdk;
   const forwarded: {data: CodingRun; version: string}[] = [];
   await sdk.respond<CodingRun>('bunny.cmd.coding-run.assistant', command => {
     forwarded.push({data: command.data, version: command.dataschema});
     return command.data.selectionId === selected ? {status: 'accepted'} : errorBody('unavailable');
   });
-  const state = (id: string | null, revision: number) => sdk.publish('bunny.state.coding-state.coding',
-    {kind: 'state', type: 'org.bunny.coding-state.updated', subject: 'coding', dataschema: 'https://bunny.invalid/events/coding-state/2.4',
-      data: {id: 'coding', revision, endpointId: id === null ? null : 'shared-endpoint', availability: id === null ? 'off' : 'available',
-        active: null, readiness: null, slots: null, runs: [], waiting: [], capacity: id === null ? null : 'uncapped',
-        counts: {runs: 0, waiting: 0}, ...(id === null ? {} : {selectionId: id})} satisfies CodingState});
   const send = (requestId: string) => sdk.request('bunny.cmd.coding-dispatch.assistant',
     draft({requestId, endpointId: 'shared-endpoint', taskId: 'task-codex', repository: 'agent-device-hub',
       brief: 'Synthetic review.', bounds: DEFAULT_CODING_BOUNDS, harness: 'codex'}), {timeoutMs: 5000, requestId});
   try {
-    await state(selection, 1);
     const stale = send('stale-codex-dispatch');
     await preparing;
-    await state(null, 2);
-    selected = replacement;
-    await state(replacement, 3);
+    selected = undefined;
+    revision = 2;
+    await sdk.publish('bunny.state.coding-state.coding', {kind: 'state', type: 'org.bunny.coding-state.updated', subject: 'coding',
+      dataschema: 'https://bunny.invalid/events/coding-state/2.3', data: {...state().data, endpointId: null, availability: 'off', slots: null}});
+    revision = 3;
+    await sdk.publish('bunny.state.coding-state.coding', state());
+    await flush();
     release();
     assert.equal((await stale).status, 'rejected');
     assert.equal((await send('fresh-codex-dispatch')).status, 'accepted');
     assert.deepEqual(forwarded.map(({data, version}) => [data.harness, data.selectionId, version]), [
       ['codex', selection, 'https://bunny.invalid/events/coding-run/2.2'],
-      ['codex', replacement, 'https://bunny.invalid/events/coding-run/2.2'],
+      ['codex', undefined, 'https://bunny.invalid/events/coding-run/2.1'],
     ]);
   } finally {release();}
 });

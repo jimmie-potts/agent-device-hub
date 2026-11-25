@@ -12,7 +12,10 @@ the worker SHALL remain uncertain without resending it. Jobs that have never
 been assigned to a connection SHALL keep their place. The core SHALL bind an
 explicit dispatch to the current uncapped selection before tracked forwarding.
 A forward delayed past replacement SHALL be rejected even if the endpoint
-name is reused.
+name is reused. The core SHALL synchronize its selection copy on attach and
+after a delivery gap. It SHALL refuse an explicit dispatch while selection
+is unknown, unavailable or belongs to a different endpoint. A positively
+known finite selection SHALL keep its existing dispatch contract.
 Finite workers SHALL retain their supported admission behavior. The worker SHALL serialize conflicting Git setup, leave a cancelled
 queued attempt without a new worktree, and report setup and execution progress
 using the original operation identity. The coordinator SHALL use the attempt's

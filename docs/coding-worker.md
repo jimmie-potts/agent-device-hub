@@ -25,6 +25,8 @@ that connection. A start the Hub had not sent ends with a definite failure.
 If the start may have reached the worker, the outcome stays uncertain. The Hub
 does not resend either start. A delayed explicit dispatch keeps its original
 connection binding even when the next worker uses the same endpoint name.
+The core reads current selection at startup and after a state-stream gap. It
+refuses explicit dispatch until that read confirms an available worker.
 Unassigned jobs keep their place for the next worker connection.
 
 An uncapped worker reports whether an attempt is waiting for Git setup,

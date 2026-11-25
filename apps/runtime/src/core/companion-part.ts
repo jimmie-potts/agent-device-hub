@@ -2,7 +2,7 @@
 // It also forwards the companions module's approved assistant commands to its tracked dispatcher (Hub #46): only the
 // allowlisted family and target below, only from that module, as one operation the module requested.
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
+import {followCopy, recordLog, SdkError, Outcome, type SyncedCopy} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
 import {ASSISTANT_LIGHT_OWNER, type AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
@@ -15,12 +15,16 @@ import {dispatchCatalogAction} from './assistant-actions.js';
 import type {Action, ActionAnswer} from './tracker.js';
 import {LivePublication} from './live-publication.js';
 
+const COMPANIONS = 'bunny/modules/companions';
+const CODING_STATE = 'coding-state';
 const TYPES = new Set(['org.bunny.attention.raised', 'org.bunny.turn.ended']);
 export class CompanionPart implements CorePart {
   readonly #eligibility = new LivePublication();
   readonly #sessions = new Map<string, Session30Record>();
   #closed = false;
-  #codingSelection: {endpointId: string; selectionId: string} | undefined;
+  #coding: SyncedCopy<CodingState> | undefined;
+  #codingFresh = false;
+  #stopCodingCopy: (() => void) | undefined;
   constructor(private readonly device: (id: string) => Message<DeviceRecord> | undefined = () => undefined,
     private readonly dispatchLighting: (action: Action) => Promise<ActionAnswer> = () => Promise.resolve(errorBody('unavailable'))) {}
   /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
@@ -70,11 +74,15 @@ export class CompanionPart implements CorePart {
           dataschema: 'https://bunny.invalid/events/companion-speech-play/2.0', data: command.data}});
       return 'error' in answer ? answer : {status: 'accepted'};
     });
-    await core.sdk.subscribe<CodingState>('bunny.state.coding-state.coding', message => {
-      if (this.#closed || message.source !== 'bunny/modules/companions' || !validator.validate(message).ok) return;
-      const {endpointId, selectionId} = message.data;
-      this.#codingSelection = endpointId !== null && selectionId !== undefined ? {endpointId, selectionId} : undefined;
-    }, {onOverflow: () => {this.#codingSelection = undefined;}});
+    this.#stopCodingCopy = followCopy<CodingState>(
+      (changed, {onRestarted}) => core.sdk.sync([CODING_STATE], changed, {owner: COMPANIONS, timeoutMs: 5000, onRestarted}),
+      {
+        changed: change => {if (change.type === 'synced') this.#codingFresh = true;},
+        current: copy => {this.#coding = copy;},
+        restarted: () => {this.#codingFresh = false;},
+        refused: () => {this.#codingFresh = false; this.#coding = undefined;},
+      },
+    );
     // A delegation (Hub #502) is one tracked operation the module requested: the core forwards it to the module's own
     // coding-run responder, which hands it to the worker endpoint; the tracked effect is "handed to the worker".
     await core.sdk.respond<CodingDispatch>('bunny.cmd.coding-dispatch.assistant', async command => {
@@ -82,7 +90,13 @@ export class CompanionPart implements CorePart {
       if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
       const checked = validator.validate(command, {nowMs: core.clock.now()});
       if (!checked.ok) return {error: checked.error};
-      const selectionId = this.#codingSelection?.endpointId === command.data.endpointId ? this.#codingSelection.selectionId : undefined;
+      const record = this.#codingFresh ? this.#coding?.get({family: CODING_STATE, id: 'coding'}) : undefined;
+      const selection = record !== undefined && validator.validate(record).ok && record.data.availability === 'available' &&
+        record.data.endpointId === command.data.endpointId ? record.data : undefined;
+      const selectionId = selection?.selectionId;
+      if (command.data.harness !== undefined && (selection === undefined || (selection.capacity === 'uncapped' && selectionId === undefined))) {
+        return errorBody('unavailable', {detail: 'the selected worker could not be verified'});
+      }
       const version = selectionId === undefined ? command.data.harness === undefined ? '2.0' : '2.1' : '2.2';
       const answer = await core.dispatch({key: 'bunny.cmd.coding-run.assistant', requestedBy: command.source, requestId: command.data.requestId, parent: command,
         draft: {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-run/${version}`, data: {...command.data, ...(selectionId === undefined ? {} : {selectionId})}}});
@@ -146,5 +160,12 @@ export class CompanionPart implements CorePart {
       }
     }, {onOverflow: () => {this.#eligibility.clear();}})));
   }
-  close(): void {this.#closed = true; this.#eligibility.clear(); this.#sessions.clear();}
+  close(): void {
+    this.#closed = true;
+    this.#stopCodingCopy?.();
+    this.#coding = undefined;
+    this.#codingFresh = false;
+    this.#eligibility.clear();
+    this.#sessions.clear();
+  }
 }
