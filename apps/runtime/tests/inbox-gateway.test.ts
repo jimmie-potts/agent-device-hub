@@ -92,6 +92,11 @@ it('gateway and MCP readers see the whole inbox/history; handling needs control 
   const listed = (await call('/mcp', operator.token, {jsonrpc: '2.0', id: 3, method: 'tools/list'}, mcpHeaders)).body.result as
     {tools: {name: string; inputSchema: {properties: Record<string, unknown>}; outputSchema?: {additionalProperties?: unknown; properties?: Record<string, unknown>}}[]};
   assert.deepEqual(listed.tools.find(item => item.name === 'core_history')?.inputSchema.properties.limit, {type: 'integer', minimum: 1, maximum: 500});
+  assert.ok(listed.tools.some(item => item.name === 'core_device_power_history'));
+  const typed = await tool('core_device_power_history', {source: 'bunny/modules/wemo', target: device.id, fromAtMs: openingAt, toAtMs: clock.now()});
+  assert.equal(typed.isError, false);
+  assert.match(JSON.stringify(typed), /device-history\/1\.0/);
+
   // The MCP package embeds the gateway's closed `{result}|{error}` schema as `data`.
   const published = listed.tools.find(item => item.name === 'core_history')?.outputSchema?.properties?.data as {additionalProperties?: unknown; properties?: Record<string, unknown>} | undefined;
   assert.equal(published?.additionalProperties, false);

@@ -3154,6 +3154,13 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+For device history, build and run `node --test --test-concurrency=2 apps/runtime/dist/tests/device-history.test.js modules/companions/dist/tests/device-history.test.js`.
+Run the Companion and runtime suites for the synthetic conversation and the
+core history and MCP readers. The Companion suite also exercises Responses
+summary scope, mismatched queries, title isolation and revocation before the
+next provider call. Their existing CI commands discover these files.
+The fixture writes only its disposable store and uses no device or hosted model.
+
 The Conversation maximum-on read uses a disposable Companions engine with
 synthetic Wemo and core SDK records. After the root build, the
 `assistant.test.js` cases exercise both named device reads, every limit status,
@@ -3700,3 +3707,14 @@ Run
 isolation, retained bytes, private permissions and refusal of an unusable parent.
 The existing dashboard unit discovery includes these checks. The vendor-only
 MicroDuck `/proof` paths remain inside that exercise's separately owned container.
+
+
+### Companion supervisor acceptance
+
+After the root build, run `npm run test:companions:built`,
+`npm run test:events:built` and `npm run test:companions:browser`.
+The companion tests use scripted responses to run the same task and device
+guard through hosted selection, then resume an interrupted Responses task
+with its opaque items. They verify the title projection and the shared
+spend ledger with reported and uncertain usage. The disposable browser
+journey uses fixture supervisors to send one task to each selected provider.
