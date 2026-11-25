@@ -149,6 +149,18 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await card(second).locator('dd').filter({hasText: continuation.operationId}).waitFor();
     await card(second).locator('code').filter({hasText: second.operationId}).waitFor();
     assert.equal(await card(second).getByRole('button', {name: /^Continue with/}).count(), 0);
+    const nativeSession = 'fixture-continued-native';
+    await progress({operationId: continuation.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: nativeSession});
+    await progress({operationId: continuation.operationId, status: 'completed', harness: 'claude-code', sessionId: nativeSession,
+      result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: revision, head: revision,
+        changedFiles: ['fixture.ts'], checks: [], findings: [], limitations: [],
+        summary: 'Synthetic continued work.', sessionId: nativeSession, usage: null}});
+    await card(second).getByText(/ · completed$/).waitFor();
+    await page.reload();
+    await card(second).getByText(/ · completed$/).waitFor();
+    await card(second).locator('dd').filter({hasText: nativeSession}).waitFor();
+    await card(second).locator('dd').filter({hasText: 'claude-code'}).waitFor();
+
 
   } finally {acceptMessage(); await worker.close(); await context.close(); await world.close();}
 }
