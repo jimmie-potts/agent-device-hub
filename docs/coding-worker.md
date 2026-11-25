@@ -204,17 +204,20 @@ disabled or lost endpoint clears the record.
 
 ## Codex delegation
 
+Use the Codex worker on your own unmanaged Mac with a personal ChatGPT
+workspace. Managed Macs and organization-managed workspaces are unsupported.
+Disable the Codex worker if either becomes managed, pending review of the
+new setup. This is a setup decision. Jobs can run without asking again.
+The worker checks the reported sign-in and settings before sending a brief.
+
 Use `coding-worker/1.1` and add a `codex` object with absolute `executable`
-and `home` paths and, optionally, a `model` name. For example, use the
-reviewed local executable with `app-server --print-startup-config` support
-and a dedicated mode-700 directory outside every checkout. The standalone
-Codex 0.163.0 CLI does not provide that preflight. A separately observed
-ChatGPT app bundle shipped Codex 0.171.0-alpha.13.2 with the preflight.
-Select the executable in the worker configuration. The worker refuses
-Codex when the configured executable cannot verify startup settings.
-Upgrade the core first so it accepts `coding-endpoint/2.3`. Existing
-Claude-only worker configurations and requests without a harness selection
-continue to use Claude Code.
+and `home` paths and, optionally, a `model` name. Select the local CLI in
+the worker configuration and give it a separate mode-700 directory outside
+every checkout. Standalone Codex 0.163.0 supports the app-server checks in
+a signed-out profile. Use a CLI that confirms the required effective settings,
+account mode and thread scope. Upgrade the core first so it accepts
+`coding-endpoint/2.3`. Existing Claude-only configuration and requests without
+a harness selection continue to use Claude Code.
 
 As the worker's host user, create that directory and sign in to ChatGPT in
 the dedicated profile. Use the same absolute directory for `codex.home`
@@ -231,13 +234,16 @@ Keep this profile free of `config.toml` and a nested `.codex` directory.
 Use the dedicated ChatGPT login and keep personal credentials in their own profile.
 The worker launches the private stdio app-server from that directory with
 both `HOME` and `CODEX_HOME` set to it. It pins the SQLite files and logs to
-the profile's `sqlite` and `log` directories. Before starting app-server it
-runs the CLI's startup configuration preflight and refuses managed paths that
-would redirect either store. It checks the effective configuration before
-reading account readiness or opening a thread. Configured MCP
-servers or plugins, enabled hooks, apps, shell snapshots or login shells,
-and unavailable settings evidence refuse the operation. The worker checks
-the ChatGPT account before opening a thread and again before sending a turn.
+the profile's `sqlite` and `log` directories in the launch arguments.
+The process can open its local stores during startup. The worker checks the
+effective configuration before reading the account or opening a thread.
+A reported path or route override, enabled telemetry, configured MCP servers
+or plugins, enabled hooks, apps, shell snapshots or login shells, or unavailable
+settings evidence prevents a brief from being sent. The worker checks
+the personal ChatGPT account before opening a thread and again before sending
+a turn. Reports of an organization plan or a different backend also refuse
+the run. The effective settings and account checks do not attest that a
+host or workspace is unmanaged.
 Sign-in, plan and limit responses contribute only the declared readiness
 fields. The child receives no worker credential or provider API key. Codex
 owns its file-backed sign-in in the dedicated profile. The worker reads no

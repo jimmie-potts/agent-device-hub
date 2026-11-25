@@ -144,10 +144,16 @@ run evidence declared by the worker contract.
 - **WHEN** a readiness probe or delegated run finds unsafe or unreadable effective Codex settings
 - **THEN** it SHALL refuse account probing or thread startup and keep any personal profile outside the child environment
 
-#### Scenario: Codex cannot confirm private startup storage
+#### Scenario: Codex receives a private profile for standalone startup
 
-- **WHEN** a Codex worker profile resolves into a personal profile, or startup requirements can redirect SQLite or logs outside the designated directories
-- **THEN** the worker SHALL refuse to start app-server before it opens its stores
+- **GIVEN** a personal unmanaged Mac, a personal ChatGPT workspace and a separate private worker profile
+- **WHEN** the operator configures a standalone CLI that supports the required app-server protocol
+- **THEN** the worker SHALL pin SQLite and logs before launching and SHALL verify effective settings before asking for account evidence or sending a brief
+
+#### Scenario: Codex receives contrary profile or account evidence
+
+- **WHEN** a worker profile resolves into a personal profile, an effective setting redirects storage or routing, or account evidence identifies organization management or non-subscription credentials
+- **THEN** the worker SHALL refuse at the first unsupported boundary, with no model turn or API fallback
 
 #### Scenario: Only explicit plan exhaustion routes as a usage limit
 

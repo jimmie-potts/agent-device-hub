@@ -17,17 +17,28 @@ const validOutput = new Ajv2020({strict: true}).compile(CODEX_RESULT_SCHEMA);
 const PROBE_MS = 10_000;
 const MESSAGE_BYTES = 1024 * 1024;
 const CLOSED = new Error('codex protocol closed');
+const CHATGPT_ORIGIN = 'https://chatgpt.com';
+const CHATGPT_BACKEND = `${CHATGPT_ORIGIN}/backend-api/`;
+const OPENAI_API = 'https://api.openai.com/v1';
+const MANAGED_PLAN = /^(?:team|(?:self_serve_)?business|ent26|enterprise|edu)(?:_|$)/;
 const UNSUPPORTED_RPC_REQUEST = {code: -32601, message: 'Unsupported worker request'};
 export type CodexConfiguration = {executable: string; home: string; model?: string};
 
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const record = (value: unknown): Record<string, unknown> => object(value) ? value : {};
+const managedPlan = (plan: unknown): boolean => typeof plan === 'string' && MANAGED_PLAN.test(plan);
+function supportsRouting(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  const {backendOrigin} = record(value);
+  return backendOrigin === CHATGPT_ORIGIN || backendOrigin === `${CHATGPT_ORIGIN}/`;
+}
+
 export const codexSignIn = (reply: unknown): Pick<HarnessReadiness, 'signedIn' | 'plan'> => {
-  const {account, requiresOpenaiAuth} = record(reply);
+  const {account, requiresOpenaiAuth, workspaceRouting} = record(reply);
   if (requiresOpenaiAuth !== true) return {signedIn: 'unknown', plan: null};
   if (account === null) return {signedIn: 'no', plan: null};
   const {type, planType} = record(account);
-  if (type !== 'chatgpt') return {signedIn: 'unknown', plan: null};
+  if (type !== 'chatgpt' || managedPlan(planType) || !supportsRouting(workspaceRouting)) return {signedIn: 'unknown', plan: null};
   const plan = typeof planType === 'string' && planType !== 'unknown' && /^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)*$/.test(planType) && planType.length <= 64
     ? planType.replaceAll('_', '-') : null;
   return {signedIn: 'yes', plan};
@@ -76,6 +87,15 @@ const entry = (path: string) => lstat(path).catch((error: unknown) => {
   throw error;
 });
 
+async function checkPrivateEntries(directory: string): Promise<void> {
+  for (const filename of await readdir(directory)) {
+    const info = await entry(join(directory, filename));
+    if (info !== undefined && (info.isSymbolicLink() || (info.isFile() && info.nlink !== 1))) {
+      throw new Error('codex worker storage contains an alias');
+    }
+  }
+}
+
 async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise<string> {
   const path = await checkStateDirectory(home);
   const userHomes = await Promise.all([userInfo().homedir, environment.HOME]
@@ -96,12 +116,10 @@ async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise
   if (auth !== undefined && (!auth.isFile() || auth.uid !== process.getuid?.() || (auth.mode & 0o077) !== 0 || auth.nlink !== 1)) {
     throw new Error('codex worker credentials must be private to this profile');
   }
+  await checkPrivateEntries(path);
   for (const directory of Object.values(startupStorage(path))) {
     await prepareStateDirectory(directory);
-    for (const filename of await readdir(directory)) {
-      const info = await entry(join(directory, filename));
-      if (info !== undefined && (info.isSymbolicLink() || (info.isFile() && info.nlink !== 1))) throw new Error('codex worker storage contains an alias');
-    }
+    await checkPrivateEntries(directory);
   }
   return path;
 }
@@ -115,8 +133,8 @@ function codexArguments(cwd: string, profile: string, home: string): string[] {
   const {sqlite, logs} = startupStorage(home);
   return [...configArg('sqlite_home', sqlite), ...configArg('log_dir', logs),
     ...configArg('forced_login_method', 'chatgpt'), ...configArg('cli_auth_credentials_store', 'file'), ...configArg('model_provider', 'openai'),
-    ...configArg('chatgpt_base_url', 'https://chatgpt.com/backend-api/'),
-    ...configArg('openai_base_url', 'https://api.openai.com/v1'),
+    ...configArg('chatgpt_base_url', CHATGPT_BACKEND),
+    ...configArg('openai_base_url', OPENAI_API),
     ...configArg('approval_policy', 'never'), ...configArg('web_search', 'disabled'), ...configArg('allow_login_shell', false),
     ...configArg('analytics.enabled', false), ...configArg('feedback.enabled', false),
     ...configArg('otel.log_user_prompt', false), ...configArg('otel.exporter', 'none'), ...configArg('otel.trace_exporter', 'none'),
@@ -130,13 +148,6 @@ function codexArguments(cwd: string, profile: string, home: string): string[] {
     ...configArg('default_permissions', profile),
     '-c', `permissions.${profile}.filesystem={${rules}}`,
     ...configArg(`permissions.${profile}.network.enabled`, false)];
-}
-
-type StartupCommand = {executable: string; args: string[]; cwd: string; env: Record<string, string>; signal: AbortSignal};
-
-async function printStartupConfig({executable, args, cwd, env, signal}: StartupCommand): Promise<unknown> {
-  const {stdout} = await execute(executable, args, {cwd, env, signal, timeout: PROBE_MS, maxBuffer: MESSAGE_BYTES});
-  return JSON.parse(stdout);
 }
 
 type Wire = {
@@ -225,37 +236,31 @@ const initialize = async (wire: Wire) => {
 
 async function isolatedSettings(wire: Wire, cwd: string, home: string): Promise<boolean> {
   const {config} = record(await wire.request('config/read', {cwd, includeLayers: false}));
-  const {mcp_servers, plugins, hooks, notify, features, allow_login_shell, cli_auth_credentials_store, sqlite_home, log_dir} = record(config);
+  const {mcp_servers, plugins, hooks, notify, features, allow_login_shell, cli_auth_credentials_store, sqlite_home, log_dir,
+    forced_login_method, model_provider, chatgpt_base_url, openai_base_url, otel} = record(config);
+  const telemetry = record(otel);
   const flags = record(features);
   const {sqlite, logs} = startupStorage(home);
   return sqlite_home === sqlite && log_dir === logs && object(mcp_servers) && Object.keys(mcp_servers).length === 0 && object(plugins) && Object.keys(plugins).length === 0
     && (hooks === null || hooks === undefined || (object(hooks) && Object.keys(hooks).length === 0))
     && (notify === null || notify === undefined || (Array.isArray(notify) && notify.length === 0))
-    && allow_login_shell === false && cli_auth_credentials_store === 'file'
+    && allow_login_shell === false && cli_auth_credentials_store === 'file' && forced_login_method === 'chatgpt' && model_provider === 'openai'
+    && chatgpt_base_url === CHATGPT_BACKEND
+    && openai_base_url === OPENAI_API
+    && telemetry.log_user_prompt === false
+    && ['exporter', 'trace_exporter', 'metrics_exporter'].every(key => telemetry[key] === 'none')
     && ['apps', 'plugins', 'hooks', 'shell_snapshot'].every(name => flags[name] === false);
 }
 
 export function codexAdapter(configuration: CodexConfiguration, options: {
   environment?: NodeJS.ProcessEnv; transport?: CodexTransport; version?: () => Promise<string | null>;
-  startupConfig?: (command: StartupCommand) => Promise<unknown>;
 }): CodingAdapter {
   const environment = options.environment ?? process.env;
   const transport = options.transport ?? openCodex;
-  const prepare = async (home: string, cwd: string, signal: AbortSignal) => {
+  const prepare = (home: string, cwd: string, signal: AbortSignal) => {
     const profile = `bunny-worker-${randomUUID()}`;
-    const args = codexArguments(cwd, profile, home);
-    const command = {executable: configuration.executable, cwd: home, env: codexEnvironment(environment, home), signal};
-    // App-server initializes SQLite before its first RPC, and managed requirements beat CLI overrides.
-    const startup = await (options.startupConfig ?? printStartupConfig)({...command, args: ['app-server', '--print-startup-config', ...args]});
-    const {requirements} = record(record(startup).configRequirements);
-    const {sqlite, logs} = startupStorage(home);
-    if (requirements !== null && (!object(requirements) || (requirements.sqliteHome !== null && requirements.sqliteHome !== sqlite)
-      || (requirements.logDir !== null && requirements.logDir !== logs)
-      || (requirements.cliAuthCredentialsStore !== null && requirements.cliAuthCredentialsStore !== 'file'))) {
-      throw new Error('codex worker startup storage could not be verified');
-    }
-    signal.throwIfAborted();
-    return {command: {...command, args: ['app-server', '--listen', 'stdio://', ...args]}, profile};
+    const args = ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home)];
+    return {command: {executable: configuration.executable, cwd: home, env: codexEnvironment(environment, home), signal, args}, profile};
   };
   return {
     id: 'codex', capabilities: {steering: 'unsupported', resume: 'unsupported', review: true},
@@ -271,7 +276,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       const health: AdapterHealth = {...UNKNOWN_READINESS, installed: version === null ? 'unknown' : 'yes', version};
       let wire: Wire | undefined;
       try {
-        const {command} = await prepare(home, home, signal);
+        const {command} = prepare(home, home, signal);
         wire = transport({...command, event: () => {}, closed: () => {}});
         await initialize(wire);
         if (!await isolatedSettings(wire, home, home)) return health;
@@ -292,21 +297,15 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       if (inside(cwd, home) || inside(home, cwd)) return {reason: 'refused', summary: 'The Codex worker profile must be outside the worktree.'};
       const {signal} = input;
       if (signal.aborted) return {reason: 'cancelled'};
-      let prepared: Awaited<ReturnType<typeof prepare>>;
-      try {prepared = await prepare(home, cwd, signal);}
-      catch {
-        return signal.aborted ? {reason: 'cancelled'}
-          : {reason: 'refused', summary: 'Codex could not verify isolated startup storage.'};
-      }
       let sessionId: string | undefined, turnId: string | undefined, dispatched = false, unauthorized = false, accountVerified = false;
       let windows: CodingLimitWindow[] = [];
       let message: string | undefined, terminal: Record<string, unknown> | undefined;
       let settle = (): void => {};
       const completed = new Promise<void>(resolve => {settle = resolve;});
-      const {command, profile} = prepared;
+      const {command, profile} = prepare(home, cwd, signal);
       const wire = transport({...command, event: (method, value) => {
         const data = record(value);
-        if (method === 'account/updated' && accountVerified && data.authMode !== 'chatgpt') {unauthorized = true; settle(); return;}
+        if (method === 'account/updated' && accountVerified && (data.authMode !== 'chatgpt' || managedPlan(data.planType))) {unauthorized = true; settle(); return;}
         if (method === 'account/rateLimits/updated') {const reported = windowsOf(data.rateLimits); if (reported.length > 0) windows = reported; return;}
         if (data.threadId !== sessionId || sessionId === undefined || !dispatched) return;
         if (method === 'turn/started' && turnId === undefined) turnId = nativeSessionId(record(data.turn).id);
@@ -324,7 +323,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         await initialize(wire);
         if (!await isolatedSettings(wire, cwd, home)) return refusal('Codex did not confirm isolated settings for this worktree.');
         const account = codexSignIn(await wire.request('account/read', {refreshToken: false}));
-        if (account.signedIn !== 'yes') return refusal('Codex needs a confirmed ChatGPT subscription sign-in.');
+        if (account.signedIn !== 'yes') return refusal('Codex needs a confirmed personal ChatGPT subscription sign-in.');
         accountVerified = true;
         const opened = record(await wire.request('thread/start', {cwd, runtimeWorkspaceRoots: [cwd], permissions: profile,
           modelProvider: 'openai', approvalPolicy: 'never', allowProviderModelFallback: false,
@@ -344,7 +343,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         if (input.signal.aborted) return {reason: 'cancelled', sessionId};
         const latestAccount = codexSignIn(await wire.request('account/read', {refreshToken: false}));
         if (unauthorized || latestAccount.signedIn !== 'yes') {
-          return {...refusal('Codex could not confirm subscription sign-in immediately before the turn.'), sessionId};
+          return {...refusal('Codex could not confirm personal ChatGPT subscription sign-in immediately before the turn.'), sessionId};
         }
         if (input.signal.aborted) return {reason: 'cancelled', sessionId};
         dispatched = true;
@@ -354,7 +353,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         if (acceptedTurn === undefined || (turnId !== undefined && turnId !== acceptedTurn)) return {reason: 'invalid-output', uncertain: true, sessionId};
         turnId = acceptedTurn;
         await completed;
-        if (unauthorized) return {...refusal('Codex reported a change away from subscription sign-in during the run.'), sessionId, uncertain: true};
+        if (unauthorized) return {...refusal('Codex reported a change away from personal ChatGPT subscription sign-in during the run.'), sessionId, uncertain: true};
         if (terminal === undefined) return {reason: 'lost', uncertain: true, sessionId, windows};
         const cause = record(terminal.error).codexErrorInfo;
         if (terminal.status !== 'completed') {
