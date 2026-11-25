@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
+import {lstat, mkdir, mkdtemp, realpath, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, test} from 'node:test';
@@ -36,7 +36,8 @@ type Scenario = {
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
 };
 
-function fixture(scenario: Scenario = {}, home = profileHome) {
+function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJS.ProcessEnv = {}) {
+  const storage = {sqlite_home: join(home, 'sqlite'), log_dir: join(home, 'log')};
   const requests: string[] = [], sessions: string[] = [];
   let starts = 0, accounts = 0;
   let wireSchema: unknown;
@@ -49,6 +50,8 @@ function fixture(scenario: Scenario = {}, home = profileHome) {
     assert.ok(args.includes('allow_login_shell=false'));
     assert.ok(args.includes('cli_auth_credentials_store="file"'));
     assert.ok(args.includes('mcp_servers={}'));
+    assert.ok(args.includes(`sqlite_home=${JSON.stringify(storage.sqlite_home)}`));
+    assert.ok(args.includes(`log_dir=${JSON.stringify(storage.log_dir)}`));
     assert.ok(args.some(arg => arg.includes('.network.enabled=false')));
     assert.ok(args.some(arg => arg.includes(`${JSON.stringify(join(home, 'auth.json'))}="deny"`)));
     assert.equal(cwd, home, 'app-server starts outside the worktree');
@@ -63,7 +66,7 @@ function fixture(scenario: Scenario = {}, home = profileHome) {
           case 'config/read':
             assert.ok(params !== undefined && 'cwd' in params && typeof params.cwd === 'string');
             assert.deepEqual(params, {cwd: params.cwd, includeLayers: false});
-            return Promise.resolve({config: scenario.effectiveConfig ?? safeConfig});
+            return Promise.resolve({config: {...storage, ...(scenario.effectiveConfig ?? safeConfig)}});
           case 'account/read':
             assert.deepEqual(params, {refreshToken: false});
             accounts += 1;
@@ -101,8 +104,17 @@ function fixture(scenario: Scenario = {}, home = profileHome) {
     };
   };
   const adapter = codexAdapter({executable: '/synthetic/codex', home}, {transport, version: () => Promise.resolve('0.163.0'),
+    startupConfig: ({args, cwd, env}) => {
+      assert.equal(cwd, home);
+      assert.equal(env.CODEX_HOME, home);
+      assert.ok(args.includes('--print-startup-config'));
+      assert.ok(!args.includes('--listen'));
+      assert.ok(args.includes(`sqlite_home=${JSON.stringify(storage.sqlite_home)}`));
+      assert.ok(args.includes(`log_dir=${JSON.stringify(storage.log_dir)}`));
+      return Promise.resolve({configRequirements: {requirements: {sqliteHome: null, logDir: null, cliAuthCredentialsStore: null}}});
+    },
     environment: {PATH: '/synthetic/bin', HOME: '/synthetic/home', OPENAI_API_KEY: 'synthetic-key', CODEX_HOME: '/untrusted/config',
-      BUNNY_CODING_TOKEN: 'worker-credential', CLAUDE_CODE_OAUTH_TOKEN: 'other-provider-token'}});
+      BUNNY_CODING_TOKEN: 'worker-credential', CLAUDE_CODE_OAUTH_TOKEN: 'other-provider-token', ...environment}});
   const run = (worktree: string) => adapter.run({worktree, brief, bounds, signal: new AbortController().signal, session: id => {sessions.push(id);}});
   return {adapter, requests, sessions, run, starts: () => starts, output: () => wireSchema};
 }
@@ -136,6 +148,7 @@ void test('Codex refuses effective MCP or plugin configuration before probing au
     {...safeConfig, mcp_servers: {synthetic: {command: '/usr/bin/false'}}},
     {...safeConfig, plugins: {'synthetic@test': {enabled: true}}},
     {...safeConfig, features: {...safeConfig.features, shell_snapshot: true}},
+    {...safeConfig, log_dir: '/synthetic/redirected'},
     {},
   ]) {
     const probe = fixture({effectiveConfig});
@@ -158,6 +171,48 @@ void test('a worker profile containing user configuration refuses both entry poi
   assert.equal((await candidate.adapter.readiness()).signedIn, 'unknown');
   assert.equal((await candidate.run(cwd)).reason, 'refused');
   assert.deepEqual(candidate.requests, []);
+});
+
+void test('canonical personal Codex profile aliases refuse both entry points without starting app-server', async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-aliases-')));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const home = join(root, 'worker'), user = join(root, 'user'), worktree = join(root, 'worktree');
+  for (const path of [home, user, worktree]) await mkdir(path, {mode: 0o700});
+  const alias = join(root, 'alias');
+  await symlink(home, alias);
+  await symlink(home, join(user, '.codex'));
+  for (const environment of [{CODEX_HOME: alias}, {HOME: user}]) {
+    const candidate = fixture({}, home, environment);
+    assert.equal((await candidate.run(worktree)).reason, 'refused');
+    assert.equal((await candidate.adapter.readiness()).signedIn, 'unknown');
+    assert.deepEqual(candidate.requests, []);
+  }
+});
+
+void test('managed redirected storage refuses before the production transport starts app-server', async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-managed-')));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const home = join(root, 'worker'), worktree = join(root, 'worktree');
+  for (const path of [home, worktree]) await mkdir(path, {mode: 0o700});
+  const executable = join(root, 'codex-fixture'), marker = join(root, 'started');
+  const defaults = {sqliteHome: null, logDir: null, cliAuthCredentialsStore: null};
+  for (const requirements of [
+    {...defaults, sqliteHome: join(root, 'redirected')}, {...defaults, logDir: join(root, 'redirected')},
+    {...defaults, cliAuthCredentialsStore: 'keyring'}, {},
+  ]) {
+    await writeFile(executable, `#!${process.execPath}
+if (process.argv.includes('--version')) {console.log('codex-cli 0.171.0'); process.exit(0);}
+if (process.argv.includes('--print-startup-config')) {
+  console.log(${JSON.stringify(JSON.stringify({appServerVersion: '0.171.0', configRequirements: {requirements}}))});
+  process.exit(0);
+}
+require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started');
+`, {mode: 0o700});
+    const adapter = codexAdapter({executable, home}, {});
+    assert.equal((await adapter.readiness()).signedIn, 'unknown');
+    assert.equal((await adapter.run({worktree, brief, bounds, signal: AbortSignal.timeout(5000), session: () => {}})).reason, 'refused');
+    await assert.rejects(lstat(marker), {code: 'ENOENT'});
+  }
 });
 
 void test('Codex refuses signed-out, API key, unknown credentials and broadened worktree authority before model work', async t => {
@@ -207,14 +262,18 @@ void test('the production Codex transport reads a disposable scripted process ov
   const executable = join(cwd, 'codex-fixture');
   await writeFile(executable, `#!${process.execPath}
 const lines = require('node:readline').createInterface({input: process.stdin});
-if (process.argv.includes('--version')) {console.log('codex-cli 0.163.0'); process.exit(0);}
+if (process.argv.includes('--version')) {console.log('codex-cli 0.171.0'); process.exit(0);}
+if (process.argv.includes('--print-startup-config')) {
+  console.log(JSON.stringify({appServerVersion:'0.171.0',configRequirements:{requirements:null}}));
+  process.exit(0);
+}
 lines.on('line', line => {
   const {id, method} = JSON.parse(line);
   if (method === 'initialize') console.log(JSON.stringify({id, result: {}}));
-  if (method === 'config/read') console.log(JSON.stringify({id, result: {config: ${JSON.stringify(safeConfig)}}}));
+  if (method === 'config/read') console.log(JSON.stringify({id, result: {config: ${JSON.stringify({...safeConfig, sqlite_home: join(profileHome, 'sqlite'), log_dir: join(profileHome, 'log')})}}}));
   if (method === 'account/read') console.log(JSON.stringify({id, result: {requiresOpenaiAuth: true, account: null}}));
 });
 `, {mode: 0o700});
   const adapter = codexAdapter({executable, home: profileHome}, {});
-  assert.deepEqual(await adapter.readiness(), {installed: 'yes', signedIn: 'no', version: '0.163.0', plan: null});
+  assert.deepEqual(await adapter.readiness(), {installed: 'yes', signedIn: 'no', version: '0.171.0', plan: null});
 });

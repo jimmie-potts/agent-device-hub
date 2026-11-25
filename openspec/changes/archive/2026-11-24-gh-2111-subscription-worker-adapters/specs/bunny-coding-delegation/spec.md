@@ -38,6 +38,11 @@ run evidence declared by the worker contract.
 - **WHEN** a readiness probe or delegated run finds unsafe or unreadable effective Codex settings
 - **THEN** it SHALL refuse account probing or thread startup and keep any personal profile outside the child environment
 
+#### Scenario: Codex cannot confirm private startup storage
+
+- **WHEN** a Codex worker profile resolves into a personal profile, or startup requirements can redirect SQLite or logs outside the designated directories
+- **THEN** the worker SHALL refuse to start app-server before it opens its stores
+
 #### Scenario: Only explicit plan exhaustion routes as a usage limit
 
 - **WHEN** a harness reports subscription-plan exhaustion without a completed structured result

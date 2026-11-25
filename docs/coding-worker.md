@@ -206,9 +206,15 @@ disabled or lost endpoint clears the record.
 
 Use `coding-worker/1.1` and add a `codex` object with absolute `executable`
 and `home` paths and, optionally, a `model` name. For example, use the
-reviewed `/opt/homebrew/bin/codex` binary and a dedicated mode-700 directory
-outside every checkout. Upgrade the core first so it accepts
-`coding-endpoint/2.3`. Omitting the harness still selects Claude Code.
+reviewed local executable with `app-server --print-startup-config` support
+and a dedicated mode-700 directory outside every checkout. The standalone
+Codex 0.163.0 CLI does not provide that preflight. A separately observed
+ChatGPT app bundle shipped Codex 0.171.0-alpha.13.2 with the preflight.
+Select the executable in the worker configuration. The worker refuses
+Codex when the configured executable cannot verify startup settings.
+Upgrade the core first so it accepts `coding-endpoint/2.3`. Existing
+Claude-only worker configurations and requests without a harness selection
+continue to use Claude Code.
 
 As the worker's host user, create that directory and sign in to ChatGPT in
 the dedicated profile. Use the same absolute directory for `codex.home`
@@ -217,15 +223,18 @@ and preserve it for the native sessions it stores.
 ```sh
 worker_codex_home="$HOME/.local/share/bunny/coding-worker/codex"
 install -d -m 700 "$worker_codex_home"
-CODEX_HOME="$worker_codex_home" HOME="$worker_codex_home" /opt/homebrew/bin/codex \
+CODEX_HOME="$worker_codex_home" HOME="$worker_codex_home" /ABSOLUTE/REVIEWED/codex \
   -c 'cli_auth_credentials_store="file"' -c 'forced_login_method="chatgpt"' login
 ```
 
 Keep this profile free of `config.toml` and a nested `.codex` directory.
 Use the dedicated ChatGPT login and keep personal credentials in their own profile.
 The worker launches the private stdio app-server from that directory with
-both `HOME` and `CODEX_HOME` set to it. It checks the effective configuration
-before reading account readiness or opening a thread. Configured MCP
+both `HOME` and `CODEX_HOME` set to it. It pins the SQLite files and logs to
+the profile's `sqlite` and `log` directories. Before starting app-server it
+runs the CLI's startup configuration preflight and refuses managed paths that
+would redirect either store. It checks the effective configuration before
+reading account readiness or opening a thread. Configured MCP
 servers or plugins, enabled hooks, apps, shell snapshots or login shells,
 and unavailable settings evidence refuse the operation. The worker checks
 the ChatGPT account before opening a thread and again before sending a turn.
