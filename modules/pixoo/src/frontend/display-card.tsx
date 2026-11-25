@@ -8,6 +8,7 @@ import {PlaylistEditor} from './playlist-editor.js';
 import {useCardCommand} from './card-command.js';
 import {PixooCompactCard} from './compact-card.js';
 import {playerKey} from './player-key.js';
+import {liveDuringRefresh} from './refresh-gate.js';
 
 type Props = {context: FrontendContext; device: DeviceRecord; display: DisplayRecord | undefined; live: boolean; playlists: readonly PlaylistRecord[]; command: FrontendCommand};
 const tabs = ['Display', 'Content'] as const;
@@ -37,7 +38,8 @@ export function PixooCard({context, device, display, live, playlists, command}: 
   const current = context.connected && live && reading?.revision === revision && !loading && !error;
   // A routine re-read after a display change (#2124): the card holds a successful read and reads again. Until the new
   // read lands, the card keeps showing what it holds and its controls stay live, each sending what it shows, so a press
-  // is not dropped. When the read lands, the content, the labels and the commands change in one render; a failed read
+  // is not dropped; a playback control stays live only where the newer display record agrees (refresh-gate.ts), and is
+  // otherwise disabled under its label, with no Stale text, until the read lands. When the read lands, the content, the labels and the commands change in one render; a failed read
   // drops the content. Stale records, no read yet and a failed read are not a refresh.
   const refreshing = context.connected && live && revision !== undefined && reading !== undefined && !error && (loading || reading.revision !== revision);
   const held = current || refreshing;
@@ -51,7 +53,9 @@ export function PixooCard({context, device, display, live, playlists, command}: 
   // Work admits no playback start (ADR 0014); Free and Quiet admit everything.
   const contentBlocked = deviceBlocked || device.desired.mode.status !== 'known' || device.desired.mode.value === 'work';
   const actionDisabled = (action: MediaAction): boolean => contentBlocked || !device.capabilities.media.supported || !device.capabilities.media.actions.includes(action)
-    || session === null || session === undefined || (action === 'restart-with-changes' && (session.source?.kind === 'media' || savedSession?.repeat !== true));
+    || session === null || session === undefined || (action === 'restart-with-changes' && (session.source?.kind === 'media' || savedSession?.repeat !== true))
+    // During a re-read a playback control sends only what the newer display record still agrees with (refresh-gate.ts).
+    || (refreshing && (reading === undefined || display === undefined || !liveDuringRefresh(action, reading.value, display.player)));
   const desiredBrightness = device.desired.brightness.status === 'known' ? device.desired.brightness.value : undefined;
   const screenOn = device.desired.power.status === 'known' ? device.desired.power.value : undefined;
   const stateText = !held ? 'Stale' : display?.base === 'status' ? 'Monitor' : state?.state ?? 'Media';
