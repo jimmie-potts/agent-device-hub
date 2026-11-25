@@ -572,7 +572,7 @@ as for every configured module; an empty section keeps every default:
 The key file holds an API key created in B.U.N.N.Y.'s own Console workspace,
 which carries the monthly spend limit ([Spend limits](#spend-limits)).
 
-- `assistant.provider` is `synthetic` (the default) or `anthropic`. The Anthropic
+- `assistant.provider` is `synthetic` (the default), `anthropic` or `openai`. The Anthropic
   provider needs `secrets.anthropic-api-key`, the owner-only file holding the
   API key. The module reads it once at start, holds it only in the provider,
   sends it only as the request header and never stores, publishes or logs it;
@@ -581,16 +581,63 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   `titleModel` names the small model that writes conversation titles (see
   [Conversation titles](#conversation-titles)) and defaults to
   `claude-haiku-5-5`. The synthetic provider takes none of the three.
+- To offer both hosted supervisors, keep `assistant.provider` set to
+  `anthropic` and add `"openAI": {"model": "gpt-6.2-sol", "effort": "medium"}`
+  under `assistant`. Add the owner-only OpenAI API key file as
+  `secrets.openai-responses-api-key`. With only OpenAI, set the provider to
+  `openai` and put `model` and `effort` directly under `assistant`.
+  OpenAI tasks and titles use the same published model. The available choices
+  appear in the Conversation composer. Send and Queue preserve the selected
+  provider on their own task. Answer and Steer use the active task's provider.
+  If a configured key cannot be read, the composer offers the available
+  supervisor for new tasks. History stays readable. Tasks already pinned to
+  the unavailable supervisor stay paused. Coding workers have their own
+  configuration and approval.
+- OpenAI receives the current owner request and selected relevant data under
+  [ADR 0011](../../docs/decisions/0011-private-personal-data-retention.md).
+  Device reads resolve the opening affirmative target to an exact configured
+  ID or label. Ambiguous matches or later clauses add no device facts. For a
+  historical question about one Wemo plug or LIFX light, the shared history
+  read sends only the allowed duration totals or last observed change. The
+  current request sets the device and interval. For an explicit reference to a
+  previous request, the supervisor can receive a bounded excerpt from the
+  same conversation. A title for an untitled conversation uses only the
+  current request. Provider-native reasoning and tool items replay within
+  their original task and current subject. A steer submits the new request
+  with only relevant excerpts from an earlier subject. A missing or changed
+  provider leaves the task readable and paused. An earlier task with no
+  saved supervisor stays paused, and its unpinned queued work stays held.
+  Cancel the paused task and withdraw any unpinned messages to start a new
+  conversation. A recovered coding job requires the saved supervisor and the
+  approval for its exact operation, repository and brief. The approval uses
+  the worker grant. Earlier call disclosures must still pass the original
+  supervisor, private read and derived-input grants. If the approval or
+  supervisor cannot be verified, the job stays readable with a receipt
+  explaining that it did not start. Create a new job to authorize it. A
+  verified job can start without the supervisor credential or a model call.
+  Worker results remain in the private conversation. Pending title checks use
+  their own provider and permitted inputs. A pending Responses check skips a
+  conversation that already has a title.
+- Responses calls use Standard service and a 30-minute prompt cache. The
+  published `gpt-6.2-sol` rates on 2026-11-24 are $2 per million input tokens,
+  $2.50 for cache writes, $0.10 for cache reads and $10 for output, which
+  includes reasoning tokens. Above 272,000 input tokens the rates are $4,
+  $5, $0.20 and $15 respectively. The Responses price schedule is pinned in the
+  task and in each reservation. Unknown model pricing prevents a request.
+  Both supervisors and their title calls draw from the same local spend
+  guards. Usage the provider does not report keeps its full reservation.
+  [OpenAI pricing](https://developers.openai.com/api/docs/pricing)
 - `assistant.prices` is optional. It maps each model to its `input`,
   `output`, `cacheWrite` and `cacheRead` prices in US dollars per million
   tokens, to override the built-in table below. Each entry needs all four
   prices, from 0 to 1000, for at most 16 models. `cacheWrite` is the
-  five-minute cache write. The synthetic provider takes no prices.
+  five-minute Anthropic cache write. Responses uses its published schedule.
+  The synthetic provider takes no prices.
 - `assistant.monthlyLimit` is optional (Hub #2102). It sets the local monthly
   spend guard in US dollars, a number from 0.01 to 10000. The default is 150.
   Set it to the B.U.N.N.Y. workspace's monthly spend limit in the Anthropic
   Console, such as `"monthlyLimit": 200` for a $200 limit, so the local
-  estimate does not refuse messages before Anthropic does
+  estimate follows the desired guard for the installation
   ([Spend limits](#spend-limits)). Any other value refuses the section with
   `invalid-request` and the detail "assistant.monthlyLimit is the local
   monthly spend guard in US dollars, from 0.01 to 10000". The daily limit
@@ -620,12 +667,13 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   definitions from the list at start and checks membership again when a call
   executes, so a changed section cannot widen an effect. The built-in
   `ask_owner` is always available; the synthetic fixture read is never listed.
-  Device and catalog tools stay B.U.N.N.Y.'s (Hub #2026): Reachy's and
-  MicroDuck's models are offered only the listed tools that are neither, such
-  as `read_sessions`, `set_mode` and `delegate_coding`, and a proposal from them
-  still needs your approval. **Details** lists the tools the open profile's
-  model is offered under **Allowed tools**, and the listed ones it is not under
-  **B.U.N.N.Y. only**.
+  All three companions use the same configured allowlist. Details shows
+  it under **Allowed tools**. To answer device-history questions, allow
+  `read_hub_guide`, `read_devices` and `read_device_history`. The guide
+  distinguishes current device observations, Wemo maximum-on deadlines and
+  retained power evidence. History currently covers Wemo and LIFX, reports
+  observed on, off and unknown time, and returns bounded evidence pages.
+  An expired cursor or restart requires a fresh read.
 - Requests go to `https://api.anthropic.com/v1/messages` through the module's
   own fetch with API version `2026-10-21`, carrying the fixed instructions, the
   current Hub mode, the task's transcript, the tool definitions marked strict,

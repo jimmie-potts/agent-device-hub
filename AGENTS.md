@@ -259,6 +259,12 @@ needs no clearing, erasure or retention-expiry features (ADR 0011 amendment,
 may be sent, outside its not-for-now list, may also go to OpenAI's Decisions
 endpoint, and only as input to a decision; the delivery orchestrator's decision
 step may send only issue text and repository facts to the OpenAI API.
+The separately selected companion Responses supervisor may receive the
+current request, relevant excerpts from its own conversation and relevant
+device facts or requested summaries within the supervisor grant in ADR 0011.
+Use the title grant for an OpenAI title call. Recheck sharing before replaying
+stored provider items. This authorization applies only to companion
+supervision and titles.
 Before changing collection, retention, diagnostics, export or evidence publication,
 or changing what personal data is sent to a model or cloud service, read
 [ADR 0011](docs/decisions/0011-private-personal-data-retention.md) for the

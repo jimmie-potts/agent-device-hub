@@ -77,6 +77,7 @@ export type WorldOptions = {
   privateProxy?: {origin: string; tokenDigest: string};
   companions?: boolean;
   assistantProvider?: NonNullable<Parameters<typeof createCompanionsModule>[0]>['provider'];
+  assistantAlternateProvider?: NonNullable<Parameters<typeof createCompanionsModule>[0]>['alternateProvider'];
   assistantLights?: boolean;
   assistantWemo?: boolean;
   wemoReadback?: (plugId: string, observed: boolean) => Promise<boolean | undefined>;
@@ -364,7 +365,10 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
     stop: () => { desktopSdk = undefined; },
   };
   const companionModule = (): BunnyModule => {
-    const module = createCompanionsModule(options.assistantProvider === undefined ? {} : {provider: options.assistantProvider});
+    const module = createCompanionsModule({
+      ...(options.assistantProvider === undefined ? {} : {provider: options.assistantProvider}),
+      ...(options.assistantAlternateProvider === undefined ? {} : {alternateProvider: options.assistantAlternateProvider}),
+    });
     if (options.speech === true) {
       const start = module.start.bind(module);
       module.start = async context => {

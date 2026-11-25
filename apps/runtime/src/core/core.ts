@@ -1,3 +1,4 @@
+import type {DeviceHistoryQuery, DeviceHistorySnapshot} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {readReceiptValidator, type Lifecycle21Observation} from '@jimmie-potts/event-contracts/v2/read-receipts';
 import {isReadReceipt, receiptQualification} from '../read-receipts/qualification.js';
 // The agent-session core (Hub #831, ADR 0012): the one owner of agent sessions in the runtime, as the source `bunny/core`.
@@ -20,7 +21,7 @@ import {recordLog, Outcome as OutcomeWord, type BunnyModule, type Cancel, type C
 } from '@jimmie-potts/sdk';
 import {DEFAULT_HISTORY_RULES, type HistoryFilter, type HistoryPage, type HistoryRow, type HistoryRules} from './history.js';
 import type {HistoryDevice} from './history-alarm.js';
-import {inboxTool, historyTool} from './read-tools.js';
+import {inboxTool, historyTool, devicePowerHistoryTool} from './read-tools.js';
 import {NATIVE_SOURCE, PROVIDERS} from '@jimmie-potts/event-contracts/v2/sources';
 import {InboxRecords} from './inbox.js';
 import {OperationRecords} from './operation-records.js';
@@ -204,7 +205,7 @@ export interface CoreModule extends BunnyModule {
    * members and the polled families, as the core was built with them, so an entry point's tests can show which (#1795).
    * `page` is the gateway's read: the rows with the open spans of the entities that have a change row among them (#1773).
    */
-  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody; page: (filter: HistoryFilter) => HistoryPage | ErrorBody; readonly rules: HistoryRules};
+  readonly history: {read: (filter: HistoryFilter) => HistoryRow[] | ErrorBody; page: (filter: HistoryFilter) => HistoryPage | ErrorBody; devicePower: (query: DeviceHistoryQuery) => DeviceHistorySnapshot | ErrorBody; readonly rules: HistoryRules};
 }
 
 /** Whether a hosted module is the core, whose dispatcher the gateway's action routes call. */
@@ -267,7 +268,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
         return await readApartmentContent(files, ref, context.signal, request) ?? readRoomContent(files, ref, context.signal, request);
       },
       tools: [sessionsTool(() => core?.sessions()),
-      inboxTool(() => core?.inbox()), historyTool(filter => core?.historyPage(filter))]},
+      inboxTool(() => core?.inbox()), historyTool(filter => core?.historyPage(filter)), devicePowerHistoryTool(query => core?.devicePowerHistory(query))]},
     start: (context: ModuleContext) => {
       if (ownership !== undefined) {
         if (started) throw ownershipUnavailable();
@@ -280,7 +281,8 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     },
     stop: () => core?.stop(),
     history: {read: filter => core?.history(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}),
-      page: filter => core?.historyPage(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}), rules: options.history ?? DEFAULT_HISTORY_RULES},
+      page: filter => core?.historyPage(filter) ?? errorBody('unavailable', {detail: 'the core has not started'}),
+      devicePower: query => core?.devicePowerHistory(query) ?? errorBody('unavailable'), rules: options.history ?? DEFAULT_HISTORY_RULES},
     // Hosts may capture controls before start; calls resolve the currently serving core.
     automation: {
       artSchedule:{get:()=>artSchedule().get(),save:(value,parent)=>artSchedule().save(value,parent)},
@@ -836,6 +838,9 @@ class Core {
   /** In-process history rows without span lookups. */
   history(filter: HistoryFilter): HistoryRow[] | ErrorBody {
     return this.#store.isOpen ? this.#store.history.read(filter) : errorBody('unavailable', {detail: 'the core history is unavailable'});
+  }
+  devicePowerHistory(query: DeviceHistoryQuery): DeviceHistorySnapshot | ErrorBody {
+    return this.#store.isOpen ? this.#store.history.devicePower(query) : errorBody('unavailable');
   }
   /** History's rows with the open spans of the entities that have a change row among them (#1773): the gateway's read. */
   historyPage(filter: HistoryFilter): HistoryPage | ErrorBody {

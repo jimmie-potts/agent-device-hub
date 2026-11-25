@@ -1,3 +1,4 @@
+import {DEVICE_HISTORY_VERSION} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
@@ -14,6 +15,7 @@ import {fullDisk, InProcessBus, type Participant, type ModuleContext, type Reque
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AnthropicProvider} from '../src/assistant/anthropic.js';
+import {OPENAI_MODEL, OPENAI_URL, OpenAIProvider, OpenAITitleProvider} from '../src/assistant/openai.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
 import {inputBound} from '../src/assistant/spend.js';
@@ -70,7 +72,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
 }
 async function control(core: Participant, module: CompanionsModule, action: string, taskId?: string, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
-    dataschema: `https://bunny.invalid/events/assistant-control/${action === 'rename' ? '2.1' : '2.0'}`, data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
+    dataschema: `https://bunny.invalid/events/assistant-control/${action === 'resume-queue' || action === 'withdraw' ? '2.2' : action === 'rename' ? '2.1' : '2.0'}`, data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
 }
 async function input(core: Participant, module: CompanionsModule, text: string, answer = false, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   const state = module.inspectAssistant(), task = state?.tasks[0];
@@ -401,6 +403,50 @@ void test('an explicit Wemo group binds every target once', async context => {
   await until(() => status(w) === 'succeeded' && requests.length === 2);
   assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
   assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
+});
+
+void test('Conversation discovers an allowed device and answers a held-out power interval from bounded evidence', async context => {
+  const owner = 'bunny/modules/wemo', target = 'fixture-plug';
+  const read = {source: owner, target, period: '', fromAtMs: 1000, toAtMs: 1100};
+  const provider = counted((request, turn) => {
+    if (turn === 1) return call('read_hub_guide');
+    if (turn === 2) {
+      assert.match(JSON.stringify(request.transcript), /read_device_history/);
+      return call('read_devices', {owner, target: ''});
+    }
+    if (turn === 3) {
+      assert.match(JSON.stringify(request.transcript), /fixture-plug/);
+      return call('read_device_history', {...read, cursor: ''}, 'history-first');
+    }
+    const result = request.transcript.filter(item => item.role === 'tool').at(-1)?.result ?? '{}';
+    const page = JSON.parse(result) as {next: string | null; durations: {on: number; unknown: number}; evidence: {seq: number}[]};
+    if (page.next !== null) return call('read_device_history', {...read, cursor: page.next}, 'history-next');
+    assert.equal(page.evidence.at(-1)?.seq, 15);
+    return reply(`The evidence supports ${String(page.durations.on)} on and ${String(page.durations.unknown)} unknown.`);
+  });
+  let reads = 0;
+  const w = await world(context, {provider, tools: ['read_hub_guide', 'read_devices', 'read_device_history'],
+    dispatch: () => assert.fail('history sends no device command'),
+    deviceHistory: query => {
+      reads += 1;
+      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 15, complete: true,
+        durations: {on: 60, off: 10, unknown: 30}, lastChange: null, links: [],
+        evidence: Array.from({length: 16}, (_, seq) => ({seq, messageId: null, atMs: 1000 + seq, confirmedThroughMs: 1001 + seq,
+          kind: 'observation', power: 'on'}))};
+    },
+  });
+  const device = w.bus.connect(owner);
+  context.after(() => device.close());
+  await device.serveSync(['device'], () => ({revision: 1, states: [{
+    type: 'org.bunny.device.updated', subject: target, dataschema: DEVICE_READBACK_SCHEMA,
+    data: {...light(target, 'Fixture Plug'), kind: 'wemo'},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'How much of the Fixture Plug’s last interval can you prove it was on?');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(reads, 1);
+  await w.restart();
+  assert.match(JSON.stringify(await page(w)), /60 on and 30 unknown/);
 });
 
 void test('assistant-state updates and sync hide revoked task metadata, including after restart', async context => {
@@ -2309,4 +2355,364 @@ void test('a full disk reported by the checkpoint writer names the storage cause
   await until(() => status(w) === 'failed');
   assert.equal(task(w)?.code, 'capacity');
   assert.equal((await page(w)).messages.at(-1)?.text, 'There was no space left to save the turn.');
+});
+
+void test('selecting OpenAI scopes titles and device reads, and replays only its own Responses items after restart', async context => {
+  const sent: string[] = [], dispatched: AssistantDispatch[] = [];
+  const superseded = deferred<Response>(), pendingTitle = deferred<Response>(), pendingRead = deferred<Response>();
+  const reasoning = {type: 'reasoning', id: 'rs_fixture', encrypted_content: 'opaque-reasoning', summary: []};
+  const message = (text: string) => ({type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]});
+  const usage = {input_tokens: 200, output_tokens: 80, input_tokens_details: {cached_tokens: 50, cache_write_tokens: 20}, output_tokens_details: {reasoning_tokens: 60}};
+  const functionCall = (name: string, args: object) => ({type: 'function_call', id: `fc_${name}`, call_id: `call_${name}`, name, arguments: JSON.stringify(args)});
+  const options = {key: 'fake-responses-key', model: OPENAI_MODEL, transport: (url: string, init: {body: string; redirect: string; headers: Record<string, string>}) => {
+    assert.equal(url, OPENAI_URL);
+    assert.equal(init.redirect, 'error');
+    assert.equal(init.headers.authorization, 'Bearer fake-responses-key');
+    sent.push(init.body);
+    const body = JSON.parse(init.body) as {tools: unknown[]; input: Record<string, unknown>[]; store: boolean; parallel_tool_calls: boolean};
+    assert.equal(body.store, false);
+    assert.equal(body.parallel_tool_calls, false);
+    if (body.input.some(item => item.content === 'PRIVATE_SUPERSEDED_SUBJECT')) return superseded.promise;
+    if (body.input.some(item => item.content === 'Synthetic provider spend refusal')) return Promise.resolve(new Response(null, {status: 429}));
+    if (body.input.some(item => item.content === 'Synthetic lost reply')) return Promise.reject(new Error('synthetic transport reset'));
+    let output: unknown[];
+    if (body.tools.length === 0) return pendingTitle.promise;
+    if (body.input.length === 1 && body.input[0]?.content === 'Is Studio Plug on?') return pendingRead.promise;
+    if (body.input.some(item => item.content === 'New synthetic topic')) output = [message('A fresh topic.')];
+    else if (body.input.some(item => item.type === 'function_call_output')) output = [message('I checked the tool result.')];
+    else if (init.body.includes('What is the status of catalog-plug')) output = [functionCall('read_devices', {target: 'catalog-plug', owner: 'bunny/modules/pixoo'})];
+    else if (init.body.includes('Turn off Catalog Plug')) output = [functionCall('control_power_set', {target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
+    else if (init.body.includes('What color is it')) output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
+    else if (init.body.includes('Turn off Studio Plug') || init.body.includes('Could Studio Plug be off')) output = [reasoning, functionCall('set_wemo_power', {device: 'studio-plug', on: false})];
+    else output = [reasoning, functionCall('read_wemo', {device: 'studio-plug'})];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage})));
+  }};
+  const anthropicBodies: string[] = [];
+  const anthropic = new AnthropicProvider({key: 'fake-anthropic', transport: (_url, init) => {
+    anthropicBodies.push(init.body);
+    const body = JSON.parse(init.body) as {messages: {role: string; content: Record<string, unknown>[]}[]};
+    const first = body.messages[0]?.content[0]?.text;
+    const tool = first === 'Is Studio Plug on?' ? {name: 'read_wemo', input: {device: 'studio-plug'}}
+      : first === 'Turn off Studio Plug' || first === 'Could Studio Plug be off?' ? {name: 'set_wemo_power', input: {device: 'studio-plug', on: false}}
+      : first === 'What color is it?' ? {name: 'ask_owner', input: {text: 'Which item?'}} : undefined;
+    const answered = body.messages.some(message => message.content.some(block => block.type === 'tool_result'));
+    const use = tool !== undefined && !answered;
+    return Promise.resolve(new Response(JSON.stringify({content: use ? [{type: 'thinking', thinking: 'private fictional thought', signature: 'ANTHROPIC_TEST_THINKING'},
+      {type: 'tool_use', id: 'toolu_test', ...tool}] : [{type: 'text', text: 'CHANGES_NONE'}],
+    stop_reason: use ? 'tool_use' : 'end_turn', usage: {input_tokens: 20, output_tokens: 30}})));
+  }});
+  const w = await world(context, {provider: anthropic, alternateProvider: new OpenAIProvider({...options, effort: 'medium'}),
+    openAITitleProvider: new OpenAITitleProvider(options), preferences: () => [{id: 'preference', active: true, createdAtMs: 1, updatedAtMs: 1, title: 'Secret preference', text: 'PRIVATE_PREFERENCES'}],
+    tools: ['read_sessions', 'read_wemo', 'set_wemo_power', 'read_devices', 'control_power_set'], devices: owner => owner === WEMO_OWNER ? [
+      {...light('studio-plug', 'Studio Plug'), kind: 'wemo'}, {...light('unrelated-plug', 'PRIVATE_OTHER_DEVICE'), kind: 'wemo'},
+    ] : [], dispatch: data => {dispatched.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const catalogOwner = w.bus.connect('bunny/modules/pixoo');
+  context.after(() => catalogOwner.close());
+  await catalogOwner.serveSync(['device'], () => ({revision: 1, states: [
+    {type: 'org.bunny.device.updated', subject: 'catalog-plug',
+      dataschema: DEVICE_READBACK_SCHEMA, data: {...light('catalog-plug', 'Catalog Plug'), kind: 'pixoo'}},
+    {type: 'org.bunny.device.updated', subject: 'private-catalog-device',
+      dataschema: DEVICE_READBACK_SCHEMA, data: {...light('private-catalog-device', 'PRIVATE_CATALOG_DEVICE'), kind: 'pixoo'}},
+  ]}));
+  await control(w.core, w.module(), 'enable');
+  assert.deepEqual(w.module().inspectAssistant()?.providers?.map(value => value.provider), ['anthropic', 'openai']);
+  await input(w.core, w.module(), 'PRIVATE_OTHER_CONVERSATION', false, randomUUID(), {profile: 'reachy', provider: 'anthropic'});
+  await until(() => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'reachy')?.status === 'succeeded');
+  assert.equal(anthropicBodies.length, 1);
+  const bunnyTask = () => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'bunny');
+  const start = async (text: string) => {
+    const result = await input(w.core, w.module(), text, false, randomUUID(), {provider: 'openai'});
+    assert.equal(result.status, 'accepted', JSON.stringify(result));
+  };
+  await start('Is Studio Plug on?');
+  await until(() => sent.length === 2);
+  const inFlight = await w.module().manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
+  assert.ok(inFlight !== undefined && !('error' in inFlight));
+  const day = (JSON.parse(Buffer.from(inFlight.bytes).toString()) as {day: {unreported: number; spentMicros: number}}).day;
+  assert.equal(day.unreported, 2, 'task and title both reserved before either provider reply');
+  assert.ok(day.spentMicros > 10_000);
+  pendingRead.resolve(new Response(JSON.stringify({status: 'completed', output: [reasoning, functionCall('read_wemo', {device: 'studio-plug'})], usage})));
+  pendingTitle.resolve(new Response(JSON.stringify({status: 'completed', output: [message('Studio plug check')], usage})));
+  await until(() => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'bunny')?.status === 'succeeded');
+  assert.ok(sent.some(body => /Studio Plug.*Observed power/.test(body)));
+  assert.ok(sent.some(body => body.includes('opaque-reasoning') && body.includes('function_call_output')));
+  assert.ok(sent.some(body => body.includes('Current title: none') && body.includes('Is Studio Plug on?')));
+  assert.doesNotMatch(sent.join('\n'), /PRIVATE_|read_sessions|CHANGES_NONE/);
+
+  await start('Could Studio Plug be off?');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.equal(dispatched.length, 0);
+  await start('Turn off Studio Plug');
+  await until(() => dispatched.length === 1 || bunnyTask()?.status === 'succeeded' || bunnyTask()?.status === 'failed');
+  assert.equal(dispatched.length, 1, JSON.stringify({task: bunnyTask(), last: sent.at(-1)}));
+  w.advance(1200);
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.equal(dispatched[0]?.target, 'studio-plug');
+  assert.equal(dispatched.length, 1);
+
+  await start('What is the status of catalog-plug?');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.match(sent.at(-1) ?? '', /Catalog Plug/);
+  assert.doesNotMatch(sent.at(-1) ?? '', /PRIVATE_CATALOG_DEVICE|lastTransmissionAtMs|configurationRevision/);
+  await start('Turn off Catalog Plug');
+  await until(() => dispatched.length === 2 || bunnyTask()?.status === 'failed' || bunnyTask()?.status === 'succeeded');
+  assert.equal(dispatched[1]?.target, 'catalog-plug');
+  w.advance(1200);
+  await until(() => bunnyTask()?.status === 'succeeded');
+
+  await start('What color is it?');
+  await until(() => bunnyTask()?.status === 'waiting');
+  const held = bunnyTask() ?? assert.fail('missing task');
+  const taskId = held.taskId;
+  assert.equal((await input(w.core, w.module(), 'Synthetic queued Anthropic request', false, randomUUID(),
+    {action: 'queue', provider: 'anthropic'})).status, 'accepted');
+  await w.restart();
+  await until(() => bunnyTask()?.status === 'waiting');
+  assert.equal(w.store().task(taskId)?.supervisor?.provider, 'openai');
+  assert.equal((await input(w.core, w.module(), 'The blue item.', true, randomUUID(), {taskId, questionId: bunnyTask()?.questionId})).status, 'accepted');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.equal(sent.at(-1)?.includes('opaque-reasoning'), true);
+  assert.equal(sent.at(-1)?.includes('The blue item.'), true);
+  assert.equal(anthropicBodies.length, 1);
+  assert.equal((await control(w.core, w.module(), 'resume-queue', undefined, randomUUID(), {profile: 'bunny'})).status, 'accepted');
+  await until(() => bunnyTask()?.taskId !== taskId && bunnyTask()?.status === 'succeeded');
+  assert.equal(bunnyTask()?.supervisor?.provider, 'anthropic');
+  assert.equal(anthropicBodies.length, 2);
+  assert.doesNotMatch(sent.join('\n'), /Synthetic queued Anthropic request/);
+
+  await start('PRIVATE_SUPERSEDED_SUBJECT');
+  await until(() => sent.at(-1)?.includes('PRIVATE_SUPERSEDED_SUBJECT') === true);
+  assert.equal((await input(w.core, w.module(), 'New synthetic topic', false, randomUUID(),
+    {action: 'steer', taskId: bunnyTask()?.taskId})).status, 'accepted');
+  superseded.resolve(new Response(JSON.stringify({status: 'completed', output: [reasoning, message('PRIVATE_SUPERSEDED_ANSWER')], usage})));
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.match(sent.at(-1) ?? '', /New synthetic topic/);
+  assert.doesNotMatch(sent.at(-1) ?? '', /PRIVATE_SUPERSEDED|opaque-reasoning/);
+
+  const countCommands = (): number => dispatched.length;
+  const requestsBefore = countCommands();
+  const startAnthropic = async (text: string) => {
+    const request = await input(w.core, w.module(), text, false, randomUUID(), {provider: 'anthropic'});
+    assert.equal(request.status, 'accepted');
+  };
+  await startAnthropic('Is Studio Plug on?');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.match(anthropicBodies.at(-1) ?? '', /Observed power/);
+  assert.equal(countCommands(), requestsBefore);
+  await startAnthropic('Could Studio Plug be off?');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.equal(countCommands(), requestsBefore, 'same status question refuses a proposed mutation');
+  assert.match(anthropicBodies.at(-1) ?? '', /refused/);
+  await startAnthropic('Turn off Studio Plug');
+  await until(() => countCommands() === requestsBefore + 1);
+  w.advance(1200);
+  await until(() => bunnyTask()?.status === 'succeeded');
+  await startAnthropic('What color is it?');
+  await until(() => bunnyTask()?.status === 'waiting');
+  const savedAnthropic = bunnyTask();
+  await w.restart();
+  assert.equal((await input(w.core, w.module(), 'The blue item.', true, randomUUID(),
+    {taskId: savedAnthropic?.taskId, questionId: savedAnthropic?.questionId})).status, 'accepted');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.match(anthropicBodies.at(-1) ?? '', /ANTHROPIC_TEST_THINKING.*The blue item/);
+  assert.doesNotMatch(anthropicBodies.join('\n'), /opaque-reasoning|PRIVATE_SUPERSEDED_ANSWER/);
+  assert.doesNotMatch(sent.join('\n'), /ANTHROPIC_TEST_THINKING/);
+
+  await start('Synthetic provider spend refusal');
+  await until(() => bunnyTask()?.status === 'failed');
+  assert.equal(bunnyTask()?.code, 'capacity');
+  const refusedTask = bunnyTask()?.taskId ?? assert.fail('refused task missing');
+  assert.equal(w.store().calls(refusedTask).filter(call => call.kind === 'model').length, 1);
+  await start('Synthetic lost reply');
+  await until(() => bunnyTask()?.status === 'uncertain');
+  const lostTask = bunnyTask()?.taskId ?? assert.fail('uncertain task missing');
+  const count = sent.length;
+  await w.restart();
+  assert.equal(bunnyTask()?.status, 'uncertain');
+  assert.equal(w.store().calls(lostTask).filter(call => call.kind === 'model' && call.status === 'uncertain').length, 1);
+  assert.equal(sent.length, count, 'restart sends no request');
+
+});
+
+
+void test('Responses device reads bind the affirmative subject without widening it', async context => {
+  const cases = [
+    ['What is the brightness of Desk Lamp, not all lights?', 'Desk Lamp (desk)'],
+    ['What is the brightness of Desk Lamp, rather than Hall Lamp?', 'Desk Lamp (desk)'],
+    ['What is the brightness of Desk Lamp only? Leave Hall Lamp alone.', 'Desk Lamp (desk)'],
+    ['What is the brightness of Desk Lamp?', 'Desk Lamp (desk)'],
+    ['List all lights', 'Desk Lamp (desk)\nHall Lamp (lamp)\nDuplicated Lamp (first)\nDuplicated Lamp (second)'],
+    ['What is the brightness of Duplicated Lamp?', 'No configured LIFX lights are known.'],
+    ['What is the status of Hall Plug?', 'No configured LIFX lights are known.'],
+    ['List all lights except Hall Lamp', 'No configured LIFX lights are known.'],
+  ] as const;
+  const outputs: string[] = [];
+  const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+    const output = body.input.find(item => item.type === 'function_call_output')?.output;
+    if (output !== undefined) outputs.push(output);
+    const items = output === undefined
+      ? [{type: 'function_call', id: 'fc_lights', call_id: 'call_lights', name: 'read_lifx', arguments: '{"device":""}'}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Read complete.', annotations: []}]}];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output: items, usage: {input_tokens: 40, output_tokens: 40}})));
+  }});
+  const w = await world(context, {provider, tools: ['read_lifx'], devices: owner => owner === WEMO_OWNER ? [{...light('desk', 'Hall Plug'), kind: 'wemo'}]
+    : [light('desk', 'Desk Lamp'), light('lamp', 'Hall Lamp'), light('first', 'Duplicated Lamp'), light('second', 'Duplicated Lamp')]});
+  await control(w.core, w.module(), 'enable');
+  for (const [prompt, expected] of cases) {
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+    assert.equal(outputs.at(-1), expected, prompt);
+  }
+  assert.equal(outputs.length, cases.length);
+});
+
+
+void test('Responses history requires one exact device and current summary grants', async context => {
+  const target = 'desk', source = 'bunny/modules/lifx';
+  const baseline = sharing();
+  const day = Date.parse('2026-11-25T00:00:00Z');
+  let expected: {source: string; target: string} = {source, target};
+  let denied: 'local' | 'remote' | undefined, reads = 0, revokeAfterRead = false;
+  let args = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
+  const sent: string[] = [], results: string[] = [];
+  const titles: string[] = [];
+  const titleProvider = new OpenAITitleProvider({key: 'fake', model: OPENAI_MODEL, transport: (_url, init) => {
+    titles.push(init.body);
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output: [{type: 'message', role: 'assistant',
+      content: [{type: 'output_text', text: 'Fixture history title', annotations: []}]}], usage: {input_tokens: 20, output_tokens: 10}})));
+  }});
+  const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    sent.push(init.body);
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+    const result = body.input.find(item => item.type === 'function_call_output')?.output;
+    if (result !== undefined) results.push(result);
+    const output = result === undefined
+      ? [{type: 'function_call', id: 'fc_history', call_id: 'call_history', name: 'read_device_history', arguments: JSON.stringify(args)}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic history answer.', annotations: []}]}];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 40}})));
+  }});
+  const share = (query: ShareQuery) => baseline(query) && !(query.source === 'devices' && query.field === 'summary' && query.record === target &&
+    (denied === 'local' && query.destination === 'private-conversation' || denied === 'remote' && query.destination === 'openai-supervisor'));
+  const w = await world(context, {provider, openAITitleProvider: titleProvider, timeZone: 'UTC', share, tools: ['read_device_history'],
+    devices: owner => owner === WEMO_OWNER ? [{...light('plug', 'Hall Plug'), kind: 'wemo'}]
+      : [light(target, 'Desk Lamp'), light('other', 'Hall Lamp'), light('first', 'Shared Name'), light('second', 'Shared Name')],
+    dispatch: () => assert.fail('history sends no device command'),
+    deviceHistory: query => {
+      reads += 1;
+      if (revokeAfterRead) denied = 'remote';
+      assert.equal(query.source, expected.source);
+      assert.equal(query.target, expected.target);
+      const total = query.toAtMs - query.fromAtMs;
+      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 155, complete: true,
+        durations: {on: 421, off: 0, unknown: total - 421}, lastChange: {atMs: query.fromAtMs + 1, seq: 154, from: 'off', to: 'on'},
+        evidence: [{seq: 154, messageId: 'PRIVATE_EVIDENCE_ID', atMs: query.fromAtMs + 1, confirmedThroughMs: query.toAtMs,
+          kind: 'observation', power: 'on'}],
+        links: [{requestId: 'PRIVATE_OPERATION_ID', observationSeq: 154, sentSeq: 151, transmissionOutcomeSeq: 152, transmittedAtMs: query.fromAtMs}]};
+    }}, undefined, day + 5000);
+  await control(w.core, w.module(), 'enable');
+  const ask = async (prompt: string) => {
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+    return results.at(-1) ?? '';
+  };
+  const affirmative = 'How long was Desk Lamp on yesterday?';
+  const summary = await ask(affirmative);
+  assert.equal(reads, 1);
+  assert.match(summary, /"on":421/);
+  assert.deepEqual((JSON.parse(summary) as {interval: unknown}).interval, {fromAtMs: day - 86_400_000, toAtMs: day});
+  assert.doesNotMatch(summary, /lastChange|PRIVATE_|"seq"|"cursor"|"boundary"|"target"|"source"/);
+  for (const side of ['remote', 'local'] as const) {
+    denied = side;
+    assert.match(await ask(affirmative), /forbidden/);
+  }
+  denied = undefined;
+  assert.match(await ask('How long was Shared Name on yesterday?'), /forbidden/);
+  assert.match(await ask('How long was Desk Lamp or Hall Plug on yesterday?'), /forbidden/);
+  args = {...args, target: 'other'};
+  assert.match(await ask(affirmative), /forbidden/);
+  args = {...args, target: '', source: WEMO_OWNER};
+  assert.match(await ask(affirmative), /forbidden/);
+  args = {...args, source: '', period: 'yesterday', fromAtMs: 1, toAtMs: 2};
+  assert.match(await ask(affirmative), /forbidden/);
+  assert.equal(reads, 1);
+  args = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
+  const lastChange = await ask('When did Desk Lamp last change between 2026-11-24T12:00:00Z and 2026-11-24T13:00:00Z?');
+  assert.match(lastChange, /"lastChange":\{"atMs":1795521600001,"from":"off","to":"on"\}/);
+  assert.doesNotMatch(lastChange, /seq|durations/);
+  assert.match(await ask('How long was Desk Lamp on from 2026-11-31T12:00:00Z to 2026-12-01T13:00:00Z?'), /forbidden/);
+  assert.match(await ask('Tell me a synthetic joke.'), /forbidden/);
+  assert.equal(reads, 2);
+  assert.equal(results.filter(value => value.includes('"on":421')).length, 1);
+  assert.ok(titles.length > 0);
+  assert.doesNotMatch(titles.join(' '), /durations|lastChange|PRIVATE_/);
+  const beforeRevoke = sent.length;
+  const priorTask = task(w)?.taskId;
+  revokeAfterRead = true;
+  await input(w.core, w.module(), affirmative);
+  await until(() => task(w)?.taskId !== priorTask && status(w) === 'failed');
+  assert.equal(task(w)?.code, 'forbidden');
+  assert.equal(reads, 3);
+  assert.equal(sent.length, beforeRevoke + 1, 'revoked result did not reach a second provider call');
+  denied = undefined;
+  revokeAfterRead = false;
+  expected = {source: WEMO_OWNER, target: 'plug'};
+  assert.match(await ask('How long was Hall Plug on yesterday?'), /"on":421/);
+  assert.equal(reads, 4);
+  assert.doesNotMatch(sent.join(' '), /PRIVATE_EVIDENCE_ID|PRIVATE_OPERATION_ID/);
+});
+
+
+void test('an unpinned legacy task and queue remain readable without resuming on a synthetic host', async context => {
+  const earlier = counted(() => call('ask_owner', {text: 'Which option?'}));
+  const current = counted(() => reply('Fresh synthetic answer.'));
+  const options: CompanionsOptions = {provider: {...earlier, name: 'anthropic', model: 'claude-opus-5-5'},
+    dispatch: () => assert.fail('an ambiguous restart cannot send a command')};
+  const w = await world(context, options);
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'Legacy hosted request.')).status, 'accepted');
+  await until(() => status(w) === 'waiting');
+  const old = task(w) ?? assert.fail('legacy task');
+  const queuedId = randomUUID();
+  assert.equal((await input(w.core, w.module(), 'Legacy queued request.', false, queuedId, {action: 'queue'})).status, 'accepted');
+  const requestId = randomUUID();
+  const staged = await w.module().manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+    bytes: Buffer.from(JSON.stringify({action: 'answer', profile: 'bunny', expectedRevision: w.module().inspectAssistant()?.revision,
+      taskId: old.taskId, questionId: old.questionId, text: 'approve'}))});
+  assert.ok(staged !== undefined && !('error' in staged));
+  const store = w.store(), legacy = store.task(old.taskId) ?? assert.fail('persisted task');
+  delete legacy.supervisor;
+  assert.ok(legacy.question);
+  legacy.question = {...legacy.question, kind: 'approval', proposal: {family: 'mode-set', target: 'hub', data: {mode: 'quiet'}, expectedRevision: 4}};
+  store.save(legacy);
+  w.host().moduleDatabase()?.prepare('DELETE FROM assistant_queue_supervisors WHERE message_id=?').run(queuedId);
+
+  await w.restart(() => {options.provider = current;});
+  assert.equal(status(w), 'paused');
+  assert.equal(task(w)?.code, 'unavailable');
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === 'Legacy hosted request.'));
+  const answer = await w.core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested',
+    subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+  assert.equal(answer.status, 'rejected');
+  const freshAnswer = await input(w.core, w.module(), 'approve', true);
+  assert.equal(freshAnswer.status, 'rejected');
+  if (freshAnswer.status === 'rejected') assert.equal(freshAnswer.error.error.code, 'unavailable');
+  assert.equal(w.store().task(old.taskId)?.question?.answer, null);
+  assert.equal((await control(w.core, w.module(), 'cancel', old.taskId)).status, 'accepted');
+  assert.equal((await control(w.core, w.module(), 'resume-queue', undefined, randomUUID(), {profile: 'bunny'})).status, 'rejected');
+  assert.equal(w.store().queue.message(queuedId)?.text, 'Legacy queued request.');
+  assert.equal(current.calls(), 0);
+  assert.equal((await control(w.core, w.module(), 'withdraw', undefined, randomUUID(), {profile: 'bunny', queuedId})).status, 'accepted');
+  const newRequest = randomUUID();
+  const fresh = await w.module().manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId: newRequest, signal: new AbortController().signal,
+    bytes: Buffer.from(JSON.stringify({action: 'new-conversation', profile: 'bunny', expectedRevision: w.module().inspectAssistant()?.revision}))});
+  assert.ok(fresh !== undefined && !('error' in fresh));
+  assert.equal((await w.core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+    dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId: newRequest, ...fresh.data}}, {requestId: newRequest, timeoutMs: 5000})).status, 'accepted');
+  assert.equal((await input(w.core, w.module(), 'Fresh synthetic request.')).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(current.calls(), 1);
+  assert.equal(w.store().task(task(w)?.taskId ?? '')?.supervisor?.provider, 'synthetic');
 });

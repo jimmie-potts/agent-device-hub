@@ -22,15 +22,19 @@ import type {DatabaseSync} from 'node:sqlite';
 import type {AssistantProfile, AssistantQueueHold} from '@jimmie-potts/event-contracts/v2/assistant';
 import {LIMITS} from './limits.js';
 import {isErrorCode} from '@jimmie-potts/event-contracts/v2/errors';
+import type {SupervisorIdentity} from './provider.js';
 import type {QueueDocument, QueueHold} from './queue-contract.js';
 export type {QueueDocument, QueueHold} from './queue-contract.js';
 
 /** One waiting message: its ID is the request ID of the input command that queued it, so a repeat cannot queue it twice. */
 export type QueuedMessage = {id: string; conversationId: string; profile: AssistantProfile; text: string; queuedAtMs: number; updatedAtMs: number;
   /** The queuing command's trace, which the run of the message's task starts from. */
-  traceparent: string};
-type MessageRow = {id: string; conversationId: string; profile: AssistantProfile; text: string; queuedAtMs: number; updatedAtMs: number; traceparent: string};
-const COLUMNS = 'id,conversation_id AS conversationId,profile,text,queued_at_ms AS queuedAtMs,updated_at_ms AS updatedAtMs,traceparent';
+  traceparent: string; supervisor?: SupervisorIdentity};
+type MessageRow = {id: string; conversationId: string; profile: AssistantProfile; text: string; queuedAtMs: number; updatedAtMs: number; traceparent: string; supervisorJSON: string | null};
+const COLUMNS = 'id,conversation_id AS conversationId,profile,text,queued_at_ms AS queuedAtMs,updated_at_ms AS updatedAtMs,traceparent,(SELECT record FROM assistant_queue_supervisors WHERE message_id=assistant_queued_messages.id) AS supervisorJSON';
+function queuedMessage({supervisorJSON, ...row}: MessageRow): QueuedMessage {
+  return supervisorJSON === null ? row : {...row, supervisor: JSON.parse(supervisorJSON) as SupervisorIdentity};
+}
 /**
  * One unread steer of a running task (Hub #2031). Its ID is the request ID of the input command that sent it, as a
  * queued message's is, so a repeat cannot save it twice and the queued message it may become keeps the same ID.
@@ -51,7 +55,9 @@ export class MessageQueue {
         pending INTEGER NOT NULL DEFAULT 0 CHECK(pending IN (0,1))) STRICT;
       CREATE TABLE IF NOT EXISTS assistant_steers (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, conversation_id TEXT NOT NULL, profile TEXT NOT NULL,
         position INTEGER NOT NULL, text TEXT NOT NULL, saved_at_ms INTEGER NOT NULL, traceparent TEXT NOT NULL) STRICT;
-      CREATE INDEX IF NOT EXISTS assistant_steer_order ON assistant_steers(task_id,position);`);
+      CREATE INDEX IF NOT EXISTS assistant_steer_order ON assistant_steers(task_id,position);
+      CREATE TABLE IF NOT EXISTS assistant_queue_supervisors (message_id TEXT PRIMARY KEY
+        REFERENCES assistant_queued_messages(id) ON DELETE CASCADE, record TEXT NOT NULL) STRICT;`);
   }
   /**
    * Counts the conversation's queue as changed in the open transaction; the assistant's next revision records it. The
@@ -62,10 +68,11 @@ export class MessageQueue {
   }
   /** The conversation's waiting messages, first to start first. */
   messages(conversationId: string): QueuedMessage[] {
-    return this.database.prepare(`SELECT ${COLUMNS} FROM assistant_queued_messages WHERE conversation_id=? ORDER BY position`).all(conversationId) as MessageRow[];
+    return (this.database.prepare(`SELECT ${COLUMNS} FROM assistant_queued_messages WHERE conversation_id=? ORDER BY position`).all(conversationId) as MessageRow[]).map(queuedMessage);
   }
   message(id: string): QueuedMessage | undefined {
-    return this.database.prepare(`SELECT ${COLUMNS} FROM assistant_queued_messages WHERE id=?`).get(id) as MessageRow | undefined;
+    const row = this.database.prepare(`SELECT ${COLUMNS} FROM assistant_queued_messages WHERE id=?`).get(id) as MessageRow | undefined;
+    return row === undefined ? undefined : queuedMessage(row);
   }
   count(conversationId: string): number {
     return (this.database.prepare('SELECT COUNT(*) AS count FROM assistant_queued_messages WHERE conversation_id=?').get(conversationId) as {count: number}).count;
@@ -84,8 +91,7 @@ export class MessageQueue {
   /** Saves a message at the end of the conversation's queue; the caller has checked the queue has room. */
   add(message: QueuedMessage): void {
     const last = (this.database.prepare('SELECT MAX(position) AS position FROM assistant_queued_messages WHERE conversation_id=?').get(message.conversationId) as {position: number | null}).position ?? 0;
-    this.database.prepare('INSERT INTO assistant_queued_messages VALUES (?,?,?,?,?,?,?,?)')
-      .run(message.id, message.conversationId, message.profile, last + 1, message.text, message.queuedAtMs, message.updatedAtMs, message.traceparent);
+    this.#insert(message, last + 1);
     this.touch(message.conversationId);
   }
   /**
@@ -132,10 +138,10 @@ export class MessageQueue {
    * messages already queued, as the next messages to start (Hub #2031). They may take the queue past its limit, up to
    * its bound: nothing the owner wrote is dropped. Returns how many came back.
    */
-  returnSteers(taskId: string, atMs: number): number {
+  returnSteers(taskId: string, atMs: number, supervisor?: SupervisorIdentity): number {
     const steers = this.steers(taskId);
     this.prepend(steers.map(steer => ({id: steer.id, conversationId: steer.conversationId, profile: steer.profile, text: steer.text, queuedAtMs: steer.savedAtMs,
-      updatedAtMs: atMs, traceparent: steer.traceparent})));
+      updatedAtMs: atMs, traceparent: steer.traceparent, ...(supervisor === undefined ? {} : {supervisor})})));
     this.database.prepare('DELETE FROM assistant_steers WHERE task_id=?').run(taskId);
     return steers.length;
   }
@@ -147,9 +153,14 @@ export class MessageQueue {
     const first = messages[0];
     if (first === undefined) return;
     const head = (this.database.prepare('SELECT MIN(position) AS position FROM assistant_queued_messages WHERE conversation_id=?').get(first.conversationId) as {position: number | null}).position ?? 1;
-    const insert = this.database.prepare('INSERT INTO assistant_queued_messages VALUES (?,?,?,?,?,?,?,?)');
-    messages.forEach((message, index) => {insert.run(message.id, message.conversationId, message.profile, head - messages.length + index, message.text, message.queuedAtMs, message.updatedAtMs, message.traceparent);});
+    messages.forEach((message, index) => {this.#insert(message, head - messages.length + index);});
     this.touch(first.conversationId);
+  }
+  #insert(message: QueuedMessage, position: number): void {
+    this.database.prepare('INSERT INTO assistant_queued_messages VALUES (?,?,?,?,?,?,?,?)')
+      .run(message.id, message.conversationId, message.profile, position, message.text, message.queuedAtMs, message.updatedAtMs, message.traceparent);
+    if (message.supervisor !== undefined) this.database.prepare('INSERT INTO assistant_queue_supervisors VALUES (?,?)')
+      .run(message.id, JSON.stringify(message.supervisor));
   }
   edit(id: string, text: string, atMs: number): void {
     const message = this.message(id); if (message === undefined) return;
