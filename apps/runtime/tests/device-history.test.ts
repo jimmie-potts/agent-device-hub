@@ -28,7 +28,9 @@ void test('the Core host and bounded tool share whole device evidence, including
       const change = (at: number, on: boolean, extras: Record<string, unknown> = {}, requests: string[] = []) =>
         add(at, 'change', 'org.bunny.device.updated', {family: 'device', id: target, revision: ordinal + 1,
           changed: {observed: {status: 'known', power: {status: 'known', value: on}, observedAtMs: at},
-            powerReadbacks: requests.map(requestId => ({requestId, transmittedAtMs: at - 20, requestedOn: on, reading: {status: 'known', observedAtMs: at, on}}))}, ...extras});
+            ...(source === 'bunny/modules/wemo' ? {powerReadbacks: requests.map(requestId => ({
+              requestId, transmittedAtMs: at - 20, requestedOn: on, reading: {status: 'known', observedAtMs: at, on},
+            }))} : {})}, ...extras});
       const step = (at: number, event: string, requestId: string, status: object = {}) =>
         add(at, 'operation', 'power-set', {command: 'power-set', event, ...status}, requestId);
       change(100, true);
@@ -47,7 +49,7 @@ void test('the Core host and bounded tool share whole device evidence, including
       assert.deepEqual(snapshot.durations, {on: 55, off: 20, unknown: 300});
       assert.deepEqual(snapshot.evidence.map(row => row.kind), ['observation', 'observation', 'gap', 'observation', 'removal']);
       assert.equal(snapshot.lastChange?.atMs, 350);
-      assert.deepEqual(snapshot.links.map(cause => cause.requestId), ['one']);
+      assert.deepEqual(snapshot.links.map(link => link.requestId), source === 'bunny/modules/wemo' ? ['one'] : []);
       const tool = devicePowerHistoryTool(input => history.devicePower(input));
       assert.deepEqual(tool.read(query), snapshot);
       assert.deepEqual(history.read({kind: 'operation'}).map(row => row.record.event).slice(-5), ['sent', 'reply', 'outcome', 'sent', 'outcome']);
