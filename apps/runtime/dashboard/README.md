@@ -1279,6 +1279,26 @@ blocks is not sent and says why while the others switch, and each member whose
 last command was refused, not sent, unanswered or uncertain is named under the
 switches.
 
+## A card that fails
+
+An error thrown while a card renders, or from one of its effects, stays in that
+card (#2139). Each Home card, each device card on a component page and a module
+page on its route has its own boundary. The failed card keeps its place and
+shows its name, "*Name* failed to show. Its controls are unavailable." and one
+**Retry**, which mounts it again and sends nothing. The rest of the page keeps
+working. A fault in the shell itself (rail, hero, palettes, menus, the lighting
+and playback workspaces) still unmounts the page. Errors in event handlers and
+async work never reach a boundary and, as before, leave the page mounted.
+
+Each failure is recorded once as `dashboard.card.failed` through the SDK's
+`recordLog`, at ERROR, with `bunny.card`, `bunny.code` `internal` and
+`error.type`; never the message. The page has no diagnostic route to the
+runtime, so the record stays in a bounded in-page log. The page also reports the
+error as a page error, and the failed card carries `data-card-failed`: the
+journey harness's `feed()` fails on a failed card a journey did not expect.
+`tests/card-errors.browser.ts` throws from chosen cards in a test build
+(`tests/card-faults.ts`).
+
 ## Build and checks
 
 `npm run build` builds the page with `apps/runtime/dashboard/build.mjs` into
