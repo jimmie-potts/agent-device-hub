@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The host-local coding worker (Hub #502): node coding-worker.mjs /absolute/private/coding-worker.json
 const {main} = await import('@jimmie-potts/runtime/coding-worker');
-try {await main(process.argv.slice(2), line => {process.stderr.write(`${line}\n`);});}
+try {await main(process.argv.slice(2), line => {process.stderr.write(`${line}\n`);}, process.stdin.isTTY === true && process.stdout.isTTY === true);}
 catch (error) {
   // A private-file refusal names the file in its message; the log line carries only the fixed problem, never a path.
   const line = error instanceof Error && 'problem' in error ? `coding-worker: private file ${String(error.problem)}`

@@ -1222,7 +1222,9 @@ through its independently paged content endpoint.
 
 A `coding-work/2.4` message names one operation and carries at most 4,096
 UTF-8 bytes of owner instruction. Its request ID correlates the instruction
-with an optional `coding-progress/2.5` native input observation. The
+with an optional `coding-progress/2.5` native input observation. A worker can also accept an exact saved client handoff on `coding-work/2.5`.
+`coding-progress/2.6` carries offered clients and the latest authority observation.
+The attempt's local launch plan stays on the worker host. The
 observation names that operation, request and session. It carries no
 instruction text. A separate 2.5 attempt-context observation can report the
 worker's worktree reference, branch or model. A worktree reference is a name

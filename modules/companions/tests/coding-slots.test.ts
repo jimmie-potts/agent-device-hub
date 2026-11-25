@@ -116,14 +116,16 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
   };
-  const stop = async (jobId: string, operationId: string): Promise<RequestResult> => {
+  const jobInput = async (action: 'stop-coding-job' | 'open-native-terminal', jobId: string, operationId: string): Promise<RequestResult> => {
     const requestId = randomUUID();
     const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
-      bytes: Buffer.from(JSON.stringify({action: 'stop-coding-job', jobId, operationId}))});
+      bytes: Buffer.from(JSON.stringify({action, jobId, operationId}))});
     if (staged === undefined || 'error' in staged) return {status: 'rejected', requestId, error: staged ?? errorBody('unavailable')};
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
   };
+  const stop = (jobId: string, operationId: string) => jobInput('stop-coding-job', jobId, operationId);
+  const openNative = (jobId: string, operationId: string) => jobInput('open-native-terminal', jobId, operationId);
   const message = async (jobId: string, operationId: string, text: string, repeat = false): Promise<RequestResult> => {
     const requestId = randomUUID();
     const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
@@ -178,12 +180,63 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     assert.ok(reply !== undefined && !('error' in reply));
     return JSON.parse(Buffer.from(reply.bytes).toString()) as CodingJobDetail;
   };
-  return {continueJob, jobDetail, jobs, message, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
+  return {continueJob, jobDetail, jobs, message, openNative, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
     const release = releaseStart ?? assert.fail('serial responder has a delivered start to acknowledge');
     releaseStart = undefined; release();
   }, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, lose, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
     restart: async () => {await host.stop(); ({module, host} = make()); await host.start();}, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}};
 }
+
+void test('native continuation respects current brief grants and retains only last-observed authority after restart', async context => {
+  const permitted = sharing();
+  let revoked = false;
+  const share = Object.assign((query: ShareQuery) => permitted(query) &&
+    !(revoked && query.destination === 'private-conversation' && query.source === 'coding' && query.field === 'brief'),
+  {revokesFields: true, allowsDerived: (query: ShareQuery) => permitted.allowsDerived?.(query) !== false});
+  const w = await world(context, {share});
+  const readiness: CodingHarnessReadiness = {
+    harness: 'claude-code', capabilities: {steering: 'unsupported', resume: 'unsupported', review: true},
+    installed: 'yes', signedIn: 'yes', version: '2.1.292', plan: 'max', checkedAtMs: Date.parse('2026-11-24T18:00:00Z'),
+    limits: null, limitsObservedAtMs: null,
+  };
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable('uncapped', [readiness])).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic saved native attempt')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  const operationId = w.starts()[0]?.data.operationId ?? assert.fail('native job start');
+  const jobId = `${operationId}-job`, sessionId = 'synthetic-native-attempt';
+  await w.progress({operationId, harness: 'claude-code', sessionId, status: 'started', setup: 'ready'}, '2.3');
+  await settle(() => w.coding().runs?.some(run => run.sessionId === sessionId) === true);
+  await w.progress({operationId, harness: 'claude-code', sessionId, status: 'completed', result: result('Synthetic result.')}, '2.3');
+  await w.waitMessages('bunny', /Synthetic result/);
+  const observe = (state: 'available' | 'terminal', observedAtMs: number) => w.progress({
+    operationId, status: 'native-client', clients: ['terminal'], state, observedAtMs,
+  }, '2.6');
+  const current = async () => (await w.jobs({jobId})).jobs[0]?.nativeClient;
+  const revision = w.coding().revision;
+  await observe('available', 10);
+  await settle(() => w.coding().revision > revision);
+  assert.deepEqual(await current(), {clients: ['terminal'], state: 'available', observedAtMs: 10});
+
+  revoked = true;
+  assert.equal(await current(), undefined);
+  const denied = await w.openNative(jobId, operationId);
+  assert.equal(denied.status === 'rejected' && denied.error.error.code, 'forbidden');
+  assert.equal(w.work.length, 1);
+
+  revoked = false;
+  assert.equal((await w.openNative(jobId, operationId)).status, 'accepted');
+  await settle(() => w.work.some(command => command.data.action === 'open-native-terminal'));
+  const prompted = w.coding().revision;
+  await observe('terminal', 11);
+  await settle(() => w.coding().revision > prompted);
+  assert.equal((await current())?.state, 'terminal');
+  await w.restart();
+  assert.deepEqual(await current(), {clients: ['terminal'], state: 'uncertain', observedAtMs: 11});
+  assert.equal((await w.openNative(jobId, operationId)).status, 'rejected');
+  assert.equal(w.work.length, 2);
+});
 
 void test('an attributed background job keeps its first native session and delivers one result to the original exchange', {timeout: 30_000}, async context => {
   const w = await world(context);

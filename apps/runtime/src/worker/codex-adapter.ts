@@ -126,7 +126,7 @@ async function checkPrivateEntries(directory: string): Promise<void> {
   }
 }
 
-async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise<string> {
+export async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise<string> {
   const path = await checkStateDirectory(home);
   const userHomes = await Promise.all([userInfo().homedir, environment.HOME]
     .flatMap(value => value === undefined || value === '' ? [] : [canonical(resolve(value))]));

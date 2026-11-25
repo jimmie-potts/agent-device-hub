@@ -240,6 +240,7 @@ class Companions {
       knowledge: () => this.knowledge?.store.active().entries ?? [], speak,
       coding: this.options.coding ?? (() => coding.endpoint()), delegate, backgroundCoding: this.options.delegate === undefined, codingJob: requestId => coding.jobForAttempt(requestId), stopCodingJob: (jobId, operationId) => coding.prepareStop(jobId, operationId),
       continueCodingJob: (data, parent) => coding.prepareContinuation(data, parent),
+      openNativeClient: (input, parent) => coding.prepareNativeClient(input, parent),
       messageCodingJob: (input, parent) => coding.prepareMessage(input, parent), handedOff: this.options.handedOff ?? (requestId => coding.accepted(requestId)), onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();

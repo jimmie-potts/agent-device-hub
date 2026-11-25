@@ -39,6 +39,56 @@ limits only when the harness supplies that evidence.
 Open **Details**, then **Coding jobs**, to find active jobs and stop a named
 attempt. **Next jobs** reads later jobs without affecting admission.
 
+## Native clients for saved attempts
+
+The worker can offer saved-session continuation to the same account on its host.
+Enable only the clients qualified on that host. In the private
+`coding-worker/1.2` configuration, `nativeClients` takes an absolute Unix
+socket path inside an owner-only directory, `harnesses` with the eligible
+terminal harness names, and optional `claudeDesktop: true` on macOS.
+The socket must be outside Git. Keep the socket path short enough for the
+host's Unix socket limit. The worker reports a fixed diagnostic if it cannot
+start this optional listener.
+
+To continue in a terminal, open a foreground terminal on the worker host
+under the worker account. Run the helper with the private worker configuration
+and attempt ID from the job card, then select **Continue saved session in
+terminal** on that same card.
+
+```sh
+node apps/runtime/bin/coding-worker.mjs native /absolute/private/coding-worker.json <attempt-id>
+```
+
+The terminal helper uses the exact saved Claude session or Codex thread. The
+worker verifies the same checkout and current subscription before sending
+the launch plan to the local helper. Codex keeps its dedicated profile.
+Claude saved terminal continuation uses restricted mode and a local account
+sign-in. The helper reports release after the terminal process group is clear.
+While the terminal owns the attempt, the Hub can observe release. Native
+messages and progress stay with the native client.
+
+On a Mac qualified for Claude Desktop, **Hand off saved session to Claude
+Desktop** takes over the exact attempt using the supported
+`claude --desktop --resume <session-id>` path. The launcher receipt shows the
+exact requested identity. Desktop activity and writer release are unobserved,
+so this handoff is one-way. The worker keeps another writer off that attempt.
+Use the same local account and subscription in Desktop when qualifying this
+action. [Claude Desktop reference](https://code.claude.com/docs/en/desktop#coming-from-the-cli)
+
+Live Claude attachment applies to background sessions. Claude background mode
+rejects the print mode used for the worker's private stdin brief, authenticated
+stream, structured result and turn and spending caps. A fresh, untrusted
+worktree also needs native trust confirmation. The existing worker keeps
+its bounded headless mode.
+[Claude agent view](https://code.claude.com/docs/en/agent-view#dispatch-an-agent-from-your-shell)
+[Claude CLI reference](https://code.claude.com/docs/en/cli-reference)
+
+Codex terminal resume selects a saved UUID in the worker profile. The worker's
+live app-server stream cannot be opened by the standalone terminal. The Codex
+app workspace launcher cannot confirm an exact job thread in the dedicated
+worker profile. Both of those actions stay unavailable.
+[Codex CLI reference](https://developers.openai.com/codex/cli/reference/)
+
 ## Harness choice and continuation
 
 For a new coding job, Auto prefers Claude Code when its subscription is

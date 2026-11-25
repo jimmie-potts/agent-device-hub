@@ -104,6 +104,24 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     assert.deepEqual(commands.slice(3).map(command => [command.action, command.operationId]), [['cancel', first.operationId]]);
     await progress({operationId: first.operationId, status: 'cancelled', reason: 'cancelled', result: null, harness: 'claude-code'}, '2.3');
     await card(first).getByText(/ · cancelled$/).waitFor();
+    await progress({operationId: first.operationId, status: 'native-client', clients: ['terminal', 'claude-desktop'], state: 'available', observedAtMs: Date.now()}, '2.6');
+    await card(first).getByText('Native clients', {exact: true}).click();
+    await card(second).getByText('Native clients', {exact: true}).click();
+    const native = 'Continue saved session in terminal';
+    assert.equal(await card(second).getByRole('button', {name: native}).count(), 0);
+    await card(first).getByRole('button', {name: native}).click();
+    await waitFor(() => commands.length === 5);
+    assert.deepEqual(commands.slice(4).map(command => [command.action, command.operationId]), [['open-native-terminal', first.operationId]]);
+    await progress({operationId: first.operationId, status: 'native-client', clients: ['terminal', 'claude-desktop'], state: 'terminal', observedAtMs: Date.now()}, '2.6');
+    await card(first).getByText('Native terminal', {exact: true}).waitFor();
+    assert.equal(await card(first).getByRole('button', {name: native}).count(), 0);
+    await progress({operationId: first.operationId, status: 'native-client', clients: ['terminal', 'claude-desktop'], state: 'available', observedAtMs: Date.now()}, '2.6');
+    await card(first).getByRole('button', {name: native}).waitFor();
+    await card(first).getByRole('button', {name: 'Hand off saved session to Claude Desktop'}).click();
+    await waitFor(() => commands.length === 6);
+    assert.deepEqual(commands.slice(5).map(command => [command.action, command.operationId]), [['open-claude-desktop', first.operationId]]);
+    await progress({operationId: first.operationId, status: 'native-client', clients: ['terminal', 'claude-desktop'], state: 'desktop', observedAtMs: Date.now()}, '2.6');
+    await card(first).getByText('Claude Desktop, activity unobserved', {exact: true}).waitFor();
     await page.reload();
     await card(first).getByText(/ · cancelled$/).waitFor();
     await card(first).getByText('Attempts and results', {exact: true}).click();
@@ -117,6 +135,6 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await conversation.getByText(/Earlier conversation, read only/).waitFor();
     await conversation.getByRole('button', {name: 'Back to current conversation'}).click();
     await conversation.getByRole('button', {name: 'Approve proposal', exact: true}).waitFor();
-    assert.equal(commands.length, 4, 'pending approval stayed in Conversation');
+    assert.equal(commands.length, 6, 'pending approval stayed in Conversation');
   } finally {acceptMessage(); await worker.close(); await context.close(); await world.close();}
 }

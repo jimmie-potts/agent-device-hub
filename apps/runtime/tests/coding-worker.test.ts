@@ -48,7 +48,7 @@ function fakeEdge() {
     publish: (_family, draft) => {
       const report = draft.data as CodingWorkerProgress;
       if (report.status === 'attempt-context') contexts.push(report);
-      else if (report.status !== 'message-observed') {
+      else if (report.status !== 'message-observed' && report.status !== 'native-client') {
         progress.push(report);
         reportedOn.push(current);
       }
