@@ -3499,8 +3499,9 @@ Background coding jobs (#2109) use the same suites. `coding-slots.test.js`
 holds a worker open while Conversation answers another question and accepts
 another delegation. It exercises out-of-order result delivery, chat replacement,
 an unconfirmed named stop while another job runs, and recovery of a saved
-pre-change delegation. It injects failed writes while saving an accepted dispatch
-and while delivering results to current jobs and pre-change delegations. Repeated
+pre-change delegation. It injects failed writes while saving an accepted
+dispatch or an unconfirmed stop, and while delivering results to current jobs
+and pre-change delegations. A fast result or restart preserves earlier receipts. Repeated
 delivery leaves one conversation result and sends no new worker command. The
 browser journeys verify the job reference and its
 linked result through the real gateway with a disposable worker.

@@ -27,6 +27,9 @@ export class CodingStore {
       operation_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, companion TEXT NOT NULL CHECK(companion IN ('bunny','reachy','microduck')),
       repository TEXT NOT NULL, brief TEXT NOT NULL, traceparent TEXT NOT NULL, sending INTEGER NOT NULL DEFAULT 0 CHECK(sending IN (0,1))
     ) STRICT`);
+    database.exec(`CREATE TABLE IF NOT EXISTS companion_coding_accepted_waits (
+      operation_id TEXT PRIMARY KEY REFERENCES companion_coding(operation_id), traceparent TEXT NOT NULL
+    ) STRICT`);
     database.exec(`CREATE TABLE IF NOT EXISTS companion_coding_jobs (
       job_id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE, conversation_id TEXT NOT NULL,
       task_id TEXT NOT NULL, repository TEXT NOT NULL, brief TEXT NOT NULL,
@@ -64,8 +67,15 @@ export class CodingStore {
   recoverDeliveries(): void {
     this.database.prepare('UPDATE companion_coding_job_updates SET startup=1 WHERE delivered=0').run();
   }
-  resultSaved(operationId: string): boolean {
-    return this.database.prepare("SELECT 1 FROM companion_coding_job_updates WHERE operation_id=? AND kind='result'").get(operationId) !== undefined;
+  observationSaved(operationId: string, kind: CodingObservation['kind']): boolean {
+    return this.database.prepare('SELECT 1 FROM companion_coding_job_updates WHERE operation_id=? AND kind=?').get(operationId, kind) !== undefined;
+  }
+  resultSaved(operationId: string): boolean {return this.observationSaved(operationId, 'result');}
+  acceptedWait(operationId: string): string | undefined {
+    const row = this.database.prepare('SELECT traceparent FROM companion_coding_accepted_waits WHERE operation_id=?').get(operationId);
+    if (row === undefined) return undefined;
+    if (typeof row.traceparent !== 'string') throw new Error('coding-accepted-wait-invalid');
+    return row.traceparent;
   }
   undelivered(operationId?: string): CodingObservation[] {
     const rows = operationId === undefined
@@ -88,6 +98,7 @@ export class CodingStore {
     try {
       this.database.prepare('INSERT INTO companion_coding(operation_id,task_id,endpoint_id,traceparent) VALUES(?,?,?,?)')
         .run(record.operationId, record.taskId, record.endpointId, record.traceparent);
+      this.database.prepare('INSERT INTO companion_coding_accepted_waits SELECT operation_id,traceparent FROM companion_coding_waiting WHERE operation_id=?').run(record.operationId);
       this.database.prepare('DELETE FROM companion_coding_waiting WHERE operation_id=?').run(record.operationId);
       this.database.exec('RELEASE coding_accept');
     } catch (error) {this.database.exec('ROLLBACK TO coding_accept'); this.database.exec('RELEASE coding_accept'); throw error;}

@@ -442,24 +442,107 @@ void test('a dispatch refusal survives failed result persistence without resendi
   assert.equal(w.starts().length, 0);
 });
 
-void test('an accepted dispatch receipt survives a transient insert failure without another dispatch', {timeout: 30_000}, async context => {
-  const w = await world(context);
+void test('a legacy accepted hand-off is delivered before a fast terminal result after a receipt insert fails', {timeout: 30_000}, async context => {
+  let operationId: string | undefined;
+  const options: CompanionsOptions = {delegate: data => {
+    operationId = data.requestId;
+    return Promise.resolve({status: 'waiting', requestId: data.requestId});
+  }};
+  const w = await world(context, options);
   assert.equal((await w.control('enable')).status, 'accepted');
   assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic pre-upgrade hand-off')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.task('bunny')?.status === 'waiting' && w.task('bunny')?.questionId?.includes('-delegation-') === true);
+  assert.ok(operationId !== undefined);
+  const taskId = w.task('bunny')?.taskId ?? assert.fail('legacy task');
+  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic earlier approved brief.',
+    traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
+  delete options.delegate;
+  await w.restart();
   const db = w.database();
   let attempts = 0;
-  db.function('fail_sent_save', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
-  db.exec(`CREATE TEMP TRIGGER fail_sent_save BEFORE INSERT ON companion_coding_job_updates
-    WHEN NEW.kind='sent' AND fail_sent_save()=1 BEGIN SELECT RAISE(ABORT, 'synthetic send receipt insert failure'); END`);
-  assert.equal((await w.send('bunny', 'Synthetic accepted dispatch')).status, 'accepted');
-  await w.approved('bunny');
+  db.function('fail_legacy_sent_save', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_legacy_sent_save BEFORE INSERT ON companion_coding_job_updates
+    WHEN NEW.kind='sent' AND fail_legacy_sent_save()=1 BEGIN SELECT RAISE(ABORT, 'synthetic legacy send receipt insert failure'); END`);
+  assert.equal((await w.enable()).status, 'accepted');
   await settle(() => attempts === 1 && w.starts().length === 1);
+  await w.progress({operationId, status: 'started'});
+  await settle(() => w.coding().active?.status === 'started');
+  await w.progress({operationId, status: 'completed', result: result('Synthetic fast legacy result.')});
+  await w.waitMessages('bunny', /Synthetic fast legacy result/);
   w.advance(1000);
-  await w.waitMessages('bunny', /accepted the worker dispatch/);
-  assert.equal(attempts, 2);
-  assert.equal(w.dispatched.length, 1);
-  assert.equal(w.starts().length, 1);
+  const receipts = (await w.messages('bunny')).filter(message => message.id.includes('-delegation-') && /-(sent|result)$/.test(message.id));
+  assert.deepEqual(receipts.map(message => message.id.split('-').at(-1)), ['sent', 'result']);
+  assert.deepEqual(w.dispatched, [operationId]);
 });
+
+for (const restarted of [false, true]) {
+  void test(`an accepted dispatch survives a failed receipt insert and ${restarted ? 'restart' : 'fast terminal progress'}`, {timeout: 30_000}, async context => {
+    const w = await world(context);
+    assert.equal((await w.control('enable')).status, 'accepted');
+    assert.equal((await w.enable()).status, 'accepted');
+    const db = w.database();
+    let attempts = 0;
+    db.function('fail_sent_save', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
+    db.exec(`CREATE TEMP TRIGGER fail_sent_save BEFORE INSERT ON companion_coding_job_updates
+      WHEN NEW.kind='sent' AND fail_sent_save()=1 BEGIN SELECT RAISE(ABORT, 'synthetic send receipt insert failure'); END`);
+    assert.equal((await w.send('bunny', 'Synthetic accepted dispatch')).status, 'accepted');
+    await w.approved('bunny');
+    await settle(() => attempts === 1 && w.starts().length === 1);
+    const operationId = w.dispatched[0] ?? assert.fail('attempt');
+    if (restarted) await w.restart();
+    else {
+      await w.progress({operationId, status: 'started'});
+      await settle(() => w.coding().active?.status === 'started');
+      await w.progress({operationId, status: 'completed', result: result('Synthetic fast result.')});
+    }
+    await w.waitMessages('bunny', restarted ? /uncertain \(lost\)/ : /Synthetic fast result/);
+    w.advance(1000);
+    const receipts = (await w.messages('bunny')).filter(message => message.id === `${operationId}-job-sent` || message.id === `${operationId}-job-result`);
+    assert.deepEqual(receipts.map(message => message.id), [`${operationId}-job-sent`, `${operationId}-job-result`]);
+    assert.deepEqual(w.dispatched, [operationId]);
+    assert.equal(w.starts().length, 1);
+  });
+}
+
+for (const sequence of ['restart', 'a repeated stop and a fast terminal result', 'local retry while the job runs'] as const) {
+  void test(`a failed stop observation survives ${sequence}`, {timeout: 30_000}, async context => {
+    const w = await world(context);
+    assert.equal((await w.control('enable')).status, 'accepted');
+    assert.equal((await w.enable()).status, 'accepted');
+    assert.equal((await w.send('bunny', 'Synthetic stopped dispatch')).status, 'accepted');
+    await w.approved('bunny');
+    await w.waitMessages('bunny', /accepted the worker dispatch/);
+    const operationId = w.dispatched[0] ?? assert.fail('attempt');
+    const jobId = `${operationId}-job`;
+    await w.progress({operationId, status: 'started'});
+    await settle(() => w.coding().active?.status === 'started');
+    const db = w.database();
+    let attempts = 0;
+    db.function('fail_stop_save', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
+    db.exec(`CREATE TEMP TRIGGER fail_stop_save BEFORE INSERT ON companion_coding_job_updates
+      WHEN NEW.kind='stop-unconfirmed' AND fail_stop_save()=1 BEGIN SELECT RAISE(ABORT, 'synthetic stop receipt insert failure'); END`);
+    assert.equal((await w.stop(jobId, operationId)).status, 'accepted');
+    await settle(() => attempts === 1);
+    assert.equal((await w.stop(jobId, operationId)).status, 'accepted');
+    const restarted = sequence === 'restart';
+    if (sequence === 'local retry while the job runs') {
+      w.advance(1000);
+      await w.waitMessages('bunny', /worker accepted the stop request.*unconfirmed/);
+      assert.equal(w.coding().active?.status, 'cancelling');
+    }
+    if (restarted) await w.restart();
+    else await w.progress({operationId, status: 'cancelled', reason: 'cancelled', result: result('Synthetic fast stop result.')});
+    await w.waitMessages('bunny', restarted ? /uncertain \(lost\)/ : /Synthetic fast stop result/);
+    w.advance(1000);
+    const receipts = (await w.messages('bunny')).filter(message => message.id === `${jobId}-stop-unconfirmed` || message.id === `${jobId}-result`);
+    assert.deepEqual(receipts.map(message => message.id), [`${jobId}-stop-unconfirmed`, `${jobId}-result`]);
+    assert.match(receipts[0]?.text ?? '', restarted ? /A stop was requested.*unconfirmed/ : /worker accepted the stop request.*unconfirmed/);
+    assert.deepEqual(w.work.filter(command => command.data.action === 'cancel').map(command => command.data.operationId), [operationId]);
+    assert.deepEqual(w.dispatched, [operationId]);
+  });
+}
 
 void test('a saved result retries original-exchange delivery and deduplicates after a failed delivery marker', {timeout: 30_000}, async context => {
   const w = await world(context);
@@ -522,6 +605,7 @@ void test('an interrupted dispatch restores the job receipt, reports uncertainty
     const restored = await w.waitMessages('bunny', /uncertain \(lost\)/);
     assert.equal(restored.filter(message => message.id === `${operationId}-job`).length, 1);
     assert.ok(restored.some(message => message.id === `${operationId}-job-result` && message.follows === `${operationId}-job`));
+    assert.ok(!restored.some(message => message.id === `${operationId}-job-sent`), 'an ambiguous start does not create an accepted receipt');
     assert.equal((await w.enable()).status, 'accepted');
     release();
     for (let turns = 0; turns < 20; turns += 1) await new Promise(resolve => {setImmediate(resolve);});
