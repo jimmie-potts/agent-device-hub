@@ -242,6 +242,23 @@ try {
   await expect(pause).toBeEnabled(); await expect(screenOn).toBeEnabled();
   await expect.poll(async () => (await display()).player.state).toBe('playing');
 
+  // Another surface pauses while the card's read is held: the card still shows Pause over the playing content it read,
+  // but the newer record's player no longer runs, so Pause refuses the press. A Pause the player no longer needs would
+  // still interrupt the Monitor status base (#2124 N1). When the read lands, Resume shows.
+  hold = true;
+  await setup('media-control', {action: 'pause'});
+  await expect.poll(() => held.length).toBeGreaterThan(0);
+  await expect.poll(async () => (await display()).player.intent).toBe('paused');
+  await delay(500); await expect(screenOn).toBeEnabled();
+  assert.equal(await resume.count(), 0, 'the label stays with the content the card holds');
+  await refused(pause, 'Pause over a player the newer record says is paused');
+  results['pause-after-outside-pause'] = true;
+  await release();
+  await expect(resume).toBeEnabled(); assert.equal(await pause.count(), 0);
+  await resume.click();
+  await expect(pause).toBeEnabled(); await expect(screenOn).toBeEnabled();
+  await expect.poll(async () => (await display()).player.state).toBe('playing');
+
   // The #1789 sequence: after Resume the read and the record both say playing; the record changes again and the card
   // reads again; Pause stays live and one press sends pause once.
   hold = true;

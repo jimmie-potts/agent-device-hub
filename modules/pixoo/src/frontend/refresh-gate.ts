@@ -10,7 +10,8 @@ import type {Reading} from './player.js';
  *
  * | Control                 | Live during a re-read when                                                         |
  * | ----------------------- | ---------------------------------------------------------------------------------- |
- * | Pause                   | always: it names an absolute state and repeating it changes nothing               |
+ * | Pause                   | the record's intent is active (starting or playing); a Pause the player no longer  |
+ * |                         | needs would still interrupt the Monitor status base and cancel a pending start     |
  * | Resume                  | the record's player neither plays nor starts (intent not active), shows the same   |
  * |                         | playlist, item and rendition as the read, and has the same last error              |
  * | Next, Previous          | the record shows the same playlist, item and rendition as the read                 |
@@ -27,7 +28,7 @@ export function liveDuringRefresh(action: MediaAction, reading: Reading, player:
   const renditionId = session?.playlist.items.find(item => item.id === state.itemId)?.renditionId ?? null;
   const sameItem = player.playlistId === playlistId && player.itemId === state.itemId && player.renditionId === renditionId;
   switch (action) {
-    case 'pause': return true;
+    case 'pause': return player.intent === 'active';
     case 'resume': return player.intent !== 'active' && player.state !== 'playing' && sameItem && player.lastError === (state.lastError?.code ?? null);
     case 'next': case 'previous': return sameItem;
     case 'restart-with-changes': case 'stop': case 'clear': return false;

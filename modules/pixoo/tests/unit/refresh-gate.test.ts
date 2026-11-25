@@ -17,9 +17,13 @@ const record = (state: DisplayRecord['player']['state'], intent: DisplayRecord['
   state, intent, playlistId: playlist, itemId: first, renditionId: 'rendition-1', lastError: null, ...change,
 });
 
-it('Pause stays live whatever the newer record says', () => {
-  for (const player of [record('playing', 'active'), record('paused', 'paused'), record('loading', 'active', {itemId: second, renditionId: 'rendition-2'}), record('idle', 'stopped', {playlistId: null, itemId: null, renditionId: null})]) {
+it('Pause stays live only while the newer record says the player runs or starts', () => {
+  for (const player of [record('playing', 'active'), record('loading', 'active'), record('loading', 'active', {itemId: second, renditionId: 'rendition-2'})]) {
     expect(liveDuringRefresh('pause', reading('playing'), player)).toBe(true);
+  }
+  // Another surface paused or stopped the player: a Pause would still interrupt the Monitor status base.
+  for (const player of [record('paused', 'paused'), record('idle', 'stopped', {playlistId: null, itemId: null, renditionId: null})]) {
+    expect(liveDuringRefresh('pause', reading('playing'), player)).toBe(false);
   }
 });
 
