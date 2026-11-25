@@ -19,7 +19,7 @@ import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
 import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
 
-import {nativeSessionId, type AdapterEvidence, type AdapterRun, type CodingAdapter} from './adapter.js';
+import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type CodingAdapter} from './adapter.js';
 import {codexAdapter, type CodexConfiguration} from './codex-adapter.js';
 
 const run = promisify(execFile);
@@ -57,15 +57,6 @@ export const DEFAULT_ALLOWED_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', '
  */
 export const DENIED_TOOLS = ['Bash(git push*)', 'Bash(git -C *)', 'Bash(git --git-dir*)', 'Bash(git --work-tree*)', 'Bash(git remote*)', 'Bash(git worktree*)', 'Bash(git config*)', 'Bash(gh *)', 'Bash(claude *)', 'Bash(curl *)', 'Bash(wget *)',
   'Bash(ssh *)', 'Bash(scp *)', 'Bash(sudo *)', 'Edit(.claude/**)', 'Write(.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Edit(~/.claude.json)', 'Write(~/.claude.json)', 'WebFetch', 'WebSearch'];
-/** The JSON Schema the worker asks Claude Code to return as its structured output. */
-export const RESULT_SCHEMA = {type: 'object', additionalProperties: false, required: ['outcome', 'summary', 'checks', 'findings', 'limitations'], properties: {
-  outcome: {type: 'string', enum: ['tested-candidate', 'incomplete', 'failed', 'waiting-for-owner']},
-  summary: {type: 'string', description: 'What changed and what was verified, in a few sentences.'},
-  checks: {type: 'array', items: {type: 'object', additionalProperties: false, required: ['name', 'status'], properties: {name: {type: 'string'}, status: {type: 'string', enum: ['passed', 'failed', 'skipped', 'unrun', 'unknown']}, detail: {type: 'string'}}}},
-  findings: {type: 'array', items: {type: 'string'}, description: 'Unresolved problems, questions for the owner, or refused actions. With waiting-for-owner, the question first.'},
-  limitations: {type: 'array', items: {type: 'string'}},
-}};
-
 export type WorkerConfiguration = {
   edge: string; tokenFile: string;
   repositories: readonly {name: string; path: string}[];
@@ -637,7 +628,7 @@ export class CodingWorker {
     // repository's own settings load, no MCP server, and the deny list applies whatever any setting allows.
     // The output is a stream of events (stream-json needs --verbose with --print), read as it arrives, so a usage limit
     // the tool reports mid-run is seen even when the run ends without a result.
-    const args = ['--print', '--output-format', 'stream-json', '--verbose', '--json-schema', JSON.stringify(input.outputSchema), '--permission-mode', claude.permissionMode,
+    const args = ['--print', '--output-format', 'stream-json', '--verbose', '--json-schema', JSON.stringify(CLAUDE_RESULT_SCHEMA), '--permission-mode', claude.permissionMode,
       '--max-turns', String(Math.min(claude.maxTurns ?? bounds.maxTurns, bounds.maxTurns)), '--max-budget-usd', String(bounds.budgetUsd),
       ...(claude.allowedTools.length === 0 ? [] : ['--allowedTools', ...claude.allowedTools]), '--disallowedTools', ...DENIED_TOOLS, '--strict-mcp-config', '--setting-sources', 'project',
       '--settings', JSON.stringify({env: Object.fromEntries(BLANKED_SWITCHES.map(name => [name, '']))}),
@@ -691,7 +682,7 @@ export class CodingWorker {
     const started = this.#now();
     running.timer = setTimeout(() => {timedOut = true; running.controller.abort();}, bounds.wallClockMs);
     try {
-      evidence = await adapter.run({worktree, brief, bounds, outputSchema: RESULT_SCHEMA, signal: running.controller.signal,
+      evidence = await adapter.run({worktree, brief, bounds, signal: running.controller.signal,
         session: id => this.#session(running, id)});
     } catch {evidence = {reason: 'lost', uncertain: true};}
     finally {clearTimeout(running.timer); running.timer = undefined;}

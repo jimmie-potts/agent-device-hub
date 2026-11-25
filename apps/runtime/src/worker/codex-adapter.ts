@@ -6,11 +6,12 @@ import {promisify} from 'node:util';
 import {Ajv2020} from 'ajv/dist/2020.js';
 import {createInterface} from 'node:readline';
 import type {CodingLimit, CodingLimitWindow} from '@jimmie-potts/event-contracts/v2/coding';
-import {nativeSessionId, type AdapterEvidence, type AdapterHealth, type AdapterRun, type CodingAdapter} from './adapter.js';
+import {CODEX_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterHealth, type AdapterRun, type CodingAdapter} from './adapter.js';
 import {harnessEnvironment, parseVersion, UNKNOWN_READINESS, type HarnessReadiness} from './claude-stream.js';
 
 const execute = promisify(execFile);
-const outputValidator = new Ajv2020({strict: true});
+// Validate independently of the provider's structured-output promise.
+const validOutput = new Ajv2020({strict: true}).compile(CODEX_RESULT_SCHEMA);
 const PROBE_MS = 10_000;
 const MESSAGE_BYTES = 1024 * 1024;
 const CLOSED = new Error('codex protocol closed');
@@ -199,8 +200,6 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
     },
     async run(input: AdapterRun): Promise<AdapterEvidence> {
       if (input.signal.aborted) return {reason: 'cancelled'};
-      // Validate independently of the provider's structured-output promise.
-      const validOutput = outputValidator.compile(input.outputSchema);
       const cwd = await realpath(input.worktree);
       let sessionId: string | undefined, turnId: string | undefined, dispatched = false, unauthorized = false, accountVerified = false;
       let windows: CodingLimitWindow[] = [];
@@ -251,7 +250,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         if (input.signal.aborted) return {reason: 'cancelled', sessionId};
         dispatched = true;
         const started = record(await wire.request('turn/start', {threadId: sessionId, input: [{type: 'text', text: input.brief, text_elements: []}],
-          outputSchema: input.outputSchema}));
+          outputSchema: CODEX_RESULT_SCHEMA}));
         const acceptedTurn = nativeSessionId(record(started.turn).id);
         if (acceptedTurn === undefined || (turnId !== undefined && turnId !== acceptedTurn)) return {reason: 'invalid-output', uncertain: true, sessionId};
         turnId = acceptedTurn;

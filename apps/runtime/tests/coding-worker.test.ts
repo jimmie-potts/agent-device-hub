@@ -371,7 +371,8 @@ void test('the connection-bound worker sends exact Git evidence and early sessio
       await session('unexpected-second-identity');
       await writeFile(join(worktree, 'review.txt'), 'Synthetic review facts');
       return {sessionId: 'unexpected-third-identity', structured: {outcome: 'tested-candidate', summary: 'Reviewed the supplied revision.',
-        checks: [{name: 'git status', status: 'passed'}], findings: [], limitations: ['Fixture only.']}};
+        checks: [{name: 'git status', status: 'passed', ...(id === 'codex' ? {detail: null} : {})},
+          {name: 'git diff', status: 'passed', detail: 'Compared the named revision.'}], findings: [], limitations: ['Fixture only.']}};
     },
   });
   const worker = new CodingWorker(parseConfiguration(configuration(repo)), 'fake-token', undefined, undefined, edge.connect,
@@ -400,6 +401,7 @@ void test('the connection-bound worker sends exact Git evidence and early sessio
     assert.equal(completed?.result.head, sha);
     assert.equal(completed?.result.sessionId, `${id}-native`);
     assert.deepEqual(completed?.result.changedFiles, ['review.txt']);
-    assert.deepEqual(completed?.result.checks, [{name: 'git status', status: 'passed'}]);
+    assert.deepEqual(completed?.result.checks, [{name: 'git status', status: 'passed'},
+      {name: 'git diff', status: 'passed', detail: 'Compared the named revision.'}]);
   }
 });

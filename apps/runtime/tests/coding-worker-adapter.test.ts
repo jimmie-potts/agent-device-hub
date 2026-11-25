@@ -10,9 +10,21 @@ const turnId = 'synthetic-turn';
 const brief = 'Review the pinned revision and report checks.';
 const account = {requiresOpenaiAuth: true, account: {type: 'chatgpt', planType: 'plus', email: 'synthetic@example.invalid'}};
 const window = {primary: {usedPercent: 100, resetsAt: 1_800_000_000, windowDurationMins: 300}};
-const report = {outcome: 'tested-candidate', summary: 'Reviewed the requested revision.', checks: [{name: 'git diff', status: 'passed'}], findings: [], limitations: []};
-const outputSchema = {type: 'object', required: ['outcome'], properties: {outcome: {type: 'string'}}};
+const report = {outcome: 'tested-candidate', summary: 'Reviewed the requested revision.', checks: [
+  {name: 'git diff', status: 'passed', detail: null}, {name: 'npm test', status: 'skipped', detail: 'No fixture dependencies installed.'},
+], findings: [], limitations: []};
 const bounds = {wallClockMs: 120_000, maxTurns: 3, budgetUsd: 2};
+
+function assertStrictOutputSchema(value: unknown): void {
+  if (typeof value !== 'object' || value === null) return;
+  if ('type' in value && value.type === 'object') {
+    assert.ok('additionalProperties' in value && value.additionalProperties === false);
+    assert.ok('properties' in value && typeof value.properties === 'object' && value.properties !== null);
+    assert.ok('required' in value && Array.isArray(value.required));
+    assert.deepEqual(new Set(value.required), new Set(Object.keys(value.properties)));
+  }
+  for (const child of Object.values(value)) assertStrictOutputSchema(child);
+}
 
 type Scenario = {
   auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; badPermissions?: boolean; changeAuth?: boolean;
@@ -22,6 +34,7 @@ type Scenario = {
 function fixture(scenario: Scenario = {}) {
   const requests: string[] = [], sessions: string[] = [];
   let starts = 0, accounts = 0;
+  let wireSchema: unknown;
   const transport: CodexTransport = ({args, cwd, env, event, closed}) => {
     assert.ok(args.includes('forced_login_method="chatgpt"'));
     assert.ok(args.includes('model_provider="openai"'));
@@ -48,9 +61,12 @@ function fixture(scenario: Scenario = {}) {
             return Promise.resolve({cwd, thread: {id: threadId}, modelProvider: 'openai', approvalPolicy: 'never',
               activePermissionProfile: {id: sent.permissions}, sandbox: {type: 'workspaceWrite', networkAccess: false, writableRoots: [cwd]}, runtimeWorkspaceRoots: scenario.badPermissions === true ? [cwd, '/other-checkout'] : [cwd]});
           }
-          case 'turn/start':
+          case 'turn/start': {
             starts += 1;
-            assert.deepEqual(params, {threadId, input: [{type: 'text', text: brief, text_elements: []}], outputSchema});
+            assert.ok(params !== undefined && 'outputSchema' in params);
+            const {outputSchema, ...turn} = params;
+            wireSchema = outputSchema;
+            assert.deepEqual(turn, {threadId, input: [{type: 'text', text: brief, text_elements: []}]});
             assert.deepEqual(sessions, scenario.requireId === false ? [] : [threadId], 'native identity was reported before the model turn');
             queueMicrotask(() => {
               if (scenario.terminal === 'lost') {closed(); return;}
@@ -63,6 +79,7 @@ function fixture(scenario: Scenario = {}) {
                 error: {codexErrorInfo: scenario.terminal}}});
             });
             return Promise.resolve({turn: {id: turnId}});
+          }
           default: assert.fail(`unexpected request ${method}`);
         }
       },
@@ -71,8 +88,8 @@ function fixture(scenario: Scenario = {}) {
   const adapter = codexAdapter({executable: '/synthetic/codex'}, {probeCwd: '/synthetic/repo', transport, version: () => Promise.resolve('0.163.0'),
     environment: {PATH: '/synthetic/bin', HOME: '/synthetic/home', OPENAI_API_KEY: 'synthetic-key', CODEX_HOME: '/untrusted/config',
       BUNNY_CODING_TOKEN: 'worker-credential', CLAUDE_CODE_OAUTH_TOKEN: 'other-provider-token'}});
-  const run = (worktree: string) => adapter.run({worktree, brief, bounds, signal: new AbortController().signal, outputSchema, session: id => {sessions.push(id);}});
-  return {adapter, requests, sessions, run, starts: () => starts};
+  const run = (worktree: string) => adapter.run({worktree, brief, bounds, signal: new AbortController().signal, session: id => {sessions.push(id);}});
+  return {adapter, requests, sessions, run, starts: () => starts, output: () => wireSchema};
 }
 
 void test('Codex readiness reports only subscription fields, plan and quota without opening a thread', async () => {
@@ -87,9 +104,11 @@ void test('Codex readiness reports only subscription fields, plan and quota with
 void test('Codex sends one bounded model turn after confirmed worktree scope and early session identity', async t => {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
   t.after(() => rm(cwd, {recursive: true, force: true}));
-  const {run, starts} = fixture();
+  const {run, starts, output} = fixture();
   const evidence = await run(cwd);
   assert.equal(starts(), 1);
+  assert.ok(output() !== undefined);
+  assertStrictOutputSchema(output());
   assert.equal(evidence.sessionId, threadId);
   assert.deepEqual(evidence.structured, report);
   assert.equal(evidence.usage?.costUsd, null);
