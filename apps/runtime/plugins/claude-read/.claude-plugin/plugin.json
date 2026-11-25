@@ -1,6 +1,6 @@
 {
   "name": "bunny-read",
-  "version": "0.1.0",
-  "description": "Explicit read receipts for completed Claude Code terminal replies",
+  "version": "0.2.0",
+  "description": "Explicit read receipts for completed Claude Code replies in the terminal or the Claude desktop app",
   "author": {"name": "B.U.N.N.Y."}
 }

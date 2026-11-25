@@ -67,7 +67,7 @@ export type WorldOptions = {
   musicShowAuthoring?: NonNullable<Parameters<typeof createNanoleafModule>[0]['authoringProvider']>;
   /** A synthetic playback observation producer over the disposable gateway and real Playback owner. */
   musicPlayback?: boolean;
-  /** A dedicated synthetic Claude terminal receipt producer for the real helper. */
+  /** A dedicated synthetic Claude read receipt producer for the real helper. */
   readReceipts?: boolean;
   /** The real read-only Tidbyt module over its synthetic cloud. */
   tidbyt?: boolean;

@@ -5,21 +5,22 @@ import {READ_RECEIPT_SCHEMA, readReceiptValidator, type Lifecycle21Observation, 
 import type {SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {connectRemote, prepareMessage, publishOnce, SdkError, type RemoteParticipant} from '@jimmie-potts/sdk';
 import {readProducer} from '../hook/producer.js';
-import {CLAUDE_RECEIPT_FEED, CLAUDE_TERMINAL_VERSION, isReadReceipt, receiptSource, viewRevision, type ReceiptFeed} from './qualification.js';
+import {CLAUDE_READ_SURFACES, CLAUDE_RECEIPT_FEED, isReadReceipt, receiptSource, viewRevision, type ClaudeReadSurface, type ReceiptFeed} from './qualification.js';
 import {coreSession} from './session.js';
-export {CLAUDE_RECEIPT_FEED, CLAUDE_TERMINAL_VERSION, receiptSource} from './qualification.js';
+export {CLAUDE_READ_SURFACES, CLAUDE_RECEIPT_FEED, receiptSource} from './qualification.js';
 
-type Input = {action: 'bind'; version: string; surface: 'terminal'; sessionId: string; promptId: string}
-  | {action: 'read'; version: string; surface: 'terminal'; target: object};
+type Input = {action: 'bind'; version?: string; surface: ClaudeReadSurface; sessionId: string; promptId: string}
+  | {action: 'read'; version?: string; surface: ClaudeReadSurface; target: object};
 export type ReadHelperResult = {status: 'ready'; target: Message<ReadReceiptObservation>}
   | {status: 'confirmed'} | {status: 'unavailable' | 'unconfirmed'; error: ErrorBody['error']};
 const id = {type: 'string', pattern: '^[A-Za-z0-9_.-]{1,128}$'};
 const ajv = new Ajv2020({strict: true});
-const common = {version: {const: CLAUDE_TERMINAL_VERSION}, surface: {const: 'terminal'}};
+// The Claude Code version is optional information; no version is required or compared (Hub #2122).
+const common = {version: {type: 'string', pattern: '^[A-Za-z0-9_.+-]{1,64}$'}, surface: {enum: [...CLAUDE_READ_SURFACES]}};
 const validInput = ajv.compile<Input>({oneOf: [
-  {type: 'object', additionalProperties: false, required: ['action', 'version', 'surface', 'sessionId', 'promptId'],
+  {type: 'object', additionalProperties: false, required: ['action', 'surface', 'sessionId', 'promptId'],
     properties: {...common, action: {const: 'bind'}, sessionId: id, promptId: id}},
-  {type: 'object', additionalProperties: false, required: ['action', 'version', 'surface', 'target'],
+  {type: 'object', additionalProperties: false, required: ['action', 'surface', 'target'],
     properties: {...common, action: {const: 'read'}, target: {type: 'object'}}},
 ]});
 const validFeed = ajv.compile<ReceiptFeed & {feed: string}>({type: 'object', additionalProperties: false,

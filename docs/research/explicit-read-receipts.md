@@ -129,8 +129,11 @@ Tests used temporary Claude homes, synthetic prompts, a dummy key and a loopback
 model endpoint. Tools and MCP were disabled, external model traffic was denied,
 and no owner configuration or credentials were used. The test container had no
 installed volumes or device modules. Temporary profiles and the test container
-were removed. Qualification is limited to this Claude terminal version;
-Claude Desktop remains unqualified. Codex's permitted manual action evidence
+were removed. This research qualified that Claude terminal version only.
+[Hub #2122](https://github.com/jimmie-potts/agent-device-hub/issues/2122) later
+dropped the version pin and admitted the Claude desktop app by owner decision;
+the [runtime guide](../../apps/runtime/READ-RECEIPTS.md) holds the current
+surfaces. Codex's permitted manual action evidence
 and version-bound collector are described above and in the runtime guide.
 
 ## Collection and evidence boundaries

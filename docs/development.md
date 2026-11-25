@@ -1528,9 +1528,9 @@ real helper's read provenance, in the session/3.0 record, clears the dashboard's
 page reload and returns to unread on a new turn without a page command. The
 existing hosted dashboard smoke entry includes this journey. Native
 plugin validation, native offline rendering tests and the real Claude terminal
-exercise remain separate from synthetic runtime acceptance. The
-[operator guide](../apps/runtime/READ-RECEIPTS.md) describes the selected version
-and the installed gate. No actual provider binary or personal profile is used
+and desktop exercises remain separate from synthetic runtime acceptance. The
+[operator guide](../apps/runtime/READ-RECEIPTS.md) describes the accepted
+surfaces, settings-based loading and the installed gate. No actual provider binary or personal profile is used
 by ordinary CI.
 
 The same event test command discovers `speech.test.mjs`. It checks explicit

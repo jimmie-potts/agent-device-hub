@@ -1,0 +1,12 @@
+{
+  "name": "bunny",
+  "owner": {"name": "B.U.N.N.Y."},
+  "description": "Claude Code plugins shipped in a reviewed B.U.N.N.Y. runtime release",
+  "plugins": [
+    {
+      "name": "bunny-read",
+      "source": "./claude-read",
+      "description": "Explicit read receipts for completed Claude Code replies in the terminal or the Claude desktop app"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {it} from './support.js';
 
 type Hook = (api: object, event: object, next: (event: object) => Promise<object>) => Promise<unknown>;
@@ -7,14 +8,17 @@ type Register = (on: (name: string, matcher: object | Hook, hook?: Hook) => {cat
 const plugin = await import(new URL('../../plugins/claude-read/hooks/register.js', import.meta.url).href) as {register: Register};
 
 function fixture() {
-  const hooks = new Map<string, Hook>(), calls: {action: string; promptId?: string; target?: object}[] = [];
-  const state = {version: '2.1.292', surface: 'terminal', sessionId: 'session-a', fail: false, result: 'confirmed', opened: 0};
+  const hooks = new Map<string, Hook>(), calls: {action: string; version?: string; surface?: string; promptId?: string; target?: object}[] = [];
+  const state = {version: '2.1.292' as string | null, surface: 'terminal', sessionId: 'session-a', fail: false, result: 'confirmed', opened: 0};
   const api = {
-    session: {id: () => state.sessionId, version: () => ({version: state.version}), surface: () => state.surface},
+    session: {id: () => state.sessionId, surface: () => state.surface, version: () => {
+      if (state.version === null) throw new Error('synthetic unavailable version');
+      return {version: state.version};
+    }},
     env: {get: () => '/synthetic/path'}, command: {register: () => {}},
     process: {run: (_args: string[], options: {stdin: string}) => {
       if (state.fail) throw new Error('synthetic failure');
-      const request = JSON.parse(options.stdin) as {action: string; promptId?: string; target?: object};
+      const request = JSON.parse(options.stdin) as {action: string; version?: string; surface?: string; promptId?: string; target?: object};
       calls.push(request);
       const target = {data: {identity: {sessionId: state.sessionId}, turn: {id: request.promptId}}};
       return {exitCode: 0, isStdoutTruncated: false, stdout: JSON.stringify(request.action === 'bind' ? {status: 'ready', target} : {status: state.result})};
@@ -60,7 +64,7 @@ it('a native pane captures the lifecycle prompt of its reply, and rendering or c
   assert.equal(world.calls[2]?.promptId, 'prompt-b');
 });
 
-it('missing correlation, unsuccessful or child completion, a new session and an unqualified version have no action', async () => {
+it('missing correlation, unsuccessful or child completion, a new session and an unchecked surface have no action', async () => {
   for (const options of [{missingPrompt: true}, {missingStop: true}, {reason: 'error'}, {child: true}, {isAborted: true}]) {
     const world = fixture();
     await world.complete('prompt-a', 'native-a', options);
@@ -68,8 +72,8 @@ it('missing correlation, unsuccessful or child completion, a new session and an 
     assert.equal(world.button(await world.render()), undefined);
     assert.deepEqual(world.calls, []);
   }
-  for (const edit of [(state: ReturnType<typeof fixture>['state']) => {state.version = '2.1.293';},
-    (state: ReturnType<typeof fixture>['state']) => {state.surface = 'desktop';},
+  for (const edit of [(state: ReturnType<typeof fixture>['state']) => {state.surface = 'vscode';},
+    (state: ReturnType<typeof fixture>['state']) => {state.surface = 'mobile';},
     (state: ReturnType<typeof fixture>['state']) => {state.sessionId = 'new-session';}]) {
     const world = fixture();
     await world.complete('prompt-a', 'native-a');
@@ -97,7 +101,10 @@ it('session clearing invalidates retained callbacks, other surfaces cannot rende
   await world.fire('command.run');
   const old = world.button(await world.render());
   assert.ok(old?.onPress);
-  assert.equal(world.button(await world.render('desktop')), undefined);
+  for (const surface of ['vscode', 'mobile']) {
+    assert.equal(world.button(await world.render(surface)), undefined);
+    assert.match(JSON.stringify(await world.render(surface)), /Read receipts are unavailable here\./);
+  }
   assert.equal(await world.fire('session.end'), world.passthrough);
   world.state.sessionId = 'cleared-session';
   await old.onPress();
@@ -108,4 +115,43 @@ it('session clearing invalidates retained callbacks, other surfaces cannot rende
   await world.button(await world.render())?.onPress?.();
   assert.match(JSON.stringify(await world.render()), /not confirmed/);
   assert.doesNotMatch(JSON.stringify(await world.render()), /Marked read/);
+});
+
+it('the desktop surface and any Claude Code version bind and commit on the explicit press (Hub #2122)', async () => {
+  for (const [surface, version] of [['desktop', '2.1.325'], ['desktop', '2026.11.25'], ['terminal', '2.1.325'], ['desktop', null]] as const) {
+    const world = fixture();
+    world.state.surface = surface;
+    world.state.version = version;
+    await world.complete('prompt-a', 'native-a');
+    await world.fire('command.run');
+    assert.equal(world.calls.length, 1, `${surface} ${String(version)} binds`);
+    const pressed = world.button(await world.render());
+    assert.ok(pressed?.onPress, `${surface} ${String(version)} renders the action`);
+    assert.deepEqual(world.calls.map(call => call.action), ['bind'], 'rendering sends no read');
+    await pressed.onPress();
+    assert.deepEqual(world.calls.map(call => [call.action, call.surface, call.version]),
+      [['bind', surface, version ?? undefined], ['read', surface, version ?? undefined]], 'the version is passed only for information');
+    assert.match(JSON.stringify(await world.render()), /Marked read in B\.U\.N\.N\.Y\./);
+  }
+});
+
+it('a version with unexpected text is left out rather than refused', async () => {
+  const world = fixture();
+  world.state.surface = 'desktop';
+  world.state.version = 'synthetic version text';
+  await world.complete('prompt-a', 'native-a');
+  await world.fire('command.run');
+  assert.ok(world.button(await world.render())?.onPress);
+  assert.deepEqual(world.calls.map(call => Object.hasOwn(call, 'version')), [false]);
+});
+
+it('the shipped local marketplace lists the reviewed plugin under its manifest name, for settings-based loading (Hub #2122)', async () => {
+  const json = async (path: string) => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8')) as Record<string, unknown>;
+  const manifest = await json('../../plugins/claude-read/.claude-plugin/plugin.json');
+  const marketplace = await json('../../plugins/.claude-plugin/marketplace.json');
+  assert.equal(marketplace.name, 'bunny');
+  assert.deepEqual((marketplace.plugins as {name: string; source: string}[]).map(({name, source}) => ({name, source})),
+    [{name: manifest.name, source: './claude-read'}]);
+  assert.equal(manifest.name, 'bunny-read');
+  assert.doesNotMatch(String(manifest.description), /terminal replies$/);
 });
