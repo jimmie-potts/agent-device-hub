@@ -3437,8 +3437,9 @@ replays that model step with one forced call and the steer read once. After the 
 and `node apps/runtime/dashboard/tests/conversation-steer.browser.ts`, which
 `npm run test:companions:browser` also runs: a steer during tool use, a forced
 call, a late steer held on the network until its turn ended, Skip question and
-send, Decline with message, a steer during a delegation wait with a fake worker
-on the real gateway, Stop returning steers past the limit, a restart, and the
+send, Decline with message, a steer in a separate Hub turn while a fake worker
+runs a background job on the real gateway, Stop returning steers past the
+limit, a restart, and the
 phone layout at 390 px. With 8 queued messages and 8 steers at 1280x900,
 1024x768 and 390x844, the page does not scroll, the header and transcript stay
 in view and each new steer shows at the top of the shared box; at 320x640 the
