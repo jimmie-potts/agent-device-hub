@@ -743,7 +743,7 @@ void test('a coding hand-off\'s result starts a check labelled with its outcome 
   await w.start('Please delegate: add a test.');
   await w.until(() => w.status()?.status === 'waiting');
   await w.answer('approve');
-  await w.until(() => work.length === 1 && w.status()?.status === 'waiting');
+  await w.until(() => work.length === 1 && w.status()?.status === 'succeeded');
   await progress({operationId: work[0]?.operationId, status: 'started'});
   await progress({operationId: work[0]?.operationId, status: 'completed', result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40),
     changedFiles: ['scripts/tests/readout.test.mjs'], checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: [], summary: 'WORKER-PRIVATE-SUMMARY.', sessionId: null, usage: null}});
@@ -811,7 +811,7 @@ void test('startup reconciliation that finds a finished turn starts no title che
   assert.equal(w.calls().length, 2);
 });
 
-void test('a coding hand-off left pending at stop is settled at start without a title check; the resumed task\'s end is checked', {timeout: 20_000}, async context => {
+void test('a coding job left pending at stop is settled at start without a title check', {timeout: 20_000}, async context => {
   let turn = 0;
   const turnModel: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: () => {
     turn += 1;
@@ -835,7 +835,7 @@ void test('a coding hand-off left pending at stop is settled at start without a 
   await w.start('Please delegate: add a test.');
   await w.until(() => w.status()?.status === 'waiting');
   await w.answer('approve');
-  await w.until(() => work.length === 1 && w.status()?.status === 'waiting');
+  await w.until(() => work.length === 1 && w.status()?.status === 'succeeded');
   await turns();
   const before = (await w.settled(provider.prompts.length)).length;
   // The module stops while the worker holds the hand-off; at start the coordinator settles it as an uncertain result.
@@ -845,7 +845,7 @@ void test('a coding hand-off left pending at stop is settled at start without a 
   const after = (await w.settled(provider.prompts.length)).slice(before);
   const labels = after.flatMap(call => call.events ?? []);
   assert.equal(labels.includes('A coding hand-off\'s result arrived: uncertain.'), false, JSON.stringify(labels));
-  assert.deepEqual(labels, [SUCCEEDED], 'only the resumed task\'s end is checked');
+  assert.deepEqual(labels, [], 'startup starts no title check');
 });
 
 void test('a check the spend limits refuse is never sent and leaves the title as it was; without prices the title model is priced at its built-in tier', {timeout: 20_000}, async context => {

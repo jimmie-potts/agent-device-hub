@@ -1,3 +1,4 @@
+import type {StopCodingInput} from '../assistant/history-contract.js';
 import React, {useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore} from 'react';
 import type {AssistantProfile, AssistantState, AssistantStatus} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
@@ -491,34 +492,45 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                 {operation.evidence !== undefined && operation.evidence !== 'none' ? ` · evidence ${operation.evidence}` : ''}
                 {operation.error !== undefined ? ` · ${operation.error.code}` : ''}{!context.operationsLive ? ' (Last known)' : ''}</p>;
             }}
-            renderMessage={message => <article aria-label={`${message.role} message`}>
-              <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
-              {/* A steer joined the running turn, and a reply it superseded was saved but not spoken (Hub #2031). */}
-              {steerMessage(message) && <small className="conversation-steer-note">Sent while working</small>}
-              {supersededReply(message) && <small className="conversation-steer-note">Earlier reply, before your next message</small>}
-              {message.follows !== undefined && (visibleMessageIds.has(message.follows)
-                ? <a href={`#conversation-message-${message.follows}`} onClick={event => {
-                  event.preventDefault();
-                  document.getElementById(`conversation-message-${message.follows}`)?.focus();
-                }}>Update to earlier reply</a>
-                : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
-              <p className="conversation-message-text" dir="auto">{message.text}</p>
-              {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
-                connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
-                artRevision={art?.revision}/>}
-              {message.role === 'assistant' && (unspoken !== undefined
-                ? <small className="conversation-voice-note">{unspoken}</small>
-                : message.text.length > LIMITS.spokenChars
-                ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>
-                : state !== undefined && <button type="button" aria-label={`Read aloud message ${message.seq}`}
-                className="secondary conversation-read-aloud" disabled={locked}
-                onClick={() => {
-                  const requestId = crypto.randomUUID();
-                  setSpeakRequest(requestId);
-                  void command.run({family: 'assistant-control', target: 'assistant', requestId,
-                    data: {action: 'speak', expectedRevision: state.revision, taskId: message.taskId, messageId: message.id}});
-                }}>Read aloud</button>)}
-            </article>}/>
+            renderMessage={message => {
+              const pendingJob = coding?.waiting?.find(attempt => message.id === `${attempt.operationId}-job`);
+              const runningJob = coding?.runs?.find(attempt => message.id === `${attempt.operationId}-job` && attempt.status !== 'cancelling');
+              const attempt = pendingJob ?? runningJob;
+              return <article aria-label={`${message.role} message`}>
+                <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
+                {/* A steer joined the running turn, and a reply it superseded was saved but not spoken (Hub #2031). */}
+                {steerMessage(message) && <small className="conversation-steer-note">Sent while working</small>}
+                {supersededReply(message) && <small className="conversation-steer-note">Earlier reply, before your next message</small>}
+                {message.follows !== undefined && (visibleMessageIds.has(message.follows)
+                  ? <a href={`#conversation-message-${message.follows}`} onClick={event => {
+                    event.preventDefault();
+                    document.getElementById(`conversation-message-${message.follows}`)?.focus();
+                  }}>Update to earlier reply</a>
+                  : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
+                <p className="conversation-message-text" dir="auto">{message.text}</p>
+                {attempt !== undefined && <button type="button" className="secondary" disabled={locked}
+                  onClick={() => {
+                    const input: StopCodingInput = {action: 'stop-coding-job', jobId: message.id, operationId: attempt.operationId};
+                    void command.run({family: 'assistant-input', target: 'assistant', requestId: crypto.randomUUID(),
+                      upload: {name: 'input.json', file: new Blob([JSON.stringify(input)], {type: 'application/json'})}});
+                  }}>Stop coding job</button>}
+                {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
+                  connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
+                  artRevision={art?.revision}/>}
+                {message.role === 'assistant' && (unspoken !== undefined
+                  ? <small className="conversation-voice-note">{unspoken}</small>
+                  : message.text.length > LIMITS.spokenChars
+                  ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>
+                  : state !== undefined && <button type="button" aria-label={`Read aloud message ${message.seq}`}
+                  className="secondary conversation-read-aloud" disabled={locked}
+                  onClick={() => {
+                    const requestId = crypto.randomUUID();
+                    setSpeakRequest(requestId);
+                    void command.run({family: 'assistant-control', target: 'assistant', requestId,
+                      data: {action: 'speak', expectedRevision: state.revision, taskId: message.taskId, messageId: message.id}});
+                  }}>Read aloud</button>)}
+              </article>;
+            }}/>
           {viewing === undefined && <div className="conversation-compose">
             {state !== undefined && !state.enabled && <p>Conversation is off. <button type="button" disabled={locked} onClick={() => {present('enable');}}>Enable conversation</button></p>}
             {cue !== undefined && <p role="status" className={live && task?.status === 'succeeded' ? 'conversation-completed' : undefined}>

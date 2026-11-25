@@ -1,6 +1,7 @@
 import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
 import type {BoundControl} from './control-intent.js';
+import type {StopCodingInput} from './history-contract.js';
 import type {Confirmation} from './confirmation.js';
 import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
 import {Messages} from '../knowledge/messages.js';
@@ -32,6 +33,7 @@ export type Question = SavedQuestion & {call: string};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   control?: BoundControl;
   supervisor?: SupervisorIdentity;
+  clarificationDevices?: readonly string[];
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
   traceparent: string | null; transcript: TranscriptItem[];
@@ -63,7 +65,7 @@ export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'qu
   taskId?: string; questionId?: string; queuedId?: string};
 /** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
 export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
-export type Stage = {ref: string; requestId: string; input: StagedInput; expires: number};
+export type Stage = {ref: string; requestId: string; input: StagedInput | StopCodingInput; expires: number};
 export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: Question | null} | null; next: number | null};
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = TranscriptItem & {effect: string};
@@ -386,7 +388,7 @@ export class AssistantStore {
    * about, so it is left out and can never become a title.
    */
   titleMessages(conversationId: string, limit = 8, permits?: (message: {id: string; role: 'owner' | 'assistant'; text: string; taskId: string}) => boolean): {role: 'owner' | 'assistant'; text: string}[] {
-    const query = "SELECT id,role,text,task_id AS taskId FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' ORDER BY seq DESC";
+    const query = "SELECT id,role,text,task_id AS taskId FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' AND id NOT LIKE task_id || '-step-%-job-%' ORDER BY seq DESC";
     const rows = (permits === undefined ? this.database.prepare(query + ' LIMIT ?').all(conversationId, limit)
       : this.database.prepare(query).all(conversationId)) as {id: string; role: 'owner' | 'assistant'; text: string; taskId: string}[];
     return (permits === undefined ? rows : rows.filter(permits).slice(0, limit)).reverse().map(({role, text}) => ({role, text}));

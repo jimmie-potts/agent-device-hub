@@ -15,6 +15,22 @@ For an explicit request by the authorized owner in private Conversation, each co
 - **THEN** Conversation asks for the missing setting or the exact device
 - **AND** the owner's answer completes the original request and one tracked command dispatches without another approval
 
+#### Scenario: Ordinary requests bind typed controls
+
+- **WHEN** the owner asks to pause media on a uniquely named display, clear notices for an exact session or change a named monitor setting
+- **THEN** the matching typed command dispatches once without an approval or a protocol-formatted request
+
+#### Scenario: A display alias matches multiple eligible targets
+
+- **WHEN** the owner asks to show saved art on a shared display alias and another destination, even if the model proposes an exact display ID
+- **THEN** Conversation asks which exact display the owner meant and names only candidates permitted at the reply destination
+- **AND** a valid clarification preserves the rest of the requested destination set
+
+#### Scenario: The owner names a specific draft revision
+
+- **WHEN** a save proposal selects a different draft revision than the one the owner requested, or the draft changes before dispatch
+- **THEN** the save conflicts and no library write is sent
+
 #### Scenario: Matching words alone do not authorize effects
 
 - **WHEN** a model requests brightness using a number the owner supplied for a different property or a relative change
@@ -29,6 +45,13 @@ For an explicit request by the authorized owner in private Conversation, each co
 ### Requirement: Field grants at each Conversation destination
 
 Before disclosing retained fields, the owning module SHALL check the current grant for caller, companion, purpose, source and destination. This SHALL cover discovery, counts, joins, pages, tool output, provider prompts, recent context, title requests and coding briefs. Existing collection and sharing choices SHALL remain in force. A new destination SHALL receive retained fields only after an explicit owner selection. Revocation SHALL apply before the next disclosure.
+
+#### Scenario: Public metadata respects current grants
+
+- **WHEN** a task's public read grant is withdrawn after a state snapshot was prepared
+- **THEN** later assistant-state updates, replay and sync omit the identity, status and counts of that task
+- **AND** a conversation list uses the neutral persona title when a stored generated title cannot be traced to currently allowed fields
+- **AND** an explicit owner title is shown while its label grant allows it
 
 #### Scenario: No access through a different read
 

@@ -62,18 +62,16 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     await approve.press('Enter');
     await page.locator('html').evaluate(node => {node.style.zoom = '';});
     await page.setViewportSize({width: 1280, height: 1000});
-    await assistant.getByRole('article', {name: 'Delegated work', exact: true}).getByText(/Waiting for the coding worker/).waitFor();
-    // The page that shows the wait has read its kind and shared it, so the rail has what it needs to decide. The marker
-    // is also gone for a moment while the approval is saved, which is why this is checked once the wait is on the page.
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    assert.equal(await railMarker.count(), 0, 'a wait on the coding worker does not mark the conversation');
-    // The page shows the wait as soon as the task records it; the worker's copy of the hand-off arrives by its own round trip.
+    const messages = assistant.getByRole('list', {name: 'Saved conversation messages', exact: true});
+    const receipt = messages.locator('[data-role="assistant"]').getByText(/^Coding job .* was queued/);
+    await receipt.waitFor();
+    await assistant.getByText('Task completed', {exact: true}).waitFor();
+    assert.equal(await railMarker.count(), 0, 'a background job does not mark a chat as needing the owner');
     for (let waited = 0; work.length === 0 && waited < 100; waited += 1) await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal(work.length, 1); const started = work[0]; assert.ok(started?.action === 'start');
     assert.equal(started.repository, 'agent-device-hub'); assert.equal(started.brief, brief);
     assert.equal(await assistant.getByRole('textbox', {name: 'Answer', exact: true}).count(), 0, 'no answer box while the worker runs');
-    // Send steers the waiting task instead (Hub #2031): the task reads the message after the worker's result.
-    assert.equal(await send.count(), 1, 'Send steers the task while the worker runs');
+    assert.equal(await send.count(), 1, 'Send is available while the worker runs');
     assert.equal(await send.isDisabled(), true, 'with nothing typed, nothing is sent');
     await assistant.getByRole('button', {name: /^Voice /}).waitFor();
     await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data: {operationId: started.operationId, status: 'started'}});
@@ -82,16 +80,13 @@ export async function codingDelegationJourney(browser: Browser): Promise<void> {
     await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: 'https://bunny.invalid/events/coding-progress/2.0', data: {operationId: started.operationId, status: 'completed',
       result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: ['scripts/tests/readout.test.mjs'], checks: [{name: 'node --test', status: 'passed'}],
         findings: [], limitations: ['No browser check applies.'], summary: 'Added the test; it passes.', sessionId: null, usage: {turns: 7, costUsd: 0.21, durationMs: 90000}}}});
-    await assistant.getByText('Task completed', {exact: true}).waitFor();
-    const messages = assistant.getByRole('list', {name: 'Saved conversation messages', exact: true});
-    const resultText = /^completed \(tested-candidate\): Added the test; it passes\./;
-    const tool = messages.getByRole('article', {name: 'tool message', exact: true}).filter({has: page.locator('p', {hasText: resultText})});
-    await tool.locator('summary').click();
-    await tool.getByText(resultText).waitFor();
-    await messages.getByText(/coding worker: completed/).waitFor();
+    const result = messages.locator('[data-role="assistant"]').filter({hasText: /completed \(tested-candidate\): Added the test; it passes\./});
+    await result.getByText('Update to earlier reply').waitFor();
+    await result.getByRole('link', {name: 'Update to earlier reply'}).click();
+    assert.equal(await page.locator(':focus').getAttribute('data-message'), `${started.operationId}-job`);
     await details.getByText('Connected and idle', {exact: true}).waitFor();
     assert.equal(JSON.stringify(world.logs).includes('readout generator'), false, 'briefs reach no diagnostic record');
     assert.deepEqual(errors, []);
   } finally {await worker.close(); await context.close(); await world.close();}
-  process.stdout.write('Coding delegation browser: worker endpoint through the real gateway, proposal with repository and bound revision, approval by keyboard, delegated wait without an answer box, worker status and result as a tool message passed.\n');
+  process.stdout.write('Coding delegation browser: worker endpoint through the real gateway, proposal with repository and bound revision, approval by keyboard, background job receipt, free composer, worker status and result linked to the original receipt passed.\n');
 }

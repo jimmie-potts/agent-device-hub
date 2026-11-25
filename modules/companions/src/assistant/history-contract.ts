@@ -62,3 +62,6 @@ export function readHistoryCursor(token: string, profile: AssistantProfile): Cur
     return undefined;
   }
 }
+
+/** Authenticated Conversation input for a particular background coding attempt. */
+export type StopCodingInput = {action: 'stop-coding-job'; jobId: string; operationId: string};

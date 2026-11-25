@@ -71,7 +71,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
 }
 async function control(core: Participant, module: CompanionsModule, action: string, taskId?: string, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
-    dataschema: `https://bunny.invalid/events/assistant-control/${action === 'resume-queue' ? '2.2' : '2.0'}`, data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
+    dataschema: `https://bunny.invalid/events/assistant-control/${action === 'resume-queue' ? '2.2' : action === 'rename' ? '2.1' : '2.0'}`, data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
 }
 async function input(core: Participant, module: CompanionsModule, text: string, answer = false, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   const state = module.inspectAssistant(), task = state?.tasks[0];
@@ -236,6 +236,93 @@ void test('an exact tool ID cannot skip the owner choosing between shared catalo
   assert.equal(writes[0]?.target, 'second-screen');
 });
 
+void test('ordinary media requests bind the exact display and action', async context => {
+  const owner = 'bunny/modules/pixoo';
+  const base = light('office-pixoo', 'Office Pixoo');
+  const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities, media: {supported: true as const, actions: ['pause' as const], playlistIds: [], renditionIds: []}}};
+  const writes: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn % 2 === 0 ? reply('Finished.') : call('control_media_control', {
+    owner, target: device.id, arguments: '{"action":"pause"}',
+  }));
+  const w = await world(context, {provider, tools: ['control_media_control'],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const display = w.bus.connect(owner);
+  context.after(() => display.close());
+  await display.serveSync(['device'], () => ({revision: 1, states: [{type: 'org.bunny.device.updated',
+    subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Stop media on the office Pixoo');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(writes.length, 0);
+  await input(w.core, w.module(), 'Pause media on the office Pixoo');
+  await until(() => writes.length === 1);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  assert.equal(writes[0]?.target, device.id);
+  assert.equal(writes[0]?.family === 'catalog-action' ? writes[0].data.action : undefined, 'pause');
+});
+
+void test('ordinary monitor requests and moments dispatch only their named settings', async context => {
+  const owner = 'bunny/modules/pixoo', base = light('office-pixoo', 'Office Pixoo');
+  const device = {...base, kind: 'pixoo' as const, capabilities: {...base.capabilities,
+    moments: {supported: true as const, moods: ['celebrate'], maxDurationMs: 10_000, coversStatus: true}}};
+  const writes: AssistantDispatch[] = [];
+  const instructions = new Map([
+    ['Show Claude sessions on the office Pixoo every 3 seconds', ['control_pixoo_monitor_set', '{"filter":{"provider":"claude"},"cadenceMs":3000}']],
+    ['Hide Now Playing on the office Pixoo', ['control_pixoo_now_playing_set', '{"media":"off"}']],
+    ['Play a celebrate moment on the office Pixoo for 5 seconds', ['control_moment_play', '{}']],
+  ]);
+  const provider = counted(request => {
+    const text = request.transcript.filter(item => item.role === 'owner').at(-1)?.text ?? '';
+    const [name, args] = instructions.get(text) ?? [];
+    return request.transcript.some(item => item.role === 'tool') || name === undefined || args === undefined
+      ? reply('Finished.') : call(name, {owner, target: device.id, arguments: args});
+  });
+  const w = await world(context, {provider, tools: ['control_pixoo_monitor_set', 'control_pixoo_now_playing_set', 'control_moment_play'],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const display = w.bus.connect(owner);
+  context.after(() => display.close());
+  await display.serveSync(['device'], () => ({revision: 1, states: [{type: 'org.bunny.device.updated',
+    subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}]}));
+  await control(w.core, w.module(), 'enable');
+  for (const prompt of instructions.keys()) {
+    const prior = writes.length;
+    await input(w.core, w.module(), prompt);
+    await until(() => writes.length === prior + 1);
+    w.advance(1100);
+    await until(() => status(w) === 'succeeded');
+  }
+  const data = writes.flatMap(write => write.family === 'catalog-action' ? [write.data] : []);
+  assert.deepEqual(data.slice(0, 2), [{filter: {provider: 'claude'}, cadenceMs: 3000}, {media: 'off'}]);
+  assert.equal(data[2]?.mood, 'celebrate');
+  assert.equal(data[2]?.durationMs, 5000);
+  assert.equal(data[2]?.coversStatus, false);
+});
+
+void test('ambiguous device clarification omits choices denied at either destination', async context => {
+  const owner = 'bunny/modules/pixoo';
+  const devices = ['visible-screen', 'owner-denied-screen', 'model-denied-screen']
+    .map(id => ({...light(id, 'Studio Display'), kind: 'pixoo' as const}));
+  const provider = counted(() => call('control_brightness_set', {
+    owner, target: 'visible-screen', arguments: '{"percent":35}',
+  }));
+  const policy = sharing();
+  const w = await world(context, {provider, tools: ['control_brightness_set'], share: query => policy(query)
+    && !(query.destination === 'private-conversation' && query.record === 'owner-denied-screen')
+    && !(query.destination === 'synthetic' && query.record === 'model-denied-screen'),
+    dispatch: () => assert.fail('ambiguous control cannot dispatch')});
+  const display = w.bus.connect(owner);
+  context.after(() => display.close());
+  await display.serveSync(['device'], () => ({revision: 1, states: devices.map(device => ({type: 'org.bunny.device.updated',
+    subject: device.id, dataschema: DEVICE_READBACK_SCHEMA, data: device}))}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Set Studio Display brightness to 35%');
+  await until(() => status(w) === 'waiting');
+  const document = await page(w);
+  assert.match(JSON.stringify(document.currentTask?.question), /Give its exact device ID/);
+  assert.doesNotMatch(JSON.stringify(document), /(?:owner|model)-denied-screen/);
+});
+
 void test('showing saved art binds status visibility and the whole display set', () => {
   const proposal = {family: 'catalog-action', command: 'art-show', target: 'hub', binding: {kind: 'fixed', owner: 'bunny/core', target: 'hub'},
     data: {artworkId: 'kite', targets: ['pixoo', 'tidbyt'], coversStatus: false}} as const;
@@ -243,6 +330,61 @@ void test('showing saved art binds status visibility and the whole display set',
   assert.equal(authorizesControl(proposal, prompt, '', [['pixoo'], ['tidbyt']], ''), true);
   assert.equal(authorizesControl({...proposal, data: {...proposal.data, coversStatus: true}}, prompt, '', [['pixoo'], ['tidbyt']], ''), false);
   assert.equal(authorizesControl({...proposal, data: {...proposal.data, targets: ['pixoo']}}, prompt, '', [['pixoo']], ''), false);
+  const opaque = {...proposal, data: {...proposal.data, artworkId: 'kite-blue'}};
+  assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite-blue'), '', [['pixoo'], ['tidbyt']], ''), true);
+  assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite_blue'), '', [['pixoo'], ['tidbyt']], ''), false);
+});
+
+void test('art catalog changes bind the exact opaque ID and requested edit', () => {
+  const artworkId = 'Kite-Blue';
+  const deleteArt = {family: 'catalog-action', command: 'art-catalog-edit', target: 'art',
+    binding: {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'}, data: {action: 'delete', artworkId}} as const;
+  assert.equal(authorizesControl(deleteArt, 'Bunny, delete saved artwork Kite-Blue', '', [['art']], ''), true);
+  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork Kite_Blue', '', [['art']], ''), false);
+  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork kite-blue', '', [['art']], ''), false);
+  assert.equal(authorizesControl(deleteArt, 'Favorite saved artwork Kite-Blue', '', [['art']], ''), false);
+  const favorite = {...deleteArt, data: {action: 'favorite', artworkId, favorite: false}};
+  assert.equal(authorizesControl(favorite, 'Unfavorite artwork Kite-Blue', '', [['art']], ''), true);
+  assert.equal(authorizesControl(favorite, 'Favorite artwork Kite-Blue', '', [['art']], ''), false);
+});
+
+void test('ordinary art deletion reaches its fixed owner only for the exact selected ID', async context => {
+  const writes: AssistantDispatch[] = [];
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_art_catalog_edit', {
+    owner: 'bunny/modules/art', target: 'art', arguments: '{"action":"delete","artworkId":"Kite-Blue"}',
+  }));
+  const w = await world(context, {provider, tools: ['control_art_catalog_edit'], dispatch: data => {
+    writes.push(data);
+    return Promise.resolve(accepted(data.requestId));
+  }});
+  await control(w.core, w.module(), 'enable');
+  for (const id of ['Kite_Blue', 'kite-blue']) {
+    const prior = task(w)?.taskId;
+    await input(w.core, w.module(), 'Delete saved artwork ' + id);
+    await until(() => status(w) === 'succeeded' && task(w)?.taskId !== prior);
+    assert.equal(writes.length, 0);
+  }
+  await input(w.core, w.module(), 'Delete saved artwork Kite-Blue');
+  await until(() => writes.length === 1);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  const dispatched = writes[0];
+  assert.ok(dispatched?.family === 'catalog-action');
+  assert.deepEqual(dispatched.binding, {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'});
+  assert.deepEqual(dispatched.data, {action: 'delete', artworkId: 'Kite-Blue'});
+});
+
+void test('a seek binds the light, position and direction in an ordinary request', () => {
+  const seek = {family: 'catalog-action', command: 'music-lighting-control', target: 'wall',
+    binding: {kind: 'record', owner: 'bunny/core', target: 'wall', revision: 1},
+    data: {action: 'seek-show', generation: 'current-light-show', positionMs: 1500}} as const;
+  const wall = [['wall', 'Studio Wall']];
+  assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds', '', wall, ''), true);
+  assert.equal(authorizesControl(seek, 'Jump the light show to 1500 milliseconds on the Studio Wall.', '', wall, ''), true);
+  assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds?', '', wall, ''), true);
+  assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 milliseconds on the Studio Wall', '', wall, ''), false);
+  assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 seconds on the Studio Ceiling', '', wall, ''), false);
+  assert.equal(authorizesControl(seek, 'Jump the light show to -1.5 seconds on the Studio Wall', '', wall, ''), false);
 });
 
 void test('an explicit Wemo group binds every target once', async context => {
@@ -260,6 +402,81 @@ void test('an explicit Wemo group binds every target once', async context => {
   await until(() => status(w) === 'succeeded' && requests.length === 2);
   assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
   assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
+});
+
+void test('assistant-state updates and sync hide revoked task metadata, including after restart', async context => {
+  let denied: string | undefined, blockPublication = false, deferredStates = 0;
+  const permitted = sharing();
+  const share = (query: ShareQuery) => permitted(query) && !(denied !== undefined && query.destination === 'private-conversation' &&
+    query.source === 'conversation' && query.field === 'details' && query.record === denied);
+  const w = await world(context, {share}, context => ({...context, sdk: {...context.sdk, publishMessage: (key, message) => {
+    if (blockPublication && key === 'bunny.state.assistant-state.assistant') {
+      deferredStates += 1;
+      return Promise.reject(new Error('synthetic unavailable state transport'));
+    }
+    return context.sdk.publishMessage(key, message);
+  }}}));
+  const updates: Message<object>[] = [];
+  const subscription = await w.core.subscribe('bunny.state.assistant-state.assistant', message => {updates.push(message);});
+  context.after(() => subscription.close());
+  const sync = async () => {
+    const result = await w.core.sync(['assistant-state'], () => {}, {owner: 'bunny/modules/companions', timeoutMs: 5000});
+    assert.equal(result.status, 'synced');
+    try {return JSON.stringify(result.copy.states());} finally {await result.copy.close();}
+  };
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic private task');
+  await until(() => status(w) === 'waiting');
+  const id = task(w)?.taskId ?? assert.fail('waiting task ID');
+  assert.ok((await sync()).includes(id));
+  assert.ok(JSON.stringify(updates).includes(id));
+  blockPublication = true;
+  await control(w.core, w.module(), 'enable');
+  await until(() => deferredStates > 0);
+  denied = id;
+  assert.ok(!(await sync()).includes(id), 'sync applies current grants');
+  assert.equal((await page(w, 'bunny', 'recent')).currentTask, null);
+  const before = updates.length;
+  await w.restart(() => {blockPublication = false;});
+  await until(() => updates.length > before);
+  assert.ok(!JSON.stringify(updates.slice(before)).includes(id), 'restart sends only current state, even with an older update in the outbox');
+  assert.ok(!(await sync()).includes(id), 'restart keeps the task private');
+  assert.equal(w.store().task(id)?.status, 'waiting', 'internal lifecycle retains the task');
+  const restarted = updates.length;
+  await control(w.core, w.module(), 'enable');
+  await until(() => updates.length > restarted);
+  assert.ok(!JSON.stringify(updates.slice(restarted)).includes(id), 'live updates apply current grants');
+});
+
+void test('the conversation list hides an unproven generated title after revocation and restart', async context => {
+  let revoked = false, labelDenied = false;
+  const permitted = sharing();
+  const share = Object.defineProperty((query: ShareQuery) => permitted(query) && !(query.destination === 'private-conversation' &&
+    query.source === 'conversation' && (revoked && query.field === 'text' || labelDenied && query.field === 'label')),
+  'revokesFields', {get: () => revoked || labelDenied});
+  const w = await world(context, {share, provider: counted(() => reply('Synthetic reply.'))});
+  const list = async () => {
+    const response = await w.module().manifest.content?.('conversation', {query: {profile: 'bunny', view: 'list'}, signal: new AbortController().signal});
+    assert.ok(response !== undefined && !('error' in response));
+    return JSON.stringify(JSON.parse(Buffer.from(response.bytes).toString()));
+  };
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Synthetic title source');
+  await until(() => status(w) === 'succeeded');
+  const id = task(w)?.conversationId ?? assert.fail('conversation ID');
+  w.host().moduleDatabase()?.prepare('UPDATE assistant_titles SET record=? WHERE conversation_id=?').run(
+    JSON.stringify({version: 1, title: {value: 'Synthetic Derived Title', source: 'generated'}, generation: 1, lastActivityMs: 1000}), id);
+  assert.match(await list(), /Synthetic Derived Title/);
+  revoked = true;
+  assert.doesNotMatch(await list(), /Synthetic Derived Title/);
+  assert.match(await list(), /B\.U\.N\.N\.Y\./);
+  await w.restart();
+  assert.doesNotMatch(await list(), /Synthetic Derived Title/);
+  const renamed = await control(w.core, w.module(), 'rename', undefined, randomUUID(), {profile: 'bunny', title: 'Synthetic Owner Title'});
+  assert.equal(renamed.status, 'accepted');
+  assert.match(await list(), /Synthetic Owner Title/);
+  labelDenied = true;
+  assert.doesNotMatch(await list(), /Synthetic Owner Title/);
 });
 
 void test('a session grant filters discovery, tool results, prompt replay and title calls after revocation', async context => {
@@ -795,6 +1012,35 @@ void test('Conversation pages through large show catalogs and can read a saved t
   };
   await read(0, 'Synthetic immutable version 8');
   await read(40, 'Synthetic immutable version 48');
+});
+
+void test('ordinary light-show seek dispatches once with the active generation and exact position', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_music_lighting_control', {
+    owner: 'bunny/core', target: 'wall', arguments: '{"action":"seek-show","positionMs":1500,"generation":"model-supplied-generation"}',
+  }));
+  const w = await world(context, {provider, tools: ['control_music_lighting_control'], dispatch: data => {
+    requests.push(data);
+    return Promise.resolve(accepted(data.requestId));
+  }});
+  await w.core.serveSync(['music-lighting-state'], () => ({revision: 7, states: [{
+    type: 'org.bunny.music-lighting.updated', subject: 'wall', dataschema: 'https://bunny.invalid/events/music-lighting-state/2.0',
+    data: {id: 'wall', revision: 7, session: {status: 'active', generation: 'actual-active-generation', operationId: 'previous-start',
+      startedAtMs: 1000, show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0}}, last: null},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Seek the light show on wall to 2 seconds');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(requests.length, 0);
+  await input(w.core, w.module(), 'Could you seek the light show on wall to 1.5 seconds?');
+  await until(() => requests.length === 1);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  const dispatched = requests[0];
+  assert.ok(dispatched?.family === 'catalog-action');
+  assert.equal(dispatched.target, 'wall');
+  assert.deepEqual(dispatched.data, {action: 'seek-show', positionMs: 1500, generation: 'actual-active-generation'});
+  assert.deepEqual(dispatched.binding, {kind: 'record', owner: 'bunny/core', target: 'wall', revision: 7});
 });
 
 void test('a lost saved-show playback answer stays uncertain and never sends a second request', async context => {
@@ -1438,7 +1684,7 @@ void test('a refusal is offered to speech, a result over the spoken bound stays 
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
 });
 
-void test('an approved delegation is handed to the worker once, the owner cannot answer it, the worker\'s result resumes the task and a cancel stops the worker', async context => {
+void test('an approved delegation is handed to the worker once, the turn finishes while the worker runs and a named stop targets its attempt', async context => {
   const CODING = 'bunny/parts/coding-worker';
   let turn = 0;
   const provider = counted(() => {
@@ -1472,32 +1718,32 @@ void test('an approved delegation is handed to the worker once, the owner cannot
   assert.equal(proposal?.kind, 'approval');
   assert.deepEqual(proposal?.proposal, {family: 'coding-dispatch', target: 'assistant', data: {repository: 'agent-device-hub', brief: 'Add a unit test for the readout generator.'}, expectedRevision: w.module().inspectCoding()?.revision});
   assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
-  await until(() => work.length === 1 && status(w) === 'waiting');
+  await until(() => work.length === 1 && status(w) === 'succeeded');
   assert.equal(work[0]?.action, 'start'); assert.equal(work[0]?.taskId, task(w)?.taskId);
-  const delegation = (await page(w)).currentTask?.question; assert.equal(delegation?.kind, 'delegation'); assert.equal(delegation?.answer, null);
-  const owner = await input(w.core, w.module(), 'done yet?', true); assert.equal(owner.status, 'rejected'); if (owner.status === 'rejected') assert.equal(owner.error.error.code, 'invalid-state');
-  assert.equal(provider.calls(), before + 1, 'the model is not called while the worker runs');
+  assert.notEqual((await page(w)).currentTask?.question?.kind, 'delegation');
+  assert.equal(provider.calls(), before + 2, 'the agent can finish without the worker result');
   await progress({operationId: work[0]?.operationId, status: 'started'});
   await until(() => w.module().inspectCoding()?.active?.status === 'started');
   await progress({operationId: work[0]?.operationId, status: 'completed', result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40), changedFiles: ['scripts/tests/readout.test.mjs'],
     checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: [], summary: 'Added the test; it passes.', sessionId: null, usage: null}});
-  await until(() => status(w) === 'succeeded');
+  await until(() => w.module().inspectCoding()?.active === null);
+  await new Promise(resolve => {setImmediate(resolve);});
   assert.equal(provider.calls(), before + 2);
   const saved = await page(w);
-  assert.ok(saved.messages.some(message => message.role === 'tool' && /^completed \(tested-candidate\): Added the test; it passes\./.test(message.text)));
-  assert.equal(saved.messages.at(-1)?.text, 'Synthetic summary of the worker result.');
+  assert.ok(saved.messages.some(message => message.role === 'assistant' && /completed \(tested-candidate\): Added the test; it passes\./.test(message.text)));
   assert.equal(task(w)?.questions, 1, 'the delegation counts no owner question');
   assert.equal(w.module().inspectCoding()?.active, null);
   // A second delegation is cancelled by the owner while the worker runs: the worker is asked to stop and its report ends the task's wait.
   turn = 0;
   assert.equal((await input(w.core, w.module(), 'Please delegate: another test')).status, 'accepted'); await until(() => status(w) === 'waiting');
-  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted'); await until(() => work.length === 2 && status(w) === 'waiting');
-  const id = task(w)?.taskId ?? assert.fail('task');
-  assert.equal((await control(w.core, w.module(), 'cancel', id)).status, 'accepted'); await until(() => status(w) === 'cancelled');
+  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted'); await until(() => work.length === 2 && status(w) === 'succeeded');
+  const id = work[1]?.operationId ?? assert.fail('attempt');
+  await progress({operationId: id, status: 'started'});
+  assert.deepEqual(await w.module().stopCodingJob(`${id}-job`, id), {status: 'accepted'});
   await until(() => work.length === 3); assert.equal(work[2]?.action, 'cancel');
   await progress({operationId: work[1]?.operationId, status: 'cancelled', reason: 'cancelled', result: null});
   await until(() => w.module().inspectCoding()?.active === null);
-  assert.equal(status(w), 'cancelled');
+  assert.equal(status(w), 'succeeded');
   assert.equal(JSON.stringify(w.host().logs).includes('readout generator'), false, 'briefs reach no diagnostic record');
 });
 
@@ -1840,27 +2086,59 @@ void test('a failed turn closes after clarification without another model call',
   assert.deepEqual((await page(w)).messages, messages);
 });
 
-async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<typeof world>>, generated?: () => string | undefined): Promise<void> {
-  const target = 'display-blue';
+async function serveKiteDisplay(context: TestContext, w: Awaited<ReturnType<typeof world>>, generated?: () => string | undefined,
+  targets = ['display-blue']): Promise<void> {
   await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
     type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
-    data: {id: 'art', revision: 1, targets: [{target, kind: 'pixoo'}]},
+    data: {id: 'art', revision: 1, targets: targets.map(target => ({target, kind: 'pixoo'}))},
   }]}));
   const pixoo = w.bus.connect('bunny/modules/pixoo'), art = w.bus.connect('bunny/modules/art');
   context.after(async () => {await pixoo.close(); await art.close();});
-  const device = light(target, 'Blue panel');
-  await pixoo.serveSync(['device'], () => ({revision: 1, states: [{
-    type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
-    data: {...device, kind: 'pixoo', capabilities: {...device.capabilities, moments: {supported: true,
-      moods: ['celebrate'], maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png'], maxBytes: 65536}}}},
-  }]}));
+  await pixoo.serveSync(['device'], () => ({revision: 1, states: targets.map(target => {
+    const device = light(target, 'Blue panel');
+    return {type: 'org.bunny.device.updated', subject: target, dataschema: 'https://bunny.invalid/events/device/2.2',
+      data: {...device, kind: 'pixoo', capabilities: {...device.capabilities, moments: {supported: true,
+        moods: ['celebrate'], maxDurationMs: 10_000, coversStatus: true, art: {formats: ['png'], maxBytes: 65536}}}}};
+  })}));
   await art.serveSync(['art'], () => ({revision: 1, states: [{
     type: 'org.bunny.art.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art/2.0', data: {id: 'art', revision: 1,
       jobs: generated === undefined ? [] : [{requestId: generated(), artworkId: 'kite', status: 'finished', outcome: 'succeeded'}],
-      artworks: [{artworkId: 'kite', compositions: [{target: 'pixoo', compositionId: 'a'.repeat(64), outcome: 'succeeded',
-        renditions: [{format: 'png', bytes: 128}]}]}]},
+      artworks: [{artworkId: 'kite', compositions: ['pixoo', 'ui'].map(target => ({target, compositionId: 'a'.repeat(64), outcome: 'succeeded',
+        renditions: [{format: 'png', bytes: 128}]}))}]},
   }]}));
 }
+
+void test('an ordinary multi-display show clarifies duplicate labels despite the model supplying an exact ID', async context => {
+  const writes: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn > 2 ? reply('Show result.') : call('control_art_show', {
+    owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: 'kite', targets: [turn === 1 ? 'display-blue' : 'display-green', 'browser']}),
+  }));
+  const w = await world(context, {provider, tools: ['control_art_show'],
+    dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await serveKiteDisplay(context, w, undefined, ['display-blue', 'display-green']);
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Show the kite on Blue panel and Browser');
+  await until(() => status(w) === 'waiting');
+  assert.match(JSON.stringify((await page(w)).currentTask?.question), /id:display-blue.*id:display-green/);
+  assert.equal(writes.length, 0);
+  await input(w.core, w.module(), 'id:display-green', true);
+  await until(() => writes.length === 1);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(writes[0]?.family === 'catalog-action' ? writes[0].data.targets : undefined, ['display-green', 'browser']);
+});
+
+void test('saving a show binds the explicitly requested draft revision and immutable version name', () => {
+  const proposal = {family: 'catalog-action', command: 'nanoleaf-show-save', target: 'shows',
+    binding: {kind: 'fixed', owner: 'bunny/modules/nanoleaf', target: 'shows'}, data: {
+      name: 'Dawn test', showId: 'show-synthetic', versionName: 'First version',
+    }} as const;
+  const owners = [['show-synthetic']];
+  const request = 'Save draft Dawn test (show-synthetic) revision 1 as First version';
+  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, false, 1), true);
+  assert.equal(authorizesControl(proposal, request, '', owners, '', [], false, false, 2), false);
+  assert.equal(authorizesControl(proposal, request.replace('First version', 'Other version'), '', owners, '', [], false, false, 1), false);
+});
 
 void test('a failed compound turn reports the saved artwork and exact rejected display action', async context => {
   const requests: AssistantDispatch[] = [];
@@ -2057,6 +2335,8 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
     if (body.input.length === 1 && body.input[0]?.content === 'Is Studio Plug on?') return pendingRead.promise;
     if (body.input.some(item => item.content === 'New synthetic topic')) output = [message('A fresh topic.')];
     else if (body.input.some(item => item.type === 'function_call_output')) output = [message('I checked the tool result.')];
+    else if (init.body.includes('What is the status of catalog-plug')) output = [functionCall('read_devices', {target: 'catalog-plug', owner: 'bunny/modules/pixoo'})];
+    else if (init.body.includes('Turn off Catalog Plug')) output = [functionCall('control_power_set', {target: 'catalog-plug', owner: 'bunny/modules/pixoo', arguments: '{"on":false}'})];
     else if (init.body.includes('What color is it')) output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
     else if (init.body.includes('Turn off Studio Plug') || init.body.includes('Could Studio Plug be off')) output = [reasoning, functionCall('set_wemo_power', {device: 'studio-plug', on: false})];
     else output = [reasoning, functionCall('read_wemo', {device: 'studio-plug'})];
@@ -2078,9 +2358,17 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   }});
   const w = await world(context, {provider: anthropic, alternateProvider: new OpenAIProvider({...options, effort: 'medium'}),
     openAITitleProvider: new OpenAITitleProvider(options), preferences: () => [{id: 'preference', active: true, createdAtMs: 1, updatedAtMs: 1, title: 'Secret preference', text: 'PRIVATE_PREFERENCES'}],
-    tools: ['read_sessions', 'read_wemo', 'set_wemo_power'], devices: () => [
+    tools: ['read_sessions', 'read_wemo', 'set_wemo_power', 'read_devices', 'control_power_set'], devices: () => [
       {...light('studio-plug', 'Studio Plug'), kind: 'wemo'}, {...light('unrelated-plug', 'PRIVATE_OTHER_DEVICE'), kind: 'wemo'},
     ], dispatch: data => {dispatched.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const catalogOwner = w.bus.connect('bunny/modules/pixoo');
+  context.after(() => catalogOwner.close());
+  await catalogOwner.serveSync(['device'], () => ({revision: 1, states: [
+    {type: 'org.bunny.device.updated', subject: 'catalog-plug',
+      dataschema: DEVICE_READBACK_SCHEMA, data: {...light('catalog-plug', 'Catalog Plug'), kind: 'pixoo'}},
+    {type: 'org.bunny.device.updated', subject: 'private-catalog-device',
+      dataschema: DEVICE_READBACK_SCHEMA, data: {...light('private-catalog-device', 'PRIVATE_CATALOG_DEVICE'), kind: 'pixoo'}},
+  ]}));
   await control(w.core, w.module(), 'enable');
   assert.deepEqual(w.module().inspectAssistant()?.providers?.map(value => value.provider), ['anthropic', 'openai']);
   await input(w.core, w.module(), 'PRIVATE_OTHER_CONVERSATION', false, randomUUID(), {profile: 'reachy', provider: 'anthropic'});
@@ -2116,6 +2404,16 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   await until(() => bunnyTask()?.status === 'succeeded');
   assert.equal(dispatched[0]?.target, 'studio-plug');
   assert.equal(dispatched.length, 1);
+
+  await start('What is the status of catalog-plug?');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.match(sent.at(-1) ?? '', /Catalog Plug/);
+  assert.doesNotMatch(sent.at(-1) ?? '', /PRIVATE_CATALOG_DEVICE|lastTransmissionAtMs|configurationRevision/);
+  await start('Turn off Catalog Plug');
+  await until(() => dispatched.length === 2 || bunnyTask()?.status === 'failed' || bunnyTask()?.status === 'succeeded');
+  assert.equal(dispatched[1]?.target, 'catalog-plug');
+  w.advance(1200);
+  await until(() => bunnyTask()?.status === 'succeeded');
 
   await start('What color is it?');
   await until(() => bunnyTask()?.status === 'waiting');

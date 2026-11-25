@@ -21,3 +21,9 @@ For [Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108), e
 - **GIVEN** a shared ledger with reservations from both hosted supervisors and their title calls
 - **WHEN** OpenAI usage remains unknown after an uncertain call
 - **THEN** the pinned worst-case reservation remains counted, and another call that would exceed the shared guard is refused before submission
+
+#### Scenario: Dispatch a shared device command and hand off a background job
+
+- **GIVEN** the OpenAI supervisor is selected and the owner names a supported device or approves a proposed coding hand-off
+- **WHEN** the assistant binds the device instruction or accepts the background job through the existing dispatcher
+- **THEN** the owner's device instruction follows the same command path and guards as other supervisors, and the background job posts its result in the originating conversation without replaying private worker data to OpenAI

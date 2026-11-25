@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {mkdtemp,writeFile,readFile,realpath,rm,stat,symlink} from 'node:fs/promises';
+import {access,mkdir,mkdtemp,writeFile,readFile,realpath,rm,stat,symlink} from 'node:fs/promises';
 import {basename,dirname,join} from 'node:path';
 import {createHash} from 'node:crypto';
+import {promisify} from 'node:util';
+import {operatorFor} from '../mac-signin.mjs';
+import {installedSigninReleases,verifySigninRelease} from '../deployment/signin-release.mjs';
+import {agents,plist} from '../mac-host-install.mjs';
 import {execFile} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {refusalMessage} from '../operator-refusal.mjs';
@@ -38,7 +42,8 @@ async function fixture(t) {
     if(args[0]==='compose'&&args.includes('create')) {
       // Creates from the file it is given, as Compose would, so a missing or wrong replacement file fails here.
       const image=JSON.parse(await readFile(args[args.indexOf('-f')+1],'utf8')).services.core.image;
-      info={...info,Id:image===newImage?newId:createHash('sha256').update(image).digest('hex'),Image:image,State:{Status:'created',Running:false,Restarting:false,Pid:0}};return '';
+      const Labels={...info.Config.Labels,'org.opencontainers.image.revision':f.revisions.get(image),'com.docker.compose.project.config_files':args[args.indexOf('-f')+1],...f.replacementLabels};
+      info={...info,Config:{...info.Config,Labels},Id:image===newImage?newId:createHash('sha256').update(image).digest('hex'),Image:image,State:{Status:'created',Running:false,Restarting:false,Pid:0}};return '';
     }
     if(args[0]==='stop'){Object.assign(info.State,{Status:'exited',Running:false,Pid:0});return '';}
     if(args[0]==='start'){Object.assign(info.State,{Status:'running',Running:true,Pid:124});await writeFile(state,'latest-before\nnew-candidate-state\n');return '';}
@@ -48,7 +53,7 @@ async function fixture(t) {
     if(args[0]==='exec')return JSON.stringify(args.includes('-e')?{client:'trusted-browser',status:'passed'}:{schema:'runtime-health/1.0',status:'ok',modules:[{name:'core',state:'running'}]});
     throw Error('unexpected command '+JSON.stringify(args));
   };
-  f.deploy=()=>deployBatch(request,{root,run:f.run,qualification:async()=>target});return f;
+  f.deploy=options=>deployBatch(request,{root,run:f.run,qualification:async()=>target,...options});return f;
 }
 test('qualified batch backs up stopped writer, preserves private resources and records release',async t=>{
   const f=await fixture(t);assert.equal((await f.deploy()).outcome,'succeeded');
@@ -61,6 +66,80 @@ test('qualified batch backs up stopped writer, preserves private resources and r
   assert.equal(await readPending({root:f.root,project:'synthetic'}),undefined);
   assert.equal(record.recovery.status,'unknown');
 });
+test('the real sign-in resolver can find the deployed revision before the batch succeeds',async t=>{
+  const f=await fixture(t);
+  const releases=join(f.root,'releases'), retained=join(f.root,'retained');
+  const git=(...args)=>promisify(execFile)('git',['-C',retained,...args]);
+  await mkdir(join(retained,'scripts'),{recursive:true});
+  await writeFile(join(retained,'scripts','bunny.mjs'),'export const synthetic = true;');
+  await git('init','-q');
+  await git('add','scripts/bunny.mjs');
+  await git('-c','user.name=Synthetic','-c','user.email=synthetic@example.invalid','commit','-qm','synthetic release');
+  const sha=(await git('rev-parse','HEAD')).stdout.trim();
+  f.request.candidate=f.target.candidate=sha;
+  f.revisions.set(newImage,sha);
+  const verifySignIn=(expected,info)=>verifySigninRelease({releases,source:retained,...expected},info);
+  await assert.rejects(f.deploy({verifySignIn}),/operator-refused/);
+  const release=join(releases,sha), alias=join(release,'build','source');
+  await mkdir(join(release,'build'),{recursive:true});
+  await symlink(retained,join(release,'source'),'dir');
+  await mkdir(join(alias,'scripts'),{recursive:true});
+  await writeFile(join(alias,'scripts','bunny.mjs'),'export const conflicting = true;');
+  await assert.rejects(f.deploy({verifySignIn}),/operator-refused/);
+  await rm(alias,{recursive:true});
+  await symlink(retained,alias,'dir');
+  await git('-c','user.name=Synthetic','-c','user.email=synthetic@example.invalid','commit','--allow-empty','-qm','another release');
+  await assert.rejects(f.deploy({verifySignIn}),/operator-refused/);
+  await git('checkout','--detach',sha);
+  assert.ok(!f.calls.some(args=>args[0]==='stop'));
+  assert.equal((await f.deploy({verifySignIn})).outcome,'succeeded');
+  const found=await operatorFor(f.info,releases,path=>access(path).then(()=>true,()=>false));
+  assert.equal(await realpath(found.path),join(retained,'scripts','bunny.mjs'));
+  assert.equal(found.compose,join(f.root,'batch-synthetic.compose.json'));
+});
+
+test('a replacement with incorrect sign-in labels is stopped and cannot report success',async t=>{
+  const f=await fixture(t);
+  const releases=join(f.root,'releases'), source=join(releases,revision,'source');
+  await mkdir(join(source,'scripts'),{recursive:true});
+  await writeFile(join(source,'scripts','bunny.mjs'),'export const synthetic = true;');
+  f.replacementLabels={'com.docker.compose.project.config_files':f.request.compose};
+  const verifySignIn=(expected,info)=>verifySigninRelease({releases,source,...expected},info);
+  await assert.rejects(f.deploy({verifySignIn}),/operator-refused/);
+  assert.equal(f.info.State.Running,false);
+  const pending=await readPending({root:f.root,project:'synthetic'});
+  assert.equal(pending?.replacementContainer,newId);
+  assert.equal(pending?.replacementStop,'verified-stopped');
+  assert.equal(pending?.completedAt,undefined);
+});
+
+test('both historical archive layouts keep resolving without Git metadata',async t=>{
+  const f=await fixture(t);
+  const releases=join(f.root,'releases');
+  for(const layout of ['source',join('build','source')]) {
+    const source=join(releases,revision,layout);
+    await mkdir(join(source,'scripts'),{recursive:true});
+    await writeFile(join(source,'scripts','bunny.mjs'),'export const synthetic = true;');
+    const expected={source,releases,revision,compose:f.request.compose};
+    await verifySigninRelease(expected);
+    const labels={'org.opencontainers.image.revision':revision,'com.docker.compose.project.config_files':f.request.compose};
+    await verifySigninRelease(expected,{Config:{Labels:labels}});
+    await assert.rejects(verifySigninRelease(expected,{Config:{Labels:{...labels,'org.opencontainers.image.revision':oldRevision}}}),/operator-refused/);
+    await rm(source,{recursive:true});
+  }
+});
+
+test('the sign-in guard applies only to the project installed in the Mac agent',{skip:process.platform!=='darwin'},async t=>{
+  const {root:home}=await fixture(t);
+  assert.equal(await installedSigninReleases('selected',{home}),undefined);
+  const [starter]=agents({home,node:'/usr/bin/node',project:'selected'});
+  const directory=join(home,'Library','LaunchAgents');
+  await mkdir(directory,{recursive:true});
+  await writeFile(join(directory,`${starter.label}.plist`),plist(starter));
+  assert.equal(await installedSigninReleases('other',{home}),undefined);
+  assert.equal(await installedSigninReleases('selected',{home}),join(home,'.local','share','bunny','releases'));
+});
+
 test('bad qualification and wrong image/target refuse before stopping',async t=>{
   for(const mutate of [f=>f.target.outcome='failed',f=>f.target.candidate='9'.repeat(40),f=>f.target.architecture='linux/amd64',f=>f.request.containerId='a'.repeat(64),f=>f.request.unselectedCredential='synthetic-secret-must-not-be-retained']) {
     const f=await fixture(t);mutate(f);await assert.rejects(f.deploy());assert.ok(!f.calls.some(a=>a[0]==='stop'||a[0]==='rm'));

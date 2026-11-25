@@ -19,6 +19,9 @@ export type ShareQuery = {
 export type DisclosedField = Pick<ShareQuery, 'source' | 'field' | 'record'>;
 export type SharingGrant = ShareQuery & {allow: boolean};
 export type Share = ((query: ShareQuery) => boolean) & {readonly revokesFields?: boolean; readonly allowsDerived?: (query: ShareQuery) => boolean};
+/** A custom policy with no revocation metadata cannot prove that older disclosures are still permitted. */
+export const canRevokeFields = (share: Share | undefined): boolean => share !== undefined && share.revokesFields !== false;
+
 type Scope = Pick<ShareQuery, 'caller' | 'companion' | 'destination' | 'purpose'>;
 export type FieldAccess = (source: ShareQuery['source'], field: ShareQuery['field'], record?: string) => boolean;
 
