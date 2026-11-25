@@ -101,6 +101,11 @@ const unaddressedText = (value: string): string => value.trim().replace(
   /^(?:(?:please|could you|would you|can you|will you|(?:hey )?(?:bunny|b[. ]u[. ]n[. ]n[. ]y[.]?|reachy|microduck))[, ]+)*/iu, '',
 );
 
+function lightShowSeekRequest(raw: string) {
+  const text = unaddressedText(raw).replace(/[?.!]$/u, '');
+  return /^(?:seek|jump) (?:the )?light show on (?<target>.+?) to (?<amount>\d+(?:\.\d{1,3})?) (?<unit>milliseconds?|seconds?)$/iu.exec(text)?.groups
+    ?? /^(?:seek|jump) (?:the )?light show to (?<amount>\d+(?:\.\d{1,3})?) (?<unit>milliseconds?|seconds?) on (?<target>.+)$/iu.exec(text)?.groups;
+}
 const matchNumber = (expression: RegExp, input: string, requested: unknown): Setting | undefined => {
   const match = expression.exec(input);
   return match?.[1] !== undefined && match[2] !== undefined && Number(match[2]) === requested ? {subject: optionalArticle(match[1])} : undefined;
@@ -231,8 +236,8 @@ function setting(instruction: string, answer: string, rawInstruction: string, ra
       const art = /^(favorite|unfavorite|delete) (?:the )?(?:saved )?artwork ([a-z0-9_.-]+)$/iu.exec(unaddressedText(rawInstruction));
       if (art?.[2] === undefined || art[2] !== data.artworkId) return undefined;
       const action = art[1]?.toLowerCase();
-      if (action === 'delete') return isDeepStrictEqual(data, {action, artworkId: art[2]}) ? {} : undefined;
-      return isDeepStrictEqual(data, {action: 'favorite', artworkId: art[2], favorite: action === 'favorite'}) ? {} : undefined;
+      if (action === 'delete') return matchesEdit('art', {action, artworkId: art[2]});
+      return matchesEdit('art', {action: 'favorite', artworkId: art[2], favorite: action === 'favorite'});
     }
     case 'playback-control': {
       const request = /^(play|stop|pause|resume|next|previous) (?:the )?(?:playback on )?(.+)$/u.exec(instruction);
@@ -243,9 +248,7 @@ function setting(instruction: string, answer: string, rawInstruction: string, ra
       if (start?.[3] !== undefined && typeof data.showId === 'string' && normalizedControlText(data.showId) === start[1]) {
         return matchesEdit(start[3], {action: 'start-show', showId: data.showId, version: Number(start[2]), positionMs: 0, startDelayMs: 0});
       }
-      const seekText = unaddressedText(raw);
-      const seek = /^(?:seek|jump) (?:the )?light show on (?<target>.+?) to (?<amount>\d+(?:\.\d{1,3})?) (?<unit>milliseconds?|seconds?)$/iu.exec(seekText)?.groups
-        ?? /^(?:seek|jump) (?:the )?light show to (?<amount>\d+(?:\.\d{1,3})?) (?<unit>milliseconds?|seconds?) on (?<target>.+)$/iu.exec(seekText)?.groups;
+      const seek = lightShowSeekRequest(raw);
       if (seek?.target !== undefined && seek.unit !== undefined) {
         const amount = Number(seek.amount);
         const positionMs = seek.unit.toLowerCase().startsWith('second') ? Math.round(amount * 1000) : amount;
@@ -382,7 +385,9 @@ export function namedControlTargets(proposal: BoundControl['proposal'], instruct
 export function authorizesControl(proposal: BoundControl['proposal'], instruction: string, answer: string,
   targets: readonly (readonly string[])[], precedingOwnerText: string, knownTargets: readonly (readonly string[])[] = [], knownArtwork = false, explicitGroup = false, draftRevision?: number, artRecipientsBound = false): boolean {
   if (exactCatalogRequest(proposal, instruction)) return true;
-  const requested = explicitWords(instruction);
+  const seek = proposal.family === 'catalog-action' && proposal.command === 'music-lighting-control' &&
+    proposal.data.action === 'seek-show' && lightShowSeekRequest(instruction) !== undefined;
+  const requested = explicitWords(seek ? instruction.trimEnd().replace(/\?$/u, '') : instruction);
   if (requested === undefined) return false;
   const words = knownArtwork && proposal.family === 'catalog-action' && proposal.command === 'art-show'
     ? /\band ((?:show|display|put) .+)$/u.exec(requested)?.[1] ?? requested : requested;

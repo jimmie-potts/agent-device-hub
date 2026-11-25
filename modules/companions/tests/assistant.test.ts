@@ -338,13 +338,39 @@ void test('art catalog changes bind the exact opaque ID and requested edit', () 
   const artworkId = 'Kite-Blue';
   const deleteArt = {family: 'catalog-action', command: 'art-catalog-edit', target: 'art',
     binding: {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'}, data: {action: 'delete', artworkId}} as const;
-  assert.equal(authorizesControl(deleteArt, 'Bunny, delete saved artwork Kite-Blue', '', [], ''), true);
-  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork Kite_Blue', '', [], ''), false);
-  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork kite-blue', '', [], ''), false);
-  assert.equal(authorizesControl(deleteArt, 'Favorite saved artwork Kite-Blue', '', [], ''), false);
+  assert.equal(authorizesControl(deleteArt, 'Bunny, delete saved artwork Kite-Blue', '', [['art']], ''), true);
+  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork Kite_Blue', '', [['art']], ''), false);
+  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork kite-blue', '', [['art']], ''), false);
+  assert.equal(authorizesControl(deleteArt, 'Favorite saved artwork Kite-Blue', '', [['art']], ''), false);
   const favorite = {...deleteArt, data: {action: 'favorite', artworkId, favorite: false}};
-  assert.equal(authorizesControl(favorite, 'Unfavorite artwork Kite-Blue', '', [], ''), true);
-  assert.equal(authorizesControl(favorite, 'Favorite artwork Kite-Blue', '', [], ''), false);
+  assert.equal(authorizesControl(favorite, 'Unfavorite artwork Kite-Blue', '', [['art']], ''), true);
+  assert.equal(authorizesControl(favorite, 'Favorite artwork Kite-Blue', '', [['art']], ''), false);
+});
+
+void test('ordinary art deletion reaches its fixed owner only for the exact selected ID', async context => {
+  const writes: AssistantDispatch[] = [];
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_art_catalog_edit', {
+    owner: 'bunny/modules/art', target: 'art', arguments: '{"action":"delete","artworkId":"Kite-Blue"}',
+  }));
+  const w = await world(context, {provider, tools: ['control_art_catalog_edit'], dispatch: data => {
+    writes.push(data);
+    return Promise.resolve(accepted(data.requestId));
+  }});
+  await control(w.core, w.module(), 'enable');
+  for (const id of ['Kite_Blue', 'kite-blue']) {
+    const prior = task(w)?.taskId;
+    await input(w.core, w.module(), 'Delete saved artwork ' + id);
+    await until(() => status(w) === 'succeeded' && task(w)?.taskId !== prior);
+    assert.equal(writes.length, 0);
+  }
+  await input(w.core, w.module(), 'Delete saved artwork Kite-Blue');
+  await until(() => writes.length === 1);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  const dispatched = writes[0];
+  assert.ok(dispatched?.family === 'catalog-action');
+  assert.deepEqual(dispatched.binding, {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'});
+  assert.deepEqual(dispatched.data, {action: 'delete', artworkId: 'Kite-Blue'});
 });
 
 void test('a seek binds the light, position and direction in an ordinary request', () => {
@@ -353,7 +379,8 @@ void test('a seek binds the light, position and direction in an ordinary request
     data: {action: 'seek-show', generation: 'current-light-show', positionMs: 1500}} as const;
   const wall = [['wall', 'Studio Wall']];
   assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds', '', wall, ''), true);
-  assert.equal(authorizesControl(seek, 'Jump the light show to 1500 milliseconds on the Studio Wall', '', wall, ''), true);
+  assert.equal(authorizesControl(seek, 'Jump the light show to 1500 milliseconds on the Studio Wall.', '', wall, ''), true);
+  assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds?', '', wall, ''), true);
   assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 milliseconds on the Studio Wall', '', wall, ''), false);
   assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 seconds on the Studio Ceiling', '', wall, ''), false);
   assert.equal(authorizesControl(seek, 'Jump the light show to -1.5 seconds on the Studio Wall', '', wall, ''), false);
@@ -929,7 +956,7 @@ void test('ordinary light-show seek dispatches once with the active generation a
   await input(w.core, w.module(), 'Seek the light show on wall to 2 seconds');
   await until(() => status(w) === 'succeeded');
   assert.equal(requests.length, 0);
-  await input(w.core, w.module(), 'Seek the light show on wall to 1.5 seconds');
+  await input(w.core, w.module(), 'Could you seek the light show on wall to 1.5 seconds?');
   await until(() => requests.length === 1);
   w.advance(1100);
   await until(() => status(w) === 'succeeded');
