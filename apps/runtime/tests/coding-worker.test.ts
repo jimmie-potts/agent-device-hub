@@ -7,6 +7,7 @@ import {cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile} from 'nod
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {test, type TestContext} from 'node:test';
+import {promisify} from 'node:util';
 import type {CodingProgress, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import type {Command, Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
@@ -531,7 +532,7 @@ void test('uncapped jobs share only conflicting Git setup and isolate a cancelle
 });
 
 
-for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'restart', 'staged-new', 'untracked', 'root-replaced', 'gitdir-replaced', 'gitdir-retargeted'] as const) {
+for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'restart', 'staged-new', 'untracked', 'changed-during-copy', 'root-replaced-live', 'root-replaced', 'gitdir-replaced', 'gitdir-retargeted'] as const) {
   void test(`cross-harness handoff verifies writer and exact worktree (${scenario})`, {timeout: 30_000}, async t => {
     const repo = await repository(t), edge = fakeEdge();
     const base = git(repo, 'rev-parse', 'HEAD');
@@ -586,8 +587,15 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'r
           ].map(line => JSON.stringify(line)).join('\n')};
       },
     };
+    const runGit: GitRunner = async (cwd, args, options) => {
+      if (scenario === 'changed-during-copy' && args.includes('--depth=1')) {
+        await writeFile(join(priorWorktree ?? assert.fail('source checkout'), 'README.md'), 'external edit during copy\n');
+      }
+      const {stdout} = await promisify(execFile)('git', ['-C', cwd, ...args], {timeout: options?.timeoutMs ?? 60_000, encoding: 'utf8'});
+      return options?.trim === false ? stdout : stdout.trim();
+    };
     const make = () => new CodingWorker(parseConfiguration({...configuration(repo), schema: 'coding-worker/1.2'}),
-      'fake-token', claude, undefined, edge.connect, undefined, undefined, undefined, [codex]);
+      'fake-token', claude, undefined, edge.connect, undefined, runGit, undefined, [codex]);
     const worker = make();
     await worker.start();
     t.after(() => worker.stop());
@@ -595,6 +603,11 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'r
       harness: 'codex', repository: 'agent-device-hub', brief: 'Synthetic approved brief.', bounds: {wallClockMs: 60_000, maxTurns: 4, budgetUsd: 1}};
     assert.deepEqual(edge.respond(command(initial)), {status: 'accepted'});
     await until(() => edited);
+    if (scenario === 'root-replaced-live') {
+      const original = priorWorktree ?? assert.fail('source checkout');
+      await rename(original, `${original}-old`);
+      await cp(`${original}-old`, original, {recursive: true});
+    }
     const next = (token: string, operationId = 'continuation') => command({...initial, requestId: operationId, operationId,
       harness: 'claude-code', brief: fullBrief, continuation: {fromOperationId: 'partial', token}});
     assert.ok('error' in edge.respond(next('01234567-89ab-4cde-8fab-0123456789ab')));
@@ -603,7 +616,7 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'r
     const result = edge.progress.find(entry => entry.operationId === 'partial' && entry.status !== 'started');
     if (scenario === 'uncertain') {assert.equal(result?.status, 'uncertain'); assert.equal(result?.handoffToken, undefined); return;}
     assert.ok(result?.status === 'cancelled');
-    if (scenario === 'untracked' || scenario === 'no-confinement') {assert.equal(result.handoffToken, undefined); return;}
+    if (scenario === 'untracked' || scenario === 'no-confinement' || scenario === 'root-replaced-live') {assert.equal(result.handoffToken, undefined); return;}
     const proof = result.handoffToken ?? assert.fail('confirmed stopped partial attempt');
     assert.equal(result.result?.head, base);
     assert.equal(result.sessionId, 'codex-partial-id');
@@ -637,7 +650,7 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'no-confinement', 'r
     await until(() => edge.progress.some(entry => entry.operationId === 'continuation' && entry.status !== 'started'));
     const completed = edge.progress.find(entry => entry.operationId === 'continuation' && entry.status !== 'started');
     assert.ok('error' in edge.respond(next(proof, 'repeated')));
-    if (scenario === 'changed' || scenario === 'root-replaced' || scenario === 'gitdir-replaced' || scenario === 'gitdir-retargeted') {
+    if (scenario === 'changed' || scenario === 'changed-during-copy' || scenario === 'root-replaced' || scenario === 'gitdir-replaced' || scenario === 'gitdir-retargeted') {
       assert.equal(resumed, 0);
       assert.equal(completed?.status, 'failed');
     } else {
