@@ -14,7 +14,7 @@ import {continuationChecks, CODING_SETUP_WAIT_MS, CODING_SETUP_WORK_MS, CODING_W
   type CodingRunEntry, type CodingSetup, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {Outcome, fullDisk, recordLog, type AddMessage, type Cancel, type Command, type ModuleContext, type Outbox, type Reply, type RequestResult, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {advanceRevision} from '../revision.js';
-import {CODING_JOB_PAGE_SIZE, type CodingAttemptEntry, type CodingAttemptResult, type CodingJobDetail, type CodingJobPage} from './job-page.js';
+import {CODING_JOB_PAGE_SIZE, type CodingAttemptEntry, type CodingAttemptResult, type CodingJobDetail, type CodingJobEntry, type CodingJobPage} from './job-page.js';
 import {CodingStore, type CodingAttempt, type CodingJob, type CodingResponsibility, type CodingWaitingRecord} from './store.js';
 
 /** Workers offering adapter selection add harness declarations and active session attribution in 2.3. */
@@ -39,6 +39,7 @@ export type CodingSeams = {
   jobQueued?: (job: CodingJob, add: AddMessage, parent: TraceContext) => void;
   jobUpdate?: (job: CodingJob, kind: 'sent' | 'stop-unconfirmed' | 'result', text: string, parent: TraceContext, startup: boolean) => Promise<void>;
   companionOf?: (taskId: string) => CodingCompanion | undefined;
+  jobVisible?: (job: Pick<CodingJob, 'jobId' | 'taskId' | 'conversationId' | 'operationId' | 'repository'>, companion: CodingCompanion) => boolean;
   awaits?: (taskId: string) => boolean;
   sent?: (taskId: string, operationId: string, parent: TraceContext) => void | Promise<void>;
 };
@@ -122,18 +123,31 @@ export class CodingCoordinator {
     this.#store = new CodingStore(context.database());
   }
   jobForAttempt(operationId: string): CodingJob | undefined {return this.#store.job(operationId);}
+  jobRead(...args: Parameters<CodingStore['jobRead']>): ReturnType<CodingStore['jobRead']> {return this.#store.jobRead(...args);}
   /** Whether a hand-off was accepted as a run, so one that waited is known to have been sent. */
   accepted(operationId: string): boolean {
     try {return this.#active.has(operationId) || this.#store.accepted(operationId);} catch {return false;}
   }
+  #jobVisible(job: Pick<CodingJob, 'jobId' | 'taskId' | 'conversationId' | 'operationId' | 'repository'>, companion?: CodingCompanion): boolean {
+    const visible = this.#seams.jobVisible;
+    if (visible === undefined) return true;
+    const profile = companion ?? this.#seams.companionOf?.(job.taskId);
+    return profile !== undefined && visible(job, profile);
+  }
   jobs(after = ''): CodingJobPage {
-    const page = this.#store.activeJobs(after, CODING_JOB_PAGE_SIZE + 1);
-    const jobs = page.slice(0, CODING_JOB_PAGE_SIZE).map(job => {
-      const active = this.#active.get(job.operationId);
-      return {...job, status: active?.phase ?? 'queued' as const,
-        ...(active === undefined ? {} : {companion: active.companion, ...this.#runContext(active)})};
-    });
-    return {version: 1, jobs, next: page.length > CODING_JOB_PAGE_SIZE ? jobs.at(-1)?.jobId ?? null : null};
+    const jobs: CodingJobEntry[] = [];
+    let cursor = after;
+    for (;;) {
+      const rows = this.#store.activeJobs(cursor, CODING_JOB_PAGE_SIZE + 1);
+      for (const job of rows) {
+        if (!this.#jobVisible(job, job.companion)) continue;
+        if (jobs.length === CODING_JOB_PAGE_SIZE) return {version: 1, jobs, next: jobs.at(-1)?.jobId ?? null};
+        const active = this.#active.get(job.operationId);
+        jobs.push({...job, status: active?.phase ?? 'queued', ...(active === undefined ? {} : {companion: active.companion, ...this.#runContext(active)})});
+      }
+      if (rows.length <= CODING_JOB_PAGE_SIZE) return {version: 1, jobs, next: null};
+      cursor = rows.at(-1)?.jobId ?? cursor;
+    }
   }
   #continuation(attempt: CodingAttempt | undefined): CodingJobDetail['continuation'] {
     if (attempt === undefined || attempt.handoffToken === undefined || attempt.selectionId === undefined ||
@@ -149,10 +163,13 @@ export class CodingCoordinator {
     const job = this.#store.jobById(jobId);
     if (job === undefined) return undefined;
     const saved = this.#store.attempts(jobId);
-    const attempts: CodingAttemptEntry[] = saved.map(({operationId, harness, sessionId, status, selectionReason, result}) => {
-      const active = this.#active.get(operationId);
-      return {operationId, harness, sessionId: active?.sessionId ?? sessionId, status: active?.phase ?? status, selectionReason, result};
-    });
+    const latest = saved.at(-1);
+    if (!this.#jobVisible({...job, operationId: latest?.operationId ?? job.operationId}, latest?.companion)) return undefined;
+    const attempts: CodingAttemptEntry[] = saved.filter(attempt => this.#jobVisible({...job, operationId: attempt.operationId}, attempt.companion))
+      .map(({operationId, harness, sessionId, status, selectionReason, result}) => {
+        const active = this.#active.get(operationId);
+        return {operationId, harness, sessionId: active?.sessionId ?? sessionId, status: active?.phase ?? status, selectionReason, result};
+      });
     if (attempts.length === 0) {
       const active = this.#active.get(job.operationId);
       attempts.push({operationId: job.operationId, harness: codingHarness(active?.harness) ? active.harness : null, sessionId: active?.sessionId ?? null,
@@ -160,7 +177,7 @@ export class CodingCoordinator {
         selectionReason: 'Legacy worker selection.', result: null});
     }
     const last = attempts.at(-1);
-    const latest = saved.at(-1), continuation = this.#continuation(latest);
+    const continuation = this.#continuation(latest);
     const activeOperationId = last !== undefined && !this.#store.resultSaved(last.operationId) ? last.operationId : null;
     const continuationReason = continuation !== null || activeOperationId !== null || latest === undefined ? undefined :
       latest.status === 'uncertain' ? 'The previous writer may still be active.' :

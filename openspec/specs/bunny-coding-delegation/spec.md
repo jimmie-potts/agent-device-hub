@@ -257,3 +257,9 @@ A new coding job SHALL bind approval to Auto or a named harness. Auto SHALL choo
 
 - **WHEN** a worker may still be writing, or the previous writer's proof is unavailable after restart
 - **THEN** the coordinator or worker refuses a competing writer and sends no automatic retry
+
+#### Scenario: Revoked sharing after a continuation
+
+- **WHEN** a saved coding update belongs to a continuation and the destination loses the repository, original task, original job or attempt grant
+- **THEN** Conversation, Jobs and later prompts withhold the affected facts and derived replies for that destination, including after restart
+- **AND** a continuation update without a verified saved job and attempt association stays private under a revocable policy

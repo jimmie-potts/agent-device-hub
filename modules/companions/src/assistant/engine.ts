@@ -10,12 +10,12 @@ import {ASSISTANT_LEGACY_TOOL_LIMIT, ASSISTANT_WEMO_OWNER, type AssistantControl
 import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
-import type {CodingJob} from '../coding/store.js';
+import {codingUpdateMessageId, type CodingJob, type CodingJobRead, type CodingUpdateKind} from '../coding/store.js';
 import type {CodingCoordinator, HandOffAnswer} from '../coding/coordinator.js';
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
 import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
-import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type Question, type Stage, type StagedInput, type Task} from './store.js';
+import {AssistantStore, GRAPH_VERSION, LIMITS, terminal, unresolved, type Appended, type Call, type MessageSource, type Question, type Stage, type StagedInput, type Task} from './store.js';
 import type {ContextPreview, ConversationList, Proposal} from './history-contract.js';
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
@@ -69,6 +69,7 @@ export type AssistantOptions = {
   delegate?: Delegate;
   backgroundCoding?: boolean;
   codingJob?: (operationId: string) => CodingJob | undefined;
+  codingJobRead?: CodingCoordinator['jobRead'];
   stopCodingJob?: CodingCoordinator['prepareStop'];
   continueCodingJob?: CodingCoordinator['prepareContinuation'];
   /**
@@ -431,8 +432,8 @@ export class AssistantEngine {
    * Asks the title model to check a conversation's title after a task finished or a major event (Hub #2075), beside the
    * task and after the commit that recorded the event; the check never delays, fails or rolls back the task.
    */
-  #checkTitle(task: Pick<Task, 'conversationId' | 'profile'>, event: TitleEvent): void {
-    if (!this.#closed && !this.#starting && !this.context.signal.aborted) void this.titles.check(task.conversationId, task.profile, event);
+  #checkTitle(task: Pick<Task, 'conversationId' | 'profile'>, event: TitleEvent, allowed?: () => boolean): void {
+    if (!this.#closed && !this.#starting && !this.context.signal.aborted) void this.titles.check(task.conversationId, task.profile, event, allowed);
   }
   /**
    * Returns the task's unread steers to the head of its conversation's queue in the open transaction (Hub #2031), when
@@ -543,11 +544,12 @@ export class AssistantEngine {
   }
   canSpeak(taskId: string, messageId: string): boolean {
     const task = this.store.task(taskId);
-    if (task === undefined || this.store.savedMessage(taskId, messageId)?.role !== 'assistant' || !spokenAloud(task.profile)) return false;
+    const message = this.store.savedMessage(taskId, messageId);
+    if (task === undefined || message?.role !== 'assistant' || !spokenAloud(task.profile)) return false;
     const read = this.#fields(task.profile, 'read', 'private-conversation'), speech = this.#fields(task.profile, 'read', 'conversation-speech');
     const allowed: FieldAccess = (source, field, record) => read(source, field, record) && speech(source, field, record);
     return allowed('conversation', 'text', task.conversationId) && allowed('conversation', 'text', messageId) &&
-      this.#jobMessageAllowed({id: messageId, taskId}, allowed) && this.#replayable(taskId, allowed);
+      this.#jobMessageAllowed({...message, taskId}, allowed) && this.#replayable(taskId, allowed);
   }
   /**
    * Offers one durable assistant message to be spoken through the companions speech endpoint. Text over the browser driver's
@@ -1000,7 +1002,7 @@ export class AssistantEngine {
         return {type: 'application/json', bytes: Buffer.from(JSON.stringify({...queue, held, messages, steers}))};
       }
       const visibility = {
-        shows: (message: {id: string; role: string; taskId: string}) => fields('conversation', 'text', message.id) &&
+        shows: (message: MessageSource) => fields('conversation', 'text', message.id) &&
           (message.role === 'owner' || this.#jobMessageAllowed(message, fields) && this.#replayable(message.taskId, fields)),
         attachment: (requestId: string) => fields('artwork', 'attachment', requestId),
         task: (taskId: string) => conversationId !== undefined && task(conversationId, taskId),
@@ -1177,14 +1179,43 @@ export class AssistantEngine {
     const prompt = this.#fields(companion, 'prompt'), read = this.#fields(companion, 'read'), discover = this.#fields(companion, 'discovery');
     return (source, field, record) => prompt(source, field, record) && (field === 'index' ? discover : read)(source, field, record);
   }
-  #jobMessageAllowed(message: {id: string; taskId: string; role?: string}, access: FieldAccess): boolean {
-    const match = /^(.+-step-\d+)(-job(?:-sent|-stop-unconfirmed|-result)?)?$/u.exec(message.id);
-    const operationId = match?.[1], jobMessage = match?.[2] !== undefined;
-    if (operationId === undefined || !jobMessage && message.role !== 'tool') return true;
-    const job = this.options.codingJob?.(operationId);
-    if (job === undefined) return !jobMessage || !canRevokeFields(this.options.share);
-    return job.taskId === message.taskId && access('conversation', 'details', message.taskId) &&
-      access('coding', 'repository', job.repository) && access('coding', 'details', operationId);
+  #codingJobAllowed(job: CodingJobRead, access: FieldAccess): boolean {
+    return access('conversation', 'details', job.taskId) && access('coding', 'repository', job.repository) &&
+      access('coding', 'details', job.jobId) && access('coding', 'details', job.originalOperationId) &&
+      (job.operationId === job.originalOperationId || access('coding', 'details', job.operationId));
+  }
+  canReadCodingJob(profile: AssistantProfile, job: Pick<CodingJob, 'jobId' | 'taskId' | 'conversationId' | 'operationId' | 'repository'>): boolean {
+    const task = this.store.task(job.taskId), origin = this.options.codingJobRead?.(job.operationId);
+    if (task?.profile !== profile || task.conversationId !== job.conversationId || origin?.jobId !== job.jobId ||
+      origin.taskId !== job.taskId || origin.conversationId !== job.conversationId || origin.repository !== job.repository) return false;
+    const fields = this.#publicRead(profile);
+    return fields.task(job.conversationId, job.taskId) && fields.discover('coding', 'index', job.jobId) &&
+      this.#codingJobAllowed(origin, fields.read) && fields.read('coding', 'status', job.operationId);
+  }
+  #jobMessageAllowed(message: MessageSource, access: FieldAccess): boolean {
+    const legacy = /^(.+-step-\d+)(-job)?(?:-(sent|stop-unconfirmed|result))?$/u.exec(message.id);
+    const updateId = /^([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})-(sent|stop-unconfirmed|result)$/u.exec(message.id);
+    // A normal Conversation reply uses its own task ID and the same result suffix.
+    const continuation = updateId?.[1] === message.taskId ? null : updateId;
+    const operationId = legacy?.[1] ?? continuation?.[1];
+    const follows = message.follows ?? ((legacy?.[3] !== undefined || continuation !== null) && message.follows === undefined
+      ? this.store.savedMessage(message.taskId, message.id)?.follows : undefined);
+    const followsJob = /-step-\d+-job$/u.test(follows ?? '');
+    const jobMessage = followsJob || legacy?.[2] !== undefined || continuation !== null;
+    const acceptsOldRecords = !canRevokeFields(this.options.share);
+    if (operationId === undefined) return !jobMessage || acceptsOldRecords;
+    if (!jobMessage && message.role !== 'tool') return true;
+
+    const kind = legacy?.[3] ?? continuation?.[2];
+    const update = (kind === 'sent' || kind === 'stop-unconfirmed' || kind === 'result') && follows != null ? {jobId: follows, kind} as const : undefined;
+    // A legacy update can predate its durable delivery record. A continuation always needs both the saved link
+    // and the update owned by its attempt.
+    const read = this.options.codingJobRead;
+    const job = continuation !== null ? update === undefined ? undefined : read?.(operationId, update) : read?.(operationId);
+    if (job === undefined) return !jobMessage || acceptsOldRecords;
+    if (job.taskId !== message.taskId || this.store.task(message.taskId)?.conversationId !== job.conversationId) return false;
+    if (update !== undefined && (update.jobId !== job.jobId || codingUpdateMessageId(job, update.kind) !== message.id)) return false;
+    return this.#codingJobAllowed(job, access);
   }
   #replayable(taskId: string, access: FieldAccess): boolean {
     if (this.store.task(taskId)?.clarificationDevices?.some(id => !access('devices', 'index', id) || !access('devices', 'label', id)) === true) return false;
@@ -1198,11 +1229,11 @@ export class AssistantEngine {
    * are now, with the recent conversation held to the messages saved before the task started. A task saved before that
    * boundary existed has no recent conversation.
    */
-  #context(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>, recipient?: FieldAccess): PromptContext {
+  #context(task: Pick<Task, 'profile' | 'conversationId' | 'contextThrough'>, recipient?: FieldAccess, modelAccess = this.#modelFields(task.profile)): PromptContext {
     const persona = PROFILES.find(value => value.id === task.profile) ?? fail('internal');
-    const providerFields = this.#fields(task.profile, 'prompt'), toolFields = this.#modelFields(task.profile);
+    const providerFields = this.#fields(task.profile, 'prompt');
     const fields: FieldAccess = (source, field, record) => providerFields(source, field, record) && recipient?.(source, field, record) !== false;
-    const modelFields: FieldAccess = (source, field, record) => toolFields(source, field, record) && recipient?.(source, field, record) !== false;
+    const modelFields: FieldAccess = (source, field, record) => modelAccess(source, field, record) && recipient?.(source, field, record) !== false;
     const recent = task.contextThrough === undefined || !fields('conversation', 'text', task.conversationId)
       ? {messages: [], total: 0} : this.store.recentContext(task.profile, task.conversationId, task.contextThrough, message =>
         fields('conversation', 'text', message.id) &&
@@ -1237,9 +1268,10 @@ export class AssistantEngine {
     const id = `${state.taskId}-step-${String(state.step)}`;
     // Each section keeps to its own budget and states what it left out, so the context is bounded without a refusal.
     const paid = provider.name !== 'synthetic';
-    const ledger: DisclosureLedger = {fields: []};
+    const ledger: DisclosureLedger = {fields: []}, modelLedger: DisclosureLedger = {fields: []};
     const fields = recordDisclosures(this.#fields(task.profile, 'prompt'), ledger);
     const modelFields = this.#modelFields(task.profile);
+    const modelAccess = recordDisclosures(modelFields, modelLedger);
     if (!fields('conversation', 'text', task.conversationId)) throw new Fault('forbidden', 'This conversation is not shared with the configured model.');
     let request: TurnInput | undefined;
     let includesReplay = false;
@@ -1248,8 +1280,10 @@ export class AssistantEngine {
     // unread, and a replayed node whose call was admitted takes none again.
     const text = await this.#call(state.taskId, state.step, 'model', signal => {
       const allow = this.#fields(task.profile, 'prompt');
-      if (ledger.fields.some(field => !allow(field.source, field.field, field.record)) || includesReplay && !this.#replayable(task.id, modelFields) ||
-        ledger.incompleteDisclosures === true && this.options.share !== undefined && this.options.share.revokesFields !== false) {
+      if (ledger.fields.some(field => !allow(field.source, field.field, field.record)) ||
+        modelLedger.fields.some(field => !modelFields(field.source, field.field, field.record)) ||
+        includesReplay && !this.#replayable(task.id, modelFields) ||
+        (ledger.incompleteDisclosures === true || modelLedger.incompleteDisclosures === true) && canRevokeFields(this.options.share)) {
         throw new Fault('forbidden', 'Sharing changed before the configured model could receive this turn.');
       }
       return provider.turn(request ?? fail('internal'), signal)
@@ -1257,7 +1291,7 @@ export class AssistantEngine {
           ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})}));
     }, undefined, current => {
       this.#drain(current);
-      const replayFields: FieldAccess = (source, field, record) => modelFields(source, field, record) && fields(source, field, record);
+      const replayFields: FieldAccess = (source, field, record) => modelAccess(source, field, record) && fields(source, field, record);
       const visible = (item: TurnInput['transcript'][number]) => {
         const id = conversationMessageId(current.id, item);
         return fields('conversation', 'text', id) && (id === undefined || item.role === 'owner' ||
@@ -1268,7 +1302,7 @@ export class AssistantEngine {
       if (latest !== undefined && !visible(latest)) throw new Fault('forbidden', 'This message is not shared with the configured model.');
       includesReplay = this.#replayable(current.id, modelFields) && current.transcript.every(visible);
       const transcript = includesReplay ? current.transcript : ownerInputs.filter(visible);
-      request = {instructions: INSTRUCTIONS, context: this.#context(current, fields), transcript, tools,
+      request = {instructions: INSTRUCTIONS, context: this.#context(current, fields, modelAccess), transcript, tools,
         mode: copy.mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
       // The call reserves what this request could use: its bytes bound its input tokens, and the output bound its answer's.
       const inputUnits = inputBound(request);
@@ -1800,12 +1834,12 @@ export class AssistantEngine {
     this.#publish(add, parent);
   }
   /** Appends a job observation to the approved exchange, even after the owner starts another conversation. */
-  async codingJobUpdate(job: CodingJob, kind: 'sent' | 'stop-unconfirmed' | 'result', text: string, parent: TraceContext, startup: boolean): Promise<void> {
+  async codingJobUpdate(job: CodingJob, kind: CodingUpdateKind, text: string, parent: TraceContext, startup: boolean): Promise<void> {
     let delivered: Task | undefined;
+    const id = codingUpdateMessageId(job, kind);
     await this.outbox.transaction(add => {
       const task = this.store.task(job.taskId);
       if (task === undefined || task.conversationId !== job.conversationId) return;
-      const id = job.jobId === `${job.operationId}-job` ? `${job.jobId}-${kind}` : `${job.operationId}-${kind}`;
       if (this.store.savedMessage(task.id, id) !== undefined) return;
       this.store.message(task, job.jobId, 'assistant', jobReceipt(job).slice('accepted: '.length), this.context.clock.now());
       this.store.message(task, id, 'assistant', `Coding job ${job.jobId}: ${text}`, this.context.clock.now(), job.jobId);
@@ -1814,7 +1848,14 @@ export class AssistantEngine {
       this.#publish(add, parent);
       delivered = task;
     });
-    if (delivered !== undefined && kind === 'result' && !startup) this.#checkTitle(delivered, {kind: 'hand-off-result', outcome: handOffOutcome(text)});
+    if (delivered !== undefined && kind === 'result' && !startup) {
+      const profile = delivered.profile;
+      this.#checkTitle(delivered, {kind: 'hand-off-result', outcome: handOffOutcome(text)}, () => {
+        const fields = this.#fields(profile, 'title', (this.options.titleProvider ?? this.options.syntheticTitleProvider)?.name);
+        return fields('conversation', 'text', job.conversationId) && fields('conversation', 'text', id) &&
+          this.#jobMessageAllowed({id, role: 'assistant', taskId: job.taskId}, fields);
+      });
+    }
   }
   /** The per-turn limit the next call would pass, as the message naming it, or undefined while every bound has room. */
   #limitOf(task: Task, kind: 'model' | 'tool', timeout: number, budget: Budget): string | undefined {
