@@ -247,8 +247,8 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
     await fact(usage, 'Spend today', '$20.00 of $20.00');
     const dailyLimit = page.locator('.conversation-compose').getByText("The daily spend limit of $20.00 is reached. New messages can start after midnight, the runtime host's local time.", {exact: true});
     await dailyLimit.waitFor();
-    // Reachy and MicroDuck use the same configured provider and model (Hub #2026): Details names it, says their calls are
-    // paid and count toward the shared limits, lists only the tools their model is offered, and the spend notice shows.
+    // All three companions use the configured provider, tool allowlist and shared limits (Hubs #2026 and #2106).
+    // The profile name, allowed tools and spend notice update as the owner moves between conversations.
     await page.evaluate("window.conversationFixture.update('companion-tools')");
     await fact(capabilities, 'Allowed tools', 'set_mode, set_lifx_power');
     for (const [id, name] of [['reachy', 'Reachy'], ['microduck', 'MicroDuck']] as const) {
@@ -256,8 +256,8 @@ export async function conversationStateJourney(browser: Browser): Promise<void> 
       await details.locator('.conversation-details-profile').getByText(name, {exact: true}).waitFor();
       await fact(capabilities, 'Provider', 'Anthropic');
       await fact(capabilities, 'Model', 'claude-example-hosted-model');
-      await fact(capabilities, 'Allowed tools', 'set_mode');
-      await fact(capabilities, 'B.U.N.N.Y. only', 'set_lifx_power');
+      await fact(capabilities, 'Allowed tools', 'set_mode, set_lifx_power');
+      assert.equal(await capabilities.getByText('B.U.N.N.Y. only', {exact: true}).count(), 0, `${name} has the same allowlist`);
       await fact(usage, 'Prices', 'Configured for claude-example-hosted-model');
       await settings.getByText(/They are passed to the configured model, which B\.U\.N\.N\.Y\., Reachy and MicroDuck share, and every conversation's calls count toward the same spend limits\./).waitFor();
       assert.equal(await details.getByText(/no paid calls/).count(), 0, `${name}'s Details does not claim free calls`);

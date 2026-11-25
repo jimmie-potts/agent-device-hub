@@ -1,10 +1,10 @@
 # Run the coding worker on the Mac
 
 The coding worker (Hub #502) is one Node process on the owner's computer that
-lets B.U.N.N.Y. hand a bounded coding task to Claude Code and get a reviewable
-result back. It holds a `coding-worker` credential, opens one endpoint on the
-core's loopback gateway, and runs `claude -p` in a fresh worktree of an
-allowlisted repository when the companions module hands it owner-approved
+lets B.U.N.N.Y. hand a bounded coding task to Claude Code or Codex and get a
+reviewable result back. It holds a `coding-worker` credential, opens one endpoint on the
+core's loopback gateway, and starts the selected adapter in a fresh worktree
+of an allowlisted repository when the companions module hands it owner-approved
 work. The container gets no CLI and no repository; the worker gets no state,
 device or dashboard authority. Its credential role grants exactly three
 families on its endpoint: it answers `coding-work`, publishes `coding-progress`
@@ -16,7 +16,7 @@ start with `capacity`. Each start names the companion that asked, and runs on
 the same repository each get their own fresh worktree; their fetch and worktree
 setup take turns, so git's locks never race.
 
-## What a delegated task may do
+## Claude Code delegation
 
 For each run the worker creates `.local/worktrees/bunny-<task>-<random>` under the
 repository from `origin/main` (after a best-effort `git fetch`), runs the
@@ -167,6 +167,11 @@ be listed.
 
 ## Readiness
 
+Workers using `coding-worker/1.1` also declare each configured adapter in
+`coding-endpoint/2.3`. The core uses `coding-state/2.3` for those declarations
+and active session IDs. The existing readiness field still describes Claude
+Code.
+
 Before it connects, the worker asks its tool what it is, without starting a
 task or a session and without spending: `claude --version` and
 `claude auth status --json`. Each runs with no input, the harness's
@@ -196,6 +201,78 @@ windows only during a run, so after a run that reported them the worker
 probes again and sends one more enable from its endpoint with the new record.
 That enable is a report: if it is refused or lost, nothing is sent again. A
 disabled or lost endpoint clears the record.
+
+## Codex delegation
+
+Use the Codex worker on your own unmanaged Mac with a personal ChatGPT
+workspace. Managed Macs and organization-managed workspaces are unsupported.
+Disable the Codex worker if either becomes managed, pending review of the
+new setup. This is a setup decision. Jobs can run without asking again.
+The worker checks the reported sign-in and settings before sending a brief.
+
+Use `coding-worker/1.1` and add a `codex` object with absolute `executable`
+and `home` paths and, optionally, a `model` name. Select the local CLI in
+the worker configuration and give it a separate mode-700 directory outside
+every checkout. Standalone Codex 0.163.0 supports the app-server checks in
+a signed-out profile. Use a CLI that confirms the required effective settings,
+account mode and thread scope. Upgrade the core first so it accepts
+`coding-endpoint/2.3`. Existing Claude-only configuration and requests without
+a harness selection continue to use Claude Code.
+
+As the worker's host user, create that directory and sign in to ChatGPT in
+the dedicated profile. Use the same absolute directory for `codex.home`
+and preserve it for the native sessions it stores.
+
+```sh
+worker_codex_home="$HOME/.local/share/bunny/coding-worker/codex"
+install -d -m 700 "$worker_codex_home"
+CODEX_HOME="$worker_codex_home" HOME="$worker_codex_home" /ABSOLUTE/REVIEWED/codex \
+  -c 'cli_auth_credentials_store="file"' -c 'forced_login_method="chatgpt"' login
+```
+
+Keep this profile free of `config.toml` and a nested `.codex` directory.
+Use the dedicated ChatGPT login and keep personal credentials in their own profile.
+The worker launches the private stdio app-server from that directory with
+both `HOME` and `CODEX_HOME` set to it. It pins the SQLite files and logs to
+the profile's `sqlite` and `log` directories in the launch arguments.
+The process can open its local stores during startup. The worker checks the
+effective configuration before reading the account or opening a thread.
+A reported path or route override, enabled telemetry, configured MCP servers
+or plugins, enabled hooks, apps, shell snapshots or login shells, or unavailable
+settings evidence prevents a brief from being sent. The worker checks
+the personal ChatGPT account before opening a thread and again before sending
+a turn. An organization plan reported by the account or quota snapshot,
+or a report of a different backend, also refuses the run. Each run reads the
+current quota snapshot after checking the account and waits up to two seconds.
+Quota can be unavailable.
+After the adapter observes an organization quota, it requires a fresh personal
+account and matching quota plan before another run. An older probe cannot
+release that refusal. The effective settings and account checks do not attest
+that a host or workspace is unmanaged.
+Sign-in, plan and limit responses contribute only the declared readiness
+fields. The child receives no worker credential or provider API key. Codex
+owns its file-backed sign-in in the dedicated profile. The worker reads no
+authentication token.
+
+The run uses a fresh worktree, no interactive approvals and a profile with
+writes restricted to the worktree and disabled shell network access. The shared wall-clock
+deadline stops the process. Codex sends one model turn and supplies no
+per-turn dollar cap or subscription cost. Only declared subscription-plan
+exhaustion is a usage limit. Provider slowdown is an ordinary failure, and
+loss after dispatch is uncertain. There is no automatic retry.
+
+| Worker capability | Claude Code | Codex |
+| --- | --- | --- |
+| Subscription evidence | Preflight rejects contrary evidence. Stream init names the credential source. | Account must identify a ChatGPT sign-in before the turn. |
+| Usage limits | Windows observed during a run, or unknown | Account windows when reported, or unknown |
+| Cancellation | The worker terminates the child | The worker terminates the app-server process group |
+| Native identity | First validated session ID in the stream | Validated thread ID before the turn |
+| Review a named revision | Yes | Yes |
+| Live steering or resume through this worker | Unsupported | Unsupported |
+
+Claude Code's first-event check observes the credential after the CLI starts.
+Installed qualification in #2115 still owns evidence of real sign-in,
+billing, sandbox behavior and opening the reported session in a native client.
 
 ## Install once
 
