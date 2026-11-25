@@ -22,7 +22,7 @@ import type {CodingJobPage} from '../src/coding/job-page.js';
 import {AssistantStore} from '../src/assistant/store.js';
 import {CodingStore} from '../src/coding/store.js';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
-import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
+import type {ModelProvider, TurnInput, TurnReply} from '../src/assistant/provider.js';
 import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
 
 const PROFILES = ['bunny', 'reachy', 'microduck'] as const;
@@ -1029,12 +1029,27 @@ void test('an uncapped attempt uses observed setup deadlines without timing out 
 for (const [origin, destination] of [['codex', 'claude-code'], ['claude-code', 'codex']] as const)
 void test(`an owner-approved Auto job runs on ${origin} and explicitly continues on ${destination}`, {timeout: 30_000}, async context => {
   const brief = 'Exact owner-approved brief. ' + 'x'.repeat(4096 - 'Exact owner-approved brief. '.length);
-  const policy = sharing();
+  const inputs: TurnInput[] = [], titlePrompts: string[] = [];
   let denyBrief: 'private-conversation' | 'coding-worker' | undefined;
-  const share = Object.assign((query: ShareQuery) => policy(query) &&
+  const delegate = delegating('bunny', brief);
+  const permitted = sharing();
+  const share = Object.assign((query: ShareQuery) => permitted(query) && !revoked.some(rule => rule(query)) &&
     !(query.destination === denyBrief && query.source === 'coding' && query.field === 'brief'),
-  {revokesFields: true, allowsDerived: (query: ShareQuery) => policy.allowsDerived?.(query) !== false});
-  const w = await world(context, {provider: delegating('bunny', brief), share});
+    {revokesFields: true, allowsDerived: (query: ShareQuery) => permitted.allowsDerived?.(query) !== false});
+  const revoked: ((query: ShareQuery) => boolean)[] = [];
+  const w = await world(context, {share,
+    syntheticTitleProvider: {name: 'synthetic', model: 'synthetic', title: prompt => {
+      titlePrompts.push(prompt);
+      return Promise.resolve({text: 'KEEP', usage: null});
+    }},
+    provider: {...delegate, turn: (input, signal) => {
+      inputs.push(input);
+      if (input.transcript.some(item => item.role === 'owner' && item.text === 'Synthetic pre-revocation message')) {
+        return Promise.resolve({text: 'Synthetic response based on the continuation.', calls: [], stop: 'end', units: 10});
+      }
+      return delegate.turn(input, signal);
+    }},
+  });
   const claude: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: '2.0',
     limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
   const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus', capabilities: {...claude.capabilities, steering: 'live'}};
@@ -1111,6 +1126,8 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   });
   assert.equal((await w.continueJob(jobId, operationId, destination)).status, 'rejected');
   await w.progress({operationId: resumed.operationId, status: 'started', setup: 'ready', harness: destination, sessionId: resumedSession}, '2.3');
+  const deniesAttempt = (query: ShareQuery) => query.source === 'coding' && query.field === 'details' && query.record === resumed.operationId;
+  revoked.push(query => deniesAttempt(query) && query.purpose === 'title');
   await w.progress({operationId: resumed.operationId, status: 'completed', harness: destination,
     result: {...result('Synthetic continued work.'), head, changedFiles: ['partial.txt'], checks: [{name: 'unit test', status: 'passed'}]}}, '2.3');
   await w.waitMessages('bunny', /Synthetic continued work/);
@@ -1133,6 +1150,56 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   await w.restart();
   await assertCard();
   assert.doesNotMatch(JSON.stringify(detail), new RegExp(handoffToken));
+
+  const conversation = w.task('bunny')?.conversationId ?? assert.fail('saved job conversation');
+  const resultText = /Synthetic continued work/u, originalText = /Synthetic partial work/u;
+  assert.equal((await w.send('bunny', 'Synthetic pre-revocation message')).status, 'accepted');
+  await w.waitMessages('bunny', /Synthetic response based on the continuation/u, conversation);
+  assert.match(JSON.stringify(inputs.at(-1)), resultText, 'the current model can receive the granted attempt');
+  await settle(() => titlePrompts.some(prompt => prompt.includes('Synthetic pre-revocation message')));
+  assert.match(titlePrompts.join('\n'), /hand-off's result arrived: cancelled/u);
+  assert.doesNotMatch(titlePrompts.join('\n'), /hand-off's result arrived: completed|Synthetic continued work/u);
+  revoked.pop();
+  for (const [source, field, record] of [
+    ['coding', 'repository', 'agent-device-hub'],
+    ['conversation', 'details', initial.taskId],
+    ['coding', 'details', jobId],
+    ['coding', 'details', operationId],
+    ['coding', 'details', resumed.operationId],
+  ] as const) {
+    revoked.push(query => query.source === source && query.field === field && query.record === record);
+    const recent = JSON.stringify(await w.messages('bunny', conversation));
+    assert.doesNotMatch(recent, resultText, `revoked ${source}/${field} in recent Conversation`);
+    assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), resultText);
+    const denied = await w.module().manifest.content?.('coding-job', {query: {jobId}, signal: new AbortController().signal});
+    assert.deepEqual(denied, errorBody('not-found'));
+    assert.deepEqual((await w.jobs({jobId, scope: 'all'})).jobs, []);
+    if (record === resumed.operationId) assert.match(recent, originalText, 'the first attempt keeps its own grant');
+    revoked.pop();
+  }
+
+  revoked.push(query => deniesAttempt(query) && query.destination === 'private-conversation');
+  await w.restart();
+  const restarted = JSON.stringify(await w.messages('bunny', conversation));
+  assert.doesNotMatch(restarted, resultText);
+  assert.doesNotMatch(restarted, /Synthetic response based on the continuation/u);
+  revoked.pop();
+  revoked.push(query => deniesAttempt(query) && query.destination === 'synthetic' && query.purpose === 'read');
+  assert.match(JSON.stringify(await w.messages('bunny', conversation)), resultText, 'the private destination still has its own grant');
+  assert.equal((await w.send('bunny', 'Synthetic next message for replay')).status, 'accepted');
+  await settle(() => inputs.some(input => JSON.stringify(input.transcript).includes('Synthetic next message for replay')));
+  const next = inputs.find(input => JSON.stringify(input.transcript).includes('Synthetic next message for replay'));
+  assert.doesNotMatch(JSON.stringify(next), resultText);
+  assert.doesNotMatch(JSON.stringify(next), /Synthetic response based on the continuation/u);
+  assert.match(JSON.stringify(next), originalText);
+
+  revoked.pop();
+  // The saved association is required even if all grants currently allow the attempt.
+  assert.equal(w.database().prepare("DELETE FROM companion_coding_job_updates WHERE operation_id=? AND kind='result'").run(resumed.operationId).changes, 1);
+  const missingSource = /Synthetic continued work|Synthetic response based on the continuation/u;
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny', conversation)), missingSource);
+  share.revokesFields = false;
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny', conversation)), missingSource);
 });
 
 

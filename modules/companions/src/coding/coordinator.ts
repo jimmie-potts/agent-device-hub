@@ -143,6 +143,7 @@ export class CodingCoordinator {
     this.#store = new CodingStore(context.database());
   }
   jobForAttempt(operationId: string): CodingJob | undefined {return this.#store.job(operationId);}
+  jobRead(...args: Parameters<CodingStore['jobRead']>): ReturnType<CodingStore['jobRead']> {return this.#store.jobRead(...args);}
   /** Whether a hand-off was accepted as a run, so one that waited is known to have been sent. */
   accepted(operationId: string): boolean {
     try {return this.#active.has(operationId) || this.#store.accepted(operationId);} catch {return false;}

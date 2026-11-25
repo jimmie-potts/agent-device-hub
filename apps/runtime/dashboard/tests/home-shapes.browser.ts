@@ -897,16 +897,8 @@ try {
         + `Card buttons now ${JSON.stringify(card.buttons)}; result line ${JSON.stringify(card.result)}; last events on card buttons ${JSON.stringify(card.events)} `
         + `(page time ${String(card.now)}); last request ${JSON.stringify(bodies.at(-1))}`;
     };
-    // A started item's command completes with its upload, and the module saves the item as playing before it publishes
-    // that: until then the display record says loading, and its change makes the card read the player again with every
-    // control disabled for the read. A click as that read starts sends nothing (#1789), so a press waits for it.
-    const playback = async (): Promise<string> => live.evaluate(async id => {
-      const data = await (await fetch('/api/v2/snapshot?families=pixoo-display&owner=bunny/modules/pixoo')).json() as {records: {'pixoo-display': {id: string; player: {state: string}}[]}};
-      const record = data.records['pixoo-display'].find(value => value.id === id);if (record === undefined) throw new Error('pixoo-display-record');
-      return record.player.state;
-    }, deviceId);
+    // The card keeps its controls through a routine re-read of the player (#2124), so a press needs only its control enabled.
     const press = async (scope: Locator, name: string, family: string, data: Record<string, unknown>, double = false): Promise<void> => {
-      await expect.poll(playback).not.toBe('loading');
       await settled(scope, name);const guard = await device();mark = bodies.length;
       const button = scope.getByRole('button', {name, exact: true});
       if (double) await button.dblclick();else await button.click();

@@ -382,7 +382,8 @@ loss after dispatch is uncertain. There is no automatic retry.
 | Cancellation | The worker terminates the child | The worker terminates the app-server process group |
 | Native identity | First validated session ID in the stream | Validated thread ID before the turn |
 | Review a named revision | Yes | Yes |
-| Live steering or resume through this worker | Unsupported | Unsupported |
+| Message a running job | Unsupported | The worker sends the message to the named thread and active turn. A matching turn receipt confirms acceptance. |
+| Resume the same stopped turn through the worker | Unsupported | Unsupported |
 
 Claude Code's first-event check observes the credential after the CLI starts.
 Installed qualification in #2115 still owns evidence of real sign-in,
