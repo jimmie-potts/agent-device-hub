@@ -132,14 +132,15 @@ function matches(source: WorktreeProof, proof: WorktreeProof): boolean {
 }
 
 /** Copy only verified, tracked checkout files into a new, independent Git checkout. */
-export async function copyWorktree(proof: WorktreeProof, successor: string, protectedRoot: ProtectedCheckout, writerHome: string, base: string, git: Git): Promise<WorktreeProof | undefined> {
+export async function copyWorktree(proof: WorktreeProof, successor: string, protectedRoot: ProtectedCheckout, writerHome: string | undefined, base: string, git: Git): Promise<WorktreeProof | undefined> {
   let created = false, copied = false;
   try {
     const source = await snapshot(proof.identity.root, git, true);
     const targetParent = await realpath(dirname(successor));
     const targetPath = join(targetParent, successor.split('/').at(-1) ?? '');
     if ((await protectedCheckout(protectedRoot.path)).identity !== protectedRoot.identity || targetParent !== protectedRoot.path ||
-      !SHA.test(base) || !matches(source, proof) || within(proof.identity.root, targetPath) || within(proof.identity.common, targetPath) || within(writerHome, targetPath)) return;
+      !SHA.test(base) || !matches(source, proof) || within(proof.identity.root, targetPath) || within(proof.identity.common, targetPath) ||
+      (writerHome !== undefined && within(writerHome, targetPath))) return;
     const patch = await git(source.identity.root, ['diff', '--cached', '--binary', '--no-renames', '--no-ext-diff', '--no-textconv', source.head, '--']);
     await mkdir(successor, {mode: 0o700}); created = true;
     await git(successor, ['-c', 'init.templateDir=', 'init', '--quiet']);

@@ -245,7 +245,7 @@ A new coding job SHALL bind approval to Auto or a named harness. Auto SHALL choo
 
 #### Scenario: Continue a stopped and confined writer
 
-- **WHEN** the owner requests Claude Code after a stopped Codex attempt on a supported Mac worker, the native sandbox excludes the successor, and the worker confirms the source checkout identity, revision, index and selected files
+- **WHEN** the owner requests the other harness after a stopped Claude Code or Codex attempt on a supported Mac worker, the native sandbox excludes the successor, and the worker confirms the source checkout identity, revision, index and selected files
 - **THEN** the job receives a distinct attempt in a separate checkout and Git store with the same verified state, the full approved brief, bounded Git and check facts, and its own native identity and checks
 
 #### Scenario: Incomplete snapshot or confinement

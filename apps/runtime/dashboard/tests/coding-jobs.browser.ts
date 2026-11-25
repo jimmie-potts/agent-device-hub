@@ -107,7 +107,7 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await page.reload();
     await card(first).getByText(/ · cancelled$/).waitFor();
     await card(first).getByText('Attempts and results', {exact: true}).click();
-    await card(first).getByText(/Continuation from Claude Code is unavailable/).waitFor();
+    await card(first).getByText(/Continuation requires a stopped, confined writer/).waitFor();
     await card(second).getByText('fixture-beta-session', {exact: true}).waitFor();
     await card(second).getByText('fixture-model', {exact: true}).waitFor();
     await card(second).getByText('bunny-fixture-beta', {exact: true}).waitFor();
