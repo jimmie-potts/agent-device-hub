@@ -639,8 +639,20 @@ export function changes(page: Page, sent: string[] = []): string[] {
  * Waits for the dashboard's main region to show `feed`, within the page's default timeout. An expired wait says which
  * `data-feed` values the page showed, its `data-copies` and `data-syncs`, and how its latest SDK streams stood (#2068).
  */
-export async function feed(page: Page, value: string): Promise<void> {
+export async function feed(page: Page, value: string, expect: {failedCards?: readonly string[]} = {}): Promise<void> {
   await waitForFeed(page, value);
+  await noFailedCards(page, expect.failedCards);
+}
+
+/**
+ * A contained card fault (Hub #2139) leaves the page mounted, so a journey would not see it as a blank page: a failed
+ * card carries `data-card-failed` with its identity, and this fails the journey on any card it did not expect to fail.
+ * `feed()` checks it at each health point.
+ */
+export async function noFailedCards(page: Page, expected: readonly string[] = []): Promise<void> {
+  const found = await page.locator('[data-card-failed]').evaluateAll(all => all.map(node => `${node.getAttribute('data-card-failed') ?? ''} (${node.getAttribute('data-error-type') ?? 'unknown'})`));
+  const unexpected = found.filter(card => !expected.some(name => card.startsWith(`${name} (`)));
+  if (unexpected.length > 0) throw new Error(`a card failed: ${unexpected.join(', ')}. The page contained the error, so this journey would otherwise pass over a broken card.`);
 }
 
 /**
@@ -649,4 +661,5 @@ export async function feed(page: Page, value: string): Promise<void> {
  */
 export async function copiesSynced(page: Page): Promise<void> {
   await page.locator('main#main[data-copies="synced"]').waitFor();
+  await noFailedCards(page);
 }
