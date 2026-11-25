@@ -1633,6 +1633,11 @@ export class AssistantEngine {
         request = {instructions: INSTRUCTIONS, context: this.#context(current, undefined, {prompt: fields, model: modelAccess}), transcript, tools,
           mode: copy.mode === undefined || !fields('devices', 'status', 'hub') ? null : {mode: copy.mode.mode, revision: copy.mode.revision}};
       }
+      request = {...request, transcript: request.transcript.map(item => {
+        if (item.role !== 'owner' || !('submittedAtMs' in item)) return item;
+        const {submittedAtMs: _, ...message} = item;
+        return message;
+      })};
       // The call reserves what this request could use: its bytes bound its input tokens, and the output bound its answer's.
       const inputUnits = provider.inputUnits?.(request) ?? inputBound(request);
       return {units: inputUnits + LIMITS.outputUnits, unit: paid ? 'tokens' : 'synthetic units',
