@@ -1192,6 +1192,22 @@ module sends a worker that declared slots the 2.1 start, and one that declared
 none the 2.0 start. A 2.1 or 2.0 message stays valid and refuses the new
 members.
 
+### Subscription worker adapters
+
+The worker declares `coding-endpoint/2.3` when configured for adapter
+selection. This adds a per-harness declaration with subscription readiness,
+observed limit windows and supported capabilities. The legacy readiness field
+still describes Claude Code. `coding-state/2.3` publishes these declarations
+and the observed harness and native session ID of active runs.
+
+An explicit harness passes through `coding-run/2.1`, `coding-dispatch/2.1` and
+`coding-work/2.2`. The coordinator refuses a harness the selected worker did
+not declare. An implicit selection still runs Claude Code. Earlier workers
+keep receiving their supported work versions. `coding-progress/2.2` adds the
+harness and, when observed, its native session ID. A second `started`
+observation can attach the ID to the original operation without taking
+responsibility twice.
+
 ### Music lighting sessions (`music-lighting-*/2.0`)
 
 `registerMusicLightingFamilies` registers four families, all at 2.0, for the live Music lighting trial (#1272, #722, policy in #40). The browser-safe `v2/music-lighting-data` export owns their types and reason lists.
@@ -1230,3 +1246,9 @@ display timing through this contract.
 
 The tests are in `tests/music-lighting.test.mjs`.
 
+
+
+`assistant-state/2.4` adds the available companion supervisor and model pairs
+and may record the bound pair on current task summaries. The existing
+default, task and queue fields remain available. The state carries only
+public identifiers and counters.

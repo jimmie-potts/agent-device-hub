@@ -7,6 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {MessageValidator, SCHEMA_BASE, type Message, type MessageKind} from '@jimmie-potts/event-contracts/v2';
 import {bookkeeping, contractFamilies, familyOfSchema, leafMutations, sameState, type Bookkeeping} from '@jimmie-potts/event-contracts/v2/bookkeeping';
 import {registerDeviceFamilies} from '@jimmie-potts/event-contracts/v2/devices';
+import type {CodingHarnessReadiness, CodingRunEntry, CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {registerCoreFamilies} from '@jimmie-potts/event-contracts/v2/families';
 import type {ModuleRegistration} from '@jimmie-potts/sdk';
 import {CORE_MODULE, moduleBookkeeping, registrations, shippedList} from '../src/index.js';
@@ -135,6 +136,35 @@ function validator(): MessageValidator {
   }
   return validator;
 }
+
+it('coding worker readiness, run harness and native session are meaningful state', () => {
+  const family = 'coding-state/2.3', pointers = STATE_FAMILIES[family];
+  assert.ok(pointers !== undefined);
+  const harness: CodingHarnessReadiness = {harness: 'codex', installed: 'yes', version: '0.163.0', signedIn: 'yes',
+    plan: 'plus', limits: null, limitsObservedAtMs: null, checkedAtMs: AT,
+    capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
+  const run: CodingRunEntry = {operationId: randomUUID(), taskId: 'task-1', companion: 'bunny', status: 'started',
+    harness: 'codex', sessionId: 'native-first'};
+  const state: CodingState = {id: 'coding', revision: 1, endpointId: 'worker-1', availability: 'available',
+    active: {operationId: run.operationId, taskId: run.taskId, status: run.status},
+    readiness: null, slots: 1, harnesses: [harness], runs: [run], waiting: []};
+  const check = validator();
+  const message: Message = {specversion: '1.0', bunnyprofile: '2.0', id: randomUUID(), source: 'bunny/modules/companions',
+    type: 'org.bunny.coding-state.updated', subject: 'coding', time: new Date(AT).toISOString(), kind: 'state',
+    datacontenttype: 'application/json', dataschema: `${SCHEMA_BASE}${family}`,
+    traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', data: state};
+  const validated = check.validate(message);
+  assert.equal(validated.ok, true, JSON.stringify(validated.ok ? undefined : validated.error));
+  assert.equal(sameState(state, {...state, revision: 2}, pointers), true, 'revision alone');
+  for (const [field, updated] of [
+    ['harness readiness', {...state, harnesses: [{...harness, installed: 'unknown'}]}],
+    ['run harness', {...state, runs: [{...run, harness: 'claude-code'}]}],
+    ['native session', {...state, runs: [{...run, sessionId: 'native-second'}]}],
+  ] satisfies [string, CodingState][]) {
+    assert.equal(check.validate({...message, data: updated}).ok, true, field);
+    assert.equal(sameState(state, updated, pointers), false, field);
+  }
+});
 
 it('every leaf that is not bookkeeping, changed alone, is a change in each module family that declares bookkeeping', () => {
   const declared = moduleBookkeeping(registrations), check = validator();

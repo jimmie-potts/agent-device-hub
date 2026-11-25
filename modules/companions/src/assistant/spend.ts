@@ -21,7 +21,7 @@ export type {ModelPrices, PriceSource, PriceTable, SpendPeriod, SpendTotals, Spe
  * conversation it belongs to; `inputUnits` and `outputUnits` bound the tokens the request can use and the answer can report.
  */
 export type SpendCall = {readonly id: string; readonly purpose: 'task' | 'conversation'; readonly owner: string; readonly model: string;
-  readonly inputUnits: number; readonly outputUnits: number};
+  readonly inputUnits: number; readonly outputUnits: number; readonly pricing?: PriceSchedule};
 
 /**
  * Anthropic's published prices in US dollars per million tokens, read from
@@ -30,12 +30,17 @@ export type SpendCall = {readonly id: string; readonly purpose: 'task' | 'conver
  * reserved at the tier of its input bound and settled at the tier of its reported prompt.
  */
 export const BUILT_IN_PRICES_AS_OF = '2026-11-22';
-type Tiered = {readonly base: ModelPrices; readonly above?: {readonly promptTokens: number; readonly prices: ModelPrices}};
-export const BUILT_IN_PRICES: Readonly<Record<string, Tiered>> = Object.freeze({
+export type PriceSchedule = {readonly base: ModelPrices; readonly above?: {readonly promptTokens: number; readonly prices: ModelPrices}};
+export const BUILT_IN_PRICES: Readonly<Record<string, PriceSchedule>> = Object.freeze({
   'claude-opus-5-5': {base: {input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2}},
   'claude-haiku-5-5': {base: {input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01},
     above: {promptTokens: 100_000, prices: {input: 0.5, output: 2.5, cacheWrite: 0.625, cacheRead: 0.05}}},
 });
+// OpenAI Standard Responses, 30-minute cache writes, published 2026-11-24.
+const RESPONSES_PRICES: Readonly<Record<string, PriceSchedule>> = {
+  'gpt-6.2-sol': {base: {input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.1},
+    above: {promptTokens: 272_000, prices: {input: 4, output: 15, cacheWrite: 5, cacheRead: 0.2}}},
+};
 const hostTimeZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone;
 /** Tokens times dollars per million tokens is millionths of a dollar; a part of one counts as a whole one. */
 export const usageCost = (prices: ModelPrices, usage: TokenUsage): number =>
@@ -50,7 +55,7 @@ export {dollars};
  */
 export const inputBound = (request: unknown): number => Buffer.byteLength(JSON.stringify(request), 'utf8') + LIMITS.overheadUnits;
 const own = <T>(table: Readonly<Record<string, T>>, key: string): T | undefined => Object.hasOwn(table, key) ? table[key] : undefined;
-const tierOf = (tiers: Tiered, promptTokens: number): ModelPrices => tiers.above !== undefined && promptTokens > tiers.above.promptTokens ? tiers.above.prices : tiers.base;
+const tierOf = (tiers: PriceSchedule, promptTokens: number): ModelPrices => tiers.above !== undefined && promptTokens > tiers.above.promptTokens ? tiers.above.prices : tiers.base;
 type Sum = {spent: number | null; unreported: number; unreportedMicros: number | null};
 const SUMS = {
   day: 'SELECT SUM(COALESCE(cost_micros,reserved_micros)) AS spent, COUNT(*) FILTER (WHERE cost_micros IS NULL) AS unreported, SUM(reserved_micros) FILTER (WHERE cost_micros IS NULL) AS unreportedMicros FROM assistant_spend WHERE day=?',
@@ -64,11 +69,14 @@ export class SpendLedger {
   readonly #dearest: ModelPrices;
   /** `monthMicros` is the local monthly guard in millionths of a dollar: the section's `assistant.monthlyLimit`, else $150 (Hub #2102). */
   constructor(readonly database: DatabaseSync, readonly prices: PriceTable, readonly now: () => number, readonly timeZone: string = hostTimeZone(),
-    readonly monthMicros: number = SPEND_LIMITS.monthMicros) {
+    readonly monthMicros: number = SPEND_LIMITS.monthMicros, readonly responsesEnabled = false) {
     database.exec(`CREATE TABLE IF NOT EXISTS assistant_spend (id TEXT PRIMARY KEY, purpose TEXT NOT NULL, owner TEXT NOT NULL, model TEXT NOT NULL,
       day TEXT NOT NULL, month TEXT NOT NULL, at_ms INTEGER NOT NULL, reserved_micros INTEGER NOT NULL, cost_micros INTEGER, usage TEXT) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_spend_day ON assistant_spend(day);
       CREATE INDEX IF NOT EXISTS assistant_spend_month ON assistant_spend(month);`);
+    if (!database.prepare('PRAGMA table_info(assistant_spend)').all().some(column => column.name === 'pricing')) {
+      database.exec('ALTER TABLE assistant_spend ADD COLUMN pricing TEXT');
+    }
     const known = [...Object.values(prices), ...Object.values(BUILT_IN_PRICES).flatMap(tiers => tiers.above === undefined ? [tiers.base] : [tiers.base, tiers.above.prices])];
     const most = (key: keyof ModelPrices): number => Math.max(...known.map(entry => entry[key]));
     this.#dearest = {input: most('input'), output: most('output'), cacheWrite: most('cacheWrite'), cacheRead: most('cacheRead')};
@@ -86,42 +94,50 @@ export class SpendLedger {
    * refused when what remains of today's limit or of the month's estimate is below the smallest reservation of the turn's
    * first call, so a message is not admitted only to fail there.
    */
-  reached(model?: string): string | undefined {
-    const least = model === undefined ? 0 : this.minimum(model), {day, month} = this.totals();
+  reached(model?: string, pricing?: PriceSchedule): string | undefined {
+    const least = model === undefined ? 0 : this.minimum(model, pricing), {day, month} = this.totals();
     if (day.spentMicros >= day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} is reached: ${dollars(day.spentMicros)} is counted today. ${AFTER.day}`;
     if (day.spentMicros + least > day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} leaves too little for a model call: ${dollars(day.spentMicros)} is counted today and the smallest call could cost ${dollars(least)}. ${AFTER.day}`;
-    if (month.spentMicros >= month.limitMicros) return `The local estimate of this month's spend has reached its ${dollars(month.limitMicros)} guard: an estimated ${dollars(month.spentMicros)} is counted this month. ${AFTER.month}`;
-    if (month.spentMicros + least > month.limitMicros) return `The local estimate of this month's spend leaves too little under its ${dollars(month.limitMicros)} guard for a model call: an estimated ${dollars(month.spentMicros)} is counted this month and the smallest call could cost ${dollars(least)}. ${AFTER.month}`;
+    const nextMonth = this.responsesEnabled ? 'A new message can start when the next month begins. Provider billing is tracked separately.' : AFTER.month;
+    if (month.spentMicros >= month.limitMicros) return `The local estimate of this month's spend has reached its ${dollars(month.limitMicros)} guard: an estimated ${dollars(month.spentMicros)} is counted this month. ${nextMonth}`;
+    if (month.spentMicros + least > month.limitMicros) return `The local estimate of this month's spend leaves too little under its ${dollars(month.limitMicros)} guard for a model call: an estimated ${dollars(month.spentMicros)} is counted this month and the smallest call could cost ${dollars(least)}. ${nextMonth}`;
     return undefined;
   }
   /**
    * The smallest reservation a model call can make: the framing units at the model's dearest input price and the output
    * bound at its output price, the floor under any turn's first call.
    */
-  minimum(model: string): number {return reservationCost(this.#prices(model, LIMITS.overheadUnits), LIMITS.overheadUnits, LIMITS.outputUnits);}
+  minimum(model: string, pricing?: PriceSchedule): number {return reservationCost(pricing?.base ?? this.#prices(model, LIMITS.overheadUnits), LIMITS.overheadUnits, LIMITS.outputUnits);}
   /**
    * Reserves one call's most expensive cost before it is sent, or answers the message that refuses it: a reservation that
    * could pass the daily limit or the month's estimate. A refused call records nothing. Synchronous, so it joins the
    * caller's open transaction; an identifier already reserved throws.
    */
+  pricing(model: string, provider: 'anthropic' | 'openai'): PriceSchedule | undefined {
+    if (provider === 'openai') return own(RESPONSES_PRICES, model);
+    const configured = own(this.prices, model);
+    return configured === undefined ? own(BUILT_IN_PRICES, model) ?? {base: this.#dearest} : {base: configured};
+  }
   reserve(call: SpendCall): string | undefined {
-    const reserved = reservationCost(this.#prices(call.model, call.inputUnits), call.inputUnits, call.outputUnits), {day, month} = this.totals();
+    const reserved = reservationCost(call.pricing === undefined ? this.#prices(call.model, call.inputUnits) : tierOf(call.pricing, call.inputUnits), call.inputUnits, call.outputUnits), {day, month} = this.totals();
     if (day.spentMicros + reserved > day.limitMicros) return `The daily spend limit of ${dollars(day.limitMicros)} would be passed: ${dollars(day.spentMicros)} is counted today and this model call could cost up to ${dollars(reserved)}. The next model call was not sent.`;
     if (month.spentMicros + reserved > month.limitMicros) return `The local estimate of this month's spend would pass its ${dollars(month.limitMicros)} guard: an estimated ${dollars(month.spentMicros)} is counted this month and this model call could cost up to ${dollars(reserved)}. The next model call was not sent.`;
-    this.database.prepare('INSERT INTO assistant_spend(id,purpose,owner,model,day,month,at_ms,reserved_micros) VALUES (?,?,?,?,?,?,?,?)')
-      .run(call.id, call.purpose, call.owner, call.model, day.period, month.period, this.now(), reserved);
+    this.database.prepare('INSERT INTO assistant_spend(id,purpose,owner,model,day,month,at_ms,reserved_micros,pricing) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(call.id, call.purpose, call.owner, call.model, day.period, month.period, this.now(), reserved, call.pricing === undefined ? null : JSON.stringify(call.pricing));
     return undefined;
   }
   /** Replaces a reservation with the reported usage's cost, at the tier its prompt falls in. Null, a lost answer, leaves the reservation counting. */
   settle(id: string, usage: TokenUsage | null): void {
     if (usage === null) return;
-    const row = this.database.prepare('SELECT model FROM assistant_spend WHERE id=?').get(id) as {model: string} | undefined;
+    const row = this.database.prepare('SELECT model,pricing FROM assistant_spend WHERE id=?').get(id) as {model: string; pricing: string | null} | undefined;
     if (row === undefined) return;
-    const prices = this.#prices(row.model, usage.input + usage.cacheWrite + usage.cacheRead);
+    const promptTokens = usage.input + usage.cacheWrite + usage.cacheRead;
+    const prices = row.pricing === null ? this.#prices(row.model, promptTokens) : tierOf(JSON.parse(row.pricing) as PriceSchedule, promptTokens);
     this.database.prepare('UPDATE assistant_spend SET cost_micros=?,usage=? WHERE id=?').run(usageCost(prices, usage), JSON.stringify(usage), id);
   }
   /** Where a model's prices come from: a configured price overrides the built-in table. */
-  source(model: string): PriceSource {
+  source(model: string, provider: 'anthropic' | 'openai' = 'anthropic'): PriceSource {
+    if (provider === 'openai' && own(RESPONSES_PRICES, model) !== undefined) return 'built-in';
     return own(this.prices, model) !== undefined ? 'configured' : own(BUILT_IN_PRICES, model) !== undefined ? 'built-in' : 'dearest';
   }
   /** A model's prices for a prompt of this many tokens. Own entries only, so a name such as `constructor` finds no inherited member. */

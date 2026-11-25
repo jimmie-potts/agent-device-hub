@@ -3156,7 +3156,9 @@ account/device compatibility or map attribution.
 
 For device history, build and run `node --test --test-concurrency=2 apps/runtime/dist/tests/device-history.test.js modules/companions/dist/tests/device-history.test.js`.
 Run the Companion and runtime suites for the synthetic conversation and the
-core history and MCP readers. Their existing CI commands discover these files.
+core history and MCP readers. The Companion suite also exercises Responses
+summary scope, mismatched queries, title isolation and revocation before the
+next provider call. Their existing CI commands discover these files.
 The fixture writes only its disposable store and uses no device or hosted model.
 
 The Conversation maximum-on read uses a disposable Companions engine with
@@ -3508,6 +3510,12 @@ credential and drives a proposal, approval, background job receipt and linked
 result on the Conversation page. Installing the worker on the Mac is the [worker guide](coding-worker.md);
 source evidence establishes no installed run.
 
+Subscription worker adapters use the existing runtime unit, event contract
+and Companions checks. After the root build, run the coding worker process,
+stream and adapter test entries against their scripted commands. The event
+suite covers the added family versions and older layouts. The worker boundary
+tests use disposable repositories and synthetic accounts.
+
 Background coding jobs (#2109) use the same suites. `coding-slots.test.js`
 holds a worker open while Conversation answers another question and accepts
 another delegation. It exercises out-of-order result delivery, chat replacement,
@@ -3678,3 +3686,14 @@ Run
 isolation, retained bytes, private permissions and refusal of an unusable parent.
 The existing dashboard unit discovery includes these checks. The vendor-only
 MicroDuck `/proof` paths remain inside that exercise's separately owned container.
+
+
+### Companion supervisor acceptance
+
+After the root build, run `npm run test:companions:built`,
+`npm run test:events:built` and `npm run test:companions:browser`.
+The companion tests use scripted responses to run the same task and device
+guard through hosted selection, then resume an interrupted Responses task
+with its opaque items. They verify the title projection and the shared
+spend ledger with reported and uncertain usage. The disposable browser
+journey uses fixture supervisors to send one task to each selected provider.

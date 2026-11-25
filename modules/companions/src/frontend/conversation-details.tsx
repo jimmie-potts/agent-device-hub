@@ -102,8 +102,8 @@ export function ConversationDetails({
     return () => {document.removeEventListener('keydown', escape);};
   }, [open, overlay, onClose]);
 
-  // Every profile uses the configured provider and model (Hub #2026).
-  const synthetic = state?.provider === 'synthetic';
+  const provider = task?.supervisor?.provider ?? state?.provider;
+  const synthetic = provider === 'synthetic';
   const unit = synthetic ? 'units' : 'tokens';
   const allowed = state?.tools;
   const unavailable = state === undefined ? undefined : catalog.filter(name => !state.tools.includes(name));
@@ -128,8 +128,8 @@ export function ConversationDetails({
         <summary>Capabilities</summary>
         {lastKnown && <p>Last known provider and tools.</p>}
         <Facts items={[
-          ['Provider', synthetic ? 'Synthetic (no paid calls)' : state?.provider === 'anthropic' ? 'Anthropic' : 'Unknown'],
-          ['Model', state?.model ?? 'Unknown'],
+          ['Provider', synthetic ? 'Synthetic (no paid calls)' : provider === 'anthropic' ? 'Anthropic' : provider === 'openai' ? 'OpenAI' : 'Unknown'],
+          ['Model', task?.supervisor?.model ?? state?.model ?? 'Unknown'],
           ['Allowed tools', toolList(allowed)],
           ['Unavailable tools', toolList(unavailable)],
           ['Coding worker', workerAvailability(coding)],
@@ -169,7 +169,8 @@ export function ConversationDetails({
           ['Prices', priceText(spend)],
         ]}/>
         <p>Spend counts every profile's paid model calls from reported usage at the configured or built-in prices, by the runtime host's local day and month. A call without reported usage counts its reservation. Coding-worker runs are not counted.</p>
-        <p>This month's figure is a local estimate. The Anthropic Console holds the real monthly limit and spend.</p>
+        <p>This month's figure is a local estimate. {state?.providers?.some(item => item.provider === 'openai') === true
+          ? 'Each provider records its own billed spend.' : 'The Anthropic Console holds the real monthly limit and spend.'}</p>
       </details>
       <details>
         <summary>Conversations</summary>

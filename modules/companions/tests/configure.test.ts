@@ -10,7 +10,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {test, type TestContext} from 'node:test';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import {API_KEY_SECRET, configureCompanions, createCompanionsModule} from '../src/module.js';
+import {API_KEY_SECRET, OPENAI_KEY_SECRET, configureCompanions, createCompanionsModule} from '../src/module.js';
 import {SPEND_LIMIT_REACHED, type Transport} from '../src/assistant/anthropic.js';
 import {PROFILES} from '../src/knowledge/model.js';
 
@@ -334,9 +334,8 @@ void test('an explicit synthetic provider serves every profile without a request
   assert.equal((JSON.parse(Buffer.from(spend.bytes).toString()) as {day: {spentMicros: number}}).day.spentMicros, 0);
 });
 
-void test('a companion task the synthetic provider left waiting continues on the configured model after the upgrade, reserved and settled once', async context => {
-  // The upgrade path UPGRADE.md describes (Hub #2026): a synthetic section's waiting Reachy and MicroDuck tasks, then the
-  // same store under an Anthropic section. The restart sends nothing; each answer sends one turn on the configured model.
+void test('switching the configured provider preserves interrupted tasks and refuses cross-provider playback', async context => {
+  // Use the same private store first with a synthetic section and then with Anthropic configured.
   const dir = await mkdtemp(join(tmpdir(), 'assistant-upgrade-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   const sent: string[] = [];
@@ -371,16 +370,123 @@ void test('a companion task the synthetic provider left waiting continues on the
     secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/anthropic-api-key'}}, secrets: {[API_KEY_SECRET]: 'sk-PRIVATE-TEST-KEY'}});
   await host.start();
   assert.deepEqual(sent, [], 'the restart sends nothing');
-  const rows = () => (host.moduleDatabase()?.prepare('SELECT purpose,owner,model,reserved_micros AS reserved,cost_micros AS cost FROM assistant_spend').all() ?? []).map(row => ({...row}));
   for (const profile of ['reachy', 'microduck']) {
     const waiting = task(profile) ?? assert.fail(`${profile} task`);
-    assert.equal(waiting.status, 'waiting');
-    assert.equal((await request('input', {action: 'answer', profile, text: 'Synthetic answer', taskId: waiting.taskId, questionId: waiting.questionId})).status, 'accepted');
-    await turnsUntil(() => task(profile)?.status === 'succeeded', `${profile} continues on the configured model`);
-    const turns = rows().filter(row => row.purpose === 'task' && row.owner === waiting.taskId);
-    assert.equal(turns.length, 1, `${profile}: one task call reserved`);
-    assert.equal(turns[0]?.model, 'claude-sonnet-5-5');
-    assert.ok(typeof turns[0]?.cost === 'number' && turns[0].cost <= Number(turns[0].reserved), `${profile}: settled once with its reported cost`);
+    assert.equal(waiting.status, 'paused');
+    assert.equal(waiting.code, 'unavailable');
+    const answer = await request('input', {action: 'answer', profile, text: 'Synthetic answer', taskId: waiting.taskId, questionId: waiting.questionId});
+    assert.equal(answer.status, 'rejected');
+    if (answer.status === 'rejected') assert.equal(answer.error.error.code, 'unavailable');
+    assert.equal(task(profile)?.questionId, waiting.questionId);
   }
-  assert.deepEqual(sent.filter(model => model !== 'claude-haiku-5-5'), ['claude-sonnet-5-5', 'claude-sonnet-5-5'], 'one turn on the configured model for each answer');
+  assert.deepEqual(sent, [], 'no resumed task sends the earlier provider’s transcript');
+});
+
+void test('Responses requires its named credential and a model with published pricing', () => {
+  const secrets = {[API_KEY_SECRET]: '/run/secrets/bunny/anthropic-api-key',
+    [OPENAI_KEY_SECRET]: '/run/secrets/bunny/openai-responses-api-key'};
+  const dual = configured({assistant: {provider: 'anthropic', openAI: {effort: 'low'}}, secrets});
+  assert.notEqual(typeof dual, 'string');
+  if (typeof dual !== 'string' && dual.assistant.provider === 'anthropic') {
+    assert.deepEqual(dual.assistant.openAI, {model: 'gpt-6.2-sol', effort: 'low'});
+  }
+  assert.equal(configured({assistant: {provider: 'anthropic', openAI: {}}, secrets: {[API_KEY_SECRET]: secrets[API_KEY_SECRET]}}), 'invalid-request');
+  assert.equal(configured({assistant: {provider: 'openai', model: 'unknown-model'}, secrets}), 'invalid-request');
+  assert.equal(configured({assistant: {provider: 'openai', titleModel: 'unpriced-title'}, secrets}), 'invalid-request');
+});
+
+void test('an unreadable Responses credential leaves the companion active without an eligible paid supervisor', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'responses-credential-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
+  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  let requests = 0;
+  const module = createCompanionsModule({transport: () => {requests += 1; return Promise.reject(new Error('fixture transport must stay unused'));}});
+  const host = new ModuleHarness(module, {bus, stateDir: dir, section: {assistant: {provider: 'openai'},
+    secrets: {[OPENAI_KEY_SECRET]: '/private/fixture/openai-secret'}}, secrets: {}});
+  context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
+  await host.start();
+  assert.equal(module.inspectAssistant()?.provider, 'openai');
+  assert.equal(module.inspectAssistant()?.available, false);
+  assert.deepEqual(module.inspectAssistant()?.providers, []);
+  const history = await module.manifest.content?.('conversation', {query: {profile: 'bunny'}, signal: new AbortController().signal});
+  assert.ok(history !== undefined && !('error' in history));
+  assert.equal(requests, 0);
+});
+
+
+void test('each configured supervisor starts and admits work independently of the other credential', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'dual-supervisor-credentials-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
+  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  const sent: {provider: string; text: string}[] = [];
+  const transport: Transport = (url, init) => {
+    const openai = url === 'https://api.openai.com/v1/responses';
+    const body = JSON.parse(init.body) as {tools?: unknown[]; messages?: {content: {text?: string}[]}[]; input?: {content?: string}[]};
+    const text = openai ? body.input?.[0]?.content ?? '' : body.messages?.[0]?.content[0]?.text ?? '';
+    sent.push({provider: openai ? 'openai' : 'anthropic', text});
+    assert.equal(openai ? init.headers.authorization : init.headers['x-api-key'], openai ? 'Bearer fake-openai' : 'fake-anthropic');
+    const asks = (body.tools?.length ?? 0) > 0 && text.includes('Wait for my answer');
+    const response = openai
+      ? {status: 'completed', output: asks
+        ? [{type: 'function_call', id: 'fc_ask', call_id: 'call_ask', name: 'ask_owner', arguments: '{"text":"Which option?"}'}]
+        : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Fixture answer.', annotations: []}]}],
+        usage: {input_tokens: 20, output_tokens: 5, input_tokens_details: {cached_tokens: 0, cache_write_tokens: 0}}}
+      : {content: asks ? [{type: 'tool_use', id: 'toolu_ask', name: 'ask_owner', input: {text: 'Which option?'}}] : [{type: 'text', text: 'Fixture answer.'}],
+        stop_reason: asks ? 'tool_use' : 'end_turn', usage: {input_tokens: 20, output_tokens: 5}};
+    return Promise.resolve(new Response(JSON.stringify(response)));
+  };
+  const section = {assistant: {provider: 'anthropic', openAI: {}}, secrets: {[API_KEY_SECRET]: '/private/fixture/anthropic-secret',
+    [OPENAI_KEY_SECRET]: '/private/fixture/openai-secret'}};
+  const both = {[API_KEY_SECRET]: 'fake-anthropic', [OPENAI_KEY_SECRET]: 'fake-openai'};
+  let module = createCompanionsModule({transport});
+  let host = new ModuleHarness(module, {bus, stateDir: dir, section, secrets: both});
+  const restart = async (secrets: Record<string, string>): Promise<void> => {
+    await host.stop();
+    module = createCompanionsModule({transport});
+    host = new ModuleHarness(module, {bus, stateDir: dir, section, secrets});
+    await host.start();
+  };
+  context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
+  await host.start();
+  const task = (profile: string) => module.inspectAssistant()?.tasks.find(value => value.profile === profile);
+  const request = async (data: Record<string, unknown>) => {
+    const requestId = randomUUID(), expectedRevision = module.inspectAssistant()?.revision;
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({expectedRevision, ...data}))});
+    assert.ok(staged !== undefined && !('error' in staged), JSON.stringify(staged));
+    return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+  };
+  const start = (profile: string, provider: string, text: string) => request({action: 'start', profile, provider, text});
+  const enableId = randomUUID();
+  assert.equal((await core.request('bunny.cmd.assistant-control.assistant', {
+    type: 'org.bunny.assistant.control.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-control/2.0',
+    data: {requestId: enableId, action: 'enable', expectedRevision: module.inspectAssistant()?.revision},
+  }, {requestId: enableId, timeoutMs: 5000})).status, 'accepted');
+  for (const [profile, provider] of [['reachy', 'anthropic'], ['microduck', 'openai']] as const) {
+    assert.equal((await start(profile, provider, 'Wait for my answer.')).status, 'accepted');
+    await turnsUntil(() => task(profile)?.status === 'waiting', `${profile} waits`);
+  }
+  for (const [missing, available, profile, secrets] of [
+    ['anthropic', 'openai', 'reachy', {[OPENAI_KEY_SECRET]: both[OPENAI_KEY_SECRET]}],
+    ['openai', 'anthropic', 'microduck', {[API_KEY_SECRET]: both[API_KEY_SECRET]}],
+  ] as const) {
+    await restart(secrets);
+    const count = sent.length;
+    assert.equal(module.inspectAssistant()?.available, true);
+    assert.deepEqual(module.inspectAssistant()?.providers?.map(item => item.provider), [available]);
+    const history = await module.manifest.content?.('conversation', {query: {profile}, signal: new AbortController().signal});
+    assert.ok(history !== undefined && !('error' in history));
+    const held = task(profile) ?? assert.fail('missing pinned task');
+    assert.equal(held.status, 'paused');
+    assert.equal(held.supervisor?.provider, missing);
+    const reply = await request({action: 'answer', profile, taskId: held.taskId, questionId: held.questionId, text: 'Keep the existing task.'});
+    assert.equal(reply.status, 'rejected');
+    if (reply.status === 'rejected') assert.equal(reply.error.error.code, 'unavailable');
+    assert.equal((await start('bunny', missing, 'Unavailable fixture request.')).status, 'rejected');
+    assert.equal(sent.length, count);
+    const text = `Use available ${available} fixture.`;
+    assert.equal((await start('bunny', available, text)).status, 'accepted');
+    await turnsUntil(() => task('bunny')?.status === 'succeeded', 'available provider replies');
+    assert.ok(sent.slice(count).some(item => item.provider === available && item.text === text));
+    assert.ok(sent.slice(count).every(item => item.provider === available));
+  }
 });

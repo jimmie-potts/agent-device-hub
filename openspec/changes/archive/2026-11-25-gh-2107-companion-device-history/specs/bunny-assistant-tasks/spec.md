@@ -14,3 +14,10 @@ Conversation SHALL offer supported sources and read operations from the shared d
 - **WHEN** a bounded result needs multiple pages
 - **THEN** Conversation returns whole rows from the captured evidence boundary and rechecks the grants on every page
 - **AND** a send without observed effect, or competing possible causes, supports no unique causal claim
+
+#### Scenario: An OpenAI supervisor answers an explicit history request
+
+- **WHEN** the owner asks about one exact Wemo plug or LIFX light over a resolved interval and the current local and OpenAI grants allow its summary
+- **THEN** the supervisor receives only the requested device's bounded duration totals or last observed change, with incomplete coverage identified
+- **AND** raw observations, evidence and operation identifiers, links and cursors stay private
+- **AND** an ambiguous or mismatched query returns no retained facts, and a revoked grant prevents a saved summary from reaching another provider turn or title call

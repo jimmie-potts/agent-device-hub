@@ -11,12 +11,13 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {test, type TestContext} from 'node:test';
 import type {AssistantProfile, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
-import type {CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingHarnessReadiness, CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, type Command, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {CodingStore} from '../src/coding/store.js';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
+import {OPENAI_MODEL, OpenAIProvider} from '../src/assistant/openai.js';
 import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
 import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
 
@@ -111,10 +112,13 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return (JSON.parse(Buffer.from(content.bytes).toString()) as {messages: SavedMessage[]}).messages;
   };
   /** The worker declares itself: a worker from Hub #2028 with three slots (2.2), or an older one that declares none (2.0). */
-  const enable = (slots?: number) => worker.request(`bunny.cmd.coding-endpoint.${ENDPOINT}`, {type: 'org.bunny.coding.endpoint.requested', subject: ENDPOINT,
-    dataschema: `https://bunny.invalid/events/coding-endpoint/${slots === undefined ? '2.0' : '2.2'}`, data: {requestId: randomUUID(), action: 'enable', ...(slots === undefined ? {} : {slots})}}, {timeoutMs: 5000});
+  const enable = (slots?: number, harnesses?: CodingHarnessReadiness[]) => worker.request(`bunny.cmd.coding-endpoint.${ENDPOINT}`, {
+    type: 'org.bunny.coding.endpoint.requested', subject: ENDPOINT,
+    dataschema: `https://bunny.invalid/events/coding-endpoint/${harnesses !== undefined ? '2.3' : slots === undefined ? '2.0' : '2.2'}`,
+    data: {requestId: randomUUID(), action: 'enable', ...(slots === undefined ? {} : {slots}), ...(harnesses === undefined ? {} : {harnesses})},
+  }, {timeoutMs: 5000});
   const progress = (data: object) => worker.publish(`bunny.event.coding-progress.${ENDPOINT}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: ENDPOINT,
-    dataschema: 'https://bunny.invalid/events/coding-progress/2.1', data});
+    dataschema: `https://bunny.invalid/events/coding-progress/${'harness' in data ? '2.2' : '2.1'}`, data});
   const starts = () => work.filter(command => command.data.action === 'start');
   /** A profile's task asks, waits at its approval and is approved. */
   const approved = async (profile: AssistantProfile): Promise<void> => {
@@ -132,6 +136,42 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
   return {module: () => module, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
     restart: async () => {await host.stop(); ({module, host} = make()); await host.start();}, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}};
 }
+
+void test('an attributed background job keeps its first native session and delivers one result to the original exchange', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  const readiness: CodingHarnessReadiness = {
+    harness: 'claude-code', capabilities: {steering: 'unsupported', resume: 'unsupported', review: true},
+    installed: 'yes', signedIn: 'yes', version: '2.1.292', plan: 'max', checkedAtMs: Date.parse('2026-11-24T18:00:00Z'),
+    limits: null, limitsObservedAtMs: null,
+  };
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable(3, [readiness])).status, 'accepted');
+  assert.deepEqual(w.coding().harnesses, [readiness]);
+  assert.equal((await w.send('bunny', 'Synthetic background job with session evidence')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1 && w.task('bunny')?.status === 'succeeded');
+  const start = w.starts()[0] ?? assert.fail('worker start');
+  const {operationId} = start.data;
+  const jobId = `${operationId}-job`;
+  const origin = w.task('bunny')?.conversationId ?? assert.fail('originating conversation');
+  assert.equal(start.dataschema, 'https://bunny.invalid/events/coding-work/2.1');
+  assert.equal('harness' in start.data, false, 'an implicit job keeps the default Claude selection');
+  await w.progress({operationId, harness: 'claude-code', status: 'started'});
+  await settle(() => w.coding().runs?.some(run => run.operationId === operationId && run.status === 'started') === true);
+  await w.progress({operationId, harness: 'claude-code', status: 'started', sessionId: 'native-first'});
+  await settle(() => w.coding().runs?.some(run => run.operationId === operationId && run.sessionId === 'native-first') === true);
+  await w.progress({operationId, harness: 'claude-code', status: 'started', sessionId: 'native-conflict'});
+  assert.equal((await w.newConversation('bunny')).status, 'accepted');
+  assert.equal(w.coding().runs?.find(run => run.operationId === operationId)?.sessionId, 'native-first');
+  const ended = {operationId, harness: 'claude-code', sessionId: 'native-first', status: 'completed',
+    result: {...result('Synthetic attributed result.'), sessionId: 'native-first'}};
+  await w.progress(ended);
+  await w.progress({...ended, result: result('Synthetic late duplicate.')});
+  const original = await w.waitMessages('bunny', /Synthetic attributed result/, origin);
+  assert.deepEqual(original.filter(message => message.follows === jobId).map(message => message.id), [`${jobId}-sent`, `${jobId}-result`]);
+  assert.ok(!(await w.messages('bunny')).some(message => message.follows === jobId));
+  assert.deepEqual(w.dispatched, [operationId]);
+});
 
 void test('three companions hand off at once, each run tagged and each result back in its own conversation; another companion\'s run never refuses an approval', {timeout: 30_000}, async context => {
   const w = await world(context);
@@ -669,4 +709,36 @@ void test('a failed job receipt rolls back job admission and prevents dispatch',
   await w.restart();
   assert.equal((await w.enable()).status, 'accepted');
   assert.equal(w.dispatched.length, 0);
+});
+
+
+void test('Responses hands off to the shared background job without sending private worker results back to OpenAI', {timeout: 30_000}, async context => {
+  const sent: string[] = [];
+  const provider = new OpenAIProvider({model: OPENAI_MODEL, effort: 'medium', key: 'synthetic', transport: (_url, init) => {
+    sent.push(init.body);
+    const output = sent.length === 1 ? [{type: 'function_call', id: 'fc_work', call_id: 'call_work', name: 'delegate_coding',
+      arguments: JSON.stringify({repository: 'agent-device-hub', brief: 'Write a synthetic fixture.'})}]
+      : [{type: 'message', id: 'msg_done', role: 'assistant', status: 'completed', content: [{type: 'output_text', text: 'New request answered.', annotations: []}]}];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output,
+      usage: {input_tokens: 40, output_tokens: 40, input_tokens_details: {cached_tokens: 0}, output_tokens_details: {reasoning_tokens: 0}}})));
+  }});
+  const w = await world(context, {provider});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable(3)).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Delegate a coding job to write a synthetic fixture in agent-device-hub.')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1 && w.task('bunny')?.status === 'succeeded');
+  const origin = w.task('bunny')?.conversationId ?? assert.fail('origin conversation');
+  assert.equal(sent.length, 1);
+  assert.equal((await w.newConversation('bunny')).status, 'accepted');
+  assert.equal((await w.send('bunny', 'New unrelated request.')).status, 'accepted');
+  await settle(() => w.task('bunny')?.conversationId !== origin && w.task('bunny')?.status === 'succeeded');
+  const operationId = w.starts()[0]?.data.operationId;
+  await w.progress({operationId, status: 'started'});
+  await w.progress({operationId, status: 'completed', result: result('PRIVATE_WORKER_RESULT')});
+  await w.waitMessages('bunny', /PRIVATE_WORKER_RESULT/, origin);
+  assert.equal(sent.length, 2);
+  const second = JSON.parse(sent[1] ?? '') as {input: unknown};
+  assert.deepEqual(second.input, [{role: 'user', content: 'New unrelated request.'}]);
+  assert.equal(w.dispatched.length, 1);
 });

@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/assistant-state/2.4",
+  "description": "Assistant state 2.4 adds the available supervisor choices and their models. It carries no message text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "enabled",
+    "available",
+    "provider",
+    "model",
+    "tools",
+    "tasks",
+    "providers"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/id"
+    },
+    "revision": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/revision"
+    },
+    "enabled": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/enabled"
+    },
+    "available": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/available"
+    },
+    "provider": {
+      "enum": [
+        "synthetic",
+        "anthropic",
+        "openai"
+      ]
+    },
+    "model": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/model"
+    },
+    "tools": {
+      "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/tools"
+    },
+    "tasks": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "taskId",
+          "conversationId",
+          "profile",
+          "status",
+          "runId",
+          "questionId",
+          "hasAnswer",
+          "code",
+          "modelCalls",
+          "toolCalls",
+          "questions",
+          "activeMs",
+          "reservedUnits",
+          "usageUnits"
+        ],
+        "properties": {
+          "taskId": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/taskId"
+          },
+          "conversationId": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/conversationId"
+          },
+          "profile": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/profile"
+          },
+          "status": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/status"
+          },
+          "runId": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/runId"
+          },
+          "questionId": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/questionId"
+          },
+          "hasAnswer": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/hasAnswer"
+          },
+          "code": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/code"
+          },
+          "modelCalls": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/modelCalls"
+          },
+          "toolCalls": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/toolCalls"
+          },
+          "questions": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/questions"
+          },
+          "activeMs": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/activeMs"
+          },
+          "reservedUnits": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/reservedUnits"
+          },
+          "usageUnits": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.0#/properties/tasks/items/properties/usageUnits"
+          },
+          "supervisor": {
+            "$ref": "#/properties/providers/items"
+          }
+        }
+      }
+    },
+    "queues": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "conversationId",
+          "profile",
+          "messages",
+          "held",
+          "code"
+        ],
+        "properties": {
+          "conversationId": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/queues/items/properties/conversationId"
+          },
+          "profile": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/queues/items/properties/profile"
+          },
+          "messages": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16
+          },
+          "held": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/queues/items/properties/held"
+          },
+          "code": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/queues/items/properties/code"
+          }
+        }
+      }
+    },
+    "providers": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider",
+          "model"
+        ],
+        "properties": {
+          "provider": {
+            "enum": [
+              "synthetic",
+              "anthropic",
+              "openai"
+            ]
+          },
+          "model": {
+            "$ref": "https://bunny.invalid/events/assistant-state/2.2#/properties/model"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
 import type {BoundControl} from './control-intent.js';
 import type {StopCodingInput} from './history-contract.js';
@@ -23,6 +24,7 @@ import {MessageQueue} from './queue.js';
  * this release (see `upgradeGraph`). Tasks saved by the fixed synthetic graph (`synthetic-1`) stay readable and refuse resume.
  */
 export const GRAPH_VERSION = 'conversation-2';
+export const RESPONSES_GRAPH_VERSION = 'responses-1';
 /** The graph version before Hub #2031, whose unfinished tasks the start upgrades to `GRAPH_VERSION`. */
 export const PREVIOUS_GRAPH_VERSION = 'conversation-1';
 import {LIMITS} from './limits.js';
@@ -30,6 +32,7 @@ export {LIMITS} from './limits.js';
 export type Question = SavedQuestion & {call: string};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   control?: BoundControl;
+  supervisor?: SupervisorIdentity;
   clarificationDevices?: readonly string[];
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
@@ -58,7 +61,7 @@ export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; 
  * expects; with `questionId` it also settles that pending question: Skip question and send for a clarification,
  * Decline with message for an approval.
  */
-export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'queue' | 'edit-queued' | 'steer'; profile: AssistantProfile; text: string; expectedRevision: number;
+export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'queue' | 'edit-queued' | 'steer'; profile: AssistantProfile; text: string; expectedRevision: number; provider?: SupervisorIdentity['provider'];
   taskId?: string; questionId?: string; queuedId?: string};
 /** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
 export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
@@ -243,9 +246,10 @@ export class AssistantStore {
   lastSequence(conversationId: string): number {
     return (this.database.prepare('SELECT MAX(seq) AS seq FROM assistant_messages WHERE conversation_id=?').get(conversationId) as {seq: number | null}).seq ?? 0;
   }
-  newTask(profile: AssistantProfile, prompt: string): Task {
+  newTask(profile: AssistantProfile, prompt: string, supervisor?: SupervisorIdentity): Task {
     const conversationId = this.ensureConversation(profile);
-    return {version: 1, graphVersion: GRAPH_VERSION, tracksApprovals: true, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
+    return {version: 1, graphVersion: supervisor?.provider === 'openai' ? RESPONSES_GRAPH_VERSION : GRAPH_VERSION,
+      ...(supervisor === undefined ? {} : {supervisor}), tracksApprovals: true, id: randomUUID(), conversationId, profile, prompt, status: 'paused', runId: null,
       generation: 0, question: null, code: null, modelCalls: 0, toolCalls: 0, questions: 0, activeMs: 0, reservedUnits: 0, nextOrdinal: 0, traceparent: null,
       transcript: [{role: 'owner', text: prompt}], contextThrough: this.lastSequence(conversationId)};
   }
@@ -263,7 +267,7 @@ export class AssistantStore {
    * A tool result names its tool from its task's saved transcript when that still holds it; an artwork attachment keeps
    * its request identity.
    */
-  recentContext(profile: AssistantProfile, conversationId: string, through: number, permits?: (message: {id: string; role: ConversationMessage['role']; taskId: string}) => boolean): {messages: RecentMessage[]; total: number} {
+  recentContext(profile: AssistantProfile, conversationId: string, through: number, permits?: (message: {id: string; role: ConversationMessage['role']; taskId: string}) => boolean, latestOwnerOnly = false): {messages: RecentMessage[]; total: number} {
     const bound = this.messages.conversation(conversationId)?.profile === profile ? 1 : 0;
     const filter = `msg.conversation_id=? AND msg.seq<=?
       AND (CASE WHEN msg.record IS NULL THEN msg.role='tool' ELSE json_extract(msg.record,'$.speakerId')=?
@@ -273,16 +277,18 @@ export class AssistantStore {
       AND NOT (msg.role='tool' AND EXISTS (SELECT 1 FROM companion_removals removed
         WHERE removed.id=msg.task_id || '-prompt' OR (removed.id LIKE msg.task_id || '-q%' AND removed.id LIKE '%-answer')))`;
     const params = [conversationId, through, profile, profile, bound];
+    const limit = latestOwnerOnly ? 1 : RECENT_MESSAGES;
     let total: number;
     let rows: MessageRow[];
     if (permits === undefined) {
       total = (this.database.prepare(`SELECT COUNT(*) AS count FROM assistant_messages msg WHERE ${filter}`).get(...params) as {count: number}).count;
-      rows = (this.database.prepare(`${messagesWithAttachments} WHERE ${filter} ORDER BY msg.seq DESC LIMIT ?`).all(...params, RECENT_MESSAGES) as MessageRow[]).reverse();
+      rows = (this.database.prepare(`${messagesWithAttachments} WHERE ${filter} ORDER BY msg.seq DESC LIMIT ?`).all(...params, limit) as MessageRow[]).reverse();
     } else {
-      const eligible = (this.database.prepare(`SELECT msg.id, msg.role, msg.task_id AS taskId FROM assistant_messages msg WHERE ${filter} ORDER BY msg.seq DESC`)
+      const selected = latestOwnerOnly ? "AND msg.role='owner' ORDER BY msg.seq DESC LIMIT 1" : 'ORDER BY msg.seq DESC';
+      const eligible = (this.database.prepare(`SELECT msg.id, msg.role, msg.task_id AS taskId FROM assistant_messages msg WHERE ${filter} ${selected}`)
         .all(...params) as {id: string; role: ConversationMessage['role']; taskId: string}[]).filter(permits);
       total = eligible.length;
-      const ids = eligible.slice(0, RECENT_MESSAGES).map(row => row.id);
+      const ids = eligible.slice(0, limit).map(row => row.id);
       rows = (this.database.prepare(`${messagesWithAttachments} WHERE msg.id IN (${ids.map(() => '?').join(',')}) ORDER BY msg.seq`).all(...ids) as MessageRow[]);
     }
     const tools = new Map<string, Map<string, string>>();

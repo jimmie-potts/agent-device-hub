@@ -11,6 +11,7 @@ import type {CodingProgress, CodingWork} from '@jimmie-potts/event-contracts/v2/
 import type {Command, Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, connectRemote} from '@jimmie-potts/sdk/remote';
+import type {CodingAdapter} from '../src/worker/adapter.js';
 import {CodingWorker, DEFAULT_ALLOWED_TOOLS, DENIED_TOOLS, STOPPED_RUN_MS, assembleResult, parseConfiguration, type GitRunner, type Harness, type ProbeTimer} from '../src/worker/coding-worker.js';
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], {encoding: 'utf8', env: {...process.env, GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 't@example', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 't@example'}}).trim();
@@ -19,7 +20,7 @@ const configuration = (repository: string) => ({schema: 'coding-worker/1.0', edg
   claude: {executable: '/nonexistent/claude', permissionMode: 'acceptEdits', allowedTools: DEFAULT_ALLOWED_TOOLS}});
 const command = (data: CodingWork, source = 'bunny/modules/companions'): Command<CodingWork> => ({specversion: '1.0', bunnyprofile: '2.0', id: `cmd-${data.requestId}`, source, kind: 'command',
   type: 'org.bunny.coding.work.requested', subject: 'worker-endpoint-1', time: new Date().toISOString(), datacontenttype: 'application/json',
-  dataschema: `https://bunny.invalid/events/coding-work/${'companion' in data ? '2.1' : '2.0'}`,
+  dataschema: `https://bunny.invalid/events/coding-work/${'harness' in data ? '2.2' : 'companion' in data ? '2.1' : '2.0'}`,
   traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', expiresat: new Date(Date.now() + 5000).toISOString(), data});
 async function until(check: () => boolean, seen: () => unknown = () => undefined): Promise<void> {
   for (let i = 0; i < 1000; i += 1) {if (check()) return; await new Promise(resolve => setTimeout(resolve, 10));}
@@ -351,4 +352,56 @@ void test('a stopped run whose tool never lets go keeps only its companion\'s sl
   for (const id of ['op-r', 'op-m', 'op-b3']) exits.get(id)?.();
   await until(() => edge.progress.filter(entry => entry.status !== 'started' && ['op-r', 'op-m', 'op-b3'].includes(entry.operationId)).length === 3);
   await worker.stop();
+});
+
+void test('the connection-bound worker sends exact Git evidence and early session identities for registered adapters', async t => {
+  const repo = await repository(t), edge = fakeEdge();
+  const sha = git(repo, 'rev-parse', 'HEAD');
+  const invocations: {id: string; brief: string}[] = [];
+  const adapter = (id: string): CodingAdapter => ({
+    id, capabilities: {resume: 'unsupported', steering: 'unsupported', review: true},
+    readiness: () => Promise.resolve({installed: 'yes', version: '1.0.0', signedIn: 'yes', plan: 'test-plan'}),
+    async run({worktree, brief, bounds, session}) {
+      invocations.push({id, brief});
+      assert.notEqual(worktree, repo);
+      assert.ok(worktree.startsWith(join(repo, '.local', 'worktrees')));
+      assert.equal(git(worktree, 'rev-parse', 'HEAD'), sha);
+      assert.equal(bounds.wallClockMs, 120_000);
+      await session(`${id}-native`);
+      await session('unexpected-second-identity');
+      await writeFile(join(worktree, 'review.txt'), 'Synthetic review facts');
+      return {sessionId: 'unexpected-third-identity', structured: {outcome: 'tested-candidate', summary: 'Reviewed the supplied revision.',
+        checks: [{name: 'git status', status: 'passed', ...(id === 'codex' ? {detail: null} : {})},
+          {name: 'git diff', status: 'passed', detail: 'Compared the named revision.'}], findings: [], limitations: ['Fixture only.']}};
+    },
+  });
+  const worker = new CodingWorker(parseConfiguration(configuration(repo)), 'fake-token', undefined, undefined, edge.connect,
+    undefined, undefined, undefined, [adapter('codex'), adapter('third-fixture')]);
+  await worker.start();
+  t.after(() => worker.stop());
+  const declared = edge.requests.find(entry => entry.family === 'coding-endpoint');
+  assert.equal(declared?.dataschema, 'https://bunny.invalid/events/coding-endpoint/2.3');
+  assert.deepEqual((declared?.data as {harnesses: {harness: string}[]}).harnesses.map(item => item.harness), ['claude-code', 'codex', 'third-fixture']);
+  const ask = (id: string, companion: 'bunny' | 'reachy', operationId: string) => command({requestId: operationId, operationId,
+    action: 'start', harness: id, companion, taskId: operationId, repository: 'agent-device-hub', brief: `Review exact revision ${sha}`,
+    bounds: {wallClockMs: 120_000, maxTurns: 4, budgetUsd: 2}});
+  assert.equal('error' in edge.respond(ask('missing-harness', 'bunny', 'missing')), true);
+  assert.deepEqual(edge.respond(ask('codex', 'bunny', 'codex-review')), {status: 'accepted'});
+  assert.deepEqual(edge.respond(ask('third-fixture', 'reachy', 'third-review')), {status: 'accepted'});
+  await until(() => edge.progress.filter(observed => observed.status === 'completed').length === 2);
+  assert.equal(invocations.length, 2);
+  for (const [operation, id] of [['codex-review', 'codex'], ['third-review', 'third-fixture']] as const) {
+    assert.ok(invocations.some(item => item.id === id && item.brief === `Review exact revision ${sha}`));
+    const observed = edge.progress.filter(item => item.operationId === operation);
+    assert.deepEqual(observed.map(item => [item.harness, item.status, item.sessionId ?? null]), [
+      [id, 'started', null], [id, 'started', `${id}-native`], [id, 'completed', `${id}-native`],
+    ]);
+    const completed = observed.find(item => item.status === 'completed');
+    assert.equal(completed?.result.base, sha);
+    assert.equal(completed?.result.head, sha);
+    assert.equal(completed?.result.sessionId, `${id}-native`);
+    assert.deepEqual(completed?.result.changedFiles, ['review.txt']);
+    assert.deepEqual(completed?.result.checks, [{name: 'git status', status: 'passed'},
+      {name: 'git diff', status: 'passed', detail: 'Compared the named revision.'}]);
+  }
 });

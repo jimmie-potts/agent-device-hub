@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/coding-endpoint/2.3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "action"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/requestId"
+    },
+    "action": {
+      "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/action"
+    },
+    "slots": {
+      "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/slots"
+    },
+    "readiness": {
+      "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/readiness"
+    },
+    "harnesses": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "installed",
+          "version",
+          "signedIn",
+          "plan",
+          "limits",
+          "limitsObservedAtMs",
+          "checkedAtMs",
+          "harness",
+          "capabilities"
+        ],
+        "properties": {
+          "installed": {
+            "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/readiness/properties/installed"
+          },
+          "version": {
+            "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/readiness/properties/version"
+          },
+          "signedIn": {
+            "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/readiness/properties/signedIn"
+          },
+          "plan": {
+            "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/readiness/properties/plan"
+          },
+          "limits": {
+            "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/readiness/properties/limits"
+          },
+          "limitsObservedAtMs": {
+            "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/readiness/properties/limitsObservedAtMs"
+          },
+          "checkedAtMs": {
+            "$ref": "https://bunny.invalid/events/coding-endpoint/2.2#/properties/readiness/properties/checkedAtMs"
+          },
+          "harness": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "steering",
+              "resume",
+              "review"
+            ],
+            "properties": {
+              "steering": {
+                "enum": [
+                  "unsupported",
+                  "live"
+                ]
+              },
+              "resume": {
+                "enum": [
+                  "unsupported",
+                  "saved-session"
+                ]
+              },
+              "review": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
