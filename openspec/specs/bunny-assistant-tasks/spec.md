@@ -1073,11 +1073,29 @@ For [Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108), e
 - **WHEN** Responses requests a device listing
 - **THEN** the result can include the requested device and excludes the other device or group
 
+#### Scenario: One configured hosted supervisor is unavailable
+
+- **GIVEN** both hosted supervisors are configured and one has an unreadable credential
+- **WHEN** the companion starts
+- **THEN** the companion can start a newly selected task on the available supervisor and serve existing conversation history, while tasks pinned to the unavailable one cannot start or resume
+
+#### Scenario: Upgrade with no saved supervisor identity
+
+- **GIVEN** an earlier task and its queued work have no saved supervisor
+- **WHEN** the companion starts or receives an approval or queue-resume request
+- **THEN** the earlier task stays readable and its queued work stays held, without applying the approval or sending work to the currently configured supervisor
+
 #### Scenario: A paid Responses call loses its answer
 
 - **GIVEN** a shared ledger with reservations from both hosted supervisors and their title calls
 - **WHEN** OpenAI usage remains unknown after an uncertain call
 - **THEN** the pinned worst-case reservation remains counted, and another call that would exceed the shared guard is refused before submission
+
+#### Scenario: Dispatch a shared device command and hand off a background job
+
+- **GIVEN** the OpenAI supervisor is selected and the owner names a supported device or approves a proposed coding hand-off
+- **WHEN** the assistant binds the device instruction or accepts the background job through the existing dispatcher
+- **THEN** the owner's device instruction follows the same command path and guards as other supervisors, and the background job posts its result in the originating conversation without replaying private worker data to OpenAI
 
 ### Requirement: Background coding jobs in Conversation
 
@@ -1098,9 +1116,3 @@ An approved coding delegation SHALL return a stable job ID and let its Conversat
 
 - **WHEN** recovery settles a pre-upgrade dispatch or run, and the original conversation cannot be written immediately
 - **THEN** the saved uncertainty remains pending until the local conversation write succeeds, the original legacy turn remains paused for owner resume, and no worker command is resent
-
-#### Scenario: Dispatch a shared device command and hand off a background job
-
-- **GIVEN** the OpenAI supervisor is selected and the owner names a supported device or approves a proposed coding hand-off
-- **WHEN** the assistant binds the device instruction or accepts the background job through the existing dispatcher
-- **THEN** the owner's device instruction follows the same command path and guards as other supervisors, and the background job posts its result in the originating conversation without replaying private worker data to OpenAI

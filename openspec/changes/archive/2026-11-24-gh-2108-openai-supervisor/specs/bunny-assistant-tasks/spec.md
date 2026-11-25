@@ -22,6 +22,18 @@ For [Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108), e
 - **WHEN** Responses requests a device listing
 - **THEN** the result can include the requested device and excludes the other device or group
 
+#### Scenario: One configured hosted supervisor is unavailable
+
+- **GIVEN** both hosted supervisors are configured and one has an unreadable credential
+- **WHEN** the companion starts
+- **THEN** the companion can start a newly selected task on the available supervisor and serve existing conversation history, while tasks pinned to the unavailable one cannot start or resume
+
+#### Scenario: Upgrade with no saved supervisor identity
+
+- **GIVEN** an earlier task and its queued work have no saved supervisor
+- **WHEN** the companion starts or receives an approval or queue-resume request
+- **THEN** the earlier task stays readable and its queued work stays held, without applying the approval or sending work to the currently configured supervisor
+
 #### Scenario: A paid Responses call loses its answer
 
 - **GIVEN** a shared ledger with reservations from both hosted supervisors and their title calls

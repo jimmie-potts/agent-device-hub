@@ -71,7 +71,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
 }
 async function control(core: Participant, module: CompanionsModule, action: string, taskId?: string, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
-    dataschema: `https://bunny.invalid/events/assistant-control/${action === 'resume-queue' ? '2.2' : action === 'rename' ? '2.1' : '2.0'}`, data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
+    dataschema: `https://bunny.invalid/events/assistant-control/${action === 'resume-queue' || action === 'withdraw' ? '2.2' : action === 'rename' ? '2.1' : '2.0'}`, data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
 }
 async function input(core: Participant, module: CompanionsModule, text: string, answer = false, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   const state = module.inspectAssistant(), task = state?.tasks[0];
@@ -2358,9 +2358,9 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   }});
   const w = await world(context, {provider: anthropic, alternateProvider: new OpenAIProvider({...options, effort: 'medium'}),
     openAITitleProvider: new OpenAITitleProvider(options), preferences: () => [{id: 'preference', active: true, createdAtMs: 1, updatedAtMs: 1, title: 'Secret preference', text: 'PRIVATE_PREFERENCES'}],
-    tools: ['read_sessions', 'read_wemo', 'set_wemo_power', 'read_devices', 'control_power_set'], devices: () => [
+    tools: ['read_sessions', 'read_wemo', 'set_wemo_power', 'read_devices', 'control_power_set'], devices: owner => owner === WEMO_OWNER ? [
       {...light('studio-plug', 'Studio Plug'), kind: 'wemo'}, {...light('unrelated-plug', 'PRIVATE_OTHER_DEVICE'), kind: 'wemo'},
-    ], dispatch: data => {dispatched.push(data); return Promise.resolve(accepted(data.requestId));}});
+    ] : [], dispatch: data => {dispatched.push(data); return Promise.resolve(accepted(data.requestId));}});
   const catalogOwner = w.bus.connect('bunny/modules/pixoo');
   context.after(() => catalogOwner.close());
   await catalogOwner.serveSync(['device'], () => ({revision: 1, states: [
@@ -2490,11 +2490,15 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
 });
 
 
-void test('Responses device reads omit an excluded group and an excluded device', async context => {
+void test('Responses device reads bind the affirmative subject without widening it', async context => {
   const cases = [
     ['What is the brightness of Desk Lamp, not all lights?', 'Desk Lamp (desk)'],
     ['What is the brightness of Desk Lamp, rather than Hall Lamp?', 'Desk Lamp (desk)'],
-    ['List all lights', 'Desk Lamp (desk)\nHall Lamp (hall)'],
+    ['What is the brightness of Desk Lamp only? Leave Hall Lamp alone.', 'Desk Lamp (desk)'],
+    ['What is the brightness of Desk Lamp?', 'Desk Lamp (desk)'],
+    ['List all lights', 'Desk Lamp (desk)\nHall Lamp (lamp)\nDuplicated Lamp (first)\nDuplicated Lamp (second)'],
+    ['What is the brightness of Duplicated Lamp?', 'No configured LIFX lights are known.'],
+    ['What is the status of Hall Plug?', 'No configured LIFX lights are known.'],
     ['List all lights except Hall Lamp', 'No configured LIFX lights are known.'],
   ] as const;
   const outputs: string[] = [];
@@ -2507,13 +2511,67 @@ void test('Responses device reads omit an excluded group and an excluded device'
       : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Read complete.', annotations: []}]}];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output: items, usage: {input_tokens: 40, output_tokens: 40}})));
   }});
-  const w = await world(context, {provider, tools: ['read_lifx'], devices: () => [light('desk', 'Desk Lamp'), light('hall', 'Hall Lamp')]});
+  const w = await world(context, {provider, tools: ['read_lifx'], devices: owner => owner === WEMO_OWNER ? [{...light('desk', 'Hall Plug'), kind: 'wemo'}]
+    : [light('desk', 'Desk Lamp'), light('lamp', 'Hall Lamp'), light('first', 'Duplicated Lamp'), light('second', 'Duplicated Lamp')]});
   await control(w.core, w.module(), 'enable');
   for (const [prompt, expected] of cases) {
     const previous = task(w)?.taskId;
     assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
     await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
-    assert.equal(outputs.at(-1), expected);
+    assert.equal(outputs.at(-1), expected, prompt);
   }
   assert.equal(outputs.length, cases.length);
+});
+
+
+void test('an unpinned legacy task and queue remain readable without resuming on a synthetic host', async context => {
+  const earlier = counted(() => call('ask_owner', {text: 'Which option?'}));
+  const current = counted(() => reply('Fresh synthetic answer.'));
+  const options: CompanionsOptions = {provider: {...earlier, name: 'anthropic', model: 'claude-opus-5-5'},
+    dispatch: () => assert.fail('an ambiguous restart cannot send a command')};
+  const w = await world(context, options);
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'Legacy hosted request.')).status, 'accepted');
+  await until(() => status(w) === 'waiting');
+  const old = task(w) ?? assert.fail('legacy task');
+  const queuedId = randomUUID();
+  assert.equal((await input(w.core, w.module(), 'Legacy queued request.', false, queuedId, {action: 'queue'})).status, 'accepted');
+  const requestId = randomUUID();
+  const staged = await w.module().manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+    bytes: Buffer.from(JSON.stringify({action: 'answer', profile: 'bunny', expectedRevision: w.module().inspectAssistant()?.revision,
+      taskId: old.taskId, questionId: old.questionId, text: 'approve'}))});
+  assert.ok(staged !== undefined && !('error' in staged));
+  const store = w.store(), legacy = store.task(old.taskId) ?? assert.fail('persisted task');
+  delete legacy.supervisor;
+  assert.ok(legacy.question);
+  legacy.question = {...legacy.question, kind: 'approval', proposal: {family: 'mode-set', target: 'hub', data: {mode: 'quiet'}, expectedRevision: 4}};
+  store.save(legacy);
+  w.host().moduleDatabase()?.prepare('DELETE FROM assistant_queue_supervisors WHERE message_id=?').run(queuedId);
+
+  await w.restart(() => {options.provider = current;});
+  assert.equal(status(w), 'paused');
+  assert.equal(task(w)?.code, 'unavailable');
+  assert.ok((await page(w, 'bunny', 'recent')).messages.some(message => message.text === 'Legacy hosted request.'));
+  const answer = await w.core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested',
+    subject: 'assistant', dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+  assert.equal(answer.status, 'rejected');
+  const freshAnswer = await input(w.core, w.module(), 'approve', true);
+  assert.equal(freshAnswer.status, 'rejected');
+  if (freshAnswer.status === 'rejected') assert.equal(freshAnswer.error.error.code, 'unavailable');
+  assert.equal(w.store().task(old.taskId)?.question?.answer, null);
+  assert.equal((await control(w.core, w.module(), 'cancel', old.taskId)).status, 'accepted');
+  assert.equal((await control(w.core, w.module(), 'resume-queue', undefined, randomUUID(), {profile: 'bunny'})).status, 'rejected');
+  assert.equal(w.store().queue.message(queuedId)?.text, 'Legacy queued request.');
+  assert.equal(current.calls(), 0);
+  assert.equal((await control(w.core, w.module(), 'withdraw', undefined, randomUUID(), {profile: 'bunny', queuedId})).status, 'accepted');
+  const newRequest = randomUUID();
+  const fresh = await w.module().manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId: newRequest, signal: new AbortController().signal,
+    bytes: Buffer.from(JSON.stringify({action: 'new-conversation', profile: 'bunny', expectedRevision: w.module().inspectAssistant()?.revision}))});
+  assert.ok(fresh !== undefined && !('error' in fresh));
+  assert.equal((await w.core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+    dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId: newRequest, ...fresh.data}}, {requestId: newRequest, timeoutMs: 5000})).status, 'accepted');
+  assert.equal((await input(w.core, w.module(), 'Fresh synthetic request.')).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(current.calls(), 1);
+  assert.equal(w.store().task(task(w)?.taskId ?? '')?.supervisor?.provider, 'synthetic');
 });

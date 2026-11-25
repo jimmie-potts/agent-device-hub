@@ -589,17 +589,23 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   OpenAI tasks and titles use the same published model. The available choices
   appear in the Conversation composer. Send and Queue preserve the selected
   provider on their own task. Answer and Steer use the active task's provider.
-  Coding workers have their own configuration and approval.
+  If a configured key cannot be read, the composer offers the available
+  supervisor for new tasks. History stays readable. Tasks already pinned to
+  the unavailable supervisor stay paused. Coding workers have their own
+  configuration and approval.
 - OpenAI receives the current owner request and selected relevant data under
   [ADR 0011](../../docs/decisions/0011-private-personal-data-retention.md).
-  Device reads require a relevant target. For an explicit reference to a
+  Device reads resolve the opening affirmative target to an exact configured
+  ID or label. Ambiguous matches or later clauses add no device facts. For an explicit reference to a
   previous request, the supervisor can receive a bounded excerpt from the
   same conversation. A title for an untitled conversation uses only the
   current request. Provider-native reasoning and tool items replay within
   their original task and current subject. A steer submits the new request
   with only relevant excerpts from an earlier subject. A missing or changed
-  provider leaves the task
-  readable and paused. Worker results remain in the private conversation.
+  provider leaves the task readable and paused. An earlier task with no
+  saved supervisor stays paused, and its unpinned queued work stays held.
+  Cancel the paused task and withdraw any unpinned messages to start a new
+  conversation. Worker results remain in the private conversation.
 - Responses calls use Standard service and a 30-minute prompt cache. The
   published `gpt-6.2-sol` rates on 2026-11-24 are $2 per million input tokens,
   $2.50 for cache writes, $0.10 for cache reads and $10 for output, which

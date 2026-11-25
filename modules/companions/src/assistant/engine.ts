@@ -19,7 +19,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {ALL_WEMO_PLUGS, authorizesControl, containsControlValue, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
+import {ALL_WEMO_PLUGS, authorizesControl, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
 import {buildContext, type ContextEntry, type RecentMessage} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
@@ -178,18 +178,23 @@ export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this han
 export const WAITING_PREFIX = 'Waiting to delegate';
 const jobReceipt = (job: CodingJob): string => `accepted: Coding job ${job.jobId} was queued for ${job.repository}. Updates will appear in this conversation.`;
 
-const DEVICE_EXCLUSION = /\b(?:not|no|never|don t|do not|except(?: for)?|excluding|exclude|without|but|rather than|instead of|other than|avoid|skip|ignore|omit)\b/u;
-function deviceRequestScope(text: string) {
-  const request = normalizedControlText(text);
-  const exclusion = DEVICE_EXCLUSION.exec(request);
-  const positive = (exclusion === null ? request : request.slice(0, exclusion.index)).trim();
-  const excluded = exclusion === null ? '' : request.slice(exclusion.index);
-  const readGroup = /^(?:please )?(?:(?:list|show|check|read|are|were)|what (?:is|was) (?:the )?(?:status|state|brightness|power) of) (?:the )?(all (?:wemo )?plugs|wemo plugs|all (?:lifx )?lights|lifx lights)(?: (?:on|off|status|state|please))?$/u.exec(positive)?.[1];
-  return {
-    names: (name: string) => !/\bor\b/u.test(positive) && containsControlValue(positive, name) && !containsControlValue(excluded, name),
-    group: exclusion === null ? readGroup ?? powerSubject(text) : undefined,
-  };
+function deviceRequestSubject(text: string): string | undefined {
+  // Only the opening clause can select a read target. Its full subject must resolve locally.
+  const [opening = '', remainder] = text.trim().split(/(?<=[.!?;,])(?:\s+|$)|[\r\n]+/u, 2);
+  const affirmative = normalizedControlText(opening).replace(/ only$/u, '');
+  const subject = /^(?:please )?(?:what (?:is|was) (?:the )?(?:status|state|brightness|power) of|(?:show|check|read) (?:me )?(?:the )?(?:status|state|brightness|power) (?:of|for)) (?:the )?(.+)$/u.exec(affirmative)?.[1]
+    ?? /^(?:please )?(?:(?:list|show|check|read) (?:the )?(.+)|(?:is|was|are|were) (?:the )?(.+?) (?:on|off|available))$/u.exec(affirmative)?.slice(1).find(value => value !== undefined)
+    ?? powerSubject(text);
+  if (subject === undefined || remainder !== undefined && deviceGroup(subject) !== undefined) return undefined;
+  return subject;
 }
+
+function deviceGroup(subject: string | undefined): AssistantDeviceOwner | undefined {
+  if (/^(?:all (?:wemo )?plugs|wemo plugs)$/u.test(subject ?? '')) return ASSISTANT_WEMO_OWNER;
+  if (/^(?:all (?:lifx )?lights|lifx lights)$/u.test(subject ?? '')) return ASSISTANT_LIGHT_OWNER;
+  return undefined;
+}
+
 const waitingText = (delegated: string): string => `${WAITING_PREFIX}${delegated.slice('Delegated'.length)}`.slice(0, 1024);
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
@@ -319,9 +324,9 @@ export class AssistantEngine {
     return {provider: name, model, variant, ...(pricing === undefined ? {} : {pricing})};
   }
   #pinnedProvider(profile: AssistantProfile, pin: SupervisorIdentity | undefined): ModelProvider {
-    const provider = this.#providerFor(profile, pin?.provider);
-    if (pin === undefined && (provider.name !== 'synthetic' || this.options.alternateProvider !== undefined)) return fail('unavailable');
-    if (pin !== undefined && (provider.model !== pin.model || (provider.variant ?? '') !== pin.variant)) return fail('unavailable');
+    if (pin === undefined) return fail('unavailable');
+    const provider = this.#providerFor(profile, pin.provider);
+    if (provider.model !== pin.model || (provider.variant ?? '') !== pin.variant) return fail('unavailable');
     return provider;
   }
   #taskProvider(task: Task): ModelProvider {
@@ -397,6 +402,18 @@ export class AssistantEngine {
           for (const entry of left) {
             this.store.queue.returnSteers(entry.taskId, this.context.clock.now(), this.store.task(entry.taskId)?.supervisor);
             if (this.store.queue.hold(entry.conversationId) === null) this.store.queue.setHold(entry.conversationId, {reason: 'restart', code: null, detail: null});
+          }
+        });
+      }
+      const unpinnedQueues = profiles.map(profile => this.store.conversation(profile)).filter((id): id is string => {
+        if (id === undefined || this.store.queue.hold(id) !== null) return false;
+        const head = this.store.queue.messages(id)[0];
+        return head !== undefined && head.supervisor === undefined;
+      });
+      if (unpinnedQueues.length > 0) {
+        await this.outbox.transaction(() => {
+          for (const conversationId of unpinnedQueues) {
+            this.store.queue.setHold(conversationId, {reason: 'refused', code: 'unavailable', detail: 'This queued message has no saved supervisor.'});
           }
         });
       }
@@ -481,8 +498,8 @@ export class AssistantEngine {
   #checkTitle(task: Pick<Task, 'conversationId' | 'profile' | 'id'>, event: TitleEvent): void {
     if (this.#closed || this.#starting || this.context.signal.aborted) return;
     const saved = this.store.task(task.id);
-    if (saved === undefined) return;
-    if (saved.supervisor?.provider !== 'openai') {
+    if (saved?.supervisor === undefined) return;
+    if (saved.supervisor.provider !== 'openai') {
       void this.titles.check(task.conversationId, task.profile, event);
       return;
     }
@@ -664,7 +681,7 @@ export class AssistantEngine {
       this.store.queue.setHold(conversationId, {reason: 'refused', code: refusal.code, detail: refusal.closingReason ?? null});
       return undefined;
     }
-    const pin = head.supervisor ?? this.#identity(this.#pinnedProvider(head.profile, undefined));
+    const pin = head.supervisor ?? fail('unavailable');
     const task = this.store.newTask(head.profile, head.text, pin);
     this.store.message(task, `${task.id}-prompt`, 'owner', head.text, this.context.clock.now());
     this.#activate(task, {traceparent: head.traceparent}, true);
@@ -676,6 +693,7 @@ export class AssistantEngine {
   #startRefusal(owner: AssistantProfile, conversationId: string, pin?: SupervisorIdentity): Fault | undefined {
     if (!this.store.meta().enabled || !this.available() || this.#unrecovered.has(conversationId)) return new Fault('unavailable');
     if (this.store.conversation(owner) !== conversationId) return new Fault('invalid-state');
+    if (pin === undefined) return new Fault('unavailable', 'This queued message has no saved supervisor.');
     // A paid profile's message meets the spend limits as a new message does; synthetic turns cost nothing.
     let paid: ModelProvider;
     try {paid = this.#pinnedProvider(owner, pin);} catch {return new Fault('unavailable');}
@@ -954,7 +972,8 @@ export class AssistantEngine {
     if (terminal(task.status)) {
       if (input.questionId !== undefined || this.store.latest().find(entry => entry.conversationId === conversationId)?.id !== task.id) fail('invalid-state');
       if (this.store.queue.count(conversationId) >= LIMITS.queueBound) throw new Fault('capacity', QUEUE_FULL);
-      this.store.queue.prepend([{id: command.data.requestId, conversationId, profile: task.profile, text: input.text, queuedAtMs: now, updatedAtMs: now, traceparent: command.traceparent}]);
+      this.store.queue.prepend([{id: command.data.requestId, conversationId, profile: task.profile, text: input.text, queuedAtMs: now, updatedAtMs: now, traceparent: command.traceparent,
+        ...(task.supervisor === undefined ? {} : {supervisor: task.supervisor})}]);
       // After Stop it waits in the held queue, as the steers Stop returned do, so Stop never ends in new work.
       if (task.status === 'cancelled' && this.store.queue.hold(conversationId) === null) this.store.queue.setHold(conversationId, {reason: 'stop', code: null, detail: null});
       return {launch: this.#dispatch(conversationId)};
@@ -1265,22 +1284,26 @@ export class AssistantEngine {
           message => message.role === 'owner' && allowsExcerpt(message.id), true).messages;
       }
     }
-    const selection = deviceRequestScope(request);
-    const previousSelections = recent.map(message => deviceRequestScope(message.text));
-    const named = (scope: ReturnType<typeof deviceRequestScope>, device: DeviceRecord): boolean =>
-      [device.id, deviceLabel(device)].some(scope.names);
-    const referenced = new Map<string, string>();
-    if (purpose === 'supervisor') {
-      if (['hub mode', 'current mode', 'set mode', 'work mode', 'free mode', 'quiet mode'].some(selection.names)) devices.add('hub');
-      for (const owner of [ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER] as const) {
-        const group = owner === ASSISTANT_WEMO_OWNER ? /^(?:all (?:wemo )?plugs|wemo plugs)$/u : /^(?:all (?:lifx )?lights|lifx lights)$/u;
-        for (const device of this.options.devices?.(owner) ?? []) {
-          if (named(selection, device) || group.test(selection.group ?? '')) devices.add(device.id);
-          if (refersToDevice && previousSelections.some(scope => named(scope, device))) referenced.set(device.id, deviceLabel(device));
-        }
-      }
+    const subjectForRead = purpose === 'supervisor' ? deviceRequestSubject(request) : undefined;
+    const group = deviceGroup(subjectForRead);
+    const configured = purpose === 'supervisor' ? ([ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER] as const).flatMap(owner =>
+      (this.options.devices?.(owner) ?? []).map(device => ({owner, device}))) : [];
+    const named = (subject: string | undefined, device: DeviceRecord): boolean =>
+      [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject);
+    const matches = configured.filter(({device}) => named(subjectForRead, device));
+    const selected = group !== undefined ? configured.filter(({owner}) => owner === group) : matches.length === 1 ? matches : [];
+    for (const {device} of selected) devices.add(device.id);
+    if (purpose === 'supervisor' && /^(?:please )?(?:what (?:is|was)|show|check) (?:the )?(?:current |hub )*mode$/u.test(normalizedControlText(request))) devices.add('hub');
+    const references = refersToDevice ? configured.filter(({device}) =>
+      recent.some(message => named(deviceRequestSubject(message.text), device))) : [];
+    const reference = references.length === 1 ? references[0] : undefined;
+    const referenced = reference?.device;
+    if (reference !== undefined) {
+      devices.add(reference.device.id);
+      selected.push(reference);
     }
-    if (referenced.size === 1) for (const id of referenced.keys()) devices.add(id);
+    const selectedDevice = (owner: AssistantDeviceOwner, id: string) => selected.some(entry => entry.owner === owner && entry.device.id === id);
+    const catalogSubject = group === undefined && matches.length <= 1 ? subjectForRead : undefined;
     const messages = new Map(recent.map(message => [message.id, {conversationId: task.conversationId}]));
     for (const item of transcript) {
       const id = item.role === 'tool' ? conversationMessageId(task.id, item) : undefined;
@@ -1291,22 +1314,21 @@ export class AssistantEngine {
       if (source === 'conversation' && (record === undefined || this.store.messages.removal(record) !== undefined || !local(source, 'text', record))) return false;
       if (source === 'devices') {
         if (!local(source, field, record)) return false;
-        if (purpose === 'supervisor' && record !== undefined && selection.names(record)) devices.add(record);
+        if (record !== undefined && matches.length === 0 && catalogSubject === normalizedControlText(record)) devices.add(record);
       }
       return access(source, field, record);
     };
     let referencedDevice: string | undefined;
     if (!previous && refersToDevice) {
-      const target = referenced.size === 1 ? [...referenced.entries()][0] : undefined;
-      if (target !== undefined && fields('devices', 'label', target[0])) {
-        referencedDevice = target[0];
-        recent = recent.map(message => ({...message, text: target[1]}));
+      if (referenced !== undefined && fields('devices', 'label', referenced.id)) {
+        referencedDevice = referenced.id;
+        recent = recent.map(message => ({...message, text: deviceLabel(referenced)}));
       } else {
         for (const message of recent) messages.delete(message.id);
         recent = [];
       }
     }
-    return {request, requestId, recent, fields, transcript, effects, referencedDevice};
+    return {request, requestId, recent, fields, transcript, effects, referencedDevice, catalogSubject, selectedDevice};
   }
   #taskFields(task: Task): FieldAccess {
     if (this.#taskProvider(task).name !== 'openai') return this.#modelFields(task.profile, this.#taskProvider(task).name);
@@ -1715,7 +1737,8 @@ export class AssistantEngine {
       return {step: state.step};
     }
     const owner = deviceToolOwner(call.name);
-    const modelFields = this.#taskFields(task);
+    const scope = provider.name === 'openai' ? this.#openAIScope(task) : undefined;
+    const modelFields = scope?.fields ?? this.#taskFields(task);
     const result = await this.#call(state.taskId, state.step, 'tool', async (signal, parent) => {
       const now = this.context.clock.now();
       const ledger: DisclosureLedger = {fields: []};
@@ -1723,11 +1746,11 @@ export class AssistantEngine {
       let text: string;
       if (owner !== undefined) {
         const name = call.input.device;
-        if (provider.name === 'openai' && !/\b(?:status|state|power|brightness|list|show|is|are|was|were|on|off)\b/i.test(this.#openAIScope(task).request)) {
+        if (scope !== undefined && !/\b(?:status|state|power|brightness|list|show|is|are|was|were|on|off)\b/i.test(scope.request)) {
           return {text: 'The current request does not ask for device status.', units: 0, disclosures: []};
         }
-        const records = this.options.devices?.(owner)?.filter(device => provider.name === 'openai'
-          ? access('devices', 'label', device.id) && (name === '' || access('devices', 'status', device.id))
+        const records = this.options.devices?.(owner)?.filter(device => scope !== undefined
+          ? scope.selectedDevice(owner, device.id) && access('devices', 'label', device.id) && (name === '' || access('devices', 'status', device.id))
           : access('devices', 'index', device.id) && access('devices', 'label', device.id)
             && (name === '' || access('devices', 'details', device.id) && access('devices', 'status', device.id)));
         const selected = chooseDevice(records, name);
@@ -1736,7 +1759,7 @@ export class AssistantEngine {
       } else if (isCatalogTool(call.name)) {
         const evidence: ActionEvidence[] = [];
         text = await this.#catalog().read(call, parent, item => evidence.push(item), access,
-          id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id), provider.name === 'openai') ?? fail('invalid-state');
+          id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id), scope === undefined ? undefined : {subject: scope.catalogSubject}) ?? fail('invalid-state');
         return {text, units: 0, evidence, disclosures: ledger.fields, ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})};
       } else {
         text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now, access) : fail('invalid-state');
@@ -1768,8 +1791,7 @@ export class AssistantEngine {
     }
     if (!this.#toolsFor(task).some(tool => tool.name === name)) return refuse('refused', 'This tool is not permitted.');
     if (openai && proposal.family !== 'coding-dispatch') {
-      const boundDevice = direct !== undefined && proposal.family === 'catalog-action' && proposal.binding.kind === 'device'
-        ? proposal.target : undefined;
+      const boundDevice = direct === undefined ? undefined : proposal.target;
       const access = this.#openAIScope(task, 'supervisor', boundDevice).fields;
       if ([proposal, ...(direct?.additional ?? [])].some(item => !access('devices', 'label', item.target) || !access('devices', 'status', item.target))) {
         return refuse('refused', 'The requested device is outside the allowed scope.');

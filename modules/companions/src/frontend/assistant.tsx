@@ -43,6 +43,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
   const formId = useId();
   const [provider, setProvider] = useState<'anthropic' | 'openai'>();
   const choices = state?.providers?.filter(item => item.provider !== 'synthetic') ?? [];
+  const primaryUnavailable = choices.length > 0 && !choices.some(item => item.provider === state?.provider);
+  const selectedProvider = provider ?? (primaryUnavailable ? choices[0]?.provider : undefined);
   const unavailableProvider = provider !== undefined && !choices.some(item => item.provider === provider);
   // The draft a sent or queued message came from, cleared once its command succeeded, so the composer is ready for the
   // next message while the task runs; a refused or uncertain command keeps it.
@@ -103,7 +105,7 @@ function TaskControls({context, command, state, profile, live, question, coding,
     // A steer names the turn it expects: one that reaches that turn after it ended, while it is still the latest, is
     // queued as the next message, and one aimed at a turn a newer turn followed is refused instead of joining another.
     const input = {action, profile, text, expectedRevision: state.revision,
-      ...((action === 'start' || action === 'queue') && provider !== undefined ? {provider} : {}),
+      ...((action === 'start' || action === 'queue') && selectedProvider !== undefined ? {provider: selectedProvider} : {}),
       ...(action === 'answer' && task !== undefined ? {taskId: task.taskId, questionId: task.questionId} : {}),
       ...(action === 'steer' && task !== undefined ? {taskId: task.taskId, ...(questionId === undefined ? {} : {questionId})} : {})};
     if (action !== 'answer' || (text !== 'approve' && text !== 'decline')) setSubmitted({requestId, key: draftKey, text});
@@ -180,9 +182,9 @@ function TaskControls({context, command, state, profile, live, question, coding,
     </div>}
     <ConversationUpload key={draftKey} context={context} locked={locked || !answerable}>{attach => <>
       {showInput && <form id={formId} onSubmit={event => {event.preventDefault(); submit();}}>
-        {(choices.length > 1 || unavailableProvider) && (!pending || queueable) && <label>
+        {(choices.length > 1 || primaryUnavailable || unavailableProvider) && (!pending || queueable) && <label>
           Supervisor for new tasks
-          <select value={provider ?? state?.provider} onChange={event => {setProvider(event.target.value === 'openai' ? 'openai' : 'anthropic');}}>
+          <select value={selectedProvider ?? state?.provider} onChange={event => {setProvider(event.target.value === 'openai' ? 'openai' : 'anthropic');}}>
             {unavailableProvider && <option value={provider}>{provider === 'openai' ? 'OpenAI' : 'Anthropic'} unavailable</option>}
             {choices.length === 0 && state?.provider === 'anthropic' && <option value="anthropic">Anthropic · {state.model}</option>}
             {choices.map(item => <option key={item.provider} value={item.provider}>

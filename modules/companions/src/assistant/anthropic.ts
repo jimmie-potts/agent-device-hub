@@ -120,6 +120,7 @@ export async function faultOf(response: Response): Promise<ProviderFault> {
 
 export class AnthropicProvider implements ModelProvider {
   readonly name = 'anthropic' as const;
+  readonly available: boolean;
   readonly model: string;
   readonly variant: string;
   readonly #effort: Effort;
@@ -129,9 +130,11 @@ export class AnthropicProvider implements ModelProvider {
   constructor(options: AnthropicOptions) {
     this.model = options.model ?? DEFAULT_MODEL; this.#effort = options.effort ?? 'medium'; this.#key = options.key;
     this.variant = `messages-v1:${this.#effort}`;
+    this.available = this.#key.trim() !== '';
     this.#transport = options.transport ?? ((url, init) => fetch(url, init)); this.#url = options.url ?? ANTHROPIC_URL;
   }
   async turn(input: TurnInput, signal: AbortSignal): Promise<TurnReply> {
+    if (!this.available) throw new ProviderFault('unavailable');
     const body = JSON.stringify({model: this.model, max_tokens: MAX_TOKENS, system: this.#system(input),
       tools: input.tools.map((tool, index) => ({name: tool.name, description: tool.description, input_schema: tool.input,
         ...(index < STRICT_TOOL_LIMIT ? {strict: true} : {})})),

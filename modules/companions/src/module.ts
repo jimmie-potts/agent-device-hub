@@ -278,10 +278,10 @@ class Companions {
     const transport = options.transport === undefined ? {} : {transport: options.transport};
     if ((provider === undefined || titleProvider === undefined) && assistant?.provider === 'anthropic') {
       // The key is read once, at start, and lives only in the providers; the runtime redacts it from its own records.
-      const key = await context.secrets.read(API_KEY_SECRET);
+      const key = await context.secrets.read(API_KEY_SECRET).catch(() => '');
       provider ??= new AnthropicProvider({key, model: assistant.model, effort: assistant.effort, ...transport});
       // The conversation title call uses the same key and transport with its own small model (Hub #2025).
-      titleProvider ??= new AnthropicTitleProvider({key, model: assistant.titleModel, ...transport});
+      if (key.trim() !== '') titleProvider ??= new AnthropicTitleProvider({key, model: assistant.titleModel, ...transport});
     }
     const openAI = assistant?.provider === 'openai' ? assistant : assistant?.provider === 'anthropic' ? assistant.openAI : undefined;
     if (openAI !== undefined) {
