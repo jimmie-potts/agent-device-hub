@@ -84,7 +84,7 @@ jobs:
         env:
           SUITE_GROUP: ${{ matrix.group }}
         run: node scripts/ci-selection/runtime-browser.mjs run "$SUITE_GROUP"
-      - if: failure()
+      - if: failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''
         uses: ./.github/actions/failure-evidence
         with:
           name: runtime-dashboard-browser-${{ matrix.group }}

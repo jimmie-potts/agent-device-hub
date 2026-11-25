@@ -41,17 +41,23 @@ test('the action uploads the copy for 14 days with the pinned upload action, and
   assert.ok(fs.readFileSync(path.join(root, '.github/workflows/release-qualification.yml'), 'utf8').includes(action.runs.steps[1].uses));
 });
 
-test('the copy keeps image, text and result files, skips other types and symbolic links, and lists every file', t => {
+test('the copy keeps image, text and result files, skips other types, links and hidden files, and lists every file', t => {
   const source = path.join(directory(t), 'evidence'), target = path.join(directory(t), 'upload');
   write(path.join(source, 'bunny-browser-proof-a/failed.png'), 10);
   write(path.join(source, 'junit/node-test-1.xml'), 20);
   write(path.join(source, 'state.sqlite'), 30);
   write(path.join(source, '.env'), 5);
+  write(path.join(source, '.hidden/shot.png'), 5);
   fs.symlinkSync('/etc/hostname', path.join(source, 'link.txt'));
+  const outside = path.join(path.dirname(source), 'outside-original.txt');
+  write(outside, 7);
+  fs.linkSync(outside, path.join(source, 'hard.txt'));
   const rows = stage(source, target);
   assert.deepEqual(rows.map(row => [row.name, row.reason]), [
-    ['.env', 'file type not kept'],
+    ['.env', 'hidden, not uploaded'],
+    ['.hidden', 'hidden, not uploaded'],
     [path.join('bunny-browser-proof-a', 'failed.png'), 'kept'],
+    ['hard.txt', 'hard link'],
     [path.join('junit', 'node-test-1.xml'), 'kept'],
     ['link.txt', 'not a regular file'],
     ['state.sqlite', 'file type not kept'],
@@ -60,7 +66,9 @@ test('the copy keeps image, text and result files, skips other types and symboli
   assert.equal(fs.existsSync(path.join(target, 'state.sqlite')), false);
   assert.equal(fs.existsSync(path.join(target, '.env')), false);
   assert.equal(fs.existsSync(path.join(target, 'link.txt')), false);
-  assert.match(manifest(target), /^Failure evidence \(#2059\): 2 of 5 files kept, 30 of at most \d+ bytes\.\n/);
+  assert.equal(fs.existsSync(path.join(target, 'hard.txt')), false);
+  assert.equal(fs.existsSync(path.join(target, '.hidden')), false);
+  assert.match(manifest(target), /^Failure evidence \(#2059\): 2 of 7 files kept, 30 of at most \d+ bytes\.\n/);
   for (const type of ['.png', '.xml', '.json', '.txt', '.html']) assert.ok(KEPT_TYPES.has(type), type);
   assert.equal(LIMIT_BYTES, 50 * 1024 * 1024);
 });
@@ -104,4 +112,31 @@ test('the JUnit reporter names each test and its duration beside unchanged spec 
   assert.equal(run({ TEST_EVIDENCE_DIR: '' }).status, 1);
   assert.deepEqual(fs.readdirSync(folder).sort(), ['evidence', 'probe.test.mjs'], 'without the folder it writes nothing');
   assert.equal(fs.readdirSync(path.join(evidence, 'junit')).length, 1);
+});
+
+test('the JUnit reporter fails open: a folder it cannot write leaves the result and output as they were', t => {
+  const folder = directory(t), file = path.join(folder, 'a-file');
+  fs.writeFileSync(file, 'not a folder');
+  fs.writeFileSync(path.join(folder, 'pass.test.mjs'), "import {test} from 'node:test';\ntest('passes', () => {});\n");
+  fs.writeFileSync(path.join(folder, 'fail.test.mjs'), "import {test} from 'node:test';import assert from 'node:assert';\n"
+    + "test('fails on purpose', () => { assert.equal(1, 2); });\n");
+  // /proc refuses new folders even to root, so this holds whoever runs the test. (A recursive create there never
+  // returns, so the reporter creates one level at a time.)
+  const unwritable = '/proc/gh2059-evidence';
+  assert.throws(() => fs.mkdirSync(unwritable));
+  const reporter = path.join(root, 'scripts/ci-selection/junit-file.mjs');
+  const options = `--test-reporter=spec --test-reporter-destination=stdout --test-reporter=${reporter} --test-reporter-destination=stdout`;
+  const run = (name, env) => spawnSync(process.execPath, ['--test', name], { cwd: folder, encoding: 'utf8', timeout: 30000, env: { ...childEnv, ...env } });
+  const lines = text => text.split('\n').filter(line => !/duration_ms|\(\d/.test(line));
+  for (const [name, status] of [['pass.test.mjs', 0], ['fail.test.mjs', 1]]) {
+    const plain = run(name, { NODE_OPTIONS: '', TEST_EVIDENCE_DIR: '' });
+    assert.equal(plain.status, status, name);
+    for (const evidence of [unwritable, file, '']) {
+      const result = run(name, { NODE_OPTIONS: options, TEST_EVIDENCE_DIR: evidence });
+      assert.equal(result.status, status, `${name} with ${JSON.stringify(evidence)}`);
+      assert.deepEqual(lines(result.stdout), lines(plain.stdout), `${name} with ${JSON.stringify(evidence)}: same spec output`);
+      assert.equal(result.stderr, plain.stderr, `${name} with ${JSON.stringify(evidence)}: same error output`);
+    }
+  }
+  assert.equal(fs.readFileSync(file, 'utf8'), 'not a folder');
 });

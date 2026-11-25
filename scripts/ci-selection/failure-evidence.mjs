@@ -3,7 +3,8 @@
 // dumps (apps/runtime/dashboard/tests/browser-artifacts.ts) and the JUnit files of junit-file.mjs. When a job fails, the
 // failure-evidence action copies part of that directory with this script and uploads the copy:
 //   node scripts/ci-selection/failure-evidence.mjs <evidence directory> <upload directory>
-// Only image, text and result files are copied, never a symbolic link, and at most LIMIT_BYTES in all: JUnit files
+// Only image, text and result files are copied, never a symbolic link, a hard link (which could name a file outside
+// the folder) or a hidden file or folder (which the upload would drop), and at most LIMIT_BYTES in all: JUnit files
 // first, then the newest files, because a journey writes its failure screenshot last. MANIFEST.txt lists every file
 // and whether it was kept, so an omitted file is visible. Uploaded artifacts are public; journeys and tests write
 // synthetic fixtures only (ADR 0011).
@@ -14,15 +15,20 @@ import { pathToFileURL } from 'node:url';
 export const LIMIT_BYTES = 50 * 1024 * 1024;
 export const KEPT_TYPES = new Set(['.png', '.jpg', '.jpeg', '.webp', '.xml', '.json', '.txt', '.html', '.log']);
 
-/** Every regular file under `root`, without following a symbolic link; a missing root has none. */
+/** Every regular file under `root` with one link, without following a symbolic link; a missing root has none. */
 function files(root) {
   const found = [], skipped = [];
   const walk = folder => {
     for (const entry of readdirSync(folder, { withFileTypes: true })) {
-      const path = join(folder, entry.name);
-      if (entry.isDirectory()) walk(path);
-      else if (entry.isFile()) { const stat = lstatSync(path); found.push({ path, name: relative(root, path), size: stat.size, modified: stat.mtimeMs }); }
-      else skipped.push({ name: relative(root, path), reason: 'not a regular file' });
+      const path = join(folder, entry.name), name = relative(root, path);
+      if (entry.name.startsWith('.')) skipped.push({ name, reason: 'hidden, not uploaded' });
+      else if (entry.isDirectory()) walk(path);
+      else if (!entry.isFile()) skipped.push({ name, reason: 'not a regular file' });
+      else {
+        const stat = lstatSync(path);
+        if (stat.nlink > 1) skipped.push({ name, reason: 'hard link' });
+        else found.push({ path, name, size: stat.size, modified: stat.mtimeMs });
+      }
     }
   };
   try { walk(root); } catch (error) { if (error.code !== 'ENOENT') throw error; }

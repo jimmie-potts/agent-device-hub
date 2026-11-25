@@ -1,8 +1,11 @@
 // A Node test reporter for hosted CI (#2059). It prints nothing and writes Node's JUnit report for its own process to
 // TEST_EVIDENCE_DIR/junit/node-test-<pid>.xml, so a failed job's artifact names each failing test and its duration. The
 // workflows load it through NODE_OPTIONS beside the spec reporter, which keeps the log as it was. Without
-// TEST_EVIDENCE_DIR it writes nothing.
-import { createWriteStream, mkdirSync } from 'node:fs';
+// TEST_EVIDENCE_DIR, or empty, it writes nothing.
+// It fails open: the report is held in memory and written once the run ends, and a folder or file it cannot write is
+// skipped, so it never changes a run's result or output. It creates at most TEST_EVIDENCE_DIR and its junit folder,
+// one level each, because a recursive create under /proc never returns.
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { junit } from 'node:test/reporters';
 
@@ -10,8 +13,14 @@ import { junit } from 'node:test/reporters';
 export default async function* junitFile(source) {
   const directory = process.env.TEST_EVIDENCE_DIR;
   if (!directory) { for await (const event of source) void event; return; }
-  mkdirSync(join(directory, 'junit'), { recursive: true });
-  const out = createWriteStream(join(directory, 'junit', `node-test-${process.pid}.xml`));
-  for await (const chunk of junit(source)) out.write(chunk);
-  await new Promise((resolve, reject) => { out.end(error => (error ? reject(error) : resolve())); });
+  const chunks = [];
+  for await (const chunk of junit(source)) chunks.push(chunk);
+  try {
+    for (const folder of [directory, join(directory, 'junit')]) {
+      try { mkdirSync(folder); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+    }
+    writeFileSync(join(directory, 'junit', `node-test-${process.pid}.xml`), chunks.join(''));
+  } catch {
+    // Evidence is optional; the run's own result and output stay as they were.
+  }
 }

@@ -412,7 +412,7 @@ test('the suite job runs every group in parallel, each under a finite limit and 
   assert.equal(job.steps.find(step => step.id === 'suite').if, selected);
   // Hub #2059: a failed group uploads what its journeys wrote, as its last step; a passing or unselected group skips it.
   assert.deepEqual(workflow.env, { TEST_EVIDENCE_DIR: '/tmp/test-evidence' });
-  assert.deepEqual(job.steps.at(-1), { if: 'failure()', uses: './.github/actions/failure-evidence', with: { name: 'runtime-dashboard-browser-${{ matrix.group }}' } });
+  assert.deepEqual(job.steps.at(-1), { if: "failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''", uses: './.github/actions/failure-evidence', with: { name: 'runtime-dashboard-browser-${{ matrix.group }}' } });
 });
 
 test('only the report job can write issues, and it runs once after every group\'s result', () => {

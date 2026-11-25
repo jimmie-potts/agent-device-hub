@@ -16,6 +16,9 @@ permissions:
   contents: read
 # A failed test job uploads what its tests wrote here (#2059): browser journeys' screenshots and dumps, and the JUnit
 # files that NODE_TEST_JUNIT, the NODE_OPTIONS of the runtime's node --test steps, adds beside the usual spec output.
+# A child `node --test --test-reporter=...` started under these options has one reporter too many and exits 1, so a
+# suite that starts its own reporter must not get them. The evidence step's hashFiles condition skips it on a
+# standalone head that predates the action.
 env:
   TEST_EVIDENCE_DIR: /tmp/test-evidence
   NODE_TEST_JUNIT: --test-reporter=spec --test-reporter-destination=stdout --test-reporter=${{ github.workspace }}/scripts/ci-selection/junit-file.mjs --test-reporter-destination=stdout
@@ -196,7 +199,7 @@ jobs:
       # The runtime's dashboard (#922): its unit tests here, its browser smoke check in App verification.
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime-dashboard:built
-      - if: failure()
+      - if: failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''
         uses: ./.github/actions/failure-evidence
         with:
           name: core
@@ -222,7 +225,7 @@ jobs:
       - run: npm run test:runtime:built
         env:
           NODE_OPTIONS: ${{ env.NODE_TEST_JUNIT }}
-      - if: failure()
+      - if: failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''
         uses: ./.github/actions/failure-evidence
         with:
           name: runtime-unit
@@ -243,7 +246,7 @@ jobs:
       - run: npm run test:runtime:scenarios:built
         env:
           NODE_OPTIONS: ${{ env.NODE_TEST_JUNIT }}
-      - if: failure()
+      - if: failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''
         uses: ./.github/actions/failure-evidence
         with:
           name: runtime-scenarios
@@ -341,7 +344,7 @@ jobs:
         run: npm run test:art-theme:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
-      - if: failure()
+      - if: failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''
         uses: ./.github/actions/failure-evidence
         with:
           name: app-verify
@@ -373,7 +376,7 @@ jobs:
       - run: npm run test:runtime:verify:captures:built
         env:
           NODE_OPTIONS: ${{ env.NODE_TEST_JUNIT }}
-      - if: failure()
+      - if: failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''
         uses: ./.github/actions/failure-evidence
         with:
           name: runtime-verify-captures
@@ -402,7 +405,7 @@ jobs:
       - run: npm run test:runtime:verify:rest:built
         env:
           NODE_OPTIONS: ${{ env.NODE_TEST_JUNIT }}
-      - if: failure()
+      - if: failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''
         uses: ./.github/actions/failure-evidence
         with:
           name: runtime-verify

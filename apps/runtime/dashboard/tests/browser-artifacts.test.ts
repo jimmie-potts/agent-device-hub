@@ -41,4 +41,5 @@ void test('receipts take precedence over the CI evidence folder, which takes pre
   assert.equal(browserArtifactParent({DASHBOARD_RECEIPTS: '/receipts', TEST_EVIDENCE_DIR: '/evidence'}), '/receipts');
   assert.equal(browserArtifactParent({TEST_EVIDENCE_DIR: '/evidence'}), '/evidence');
   assert.equal(browserArtifactParent({}), tmpdir());
+  assert.equal(browserArtifactParent({TEST_EVIDENCE_DIR: ''}), tmpdir(), 'an empty evidence folder is unset');
 });

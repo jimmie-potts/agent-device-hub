@@ -1200,9 +1200,16 @@ CI leaves receipts mode off), and, from the runtime unit, scenario and
 verification steps, one `junit/node-test-<pid>.xml` per Node test process, which
 names each test, its duration and its failure. The
 [failure-evidence action](../.github/actions/failure-evidence/action.yml) copies
-only image, text, HTML, JSON and XML files, never a symbolic link, up to 50 MB,
-JUnit files first and then the newest. Its `MANIFEST.txt` lists every file with
-`kept`, `file type not kept`, `over the size limit` or `not a regular file`.
+only image, text, HTML, JSON and XML files, never a symbolic link, a hard link or
+a hidden file, up to 50 MB, JUnit files first and then the newest. Its
+`MANIFEST.txt` lists every file with `kept`, `file type not kept`,
+`over the size limit`, `hard link`, `hidden, not uploaded` or
+`not a regular file`. The JUnit reporter fails open: a folder it cannot write
+leaves the run's result and output unchanged. It reaches the runtime steps
+through `NODE_OPTIONS`, so do not give it to a suite that starts its own
+`node --test --test-reporter=...` child: that child then has one reporter too
+many and exits 1. A standalone-mode core job whose head predates the action
+skips the evidence step.
 Artifacts are a publication surface, so tests write synthetic fixtures only there
 ([ADR 0011](decisions/0011-private-personal-data-retention.md)). Journeys that
 write only under `DASHBOARD_RECEIPTS`, and steps without the JUnit reporter,

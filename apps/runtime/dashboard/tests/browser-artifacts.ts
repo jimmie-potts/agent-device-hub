@@ -7,7 +7,9 @@ import {join} from 'node:path';
  * which hosted CI sets so that a failed job uploads what its journeys wrote (#2059), else the system temporary folder.
  */
 export function browserArtifactParent(env: NodeJS.ProcessEnv = process.env): string {
-  return env.DASHBOARD_RECEIPTS ?? env.TEST_EVIDENCE_DIR ?? tmpdir();
+  // An empty TEST_EVIDENCE_DIR is unset, as the JUnit reporter reads it.
+  const evidence = env.TEST_EVIDENCE_DIR;
+  return env.DASHBOARD_RECEIPTS ?? (evidence !== undefined && evidence !== '' ? evidence : tmpdir());
 }
 
 export async function browserArtifactDirectory(parent = browserArtifactParent()): Promise<string> {

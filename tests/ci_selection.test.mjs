@@ -443,9 +443,10 @@ const STEP_GROUPS = {
   },
 };
 
-// Hub #2059: a test job's last step uploads its evidence when the job fails. It runs on the job's outcome, not the
-// selection, so the selection checks below leave it out.
-const selectionSteps = job => job.steps.filter(step => !(step.uses === './.github/actions/failure-evidence' && step.if === 'failure()'));
+// Hub #2059: a test job's last step uploads its evidence when the job fails and its checkout has the action (a
+// standalone head may predate it). It runs on the job's outcome, not the selection, so the checks below leave it out.
+const selectionSteps = job => job.steps.filter(step => !(step.uses === './.github/actions/failure-evidence'
+  && step.if === "failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''"));
 
 test('every conditional Checks step keeps its pinned group', () => {
   for (const [id, expected] of Object.entries(STEP_GROUPS)) {

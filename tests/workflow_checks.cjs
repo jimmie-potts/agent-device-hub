@@ -363,7 +363,7 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
   let builds = 0;
   for (const [id, runs] of Object.entries(suites)) {
     const job = ci.jobs[id];
-    assert.deepEqual(job.steps.filter(isEvidence), withEvidence.includes(id) ? [{ if: 'failure()', uses: './.github/actions/failure-evidence', with: { name: id } }] : [], id);
+    assert.deepEqual(job.steps.filter(isEvidence), withEvidence.includes(id) ? [{ if: "failure() && hashFiles('.github/actions/failure-evidence/action.yml') != ''", uses: './.github/actions/failure-evidence', with: { name: id } }] : [], id);
     if (withEvidence.includes(id)) assert.ok(isEvidence(job.steps.at(-1)), `${id}: the evidence step runs last`);
     assert.deepEqual(job.steps.filter(step => step.env?.NODE_OPTIONS !== undefined).map(step => [step.run, step.env]),
       withJunit[id] ? [[withJunit[id], { NODE_OPTIONS: '${{ env.NODE_TEST_JUNIT }}' }]] : [], id);
