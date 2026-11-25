@@ -35,27 +35,33 @@ export function PixooCard({context, device, display, live, playlists, command}: 
     return () => { disposed = true; };
   }, [context.api, context.connected, live, revision, retry]);
   const current = context.connected && live && reading?.revision === revision && !loading && !error;
+  // A routine re-read after a display change (#2124): the card holds a successful read and reads again. Until the new
+  // read lands, the card keeps showing what it holds and its controls stay live, each sending what it shows, so a press
+  // is not dropped. When the read lands, the content, the labels and the commands change in one render; a failed read
+  // drops the content. Stale records, no read yet and a failed read are not a refresh.
+  const refreshing = context.connected && live && revision !== undefined && reading !== undefined && !error && (loading || reading.revision !== revision);
+  const held = current || refreshing;
   const session = reading?.value.session, state = reading?.value.state;
   const activeItem = session?.playlist.items.find(item => item.id === state?.itemId);
   const selected = playlists.find(playlist => playlist.id === selectedId);
   const savedSession = playlists.find(playlist => playlist.id === session?.playlist.id);
   const pendingChanges = session?.source?.kind !== 'media' && savedSession !== undefined && savedSession.playlistRevision !== session?.playlist.revision;
   const media = [...selection.values()][0];
-  const deviceBlocked = blocked !== undefined || !current || device.availability !== 'available';
+  const deviceBlocked = blocked !== undefined || !held || device.availability !== 'available';
   // Work admits no playback start (ADR 0014); Free and Quiet admit everything.
   const contentBlocked = deviceBlocked || device.desired.mode.status !== 'known' || device.desired.mode.value === 'work';
   const actionDisabled = (action: MediaAction): boolean => contentBlocked || !device.capabilities.media.supported || !device.capabilities.media.actions.includes(action)
     || session === null || session === undefined || (action === 'restart-with-changes' && (session.source?.kind === 'media' || savedSession?.repeat !== true));
   const desiredBrightness = device.desired.brightness.status === 'known' ? device.desired.brightness.value : undefined;
   const screenOn = device.desired.power.status === 'known' ? device.desired.power.value : undefined;
-  const stateText = !current ? 'Stale' : display?.base === 'status' ? 'Monitor' : state?.state ?? 'Media';
+  const stateText = !held ? 'Stale' : display?.base === 'status' ? 'Monitor' : state?.state ?? 'Media';
   const caption = `${session?.playlist.name ?? 'Choose something to play'}${activeItem === undefined ? '' : ` · ${(session?.playlist.items.findIndex(item => item.id === activeItem.id) ?? -1) + 1}/${session?.playlist.items.length}`}`;
   // In a Home shape (#1672 PR B) the shell says which; the card shows compact content for it and keeps these hooks.
   const shape = context.presentation?.shape;
   // One line: while the controls are disabled their reason comes first (the full card shows it on its own line), then a
   // failed send, a player error and the command attempt's own text.
   // A routine re-read of the player after a display change is not a reason; the line keeps what it showed.
-  const reason = !deviceBlocked ? undefined : blocked ?? (error ? 'Player unavailable. Device details can refresh it.' : loading ? undefined : !current ? 'Pixoo records are stale.' : device.availability !== 'available' ? 'Pixoo is unavailable.' : undefined);
+  const reason = !deviceBlocked ? undefined : blocked ?? (error ? 'Player unavailable. Device details can refresh it.' : loading ? undefined : !held ? 'Pixoo records are stale.' : device.availability !== 'available' ? 'Pixoo is unavailable.' : undefined);
   const compactResult = reason ?? failure ?? (state?.lastError !== null && state?.lastError !== undefined ? `Player error: ${state.lastError.code}.` : command.text);
   if (shape !== undefined) return <PixooCompactCard context={context} device={device} shape={shape} state={stateText} renditionId={activeItem?.renditionId} current={current}
     playing={state?.state === 'playing'} caption={caption} session={session !== undefined && session !== null} deviceBlocked={deviceBlocked} actionDisabled={actionDisabled}
