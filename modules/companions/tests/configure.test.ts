@@ -10,7 +10,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {test, type TestContext} from 'node:test';
 import {InProcessBus} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
-import {API_KEY_SECRET, configureCompanions, createCompanionsModule} from '../src/module.js';
+import {API_KEY_SECRET, OPENAI_KEY_SECRET, configureCompanions, createCompanionsModule} from '../src/module.js';
 import {SPEND_LIMIT_REACHED, type Transport} from '../src/assistant/anthropic.js';
 import {PROFILES} from '../src/knowledge/model.js';
 
@@ -334,9 +334,8 @@ void test('an explicit synthetic provider serves every profile without a request
   assert.equal((JSON.parse(Buffer.from(spend.bytes).toString()) as {day: {spentMicros: number}}).day.spentMicros, 0);
 });
 
-void test('a companion task the synthetic provider left waiting continues on the configured model after the upgrade, reserved and settled once', async context => {
-  // The upgrade path UPGRADE.md describes (Hub #2026): a synthetic section's waiting Reachy and MicroDuck tasks, then the
-  // same store under an Anthropic section. The restart sends nothing; each answer sends one turn on the configured model.
+void test('switching the configured provider preserves interrupted tasks and refuses cross-provider playback', async context => {
+  // Use the same private store first with a synthetic section and then with Anthropic configured.
   const dir = await mkdtemp(join(tmpdir(), 'assistant-upgrade-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   const sent: string[] = [];
@@ -371,16 +370,27 @@ void test('a companion task the synthetic provider left waiting continues on the
     secrets: {[API_KEY_SECRET]: '/run/secrets/bunny/anthropic-api-key'}}, secrets: {[API_KEY_SECRET]: 'sk-PRIVATE-TEST-KEY'}});
   await host.start();
   assert.deepEqual(sent, [], 'the restart sends nothing');
-  const rows = () => (host.moduleDatabase()?.prepare('SELECT purpose,owner,model,reserved_micros AS reserved,cost_micros AS cost FROM assistant_spend').all() ?? []).map(row => ({...row}));
   for (const profile of ['reachy', 'microduck']) {
     const waiting = task(profile) ?? assert.fail(`${profile} task`);
-    assert.equal(waiting.status, 'waiting');
-    assert.equal((await request('input', {action: 'answer', profile, text: 'Synthetic answer', taskId: waiting.taskId, questionId: waiting.questionId})).status, 'accepted');
-    await turnsUntil(() => task(profile)?.status === 'succeeded', `${profile} continues on the configured model`);
-    const turns = rows().filter(row => row.purpose === 'task' && row.owner === waiting.taskId);
-    assert.equal(turns.length, 1, `${profile}: one task call reserved`);
-    assert.equal(turns[0]?.model, 'claude-sonnet-5-5');
-    assert.ok(typeof turns[0]?.cost === 'number' && turns[0].cost <= Number(turns[0].reserved), `${profile}: settled once with its reported cost`);
+    assert.equal(waiting.status, 'paused');
+    assert.equal(waiting.code, 'unavailable');
+    const answer = await request('input', {action: 'answer', profile, text: 'Synthetic answer', taskId: waiting.taskId, questionId: waiting.questionId});
+    assert.equal(answer.status, 'rejected');
+    if (answer.status === 'rejected') assert.equal(answer.error.error.code, 'unavailable');
+    assert.equal(task(profile)?.questionId, waiting.questionId);
   }
-  assert.deepEqual(sent.filter(model => model !== 'claude-haiku-5-5'), ['claude-sonnet-5-5', 'claude-sonnet-5-5'], 'one turn on the configured model for each answer');
+  assert.deepEqual(sent, [], 'no resumed task sends the earlier provider’s transcript');
+});
+
+void test('Responses requires its named credential and a model with published pricing', () => {
+  const secrets = {[API_KEY_SECRET]: '/run/secrets/bunny/anthropic-api-key',
+    [OPENAI_KEY_SECRET]: '/run/secrets/bunny/openai-responses-api-key'};
+  const dual = configured({assistant: {provider: 'anthropic', openAI: {effort: 'low'}}, secrets});
+  assert.notEqual(typeof dual, 'string');
+  if (typeof dual !== 'string' && dual.assistant.provider === 'anthropic') {
+    assert.deepEqual(dual.assistant.openAI, {model: 'gpt-6.2-sol', effort: 'low'});
+  }
+  assert.equal(configured({assistant: {provider: 'anthropic', openAI: {}}, secrets: {[API_KEY_SECRET]: secrets[API_KEY_SECRET]}}), 'invalid-request');
+  assert.equal(configured({assistant: {provider: 'openai', model: 'unknown-model'}, secrets}), 'invalid-request');
+  assert.equal(configured({assistant: {provider: 'openai', titleModel: 'unpriced-title'}, secrets}), 'invalid-request');
 });

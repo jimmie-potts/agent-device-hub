@@ -38,7 +38,7 @@ import {coreFamilies, type Title} from '@jimmie-potts/event-contracts/v2/familie
 import type {AddMessage, Cancel, Outbox} from '@jimmie-potts/sdk';
 import {ANTHROPIC_URL, ANTHROPIC_VERSION, faultOf, type Transport} from './anthropic.js';
 import {ProviderFault, textBytes} from './provider.js';
-import {inputBound, type SpendLedger, type TokenUsage} from './spend.js';
+import {inputBound, type PriceSchedule, type SpendLedger, type TokenUsage} from './spend.js';
 import {PROFILES} from '../knowledge/model.js';
 
 /** The longest description after any issue reference, in Unicode characters. */
@@ -272,7 +272,7 @@ export function ownerTitle(value: string): string | undefined {
 /** A title answer: its text, or null when the provider refused or cut it, and its reported usage by price class, or null when unreported. */
 export type TitleReply = {text: string | null; usage: TokenUsage | null};
 /** Writes one title from a bounded prompt. A provider never sees the bus, a task or anything but the prompt. */
-export type TitleProvider = {readonly name: AssistantProvider; readonly model: string; title(prompt: string, signal: AbortSignal): Promise<TitleReply>};
+export type TitleProvider = {readonly name: AssistantProvider; readonly model: string; inputUnits?(prompt: string): number; title(prompt: string, signal: AbortSignal): Promise<TitleReply>};
 
 /** The labelled synthetic provider's title: fixed, so it never echoes the conversation, and free. */
 export class SyntheticTitleProvider implements TitleProvider {
@@ -371,7 +371,8 @@ export type TitleDependencies = {
   metadata: (conversationId: string, title: Title, observedAtMs: number) => {key: string; draft: object};
 };
 /** A conversation's checks: the call in flight, the labels of the triggers waiting for its one follow-up, and the whole run. */
-type InFlight = {controller: AbortController; pending: string[] | undefined; work: Promise<void>};
+type ScopedTitle = {provider: TitleProvider; pricing: PriceSchedule; messages: () => TitleMessage[]};
+type InFlight = {controller: AbortController; scoped?: true; pending: string[] | undefined; work: Promise<void>};
 const persona = (profile: AssistantProfile): string => PROFILES.find(value => value.id === profile)?.name ?? profile;
 /** The labels with one more, each once, oldest first, keeping the latest `TITLE_EVENTS`. */
 const merged = (labels: readonly string[], label: string): string[] => labels.includes(label) ? [...labels] : [...labels, label].slice(-TITLE_EVENTS);
@@ -454,16 +455,16 @@ export class ConversationTitles {
    * Resolves once the conversation has no check left to run. Every failure is absorbed: a check never fails, delays or
    * rolls back a task.
    */
-  check(conversationId: string, profile: AssistantProfile, event: TitleEvent): Promise<void> {
-    if (this.#stopping || this.deps.provider(profile) === undefined) return Promise.resolve();
+  check(conversationId: string, profile: AssistantProfile, event: TitleEvent, scoped?: ScopedTitle): Promise<void> {
+    if (this.#stopping || (scoped?.provider ?? this.deps.provider(profile)) === undefined) return Promise.resolve();
     const label = eventLabel(event), running = this.#inFlight.get(conversationId);
     if (running !== undefined) {
-      running.pending = merged(running.pending ?? [], label);
+      if (scoped === undefined && running.scoped !== true) running.pending = merged(running.pending ?? [], label);
       return running.work;
     }
-    const entry: InFlight = {controller: new AbortController(), pending: undefined, work: Promise.resolve()};
+    const entry: InFlight = {controller: new AbortController(), pending: undefined, work: Promise.resolve(), ...(scoped === undefined ? {} : {scoped: true})};
     this.#inFlight.set(conversationId, entry);
-    entry.work = this.#run(conversationId, profile, entry, [label]);
+    entry.work = this.#run(conversationId, profile, entry, [label], scoped);
     return entry.work;
   }
   /**
@@ -471,10 +472,10 @@ export class ConversationTitles {
    * The run leaves `#inFlight` in the same synchronous step that finds no trigger waiting, so a later trigger starts a
    * new run instead of joining one that has ended.
    */
-  async #run(conversationId: string, profile: AssistantProfile, entry: InFlight, first: string[]): Promise<void> {
+  async #run(conversationId: string, profile: AssistantProfile, entry: InFlight, first: string[], scoped?: ScopedTitle): Promise<void> {
     let events: string[] = first;
     for (;;) {
-      await this.#ask(conversationId, profile, entry.controller, events).catch(() => { /* The admitted call keeps the evidence. */ });
+      await this.#ask(conversationId, profile, entry.controller, events, scoped).catch(() => { /* The admitted call keeps the evidence. */ });
       const next = this.#stopping ? undefined : entry.pending;
       entry.pending = undefined;
       if (next === undefined) {
@@ -489,15 +490,17 @@ export class ConversationTitles {
    * title that is valid, and still wanted because no rename or newer check landed meanwhile, is stored as generated and
    * announced in the same transaction, replacing a generated or an owner's title.
    */
-  async #ask(conversationId: string, profile: AssistantProfile, controller: AbortController, events: readonly string[]): Promise<void> {
-    const provider = this.deps.provider(profile);
+  async #ask(conversationId: string, profile: AssistantProfile, controller: AbortController, events: readonly string[], scoped?: ScopedTitle): Promise<void> {
+    const provider = scoped?.provider ?? this.deps.provider(profile);
     if (provider === undefined) return;
-    const previousTitle = (title: StoredTitle | null) => this.deps.previousTitle === undefined ? title : this.deps.previousTitle(conversationId, profile, title);
+    const messagesForCall = () => scoped === undefined ? this.deps.messages(conversationId) : scoped.messages();
+    const previousTitle = (title: StoredTitle | null) => scoped !== undefined ? null : this.deps.previousTitle === undefined ? title : this.deps.previousTitle(conversationId, profile, title);
     let call: TitleCall | undefined, prompt: string | undefined, said: TitleMessage[] = [], priorTitle: StoredTitle | null = null;
     await this.deps.outbox.transaction(() => {
       const record = this.record(conversationId) ?? this.#fresh();
       if (controller.signal.aborted) return;
-      const messages = this.deps.messages(conversationId);
+      const messages = messagesForCall();
+      if (scoped !== undefined && record.title !== null) return;
       priorTitle = record.title;
       prompt = titlePrompt(messages, previousTitle(priorTitle), events);
       if (prompt === undefined) return;
@@ -507,7 +510,8 @@ export class ConversationTitles {
         startedAtMs: this.deps.now(), endedAtMs: null, status: 'admitted', outcome: null, usage: null, maxTokens: TITLE_MAX_TOKENS, events: [...events]};
       // A paid call reserves its most expensive cost with its receipt, as a conversation-level call; the synthetic one is free.
       const refused = provider.name === 'synthetic' ? undefined : this.deps.spend.reserve({id: admitted.id, purpose: 'conversation', owner: conversationId,
-        model: provider.model, inputUnits: inputBound({system: TITLE_INSTRUCTIONS, prompt}), outputUnits: TITLE_MAX_TOKENS});
+        model: provider.model, inputUnits: provider.inputUnits?.(prompt) ?? inputBound({system: TITLE_INSTRUCTIONS, prompt}), outputUnits: TITLE_MAX_TOKENS,
+        ...(scoped === undefined ? {} : {pricing: scoped.pricing})});
       if (refused !== undefined) {
         // The spend limits refuse it: nothing is sent, and the title or the persona stays. Every model is priced (Hub #2047).
         this.#saveCall({...admitted, generation: record.generation, endedAtMs: admitted.startedAtMs, status: 'failed', code: 'capacity'});
@@ -524,7 +528,7 @@ export class ConversationTitles {
     let reply: TitleReply | undefined, fault: unknown;
     const cancel = this.deps.after(TITLE_DEADLINE_MS, () => {controller.abort();});
     try {
-      const current = titlePrompt(this.deps.messages(conversationId), previousTitle(priorTitle), events);
+      const current = titlePrompt(messagesForCall(), previousTitle(priorTitle), events);
       if (current !== prompt) throw new ProviderFault('forbidden');
       const aborted = new Promise<never>((_resolve, reject) => {
         if (controller.signal.aborted) reject(new ProviderFault('cancelled', true));

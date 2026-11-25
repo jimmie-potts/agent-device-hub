@@ -14,6 +14,7 @@ import {fullDisk, InProcessBus, type Participant, type ModuleContext, type Reque
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AnthropicProvider} from '../src/assistant/anthropic.js';
+import {OPENAI_MODEL, OPENAI_URL, OpenAIProvider, OpenAITitleProvider} from '../src/assistant/openai.js';
 import {SqliteCheckpointSaver} from '../src/assistant/checkpointer.js';
 import {AssistantStore, LIMITS} from '../src/assistant/store.js';
 import {inputBound} from '../src/assistant/spend.js';
@@ -70,7 +71,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}, adap
 }
 async function control(core: Participant, module: CompanionsModule, action: string, taskId?: string, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
-    dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
+    dataschema: `https://bunny.invalid/events/assistant-control/${action === 'resume-queue' ? '2.2' : '2.0'}`, data: {requestId, action, expectedRevision: module.inspectAssistant()?.revision, ...(taskId === undefined ? {} : {taskId}), ...extra}}, {requestId, timeoutMs: 5000});
 }
 async function input(core: Participant, module: CompanionsModule, text: string, answer = false, requestId = randomUUID(), extra: Record<string, unknown> = {}) {
   const state = module.inspectAssistant(), task = state?.tasks[0];
@@ -2031,4 +2032,85 @@ void test('a full disk reported by the checkpoint writer names the storage cause
   await until(() => status(w) === 'failed');
   assert.equal(task(w)?.code, 'capacity');
   assert.equal((await page(w)).messages.at(-1)?.text, 'There was no space left to save the turn.');
+});
+
+void test('selecting OpenAI scopes titles and device reads, and replays only its own Responses items after restart', async context => {
+  const sent: string[] = [], dispatched: AssistantDispatch[] = [];
+  const reasoning = {type: 'reasoning', id: 'rs_fixture', encrypted_content: 'opaque-reasoning', summary: []};
+  const message = (text: string) => ({type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]});
+  const usage = {input_tokens: 200, output_tokens: 80, input_tokens_details: {cached_tokens: 50, cache_write_tokens: 20}, output_tokens_details: {reasoning_tokens: 60}};
+  const functionCall = (name: string, args: object) => ({type: 'function_call', id: `fc_${name}`, call_id: `call_${name}`, name, arguments: JSON.stringify(args)});
+  const options = {key: 'fake-responses-key', model: OPENAI_MODEL, transport: (url: string, init: {body: string; redirect: string; headers: Record<string, string>}) => {
+    assert.equal(url, OPENAI_URL);
+    assert.equal(init.redirect, 'error');
+    assert.equal(init.headers.authorization, 'Bearer fake-responses-key');
+    sent.push(init.body);
+    const body = JSON.parse(init.body) as {tools: unknown[]; input: Record<string, unknown>[]; store: boolean; parallel_tool_calls: boolean};
+    assert.equal(body.store, false);
+    assert.equal(body.parallel_tool_calls, false);
+    let output: unknown[];
+    if (body.tools.length === 0) output = [message('Studio plug check')];
+    else if (body.input.some(item => item.type === 'function_call_output')) output = [message('I checked the tool result.')];
+    else if (init.body.includes('What color is it')) output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
+    else if (init.body.includes('Turn off Studio Plug') || init.body.includes('Could Studio Plug be off')) output = [reasoning, functionCall('set_wemo_power', {device: 'studio-plug', on: false})];
+    else output = [reasoning, functionCall('read_wemo', {device: 'studio-plug'})];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage})));
+  }};
+  let anthropicCalls = 0;
+  const anthropic = new AnthropicProvider({key: 'fake-anthropic', transport: () => {
+    anthropicCalls += 1;
+    return Promise.resolve(new Response(JSON.stringify({content: [{type: 'text', text: 'CHANGES_NONE'}], stop_reason: 'end_turn', usage: {input_tokens: 20, output_tokens: 30}})));
+  }});
+  const w = await world(context, {provider: anthropic, alternateProvider: new OpenAIProvider({...options, effort: 'medium'}),
+    openAITitleProvider: new OpenAITitleProvider(options), preferences: () => [{id: 'preference', active: true, createdAtMs: 1, updatedAtMs: 1, title: 'Secret preference', text: 'PRIVATE_PREFERENCES'}],
+    tools: ['read_sessions', 'read_wemo', 'set_wemo_power'], devices: () => [
+      {...light('studio-plug', 'Studio Plug'), kind: 'wemo'}, {...light('unrelated-plug', 'PRIVATE_OTHER_DEVICE'), kind: 'wemo'},
+    ], dispatch: data => {dispatched.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  assert.deepEqual(w.module().inspectAssistant()?.providers?.map(value => value.provider), ['anthropic', 'openai']);
+  await input(w.core, w.module(), 'PRIVATE_OTHER_CONVERSATION', false, randomUUID(), {profile: 'reachy', provider: 'anthropic'});
+  await until(() => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'reachy')?.status === 'succeeded');
+  assert.equal(anthropicCalls, 1);
+  const bunnyTask = () => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'bunny');
+  const start = async (text: string) => {
+    const result = await input(w.core, w.module(), text, false, randomUUID(), {provider: 'openai'});
+    assert.equal(result.status, 'accepted', JSON.stringify(result));
+  };
+  await start('Is Studio Plug on?');
+  await until(() => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'bunny')?.status === 'succeeded');
+  assert.ok(sent.some(body => /Studio Plug.*Observed power/.test(body)));
+  assert.ok(sent.some(body => body.includes('opaque-reasoning') && body.includes('function_call_output')));
+  assert.ok(sent.some(body => body.includes('Current title: none') && body.includes('Is Studio Plug on?')));
+  assert.doesNotMatch(sent.join('\n'), /PRIVATE_|read_sessions|CHANGES_NONE/);
+
+  await start('Could Studio Plug be off?');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.equal(dispatched.length, 0);
+  await start('Turn off Studio Plug');
+  await until(() => dispatched.length === 1 || bunnyTask()?.status === 'succeeded' || bunnyTask()?.status === 'failed');
+  assert.equal(dispatched.length, 1, JSON.stringify({task: bunnyTask(), last: sent.at(-1)}));
+  w.advance(1200);
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.equal(dispatched[0]?.target, 'studio-plug');
+  assert.equal(dispatched.length, 1);
+
+  await start('What color is it?');
+  await until(() => bunnyTask()?.status === 'waiting');
+  const held = bunnyTask() ?? assert.fail('missing task');
+  const taskId = held.taskId;
+  assert.equal((await input(w.core, w.module(), 'Synthetic queued Anthropic request', false, randomUUID(),
+    {action: 'queue', provider: 'anthropic'})).status, 'accepted');
+  await w.restart();
+  await until(() => bunnyTask()?.status === 'waiting');
+  assert.equal(w.store().task(taskId)?.supervisor?.provider, 'openai');
+  assert.equal((await input(w.core, w.module(), 'The blue item.', true, randomUUID(), {taskId, questionId: bunnyTask()?.questionId})).status, 'accepted');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.equal(sent.at(-1)?.includes('opaque-reasoning'), true);
+  assert.equal(sent.at(-1)?.includes('The blue item.'), true);
+  assert.equal(anthropicCalls, 1);
+  assert.equal((await control(w.core, w.module(), 'resume-queue', undefined, randomUUID(), {profile: 'bunny'})).status, 'accepted');
+  await until(() => bunnyTask()?.taskId !== taskId && bunnyTask()?.status === 'succeeded');
+  assert.equal(bunnyTask()?.supervisor?.provider, 'anthropic');
+  assert.equal(anthropicCalls, 2);
+  assert.doesNotMatch(sent.join('\n'), /Synthetic queued Anthropic request/);
 });

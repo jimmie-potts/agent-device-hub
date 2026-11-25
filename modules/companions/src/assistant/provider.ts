@@ -1,3 +1,4 @@
+import type {PriceSchedule} from './spend.js';
 // The tool-capable turn contract every provider answers (Hub #46, #507, #2029). A provider sees the fixed instructions,
 // the task's own transcript, the permitted tool definitions, the current Hub mode and the prompt context, which the
 // sectioned context builder assembles for the task's companion (see context.ts): its curated personality, the owner's
@@ -38,9 +39,12 @@ export type TurnStop = 'end' | 'tool' | 'refusal' | 'truncated';
  * report down by price class for the spend ledger (Hub #2024), null when unreported, and is absent for the synthetic provider.
  */
 export type TurnReply = {text: string | null; calls: ToolCall[]; stop: TurnStop; units: number | null; usage?: TokenUsage | null; blocks?: unknown[]};
+export type SupervisorIdentity = {provider: AssistantProvider; model: string; variant: string; pricing?: PriceSchedule};
 export type ModelProvider = {
   readonly name: AssistantProvider;
   readonly model: string;
+  readonly variant?: string;
+  inputUnits?(input: TurnInput): number;
   turn(input: TurnInput, signal: AbortSignal): Promise<TurnReply>;
 };
 /**

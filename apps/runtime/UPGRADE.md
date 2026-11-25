@@ -1713,3 +1713,26 @@ it is refused `invalid-request` and changes nothing; no device command is
 involved. A width-only save is accepted and removes the shapes. To edit Home
 again after returning to such a release, in its dashboard choose Edit Home,
 Reset with Desktop selected, Reset with Phone selected, then Done.
+
+
+## Companion supervisor choice (#2108)
+
+An existing Anthropic or synthetic section remains a valid default. To enable
+OpenAI, follow the companions module's [provider configuration](../../modules/companions/README.md#section-provider-and-permitted-tools).
+Keep the Responses credential in the module's existing secret boundary. The
+upgrade adds a queue pin table and a nullable spend-price column. Task
+records acquire their provider pin when admitted. Existing conversations
+retain their messages and titles.
+
+Resolve hosted tasks and queued messages before changing the supervisor
+configuration. An unfinished task whose provider cannot be established or
+matched stays paused. A pinned queued message waits if its supervisor is
+unavailable. Resolve the setting or cancel the task and start a fresh
+request. This also replaces the historical synthetic-to-Anthropic playback
+described in the #2026 release steps above.
+
+Keep the trial budget across both supervisors and their title calls. Set the
+shared local guard for the approved trial window, record its starting spend,
+and verify aggregate usage through the private ledger and hosted billing
+before extending it beyond that window. Synthetic source and browser
+exercises do not establish installed provider acceptance.

@@ -3661,3 +3661,14 @@ Run
 isolation, retained bytes, private permissions and refusal of an unusable parent.
 The existing dashboard unit discovery includes these checks. The vendor-only
 MicroDuck `/proof` paths remain inside that exercise's separately owned container.
+
+
+### Companion supervisor acceptance
+
+After the root build, run `npm run test:companions:built`,
+`npm run test:events:built` and `npm run test:companions:browser`.
+The companion tests use scripted responses to run the same task and device
+guard through hosted selection, then resume an interrupted Responses task
+with its opaque items. They verify the title projection and the shared
+spend ledger with reported and uncertain usage. The disposable browser
+journey uses fixture supervisors to send one task to each selected provider.

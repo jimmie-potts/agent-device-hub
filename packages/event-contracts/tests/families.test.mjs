@@ -81,7 +81,7 @@ test('each family has one kind and one type, and its schema is built from the sh
       // The conversation message queue (Hub #2030).
       || (['assistant-control', 'assistant-state'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`)
       // Returned steers past the queue's limit (Hub #2031).
-      || (family === 'assistant-state' && dataschema === 'https://bunny.invalid/events/assistant-state/2.3')
+      || (family === 'assistant-state' && ['2.3', '2.4'].some(version => dataschema === `https://bunny.invalid/events/assistant-state/${version}`))
       || (['assistant-dispatch', 'moment-play'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.3`)
       // The session family's new major (Hub #1865), registered beside 2.0 and 2.1.
       || (family === 'session' && dataschema === 'https://bunny.invalid/events/session/3.0')
