@@ -132,7 +132,7 @@ export type CompanionsOptions = AssistantOptions & {readonly transport?: Transpo
 /** One private companion owner; visual admission and optional browser speech share current policy. */
 export function createCompanionsModule(options: CompanionsOptions = {}): CompanionsModule {
   const engine = new Companions(options);
-  return {manifest: {name: 'companions', apiVersion: '1.3', configure: configureCompanions, pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'microduck', title: 'MicroDuck', presentation: 'react'}, {id: 'assistant', title: 'Conversation', presentation: 'react'}, {id: 'preferences', title: 'Preferences', presentation: 'react'}, {id: 'knowledge', title: 'Companion knowledge', presentation: 'react'}, {id: 'duck-conversation', title: 'Duck conversation', presentation: 'react'}],
+  return {manifest: {name: 'companions', apiVersion: '1.3', configure: configureCompanions, pages: [{id: 'reachy', title: 'Reachy', presentation: 'react'}, {id: 'microduck', title: 'MicroDuck', presentation: 'react'}, {id: 'assistant', title: 'Conversation', presentation: 'react'}, {id: 'jobs', title: 'Jobs', presentation: 'react'}, {id: 'preferences', title: 'Preferences', presentation: 'react'}, {id: 'knowledge', title: 'Companion knowledge', presentation: 'react'}, {id: 'duck-conversation', title: 'Duck conversation', presentation: 'react'}],
     content: (ref, request) => engine.codingJobs(ref, request) ?? engine.qualifiedSpeech(ref, request) ?? engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
     upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'knowledge' ? engine.knowledge?.stage(request) : request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
     setArtCatalog: read => {engine.retainedArtwork = read;},
@@ -191,10 +191,13 @@ class Companions {
     }
     if (ref !== 'coding-jobs') return undefined;
     const query = request?.query ?? {};
-    if (request?.signal.aborted === true || Object.keys(query).some(key => key !== 'after') ||
-      (query.after !== undefined && !/^[A-Za-z0-9._:-]{1,260}$/.test(query.after))) return errorBody('invalid-request');
+    const id = /^[A-Za-z0-9._:-]{1,260}$/u;
+    if (request?.signal.aborted === true || Object.keys(query).some(key => !['after', 'scope', 'jobId', 'target'].includes(key)) ||
+      (query.after !== undefined && !id.test(query.after)) || (query.scope !== undefined && query.scope !== 'all') ||
+      (query.jobId !== undefined && (!id.test(query.jobId) || query.after !== undefined || query.target !== undefined)) ||
+      (query.target !== undefined && (query.target.trim() === '' || query.target.length > 154 || query.scope !== undefined))) return errorBody('invalid-request');
     try {
-      const page = this.coding?.jobs(query.after);
+      const page = this.coding?.jobs(query.after, query.scope === 'all' || query.jobId !== undefined, query.jobId, query.target);
       return page === undefined ? errorBody('unavailable') : {type: 'application/json', bytes: Buffer.from(JSON.stringify(page))};
     } catch {return errorBody('unavailable');}
   }
@@ -236,6 +239,9 @@ class Companions {
       jobUpdate: (job, kind, text, parent, startup) => this.assistant?.codingJobUpdate(job, kind, text, parent, startup) ?? Promise.resolve(),
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
       jobVisible: (job, companion) => this.assistant?.canReadCodingJob(companion, job) === true,
+      legacyOperationVisible: ({companion, taskId, operationId}) => this.assistant?.canReadLegacyCodingOperation(companion, taskId, operationId) === true,
+      jobBriefVisible: (job, companion) => this.assistant?.canReadCodingJobBrief(companion, job) === true,
+      allowMessage: (job, companion) => this.assistant?.canMessageCodingJob(companion, job) === true,
       awaits: taskId => {
         const task = this.assistant?.store.task(taskId);
         return task !== undefined && !['succeeded', 'failed', 'cancelled'].includes(task.status) && task.question?.kind === 'delegation' && task.question.answer === null;
@@ -250,7 +256,9 @@ class Companions {
       retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries,
       // The owner's knowledge notes reach a companion's context only once the owner turns them on for it (Hub #2029).
       knowledge: () => this.knowledge?.store.active().entries ?? [], speak,
-      coding: this.options.coding ?? (() => coding.endpoint()), delegate, backgroundCoding: this.options.delegate === undefined, codingJob: requestId => coding.jobForAttempt(requestId), codingJobRead: (...args) => coding.jobRead(...args), stopCodingJob: (jobId, operationId) => coding.prepareStop(jobId, operationId), continueCodingJob: (data, parent) => coding.prepareContinuation(data, parent), handedOff: this.options.handedOff ?? (requestId => coding.accepted(requestId)), onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
+      coding: this.options.coding ?? (() => coding.endpoint()), delegate, backgroundCoding: this.options.delegate === undefined, codingJob: requestId => coding.jobForAttempt(requestId), codingJobRead: (...args) => coding.jobRead(...args), stopCodingJob: (jobId, operationId) => coding.prepareStop(jobId, operationId),
+      continueCodingJob: (data, parent) => coding.prepareContinuation(data, parent),
+      messageCodingJob: (input, parent) => coding.prepareMessage(input, parent), handedOff: this.options.handedOff ?? (requestId => coding.accepted(requestId)), onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();
     await this.preferences.start();

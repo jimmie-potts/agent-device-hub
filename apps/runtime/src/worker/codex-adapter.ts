@@ -9,7 +9,7 @@ import {Ajv2020} from 'ajv/dist/2020.js';
 import {createInterface} from 'node:readline';
 import type {CodingLimit, CodingLimitWindow} from '@jimmie-potts/event-contracts/v2/coding';
 import {checkStateDirectory, prepareStateDirectory} from '../state.js';
-import {CODEX_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterHealth, type AdapterRun, type CodingAdapter} from './adapter.js';
+import {CODEX_RESULT_SCHEMA, nativeSessionId, reportedModel, type AdapterEvidence, type AdapterHealth, type AdapterRun, type CodingAdapter} from './adapter.js';
 import {harnessEnvironment, parseVersion, UNKNOWN_READINESS, type HarnessReadiness} from './claude-stream.js';
 
 const execute = promisify(execFile);
@@ -17,6 +17,8 @@ const execute = promisify(execFile);
 const validOutput = new Ajv2020({strict: true}).compile(CODEX_RESULT_SCHEMA);
 const PROBE_MS = 10_000;
 const QUOTA_MS = 2000;
+const STEER_MS = 4000;
+const STEER_LIMIT = 32;
 const MESSAGE_BYTES = 1024 * 1024;
 const CLOSED = new Error('codex protocol closed');
 const CHATGPT_ORIGIN = 'https://chatgpt.com';
@@ -24,6 +26,9 @@ const CHATGPT_BACKEND = `${CHATGPT_ORIGIN}/backend-api/`;
 const OPENAI_API = 'https://api.openai.com/v1';
 const PERSONAL_PLANS = new Set(['free', 'go', 'plus', 'pro', 'prolite', 'promax']);
 const MANAGED_PLAN = /^(?:team|(?:self_serve_)?business|ent26|enterprise|edu)(?:_|$)/;
+class CodexRpcError extends Error {
+  constructor(readonly code: number | undefined) {super('codex request refused');}
+}
 const UNSUPPORTED_RPC_REQUEST = {code: -32601, message: 'Unsupported worker request'};
 export type CodexConfiguration = {executable: string; home: string; model?: string};
 
@@ -254,7 +259,10 @@ export const openCodex: CodexTransport = ({executable, args, cwd, env, signal, e
     if (waiter === undefined) return;
     pending.delete(value.id);
     if ('result' in value) waiter.resolve(value.result);
-    else waiter.reject(new Error('codex request refused'));
+    else {
+      const code = record(value.error).code;
+      waiter.reject(new CodexRpcError(typeof code === 'number' ? code : undefined));
+    }
   });
   child.stdin.on('error', stop);
   child.on('error', stop);
@@ -347,7 +355,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
     return {command: {executable: configuration.executable, cwd: home, env: codexEnvironment(environment, home), signal, args}, profile};
   };
   return {
-    id: 'codex', capabilities: {steering: 'unsupported', resume: 'unsupported', review: true},
+    id: 'codex', capabilities: {steering: 'live', resume: 'unsupported', review: true},
     async readiness(): Promise<AdapterHealth> {
       const revision = quotaRevision;
       const signal = AbortSignal.timeout(PROBE_MS);
@@ -386,6 +394,9 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       if (signal.aborted) return {reason: 'cancelled'};
       let sessionId: string | undefined, turnId: string | undefined, dispatched = false, unauthorized = false;
       let windows: CodingLimitWindow[] = [];
+      const sentMessages = new Set<string>();
+      let pendingSteer = false;
+      let wireClosed = false;
       let message: string | undefined, terminal: Record<string, unknown> | undefined;
       let settle = (): void => {};
       const completed = new Promise<void>(resolve => {settle = resolve;});
@@ -401,6 +412,12 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         if (method === 'account/rateLimits/updated') {const reported = windowsOf(data.rateLimits); if (reported.length > 0) windows = reported; return;}
         if (data.threadId !== sessionId || sessionId === undefined || !dispatched) return;
         if (method === 'turn/started' && turnId === undefined) turnId = nativeSessionId(record(data.turn).id);
+        if (method === 'item/started' && turnId !== undefined && data.turnId === turnId) {
+          const item = record(data.item);
+          if (item.type === 'userMessage' && typeof item.clientId === 'string' && sentMessages.has(item.clientId)) {
+            input.observedMessage?.(item.clientId);
+          }
+        }
         if (method === 'item/completed' && turnId !== undefined && data.turnId === turnId) {
           const item = record(data.item);
           if (item.type === 'agentMessage' && item.phase !== 'commentary') {
@@ -409,7 +426,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         }
         const turn = record(data.turn);
         if (method === 'turn/completed' && turnId !== undefined && turn.id === turnId) {terminal = turn; settle();}
-      }, closed: () => {settle();}});
+      }, closed: () => {wireClosed = true; settle();}});
       const refusal = (summary: string): AdapterEvidence => ({reason: 'refused', summary});
       const execute = async (): Promise<AdapterEvidence> => {
         try {
@@ -454,6 +471,27 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           const acceptedTurn = nativeSessionId(record(started.turn).id);
           if (acceptedTurn === undefined || (turnId !== undefined && turnId !== acceptedTurn)) return {reason: 'invalid-output', uncertain: true, sessionId};
           turnId = acceptedTurn;
+          const model = reportedModel(opened.model);
+          if (model !== undefined) input.reportedModel?.(model);
+          const nativeThread = sessionId;
+          input.steering?.(async (messageId, text) => {
+            if (signal.aborted || wireClosed || terminal !== undefined || unauthorized || !quotaAllowed(revision) ||
+                pendingSteer || sentMessages.size >= STEER_LIMIT || sentMessages.has(messageId)) return 'unavailable';
+            pendingSteer = true;
+            sentMessages.add(messageId);
+            let timer: NodeJS.Timeout | undefined;
+            try {
+              const deadline = new Promise<undefined>(resolve => {timer = setTimeout(() => {resolve(undefined);}, STEER_MS);});
+              const receipt = await Promise.race([wire.request('turn/steer', {threadId: nativeThread, expectedTurnId: acceptedTurn,
+                clientUserMessageId: messageId, input: [{type: 'text', text, text_elements: []}]}), revoked, deadline]);
+              return record(receipt).turnId === acceptedTurn ? 'accepted' : 'uncertain';
+            } catch (error) {
+              return error instanceof CodexRpcError && error.code === -32601 ? 'unsupported' : 'uncertain';
+            } finally {
+              if (timer !== undefined) clearTimeout(timer);
+              pendingSteer = false;
+            }
+          });
           await completed;
           if (unauthorized) return contrary(sessionId);
           if (terminal === undefined) return {reason: 'lost', uncertain: true, sessionId, windows};
@@ -471,7 +509,7 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
             limitations: ['Codex is limited to one turn and does not expose a per-turn dollar cap or subscription cost.']};
         } catch {
           return {reason: dispatched ? 'lost' : 'refused', uncertain: dispatched, ...(sessionId === undefined ? {} : {sessionId})};
-        } finally {quotaInterrupts.delete(invalidate); wire.close();}
+        } finally {input.steering?.(undefined); quotaInterrupts.delete(invalidate); wire.close();}
       };
       const evidence = await execute();
       const stopped = await wire.writerStopped?.();

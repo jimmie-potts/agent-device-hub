@@ -1220,6 +1220,14 @@ existing contract. `coding-state/2.4` gives total run and waiting counts with
 bounded previews of 8 runs and 32 waits. Conversation reads active jobs
 through its independently paged content endpoint.
 
+A `coding-work/2.4` message names one operation and carries at most 4,096
+UTF-8 bytes of owner instruction. Its request ID correlates the instruction
+with an optional `coding-progress/2.5` native input observation. The
+observation names that operation, request and session. It carries no
+instruction text. A separate 2.5 attempt-context observation can report the
+worker's worktree reference, branch or model. A worktree reference is a name
+with no host path. An explicit null branch reports detached HEAD.
+
 In `coding-progress/2.3`, a started observation includes `setup` as
 `waiting`, `running` or `ready` and can carry harness and native session
 identity. A waiting observation refreshes only the waiting deadline.

@@ -8,19 +8,19 @@ import {spawn, type ChildProcess} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {mkdir, mkdtemp, readFile, realpath, rmdir, stat} from 'node:fs/promises';
-import {dirname, isAbsolute, join, resolve} from 'node:path';
+import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
 import {promisify} from 'node:util';
 import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {continuationChecks, CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingProgress, type CodingProgressReason,
+import {continuationChecks, CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingAttemptContext, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingProgress, type CodingProgressReason,
   type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
 import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
 
-import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type CodingAdapter} from './adapter.js';
+import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type AdapterSteer, type CodingAdapter} from './adapter.js';
 import {codexAdapter, type CodexConfiguration} from './codex-adapter.js';
 import {claudeWriterArguments, MAC_WRITER_SANDBOX, verifyClaudeWriterBoundary} from './claude-writer.js';
 
@@ -113,7 +113,7 @@ type WriterHandoff = {
   base: string; writerHome?: string; protectedRoot: ProtectedCheckout; checks: ReturnType<typeof continuationChecks>;
 };
 type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
-  timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; controller: AbortController};
+  timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; model?: string; modelReport?: Promise<void>; steer: AdapterSteer | undefined; controller: AbortController};
 export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true; writerStopped?: boolean; fencedRoot?: string};
 export type Harness = {
   /**
@@ -535,9 +535,10 @@ export class CodingWorker {
     running.controller.abort();
     if (running.timer !== undefined) {clearTimeout(running.timer); running.timer = undefined;}
   }
-  #work(command: Command<CodingWork>): Reply {
+  #work(command: Command<CodingWork>): Reply | Promise<Reply> {
     if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
     const data = command.data;
+    if (data.action === 'message') return this.#message(data);
     if (data.action === 'cancel') {
       const running = this.#running.get(data.operationId);
       if (running === undefined) return errorBody('not-found');
@@ -563,7 +564,7 @@ export class CodingWorker {
     }
     let end = (): void => {};
     const running: Running = {operationId: data.operationId, companion: data.companion, endpoint: this.#endpoint, cancelled: false, timer: undefined,
-      harness, controller: new AbortController(),
+      harness, steer: undefined, controller: new AbortController(),
       ended: new Promise<void>(resolvePromise => {end = resolvePromise;})};
     this.#running.set(running.operationId, running);
     queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds, adapter, proof).catch(async () => {
@@ -592,6 +593,31 @@ export class CodingWorker {
       const answer = await endpoint.request('coding-endpoint', draft, {timeoutMs: 5000, requestId: draft.data.requestId});
       if (answer.status !== 'accepted') this.log(`coding-worker readiness ${answer.status}: ${answer.error.error.code} request ${answer.requestId}`);
     } catch {this.log(`coding-worker readiness uncertain: request ${draft.data.requestId}`);}
+  }
+  async #message({requestId, operationId, text}: Extract<CodingWork, {action: 'message'}>): Promise<Reply> {
+    const running = this.#running.get(operationId);
+    if (running === undefined || running.cancelled || running.endpoint === undefined || running.endpoint !== this.#endpoint) return errorBody('not-found');
+    if (this.#adapters.get(running.harness)?.capabilities.steering !== 'live') return errorBody('unsupported-capability');
+    if (running.steer === undefined) return errorBody('unavailable');
+    if (Buffer.byteLength(text) > 4096 || text.trim() === '') return errorBody('invalid-request');
+    const reply = await running.steer(requestId, text);
+    return reply === 'accepted' ? {status: 'accepted'} : errorBody(reply === 'unsupported' ? 'unsupported-capability'
+      : reply === 'uncertain' ? 'uncertain-result' : 'unavailable');
+  }
+  async #attemptContext(running: Running, context: Omit<CodingAttemptContext, 'status' | 'operationId'>): Promise<void> {
+    const endpoint = running.endpoint;
+    if (endpoint === undefined || endpoint !== this.#endpoint) return;
+    const {operationId} = running;
+    try {await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed',
+      dataschema: 'https://bunny.invalid/events/coding-progress/2.5', data: {operationId, status: 'attempt-context', ...context}});}
+    catch {this.log(`coding-worker could not report attempt context for ${operationId}`);}
+  }
+  async #observedMessage(running: Running, messageId: string): Promise<void> {
+    const {endpoint, sessionId, operationId} = running;
+    if (endpoint === undefined || endpoint !== this.#endpoint || sessionId === undefined) return;
+    try {await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed',
+      dataschema: 'https://bunny.invalid/events/coding-progress/2.5', data: {operationId, sessionId, messageId, status: 'message-observed'}});}
+    catch {this.log(`coding-worker could not report message-observed for ${operationId}`);}
   }
   /** Reports a run's progress on the endpoint that started it, and nowhere once that endpoint is gone. */
   async #progress(running: Running, data: CodingProgress): Promise<void> {
@@ -689,6 +715,7 @@ export class CodingWorker {
     if (running.cancelled) {
       await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}); return;
     }
+    if (this.#adapterProtocol || uncapped) await this.#attemptContext(running, {worktreeRef: basename(worktree), branch: null});
     await this.#runAdapter(running, adapter, repository.name, worktree, base, brief, bounds);
   }
 
@@ -758,7 +785,10 @@ export class CodingWorker {
       const refusal = stream.credentialRefusal;
       if (keyRefused === undefined && refusal !== undefined) {keyRefused = refusal; stop();}
       const id = stream.sessionId;
-      if (keyRefused === undefined && stream.apiKeySource === 'none' && id !== undefined) void input.session(id);
+      if (keyRefused === undefined && stream.apiKeySource === 'none') {
+        if (id !== undefined) void input.session(id);
+        if (stream.model !== undefined) input.reportedModel?.(stream.model);
+      }
     };
     signal.addEventListener('abort', stop, {once: true});
     let finished: Awaited<ReturnType<Harness['start']>>;
@@ -802,9 +832,17 @@ export class CodingWorker {
     try {
       evidence = await adapter.run({worktree, brief, bounds, signal: running.controller.signal,
         ...(protectedRoot === undefined || sourceIdentity === undefined ? {} : {continuationRoot: protectedRoot.path}),
-        session: id => this.#session(running, id)});
+        session: id => this.#session(running, id), steering: steer => {running.steer = steer;},
+        observedMessage: messageId => {void this.#observedMessage(running, messageId);},
+        reportedModel: model => {
+          if (running.model !== model && (this.#adapterProtocol || this.configuration.uncapped === true)) {
+            running.model = model;
+            running.modelReport = this.#attemptContext(running, {model});
+          }
+        }});
     } catch {evidence = {reason: 'lost', uncertain: true};}
     finally {clearTimeout(running.timer); running.timer = undefined;}
+    await running.modelReport;
     const endingSession = nativeSessionId(evidence.sessionId);
     if (running.sessionId === undefined && endingSession !== undefined) running.sessionId = endingSession;
     const health = this.#adapterHealth.get(adapter.id);

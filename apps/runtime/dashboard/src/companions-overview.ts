@@ -12,7 +12,7 @@ export type CompanionsOverview = {sections: CompanionSection[]; note?: string};
 
 const CONVERSATION = 'assistant';
 /** The pages with sections of their own; every other page of the module is a companion profile. */
-const OWN: Readonly<Record<string, string>> = {preferences: 'What the companions keep about how you like things done.', knowledge: 'What the companions know and the context they bring to a conversation.'};
+const OWN: Readonly<Record<string, string>> = {jobs: 'Coding jobs across conversations.', preferences: 'What the companions keep about how you like things done.', knowledge: 'What the companions know and the context they bring to a conversation.'};
 
 export function companionsOverview(runtime: RuntimeData): CompanionsOverview {
   const habitat: CompanionSection = {id: 'habitat', title: 'Habitat', hint: 'Ten bunnies in one shared home, following the sessions the dashboard sees.',

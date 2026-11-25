@@ -795,6 +795,32 @@ attempt first. A restart preserves unsent jobs and reports an ambiguous start
 as uncertain without reissuing it. A result saved before an interruption can
 still reach its original exchange.
 
+### Jobs
+
+Open **Jobs** from Conversation Details or the Companions page. Each card
+shows the owning companion and repository, the current attempt, and the
+native session as soon as the worker reports it. **Attempts and results**
+shows saved attempts, known usage, decisions that need the owner, checks,
+changed files and limitations. The worktree reference names the worker's
+worktree without exposing its host path. **Open original conversation**
+returns to the exchange that requested the job. Choose **Auto**, **Claude Code**
+or **Codex** on an approval when the worker advertises harness selection.
+For a verified stopped attempt, **Attempts and results** offers continuation
+with the named harness under the same job. If the Hub has a reason to refuse
+continuation, the card shows it.
+
+Use **Message job** on a card to change instructions for that attempt.
+You can also enter `Message job <name>: <instruction>` or
+`Tell the <name> job to <instruction>` in Conversation. If a name matches
+several jobs, choose the intended one. Ordinary questions and approvals stay
+in Conversation. Codex supports live messages while its worker turn is active.
+Claude Code reports live messages as unsupported.
+
+A queued message is recorded in the Hub. A harness receipt and observation of
+the matching native input appear separately. A disconnected worker, an expired
+turn, or a changed attempt can refuse a message or leave delivery uncertain.
+The Hub keeps the receipt and sends no automatic replacement.
+
 **Cancel task** ends the Conversation turn. **Stop coding job** on the saved
 job receipt targets one attempt. It removes a known unsent attempt, or asks the worker to stop a
 running attempt. A stop stays unconfirmed until the worker reports a terminal

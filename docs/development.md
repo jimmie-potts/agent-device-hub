@@ -3548,6 +3548,15 @@ unassigned job reaches the worker. The coding-worker
 tests inject a disk error and spawn failure, use linked Git worktrees and
 check a cancelled waiter. Follow the existing Mac test admission rules.
 
+Shared Jobs controls (#2113) use the Companions and runtime suites, event
+contracts, and `npm run test:companions:browser`. The coding-slots tests
+exercise current-attempt binding, duplicate messages, stale or unsupported
+targets, and filtering private jobs before forming pages or counts. The
+Codex worker adapter test uses a fake app-server wire to verify native
+thread and turn binding. The two-job browser journey uses a disposable
+runtime and worker to distinguish queued, harness-accepted and observed
+messages and to check that ordinary chat and job controls remain independent.
+
 Coding-worker slots (#2028) use the same suites. `coding-coordinator.test.js`
 also covers three companions at once with tagged starts, a proposal bound to
 the worker's connection only, a companion's own further hand-off waiting and

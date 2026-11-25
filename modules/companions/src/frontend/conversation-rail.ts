@@ -43,12 +43,22 @@ const sameList = (a: readonly string[], b: readonly string[]): boolean => a.leng
 
 export class ConversationRailStore {
   readonly #listeners = new Set<() => void>();
+  #opening: {profile: AssistantProfile; conversationId: string} | undefined;
   #state: ConversationRailState = {profile: 'bunny', open: false, questions: {}, waiting: NONE};
   readonly getSnapshot = (): ConversationRailState => this.#state;
   readonly subscribe = (listener: () => void): (() => void) => {this.#listeners.add(listener); return () => {this.#listeners.delete(listener);};};
   /** Chooses the conversation the page shows. It sends nothing; the page reads the profile's history when it shows it. */
   select(profile: AssistantProfile): void {
     if (profile !== this.#state.profile) this.#set({...this.#state, profile});
+  }
+  openConversation(profile: AssistantProfile, conversationId: string): void {
+    this.#opening = {profile, conversationId};
+    this.select(profile);
+  }
+  takeOpening(profile: AssistantProfile): string | undefined {
+    const opening = this.#opening;
+    this.#opening = undefined;
+    return opening?.profile === profile ? opening.conversationId : undefined;
   }
   /** The Conversation page says when it is mounted, so the rail can mark the open conversation without knowing any address. */
   setOpen(open: boolean): void {

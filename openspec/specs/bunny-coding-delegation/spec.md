@@ -263,3 +263,29 @@ A new coding job SHALL bind approval to Auto or a named harness. Auto SHALL choo
 - **WHEN** a saved coding update belongs to a continuation and the destination loses the repository, original task, original job or attempt grant
 - **THEN** Conversation, Jobs and later prompts withhold the affected facts and derived replies for that destination, including after restart
 - **AND** a continuation update and any derived reply stay private if the saved job and attempt association cannot be verified
+
+### Requirement: Inspect coding jobs and direct individual attempts
+
+Jobs SHALL offer a bounded authenticated listing and exact job lookup across the owner's permitted Conversations. Each entry SHALL carry the stable job and attempt identity, owning companion and conversation, repository, and reported attempt evidence. Available attempt evidence SHALL include branch and worktree reference, native session, harness and model, usage, status and updates, pending decisions, checks, changed files and limitations. Unknown values SHALL remain unknown. Private host paths SHALL remain outside the shared projection. An explicit Message job or Stop job SHALL bind to the named current attempt. An unsupported, stale or disconnected target SHALL never silently send to a different attempt.
+
+#### Scenario: Inspect a completed or disconnected job
+
+- **WHEN** an authorized reader opens Jobs or reloads a job's original Conversation
+- **THEN** the saved job and known outcome remain readable and the job links back to the original Conversation
+
+#### Scenario: Live state with missing attempt provenance
+
+- **WHEN** a running or waiting operation lacks a durable job association
+- **THEN** live coding state includes the operation in its entries and counts only when the original saved legacy delegation identifies that exact operation and the reader's grants allow it
+
+#### Scenario: Distinguish instruction evidence
+
+- **WHEN** a job instruction is recorded locally, accepted by a harness, or confirmed by harness activity
+- **THEN** each fact is presented at its own level of evidence, and repeating a delivery identifier cannot apply the instruction twice
+
+#### Scenario: Choose a harness in Conversation and continue from Jobs
+
+- **WHEN** the owner approves a coding proposal with harness selection available
+- **THEN** the chosen Auto, Claude Code or Codex routing is submitted with that exact approval
+- **AND** Jobs offers the named continuation action only for a verified stopped attempt the owner may read and control
+- **AND** explicit continuation preserves the job identity and records a distinct attempt

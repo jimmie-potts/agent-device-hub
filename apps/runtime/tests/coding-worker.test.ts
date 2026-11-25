@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {test, type TestContext} from 'node:test';
 import {promisify} from 'node:util';
-import type {CodingProgress, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingAttemptContext, CodingProgress, CodingWork, CodingWorkerProgress} from '@jimmie-potts/event-contracts/v2/coding';
 import type {Command, Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import type {RemoteEndpoint, RemoteEndpointOptions, RemoteParticipant, connectRemote} from '@jimmie-potts/sdk/remote';
@@ -39,12 +39,21 @@ async function repository(t: TestContext): Promise<string> {
 }
 function fakeEdge() {
   const requests: {family: string; data: unknown; dataschema?: string}[] = [], progress: CodingProgress[] = [];
+  const contexts: CodingAttemptContext[] = [];
   // Which endpoint each report went out on, so a run's report after its endpoint closed is seen to go nowhere.
   const reportedOn: string[] = [];
   let responder: ((command: Command<CodingWork>) => Reply) | undefined, closed = 0, opened = 0, refuse = 0, disconnected = 0, onClosed: (() => void) | undefined, onDiagnostic: ((diagnostic: {event: string}) => void) | undefined;
   let held: Promise<void> | undefined, releaseClose = (): void => {}, current = '';
   const endpoint: RemoteEndpoint = {id: 'worker-endpoint-1', close: () => {closed += 1; const closing = held ?? Promise.resolve(); held = undefined; return closing;},
-    publish: (family, draft) => {progress.push(draft.data as CodingProgress); reportedOn.push(current); return Promise.resolve({} as never);},
+    publish: (_family, draft) => {
+      const report = draft.data as CodingWorkerProgress;
+      if (report.status === 'attempt-context') contexts.push(report);
+      else if (report.status !== 'message-observed') {
+        progress.push(report);
+        reportedOn.push(current);
+      }
+      return Promise.resolve({} as never);
+    },
     request: (family, draft) => {
       requests.push({family, data: draft.data, dataschema: draft.dataschema});
       if (refuse > 0) {refuse -= 1; return Promise.resolve({status: 'rejected', requestId: 'r', error: errorBody('invalid-state')} as never);}
@@ -56,7 +65,7 @@ function fakeEdge() {
     return Promise.resolve({...endpoint, id, publish: (family: string, draft: {data: unknown}) => {current = id; return endpoint.publish(family, draft as never);}});
   }, close: () => {disconnected += 1; return Promise.resolve();}} as unknown as RemoteParticipant;
   const connect = (options: {onDiagnostic?: (diagnostic: {event: string}) => void}) => {onDiagnostic = options.onDiagnostic; return Promise.resolve(participant);};
-  return {connect: connect as unknown as typeof connectRemote, requests, progress, reportedOn, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed, opened: () => opened, disconnected: () => disconnected,
+  return {connect: connect as unknown as typeof connectRemote, requests, progress, contexts, reportedOn, respond: (given: Command<CodingWork>) => (responder ?? assert.fail('endpoint opened'))(given), closed: () => closed, opened: () => opened, disconnected: () => disconnected,
     refuseNextEnable: () => {refuse += 1;},
     // The next endpoint close waits until released, as one that waits for the edge's answer does.
     holdNextClose: () => {held = new Promise(resolve => {releaseClose = resolve;});}, releaseClose: () => {releaseClose();},
@@ -397,6 +406,11 @@ void test('the connection-bound worker sends exact Git evidence and early sessio
     assert.deepEqual(observed.map(item => [item.harness, item.status, item.sessionId ?? null]), [
       [id, 'started', null], [id, 'started', `${id}-native`], [id, 'completed', `${id}-native`],
     ]);
+    const context = edge.contexts.find(item => item.operationId === operation);
+    assert.ok(context?.worktreeRef !== undefined);
+    assert.notEqual(context.worktreeRef, '');
+    assert.equal(context.worktreeRef.includes('/'), false);
+    assert.equal(context.branch, null);
     const completed = observed.find(item => item.status === 'completed');
     assert.equal(completed?.result.base, sha);
     assert.equal(completed?.result.head, sha);

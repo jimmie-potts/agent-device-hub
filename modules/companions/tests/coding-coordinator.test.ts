@@ -61,6 +61,7 @@ async function world(t: TestContext, adapt: (context: ModuleContext) => ModuleCo
     // A task's companion is in its synthetic ID here; the module reads it from the engine's saved task.
     engine = new CodingCoordinator(context, outbox, (taskId, text, given, _evidence, startup) => {deliveries.push({taskId, text, parent: given, startup}); return Promise.resolve();},
       {briefRefusal: ({taskId, repository}) => mayShare(taskId, repository) ? undefined : 'grant-denied', companionOf: taskId => /reachy/.test(taskId) ? 'reachy' : /microduck/.test(taskId) ? 'microduck' : 'bunny',
+        legacyOperationVisible: ({taskId, operationId}) => operationId === `${taskId}-step-1`,
         // A task waits on its hand-off until the test ends it, as a cancel the coordinator never heard of would.
         awaits: taskId => {if (unreadable.has(taskId)) throw new Error('synthetic store read failure'); return !finished.has(taskId);}, sent: taskId => {sent.push(taskId);}});
     await engine.start(); await outbox.republish();

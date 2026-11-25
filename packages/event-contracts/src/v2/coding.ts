@@ -38,7 +38,7 @@ export const CODING_WORKER_SLOTS = 3;
  */
 export type CodingEndpointControl = {requestId: string; action: 'enable' | 'disable'; readiness?: CodingReadiness; slots?: number; capacity?: 'uncapped'; harnesses?: CodingHarnessReadiness[]};
 /** Version 2.1 (Hub #2028) tags a start with the companion that asked; a 2.0 start has no companion. */
-export type CodingWork = {requestId: string; operationId: string} & ({action: 'start'; taskId: string; companion?: CodingCompanion; repository: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId; continuation?: CodingContinuation} | {action: 'cancel'});
+export type CodingWork = {requestId: string; operationId: string} & ({action: 'start'; taskId: string; companion?: CodingCompanion; repository: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId; continuation?: CodingContinuation} | {action: 'cancel'} | {action: 'message'; text: string});
 export type CodingCheck = {name: string; status: 'passed' | 'failed' | 'skipped' | 'unrun' | 'unknown'; detail?: string};
 /** A usage limit the harness reported: the window it named and when it resets, each null when the tool did not say. */
 export type CodingLimit = {window: string | null; resetsAtMs: number | null};
@@ -67,6 +67,9 @@ export type CodingProgress = {operationId: string; harness?: CodingHarnessId; se
   | {status: 'completed'; result: CodingResult; handoffToken?: string}
   | {status: 'failed' | 'cancelled' | 'uncertain'; reason: CodingProgressReason; result?: CodingResult | null; handoffToken?: string}
 );
+export type CodingMessageObserved = {operationId: string; sessionId: string; messageId: string; status: 'message-observed'};
+export type CodingAttemptContext = {operationId: string; status: 'attempt-context'; worktreeRef?: string; branch?: string | null; model?: string};
+export type CodingWorkerProgress = CodingProgress | CodingMessageObserved | CodingAttemptContext;
 export type CodingLost = {id: string};
 /** One run the worker holds for a companion's slot, from dispatch to its end. */
 export type CodingRunEntry = {operationId: string; taskId: string; companion: CodingCompanion; status: 'dispatching' | 'started' | 'cancelling'; setup?: CodingSetup; harness?: CodingHarnessId; sessionId?: string};
@@ -88,13 +91,15 @@ function checkWork(message: Message): string | undefined {
   const routed = routedSubject('routing')(message);
   if (routed !== undefined) return routed;
   const data = message.data as CodingWork;
+  if (data.action === 'message' && (data.text.trim() === '' || new TextEncoder().encode(data.text).byteLength > 4096)) return 'payload text must be nonblank and at most 4096 bytes';
   if (data.action === 'start' && data.brief.trim() === '') return 'payload brief must not be blank';
   return undefined;
 }
 function checkProgress(message: Message): string | undefined {
   const routed = routedSubject('routing')(message);
   if (routed !== undefined) return routed;
-  const data = message.data as CodingProgress;
+  const data = message.data as CodingWorkerProgress;
+  if (data.status === 'message-observed' || data.status === 'attempt-context') return undefined;
   if (data.status === 'completed' && data.result.summary.trim() === '') return 'payload summary must not be blank';
   const result = data.status === 'started' ? undefined : data.result ?? undefined;
   if (data.status !== 'started' && data.handoffToken !== undefined && (data.status === 'uncertain' ||
@@ -152,11 +157,13 @@ export const codingFamilies = [
   defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.1'),
   defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.2'),
   defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.3'),
+  defineFamily('coding-work', 'command', 'org.bunny.coding.work.requested', checkWork, '2.4'),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.1'),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.2'),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.3'),
   defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.4'),
+  defineFamily('coding-progress', 'occurrence', 'org.bunny.coding.progress.observed', checkProgress, '2.5'),
   defineFamily('coding-lost', 'occurrence', 'org.bunny.coding.endpoint-lost', message =>
     message.subject === (message.data as CodingLost).id ? undefined : 'envelope /subject must name the lost endpoint'),
   defineFamily('coding-state', 'state', 'org.bunny.coding-state.updated', codingSubject),

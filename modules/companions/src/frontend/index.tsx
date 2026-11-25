@@ -6,6 +6,7 @@ import {DuckConversation, DuckWidget} from './duck.js';
 export {DuckWidget} from './duck.js';
 export {ConversationRail, useConversationWaiting} from './conversation-rail-group.js';
 import {PreferencesPage} from './preferences.js';
+import {JobsPage} from './coding-jobs.js';
 import {AssistantPage} from './assistant.js';
 import React, {useEffect, useRef, useState} from 'react';
 import type {CompanionCategory, CompanionState} from '@jimmie-potts/event-contracts/v2/companions';
@@ -132,4 +133,4 @@ function ReachyView({context, advanced = false}: {context: FrontendContext; adva
 export function ReachyWidget({context}: {context: FrontendContext}): React.JSX.Element {return <ReachyView context={context}/>;}
 function ReachyPage({context}: {context: FrontendContext}): React.JSX.Element {return <ReachyView context={context} advanced/>;}
 function MicroDuckPage({context}: {context: FrontendContext}): React.JSX.Element {return <div className="companion-page"><DuckWidget context={context}/></div>;}
-export const frontend: FrontendContribution = {module: 'companions', pages: [{id: 'reachy', Component: ReachyPage}, {id: 'microduck', Component: MicroDuckPage}, {id: 'assistant', Component: AssistantPage}, {id: 'preferences', Component: PreferencesPage}, {id: 'knowledge', Component: KnowledgePage}, {id: 'duck-conversation', Component: DuckConversation}]};
+export const frontend: FrontendContribution = {module: 'companions', pages: [{id: 'reachy', Component: ReachyPage}, {id: 'microduck', Component: MicroDuckPage}, {id: 'assistant', Component: AssistantPage}, {id: 'jobs', Component: JobsPage}, {id: 'preferences', Component: PreferencesPage}, {id: 'knowledge', Component: KnowledgePage}, {id: 'duck-conversation', Component: DuckConversation}]};

@@ -20,12 +20,12 @@ import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, type Command, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import type {CodingJobPage} from '../src/coding/job-page.js';
+import {AssistantStore} from '../src/assistant/store.js';
 import {CodingStore} from '../src/coding/store.js';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {OPENAI_MODEL, OpenAIProvider} from '../src/assistant/openai.js';
 import type {ModelProvider, TurnInput, TurnReply} from '../src/assistant/provider.js';
 import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
-import {AssistantStore} from '../src/assistant/store.js';
 
 const PROFILES = ['bunny', 'reachy', 'microduck'] as const;
 const ENDPOINT = 'worker-endpoint-1';
@@ -127,6 +127,22 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
   };
+  const message = async (jobId: string, operationId: string, text: string, repeat = false): Promise<RequestResult> => {
+    const requestId = randomUUID();
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({action: 'message-coding-job', jobId, operationId, text}))});
+    assert.ok(staged !== undefined && !('error' in staged));
+    const send = () => core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+    const reply = await send();
+    if (repeat) await send();
+    return reply;
+  };
+  const jobs = async (query: Record<string, string>): Promise<CodingJobPage> => {
+    const reply = await module.manifest.content?.('coding-jobs', {query, signal: new AbortController().signal});
+    assert.ok(reply !== undefined && !('error' in reply));
+    return JSON.parse(Buffer.from(reply.bytes).toString()) as CodingJobPage;
+  };
   type SavedMessage = {id: string; taskId: string; role: string; text: string; follows?: string};
   const messages = async (profile: AssistantProfile, conversationId?: string): Promise<SavedMessage[]> => {
     const content = await module.manifest.content?.('conversation', {query: conversationId === undefined ? {profile} : {profile, view: 'recent', conversationId}, signal: new AbortController().signal});
@@ -165,7 +181,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     assert.ok(reply !== undefined && !('error' in reply));
     return JSON.parse(Buffer.from(reply.bytes).toString()) as CodingJobDetail;
   };
-  return {continueJob, jobDetail, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
+  return {continueJob, jobDetail, jobs, message, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
     const release = releaseStart ?? assert.fail('serial responder has a delivered start to acknowledge');
     releaseStart = undefined; release();
   }, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, lose, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
@@ -585,6 +601,7 @@ void test('an earlier saved delegation interrupt and unsent hand-off survive the
   await w.restart();
   assert.equal(w.starts().length, 0);
   assert.equal(w.task('bunny')?.status, 'waiting');
+  assert.deepEqual(w.coding().waiting, [{operationId, taskId, companion: 'bunny'}]);
   const db = w.database();
   let sentAttempts = 0, resultAttempts = 0, markAttempts = 0;
   db.function('fail_legacy_sent', () => {sentAttempts += 1; return sentAttempts === 1 ? 1 : 0;});
@@ -980,9 +997,11 @@ for (const [origin, destination] of [['codex', 'claude-code'], ['claude-code', '
 void test(`an owner-approved Auto job runs on ${origin} and explicitly continues on ${destination}`, {timeout: 30_000}, async context => {
   const brief = 'Exact owner-approved brief. ' + 'x'.repeat(4096 - 'Exact owner-approved brief. '.length);
   const inputs: TurnInput[] = [], titlePrompts: string[] = [];
+  let denyBrief: 'private-conversation' | 'coding-worker' | undefined;
   const delegate = delegating('bunny', brief);
   const permitted = sharing();
-  const share = Object.assign((query: ShareQuery) => permitted(query) && !revoked.some(rule => rule(query)),
+  const share = Object.assign((query: ShareQuery) => permitted(query) && !revoked.some(rule => rule(query)) &&
+    !(query.destination === denyBrief && query.source === 'coding' && query.field === 'brief'),
     {revokesFields: true, allowsDerived: (query: ShareQuery) => permitted.allowsDerived?.(query) !== false});
   const revoked: ((query: ShareQuery) => boolean)[] = [];
   const w = await world(context, {share,
@@ -1003,7 +1022,7 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   });
   const claude: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: '2.0',
     limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
-  const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus'};
+  const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus', capabilities: {...claude.capabilities, steering: 'live'}};
   const exhausted: CodingHarnessReadiness = {...claude, limits: [{window: 'primary', status: 'rejected', resetsAtMs: null, utilization: null}]};
   const initialSession = `native-${origin}`, resumedSession = `native-${destination}`;
   assert.equal((await w.control('enable')).status, 'accepted');
@@ -1017,7 +1036,23 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   if (origin === 'codex') assert.match((await w.jobDetail(jobId)).attempts[0]?.selectionReason ?? '', /Claude Code quota exhausted \(reset unknown\)/);
   assert.equal((await w.continueJob(jobId, operationId, destination)).status, 'rejected');
   await w.progress({operationId, status: 'started', setup: 'ready', harness: origin, sessionId: initialSession}, '2.3');
-  await settle(() => w.coding().runs?.some(run => run.sessionId === initialSession) === true);
+  await settle(() => w.coding().runs?.some(run => run.sessionId === initialSession && run.status === 'started') === true);
+  await w.progress({operationId, status: 'attempt-context', worktreeRef: 'bunny-fixture-partial', branch: null, model: 'fixture-reported-model'}, '2.5');
+  if (origin === 'codex') {
+    const message = await w.message(jobId, operationId, 'Keep the fixture intact.', true);
+    assert.equal(message.status, 'accepted', JSON.stringify(message));
+    await settle(() => w.work.filter(command => command.data.action === 'message').length === 1);
+    await w.progress({operationId, messageId: message.requestId, sessionId: 'wrong-session', status: 'message-observed'}, '2.5');
+    assert.equal((await w.jobs({jobId})).jobs[0]?.messages?.[0]?.observed, false);
+    await w.progress({operationId, messageId: message.requestId, sessionId: initialSession, status: 'message-observed'}, '2.5');
+    await settle(() => w.database().prepare('SELECT observed FROM companion_coding_job_messages WHERE message_id=?').get(message.requestId)?.observed === 1);
+    assert.equal((await w.jobs({jobId})).jobs[0]?.messages?.[0]?.observed, true);
+  } else {
+    const unsupported = await w.message(jobId, operationId, 'Never message this unsupported harness.');
+    assert.equal(unsupported.status, 'rejected');
+    if (unsupported.status === 'rejected') assert.equal(unsupported.error.error.code, 'unsupported-capability');
+    assert.equal(w.work.filter(command => command.data.action === 'message').length, 0);
+  }
   assert.equal((await w.stop(jobId, operationId)).status, 'accepted');
   const head = 'a'.repeat(40);
   const stopped = {...result('Synthetic partial work.'), head, changedFiles: ['partial.txt', '/synthetic/absolute', 'C:/synthetic/absolute'], checks: [{name: 'git diff', status: 'passed'}]};
@@ -1025,7 +1060,23 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   await w.progress({operationId, status: 'cancelled', reason: 'cancelled', harness: origin, sessionId: initialSession, result: stopped, handoffToken}, '2.4');
   await w.waitMessages('bunny', /Synthetic partial work/);
   assert.equal((await w.enable('uncapped', [claude, codex])).status, 'accepted');
-  assert.deepEqual((await w.jobDetail(jobId)).continuation, {fromOperationId: operationId, harness: destination, head, changedFiles: ['partial.txt']});
+  const ready = await w.jobDetail(jobId);
+  assert.deepEqual(ready.continuation, {fromOperationId: operationId, harness: destination, head, changedFiles: ['partial.txt']});
+  assert.equal(ready.continuationReason, undefined);
+  for (const destinationGrant of ['private-conversation', 'coding-worker'] as const) {
+    denyBrief = destinationGrant;
+    const denied = await w.jobDetail(jobId);
+    assert.equal(denied.continuation, null);
+    assert.match(denied.continuationReason ?? '', /brief sharing is not permitted/);
+    const refused = await w.continueJob(jobId, operationId, destination);
+    assert.equal(refused.status, 'rejected');
+    if (refused.status === 'rejected') assert.equal(refused.error.error.code, 'forbidden');
+    assert.deepEqual((await w.jobDetail(jobId)).attempts.map(attempt => attempt.operationId), [operationId]);
+    assert.equal(w.starts().length, 1);
+  }
+  denyBrief = undefined;
+  assert.deepEqual((await w.jobDetail(jobId)).continuation, ready.continuation);
+
   const requestId = randomUUID();
   assert.equal((await w.continueJob(jobId, operationId, destination, requestId)).status, 'accepted');
   assert.equal((await w.continueJob(jobId, operationId, destination, requestId)).status, 'accepted');
@@ -1036,8 +1087,41 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   assert.equal(resumed.brief, brief);
   assert.doesNotMatch(resumed.brief, /native-|Synthetic partial work/);
   assert.equal((await w.jobDetail(jobId)).activeOperationId, resumed.operationId);
+  assert.equal((await w.jobs({jobId})).jobs[0]?.operationId, resumed.operationId);
+  const stale = await w.message(jobId, operationId, 'Never reach a replacement attempt.');
+  assert.equal(stale.status, 'rejected');
+  if (stale.status === 'rejected') assert.equal(stale.error.error.code, 'revision-conflict');
+  assert.deepEqual((await w.jobDetail(jobId)).attempts[0]?.context, {
+    worktreeRef: 'bunny-fixture-partial', branch: null, model: 'fixture-reported-model',
+  });
   assert.equal((await w.continueJob(jobId, operationId, destination)).status, 'rejected');
   await w.progress({operationId: resumed.operationId, status: 'started', setup: 'ready', harness: destination, sessionId: resumedSession}, '2.3');
+  const scope = (query: ShareQuery) => query.destination === 'private-conversation' &&
+    query.source === 'coding' && query.field === 'details' && query.record === jobId;
+  const db = w.database();
+  const removeAttempt = () =>
+    assert.equal(db.prepare('DELETE FROM companion_coding_attempts WHERE operation_id=?').run(resumed.operationId).changes, 1);
+  const assertHiddenRun = () => {
+    const state = w.coding();
+    assert.deepEqual(state.runs, []);
+    assert.equal(state.active, null);
+    assert.equal(state.counts?.runs, 0);
+    assert.ok(!JSON.stringify(state).includes(resumedSession));
+  };
+  await settle(() => w.coding().runs?.some(run => run.sessionId === resumedSession) === true);
+  revoked.push(scope);
+  assertHiddenRun();
+  db.exec('SAVEPOINT missing_attempt');
+  try {
+    removeAttempt();
+    assertHiddenRun();
+  } finally {
+    db.exec('ROLLBACK TO missing_attempt; RELEASE missing_attempt');
+  }
+  assertHiddenRun();
+  revoked.pop();
+  assert.equal(w.coding().runs?.[0]?.sessionId, resumedSession);
+
   const deniesAttempt = (query: ShareQuery) => query.source === 'coding' && query.field === 'details' && query.record === resumed.operationId;
   revoked.push(query => deniesAttempt(query) && query.purpose === 'title');
   await w.progress({operationId: resumed.operationId, status: 'completed', harness: destination,
@@ -1045,10 +1129,22 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   await w.waitMessages('bunny', /Synthetic continued work/);
   const detail = await w.jobDetail(jobId);
   assert.equal(detail.activeOperationId, null);
+  assert.equal(detail.continuation, null);
+  assert.match(detail.continuationReason ?? '', /previous attempt completed without a partial result/);
+  assert.equal((await w.continueJob(jobId, resumed.operationId, origin)).status, 'rejected');
+  assert.equal(w.starts().length, 2);
   assert.deepEqual(detail.attempts.map(attempt => [attempt.operationId, attempt.harness, attempt.sessionId, attempt.status, attempt.result?.checks[0]?.name]), [
     [operationId, origin, initialSession, 'cancelled', 'git diff'],
     [resumed.operationId, destination, resumedSession, 'completed', 'unit test'],
   ]);
+  const assertCard = async (): Promise<void> => {
+    const card = (await w.jobs({jobId, scope: 'all'})).jobs[0];
+    assert.deepEqual([card?.operationId, card?.status, card?.harness, card?.sessionId],
+      [resumed.operationId, 'completed', destination, resumedSession]);
+  };
+  await assertCard();
+  await w.restart();
+  await assertCard();
   assert.doesNotMatch(JSON.stringify(detail), new RegExp(handoffToken));
 
   const conversation = w.task('bunny')?.conversationId ?? assert.fail('saved job conversation');
@@ -1073,6 +1169,7 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
     assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), resultText);
     const denied = await w.module().manifest.content?.('coding-job', {query: {jobId}, signal: new AbortController().signal});
     assert.deepEqual(denied, errorBody('not-found'));
+    assert.deepEqual((await w.jobs({jobId, scope: 'all'})).jobs, []);
     if (record === resumed.operationId) assert.match(recent, originalText, 'the first attempt keeps its own grant');
     revoked.pop();
   }
@@ -1118,8 +1215,51 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   await promptAfterRestart(resultText, originalText, 'the continuation update disappeared');
   share.revokesFields = false;
   assert.doesNotMatch(JSON.stringify(await w.messages('bunny', conversation)), missingSource);
+
+  // An unsent wait survives restart even when its saved attempt is unavailable.
+  const restartedDb = w.database();
+  new CodingStore(restartedDb).wait({operationId: resumed.operationId, taskId: initial.taskId, companion: 'bunny',
+    repository: initial.repository, brief, traceparent: w.starts()[1]?.traceparent ?? assert.fail('second dispatch trace')});
+  assert.equal(restartedDb.prepare('DELETE FROM companion_coding_attempts WHERE operation_id=?').run(resumed.operationId).changes, 1);
+  revoked.push(scope);
+  await w.restart();
+  assert.ok(w.database().prepare('SELECT 1 FROM companion_coding_waiting WHERE operation_id=?').get(resumed.operationId));
+  const state = w.coding();
+  assert.deepEqual(state.waiting, []);
+  assert.equal(state.counts?.waiting ?? 0, 0);
+  assert.ok(!JSON.stringify(state).includes(resumed.operationId));
 });
 
+
+void test('Jobs read grants filter discovery, detail and live counts before projecting names', {timeout: 30_000}, async context => {
+  const policy = sharing();
+  let hiddenOperation: string | undefined, hideBrief = false;
+  const share = Object.assign((query: ShareQuery) => policy(query) &&
+    !(query.destination === 'private-conversation' && query.source === 'coding' &&
+      (query.record === hiddenOperation && hiddenOperation !== undefined || hideBrief && query.field === 'brief')),
+    {revokesFields: true, allowsDerived: (query: ShareQuery) => policy.allowsDerived?.(query) !== false});
+  const w = await world(context, {share});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  for (const profile of ['bunny', 'reachy'] as const) {
+    assert.equal((await w.send(profile, 'Synthetic private job')).status, 'accepted');
+    await w.approved(profile);
+  }
+  await settle(() => w.starts().length === 2);
+  const first = w.starts()[0]?.data.operationId ?? assert.fail('first operation');
+  const second = w.starts()[1]?.data.operationId ?? assert.fail('second operation');
+  assert.equal((await w.jobs({scope: 'all'})).jobs.length, 2);
+  hiddenOperation = first;
+  hideBrief = true;
+  const listed = await w.jobs({scope: 'all'});
+  assert.deepEqual(listed.jobs.map(job => [job.operationId, job.label]), [[second, undefined]]);
+  assert.equal(listed.next, null);
+  assert.equal(w.coding().counts?.runs, 1);
+  assert.deepEqual((await w.jobs({target: 'Synthetic reachy brief'})).jobs, []);
+  assert.deepEqual((await w.jobs({jobId: `${first}-job`})).jobs, []);
+  const restricted = await w.module().manifest.content?.('coding-job', {query: {jobId: `${first}-job`}, signal: new AbortController().signal});
+  assert.ok(restricted !== undefined && 'error' in restricted && restricted.error.code === 'not-found');
+});
 
 for (const scenario of ['codex-exhausted', 'claude-pinned', 'both-exhausted'] as const) {
   void test(`owner-approved harness selection preserves quota refusals (${scenario})`, {timeout: 30_000}, async context => {
@@ -1183,8 +1323,11 @@ for (const originalGrant of ['granted', 'revoked'] as const) {
       result: {...result('Private synthetic source result.'), changedFiles: ['fixture.txt']}}, '2.4');
     await w.waitMessages('bunny', /Private synthetic source result/u);
     if (originalGrant === 'revoked') revokedRequest = `${taskId}-prompt`;
-    assert.equal((await w.continueJob(jobId, operationId, 'codex')).status, 'accepted');
+    const detail = await w.jobDetail(jobId);
+    const continuation = await w.continueJob(jobId, operationId, 'codex');
     if (originalGrant === 'granted') {
+      assert.equal(detail.continuation?.harness, 'codex');
+      assert.equal(continuation.status, 'accepted');
       await settle(() => w.starts().length === 2);
       const resumed = w.starts()[1]?.data;
       assert.ok(resumed?.action === 'start' && resumed.harness === 'codex');
@@ -1192,7 +1335,9 @@ for (const originalGrant of ['granted', 'revoked'] as const) {
       await w.progress({operationId: resumed.operationId, status: 'completed', harness: 'codex', result: result('Private synthetic continuation result.')}, '2.3');
       await w.waitMessages('bunny', /Private synthetic continuation result/u);
     } else {
-      await w.waitMessages('bunny', /refused: forbidden/u);
+      assert.equal(detail.continuation, null);
+      assert.equal(continuation.status === 'rejected' && continuation.error.error.code, 'forbidden');
+      assert.equal((await w.jobDetail(jobId)).attempts.length, 1);
       assert.equal(w.starts().length, 1);
       assert.equal(w.dispatched.length, 1);
     }

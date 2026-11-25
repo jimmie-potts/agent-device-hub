@@ -1,4 +1,5 @@
-import type {StopCodingInput} from '../assistant/history-contract.js';
+import {codingChoice, type CodingChoice} from '../coding/routing.js';
+import type {CodingJobEntry} from '../coding/job-page.js';
 import React, {useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore} from 'react';
 import type {AssistantProfile, AssistantState, AssistantStatus} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
@@ -10,7 +11,7 @@ import {ConversationVoice, stopSpeakingButton} from './conversation-voice.js';
 
 import type {ConversationListEntry, SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, readConversationList, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
-import {CodingJobs} from './coding-jobs.js';
+import {CodingJobs, ConversationCodingJob, continueCodingJob, explicitJobInstruction, messageCodingJob, readJobTargets, stopCodingJob, useCodingState} from './coding-jobs.js';
 import {ConversationDetails, useDetailsOverlay, type ConversationTitle} from './conversation-details.js';
 import {spendNotice, useSpend} from './conversation-spend.js';
 import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
@@ -42,6 +43,7 @@ function TaskControls({context, command, state, profile, live, question, coding,
   refreshHistory: () => void; historyBusy: boolean; voice: React.JSX.Element;
 }): React.JSX.Element {
   const formId = useId();
+  const [routing, setRouting] = useState<{draft: string; status: 'loading' | 'choose' | 'unavailable' | 'missing' | 'unsupported'; jobs?: CodingJobEntry[]}>();
   const [provider, setProvider] = useState<'anthropic' | 'openai'>();
   const choices = state?.providers?.filter(item => item.provider !== 'synthetic') ?? [];
   const primaryUnavailable = choices.length > 0 && !choices.some(item => item.provider === state?.provider);
@@ -58,6 +60,10 @@ function TaskControls({context, command, state, profile, live, question, coding,
   const open = task !== undefined && !finished(task.status);
   const pending = task !== undefined && task.questionId !== null && !task.hasAnswer && ['waiting', 'paused'].includes(task.status);
   const approval = pending && question?.kind === 'approval';
+  const [codingSelection, setCodingSelection] = useState<{questionId: string; choice: CodingChoice}>();
+  const codingQuestion = approval && question?.proposal?.family === 'coding-dispatch' &&
+    (coding?.harnesses?.length ?? 0) > 0 ? question : undefined;
+  const chosenHarness = codingSelection?.questionId === codingQuestion?.id ? codingSelection?.choice ?? 'auto' : 'auto';
   const clarification = pending && question?.kind === 'clarification';
   const unavailableDecision = pending && (question === undefined || (approval && question.proposal === null));
   const delegated = pending && question?.kind === 'delegation';
@@ -69,6 +75,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
     && (task.questionId === null || task.hasAnswer);
   const draftKey = `${profile}:${pending ? task.questionId ?? 'start' : 'start'}`;
   const draft = drafts[draftKey] ?? '';
+  const currentRouting = routing?.draft === draft ? routing : undefined;
+  const jobInstruction = explicitJobInstruction(draft);
   const bytes = new TextEncoder().encode(draft).byteLength;
   // The composer stays available while the task runs or waits (Hub #2030): during an approval or a hand-off it only queues.
   const showInput = state !== undefined && !unavailableDecision;
@@ -85,7 +93,7 @@ function TaskControls({context, command, state, profile, live, question, coding,
   // task to wait for has nothing to queue behind, so Send alone shows.
   const queued = queue?.messages.length ?? 0;
   const queueable = showInput && (open || queued > 0);
-  const canQueue = queueable && ready && queued < LIMITS.queuedMessages;
+  const canQueue = queueable && ready && jobInstruction === undefined && queued < LIMITS.queuedMessages;
   useEffect(() => {
     if (submitted === undefined) return;
     const operation = context.operations.find(value => value.requestId === submitted.requestId);
@@ -108,13 +116,34 @@ function TaskControls({context, command, state, profile, live, question, coding,
     const input = {action, profile, text, expectedRevision: state.revision,
       ...((action === 'start' || action === 'queue') && selectedProvider !== undefined ? {provider: selectedProvider} : {}),
       ...(action === 'answer' && task !== undefined ? {taskId: task.taskId, questionId: task.questionId} : {}),
+      ...(action === 'answer' && text === 'approve' && codingQuestion !== undefined ? {harness: chosenHarness} : {}),
       ...(action === 'steer' && task !== undefined ? {taskId: task.taskId, ...(questionId === undefined ? {} : {questionId})} : {})};
     if (action !== 'answer' || (text !== 'approve' && text !== 'decline')) setSubmitted({requestId, key: draftKey, text});
     void command.run({family: 'assistant-input', target: 'assistant', requestId,
       upload: {name: 'input.json', file: new Blob([JSON.stringify(input)], {type: 'application/json'})}});
   };
+  const sendJob = (job: CodingJobEntry, text: string): void => {
+    if (!ready || job.steering !== 'live') return;
+    const requestId = crypto.randomUUID();
+    setSubmitted({requestId, key: draftKey, text: draft});
+    setRouting(undefined);
+    messageCodingJob(command, job, text, requestId);
+  };
+  const routeJob = (target: string, text: string): void => {
+    setRouting({draft, status: 'loading'});
+    void readJobTargets(path => context.api.read(path), target).then(page => {
+      const only = page.jobs.length === 1 && page.next === null ? page.jobs[0] : undefined;
+      if (only?.steering === 'live') {sendJob(only, text); return;}
+      setRouting(only !== undefined ? {draft, status: only.steering === 'unsupported' ? 'unsupported' : 'unavailable'}
+        : page.jobs.length === 0 ? {draft, status: 'missing'} : {draft, status: 'choose', jobs: page.jobs});
+    }, () => {setRouting({draft, status: 'unavailable'});});
+  };
   // Enter sends, steering a task that works, or answers; during an approval, or while the task is paused, it queues.
   const submit = (): void => {
+    if (jobInstruction !== undefined) {
+      if (ready && currentRouting?.status !== 'loading') routeJob(jobInstruction.target, jobInstruction.text);
+      return;
+    }
     if (steerable) {if (canSteer) send(draft, 'steer');}
     else if (canSubmit) send(draft, pending ? 'answer' : 'start');
     else if (canQueue && !(pending && answerable)) send(draft, 'queue');
@@ -151,6 +180,16 @@ function TaskControls({context, command, state, profile, live, question, coding,
               <pre style={{whiteSpace: 'pre-wrap', overflowWrap: 'anywhere'}}>{JSON.stringify(question.proposal, null, 2)}</pre>
             </details>
           : <p><code>{question.proposal.target}</code> · {question.proposal.family === 'power-set' ? (question.proposal.data.on ? 'Power on' : 'Power off') : `Brightness ${String(question.proposal.data.percent)}%`}</p>}
+        {codingQuestion !== undefined && <p><label>Coding harness{' '}
+          <select value={chosenHarness} onChange={event => {
+            const choice = event.target.value;
+            if (codingChoice(choice)) setCodingSelection({questionId: codingQuestion.id, choice});
+          }}>
+            <option value="auto">Auto</option>
+            <option value="claude-code" disabled={coding?.harnesses?.some(item => item.harness === 'claude-code') !== true}>Claude Code</option>
+            <option value="codex" disabled={coding?.harnesses?.some(item => item.harness === 'codex') !== true}>Codex</option>
+          </select>
+        </label></p>}
         <button type="button" disabled={!enabled} style={{marginInlineEnd: '0.5rem'}} onClick={() => {send('approve', 'answer');}}>Approve proposal</button>
         <button type="button" className="secondary" disabled={!enabled} onClick={() => {send('decline', 'answer');}}>Decline proposal</button>
         <p>Approval sends one tracked command; its outcome is reported separately. Declining changes nothing.</p>
@@ -182,6 +221,20 @@ function TaskControls({context, command, state, profile, live, question, coding,
       </div>
     </div>}
     <ConversationUpload key={draftKey} context={context} locked={locked || !answerable}>{attach => <>
+      {currentRouting !== undefined && <div aria-live="polite">
+        {currentRouting.status === 'loading' && <p>Finding the coding job…</p>}
+        {currentRouting.status === 'choose' && <><p>Which job should receive this message?</p>
+          <ul>{currentRouting.jobs?.map(job => <li key={job.jobId}><button type="button" className="secondary"
+            disabled={locked || job.steering !== 'live'} onClick={() => {
+              const instruction = explicitJobInstruction(draft);
+              if (instruction !== undefined) sendJob(job, instruction.text);
+            }}>{job.label ?? job.repository} · {job.jobId}</button></li>)}</ul>
+          <a href="#/module/companions/jobs">Open Jobs</a>
+        </>}
+        {currentRouting.status === 'missing' && <p>No matching active coding job.</p>}
+        {currentRouting.status === 'unsupported' && <p>This harness does not support live messages.</p>}
+        {currentRouting.status === 'unavailable' && <p>Live messages are unavailable for this attempt.</p>}
+      </div>}
       {showInput && <form id={formId} onSubmit={event => {event.preventDefault(); submit();}}>
         {(choices.length > 1 || primaryUnavailable || unavailableProvider) && (!pending || queueable) && <label>
           Supervisor for new tasks
@@ -212,7 +265,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
         {voice}
         {answerable && attach}
         {queueable && <button type="button" className="secondary conversation-queue-button" disabled={!canQueue} onClick={() => {if (canQueue) send(draft, 'queue');}}>Queue</button>}
-        {steerable ? <button type="submit" form={formId} disabled={!canSteer}>Send</button>
+        {jobInstruction !== undefined ? <button type="submit" form={formId} disabled={!ready || currentRouting?.status === 'loading'}>Message job</button>
+          : steerable ? <button type="submit" form={formId} disabled={!canSteer}>Send</button>
           : answerable && <button type="submit" form={formId} disabled={!canSubmit}>{pending ? 'Answer' : 'Send'}</button>}
       </div>
     </>}</ConversationUpload>
@@ -244,6 +298,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const [history, setHistory] = useState<ConversationHistory>();
   // An earlier conversation of this profile the owner opened from Details (Hub #2029), read only; undefined shows the current one.
   const [viewing, setViewing] = useState<string>();
+  const previousProfile = useRef(profile);
   const [conversations, setConversations] = useState<readonly ConversationListEntry[]>();
   // The cursor of the next page of the profile's conversations, or null when every one is listed.
   const [olderConversations, setOlderConversations] = useState<string | null>(null);
@@ -253,7 +308,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const failedCursor = useRef<string>(undefined);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [speakRequest, setSpeakRequest] = useState<string>();
-  const [coding, setCoding] = useState<CodingState>();
+  const coding = useCodingState(context);
   const companionSpeech = useCompanionSpeechCopy(context);
   const speech = useSpeechControlsSession(context, companionSpeech.copy);
   const [panel, setPanel] = useState<'voice' | 'details'>();
@@ -275,25 +330,6 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   }, [panel]);
   const stopSpeaking = stopSpeakingButton(speech);
   const stopInDrawer = detailsOpen && detailsOverlay;
-  useEffect(() => {
-    setCoding(undefined);
-    if (!connected) return;
-    let active = true;
-    let copy: SyncedCopy<CodingState> | undefined;
-    void api.sync<CodingState>(['coding-state'], change => {
-      if (!active) return;
-      if (change.type === 'updated' && change.message.data.id === 'coding') setCoding(change.message.data);
-      else if (change.type === 'failed' || change.type === 'removed') setCoding(undefined);
-      else if (change.type === 'synced' && copy !== undefined) setCoding(copy.states().find(message => message.data.id === 'coding')?.data);
-    }, {onRestarted: () => {if (active) setCoding(undefined);}}).then(result => {
-      if (result.status !== 'synced') return;
-      if (!active) {void result.copy.close(); return;}
-      copy = result.copy;
-      const current = result.copy.states().find(message => message.data.id === 'coding');
-      if (current !== undefined) setCoding(current.data);
-    }, () => {if (active) setCoding(undefined);});
-    return () => {active = false; void copy?.close();};
-  }, [api, connected]);
   useEffect(() => {
     if (!connected) {setHistoryApi(undefined); return;}
     let active = true;
@@ -377,7 +413,16 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
     setHistoryStatus('loading');
   }, [profile, viewing]);
   // Another profile opens on its current conversation.
-  useLayoutEffect(() => {setViewing(undefined);}, [profile]);
+  useLayoutEffect(() => {
+    const opening = conversationRail.takeOpening(profile);
+    if (opening !== undefined || previousProfile.current !== profile) setViewing(opening);
+    previousProfile.current = profile;
+  }, [profile]);
+  useEffect(() => {
+    if (viewing !== undefined && conversations?.some(entry => entry.current && entry.conversationId === viewing) === true) {
+      setViewing(undefined);
+    }
+  }, [conversations, viewing]);
   // The profile's conversations, current and earlier (Hub #2029), read while Details is open or an earlier one is shown,
   // and again at each change of the assistant's state meanwhile.
   const listed = detailsOpen || viewing !== undefined;
@@ -439,11 +484,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   return <section aria-label="B.U.N.N.Y. conversation" className="conversation-page">
     <Command context={context} target="assistant">{command => {
       const locked = command.locked || !live || !context.control || !context.operationsLive;
-      const stopCodingJob = (jobId: string, operationId: string): void => {
-        const input: StopCodingInput = {action: 'stop-coding-job', jobId, operationId};
-        void command.run({family: 'assistant-input', target: 'assistant', requestId: crypto.randomUUID(),
-          upload: {name: 'input.json', file: new Blob([JSON.stringify(input)], {type: 'application/json'})}});
-      };
+      const stopJob = (jobId: string, operationId: string): void => {stopCodingJob(command, jobId, operationId);};
+      const continueJob = (commandData: Parameters<typeof continueCodingJob>[1]): void => {continueCodingJob(command, commandData);};
       const speakReceipt = speakRequest !== undefined && command.requestId === speakRequest;
       const operation = context.operations.find(value => value.target === 'assistant' && value.requestId === command.requestId);
       const routineReceipt = !speakReceipt && !command.locked && (command.requestId === undefined || (
@@ -502,9 +544,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                 {operation.error !== undefined ? ` · ${operation.error.code}` : ''}{!context.operationsLive ? ' (Last known)' : ''}</p>;
             }}
             renderMessage={message => {
-              const pendingJob = coding?.waiting?.find(attempt => message.id === `${attempt.operationId}-job`);
-              const runningJob = coding?.runs?.find(attempt => message.id === `${attempt.operationId}-job` && attempt.status !== 'cancelling');
-              const attempt = pendingJob ?? runningJob;
+              const jobReceipt = message.role === 'assistant' && /^.+-step-\d+-job$/u.test(message.id);
               return <article aria-label={`${message.role} message`}>
                 <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
                 {/* A steer joined the running turn, and a reply it superseded was saved but not spoken (Hub #2031). */}
@@ -517,8 +557,9 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                   }}>Update to earlier reply</a>
                   : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
                 <p className="conversation-message-text" dir="auto">{message.text}</p>
-                {attempt !== undefined && <button type="button" className="secondary" disabled={locked}
-                  onClick={() => {stopCodingJob(message.id, attempt.operationId);}}>Stop coding job</button>}
+                {jobReceipt && <ConversationCodingJob jobId={message.id} revision={coding?.revision}
+                  read={readCodingJobs} locked={locked} stop={stopJob} continueJob={continueJob} operations={context.operations}
+                  message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}/>}
                 {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
                   connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
                   artRevision={art?.revision}/>}
@@ -559,8 +600,10 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           {viewing !== undefined && !routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
         </div>
         <ConversationDetails id={detailsId} open={detailsOpen} overlay={detailsOverlay} onClose={closeDetails}
-          codingJobs={coding?.counts === undefined || !detailsOpen ? null : <CodingJobs revision={coding.revision}
-            read={readCodingJobs} stop={stopCodingJob} locked={locked}/>}
+          codingJobs={<><a href="#/module/companions/jobs">Open Jobs</a>
+            {coding?.counts !== undefined && detailsOpen && <CodingJobs revision={coding.revision}
+              read={readCodingJobs} stop={stopJob} continueJob={continueJob} locked={locked} operations={context.operations}
+              message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}/>}</>}
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live} spend={spend}
           savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}

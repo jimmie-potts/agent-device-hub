@@ -1,5 +1,6 @@
 import type {DatabaseSync} from 'node:sqlite';
-import type {CodingAttemptEntry, CodingAttemptResult, CodingJobEntry} from './job-page.js';
+import {isErrorCode} from '@jimmie-potts/event-contracts/v2';
+import type {AttemptContext, CodingAttemptEntry, CodingAttemptResult, CodingJobEntry, JobMessage} from './job-page.js';
 import type {CodingCompanion, CodingContinuation, CodingProgress} from '@jimmie-potts/event-contracts/v2/coding';
 import type {CodingChoice, CodingHarness} from './routing.js';
 
@@ -52,6 +53,9 @@ export class CodingStore {
       selection_reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued', result TEXT, handoff_token TEXT, selection_id TEXT,
       from_operation_id TEXT UNIQUE, from_token TEXT, stop_requested INTEGER NOT NULL DEFAULT 0 CHECK(stop_requested IN (0,1))
     ) STRICT`);
+    if (!database.prepare('PRAGMA table_info(companion_coding_attempts)').all().some(column => column.name === 'context')) {
+      database.exec('ALTER TABLE companion_coding_attempts ADD COLUMN context TEXT');
+    }
     database.exec('CREATE INDEX IF NOT EXISTS companion_coding_attempt_job ON companion_coding_attempts(job_id)');
     database.exec(`CREATE TABLE IF NOT EXISTS companion_coding_job_updates (
       operation_id TEXT NOT NULL, task_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('sent','stop-unconfirmed','result')),
@@ -59,6 +63,13 @@ export class CodingStore {
       startup INTEGER NOT NULL DEFAULT 0 CHECK(startup IN (0,1)), delivered INTEGER NOT NULL DEFAULT 0 CHECK(delivered IN (0,1)),
       PRIMARY KEY(operation_id, kind)
     ) STRICT`);
+    database.exec(`CREATE TABLE IF NOT EXISTS companion_coding_job_messages (
+      message_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, operation_id TEXT NOT NULL,
+      endpoint_id TEXT NOT NULL, session_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
+      recorded_at_ms INTEGER NOT NULL, status TEXT NOT NULL CHECK(status IN ('queued','accepted','refused','uncertain')),
+      observed INTEGER NOT NULL DEFAULT 0 CHECK(observed IN (0,1)), code TEXT
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS companion_coding_job_message_job ON companion_coding_job_messages(job_id,recorded_at_ms,message_id)`);
   }
   create(job: CodingJob): void {
     this.database.prepare('INSERT INTO companion_coding_jobs(job_id,operation_id,conversation_id,task_id,repository,brief) VALUES(?,?,?,?,?,?)')
@@ -88,24 +99,61 @@ export class CodingStore {
     const {jobId, taskId, conversationId, repository} = job;
     return {jobId, taskId, conversationId, repository, operationId, originalOperationId: original.operationId};
   }
-  activeJobs(after: string, limit: number): Omit<CodingJobEntry, 'status' | 'setup'>[] {
+  jobs({after, limit, includeEnded, jobId}: {after: string; limit: number; includeEnded: boolean; jobId?: string}): CodingJobEntry[] {
     return this.database.prepare(`WITH current AS (
       SELECT j.*, COALESCE((SELECT a.operation_id FROM companion_coding_attempts a
-        WHERE a.job_id=j.job_id ORDER BY a.rowid DESC LIMIT 1), j.operation_id) AS current_operation FROM companion_coding_jobs j
-      WHERE j.job_id > ?
-    )
-      SELECT job.job_id, job.current_operation AS operation_id, job.task_id, job.conversation_id, job.repository,
-        COALESCE(waiting.companion, attempt.companion) AS companion
+        WHERE a.job_id=j.job_id ORDER BY a.rowid DESC LIMIT 1), j.operation_id) AS current_operation
+      FROM companion_coding_jobs j WHERE j.job_id > ?
+      )
+      SELECT job.job_id, job.current_operation AS operation_id, job.task_id, job.conversation_id, job.repository, COALESCE(waiting.companion, attempt.companion) AS companion,
+      COALESCE(attempt.status, run.status) AS status, terminal.text AS terminal_text,
+      (SELECT CASE kind WHEN 'result' THEN 'A job outcome was recorded.' ELSE text END FROM companion_coding_job_updates item
+        WHERE item.operation_id=job.current_operation ORDER BY rowid DESC LIMIT 1) AS latest_update
       FROM current job LEFT JOIN companion_coding_waiting waiting ON waiting.operation_id=job.current_operation
       LEFT JOIN companion_coding_attempts attempt ON attempt.operation_id=job.current_operation
-      WHERE NOT EXISTS (SELECT 1 FROM companion_coding_job_updates observation
-        WHERE observation.operation_id = job.current_operation AND observation.kind = 'result')
-      ORDER BY job.job_id LIMIT ?`).all(after, limit).map(row => {
-      const {job_id: jobId, operation_id: operationId, task_id: taskId, conversation_id: conversationId, repository, companion} = row;
-      if (typeof jobId !== 'string' || typeof operationId !== 'string' || typeof taskId !== 'string' ||
+      LEFT JOIN companion_coding run ON run.operation_id=job.current_operation
+      LEFT JOIN companion_coding_job_updates terminal ON terminal.operation_id=job.current_operation AND terminal.kind='result'
+      WHERE (? IS NULL OR job.job_id=?) AND (?=1 OR terminal.operation_id IS NULL)
+      ORDER BY job.job_id LIMIT ?`).all(after, jobId ?? null, jobId ?? null, includeEnded ? 1 : 0, limit).map(row => {
+      const {job_id: id, operation_id: operationId, task_id: taskId, conversation_id: conversationId, repository, companion,
+        status, terminal_text: terminal, latest_update: latestUpdate} = row;
+      if (typeof id !== 'string' || typeof operationId !== 'string' || typeof taskId !== 'string' ||
         typeof conversationId !== 'string' || typeof repository !== 'string') throw new Error('coding-job-invalid');
-      return {jobId, operationId, taskId, conversationId, repository,
-        ...(companion === 'bunny' || companion === 'reachy' || companion === 'microduck' ? {companion} : {})};
+      return {jobId: id, operationId, taskId, conversationId, repository,
+        status: status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'uncertain' ? status
+          : typeof terminal === 'string' ? 'ended' : 'queued',
+        ...(companion === 'bunny' || companion === 'reachy' || companion === 'microduck' ? {companion} : {}),
+        ...(typeof latestUpdate === 'string' ? {latestUpdate} : {})};
+    });
+  }
+  rememberMessage(row: {requestId: string; jobId: string; operationId: string; endpointId: string; sessionId: string;
+    fingerprint: string; recordedAtMs: number}): 'new' | 'existing' | 'conflict' {
+    const unique = this.database.prepare(`INSERT OR IGNORE INTO companion_coding_job_messages
+      (message_id,job_id,operation_id,endpoint_id,session_id,fingerprint,recorded_at_ms,status) VALUES(?,?,?,?,?,?,?,'queued')`)
+      .run(row.requestId, row.jobId, row.operationId, row.endpointId, row.sessionId, row.fingerprint, row.recordedAtMs);
+    if (unique.changes === 1) return 'new';
+    const old = this.database.prepare('SELECT job_id,operation_id,fingerprint FROM companion_coding_job_messages WHERE message_id=?').get(row.requestId);
+    return old?.job_id === row.jobId && old.operation_id === row.operationId && old.fingerprint === row.fingerprint ? 'existing' : 'conflict';
+  }
+  resolveMessage(requestId: string, status: Exclude<JobMessage['status'], 'queued'>, code?: JobMessage['code']): boolean {
+    return this.database.prepare("UPDATE companion_coding_job_messages SET status=?,code=? WHERE message_id=? AND status='queued'")
+      .run(status, code ?? null, requestId).changes === 1;
+  }
+  observeMessage(requestId: string, operationId: string, endpointId: string, sessionId: string): boolean {
+    return this.database.prepare(`UPDATE companion_coding_job_messages SET observed=1
+      WHERE message_id=? AND operation_id=? AND endpoint_id=? AND session_id=? AND observed=0 AND status<>'refused'`)
+      .run(requestId, operationId, endpointId, sessionId).changes === 1;
+  }
+  recoverMessages(): void {
+    this.database.prepare("UPDATE companion_coding_job_messages SET status='uncertain',code='uncertain-result' WHERE status='queued'").run();
+  }
+  messages(jobId: string): JobMessage[] {
+    return this.database.prepare(`SELECT message_id,operation_id,status,observed,recorded_at_ms,code
+      FROM companion_coding_job_messages WHERE job_id=? ORDER BY recorded_at_ms DESC,rowid DESC LIMIT 8`).all(jobId).map(row => {
+      const {message_id: requestId, operation_id: operationId, status, observed, recorded_at_ms: recordedAtMs, code} = row;
+      if (typeof requestId !== 'string' || typeof operationId !== 'string' || typeof recordedAtMs !== 'number' ||
+        (status !== 'queued' && status !== 'accepted' && status !== 'refused' && status !== 'uncertain')) throw new Error('coding-job-message-invalid');
+      return {requestId, operationId, status, observed: observed === 1, recordedAtMs, ...(isErrorCode(code) ? {code} : {})};
     });
   }
   createAttempt(attempt: Pick<CodingAttempt, 'jobId' | 'operationId' | 'choice' | 'companion' | 'harness' | 'selectionReason' | 'continuation'>): void {
@@ -127,9 +175,10 @@ export class CodingStore {
       (choice !== 'auto' && choice !== 'claude-code' && choice !== 'codex') ||
       (companion !== 'bunny' && companion !== 'reachy' && companion !== 'microduck') ||
       (harness !== null && harness !== 'claude-code' && harness !== 'codex') || (sessionId !== null && typeof sessionId !== 'string') ||
-      (status !== 'queued' && status !== 'dispatching' && status !== 'started' && status !== 'completed' && status !== 'failed' &&
+      (status !== 'queued' && status !== 'dispatching' && status !== 'started' && status !== 'cancelling' && status !== 'completed' && status !== 'failed' &&
         status !== 'cancelled' && status !== 'uncertain') || (result !== null && typeof result !== 'string')) throw new Error('coding-attempt-invalid');
     return {operationId, jobId, choice, companion, harness, sessionId, selectionReason, status, result: result === null ? null : JSON.parse(result) as CodingAttemptResult,
+      ...(typeof row.context === 'string' ? {context: JSON.parse(row.context) as AttemptContext} : {}),
       ...(typeof handoffToken === 'string' ? {handoffToken} : {}), ...(typeof selectionId === 'string' ? {selectionId} : {}),
       ...(typeof from === 'string' && typeof token === 'string' ? {continuation: {fromOperationId: from, token}} : {})};
   }
@@ -141,6 +190,13 @@ export class CodingStore {
     this.database.prepare(`UPDATE companion_coding_attempts SET status=?, session_id=COALESCE(session_id,?),
       result=COALESCE(result,?), handoff_token=COALESCE(handoff_token,?), selection_id=COALESCE(selection_id,?), harness=COALESCE(harness,?) WHERE operation_id=?`)
       .run(status, sessionId ?? null, result === undefined ? null : JSON.stringify(result), handoffToken ?? null, selectionId ?? null, harness ?? null, operationId);
+  }
+  observeAttemptContext(operationId: string, context: AttemptContext): boolean {
+    const attempt = this.attempt(operationId);
+    if (attempt === undefined) return false;
+    const merged = JSON.stringify({...attempt.context, ...context});
+    if (merged === JSON.stringify(attempt.context)) return false;
+    return this.database.prepare('UPDATE companion_coding_attempts SET context=? WHERE operation_id=?').run(merged, operationId).changes === 1;
   }
   requestStop(operationId: string): boolean {
     if (this.attempt(operationId) !== undefined) return this.database.prepare('UPDATE companion_coding_attempts SET stop_requested=1 WHERE operation_id=? AND stop_requested=0').run(operationId).changes === 1;

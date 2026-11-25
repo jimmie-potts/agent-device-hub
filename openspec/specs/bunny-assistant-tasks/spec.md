@@ -1152,3 +1152,13 @@ Conversation SHALL offer supported sources and read operations from the shared d
 - **THEN** the supervisor receives only the requested device's bounded duration totals or last observed change, with incomplete coverage identified
 - **AND** raw observations, evidence and operation identifiers, links and cursors stay private
 - **AND** an ambiguous or mismatched query returns no retained facts, and a revoked grant prevents a saved summary from reaching another provider turn or title call
+
+### Requirement: Separate explicit job instructions from ordinary Conversation
+
+Conversation SHALL give each authorized coding-job receipt an attempt-specific card. An explicit natural-language job instruction SHALL be resolved to an eligible job and its current attempt. When the owner has not identified a unique target the page SHALL request a choice before sending. Ordinary messages and approvals SHALL retain their existing Conversation behavior while the job runs.
+
+#### Scenario: Two similar jobs and a Hub question
+
+- **GIVEN** two jobs for the same companion use the same repository
+- **WHEN** the owner addresses one by a unique name and asks a separate Hub question
+- **THEN** only the named attempt receives the job instruction and the Hub question proceeds in Conversation
