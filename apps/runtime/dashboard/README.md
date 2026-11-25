@@ -1321,9 +1321,9 @@ stays in a bounded in-page log of 64 records and is lost with the page. Its
 delivery through a browser relay, with the event and `bunny.card` registered in
 the diagnostic catalog as the contract requires before a record is exported, is
 a follow-up (follow-up issue to be filed by the coordinator). The page also
-passes the error to the browser's `reportError`, so an owner sees it only in the
-browser's console; a browser without `reportError` gets it through
-`console.error`.
+passes the error to the browser's `reportError`, so an owner's browser shows it
+only on its console; a browser without `reportError` is not told, and the failed
+part and its record stay as they are.
 
 A failed part carries `data-card-failed`, `data-error-type` and
 `data-fault-count`. The journey harness's `feed()` and `copiesSynced()` fail on a

@@ -39,10 +39,9 @@ export function recordCardFault(log: Logger | undefined, card: string, error: un
 
 /**
  * Reports a contained error to the page as an uncaught error would be, so the browser's console shows it and a test that
- * watches page errors sees it. A browser without `reportError` gets it on the console only.
+ * watches page errors sees it. A browser without `reportError` is not told; the failed face and the record still are.
  */
 export function reportCardError(error: unknown): void {
   const report = (globalThis as {reportError?: (error: unknown) => void}).reportError;
   if (typeof report === 'function') report(error);
-  else console.error(error);
 }

@@ -44,21 +44,18 @@ void test('the page keeps a bounded log of its records', () => {
   assert.equal(pageRecords().at(-1)?.event, 'dashboard.card.failed');
 });
 
-void test('a contained error is reported as a page error, or on the console in a browser without reportError', () => {
+void test('a contained error is reported as a page error, and a browser without reportError is not told', () => {
   const scope = globalThis as {reportError?: (error: unknown) => void};
-  const original = scope.reportError, originalConsole = console.error;
-  const reported: unknown[] = [], logged: unknown[] = [];
+  const original = scope.reportError;
+  const reported: unknown[] = [];
   const error = new TypeError('synthetic');
   try {
     scope.reportError = value => { reported.push(value); };
-    console.error = (value: unknown) => { logged.push(value); };
     reportCardError(error);
-    assert.deepEqual([reported, logged], [[error], []]);
+    assert.deepEqual(reported, [error]);
     delete scope.reportError;
-    assert.doesNotThrow(() => { reportCardError(error); });
-    assert.deepEqual([reported, logged], [[error], [error]]);
+    assert.doesNotThrow(() => { reportCardError(error); }, 'the boundary does not throw where the browser lacks reportError');
   } finally {
     if (original === undefined) delete scope.reportError; else scope.reportError = original;
-    console.error = originalConsole;
   }
 });
