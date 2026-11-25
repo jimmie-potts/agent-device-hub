@@ -3010,3 +3010,71 @@ void test('an unpinned legacy task and queue remain readable without resuming on
   assert.equal(current.calls(), 1);
   assert.equal(w.store().task(task(w)?.taskId ?? '')?.supervisor?.provider, 'synthetic');
 });
+
+void test('Claude uses only the owner-bound history tool and two pages from the same local day', async context => {
+  const day = Date.parse('2026-11-02T00:00:00Z');
+  const source = 'bunny/modules/lifx';
+  const empty = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
+  const prompt = 'How long was Desk Lamp on yesterday?';
+  const pages: {next: string | null; capped: boolean; evidence: {atMs: number; kind: string}[]}[] = [];
+  const turns: TurnInput[] = [];
+  let reads = 0;
+  const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: request => {
+    const latest = request.transcript.filter(item => item.role === 'owner').at(-1)?.text;
+    if (latest === 'PRIVATE_PRIOR_TOPIC') return Promise.resolve(reply('PRIVATE_PRIOR_REPLY'));
+    turns.push(request);
+    const results = request.transcript.filter(item => item.role === 'tool');
+    const result = results.at(-1)?.result ?? '';
+    if (latest !== prompt) return Promise.resolve(result === ''
+      ? call('read_device_history', empty) : reply('No resolved device history.'));
+    switch (results.length) {
+      case 0: return Promise.resolve(call('read_device_history', {...empty, source: WEMO_OWNER, target: 'hall'}));
+      case 1: return Promise.resolve(call('read_device_history', empty));
+      case 2: {
+        const page = JSON.parse(result) as (typeof pages)[number];
+        pages.push(page);
+        return Promise.resolve(call('read_device_history', {...empty, cursor: page.next}));
+      }
+      case 3: {
+        pages.push(JSON.parse(result) as (typeof pages)[number]);
+        return Promise.resolve(call('read_device_history', empty));
+      }
+      default: return Promise.resolve(reply('Synthetic scoped answer.'));
+    }
+  }};
+  const w = await world(context, {provider, timeZone: 'UTC', tools: ['read_devices', 'read_device_history'],
+    devices: owner => owner === source ? [light('desk', 'Desk Lamp'), light('a', 'Duplicated'), light('b', 'Duplicated')]
+      : [{...light('hall', 'Hall Plug'), kind: 'wemo'}],
+    dispatch: () => assert.fail('history sends no device command'),
+    deviceHistory: query => {
+      reads += 1;
+      assert.deepEqual(query, {source, target: 'desk', fromAtMs: day - 86_400_000, toAtMs: day});
+      const {fromAtMs, toAtMs} = query;
+      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 25, complete: true, lastChange: null,
+        durations: {on: 100, off: 0, unknown: toAtMs - fromAtMs - 100}, links: [],
+        evidence: Array.from({length: 25}, (_, seq) => ({seq, messageId: 'PRIVATE_ROW', atMs: fromAtMs + seq - 1,
+          confirmedThroughMs: fromAtMs + seq + 1, power: 'on', kind: 'observation'}))};
+    }}, undefined, day + 1000);
+  await control(w.core, w.module(), 'enable');
+  const ask = async (text: string) => {
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), text)).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+  };
+  await ask('PRIVATE_PRIOR_TOPIC');
+  await ask(prompt);
+  assert.equal(reads, 1);
+  assert.deepEqual(pages.map(page => page.evidence.length), [12, 12]);
+  assert.deepEqual(pages[0]?.evidence[0], {atMs: day - 86_400_000, confirmedThroughMs: day - 86_400_000 + 1,
+    kind: 'continuation', power: 'on'});
+  assert.ok(pages[0]?.next);
+  assert.equal(pages[1]?.next, null);
+  assert.equal(pages[1]?.capped, true);
+  assert.match(JSON.stringify(turns.at(-1)?.transcript), /history page limit reached/u);
+  assert.doesNotMatch(JSON.stringify(turns), /PRIVATE_|"seq"|"boundary"|"links"/u);
+  assert.ok(turns.every(turn => turn.tools.length === 1 && turn.tools[0]?.name === 'read_device_history'));
+  await ask('How long was Duplicated on yesterday?');
+  await ask('How long was Desk Lamp on from 2026-02-30T00:00:00Z to 2026-03-01T00:00:00Z?');
+  assert.match(JSON.stringify(turns.at(-1)?.transcript), /refused: forbidden/u);
+  assert.equal(reads, 1);
+});

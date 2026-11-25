@@ -1153,6 +1153,13 @@ Conversation SHALL offer supported sources and read operations from the shared d
 - **AND** raw observations, evidence and operation identifiers, links and cursors stay private
 - **AND** an ambiguous or mismatched query returns no retained facts, and a revoked grant prevents a saved summary from reaching another provider turn or title call
 
+#### Scenario: A Claude supervisor answers a named local-day history question
+
+- **WHEN** the owner asks how long one named Wemo plug or LIFX light was on or off yesterday
+- **THEN** the request fixes the source, device and local-day interval before any model tool call, and each returned page rechecks destination grants
+- **AND** Claude receives at most two pages for the request with observed power, in-window timestamps, coverage and duration totals, while unrelated prompt context, record identifiers and command links remain private
+- **AND** an ambiguous device, mismatched query, expired cursor or cursor from another owner request returns no retained facts
+
 ### Requirement: Separate explicit job instructions from ordinary Conversation
 
 Conversation SHALL give each authorized coding-job receipt an attempt-specific card. An explicit natural-language job instruction SHALL be resolved to an eligible job and its current attempt. When the owner has not identified a unique target the page SHALL request a choice before sending. Ordinary messages and approvals SHALL retain their existing Conversation behavior while the job runs.
