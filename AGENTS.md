@@ -138,9 +138,9 @@ npm run test:agent-state, npm run test:agent-state:python and
 npm run test:agent-state:package, plus the shared build/type, controller,
 lifecycle, MCP and workflow checks from the worktree root. All must exit zero.
 Source tests do not qualify a production storage adapter or installed provider.
-For controllers/tidbyt changes, read its README and run npm run test:tidbyt and
-npm run test:tidbyt:python plus the shared build/type, contract and workflow
-checks from the worktree root. All must exit zero.
+For controllers/tidbyt changes, read its README and run npm run test:tidbyt
+plus the shared build/type, contract and workflow checks from the worktree
+root. All must exit zero.
 For modules/pixoo changes, read its README and run npm run test:pixoo plus the
 shared build/type/lint/workflow checks from the worktree root. All must exit zero.
 Before changing the Mac operator (scripts/bunny*.mjs, scripts/deployment,

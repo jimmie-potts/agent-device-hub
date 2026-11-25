@@ -1,6 +1,6 @@
 // Regenerate golden WebP fixtures after an intentional encoder change:
 //   npm run build && node controllers/tidbyt/scripts/write-golden.mjs
-// Then run npm run test:tidbyt:python, which decodes them independently with Pillow.
+// Then rerun npm run test:tidbyt.
 import { writeFileSync } from 'node:fs';
 import { renderFrame } from '../dist/index.js';
 import { goldenFrames, WIDTH, HEIGHT } from '../tests/frames.mjs';

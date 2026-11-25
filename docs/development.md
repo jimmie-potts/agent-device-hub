@@ -1014,8 +1014,8 @@ stay until #839, so run them locally when a change touches that code:
 - `npm run test:hub` and `npm run test:hub:package`, which include the setup,
   Hub MCP, automation, Wispr producer and compatibility-process tests, and
   `npm run test:hub:verify`;
-- `npm run test:agent-status`, `npm run test:lifx`, `npm run test:tidbyt`,
-  `npm run test:tidbyt:python` and `npm run test:local-controllers`;
+- `npm run test:agent-status`, `npm run test:lifx`, `npm run test:tidbyt` and
+  `npm run test:local-controllers`;
 - `npm run test:contracts:python` and `npm run test:package`, the 1.x
   contracts' Python consumer and archive check;
 - `npm run test:performance`, the early hook measurement tooling;
@@ -1028,8 +1028,7 @@ CI still covers the old code that kept checks rely on. `npm run build` and
 observability pilot import `@jimmie-potts/device-contracts` from source.
 `test:dashboard` and `test:dashboard:smoke` run because #922 copies the
 dashboard into the runtime; the copy has its own
-[checks](#runtime-dashboard-checks). The Python setup still installs
-`requirements-contracts.txt`, whose Pillow pin only the local Tidbyt check uses.
+[checks](#runtime-dashboard-checks).
 
 Native Windows is outside the supported CI matrix. Windows development uses
 Linux Node/Python runtimes inside WSL. Ubuntu CI does not establish installed
@@ -2151,14 +2150,12 @@ a real in-memory shared owner with fake cloud transport and run locally with the
 rest of `test:tidbyt`. No installed service or physical device participates.
 
 Hub #16 adds the `controllers/tidbyt` workspace package, an in-process Tidbyt cloud
-controller. Use Node 24 and Python 3.14. Run `npm run build`,
-`npm run typecheck` and `npm run test:tidbyt`. After installing
-`requirements-contracts.txt`, which pins Pillow, run `npm run test:tidbyt:python`.
-If the system Python lacks Pillow, create a virtual environment, install
-`requirements-contracts.txt` into it and run the command with that environment
-active (the #222 and #241 closeouts both hit this).
+controller. Use Node 24. Run `npm run build`, `npm run typecheck` and
+`npm run test:tidbyt`. #839 removed its Python golden check, which decoded the
+golden images with Pillow; `modules/tidbyt`'s Node golden check decodes the same
+images independently (see [Tidbyt module checks](#tidbyt-module-checks)).
 Keep running the shared controller-contract and workflow checks alongside them.
-Both are [old system checks](#old-system-checks) that run locally, not in CI.
+`npm run test:tidbyt` is an [old system check](#old-system-checks) that runs locally, not in CI.
 
 The TypeScript suite covers the renderer, including golden WebP bytes, invalid
 frames and its import boundary. It also covers the cloud connection against a
@@ -2180,17 +2177,15 @@ refresh, stale and failed-read cards, removal when nothing plays, backoff, a
 hung read and coexistence with the status publisher on one controller; the
 controller's additional installations with shared holds and per-installation
 evidence; and the runner's playback feed and optional `nowPlaying`
-configuration. A golden now-playing card is among the Pillow-decoded images. Every receipt and snapshot is checked with the controller v1 `validate()`. The
-Python check decodes the committed golden images with Pillow, independently of
-the encoder. No check reads credentials or contacts the Tidbyt cloud or a
+configuration. A golden now-playing card is among the golden images. Every receipt and snapshot is checked with the controller v1 `validate()`. No check reads credentials or contacts the Tidbyt cloud or a
 device. Visible results need the separately authorized installation in #21.
 
 Hub #426 extends these same suites with label/title/project/neutral precedence,
 a title-bearing golden frame, a snapshot 1.2 runner request and the exact frame
 sent through its queue. Run `npm run test:agent-status`, `npm run test:lifx` and
 `npm run test:local-controllers` as shared-feed consumer checks too. The feed's
-version selection is optional, and LIFX retains its default request. The title golden is independently decoded
-by `test:tidbyt:python`; it is a synthetic preview, not visible-device evidence.
+version selection is optional, and LIFX retains its default request. The title golden is a synthetic preview,
+not visible-device evidence.
 
 Hub #20 moves the per-session ranking (`sessionState`/`RANK`), the whole-owner
 reduction, `HubStatusFeed` and its bounded hub GET helpers, and the generic
@@ -2469,7 +2464,7 @@ publishers into the runtime module `modules/tidbyt`, under the
 copied test. The runtime ships it after the playback module, whose record its
 now-playing tile follows. `controllers/tidbyt` stays unchanged for the installed
 local controller host until #839, and keeps its own
-[checks](#tidbyt-controller-checks), its Pillow check included.
+[checks](#tidbyt-controller-checks).
 
 Use Node 24 and run `npm run build`, `npm run typecheck`, `npm run lint:js` and
 `npm run test:tidbyt-module` from the worktree root. `test:tidbyt-module`
