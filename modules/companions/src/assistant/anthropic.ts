@@ -3,8 +3,7 @@
 // bounded `strict` tools, `output_config.effort`, thinking left to the model's default, one tool call per turn. The model's own
 // content blocks, thinking blocks included, are kept with the assistant turn and replayed exactly as received, which the
 // API requires for the turn whose tool call awaits its result. The key is held in memory, sent only as the request header
-// and never logged, stored or published. No retry and no fallback model: ADR 0012 forbids automatic resends, and the owner
-// declined a second model.
+// and never logged, stored or published. ADR 0012 forbids automatic resends. Provider selection is fixed for the task.
 import type {TokenUsage} from './spend-contract.js';
 import {sectionTexts} from './context.js';
 import {ProviderFault, textBytes, type ModelProvider, type ToolCall, type ToolDefinition, type ToolInputSchema, type TranscriptItem, type TurnInput, type TurnReply, type TurnStop} from './provider.js';
@@ -31,7 +30,7 @@ const object = (value: unknown): value is Record<string, unknown> => typeof valu
 const integer = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const TOOL_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
-function conformsToSchema(schema: ToolInputSchema, input: ToolCall['input']): boolean {
+export function conformsToSchema(schema: ToolInputSchema, input: ToolCall['input']): boolean {
   if (!schema.required.every(key => Object.hasOwn(input, key))) return false;
   return Object.entries(input).every(([key, value]) => {
     if (!Object.hasOwn(schema.properties, key)) return false;
@@ -121,16 +120,21 @@ export async function faultOf(response: Response): Promise<ProviderFault> {
 
 export class AnthropicProvider implements ModelProvider {
   readonly name = 'anthropic' as const;
+  readonly available: boolean;
   readonly model: string;
+  readonly variant: string;
   readonly #effort: Effort;
   readonly #transport: Transport;
   readonly #url: string;
   readonly #key: string;
   constructor(options: AnthropicOptions) {
     this.model = options.model ?? DEFAULT_MODEL; this.#effort = options.effort ?? 'medium'; this.#key = options.key;
+    this.variant = `messages-v1:${this.#effort}`;
+    this.available = this.#key.trim() !== '';
     this.#transport = options.transport ?? ((url, init) => fetch(url, init)); this.#url = options.url ?? ANTHROPIC_URL;
   }
   async turn(input: TurnInput, signal: AbortSignal): Promise<TurnReply> {
+    if (!this.available) throw new ProviderFault('unavailable');
     const body = JSON.stringify({model: this.model, max_tokens: MAX_TOKENS, system: this.#system(input),
       tools: input.tools.map((tool, index) => ({name: tool.name, description: tool.description, input_schema: tool.input,
         ...(index < STRICT_TOOL_LIMIT ? {strict: true} : {})})),

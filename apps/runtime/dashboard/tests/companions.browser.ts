@@ -1,3 +1,4 @@
+import {supervisorSelectionJourney} from './supervisor-selection.browser.ts';
 import {pixooConfirmationJourney} from './pixoo-confirmation.browser.ts';
 import {showConversationJourney} from './show-conversation.browser.ts';
 import {failedTurnJourney} from './failed-turn.browser.ts';
@@ -33,6 +34,7 @@ import {changes, feed, startWorld} from './harness.ts';
 const world = await startWorld({companions: true});
 const browser = await chromium.launch({headless: true});
 try {
+  await supervisorSelectionJourney(browser);
   await conversationWorkspaceJourney(browser);
   await conversationRailJourney(browser);
   await conversationHistoryJourney(browser);

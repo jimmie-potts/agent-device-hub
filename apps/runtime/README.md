@@ -449,6 +449,10 @@ and exits 1, and the service manager restarts it whole.
   history held, never a snapshot); and each step of a tracked action. A hook's
   raw observation and the acknowledgments are not kept: the session changes
   they cause are. The read API with filters and the timeline are #923's.
+  Conversation and the authenticated `core_device_power_history` MCP tool
+  also share a versioned bounded projection for Wemo and LIFX. It reports
+  observed on, off and unknown time and request-linked evidence for a half-open
+  interval. The bounded projection preserves the existing history route.
 - **Changes and spans** (#1772). A row is a change. A state is compared with
   the record of its entity's last row by `sameState` from the contracts
   package's `v2/bookkeeping`, with the family's bookkeeping members. When only

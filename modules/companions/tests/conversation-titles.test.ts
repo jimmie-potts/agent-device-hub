@@ -482,6 +482,47 @@ void test('a trigger just after a call settles is never lost: at every microtask
   assert.deepEqual(lost, [], 'the microtask delays whose trigger was never sent');
 });
 
+for (const first of ['OpenAI applies a title', 'Anthropic keeps the conversation untitled', 'Anthropic applies a title'] as const) {
+  void test(`mixed-provider title triggers keep their own scope when ${first}`, async () => {
+    const database = new DatabaseSync(':memory:');
+    const outbox = {transaction: <T>(work: (add: (key: string, draft: unknown) => unknown) => T) => Promise.resolve(work(() => undefined))} as unknown as Outbox;
+    const openaiFirst = first === 'OpenAI applies a title';
+    const anthropic = titler(openaiFirst ? [titled('Anthropic follow-up')] : ['hold']);
+    const openAITitle = titler(openaiFirst ? ['hold'] : [titled('OpenAI follow-up')]);
+    const openai = {...openAITitle, name: 'openai' as const, model: 'synthetic-openai'};
+    const titles = new ConversationTitles(database, {outbox, spend: {reserve: () => undefined, settle: () => {}}, now: () => 1000,
+      after: () => () => {}, provider: () => anthropic, messages: () => [{role: 'owner', text: 'Synthetic Anthropic-only note.'}],
+      reported: () => true, metadata: (_id, title) => ({key: 'title', draft: title})});
+    const conversation = 'conversation-1';
+    const scoped = {provider: openai, pricing: {base: PRICES['claude-haiku-5-5']},
+      messages: (): TitleMessage[] => [{role: 'owner', text: 'Synthetic OpenAI-only request.'}]};
+    try {
+      const ordinaryCheck = () => titles.check(conversation, 'bunny', {kind: 'task', result: 'succeeded'});
+      const scopedCheck = () => titles.check(conversation, 'bunny', {kind: 'message'}, scoped);
+      const current = openaiFirst ? scopedCheck() : ordinaryCheck();
+      const provider = openaiFirst ? openai : anthropic;
+      await provider.called(1);
+      const next = openaiFirst ? ordinaryCheck() : scopedCheck();
+      if (openaiFirst) void ordinaryCheck();
+      assert.equal(anthropic.prompts.length + openai.prompts.length, 1, 'only one title call can run');
+      provider.held[0]?.resolve(openaiFirst ? titled('Initial OpenAI title') : first === 'Anthropic applies a title' ? titled('Initial Anthropic title') : kept);
+      await Promise.all([current, next]);
+      assert.equal(anthropic.prompts.length, 1);
+      assert.match(anthropic.prompts[0] ?? '', /Anthropic-only note/);
+      if (first === 'Anthropic applies a title') {
+        assert.equal(openai.prompts.length, 0, 'the queued OpenAI check cannot update an existing title');
+        assert.equal(titles.record(conversation)?.title?.value, 'Initial Anthropic title');
+        return;
+      }
+      assert.equal(openai.prompts.length, 1);
+      assert.match(openai.prompts[0] ?? '', /OpenAI-only request/);
+      assert.doesNotMatch(openai.prompts[0] ?? '', /Anthropic-only note|task finished/);
+      assert.doesNotMatch(anthropic.prompts[0] ?? '', /OpenAI-only request/);
+      assert.equal(titles.record(conversation)?.title?.value, openaiFirst ? 'Anthropic follow-up' : 'OpenAI follow-up');
+    } finally {database.close();}
+  });
+}
+
 void test('one title call per conversation: triggers during a call coalesce into one follow-up check with their events', {timeout: 20_000}, async context => {
   let turn = 0;
   const failing: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: () => {

@@ -103,8 +103,13 @@ export function supervisorFields(share: Share | undefined, scope: SupervisorScop
       : scope.messages.get(record)?.conversationId === scope.conversationId
       : source === 'devices' && scope.devices.has(record) && (field !== 'summary' || scope.requestedHistory?.has(record) === true);
     if (!eligible) return false;
-    const query: ShareQuery = {caller: 'companion', companion: scope.companion, destination: 'openai-supervisor',
-      purpose: scope.purpose, source, field, record, relevant: true};
-    return supervisorScope(query) && (share ?? existing)(query);
+    return recordedSupervisorField(share, scope.companion, scope.purpose, source, field, record);
   };
+}
+
+/** Recheck a field whose relevance was established when the supervisor input was built. */
+export function recordedSupervisorField(share: Share | undefined, companion: AssistantProfile, purpose: SupervisorScope['purpose'],
+  source: ShareQuery['source'], field: ShareQuery['field'], record: string): boolean {
+  const query: ShareQuery = {caller: 'companion', companion, destination: 'openai-supervisor', purpose, source, field, record, relevant: true};
+  return supervisorScope(query) && (share ?? existing)(query);
 }

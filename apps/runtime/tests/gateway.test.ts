@@ -477,9 +477,22 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
     const listed = await ask(url, '/mcp', {method: 'POST', token: part.token, headers: await session(part), body: {jsonrpc: '2.0', id: 2, method: 'tools/list'}});
     return ((listed.body as {result: {tools: {name: string}[]}}).result.tools).map(tool => tool.name).sort();
   };
-  assert.deepEqual(await tools(operator), ['core_art_show', 'core_handle_inbox', 'core_history', 'core_inbox', 'core_recover_approval', 'core_send_command', 'core_sessions', 'core_set_device_mode', 'core_set_mode', 'sign_status']);
-  assert.deepEqual(await tools(reader), ['core_history', 'core_inbox', 'core_sessions', 'sign_status'], 'a reader sees every module\'s read tools, and no action');
+  assert.deepEqual(await tools(operator), ['core_art_show', 'core_device_power_history', 'core_handle_inbox', 'core_history', 'core_inbox', 'core_recover_approval', 'core_send_command', 'core_sessions', 'core_set_device_mode', 'core_set_mode', 'sign_status']);
+  assert.deepEqual(await tools(reader), ['core_device_power_history', 'core_history', 'core_inbox', 'core_sessions', 'sign_status'], 'a reader sees every module\'s read tools, and no action');
   assert.deepEqual(await tools(hook), [], 'a hook sees no tool');
+  const historyArgs = {source: 'bunny/modules/wemo', target: 'synthetic-unobserved-plug', fromAtMs: 100, toAtMs: 200};
+  const historyCall = {jsonrpc: '2.0', id: 12, method: 'tools/call', params: {name: 'core_device_power_history', arguments: historyArgs}};
+  const history = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: await session(reader), body: historyCall});
+  const historyResult = (history.body as {result: {isError: boolean; structuredContent: {kind: string; data: {result: {boundary: unknown}}}}}).result;
+  assert.equal(historyResult.isError, false);
+  assert.equal(historyResult.structuredContent.kind, 'extension');
+  const {boundary: historyBoundary, ...summary} = historyResult.structuredContent.data.result;
+  assert.ok(typeof historyBoundary === 'number' && Number.isSafeInteger(historyBoundary) && historyBoundary >= 0);
+  assert.deepEqual(summary, {schema: 'device-history/1.0', query: historyArgs,
+    complete: true, evidence: [], durations: {on: 0, off: 0, unknown: 100}, lastChange: null, links: []});
+  const hiddenHistory = await ask(url, '/mcp', {method: 'POST', token: hook.token, headers: await session(hook), body: historyCall});
+  assert.notEqual((hiddenHistory.body as {result?: {structuredContent?: {kind?: string}}}).result?.structuredContent?.kind, 'extension');
+
   // A reader's call of the action is refused by the MCP package before the core has it, so no recovery runs.
   const action = await ask(url, '/mcp', {method: 'POST', token: reader.token, headers: await session(reader), body: {jsonrpc: '2.0', id: 9, method: 'tools/call',
     params: {name: 'core_recover_approval', arguments: {session: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', turnId: 'turn-1', expectedRevision: 0}}}});
@@ -525,8 +538,10 @@ it('MCP lists and calls only what a credential may use, maps results and refusal
   const reads = g.spans.map(line => JSON.parse(line) as {resourceSpans: {scopeSpans: {spans: {name: string; status: {code: number}; attributes: {key: string; value: {stringValue?: string}}[]}[]}[]}[]})
     .flatMap(document => document.resourceSpans.flatMap(group => group.scopeSpans.flatMap(scoped => scoped.spans)))
     .filter(span => span.name === 'bunny.feed.read' && span.attributes.some(item => item.key === 'http.route' && item.value.stringValue === '/mcp'));
-  assert.ok(reads.length >= 1, 'the sign_status call left a read span');
-  assert.ok(reads.every(span => span.attributes.some(item => item.key === 'bunny.module' && item.value.stringValue === 'sign') && span.status.code !== 2), 'the span names the module and was not an error');
+  for (const module of ['sign', 'core']) {
+    assert.ok(reads.some(span => span.attributes.some(item => item.key === 'bunny.module' && item.value.stringValue === module) && span.status.code !== 2),
+      `the ${module} read left a successful module span`);
+  }
 });
 
 it('the session reads, the snapshot and core_sessions pass the core\'s records unchanged, filtered by the supported providers (#1865)', async context => {

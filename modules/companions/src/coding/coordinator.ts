@@ -8,7 +8,7 @@ import type {ActionEvidence} from '../assistant/closing-reply.js';
 // responsibility and reaches the task through the engine as the delegation's answer; nothing is resent, and a lost
 // worker or a restart leaves each of its operations uncertain rather than restarting it. An approved hand-off whose
 // companion's slot is busy waits, durably and first in first out, and is dispatched once when that slot frees.
-import {errorBody, isErrorCode, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, isErrorCode, type ErrorBody, type ErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
 import {continuationChecks, CODING_SETUP_WAIT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingAttemptContext, type CodingCompanion, type CodingEndpointControl, type CodingHarnessId, type CodingLost, type CodingWorkerProgress, type CodingResult, type CodingRun,
   type CodingRunEntry, type CodingSetup, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
@@ -28,14 +28,16 @@ export type Delivery = (taskId: string, text: string, parent: TraceContext, evid
 /** An approved hand-off as the engine gives it: the task, the companion whose slot it needs and the endpoint revision the proposal saw. */
 export type HandOff = {requestId: string; taskId: string; conversationId?: string; companion: CodingCompanion; repository: string; brief: string; expectedRevision: number; choice?: CodingChoice};
 /** The core's answer for a hand-off sent now, or `waiting` for one held until its companion's slot frees. */
+export type CodingBrief = Pick<HandOff, 'requestId' | 'taskId' | 'repository' | 'brief'>;
 export type HandOffAnswer = RequestResult | {status: 'waiting'; requestId: string} | {status: 'queued'; requestId: string; jobId: string};
 /**
  * What the coordinator asks the engine (Hub #2028): the companion a task belongs to, so a run is tagged with the
  * companion that asked; whether a task still waits on this delegation, so a waiting hand-off whose task was cancelled
  * or ended, even while the coordinator was stopped, is dropped unsent; and the news that a waiting hand-off was sent.
  */
+export type CodingBriefRefusal = 'unverified-supervisor' | 'grant-denied';
 export type CodingSeams = {
-  mayShare?: (taskId: string, repository: string) => boolean;
+  briefRefusal?: (brief: CodingBrief) => CodingBriefRefusal | undefined;
   jobQueued?: (job: CodingJob, add: AddMessage, parent: TraceContext) => void;
   jobUpdate?: (job: CodingJob, kind: 'sent' | 'stop-unconfirmed' | 'result', text: string, parent: TraceContext, startup: boolean) => Promise<void>;
   companionOf?: (taskId: string) => CodingCompanion | undefined;
@@ -65,6 +67,7 @@ function attemptResult(result: CodingResult): CodingAttemptResult {
     checks: continuationChecks(result.checks),
     ...(result.outcome === 'waiting-for-owner' ? {pendingDecision: privateDisplayText(result.findings[0] ?? '') ?? ''} : {})};
 }
+const UNVERIFIED_SUPERVISOR = 'The original supervisor or coding approval could not be verified. This coding job did not start. Create a new job to authorize it.';
 const DISCONNECTED_BEFORE_START = 'worker became unavailable before start was sent';
 const STOP_UNCONFIRMED = "A stop was requested. The worker's stop is unconfirmed.";
 const STORAGE_RETRY_MS = 1000;
@@ -185,7 +188,7 @@ export class CodingCoordinator {
     return {fromOperationId: attempt.operationId, harness, head: attempt.result.head, changedFiles: attempt.result.changedFiles};
   }
   #canContinue(job: CodingJob, companion: CodingCompanion): boolean {
-    return this.#seams.jobBriefVisible?.(job, companion) !== false && this.#seams.mayShare?.(job.taskId, job.repository) !== false;
+    return this.#seams.jobBriefVisible?.(job, companion) !== false && this.#briefRefusal({...job, requestId: job.operationId}) === undefined;
   }
   jobDetail(jobId: string): CodingJobDetail | undefined {
     const job = this.#store.jobById(jobId);
@@ -321,7 +324,8 @@ export class CodingCoordinator {
    */
   async handOff(data: HandOff, parent: TraceContext): Promise<HandOffAnswer> {
     const refused = (code: 'unavailable' | 'revision-conflict' | 'capacity' | 'internal' | 'forbidden', detail: string): HandOffAnswer => ({status: Outcome.rejected, requestId: data.requestId, error: errorBody(code, {detail})});
-    if (this.#seams.mayShare?.(data.taskId, data.repository) === false) return refused('forbidden', 'coding brief sharing is not permitted');
+    const brief = this.#briefRefusal(data);
+    if (brief !== undefined) return {status: Outcome.rejected, requestId: data.requestId, error: brief};
     if (data.conversationId !== undefined) {
       const {requestId: operationId, conversationId, taskId, companion, repository, brief} = data;
       const jobId = `${operationId}-job`;
@@ -369,11 +373,26 @@ export class CodingCoordinator {
     if (this.#uncapped()) this.#drain();
     return {status: 'waiting', requestId: data.requestId};
   }
+  #briefRefusal(brief: CodingBrief): ErrorBody | undefined {
+    const attempt = this.#store.attempt(brief.requestId);
+    const approval = attempt?.continuation === undefined ? brief.requestId : this.#store.jobRead(brief.requestId)?.originalOperationId;
+    const refusal = approval === undefined ? 'unverified-supervisor' : this.#seams.briefRefusal?.({...brief, requestId: approval});
+    return refusal === 'unverified-supervisor' ? errorBody('unavailable', {detail: UNVERIFIED_SUPERVISOR})
+      : refusal === 'grant-denied' ? errorBody('forbidden', {detail: 'coding brief sharing is not permitted'}) : undefined;
+  }
+  #matchesJob(data: CodingBrief): boolean {
+    const job = this.#store.job(data.requestId);
+    if (job === undefined) return true;
+    const saved = this.#store.jobRead(data.requestId);
+    return saved !== undefined && saved.jobId === `${saved.originalOperationId}-job` &&
+      job.taskId === data.taskId && job.repository === data.repository && job.brief === data.brief;
+  }
   #dispatch(data: Omit<HandOff, 'expectedRevision'>, parent: TraceContext): Promise<RequestResult> {
     const endpointId = this.#state.endpointId;
-    if (this.#seams.mayShare?.(data.taskId, data.repository) === false) {
-      return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('forbidden')});
-    }
+    if (!this.#matchesJob(data)) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId,
+      error: errorBody('revision-conflict', {detail: 'the dispatch does not match the approved job'})});
+    const brief = this.#briefRefusal(data);
+    if (brief !== undefined) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: brief});
     if (endpointId === null) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('unavailable', {detail: 'no coding worker is connected'})});
     const attempt = this.#store.attempt(data.requestId);
     const continuation = attempt?.continuation;
@@ -458,15 +477,18 @@ export class CodingCoordinator {
         return false;
       }
       const code = answer?.error.error.code;
+      const unverifiedSupervisor = code === 'unavailable' && answer?.error.error.detail === UNVERIFIED_SUPERVISOR;
       const uncertain = answer === undefined || answer.status === Outcome.uncertain || code === 'uncertain-result';
       const stopped = !uncertain && (code === 'invalid-state' || disconnectedBeforeStart) && this.#store.stopRequested(operationId);
       const text = describeResult(uncertain ? 'uncertain' : stopped ? 'cancelled' : 'failed', undefined,
-        uncertain ? 'lost' : stopped ? 'stopped before worker start' : disconnectedBeforeStart ? DISCONNECTED_BEFORE_START : `refused: ${code}`);
-      const refusalDetail = !uncertain && !stopped && !disconnectedBeforeStart && answer?.status === Outcome.rejected ? answer.error.error.detail : undefined;
+        uncertain ? 'lost' : stopped ? 'stopped before worker start' : disconnectedBeforeStart ? DISCONNECTED_BEFORE_START : unverifiedSupervisor ? UNVERIFIED_SUPERVISOR : `refused: ${code}`);
+      const refusalDetail = !uncertain && !stopped && !disconnectedBeforeStart && !unverifiedSupervisor &&
+        answer?.status === Outcome.rejected ? answer.error.error.detail : undefined;
       this.#store.unwait(operationId);
       this.#store.observeAttempt(operationId, uncertain ? 'uncertain' : stopped ? 'cancelled' : 'failed');
       if (job !== undefined || !this.#cancelled.has(record.taskId)) this.#store.update({...record, kind: 'result', text: refusalDetail === undefined ? text : `${text} ${refusalDetail}`, startup,
-        ...(job === undefined ? {legacyEvidence: uncertain ? 'the coding worker outcome is unknown' : disconnectedBeforeStart ? DISCONNECTED_BEFORE_START : 'the coding hand-off was refused'} : {})});
+        ...(job === undefined ? {legacyEvidence: uncertain ? 'the coding worker outcome is unknown'
+          : disconnectedBeforeStart ? DISCONNECTED_BEFORE_START : unverifiedSupervisor ? UNVERIFIED_SUPERVISOR : 'the coding hand-off was refused'} : {})});
       return true;
     }), async ended => {
       if (ended) {this.#cancelled.delete(record.taskId); this.#changed();}
@@ -716,15 +738,13 @@ export class CodingCoordinator {
     try {
       if (this.#observationWrites.has(waitWriteKey(data.requestId)) || this.#store.accepted(data.requestId) || this.#store.resultSaved(data.requestId)) return errorBody('invalid-state', {detail: 'the coding attempt has already settled'});
       if (this.#store.stopRequested(data.requestId)) return errorBody('invalid-state', {detail: 'the job was stopped before the worker start'});
-      const job = this.#store.job(data.requestId);
-      const waiting = this.#store.waitingFor(data.requestId);
-      approvedCompanion = waiting?.companion;
+      approvedCompanion = this.#store.waitingFor(data.requestId)?.companion;
       const attempt = this.#store.attempt(data.requestId);
       if (data.continuation !== undefined && attempt === undefined) return errorBody('invalid-state', {detail: 'the continuation has no durable approval'});
       if (attempt !== undefined && ((attempt.harness ?? undefined) !== data.harness ||
         attempt.continuation?.fromOperationId !== data.continuation?.fromOperationId ||
         attempt.continuation?.token !== data.continuation?.token)) return errorBody('revision-conflict', {detail: 'the dispatch does not match the approved attempt'});
-      if (job !== undefined && (job.taskId !== data.taskId || job.repository !== data.repository || (waiting?.brief ?? job.brief) !== data.brief)) {
+      if (!this.#matchesJob(data)) {
         return errorBody('revision-conflict', {detail: 'the dispatch does not match the approved job'});
       }
     } catch (error) {this.#storageFailure(error, command); return errorBody('internal');}
@@ -745,7 +765,8 @@ export class CodingCoordinator {
     }
     const companion = approvedCompanion ?? this.#seams.companionOf?.(data.taskId);
     if (companion === undefined) return errorBody('not-found', {detail: 'the dispatch names no companion task'});
-    if (this.#seams.mayShare?.(data.taskId, data.repository) === false) return errorBody('forbidden');
+    const brief = this.#briefRefusal(data);
+    if (brief !== undefined) return brief;
     const slot = this.#uncapped() ? data.requestId : this.#slotOf(companion), reserved = this.#reserved.get(slot);
     if (reserved !== data.requestId && this.#busy(slot)) return errorBody('capacity', {detail: 'that companion\'s coding slot is busy'});
     const active: Active = {operationId: data.requestId, taskId: data.taskId, endpointId: data.endpointId, traceparent: command.traceparent, started: false, status: 'pending',
@@ -769,8 +790,10 @@ export class CodingCoordinator {
     // A worker that declared slots (2.2) hears which companion asked; an older one gets the 2.0 start it knows.
     const tagged = active.uncapped || this.#state.slots !== null || data.harness !== undefined;
     try {
-      if (this.#seams.mayShare?.(data.taskId, data.repository) === false) {
-        await this.#settle(active, 'failed', undefined, 'coding brief sharing was revoked', {result: Outcome.failed, code: 'forbidden'});
+      const brief = this.#briefRefusal(data);
+      if (brief !== undefined) {
+        const reason = brief.error.code === 'unavailable' ? UNVERIFIED_SUPERVISOR : 'coding brief sharing was revoked';
+        await this.#settle(active, 'failed', undefined, reason, {result: Outcome.failed, code: brief.error.code});
         return;
       }
       if (this.#store.stopRequested(active.operationId) || (active.uncapped && active.phase === 'cancelling')) {
@@ -874,7 +897,7 @@ export class CodingCoordinator {
       const job = this.#store.job(record.operationId);
       // Acceptance survives the queue removal, even if its conversation observation could not be inserted.
       this.#saveSent(record, this.#store.acceptedWait(record.operationId), startup);
-      const knownUnsent = reason === DISCONNECTED_BEFORE_START || reason === 'stopped before worker start';
+      const knownUnsent = reason === DISCONNECTED_BEFORE_START || reason === UNVERIFIED_SUPERVISOR || reason === 'stopped before worker start';
       if (job !== undefined && !knownUnsent && this.#store.stopRequested(record.operationId)) {
         this.#saveStop(record, active?.stopEvidence ?? STOP_UNCONFIRMED, startup);
       }
