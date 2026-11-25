@@ -280,13 +280,9 @@ class Companions {
     const openAI = assistant?.provider === 'openai' ? assistant : assistant?.provider === 'anthropic' ? assistant.openAI : undefined;
     if (openAI !== undefined) {
       const key = await context.secrets.read(OPENAI_KEY_SECRET).catch(() => '');
-      if (key.trim() !== '') {
-        const selected = new OpenAIProvider({key, model: openAI.model, effort: openAI.effort, ...transport});
-        if (assistant?.provider === 'openai') provider ??= selected; else alternateProvider ??= selected;
-        openAITitleProvider ??= new OpenAITitleProvider({key, model: openAI.model, ...transport});
-      } else if (assistant?.provider === 'openai' && provider === undefined) {
-        throw new Error('The OpenAI supervisor API key is unavailable.');
-      }
+      const selected = new OpenAIProvider({key, model: openAI.model, effort: openAI.effort, ...transport});
+      if (assistant?.provider === 'openai') provider ??= selected; else alternateProvider ??= selected;
+      if (selected.available) openAITitleProvider ??= new OpenAITitleProvider({key, model: openAI.model, ...transport});
     }
     const core = options.core ?? (() => {
       const records = this.#copy?.states().map(message => message.data) ?? [];

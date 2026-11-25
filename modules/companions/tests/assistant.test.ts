@@ -2036,7 +2036,7 @@ void test('a full disk reported by the checkpoint writer names the storage cause
 
 void test('selecting OpenAI scopes titles and device reads, and replays only its own Responses items after restart', async context => {
   const sent: string[] = [], dispatched: AssistantDispatch[] = [];
-  const superseded = deferred<Response>();
+  const superseded = deferred<Response>(), pendingTitle = deferred<Response>(), pendingRead = deferred<Response>();
   const reasoning = {type: 'reasoning', id: 'rs_fixture', encrypted_content: 'opaque-reasoning', summary: []};
   const message = (text: string) => ({type: 'message', role: 'assistant', content: [{type: 'output_text', text, annotations: []}]});
   const usage = {input_tokens: 200, output_tokens: 80, input_tokens_details: {cached_tokens: 50, cache_write_tokens: 20}, output_tokens_details: {reasoning_tokens: 60}};
@@ -2050,19 +2050,31 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
     assert.equal(body.store, false);
     assert.equal(body.parallel_tool_calls, false);
     if (body.input.some(item => item.content === 'PRIVATE_SUPERSEDED_SUBJECT')) return superseded.promise;
+    if (body.input.some(item => item.content === 'Synthetic provider spend refusal')) return Promise.resolve(new Response(null, {status: 429}));
+    if (body.input.some(item => item.content === 'Synthetic lost reply')) return Promise.reject(new Error('synthetic transport reset'));
     let output: unknown[];
-    if (body.tools.length === 0) output = [message('Studio plug check')];
-    else if (body.input.some(item => item.content === 'New synthetic topic')) output = [message('A fresh topic.')];
+    if (body.tools.length === 0) return pendingTitle.promise;
+    if (body.input.length === 1 && body.input[0]?.content === 'Is Studio Plug on?') return pendingRead.promise;
+    if (body.input.some(item => item.content === 'New synthetic topic')) output = [message('A fresh topic.')];
     else if (body.input.some(item => item.type === 'function_call_output')) output = [message('I checked the tool result.')];
     else if (init.body.includes('What color is it')) output = [reasoning, functionCall('ask_owner', {text: 'Which item?'})];
     else if (init.body.includes('Turn off Studio Plug') || init.body.includes('Could Studio Plug be off')) output = [reasoning, functionCall('set_wemo_power', {device: 'studio-plug', on: false})];
     else output = [reasoning, functionCall('read_wemo', {device: 'studio-plug'})];
     return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage})));
   }};
-  let anthropicCalls = 0;
-  const anthropic = new AnthropicProvider({key: 'fake-anthropic', transport: () => {
-    anthropicCalls += 1;
-    return Promise.resolve(new Response(JSON.stringify({content: [{type: 'text', text: 'CHANGES_NONE'}], stop_reason: 'end_turn', usage: {input_tokens: 20, output_tokens: 30}})));
+  const anthropicBodies: string[] = [];
+  const anthropic = new AnthropicProvider({key: 'fake-anthropic', transport: (_url, init) => {
+    anthropicBodies.push(init.body);
+    const body = JSON.parse(init.body) as {messages: {role: string; content: Record<string, unknown>[]}[]};
+    const first = body.messages[0]?.content[0]?.text;
+    const tool = first === 'Is Studio Plug on?' ? {name: 'read_wemo', input: {device: 'studio-plug'}}
+      : first === 'Turn off Studio Plug' || first === 'Could Studio Plug be off?' ? {name: 'set_wemo_power', input: {device: 'studio-plug', on: false}}
+      : first === 'What color is it?' ? {name: 'ask_owner', input: {text: 'Which item?'}} : undefined;
+    const answered = body.messages.some(message => message.content.some(block => block.type === 'tool_result'));
+    const use = tool !== undefined && !answered;
+    return Promise.resolve(new Response(JSON.stringify({content: use ? [{type: 'thinking', thinking: 'private fictional thought', signature: 'ANTHROPIC_TEST_THINKING'},
+      {type: 'tool_use', id: 'toolu_test', ...tool}] : [{type: 'text', text: 'CHANGES_NONE'}],
+    stop_reason: use ? 'tool_use' : 'end_turn', usage: {input_tokens: 20, output_tokens: 30}})));
   }});
   const w = await world(context, {provider: anthropic, alternateProvider: new OpenAIProvider({...options, effort: 'medium'}),
     openAITitleProvider: new OpenAITitleProvider(options), preferences: () => [{id: 'preference', active: true, createdAtMs: 1, updatedAtMs: 1, title: 'Secret preference', text: 'PRIVATE_PREFERENCES'}],
@@ -2073,13 +2085,21 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   assert.deepEqual(w.module().inspectAssistant()?.providers?.map(value => value.provider), ['anthropic', 'openai']);
   await input(w.core, w.module(), 'PRIVATE_OTHER_CONVERSATION', false, randomUUID(), {profile: 'reachy', provider: 'anthropic'});
   await until(() => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'reachy')?.status === 'succeeded');
-  assert.equal(anthropicCalls, 1);
+  assert.equal(anthropicBodies.length, 1);
   const bunnyTask = () => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'bunny');
   const start = async (text: string) => {
     const result = await input(w.core, w.module(), text, false, randomUUID(), {provider: 'openai'});
     assert.equal(result.status, 'accepted', JSON.stringify(result));
   };
   await start('Is Studio Plug on?');
+  await until(() => sent.length === 2);
+  const inFlight = await w.module().manifest.content?.('spend', {query: {}, signal: new AbortController().signal});
+  assert.ok(inFlight !== undefined && !('error' in inFlight));
+  const day = (JSON.parse(Buffer.from(inFlight.bytes).toString()) as {day: {unreported: number; spentMicros: number}}).day;
+  assert.equal(day.unreported, 2, 'task and title both reserved before either provider reply');
+  assert.ok(day.spentMicros > 10_000);
+  pendingRead.resolve(new Response(JSON.stringify({status: 'completed', output: [reasoning, functionCall('read_wemo', {device: 'studio-plug'})], usage})));
+  pendingTitle.resolve(new Response(JSON.stringify({status: 'completed', output: [message('Studio plug check')], usage})));
   await until(() => w.module().inspectAssistant()?.tasks.find(value => value.profile === 'bunny')?.status === 'succeeded');
   assert.ok(sent.some(body => /Studio Plug.*Observed power/.test(body)));
   assert.ok(sent.some(body => body.includes('opaque-reasoning') && body.includes('function_call_output')));
@@ -2110,11 +2130,11 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   await until(() => bunnyTask()?.status === 'succeeded');
   assert.equal(sent.at(-1)?.includes('opaque-reasoning'), true);
   assert.equal(sent.at(-1)?.includes('The blue item.'), true);
-  assert.equal(anthropicCalls, 1);
+  assert.equal(anthropicBodies.length, 1);
   assert.equal((await control(w.core, w.module(), 'resume-queue', undefined, randomUUID(), {profile: 'bunny'})).status, 'accepted');
   await until(() => bunnyTask()?.taskId !== taskId && bunnyTask()?.status === 'succeeded');
   assert.equal(bunnyTask()?.supervisor?.provider, 'anthropic');
-  assert.equal(anthropicCalls, 2);
+  assert.equal(anthropicBodies.length, 2);
   assert.doesNotMatch(sent.join('\n'), /Synthetic queued Anthropic request/);
 
   await start('PRIVATE_SUPERSEDED_SUBJECT');
@@ -2125,4 +2145,47 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   await until(() => bunnyTask()?.status === 'succeeded');
   assert.match(sent.at(-1) ?? '', /New synthetic topic/);
   assert.doesNotMatch(sent.at(-1) ?? '', /PRIVATE_SUPERSEDED|opaque-reasoning/);
+
+  const requestsBefore = dispatched.length;
+  const startAnthropic = async (text: string) => {
+    const request = await input(w.core, w.module(), text, false, randomUUID(), {provider: 'anthropic'});
+    assert.equal(request.status, 'accepted');
+  };
+  await startAnthropic('Is Studio Plug on?');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.match(anthropicBodies.at(-1) ?? '', /Observed power/);
+  assert.equal(dispatched.length, requestsBefore);
+  await startAnthropic('Could Studio Plug be off?');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.equal(dispatched.length, requestsBefore, 'same status question refuses a proposed mutation');
+  assert.match(anthropicBodies.at(-1) ?? '', /refused/);
+  await startAnthropic('Turn off Studio Plug');
+  await until(() => dispatched.length === requestsBefore + 1);
+  w.advance(1200);
+  await until(() => bunnyTask()?.status === 'succeeded');
+  await startAnthropic('What color is it?');
+  await until(() => bunnyTask()?.status === 'waiting');
+  const savedAnthropic = bunnyTask();
+  await w.restart();
+  assert.equal((await input(w.core, w.module(), 'The blue item.', true, randomUUID(),
+    {taskId: savedAnthropic?.taskId, questionId: savedAnthropic?.questionId})).status, 'accepted');
+  await until(() => bunnyTask()?.status === 'succeeded');
+  assert.match(anthropicBodies.at(-1) ?? '', /ANTHROPIC_TEST_THINKING.*The blue item/);
+  assert.doesNotMatch(anthropicBodies.join('\n'), /opaque-reasoning|PRIVATE_SUPERSEDED_ANSWER/);
+  assert.doesNotMatch(sent.join('\n'), /ANTHROPIC_TEST_THINKING/);
+
+  await start('Synthetic provider spend refusal');
+  await until(() => bunnyTask()?.status === 'failed');
+  assert.equal(bunnyTask()?.code, 'capacity');
+  const refusedTask = bunnyTask()?.taskId ?? assert.fail('refused task missing');
+  assert.equal(w.store().calls(refusedTask).filter(call => call.kind === 'model').length, 1);
+  await start('Synthetic lost reply');
+  await until(() => bunnyTask()?.status === 'uncertain');
+  const lostTask = bunnyTask()?.taskId ?? assert.fail('uncertain task missing');
+  const count = sent.length;
+  await w.restart();
+  assert.equal(bunnyTask()?.status, 'uncertain');
+  assert.equal(w.store().calls(lostTask).filter(call => call.kind === 'model' && call.status === 'uncertain').length, 1);
+  assert.equal(sent.length, count, 'restart sends no request');
+
 });

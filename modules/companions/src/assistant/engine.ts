@@ -287,9 +287,8 @@ export class AssistantEngine {
   }
   #providerFor(profile: AssistantProfile, selected?: AssistantProvider): ModelProvider {
     const primary = this.provider(profile);
-    if (selected === undefined || selected === primary.name) return primary;
-    const alternate = this.options.alternateProvider;
-    if (alternate?.name === selected) return alternate;
+    const provider = selected === undefined || selected === primary.name ? primary : this.options.alternateProvider;
+    if (provider !== undefined && provider.available !== false && (selected === undefined || selected === provider.name)) return provider;
     return fail('unavailable');
   }
   #identity(provider: ModelProvider): SupervisorIdentity {
@@ -322,8 +321,8 @@ export class AssistantEngine {
     const providers = alternate === undefined ? [provider] : [provider, alternate];
     const tasks = this.store.latest();
     const versioned = providers.some(item => item.name === 'openai') || tasks.some(task => task.supervisor?.provider === 'openai');
-    return {id: 'assistant', ...this.store.meta(), available: this.available(), provider: provider.name, model: provider.model, tools: [...this.#allowed],
-      ...(versioned ? {providers: providers.map(item => ({provider: item.name, model: item.model}))} : {}),
+    return {id: 'assistant', ...this.store.meta(), available: this.available() && providers.some(item => item.available !== false), provider: provider.name, model: provider.model, tools: [...this.#allowed],
+      ...(versioned ? {providers: providers.filter(item => item.available !== false).map(item => ({provider: item.name, model: item.model}))} : {}),
       tasks: tasks.map(task => {
         const summary = this.store.summary(task), pin = task.supervisor;
         return versioned && pin !== undefined ? {...summary, supervisor: {provider: pin.provider, model: pin.model}} : summary;

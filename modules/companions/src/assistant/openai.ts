@@ -76,7 +76,7 @@ class ResponsesClient {
     if (!response.ok) {
       void response.body?.cancel().catch(() => {});
       const fault = codeOfStatus(response.status);
-      throw new ProviderFault(fault.code, true, fault.sizeLimit);
+      throw new ProviderFault(fault.code, response.status === 408 || response.status >= 500, fault.sizeLimit);
     }
     if (Number(response.headers.get('content-length')) > RESPONSE_BYTES) {
       void response.body?.cancel().catch(() => {});
@@ -145,11 +145,13 @@ function answer(value: Item, tools: TurnInput['tools']): TurnReply {
 export class OpenAIProvider implements ModelProvider {
   readonly name = 'openai' as const;
   readonly variant: string;
+  readonly available: boolean;
   readonly model: string;
   readonly #client: ResponsesClient;
 
   constructor(options: Options) {
     this.model = options.model;
+    this.available = options.key.trim() !== '';
     this.variant = `responses-v1:${options.effort}`;
     this.#client = new ResponsesClient(this.model, options.effort, options);
   }
@@ -165,6 +167,7 @@ export class OpenAIProvider implements ModelProvider {
   inputUnits(input: TurnInput): number {return textBytes(this.#body(input)) + LIMITS.overheadUnits;}
 
   async turn(input: TurnInput, signal: AbortSignal): Promise<TurnReply> {
+    if (!this.available) throw new ProviderFault('unavailable');
     return answer(await this.#client.request(this.#body(input), signal), input.tools);
   }
 }

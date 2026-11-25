@@ -394,3 +394,20 @@ void test('Responses requires its named credential and a model with published pr
   assert.equal(configured({assistant: {provider: 'openai', model: 'unknown-model'}, secrets}), 'invalid-request');
   assert.equal(configured({assistant: {provider: 'openai', titleModel: 'unpriced-title'}, secrets}), 'invalid-request');
 });
+
+void test('an unreadable Responses credential leaves the companion active without an eligible paid supervisor', async context => {
+  const dir = await mkdtemp(join(tmpdir(), 'responses-credential-')), bus = new InProcessBus(), core = bus.connect('bunny/core');
+  await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
+  let requests = 0;
+  const module = createCompanionsModule({transport: () => {requests += 1; return Promise.reject(new Error('fixture transport must stay unused'));}});
+  const host = new ModuleHarness(module, {bus, stateDir: dir, section: {assistant: {provider: 'openai'},
+    secrets: {[OPENAI_KEY_SECRET]: '/private/fixture/openai-secret'}}, secrets: {}});
+  context.after(async () => {await host.stop(); await core.close(); await rm(dir, {recursive: true, force: true});});
+  await host.start();
+  assert.equal(module.inspectAssistant()?.provider, 'openai');
+  assert.equal(module.inspectAssistant()?.available, false);
+  assert.deepEqual(module.inspectAssistant()?.providers, []);
+  const history = await module.manifest.content?.('conversation', {query: {profile: 'bunny'}, signal: new AbortController().signal});
+  assert.ok(history !== undefined && !('error' in history));
+  assert.equal(requests, 0);
+});

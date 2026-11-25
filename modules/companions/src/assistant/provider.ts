@@ -44,6 +44,7 @@ export type ModelProvider = {
   readonly name: AssistantProvider;
   readonly model: string;
   readonly variant?: string;
+  readonly available?: boolean;
   inputUnits?(input: TurnInput): number;
   turn(input: TurnInput, signal: AbortSignal): Promise<TurnReply>;
 };
