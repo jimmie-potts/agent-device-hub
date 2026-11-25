@@ -474,7 +474,9 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
           const writable = sandbox.writableRoots;
           if (unauthorized || opened.modelProvider !== 'openai' || opened.approvalPolicy !== 'never' || opened.cwd !== cwd ||
             record(opened.activePermissionProfile).id !== profile || sandbox.type !== 'workspaceWrite' || sandbox.networkAccess !== false ||
-            !Array.isArray(writable) || writable.length !== 1 || writable[0] !== cwd || !Array.isArray(roots) || roots.length !== 1 || roots[0] !== cwd) {
+            // A named profile may omit the worktree from this legacy projection, as on thread/resume.
+            !Array.isArray(writable) || writable.length > 1 || writable.some(root => root !== cwd) ||
+            !Array.isArray(roots) || roots.length !== 1 || roots[0] !== cwd) {
             return refusal('Codex did not confirm the required worktree, permission profile or first-party provider.');
           }
           sessionId = nativeSessionId(record(opened.thread).id);
