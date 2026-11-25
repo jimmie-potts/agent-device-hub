@@ -11,6 +11,7 @@ import {FuseProvider} from './fuse.tsx';
 import type {GroupUnit} from './lighting.ts';
 import {changeArtPlacement} from './home-art.ts';
 import {HomeCardIcon} from './home-card-icon.tsx';
+import {CardBoundary} from './card-boundary.tsx';
 import {GlassLayer, type GlassBackdrop, type GlassState} from './glass-layer.tsx';
 import {useArtBackdrop, useShowArtBackdrop} from '@jimmie-potts/art/frontend';
 import './home-layout.css';
@@ -268,7 +269,7 @@ export function HomeLayout({runtime, connected, operations, operationsLive, atte
           </div>}
         </div>}
         <div className="home-card-content" inert={editing}><HomeShapeContext.Provider value={generic || shape === undefined || place === undefined ? undefined : boxOf(place, shape)}>
-          <HomeUnfoldContext.Provider value={unfoldable(entry.widget) ? unfoldOf(entry.widget) : undefined}>{content}</HomeUnfoldContext.Provider></HomeShapeContext.Provider></div>
+          <HomeUnfoldContext.Provider value={unfoldable(entry.widget) ? unfoldOf(entry.widget) : undefined}><CardBoundary id={entry.widget} name={definition.name}>{content}</CardBoundary></HomeUnfoldContext.Provider></HomeShapeContext.Provider></div>
       </div>;
     })}
       {editing && packed?.holes.map(hole => <div key={`${String(hole.row)}:${String(hole.column)}`} className="home-hole" aria-hidden="true" data-glass-veil style={{gridColumn: String(hole.column), gridRow: String(hole.row)}}><span>Empty</span></div>)}

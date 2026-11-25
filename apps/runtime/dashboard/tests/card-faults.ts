@@ -86,7 +86,7 @@ export async function serveFaultable(page: Page, initial: Record<string, CardFau
     set: async (card, fault) => {
       await page.evaluate(([key, value]) => {
         const all = ((globalThis as {cardFaults?: Record<string, string>}).cardFaults ??= {});
-        if (value === null) delete all[key as string]; else all[key as string] = value;
+        if (value === null) delete all[key]; else all[key] = value;
       }, [card, fault ?? null] as const);
     },
   };

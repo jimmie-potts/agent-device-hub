@@ -45,6 +45,7 @@ import {PlaybackWorkspace} from './playback-workspace.tsx';
 import {BuildIdentity} from './build-identity.tsx';
 import {FRONTENDS} from '@bunny/module-frontends';
 import {ModuleFrontend, ModulePageView} from './module-page.tsx';
+import {CardBoundary} from './card-boundary.tsx';
 import {moduleCard} from './module-cards.ts';
 import {PixooDisplay} from '@jimmie-potts/pixoo/frontend';
 import {TidbytDisplay} from '@jimmie-potts/tidbyt/frontend';
@@ -480,7 +481,7 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         {runtime.copies.filter(copy => copy.family === 'device' && !copy.synced).map(copy => <p className="warning" key={copy.owner}>{copy.owner}: device records unavailable or stale{copy.refused === undefined ? '' : ` (${copy.refused})`}.</p>)}
         {runtime.modules !== undefined && devices.length === 0 && <p className="hint">No device records are available.</p>}
         <div className="cards">{devices.map(({record, copy}) => <div key={`${copy.owner}:${record.id}`} hidden={route.kind === 'component' && record.id !== route.id} data-glass-panel={displayPage ? record.id : undefined}>
-          {deviceCard({record, copy})}
+          <CardBoundary id={`component:${record.id}`} name={nameOf(runtime, record.id)}>{deviceCard({record, copy})}</CardBoundary>
         </div>)}</div>
       </section>}
       {route.kind !== 'home' && <PlaybackWorkspace runtime={runtime} connected={state.feed === 'connected'} operations={operations} operationsLive={operationsLive} connection={connection} route={route}/>}
@@ -491,8 +492,8 @@ function Dashboard({connection, links, disconnect, signInAgain}: {
         </header>
         {!workspace && <FeatureNavigation route={route} runtime={runtime}/>}
         {/* A display's page is one glass panel (#1950); other module pages keep their layout as it was. */}
-        {(view => displayPage ? <div data-glass-panel={selectedPage.id}>{view}</div> : view)(<ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule}
-          page={selectedPage} frontends={FRONTENDS} connection={connection} connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/>)}
+        {(view => displayPage ? <div data-glass-panel={selectedPage.id}>{view}</div> : view)(<CardBoundary id={`module:${selectedModule.name}/${selectedPage.id}`} name={selectedPage.title}><ModulePageView key={`${selectedModule.name}:${selectedPage.id}`} module={selectedModule}
+          page={selectedPage} frontends={FRONTENDS} connection={connection} connected={state.feed === 'connected'} control={runtime.control} operations={operations} operationsLive={operationsLive}/></CardBoundary>)}
       </section>}
       {route.kind === 'companions' && <CompanionsPage runtime={runtime}/>}
       {route.kind === 'habitat' && <HabitatPage views={state.sessions.views} live={live}/>}

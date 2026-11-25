@@ -44,6 +44,20 @@ async function failedFace(page: Page, card: string, type: string, name: string):
     'a failed card offers Retry and no control that could send a command');
 }
 
+const HOME_CARDS = ['device:bunny/modules/tidbyt:tidbyt', 'music:bunny/modules/playback:living-room', 'device:bunny/modules/pixoo:pixoo-1', 'sessions', 'inbox'];
+/** Waits for every card of this world's Home before its places are compared. */
+async function allCards(page: Page): Promise<void> {
+  for (const card of HOME_CARDS) await page.locator(`.home-layout-grid > [data-home-card="${card}"]`).waitFor();
+  await page.locator('[data-tidbyt-artwork], [data-tidbyt-shape]').first().waitFor();
+}
+
+/** Waits until `card` has recorded `count` failures, then checks that no more follow. */
+async function recorded(page: Page, card: string, count: number): Promise<void> {
+  await page.waitForFunction(([name, value]) => document.querySelector(`[data-card-failed="${name}"]`)?.getAttribute('data-fault-count') === value, [card, String(count)] as const);
+  await page.waitForTimeout(300);
+  assert.equal(await failed(page, card).getAttribute('data-fault-count'), String(count), `${card} recorded ${String(count)} failures, once each, with no render loop`);
+}
+
 /** The Home cards' boxes, by card, to show that a failed card keeps its place. */
 const boxes = (page: Page) => page.locator('.home-layout-grid > [data-home-card]').evaluateAll(all => Object.fromEntries(all.map(node => {
   const box = node.getBoundingClientRect();
@@ -56,10 +70,10 @@ async function open(fault: Record<string, CardFault>): Promise<{page: Page; erro
   const errors: string[] = [];
   page.on('pageerror', error => { errors.push(error.name); });
   const sent = changes(page);
-  const {set} = await serveFaultable(page, fault);
+  const faults = await serveFaultable(page, fault);
   await page.goto(world.url);
   await page.locator('main#main').waitFor({timeout: 8000}).catch(() => {});
-  return {page, errors, sent, set};
+  return {page, errors, sent, set: async (card, value) => { await faults.set(card, value); }};
 }
 
 try {
@@ -68,6 +82,7 @@ try {
   const healthy = await open({});
   await feed(healthy.page, 'connected');
   await healthy.page.locator('[data-home-card=inbox] h2', {hasText: 'Inbox'}).first().waitFor();
+  await allCards(healthy.page);
   const places: Record<string, Record<string, string>> = {};
   for (const width of [1440, 390]) {
     await healthy.page.setViewportSize({width, height: 900});
@@ -83,7 +98,7 @@ try {
   await feed(home.page, 'connected', {failedCards: ['inbox']});
   await failedFace(home.page, 'inbox', 'TypeError', 'Inbox');
   assert.equal(await home.page.locator('[data-home-card=inbox] [data-card-failed=inbox]').count(), 1, 'the failure shows in the card\'s own place');
-  assert.equal(await failed(home.page, 'inbox').getAttribute('data-fault-count'), '1', 'the failure is recorded once');
+  await recorded(home.page, 'inbox', 1);
   assert.deepEqual(home.errors, ['TypeError'], 'the page reports the contained error once, as a page error');
   checks.push('a card that throws while it renders shows its failure in its own place; the page stays mounted');
 
@@ -91,13 +106,20 @@ try {
   await assert.rejects(feed(home.page, 'connected'), /a card failed: inbox \(TypeError\)/, 'feed() reports an unexpected failed card');
   checks.push('the journey harness fails a health check on a failed card and names it');
 
+  await allCards(home.page);
   // Layout: the failed card keeps its place, at its own size, at desktop and phone widths, light and dark.
   for (const colorScheme of ['light', 'dark'] as const) {
     await home.page.emulateMedia({colorScheme});
     for (const width of [1440, 390]) {
       await home.page.setViewportSize({width, height: 900});
       await home.page.waitForTimeout(200);
-      assert.deepEqual(await boxes(home.page), places[width], `at ${String(width)} px the cards keep their places`);
+      const now = await boxes(home.page), was = places[width] ?? {};
+      if (width === 1440) assert.deepEqual(now, was, 'on the unit grid every card keeps its place and size');
+      // A phone stacks the cards at their content heights: the order and the widths stay.
+      else {
+        const order = (all: Record<string, string>): string[] => Object.entries(all).sort(([, a], [, b]) => Number(a.split(',')[1]) - Number(b.split(',')[1])).map(([card, box]) => `${card}@${box.split(',')[2] ?? ''}`);
+        assert.deepEqual(order(now), order(was), 'on a phone the cards keep their order and widths');
+      }
       assert.ok(await home.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no horizontal overflow at ${String(width)} px`);
       assert.ok(await failed(home.page, 'inbox').evaluate(face => face.scrollWidth <= face.clientWidth && face.scrollHeight <= Math.max(face.clientHeight, (face.parentElement?.clientHeight ?? 0))),
         `the failed face fits its card at ${String(width)} px`);
@@ -128,10 +150,9 @@ try {
   // Retry remounts the card. A card that throws again is contained again, recorded again, with no render loop.
   const before = home.sent.length;
   await failed(home.page, 'inbox').getByRole('button', {name: 'Retry', exact: true}).click();
-  await home.page.waitForFunction(() => document.querySelector('[data-card-failed=inbox]')?.getAttribute('data-fault-count') === '2');
-  await home.page.waitForTimeout(500);
-  assert.equal(await failed(home.page, 'inbox').getAttribute('data-fault-count'), '2', 'one more failure, recorded once, and no loop');
-  assert.deepEqual(home.errors, ['TypeError', 'TypeError']);
+  await recorded(home.page, 'inbox', 2);
+  // Returning to Home mounted the card again, which failed again: three failures in all, each reported once.
+  assert.deepEqual(home.errors, ['TypeError', 'TypeError', 'TypeError']);
   await home.set('inbox', undefined);
   await failed(home.page, 'inbox').getByRole('button', {name: 'Retry', exact: true}).click();
   await failed(home.page, 'inbox').waitFor({state: 'detached'});
@@ -149,14 +170,14 @@ try {
   await mounted(effect.page, 'a card that throws from an effect');
   await feed(effect.page, 'connected', {failedCards: ['inbox']});
   await failedFace(effect.page, 'inbox', 'RangeError', 'Inbox');
-  assert.equal(await failed(effect.page, 'inbox').getAttribute('data-fault-count'), '1');
+  await recorded(effect.page, 'inbox', 1);
   await openSettings(effect.page);
   await effect.page.getByRole('heading', {name: 'Settings', exact: true}).waitFor();
   await effect.page.goBack();
   await effect.set('inbox', undefined);
   await failed(effect.page, 'inbox').getByRole('button', {name: 'Retry', exact: true}).click();
   await effect.page.locator('[data-home-card=inbox] h2', {hasText: 'Inbox'}).first().waitFor();
-  assert.deepEqual(effect.errors, ['RangeError']);
+  assert.deepEqual(effect.errors, ['RangeError', 'RangeError'], 'the first mount and the one after navigating back');
   assert.deepEqual(effect.sent, []);
   checks.push('a card that throws from an effect is contained and recovers on Retry');
   await effect.page.close();

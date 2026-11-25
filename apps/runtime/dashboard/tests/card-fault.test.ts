@@ -13,7 +13,7 @@ function capture(): {log: Logger; records: {level: string; event: string; fields
   return {log: {debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error')}, records};
 }
 
-test('a card fault is one record with the card and the error type, at the table level', () => {
+void test('a card fault is one record with the card and the error type, at the table level', () => {
   const {log, records} = capture();
   recordCardFault(log, 'device:bunny/modules/tidbyt:tidbyt', new TypeError(SECRET, {cause: new Error(SECRET)}));
   assert.deepEqual(records, [{level: levelOf(CARD_FAULT_EVENT), event: 'dashboard.card.failed',
@@ -22,7 +22,7 @@ test('a card fault is one record with the card and the error type, at the table 
   assert.equal(JSON.stringify(records).includes('SYNTHETIC2139'), false, 'no message, stack or cause is recorded');
 });
 
-test('a thrown value that is not an Error is recorded by its type, and an unusual name falls back to Error', () => {
+void test('a thrown value that is not an Error is recorded by its type, and an unusual name falls back to Error', () => {
   const {log, records} = capture();
   recordCardFault(log, 'inbox', SECRET);
   const odd = new Error('x');odd.name = SECRET;
@@ -30,13 +30,13 @@ test('a thrown value that is not an Error is recorded by its type, and an unusua
   assert.deepEqual(records.map(record => record.fields?.['error.type']), ['string', 'Error']);
 });
 
-test('an identity outside the neutral alphabet is not recorded as given', () => {
+void test('an identity outside the neutral alphabet is not recorded as given', () => {
   const {log, records} = capture();
   recordCardFault(log, `inbox ${SECRET}`, new Error('x'));
   assert.equal(records[0]?.fields?.['bunny.card'], 'unknown');
 });
 
-test('the page keeps a bounded log of its records', () => {
+void test('the page keeps a bounded log of its records', () => {
   const start = pageRecords().length;
   for (let index = 0; index < 100; index += 1) recordCardFault(undefined, 'inbox', new Error('x'));
   assert.ok(start <= 64);
