@@ -6,7 +6,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, expect, type Locator, type Page} from 'playwright/test';
 import type {HomeLayoutRecord, HomePlacement, HomeShape} from '@jimmie-potts/event-contracts/v2/families';
-import {changes, feed, startWorld} from './harness.ts';
+import {changes, copiesSynced, feed, startWorld} from './harness.ts';
 import {approvalPrompt, IDENTITY} from '../../dist/tests/fixtures/agents.js';
 import {listFit} from '../src/paging.ts';
 import {idleChanges} from './list-idle.ts';
@@ -1078,7 +1078,9 @@ try {
     const line = card.locator('.pixoo-compact-result');
     await expect(line).toHaveText('Pixoo records are stale.');await expect(line).toHaveAttribute('title', 'Pixoo records are stale.');
     assert.deepEqual(misfits((await measure(page)).cards), [], 'the reason line stays inside the card');
-    await page.reload();await feed(page, 'connected');
+    // A connected feed is the session link alone: the page syncs the owners' records after it, so the card waits for
+    // those copies, as Home does (#2123). On one CPU they arrived up to 5.1 s after `connected`.
+    await page.reload();await feed(page, 'connected');await copiesSynced(page);
     await expect(card.getByRole('button', {name: 'Screen off', exact: true})).toBeEnabled()
       .catch(async (error: unknown) => {throw new Error(`the Pixoo card after the reload: ${await held(page, pixoo)}`, {cause: error});});
   }
