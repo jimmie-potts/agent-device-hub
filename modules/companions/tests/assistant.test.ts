@@ -2569,6 +2569,82 @@ void test('Responses device reads bind the affirmative subject without widening 
 });
 
 
+for (const kind of ['timer', 'brightness'] as const) {
+  void test(`Responses binds natural ${kind} reads to the exact owner-requested device`, async context => {
+    const displayOwner = 'bunny/modules/pixoo';
+    const plug: DeviceRecord = {...light(PLUG_ID, 'Test Plug'), kind: 'wemo'};
+    const display: DeviceRecord = {...light('fixture-display', 'Test Display'), kind: 'pixoo', observed: {
+      status: 'known', observedAtMs: TIMER_READ, power: unknown, brightness: {status: 'known', value: 37},
+    }};
+    const unknownDisplay: DeviceRecord = {...display, id: 'unknown-display', label: 'Unknown Display', observed: unknown};
+    const otherPlug: DeviceRecord = {...plug, id: 'other-plug', label: 'Other Plug'};
+    const duplicatePlugs: DeviceRecord[] = ['dupe-1', 'dupe-2'].map(id => ({...plug, id, label: 'Shared Plug'}));
+    const displays: DeviceRecord[] = [display, unknownDisplay, ...['dupe-3', 'dupe-4'].map(id => ({...display, id, label: 'Shared Display'}))];
+    const plugs = [plug, otherPlug, ...duplicatePlugs];
+    const tool = kind === 'timer' ? 'read_wemo' : 'read_devices';
+    let target = kind === 'timer' ? 'Test Plug' : display.id;
+    let denied: 'private-conversation' | 'openai-supervisor' | undefined;
+    const baseline = sharing();
+    const share = (query: ShareQuery) => baseline(query) && !(query.destination === denied &&
+      query.source === 'devices' && query.field === 'label' && query.record === (kind === 'timer' ? plug.id : display.id));
+    const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+      const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+      const evidence = body.input.find(item => item.type === 'function_call_output')?.output;
+      const output = evidence === undefined
+        ? [{type: 'function_call', id: 'fc_read', call_id: 'call_read', name: tool,
+          arguments: JSON.stringify(kind === 'timer' ? {device: target} : {owner: displayOwner, target})}]
+        : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: evidence, annotations: []}]}];
+      return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 40}})));
+    }});
+    const w = await world(context, {provider, share, tools: [tool], timeZone: 'America/New_York',
+      devices: owner => owner === WEMO_OWNER ? plugs : [], dispatch: () => assert.fail('A read-only question sends no command')}, undefined, TIMER_READ);
+    const register = async (source: string, devices: DeviceRecord[]) => {
+      const owner = w.bus.connect(source);
+      context.after(() => owner.close());
+      await owner.serveSync(['device'], () => ({revision: 1, states: devices.map(data => ({
+        type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_POWER_READBACK_SCHEMA, data,
+      }))}));
+    };
+    await register(WEMO_OWNER, plugs);
+    await register(displayOwner, displays);
+    await w.core.serveSync(['power-limit'], () => ({revision: 1, states: [powerLimitDraft(powerLimit('armed'))]}));
+    await w.restart();
+    await control(w.core, w.module(), 'enable');
+    const ask = async (text: string, profile = 'bunny'): Promise<string> => {
+      const current = () => w.module().inspectAssistant()?.tasks.find(task => task.profile === profile);
+      const previous = current()?.taskId;
+      assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
+      await until(() => current()?.taskId !== previous && current()?.status === 'succeeded');
+      const message = (await page(w, profile, 'recent')).messages.at(-1);
+      assert.equal(message?.role, 'assistant');
+      return message?.text ?? assert.fail('Expected a Conversation answer');
+    };
+    const prompt = kind === 'timer'
+      ? 'Is the timer for the test plug on, and how much time is left on the timer for it to automatically turn off?'
+      : 'What is the currently reported brightness of fixture-display?';
+    const known = kind === 'timer' ? /maximum-on limit is enabled.*Time remaining at this read: about 2 hours 4 minutes/isu : /"brightness":\{"status":"known","value":37\}/u;
+    const missing = kind === 'timer' ? /not-found/u : /"devices":\[\]/u;
+    for (const profile of ['bunny', 'reachy', 'microduck']) assert.match(await ask(prompt, profile), known, profile);
+    for (const side of ['private-conversation', 'openai-supervisor'] as const) {
+      denied = side;
+      assert.match(await ask(prompt), missing);
+    }
+    denied = undefined;
+    target = kind === 'timer' ? otherPlug.label ?? '' : unknownDisplay.id;
+    assert.match(await ask(prompt), missing, 'The model cannot widen the owner-requested target.');
+    target = kind === 'timer' ? 'Shared Plug' : 'Shared Display';
+    assert.match(await ask(kind === 'timer' ? 'Is the timer for the Shared Plug active?'
+      : 'What is the currently reported brightness of Shared Display?'), missing);
+    if (kind === 'brightness') {
+      target = unknownDisplay.id;
+      assert.match(await ask('What is the currently reported brightness of unknown-display?'), /"observation":\{"status":"unknown"\}/u);
+    } else {
+      target = 'Other Plug';
+      assert.match(await ask('Is the timer active for the Other Plug?'), /No maximum-on limit has been set/);
+    }
+  });
+}
+
 void test('Responses history requires one exact device and current summary grants', async context => {
   const target = 'desk', source = 'bunny/modules/lifx';
   const baseline = sharing();
