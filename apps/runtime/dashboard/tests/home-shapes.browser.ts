@@ -6,7 +6,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {chromium, expect, type Locator, type Page} from 'playwright/test';
 import type {HomeLayoutRecord, HomePlacement, HomeShape} from '@jimmie-potts/event-contracts/v2/families';
-import {changes, copiesSynced, feed, startWorld} from './harness.ts';
+import {changes, feed, recordsLoaded, startWorld} from './harness.ts';
 import {approvalPrompt, IDENTITY} from '../../dist/tests/fixtures/agents.js';
 import {listFit} from '../src/paging.ts';
 import {idleChanges} from './list-idle.ts';
@@ -328,7 +328,7 @@ try {
     const opened = await own.newPage();opened.setDefaultTimeout(20_000);await opened.clock.install();
     return {page: opened, close: () => own.close()};
   };
-  await page.goto(world.url);await feed(page, 'connected');
+  await page.goto(world.url);await recordsLoaded(page);
   await expect(page.getByRole('button', {name: 'Edit Home', exact: true})).toBeEnabled();
   for (const prefix of ['device:bunny/modules/pixoo:', 'device:bunny/modules/tidbyt:', 'light:device:']) await page.locator(`[data-home-card^="${prefix}"]`).first().waitFor();
   // Setup only: a room for the room card, through the existing lighting metadata command.
@@ -1080,7 +1080,7 @@ try {
     assert.deepEqual(misfits((await measure(page)).cards), [], 'the reason line stays inside the card');
     // A connected feed is the session link alone: the page syncs the owners' records after it, so the card waits for
     // those copies, as Home does (#2123). On one CPU they arrived up to 5.1 s after `connected`.
-    await page.reload();await feed(page, 'connected');await copiesSynced(page);
+    await page.reload();await recordsLoaded(page);
     await expect(card.getByRole('button', {name: 'Screen off', exact: true})).toBeEnabled()
       .catch(async (error: unknown) => {throw new Error(`the Pixoo card after the reload: ${await held(page, pixoo)}`, {cause: error});});
   }
