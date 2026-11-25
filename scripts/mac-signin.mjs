@@ -45,14 +45,17 @@ async function selectedCore(project, run) {
   return info;
 }
 
+export const signinReleaseRoot = home => join(home, '.local', 'share', 'bunny', 'releases');
+export const signinOperatorPaths = (releases, revision) => ['source', join('build', 'source')]
+  .map(source => join(releases, revision, source, 'scripts', 'bunny.mjs'));
+
 // The container's own labels name its revision and Compose file, so a deployment needs no change here.
 export async function operatorFor(info, releases, exists) {
   const labels = info.Config?.Labels ?? {};
   const revision = labels['org.opencontainers.image.revision'];
   const compose = labels['com.docker.compose.project.config_files'];
   if (!/^[0-9a-f]{40}$/.test(revision ?? '') || typeof compose !== 'string' || compose === '' || compose.includes(',')) refuse('identity-invalid');
-  for (const source of ['source', join('build', 'source')]) {
-    const path = join(releases, revision, source, 'scripts', 'bunny.mjs');
+  for (const path of signinOperatorPaths(releases, revision)) {
     if (await exists(path)) return {path, compose};
   }
   return refuse('operator-missing');
@@ -146,7 +149,7 @@ if (isEntryPoint()) {
   try {
     await startAtSignIn({
       project: values.project ?? 'bunny-mac-personal',
-      releases: values.releases ?? join(homedir(), '.local', 'share', 'bunny', 'releases'),
+      releases: values.releases ?? signinReleaseRoot(homedir()),
       operations: join(homedir(), '.local', 'state', 'bunny-operations'),
     }, {report});
   } catch (error) {
