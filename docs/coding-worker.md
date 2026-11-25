@@ -241,8 +241,8 @@ A reported path or route override, enabled telemetry, configured MCP servers
 or plugins, enabled hooks, apps, shell snapshots or login shells, or unavailable
 settings evidence prevents a brief from being sent. The worker checks
 the personal ChatGPT account before opening a thread and again before sending
-a turn. Reports of an organization plan or a different backend also refuse
-the run. The effective settings and account checks do not attest that a
+a turn. An organization plan reported by the account or quota snapshot,
+or a report of a different backend, also refuses the run. The effective settings and account checks do not attest that a
 host or workspace is unmanaged.
 Sign-in, plan and limit responses contribute only the declared readiness
 fields. The child receives no worker credential or provider API key. Codex

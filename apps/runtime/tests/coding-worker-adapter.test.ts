@@ -36,6 +36,7 @@ function assertStrictOutputSchema(value: unknown): void {
 
 type Scenario = {
   effectiveConfig?: object; auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; badPermissions?: boolean; changeAuth?: boolean;
+  quotaResponse?: object; quotaEvent?: 'initialize' | 'second-account' | 'pending-turn';
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
 };
 
@@ -65,7 +66,9 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
       request(method, params) {
         requests.push(method);
         switch (method) {
-          case 'initialize': return Promise.resolve({});
+          case 'initialize':
+            if (scenario.quotaEvent === 'initialize') event('account/rateLimits/updated', {rateLimits: {...window, planType: 'business'}});
+            return Promise.resolve({});
           case 'config/read':
             assert.ok(params !== undefined && 'cwd' in params && typeof params.cwd === 'string');
             assert.deepEqual(params, {cwd: params.cwd, includeLayers: false});
@@ -73,8 +76,9 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
           case 'account/read':
             assert.deepEqual(params, {refreshToken: false});
             accounts += 1;
+            if (accounts === 2 && scenario.quotaEvent === 'second-account') event('account/rateLimits/updated', {rateLimits: {...window, planType: 'team'}});
             return Promise.resolve(accounts === 2 && scenario.laterAuth !== undefined ? scenario.laterAuth : scenario.auth ?? account);
-          case 'account/rateLimits/read': return Promise.resolve({rateLimits: window});
+          case 'account/rateLimits/read': return Promise.resolve(scenario.quotaResponse ?? {rateLimits: window});
           case 'thread/start': {
             const sent = params as {cwd: string; permissions: string; runtimeWorkspaceRoots: string[]};
             assert.notEqual(sent.cwd, home);
@@ -89,6 +93,10 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
             wireSchema = outputSchema;
             assert.deepEqual(turn, {threadId, input: [{type: 'text', text: brief, text_elements: []}]});
             assert.deepEqual(sessions, scenario.requireId === false ? [] : [threadId], 'native identity was reported before the model turn');
+            if (scenario.quotaEvent === 'pending-turn') {
+              queueMicrotask(() => {event('account/rateLimits/updated', {rateLimits: {...window, planType: 'enterprise'}});});
+              return new Promise(() => {});
+            }
             queueMicrotask(() => {
               if (scenario.terminal === 'lost') {closed(); return;}
               event('turn/started', {threadId, turn: {id: turnId}});
@@ -218,6 +226,31 @@ void test('Codex refuses signed-out, API key, unknown credentials and broadened 
   }
   const missing = codexAdapter({executable: '/nonexistent/codex', home: profileHome}, {});
   assert.equal((await missing.readiness()).installed, 'no');
+});
+
+void test('Codex treats managed-plan quota snapshots as contrary evidence without another account probe', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-worktree-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  for (const quotaResponse of [
+    {rateLimits: {...window, planType: 'business'}},
+    {rateLimits: window, rateLimitsByLimitId: {synthetic: {...window, planType: 'edu'}}},
+  ]) {
+    const probe = fixture({quotaResponse});
+    assert.deepEqual(await probe.adapter.readiness(), {installed: 'yes', signedIn: 'unknown', version: '0.163.0', plan: null});
+    assert.deepEqual(probe.requests, ['initialize', 'config/read', 'account/read', 'account/rateLimits/read']);
+  }
+  const buffered = fixture({quotaEvent: 'initialize'});
+  assert.equal((await buffered.adapter.readiness()).signedIn, 'unknown');
+  assert.equal((await buffered.run(cwd)).reason, 'refused');
+  assert.deepEqual(buffered.requests, ['initialize', 'config/read', 'initialize', 'config/read']);
+  const beforeSend = fixture({quotaEvent: 'second-account'});
+  assert.equal((await beforeSend.run(cwd)).reason, 'refused');
+  assert.equal(beforeSend.starts(), 0);
+  const inFlight = fixture({quotaEvent: 'pending-turn'});
+  const result = await inFlight.run(cwd);
+  assert.equal(result.reason, 'refused');
+  assert.equal(result.uncertain, true);
+  assert.equal(inFlight.starts(), 1);
 });
 
 void test('Codex distinguishes plan exhaustion, provider slowdown, unreadable output and loss after start', async t => {

@@ -27,6 +27,18 @@ export type CodexConfiguration = {executable: string; home: string; model?: stri
 const object = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const record = (value: unknown): Record<string, unknown> => object(value) ? value : {};
 const managedPlan = (plan: unknown): boolean => typeof plan === 'string' && MANAGED_PLAN.test(plan);
+function managedQuota(value: unknown): boolean {
+  const {rateLimits, rateLimitsByLimitId} = record(value);
+  return [rateLimits, ...Object.values(record(rateLimitsByLimitId))].some(snapshot => managedPlan(record(snapshot).planType));
+}
+
+function contraryAccountEvent(method: string, value: unknown): boolean {
+  if (method === 'account/rateLimits/updated') return managedQuota(value);
+  if (method !== 'account/updated') return false;
+  const {authMode, planType} = record(value);
+  return managedPlan(planType) || (authMode !== undefined && authMode !== 'chatgpt');
+}
+
 function supportsRouting(value: unknown): boolean {
   if (value === null || value === undefined) return true;
   const {backendOrigin} = record(value);
@@ -275,16 +287,22 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       }
       const health: AdapterHealth = {...UNKNOWN_READINESS, installed: version === null ? 'unknown' : 'yes', version};
       let wire: Wire | undefined;
+      let unauthorized = false;
       try {
         const {command} = prepare(home, home, signal);
-        wire = transport({...command, event: () => {}, closed: () => {}});
+        wire = transport({...command, event: (method, data) => {if (contraryAccountEvent(method, data)) unauthorized = true;}, closed: () => {}});
         await initialize(wire);
-        if (!await isolatedSettings(wire, home, home)) return health;
-        Object.assign(health, codexSignIn(await wire.request('account/read', {refreshToken: false})));
-        if (health.signedIn === 'yes') {
-          try {health.windows = windowsOf(record(await wire.request('account/rateLimits/read')).rateLimits);} catch { /* The account can omit this evidence. */ }
-        }
-        return health;
+        if (!await isolatedSettings(wire, home, home) || unauthorized) return health;
+        const account = codexSignIn(await wire.request('account/read', {refreshToken: false}));
+        if (unauthorized) return health;
+        if (account.signedIn !== 'yes') return {...health, ...account};
+        let windows: CodingLimitWindow[] | undefined;
+        try {
+          const quota = await wire.request('account/rateLimits/read');
+          if (managedQuota(quota)) unauthorized = true;
+          windows = windowsOf(record(quota).rateLimits);
+        } catch { /* The account can omit this evidence. */ }
+        return unauthorized ? health : {...health, ...account, ...(windows === undefined ? {} : {windows})};
       } catch {return health;}
       finally {wire?.close();}
     },
@@ -297,15 +315,17 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       if (inside(cwd, home) || inside(home, cwd)) return {reason: 'refused', summary: 'The Codex worker profile must be outside the worktree.'};
       const {signal} = input;
       if (signal.aborted) return {reason: 'cancelled'};
-      let sessionId: string | undefined, turnId: string | undefined, dispatched = false, unauthorized = false, accountVerified = false;
+      let sessionId: string | undefined, turnId: string | undefined, dispatched = false, unauthorized = false;
       let windows: CodingLimitWindow[] = [];
       let message: string | undefined, terminal: Record<string, unknown> | undefined;
       let settle = (): void => {};
       const completed = new Promise<void>(resolve => {settle = resolve;});
+      let revoke = (): void => {};
+      const revoked = new Promise<void>(resolve => {revoke = resolve;});
       const {command, profile} = prepare(home, cwd, signal);
       const wire = transport({...command, event: (method, value) => {
         const data = record(value);
-        if (method === 'account/updated' && accountVerified && (data.authMode !== 'chatgpt' || managedPlan(data.planType))) {unauthorized = true; settle(); return;}
+        if (contraryAccountEvent(method, data)) {unauthorized = true; revoke(); settle(); return;}
         if (method === 'account/rateLimits/updated') {const reported = windowsOf(data.rateLimits); if (reported.length > 0) windows = reported; return;}
         if (data.threadId !== sessionId || sessionId === undefined || !dispatched) return;
         if (method === 'turn/started' && turnId === undefined) turnId = nativeSessionId(record(data.turn).id);
@@ -322,9 +342,9 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
       try {
         await initialize(wire);
         if (!await isolatedSettings(wire, cwd, home)) return refusal('Codex did not confirm isolated settings for this worktree.');
+        if (unauthorized) return refusal('Codex reported contrary personal ChatGPT subscription evidence.');
         const account = codexSignIn(await wire.request('account/read', {refreshToken: false}));
-        if (account.signedIn !== 'yes') return refusal('Codex needs a confirmed personal ChatGPT subscription sign-in.');
-        accountVerified = true;
+        if (unauthorized || account.signedIn !== 'yes') return refusal('Codex needs a confirmed personal ChatGPT subscription sign-in.');
         const opened = record(await wire.request('thread/start', {cwd, runtimeWorkspaceRoots: [cwd], permissions: profile,
           modelProvider: 'openai', approvalPolicy: 'never', allowProviderModelFallback: false,
           developerInstructions: 'Work only on this delegated repository brief. Do not change settings, publish changes or open a pull request. Report checks and limitations. Use waiting-for-owner for an unresolved decision.',
@@ -347,13 +367,17 @@ export function codexAdapter(configuration: CodexConfiguration, options: {
         }
         if (input.signal.aborted) return {reason: 'cancelled', sessionId};
         dispatched = true;
-        const started = record(await wire.request('turn/start', {threadId: sessionId, input: [{type: 'text', text: input.brief, text_elements: []}],
-          outputSchema: CODEX_RESULT_SCHEMA}));
+        const contrary = (sessionId: string): AdapterEvidence => ({
+          ...refusal('Codex reported a change away from personal ChatGPT subscription sign-in during the run.'), sessionId, uncertain: true,
+        });
+        const started = record(await Promise.race([wire.request('turn/start', {threadId: sessionId,
+          input: [{type: 'text', text: input.brief, text_elements: []}], outputSchema: CODEX_RESULT_SCHEMA}), revoked]));
+        if (unauthorized) return contrary(sessionId);
         const acceptedTurn = nativeSessionId(record(started.turn).id);
         if (acceptedTurn === undefined || (turnId !== undefined && turnId !== acceptedTurn)) return {reason: 'invalid-output', uncertain: true, sessionId};
         turnId = acceptedTurn;
         await completed;
-        if (unauthorized) return {...refusal('Codex reported a change away from personal ChatGPT subscription sign-in during the run.'), sessionId, uncertain: true};
+        if (unauthorized) return contrary(sessionId);
         if (terminal === undefined) return {reason: 'lost', uncertain: true, sessionId, windows};
         const cause = record(terminal.error).codexErrorInfo;
         if (terminal.status !== 'completed') {
