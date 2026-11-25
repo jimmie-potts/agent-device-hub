@@ -171,7 +171,7 @@ The companions module SHALL run every task through one provider behind a tool-ca
 
 ### Requirement: Permitted tools from the runtime
 
-The companions module SHALL discover the tools a turn may call from its own static catalog and filter them by the private section's allowlist, checking membership again when a call executes, so a changed section cannot widen an effect. The built-in owner question is always available; the synthetic fixture read exists only for the synthetic provider. The device tools SHALL use admitted LIFX device records and the registered power and brightness commands. `read_sessions` SHALL read each session through the contracts package's shared session read function and report its shared status class and detail. Device and catalog tools SHALL be offered to the `bunny` profile only ([Hub #2026](https://github.com/jimmie-potts/agent-device-hub/issues/2026)): the `reachy` and `microduck` profiles SHALL be offered only the allowlisted tools that are neither, such as `read_sessions`, `set_mode` and `delegate_coding`, each command still needing the owner's approval, and a call to a tool its profile is not offered SHALL be refused as one outside the allowlist. Whether the companions get device or catalog tools is a later decision. The dashboard SHALL show, for the open profile, the tools its model is offered, the allowlisted tools it is not offered, labelled as B.U.N.N.Y.'s only, and the unavailable tools, and grant nothing. `delegate_coding` SHALL propose handing one bounded coding task, named by an allowlisted repository and a brief, to the coding worker; without a connected worker, or with an unusable repository name or brief, the call SHALL be refused as a tool result and nothing proposed.
+The companions module SHALL discover the tools a turn may call from its own static catalog and filter them by the private section's allowlist, checking membership again when a call executes, so a changed section cannot widen an effect. The built-in owner question is always available; the synthetic fixture read exists only for the synthetic provider. The device tools SHALL use admitted LIFX device records and the registered power and brightness commands. `read_sessions` SHALL read each session through the contracts package's shared session read function and report its shared status class and detail. All three profiles SHALL offer the same configured tools with the same execution checks ([Hub #2106](https://github.com/jimmie-potts/agent-device-hub/issues/2106)). The dashboard SHALL show allowed and unavailable tools for the open profile. Tool availability SHALL grant no access to fields at an ungranted destination. `delegate_coding` SHALL propose handing one bounded coding task, named by an allowlisted repository and a brief, to the coding worker; without a connected worker, or with an unusable repository name or brief, the call SHALL be refused as a tool result and nothing proposed.
 
 #### Scenario: Read tool
 - **WHEN** the model calls `read_sessions`
@@ -187,18 +187,18 @@ The companions module SHALL discover the tools a turn may call from its own stat
 
 #### Scenario: Companion tool scope
 - **WHEN** the allowlist names `read_sessions`, a device tool and a catalog tool, and Reachy, MicroDuck and B.U.N.N.Y. each run a turn on the configured model
-- **THEN** Reachy's and MicroDuck's turns are offered `ask_owner` and `read_sessions` only, B.U.N.N.Y.'s every listed tool, and Details on a companion lists `read_sessions` as allowed and the device and catalog tools as B.U.N.N.Y.'s only
+- **THEN** all three companions' turns offer the listed tools and Details shows the same list
 
 ### Requirement: Owner approval of proposed commands
 
-Every state-changing command SHALL go through the existing question interrupt as an approval proposal bound to the exact family, target, value and the revision it was proposed against: the synced Hub-mode revision for `mode-set`, the coding worker's endpoint revision for a delegation, which moves only when a worker endpoint is selected, disabled or lost and never when a run starts or ends, and the configuration revision and generation for each LIFX write. A delegation SHALL be proposed while a coding worker is connected, even when the asking companion's slot is busy. The owner SHALL answer an approval only with the literal decisions approve or decline. An approved command SHALL be dispatched once through the core's tracked dispatcher; a dispatch whose bound revision has moved SHALL be refused and reported to the model as refused; a decline SHALL send nothing and say so. An approved delegation SHALL leave the task waiting on a delegation that only the worker's result answers, whether it was sent at once or waits for its companion's busy slot, in which case the tool result SHALL say the coding worker is busy and the hand-off waits for that companion's slot, the conversation SHALL say it waits to delegate, and say it was delegated once the hand-off is sent; the owner's input SHALL be refused for it, it SHALL count no owner question, and cancelling the task SHALL ask the worker to stop or, for a hand-off still waiting, remove it unsent.
+Coding hand-offs and paid generation SHALL use the owner approval interrupt. Approval SHALL bind the exact target, settings and applicable revision. The coding endpoint revision SHALL move when an endpoint is selected, disabled or lost. Running or completing work SHALL retain that revision. A delegation SHALL be proposed while a coding worker is connected, even when the asking companion's slot is busy. The owner SHALL answer an approval only with the literal decisions approve or decline. An approved command SHALL be dispatched once through the core's tracked dispatcher; a dispatch whose bound revision has moved SHALL be refused and reported to the model as refused; a decline SHALL send nothing and say so. An approved coding delegation SHALL record a background job and return its stable Hub job ID. Only a delegation checkpoint saved by an earlier version MAY resume through the worker-result interrupt.
 
 #### Scenario: Approved mode change
-- **WHEN** the owner approves a proposed `set_mode` and the Hub mode has not changed since the proposal
-- **THEN** one tracked `mode-set` operation is sent with the recorded expected revision, the saved mode changes, and the task's final text reports the accepted result without claiming device effects
+- **WHEN** the authorized owner explicitly asks for a specific mode and the bound Hub revision still matches
+- **THEN** one tracked operation carries the bound revision and the turn presents its actual result without an approval question
 
 #### Scenario: Declined or stale proposal
-- **WHEN** the owner declines, or approves after the Hub mode changed or the coding worker's endpoint changed
+- **WHEN** the owner declines, or approves after the coding worker's endpoint changed
 - **THEN** no command is sent for a decline; a stale approval is refused with `revision-conflict` and the conversation reports it; neither path starts a duplicate command
 
 #### Scenario: Another companion's run
@@ -222,7 +222,7 @@ Every state-changing command SHALL go through the existing question interrupt as
 The core SHALL answer an `assistant-dispatch` command only from `bunny/modules/companions`, forward only an allowlisted family and target to its tracked dispatcher as one operation requested by that module, and refuse any other source, family or target before anything is recorded. The operation SHALL follow the dispatcher's ordinary reply, outcome, inbox and history rules.
 
 #### Scenario: Forwarded mode-set
-- **WHEN** the companions module dispatches an approved `mode-set` for the Hub
+- **WHEN** the companions module dispatches an owner-requested `mode-set` for the Hub
 - **THEN** the core records one tracked operation requested by the module, the mode owner answers it, and its outcome reaches history and the inbox like an operator's command
 
 #### Scenario: Refused dispatch
@@ -231,7 +231,7 @@ The core SHALL answer an `assistant-dispatch` command only from `bunny/modules/c
 
 ### Requirement: Conversation panel
 
-The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assistant` page: the provider and model, allowed and unavailable tools, the coding worker's availability with how many of its slots are busy and how many hand-offs wait, the conversation companion's own slot, the shared plan usage windows the worker's readiness reported with their use, reset and when they were observed, or why there are none, reported usage in hosted tokens or synthetic units, and unknown when usage is unreported, today's shared spend against the daily limit and this month's local estimate, the saved conversation with owner, assistant and tool messages, and explicit send, answer, approve, decline, resume and cancel controls. It SHALL carry the speech endpoint controls as spoken replies (enable in this tab, mute, stop speaking, playback and tracked operation) and a Read aloud control beside each saved assistant message within the spoken bound, stating that enabling makes the tab the one speaker and that stopping speech does not cancel the task. A delegation proposal SHALL show its repository, brief and bound revision and, while the companion's slot is busy, that an approved hand-off waits for it; a waiting delegation SHALL say it waits for the worker, worded as busy and unsent while its hand-off waits for a slot, and offer cancel, not an answer box. It SHALL label the synthetic provider as making no paid calls, preserve written context and saved questions on reload, and distinguish control receipts from task state. Disconnection SHALL be visible and prevent mutation against stale state. Assistant activation SHALL default off without affecting fixed-text Reachy or coding-session lifecycle ownership.
+The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assistant` page: the provider and model, allowed and unavailable tools, the coding worker's availability with how many of its slots are busy and how many hand-offs wait, the conversation companion's own slot, the shared plan usage windows the worker's readiness reported with their use, reset and when they were observed, or why there are none, reported usage in hosted tokens or synthetic units, and unknown when usage is unreported, today's shared spend against the daily limit and this month's local estimate, the saved conversation with owner, assistant and tool messages, and explicit send, answer, approve, decline, resume and cancel controls. It SHALL carry the speech endpoint controls as spoken replies (enable in this tab, mute, stop speaking, playback and tracked operation) and a Read aloud control beside each saved assistant message within the spoken bound, stating that enabling makes the tab the one speaker and that stopping speech does not cancel the task. A delegation proposal SHALL show its repository, brief and bound revision and, while the companion's slot is busy, that an approved hand-off waits for it; an approved background job SHALL show a saved job reference and updates in the original exchange. It SHALL label the synthetic provider as making no paid calls, preserve written context and saved questions on reload, and distinguish control receipts from task state. Disconnection SHALL be visible and prevent mutation against stale state. Assistant activation SHALL default off without affecting fixed-text Reachy or coding-session lifecycle ownership.
 
 #### Scenario: Approval by keyboard
 - **WHEN** a task waits for approval and the owner reloads the page and operates it by keyboard
@@ -247,11 +247,11 @@ The dashboard SHALL present the B.U.N.N.Y. conversation on the companions `assis
 
 #### Scenario: Delegation on the page
 - **WHEN** the model proposes a delegation and the owner approves it by keyboard
-- **THEN** the proposal shows the repository, brief and bound revision, the page then shows the delegated work waiting for the worker with cancel available, and the worker's result appears as a tool message
+- **THEN** the proposal shows the repository, brief and bound revision, the page shows the job reference while the worker runs and links its result to that reference
 
 #### Scenario: Busy slot on the page
 - **WHEN** a companion's slot is busy and its conversation proposes a delegation that the owner approves
-- **THEN** the proposal says the hand-off will wait, the delegated work says the coding worker is busy and nothing has been sent, the details show the busy slots and the waiting hand-off, and the card changes to the ordinary wait once the hand-off is sent
+- **THEN** the proposal says the hand-off will wait, Conversation shows a background job reference, and details show the busy slots and waiting hand-off until it is sent
 
 #### Scenario: Plan usage
 - **WHEN** the selected worker's readiness carries limit windows from its latest run
@@ -390,19 +390,19 @@ Assistant run/model/tool spans and decision records SHALL use the SDK diagnostic
 
 ### Requirement: Conversation controls configured LIFX lights
 
-Conversation SHALL expose authorized LIFX status, power, and brightness based on the admitted owner's current device records. It SHALL ask the owner to disambiguate matching labels before proposing a write. Reads report observed values with evidence time and identify unknown or unavailable evidence. A reading older than the LIFX refresh interval, dated in the future, or superseded by a newer transmission SHALL be reported as stale.
+Conversation SHALL expose authorized LIFX status, power, and brightness based on the admitted owner's current device records. It SHALL ask the owner to disambiguate matching labels before sending a write. Reads report observed values with evidence time and identify unknown or unavailable evidence. A reading older than the LIFX refresh interval, dated in the future, or superseded by a newer transmission SHALL be reported as stale.
 
 #### Scenario: Status from the configured owner
 - **WHEN** the owner asks about a configured LIFX light
 - **THEN** Conversation names the light and reports the observed power and brightness or explains that the evidence is unavailable
 
 #### Scenario: Exact target and guarded effect
-- **WHEN** the owner approves a specific power or brightness proposal
+- **WHEN** the owner explicitly requests a specific power or brightness setting
 - **THEN** one tracked command targets the selected eligible bulb with the saved guards, and Conversation reports the operation without claiming a physical effect from acceptance
 
 #### Scenario: Approval can no longer execute
 - **WHEN** the target becomes unavailable before owner admission, permission is removed, or the saved guards become stale
-- **THEN** the approval cannot cause a device write and Conversation reports the refusal
+- **THEN** the request cannot cause a device write and Conversation reports the refusal
 
 #### Scenario: Lost reply
 - **WHEN** the assistant loses the reply after possible admission
@@ -454,43 +454,43 @@ or automation command.
 
 ### Requirement: Tracked owner approval across device integrations
 
-Conversation SHALL propose one exact action on a selected device or explicit set of recipients. Approval SHALL bind the owner, target, effect, and the domain revision, generation or exact immutable library version required at admission. The SDK and core dispatcher SHALL carry the existing typed commands to their respective owners. The original approval and request identity SHALL persist across failures. A lost reply SHALL remain uncertain without an automatic resend. Multi-target actions SHALL present each target's effect evidence independently.
+Conversation SHALL resolve one exact action on a selected device or explicit set of recipients. Admission SHALL bind the owner, target, effect, and the domain revision, generation or exact immutable library version required at admission. The SDK and core dispatcher SHALL carry the existing typed commands to their respective owners. The original owner input and request identity SHALL persist across failures. A lost reply SHALL remain uncertain without an automatic resend. Multi-target actions SHALL present each target's effect evidence independently.
 
 #### Scenario: Wemo respects its device policy
 
-- **WHEN** the owner approves power on or off for an eligible Wemo plug identified by name
+- **WHEN** the owner explicitly requests power on or off for an eligible Wemo plug identified by name
 - **THEN** the existing Wemo command runs through that plug's queue with its hold and revision checks
 - **AND** the original continuous run and maximum-on policy remain effective
 
 #### Scenario: A saved artwork is presented
 
-- **WHEN** the owner approves the saved artwork and exact display recipients
+- **WHEN** the owner requests the saved artwork on exact display recipients
 - **THEN** the existing art-show path prepares and presents it and Conversation exposes each display's tracked result, including skipped or uncertain effects
 
 #### Scenario: Availability or approval changes
 
-- **WHEN** a held target, revoked permission, stale revision, or changed generation invalidates a proposed write
+- **WHEN** a held target, revoked permission, stale revision, or changed generation invalidates a resolved write
 - **THEN** the refusal is visible without starting a device effect
 
 ### Requirement: Light-show authoring and playback in Conversation
 
-Conversation SHALL let the owner create a deterministic draft, edit its cues, and preview a storyboard through the existing authoring rules. Draft and preview operations SHALL send no lighting command. Saving SHALL use the existing guarded catalog operation and retain prior versions. Playing SHALL require approval for the exact saved version and eligible light. Stopping SHALL require approval for the active generation and preserve the owner's restoration behavior. [#724](https://github.com/jimmie-potts/agent-device-hub/issues/724) owns AI-generated drafts.
+Conversation SHALL let the owner create a deterministic draft, edit its cues, and preview a storyboard through the existing authoring rules. Draft and preview operations SHALL send no lighting command. Saving SHALL use the existing guarded catalog operation and retain prior versions. Playing SHALL require an explicit request for the exact saved version and eligible light. Stopping SHALL require an explicit request for the active generation and preserve the owner's restoration behavior. [#724](https://github.com/jimmie-potts/agent-device-hub/issues/724) owns AI-generated drafts.
 
 #### Scenario: Create, edit, preview and save
 
 - **WHEN** the owner creates a draft, specifies a cue edit, previews it and explicitly saves
-- **THEN** the storyboard shows the edited cue and the approved save creates one independently selectable version
+- **THEN** the storyboard shows the edited cue and the explicit save creates one independently selectable version
 - **AND** no lighting command was sent
 
 #### Scenario: Play a saved version and stop it
 
-- **WHEN** the owner selects a saved show version and eligible light, approves playback and later approves Stop
+- **WHEN** the owner requests a saved show version on an eligible light and later requests Stop
 - **THEN** the existing playback owner runs that immutable version on the selected light and stops the selected generation
 
 #### Scenario: Unsaved or stale selection
 
-- **WHEN** the owner requests playback of an unsaved draft or an approval no longer matches the selected light, saved version or generation
-- **THEN** Conversation reports the refusal and no playback starts from that approval
+- **WHEN** the owner requests playback of an unsaved draft or a request no longer matches the selected light, saved version or generation
+- **THEN** Conversation reports the refusal and no playback starts from that request
 
 ### Requirement: Created artwork in a Conversation reply
 
@@ -706,17 +706,17 @@ Conversation SHALL accept one supported still or GIF from either a drop on the m
 
 ### Requirement: Resolve exact artwork and display before Conversation approval
 
-Conversation SHALL resolve the requested artwork and configured display identities before offering a display action. It SHALL distinguish a browser composition from the browser destination and a device kind from its routing ID. Each proposed destination SHALL be eligible for the exact artwork and visibly identified. Conversation SHALL explain unavailable choices and require a specific choice among ambiguous matches.
+Conversation SHALL resolve the requested artwork and configured display identities before executing a display action. It SHALL distinguish a browser composition from the browser destination and a device kind from its routing ID. Each destination SHALL be eligible for the exact artwork and visibly identified. Conversation SHALL explain unavailable choices and require a specific choice among ambiguous matches.
 
 #### Scenario: A display kind matches more than one installation target
 
 - **WHEN** the owner asks for a display by kind and two configured displays could match
-- **THEN** Conversation asks which display to use and dispatches nothing before an exact selection and approval
+- **THEN** Conversation asks which display to use and dispatches nothing before an exact selection
 
 #### Scenario: Generate for the reply and show on a display
 
 - **WHEN** the owner approves generation for a request that also names a configured display, and the exact generated attachment becomes ready
-- **THEN** the reply presents that attachment and offers a separate display approval with the intended destination selected, even if another artwork has been created since
+- **THEN** the reply presents that attachment and offers the Show on control with the intended destination selected, even if another artwork has been created since
 
 #### Scenario: Select a destination for a ready attachment
 
@@ -725,16 +725,16 @@ Conversation SHALL resolve the requested artwork and configured display identiti
 
 #### Scenario: A proposed show is dismissed or interrupted
 
-- **WHEN** the owner declines the proposal, reloads the page or reconnects after an uncertain dispatch
+- **WHEN** the owner dismisses the display choice, reloads the page or reconnects after an uncertain dispatch
 - **THEN** Conversation performs no automatic generation or display write and restores the tracked preparation and presentation evidence for each selected destination, including uncertainty after a lost reply
 
 ### Requirement: Closing reply when a turn fails
 
-An admitted turn that settles failed or uncertain SHALL save a single private closing reply explaining the known outcomes of its approved actions and the supported reason the turn stopped. The runtime SHALL use the records of that turn, preserve a provider's existing closing answer, and issue no model call, device command or retry to produce or deliver the fallback. If the cause is unknown, the fallback SHALL say so. Pending questions and paused tasks SHALL retain their controls.
+An admitted turn that settles failed or uncertain SHALL save a single private closing reply explaining the known outcomes of its recorded actions and the supported reason the turn stopped. The runtime SHALL use the records of that turn, preserve a provider's existing closing answer, and issue no model call, device command or retry to produce or deliver the fallback. If the cause is unknown, the fallback SHALL say so. Pending questions and paused tasks SHALL retain their controls.
 
 #### Scenario: A failed command follows a successful step
 
-- **WHEN** a turn has saved action evidence and a later approved action is refused, then the model cannot finish the turn
+- **WHEN** a turn has saved action evidence and a later requested action is refused, then the model cannot finish the turn
 - **THEN** the closing reply describes both outcomes using the strongest recorded evidence, preserves confirmed phases across later reads with missing records, and remains readable after reload
 
 #### Scenario: Recovery finds an uncertain call
@@ -749,13 +749,13 @@ An admitted turn that settles failed or uncertain SHALL save a single private cl
 
 ### Requirement: Approved device confirmation in Conversation
 
-Conversation SHALL associate the approved Pixoo brightness request with its original task, turn, owner and target. It SHALL report the strongest correlated evidence available at turn end and recover a pending confirmation through SDK sync without reissuing the write.
+Conversation SHALL associate the Pixoo brightness request with its original task, turn, owner and target. It SHALL report the strongest correlated evidence available at turn end and recover a pending confirmation through SDK sync without reissuing the write.
 
 #### Scenario: The display reports before the deadline
 
-- **WHEN** the approved display reports fresh brightness for the tracked request within the turn's observation window
+- **WHEN** the selected display reports fresh brightness for the tracked request within the turn's observation window
 - **THEN** the original reply states the percentage the display reported, including a different or already-matching value
-- **AND** answering approval clears its attention item and the turn ends once
+- **AND** the turn ends once and any resolved clarification clears its attention item
 
 #### Scenario: The display reports after the turn ends
 
@@ -770,11 +770,11 @@ Conversation SHALL associate the approved Pixoo brightness request with its orig
 
 ### Requirement: Approved Wemo power confirmation
 
-Conversation SHALL use the configured plug and exact on or off setting in the approval. It SHALL follow the tracked operation and report a fresh power reading in the original reply or once as a later update to that reply.
+Conversation SHALL use the configured plug and exact on or off setting in the request. It SHALL follow the tracked operation and report a fresh power reading in the original reply or once as a later update to that reply.
 
 #### Scenario: Readback arrives after the original reply
 
-- **WHEN** the owner sees a pending reply and the approved plug reports its power later
+- **WHEN** the owner sees a pending reply and the selected plug reports its power later
 - **THEN** the original exchange receives one update, including after reconnect or restart
 - **AND** no write or turn-end notice is repeated
 
@@ -843,7 +843,7 @@ One context builder SHALL assemble each model call's prompt context for the task
 
 ### Requirement: New conversation
 
-The owner SHALL be able to start a new conversation for a profile from the Conversation page ([Hub #2029](https://github.com/jimmie-potts/agent-device-hub/issues/2029)). The module SHALL take it as a staged `new-conversation` input naming the profile and the assistant revision read, checked against the profile's current conversation as any conversation command is, and admitted while conversation is off. It SHALL be refused with `invalid-state` while the profile's current conversation has an unfinished task: running, waiting on a clarification, an approval or the coding worker, paused or uncertain (owner decision 2026-11-24); a profile SHALL have at most one unfinished task. It SHALL also be refused with `invalid-state` while the current conversation's queue holds a message ([Hub #2030](https://github.com/jimmie-potts/agent-device-hub/issues/2030)), and the page disables the button with the note "Start or withdraw the queued messages first." It SHALL also be refused with `invalid-state` while the profile has no conversation or its current one holds no message, so repeated requests cannot add empty conversations; the page disables the button with the note "This conversation is empty. Send a message first." Otherwise the profile's current conversation SHALL become a new one with its own identity, so its own session on the devices, title, running slot and change revision, and both conversations SHALL count as changed. The new conversation's recent context SHALL start empty. Public assistant state SHALL list each profile's latest task in its current conversation only. The earlier conversation SHALL keep its messages, title and last session report, and SHALL stay readable by its identity in the recent view, without a current task; a read for a conversation that is not one of the profile's SHALL be not found. An authorized reader SHALL be able to list a profile's conversations, 16 a page with a keyset cursor, so a conversation that changes between page reads never repeats or skips an unchanged one: the current one first, then the others by their last message, newest first, and those without messages last, each with whether it is current, its message count, first and last message times and published title; Details SHALL offer the older pages. The page SHALL offer New conversation beside Details, disabled while the conversation's task is unfinished with the note "Finish or cancel this conversation's task first.", and SHALL list the profile's conversations in Details, where an earlier one opens read only with no composer and a way back to the current one. An archive export SHALL list each profile's current conversation after its earlier ones, with no change to the archive format, and an archive import SHALL accept a profile's earlier conversations, SHALL NOT move a current one, and SHALL make a profile without one take the archive's last conversation of that profile, so a round trip restores the current conversation.
+The owner SHALL be able to start a new conversation for a profile from the Conversation page ([Hub #2029](https://github.com/jimmie-potts/agent-device-hub/issues/2029)). The module SHALL take it as a staged `new-conversation` input naming the profile and the assistant revision read, checked against the profile's current conversation as any conversation command is, and admitted while conversation is off. It SHALL be refused with `invalid-state` while the profile's current conversation has an unfinished task: running, waiting on a clarification, an approval, paused or uncertain, including an earlier saved worker-result interrupt (owner decision 2026-11-24); a profile SHALL have at most one unfinished task. It SHALL also be refused with `invalid-state` while the current conversation's queue holds a message ([Hub #2030](https://github.com/jimmie-potts/agent-device-hub/issues/2030)), and the page disables the button with the note "Start or withdraw the queued messages first." It SHALL also be refused with `invalid-state` while the profile has no conversation or its current one holds no message, so repeated requests cannot add empty conversations; the page disables the button with the note "This conversation is empty. Send a message first." Otherwise the profile's current conversation SHALL become a new one with its own identity, so its own session on the devices, title, running slot and change revision, and both conversations SHALL count as changed. The new conversation's recent context SHALL start empty. Public assistant state SHALL list each profile's latest task in its current conversation only. The earlier conversation SHALL keep its messages, title and last session report, and SHALL stay readable by its identity in the recent view, without a current task; a read for a conversation that is not one of the profile's SHALL be not found. An authorized reader SHALL be able to list a profile's conversations, 16 a page with a keyset cursor, so a conversation that changes between page reads never repeats or skips an unchanged one: the current one first, then the others by their last message, newest first, and those without messages last, each with whether it is current, its message count, first and last message times and published title; Details SHALL offer the older pages. The page SHALL offer New conversation beside Details, disabled while the conversation's task is unfinished with the note "Finish or cancel this conversation's task first.", and SHALL list the profile's conversations in Details, where an earlier one opens read only with no composer and a way back to the current one. An archive export SHALL list each profile's current conversation after its earlier ones, with no change to the archive format, and an archive import SHALL accept a profile's earlier conversations, SHALL NOT move a current one, and SHALL make a profile without one take the archive's last conversation of that profile, so a round trip restores the current conversation.
 
 #### Scenario: Refused while a task is unfinished
 - **WHEN** the owner asks for New conversation while B.U.N.N.Y.'s task runs, waits on a question, and after a restart is uncertain
@@ -884,7 +884,7 @@ The owner SHALL be able to start a new conversation for a profile from the Conve
 
 ### Requirement: Conversation message queue
 
-The owner SHALL be able to queue messages for a conversation while its task works or waits ([Hub #2030](https://github.com/jimmie-potts/agent-device-hub/issues/2030), owner decisions 1, 5 and 6 of [#505 round 2](https://github.com/jimmie-potts/agent-device-hub/issues/505#issuecomment-7079875201)). The Conversation page SHALL offer **Queue** as its own control beside **Send**, and the composer SHALL stay available while the task works, waits on a clarification, an approval or the coding worker; while the task works or waits on the coding worker Send and Enter SHALL steer it as "Steering a running task" specifies, during a clarification Enter SHALL answer it, and during an approval only Queue and Decline with message SHALL show ([Hub #2031](https://github.com/jimmie-potts/agent-device-hub/issues/2031)). The module SHALL take Queue as a staged `queue` input naming the profile, the text and the revision read; the input command SHALL complete once the message is saved in the conversation's queue, as domain state and never as a stored command (ADR 0012). A queued message's identity SHALL be the request ID of the command that queued it, so a repeated command queues nothing more, before or after the message starts. Queue SHALL be refused with `capacity` and a message naming the limit while the queue holds 8 messages or more. Steers that a closed or stopped turn returns to the queue, and a steer that reaches its turn after the turn ended, SHALL be saved even past 8, up to 16, so nothing the owner wrote is dropped (owner decision of 2026-11-24 on [#2031](https://github.com/jimmie-potts/agent-device-hub/issues/2031#issuecomment-7142267166)); a new Queue SHALL stay refused until the queue holds fewer than 8. Queued messages SHALL show above the composer in the order they start, and the owner SHALL be able to edit one, through a staged `edit-queued` input, and withdraw or reorder one, through the `withdraw` and `reorder` actions of `assistant-control/2.2`; editing, withdrawing and reordering run no work and SHALL be admitted while conversation is off. A message that is not in the profile's current conversation's queue SHALL be `not-found`. Every queue command SHALL be refused as a revision conflict only when the conversation's queue changed after the revision it names, or when it names a revision the assistant has not reached, so the running task's own steps never make it stale. New conversation SHALL count both conversations' queues as changed, and each start SHALL count every saved conversation's queue as changed at the start's revision and again wherever the start changed its conversation, so a Queue naming a revision read before either is refused exactly when a Send is. A transaction that rolls back SHALL record no queue change. The queue read SHALL name the assistant revision it was read at, and the page's withdraw, reorder and Resume queue SHALL name the revision of the queue it shows, so a move never acts on an order the page no longer shows; an open edit SHALL name the revision of the latest read in which its message still had the text the edit opened with, so another message queued, moved or started never refuses it and it never overwrites a change made to its message since; a refused edit SHALL keep its text and allow Save again, and an edit whose message is changed elsewhere, starts or is withdrawn first SHALL close and offer its text back to the owner. Messages that a release before this one left in a conversation New conversation replaced SHALL never start, SHALL stay out of public state, SHALL be held at each start, and SHALL show on that conversation's read-only view, where the owner can only withdraw them. When a task ends succeeded or failed and its conversation's queue is not held, the first queued message SHALL start as a new task and turn of the same conversation, and its removal from the queue, the new task with its prompt message and its run's activation SHALL commit in the transaction that ended the earlier task, so its start is reported after the earlier turn's end and a crash never leaves it both started and queued; it SHALL start at most once. Its recent context SHALL hold the finished task. A queued start SHALL run no title check of its own. A message SHALL stay queued while the task waits on an answer, an approval or the coding worker, or is paused or uncertain. With no unfinished task and a free queue, a queued message SHALL start at once. Cancel task, the Stop of the owner's decisions, SHALL end the task and hold the queue while it holds messages, until **Resume queue**. A start of the module SHALL start no work and SHALL hold every queue that still holds messages until **Start**, publishing that change at a new revision. A queued message that cannot start, because conversation is off or unavailable, the conversation is unrecovered or a paid profile's spend limits leave too little for its first call, SHALL be refused at its start with that code, such as `capacity` with the limit's message, SHALL stay queued and SHALL hold the queue, with no retry. Resume queue and Start, the `resume-queue` action, SHALL release a held queue and start its next message when the conversation has no unfinished task; a start the module still refuses SHALL refuse the command and leave the queue held; with nothing held it SHALL be refused with `invalid-state`. Withdrawing the last message SHALL release a hold. Send SHALL still start a task beside a held queue, which stays held. Public `assistant-state/2.2` SHALL list each profile's current conversation whose queue holds messages, with the count, the hold (`stop`, `restart`, `refused` or none) and a refusal's code, and no text, and the module SHALL publish `assistant-state/2.3`, which allows a count up to 16, only while a queue holds more than 8; an authorized reader SHALL read the queue's messages and hold, and the running task's unread steers, through the private conversation route's `view=queue`.
+The owner SHALL be able to queue messages for a conversation while its task works or waits ([Hub #2030](https://github.com/jimmie-potts/agent-device-hub/issues/2030), owner decisions 1, 5 and 6 of [#505 round 2](https://github.com/jimmie-potts/agent-device-hub/issues/505#issuecomment-7079875201)). The Conversation page SHALL offer **Queue** as its own control beside **Send**, and the composer SHALL stay available while the task works, waits on a clarification, an approval or the coding worker; while the task works or has an earlier saved worker-result interrupt Send and Enter SHALL steer it as "Steering a running task" specifies, during a clarification Enter SHALL answer it, and during an approval only Queue and Decline with message SHALL show ([Hub #2031](https://github.com/jimmie-potts/agent-device-hub/issues/2031)). The module SHALL take Queue as a staged `queue` input naming the profile, the text and the revision read; the input command SHALL complete once the message is saved in the conversation's queue, as domain state and never as a stored command (ADR 0012). A queued message's identity SHALL be the request ID of the command that queued it, so a repeated command queues nothing more, before or after the message starts. Queue SHALL be refused with `capacity` and a message naming the limit while the queue holds 8 messages or more. Steers that a closed or stopped turn returns to the queue, and a steer that reaches its turn after the turn ended, SHALL be saved even past 8, up to 16, so nothing the owner wrote is dropped (owner decision of 2026-11-24 on [#2031](https://github.com/jimmie-potts/agent-device-hub/issues/2031#issuecomment-7142267166)); a new Queue SHALL stay refused until the queue holds fewer than 8. Queued messages SHALL show above the composer in the order they start, and the owner SHALL be able to edit one, through a staged `edit-queued` input, and withdraw or reorder one, through the `withdraw` and `reorder` actions of `assistant-control/2.2`; editing, withdrawing and reordering run no work and SHALL be admitted while conversation is off. A message that is not in the profile's current conversation's queue SHALL be `not-found`. Every queue command SHALL be refused as a revision conflict only when the conversation's queue changed after the revision it names, or when it names a revision the assistant has not reached, so the running task's own steps never make it stale. New conversation SHALL count both conversations' queues as changed, and each start SHALL count every saved conversation's queue as changed at the start's revision and again wherever the start changed its conversation, so a Queue naming a revision read before either is refused exactly when a Send is. A transaction that rolls back SHALL record no queue change. The queue read SHALL name the assistant revision it was read at, and the page's withdraw, reorder and Resume queue SHALL name the revision of the queue it shows, so a move never acts on an order the page no longer shows; an open edit SHALL name the revision of the latest read in which its message still had the text the edit opened with, so another message queued, moved or started never refuses it and it never overwrites a change made to its message since; a refused edit SHALL keep its text and allow Save again, and an edit whose message is changed elsewhere, starts or is withdrawn first SHALL close and offer its text back to the owner. Messages that a release before this one left in a conversation New conversation replaced SHALL never start, SHALL stay out of public state, SHALL be held at each start, and SHALL show on that conversation's read-only view, where the owner can only withdraw them. When a task ends succeeded or failed and its conversation's queue is not held, the first queued message SHALL start as a new task and turn of the same conversation, and its removal from the queue, the new task with its prompt message and its run's activation SHALL commit in the transaction that ended the earlier task, so its start is reported after the earlier turn's end and a crash never leaves it both started and queued; it SHALL start at most once. Its recent context SHALL hold the finished task. A queued start SHALL run no title check of its own. A message SHALL stay queued while the task waits on an answer, an approval or an earlier saved worker-result interrupt, or is paused or uncertain. With no unfinished task and a free queue, a queued message SHALL start at once. Cancel task, the Stop of the owner's decisions, SHALL end the task and hold the queue while it holds messages, until **Resume queue**. A start of the module SHALL start no work and SHALL hold every queue that still holds messages until **Start**, publishing that change at a new revision. A queued message that cannot start, because conversation is off or unavailable, the conversation is unrecovered or a paid profile's spend limits leave too little for its first call, SHALL be refused at its start with that code, such as `capacity` with the limit's message, SHALL stay queued and SHALL hold the queue, with no retry. Resume queue and Start, the `resume-queue` action, SHALL release a held queue and start its next message when the conversation has no unfinished task; a start the module still refuses SHALL refuse the command and leave the queue held; with nothing held it SHALL be refused with `invalid-state`. Withdrawing the last message SHALL release a hold. Send SHALL still start a task beside a held queue, which stays held. Public `assistant-state/2.2` SHALL list each profile's current conversation whose queue holds messages, with the count, the hold (`stop`, `restart`, `refused` or none) and a refusal's code, and no text, and the module SHALL publish `assistant-state/2.3`, which allows a count up to 16, only while a queue holds more than 8; an authorized reader SHALL read the queue's messages and hold, and the running task's unread steers, through the private conversation route's `view=queue`.
 
 #### Scenario: Queue while a task works
 - **WHEN** the owner queues two messages while a task's model call is in flight
@@ -940,7 +940,7 @@ The owner SHALL be able to queue messages for a conversation while its task work
 
 ### Requirement: Steering a running task
 
-The owner SHALL be able to steer a conversation's unfinished task with a new message ([Hub #2031](https://github.com/jimmie-potts/agent-device-hub/issues/2031), owner decisions 1, 3, 4 and 5 of [#505 round 2](https://github.com/jimmie-potts/agent-device-hub/issues/505#issuecomment-7079875201)). On the Conversation page **Send**, and Enter, SHALL steer a task that works or waits on the coding worker. The module SHALL take a steer as a staged `steer` input naming the profile, the text, the revision read and the `taskId` of the turn the page expects, and with `questionId` the question it sets aside. A steer SHALL be saved at once in the module's queue store, keyed by the request ID of its input command, without bumping the task's generation, so the running call goes on; a repeated command SHALL save nothing more. The task's unread steers SHALL show above the composer and in the private queue read. Each SHALL be taken into the task's own transcript, oldest first, in the admission transaction of the task's next model call, after any tool results of the last call, so the Messages API reads the `tool_result` blocks first and the steer's text after them, and SHALL be saved in the conversation there, in the task's turn; a call the turn's limits refuse SHALL leave them unread, and a replayed model node whose call was admitted SHALL take none again. The recent conversation section SHALL stay as fixed when the task started. A steer that is unread when a model call's answer is saved SHALL make a final answer superseded: that answer SHALL be saved and never spoken, and the task SHALL make one more model call, admitted, reserved and counted as any other, to read it; only the turn's final reply SHALL be spoken. A steer the task never read SHALL go back to the head of its conversation's queue, in order and before the messages already queued, in the commit that closes the turn, succeeded or failed, so one that arrived after the last model call starts as the next queued message, and in the commit of Cancel task, which then holds the queue; none SHALL be dropped. A steer that reaches its turn after the turn ended, while that turn is still the conversation's latest, SHALL become the next queued message the same way, even past 8 up to the queue's bound of 16 as a returned steer may, and start at once unless the queue is held; after Cancel task it SHALL hold the queue, as the steers Cancel task returned do. A steer aimed at a turn a newer turn followed, at another conversation's or an unknown turn, or setting aside a question of an ended turn, SHALL be refused with `invalid-state` and never retried (ADR 0012); a steer naming a revision the assistant has not reached SHALL be refused as a revision conflict, while the running task's own steps never make a steer stale. A paused or uncertain task SHALL refuse a steer with `invalid-state`. During an approval a steer SHALL be queued, and **Decline with message** SHALL decline the approval and steer the task in one commit; during a clarification the composer SHALL answer it, and **Skip question and send** SHALL answer the clarification with a fixed tool result saying the owner skipped it and steer the task in one commit; a delegation SHALL refuse either with `invalid-state`. A steer during a delegation wait, a hand-off that waits for its companion's busy slot included, SHALL be kept until the worker's result arrives and read after it. When fewer than two model calls remain in the turn's limits, by its count of model calls, its active time at a model call's deadline or its usage units at the least a call reserves, a steer SHALL be queued instead. A task SHALL hold at most 8 unread steers, and its steers and its conversation's queue together at most 16; a steer past either SHALL be refused with `capacity` and a fixed message. A steer SHALL run no title check of its own, while a declined approval stays the title's major event, and SHALL report no turn of its own to the shared session model. A restart SHALL start no work: a waiting or paused task keeps its unread steers, and steers a start's reconciliation returns, and unread steers a start finds on a task that already finished, SHALL go back to the head of their queue and wait there, held with `restart`. The graph version SHALL be `conversation-2`, whose model node has an edge back to itself; each start SHALL upgrade an unfinished task saved under `conversation-1`, whose nodes, state and checkpoints are the same, before reconciling it, while a task of any other version stays recovered unavailable. An unread steer's text SHALL reach only its own task's model calls and SHALL be stored only in the queue store; once the task reads it, it SHALL be a saved owner message of the conversation like any other, and a superseded reply a saved assistant message, which later turns' recent context and the conversation's title checks read. Steer text SHALL never appear in logs, published state or session reports.
+The owner SHALL be able to steer a conversation's unfinished task with a new message ([Hub #2031](https://github.com/jimmie-potts/agent-device-hub/issues/2031), owner decisions 1, 3, 4 and 5 of [#505 round 2](https://github.com/jimmie-potts/agent-device-hub/issues/505#issuecomment-7079875201)). On the Conversation page **Send**, and Enter, SHALL steer a task that works or has an earlier saved worker-result interrupt. The module SHALL take a steer as a staged `steer` input naming the profile, the text, the revision read and the `taskId` of the turn the page expects, and with `questionId` the question it sets aside. A steer SHALL be saved at once in the module's queue store, keyed by the request ID of its input command, without bumping the task's generation, so the running call goes on; a repeated command SHALL save nothing more. The task's unread steers SHALL show above the composer and in the private queue read. Each SHALL be taken into the task's own transcript, oldest first, in the admission transaction of the task's next model call, after any tool results of the last call, so the Messages API reads the `tool_result` blocks first and the steer's text after them, and SHALL be saved in the conversation there, in the task's turn; a call the turn's limits refuse SHALL leave them unread, and a replayed model node whose call was admitted SHALL take none again. The recent conversation section SHALL stay as fixed when the task started. A steer that is unread when a model call's answer is saved SHALL make a final answer superseded: that answer SHALL be saved and never spoken, and the task SHALL make one more model call, admitted, reserved and counted as any other, to read it; only the turn's final reply SHALL be spoken. A steer the task never read SHALL go back to the head of its conversation's queue, in order and before the messages already queued, in the commit that closes the turn, succeeded or failed, so one that arrived after the last model call starts as the next queued message, and in the commit of Cancel task, which then holds the queue; none SHALL be dropped. A steer that reaches its turn after the turn ended, while that turn is still the conversation's latest, SHALL become the next queued message the same way, even past 8 up to the queue's bound of 16 as a returned steer may, and start at once unless the queue is held; after Cancel task it SHALL hold the queue, as the steers Cancel task returned do. A steer aimed at a turn a newer turn followed, at another conversation's or an unknown turn, or setting aside a question of an ended turn, SHALL be refused with `invalid-state` and never retried (ADR 0012); a steer naming a revision the assistant has not reached SHALL be refused as a revision conflict, while the running task's own steps never make a steer stale. A paused or uncertain task SHALL refuse a steer with `invalid-state`. During an approval a steer SHALL be queued, and **Decline with message** SHALL decline the approval and steer the task in one commit; during a clarification the composer SHALL answer it, and **Skip question and send** SHALL answer the clarification with a fixed tool result saying the owner skipped it and steer the task in one commit; a delegation SHALL refuse either with `invalid-state`. A steer on an earlier saved worker-result interrupt SHALL stay with that task until it resumes. A background job SHALL NOT hold a steer or prevent a new Conversation turn. When fewer than two model calls remain in the turn's limits, by its count of model calls, its active time at a model call's deadline or its usage units at the least a call reserves, a steer SHALL be queued instead. A task SHALL hold at most 8 unread steers, and its steers and its conversation's queue together at most 16; a steer past either SHALL be refused with `capacity` and a fixed message. A steer SHALL run no title check of its own, while a declined approval stays the title's major event, and SHALL report no turn of its own to the shared session model. A restart SHALL start no work: a waiting or paused task keeps its unread steers, and steers a start's reconciliation returns, and unread steers a start finds on a task that already finished, SHALL go back to the head of their queue and wait there, held with `restart`. The graph version SHALL be `conversation-2`, whose model node has an edge back to itself; each start SHALL upgrade an unfinished task saved under `conversation-1`, whose nodes, state and checkpoints are the same, before reconciling it, while a task of any other version stays recovered unavailable. An unread steer's text SHALL reach only its own task's model calls and SHALL be stored only in the queue store; once the task reads it, it SHALL be a saved owner message of the conversation like any other, and a superseded reply a saved assistant message, which later turns' recent context and the conversation's title checks read. Steer text SHALL never appear in logs, published state or session reports.
 
 #### Scenario: A steer during tool use
 - **WHEN** the owner steers a task while its model call that asks for a read is in flight
@@ -963,8 +963,8 @@ The owner SHALL be able to steer a conversation's unfinished task with a new mes
 - **THEN** the free text is queued, the approval is declined with nothing dispatched, and the next call reads the declined result and then the steer
 
 #### Scenario: Delegation wait
-- **WHEN** the owner steers a task whose hand-off runs, and another whose hand-off waits for its companion's busy slot
-- **THEN** neither makes a model call until its worker's result arrives, and each next call reads the result and then the steer
+- **WHEN** the owner writes a new message while a background job is running or waiting for worker capacity
+- **THEN** the message follows ordinary Conversation admission and neither worker state delays a model call
 
 #### Scenario: Few calls left
 - **WHEN** the owner steers a task with one model call or less than two model deadlines of active time left
@@ -985,3 +985,88 @@ The owner SHALL be able to steer a conversation's unfinished task with a new mes
 #### Scenario: A process exit during the call that read a steer
 - **WHEN** the process exits during the model call whose admission took a steer into the transcript, and the owner cancels the uncertain task after the restart
 - **THEN** the steer is in the transcript and the conversation once, no steer is unread, and nothing is returned to the queue
+
+### Requirement: Direct private Conversation controls
+
+For an explicit request by the authorized owner in private Conversation, each companion SHALL execute the resolved supported Hub or device control through the tracked dispatcher without an approval turn. Before dispatch the module SHALL bind the owner input, action, targets, settings, request identity and current revisions. The module SHALL ask for missing or ambiguous details before sending anything. Previous messages MAY resolve references and SHALL NOT authorize a new action. Status questions, hypotheticals and model suggestions SHALL NOT dispatch controls. The dispatcher and designated writer SHALL preserve capability, permission, revision and hold checks. A lost acknowledgment SHALL report uncertainty with no retry.
+
+#### Scenario: All three companions can execute
+
+- **WHEN** the owner names a unique configured plug and asks to turn it off, or asks for an explicit Hub mode, in any of the three conversations
+- **THEN** its allowed control dispatches once without an approval question
+
+#### Scenario: Clarification binds a missing setting
+
+- **WHEN** the owner requests a control without specifying a required setting, or names a target matching two devices
+- **THEN** Conversation asks for the missing setting or the exact device
+- **AND** the owner's answer completes the original request and one tracked command dispatches without another approval
+
+#### Scenario: Ordinary requests bind typed controls
+
+- **WHEN** the owner asks to pause media on a uniquely named display, clear notices for an exact session or change a named monitor setting
+- **THEN** the matching typed command dispatches once without an approval or a protocol-formatted request
+
+#### Scenario: A display alias matches multiple eligible targets
+
+- **WHEN** the owner asks to show saved art on a shared display alias and another destination, even if the model proposes an exact display ID
+- **THEN** Conversation asks which exact display the owner meant and names only candidates permitted at the reply destination
+- **AND** a valid clarification preserves the rest of the requested destination set
+
+#### Scenario: The owner names a specific draft revision
+
+- **WHEN** a save proposal selects a different draft revision than the one the owner requested, or the draft changes before dispatch
+- **THEN** the save conflicts and no library write is sent
+
+#### Scenario: Matching words alone do not authorize effects
+
+- **WHEN** a model requests brightness using a number the owner supplied for a different property or a relative change
+- **THEN** no brightness command is sent
+- **AND** a saved-art show must match every requested recipient and the requested status visibility
+
+#### Scenario: A stored admission has no reply after restart
+
+- **WHEN** the runtime restarts after admitting the command but before receiving its reply
+- **THEN** the original request stays uncertain and is never sent again
+
+### Requirement: Field grants at each Conversation destination
+
+Before disclosing retained fields, the owning module SHALL check the current grant for caller, companion, purpose, source and destination. This SHALL cover discovery, counts, joins, pages, tool output, provider prompts, recent context, title requests and coding briefs. Existing collection and sharing choices SHALL remain in force. A new destination SHALL receive retained fields only after an explicit owner selection. Revocation SHALL apply before the next disclosure.
+
+#### Scenario: Public metadata respects current grants
+
+- **WHEN** a task's public read grant is withdrawn after a state snapshot was prepared
+- **THEN** later assistant-state updates, replay and sync omit the identity, status and counts of that task
+- **AND** a conversation list uses the neutral persona title when a stored generated title cannot be traced to currently allowed fields
+- **AND** an explicit owner title is shown while its label grant allows it
+
+#### Scenario: No access through a different read
+
+- **WHEN** the owner withdraws a grant for a retained record
+- **THEN** a later read cannot return the record, its fields or its contribution to counts through a different companion, task, tool, page or ungranted destination
+
+#### Scenario: Revocation follows saved answers and selected briefs
+
+- **WHEN** a later turn repeats an earlier tool-derived answer and the owner revokes its source field
+- **THEN** the derived answer cannot reach a page, a new model prompt or read-aloud delivery after restart
+- **AND** an approved brief with a source denied to the worker does not leave through a new or queued dispatch
+- **AND** a retained question cannot expose an answer whose own message grant was revoked
+
+### Requirement: Background coding jobs in Conversation
+
+An approved coding delegation SHALL return a stable job ID and let its Conversation turn finish without waiting for dispatch, worker admission or a result. The approved job SHALL remain independent of subsequent turns and chat selection. The result SHALL reach the original conversation and exchange by the saved attempt identity. Conversation SHALL offer an authenticated stop control on a queued or running job reference. It SHALL name the exact job and attempt, including when opened in an earlier chat. Settlement SHALL save the observed result and pending conversation delivery together, including for pre-upgrade delegations. If saving an accepted-dispatch or unconfirmed-stop observation fails, or delivering a saved observation fails, the coordinator SHALL retry only the local write. Settlement SHALL retain preceding observations in order. Recovery of an unsettled run with a committed stop intent and no saved receipt SHALL show that a stop was requested and remains unconfirmed. Repeated delivery SHALL affect only the original job exchange or saved delegation question. It SHALL never resend a worker command to recover delivery.
+
+#### Scenario: Worker still running
+
+- **WHEN** an approved job has a delayed worker result
+- **THEN** Conversation can answer a Hub question and accept a second delegation before the result arrives
+
+#### Scenario: Results in a different order
+
+- **WHEN** two jobs finish in reverse order after the owner starts another chat
+- **THEN** each result appears once on its originating exchange
+
+
+#### Scenario: A pre-upgrade delegation cannot receive its saved observation immediately
+
+- **WHEN** recovery settles a pre-upgrade dispatch or run, and the original conversation cannot be written immediately
+- **THEN** the saved uncertainty remains pending until the local conversation write succeeds, the original legacy turn remains paused for owner resume, and no worker command is resent

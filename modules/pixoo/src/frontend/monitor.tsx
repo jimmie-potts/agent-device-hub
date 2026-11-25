@@ -4,6 +4,7 @@ import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {DisplayRecord, Filter} from '../module/schemas.js';
+import {useCanvasBitmaps} from './bitmaps.js';
 import {PreviewFrame} from './preview.js';
 
 type Props = {context: FrontendContext; device: DeviceRecord | undefined; display: DisplayRecord | undefined; live: boolean};
@@ -40,26 +41,29 @@ function matches(row: MonitorSessionRow, filter: Filter): boolean {
     && (filter.projectId === undefined || row.projectId === filter.projectId)
     && (filter.session === undefined || Object.entries(filter.session).every(([key, value]) => row.identity[key as keyof typeof row.identity] === value));
 }
-function Pixels({context, refs, delay, revision, label}: {context: FrontendContext; refs: readonly string[]; delay: number | null; revision: number | undefined; label: string}): React.JSX.Element {
+/** Exported for its bitmap-lifetime check (Hub #2133). */
+export function Pixels({context, refs, delay, revision, label}: {context: FrontendContext; refs: readonly string[]; delay: number | null; revision: number | undefined; label: string}): React.JSX.Element {
   const [bitmaps, setBitmaps] = useState<ImageBitmap[]>([]), [index, setIndex] = useState(0), [failure, setFailure] = useState<string>();
   const key = JSON.stringify(refs);
+  // The generation keeps its frames; the one on the canvas outlives the generation until it is replaced (Hub #2133).
+  const {keep, drop} = useCanvasBitmaps(bitmaps[index]);
   useEffect(() => {
     let disposed = false;
     const owned: ImageBitmap[] = [];
     setBitmaps([]); setIndex(0); setFailure(undefined);
-    // The generation owns these cached pixels. Every decoded bitmap is closed when that generation changes.
+    // The generation owns these cached pixels. Every decoded bitmap is dropped when that generation changes.
     void (async () => {
       try {
         for (const ref of JSON.parse(key) as string[]) {
           const bitmap = await createImageBitmap(await context.api.image(`/modules/pixoo/content/${ref}`));
           if (disposed) { bitmap.close(); return; }
-          owned.push(bitmap);
+          keep(bitmap); owned.push(bitmap);
         }
         if (!disposed) setBitmaps([...owned]);
       } catch (error) { if (!disposed) setFailure(codeOf(error)); }
     })();
-    return () => { disposed = true; for (const bitmap of owned) bitmap.close(); };
-  }, [context.api, key, revision]);
+    return () => { disposed = true; for (const bitmap of owned) drop(bitmap); };
+  }, [context.api, key, revision, keep, drop]);
   useEffect(() => {
     if (bitmaps.length < 2 || delay === null || delay < 1) return;
     // This local preview animation performs no network reads or commands.

@@ -8,7 +8,6 @@ import type {ConversationListEntry} from '../assistant/history-contract.js';
 import {priceText, spendText} from './conversation-spend.js';
 import {profiles} from './conversation-rail.js';
 import {planUsage, slotStatus, workerAvailability} from './coding-status.js';
-import {profileTools} from '../assistant/tool-scope.js';
 
 /** The longest owner title, as the session label bound (Hub #2025). */
 const TITLE_CHARS = 80;
@@ -48,7 +47,7 @@ function titleOrigin(title: ConversationTitle, profileName: string, synthetic: b
 export function ConversationDetails({
   id, open, overlay, onClose, stopSpeaking,
   Facts, profile, profileName, state, task, coding, live, spend, savedQuestion, receipt, locked, unfinished, goTo, setEnabled, title, rename,
-  conversations, viewing, openConversation, showOlder,
+  conversations, viewing, openConversation, showOlder, codingJobs,
 }: {
   id: string; open: boolean; overlay: boolean; onClose: () => void; stopSpeaking: React.JSX.Element | null;
   Facts: FrontendUi['Facts']; profile: AssistantProfile; profileName: string;
@@ -69,6 +68,7 @@ export function ConversationDetails({
   conversations: readonly ConversationListEntry[] | undefined; viewing: string | undefined; openConversation: (conversationId: string) => void;
   /** Lists the next page of older conversations, or undefined when every one is listed. */
   showOlder: (() => void) | undefined;
+  codingJobs: React.ReactNode;
 }): React.JSX.Element {
   const renameId = useId();
   const [draftTitle, setDraftTitle] = useState('');
@@ -106,9 +106,7 @@ export function ConversationDetails({
   // Every profile uses the configured provider and model (Hub #2026).
   const synthetic = state?.provider === 'synthetic';
   const unit = synthetic ? 'units' : 'tokens';
-  // The tools this profile's model is offered: device and catalog tools stay B.U.N.N.Y.'s (Hub #2026).
-  const allowed = state === undefined ? undefined : profileTools(state.tools, profile);
-  const withheld = state === undefined || allowed === undefined ? [] : state.tools.filter(name => !allowed.includes(name));
+  const allowed = state?.tools;
   const unavailable = state === undefined ? undefined : catalog.filter(name => !state.tools.includes(name));
   const lastKnown = state !== undefined && !live;
   const enabled = state?.enabled;
@@ -134,15 +132,15 @@ export function ConversationDetails({
           ['Provider', synthetic ? 'Synthetic (no paid calls)' : state?.provider === 'anthropic' ? 'Anthropic' : 'Unknown'],
           ['Model', state?.model ?? 'Unknown'],
           ['Allowed tools', toolList(allowed)],
-          ...(withheld.length === 0 ? [] : [['B.U.N.N.Y. only', toolList(withheld)] as const]),
           ['Unavailable tools', toolList(unavailable)],
           ['Coding worker', workerAvailability(coding)],
-          [`${profileName}'s coding slot`, slotStatus(coding, profile)],
+          ...(coding?.capacity === 'uncapped' ? [] : [[`${profileName}'s coding slot`, slotStatus(coding, profile)] as const]),
           // The plan's usage windows are shared by every run; the worker reports them after a run (Hub #2028).
           ['Plan usage', planUsage(coding?.readiness, ms => new Date(ms).toLocaleString()).join('; ')],
         ]}/>
-        <p>Reads need no approval. Proposed changes need your approval in the conversation.</p>
+        <p>Explicit requests for configured Hub and device controls run as soon as the action and target are clear. Coding hand-offs and paid generation use separate approval.</p>
       </details>
+      {codingJobs}
       <details>
         <summary>Task activity</summary>
         {lastKnown && <p>Last known task activity.</p>}

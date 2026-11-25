@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/coding-run/2.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "endpointId",
+    "taskId",
+    "repository",
+    "brief",
+    "bounds"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.0#/properties/requestId"
+    },
+    "endpointId": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.0#/properties/endpointId"
+    },
+    "taskId": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.0#/properties/taskId"
+    },
+    "repository": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.0#/properties/repository"
+    },
+    "brief": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.0#/properties/brief"
+    },
+    "bounds": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.0#/properties/bounds"
+    },
+    "harness": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    }
+  }
+}

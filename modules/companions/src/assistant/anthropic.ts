@@ -175,7 +175,7 @@ export class AnthropicProvider implements ModelProvider {
     // task, and the mode last, so the cached prefix reaches as far as possible.
     const stable = [input.instructions, ...sectionTexts(input.context, ['personality']),
       'Use a tool when the request needs it and call at most one tool per turn. Reads need no approval.',
-      'A command tool only proposes a change; the owner approves it, and the tool result says whether it was accepted, refused or declined. Never claim a change was applied unless the result says so.',
+      'Run a Hub or device control only for a clear request in the current owner message. Earlier messages can identify what a current request refers to. Status questions, hypotheticals, and suggestions never authorize a control. Paid artwork and coding delegation still ask for approval. Claim a change was applied only with confirming tool evidence.',
       'If a request needs a detail you do not have, ask the owner with ask_owner. Do not invent device or session facts.',
       ...sectionTexts(input.context, ['knowledge', 'preferences', 'memory'])].join('\n\n');
     return [{type: 'text', text: stable, cache_control: {type: 'ephemeral'}}, {type: 'text', text: [...sectionTexts(input.context, ['recent']), mode].join('\n\n')}];

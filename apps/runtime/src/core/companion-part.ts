@@ -2,26 +2,33 @@
 // It also forwards the companions module's approved assistant commands to its tracked dispatcher (Hub #46): only the
 // allowlisted family and target below, only from that module, as one operation the module requested.
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
-import {recordLog, SdkError, Outcome} from '@jimmie-potts/sdk';
+import {followCopy, recordLog, SdkError, Outcome, type Sdk, type SyncedCopy} from '@jimmie-potts/sdk';
 import {OPPORTUNITY_TTL_MS, type CompanionOpportunity, type SpeechDispatch} from '@jimmie-potts/event-contracts/v2/companions';
 import {ASSISTANT_LIGHT_OWNER, type AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import type {CodingDispatch} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingDispatch, CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
 import {coreValidator, type AgentOccurrence, type AttentionRaised, type Session30Record, type TurnEnded} from '@jimmie-potts/event-contracts/v2/families';
 import type {CoreHandle, CorePart} from './core.js';
 import type {CoreChange} from './store.js';
 import {dispatchCatalogAction} from './assistant-actions.js';
 import type {Action, ActionAnswer} from './tracker.js';
+import type {InboxRecords} from './inbox.js';
 import {LivePublication} from './live-publication.js';
 
+const COMPANIONS = 'bunny/modules/companions';
+const CODING_STATE = 'coding-state';
 const TYPES = new Set(['org.bunny.attention.raised', 'org.bunny.turn.ended']);
 export class CompanionPart implements CorePart {
   readonly #eligibility = new LivePublication();
   readonly #sessions = new Map<string, Session30Record>();
   #closed = false;
+  #coding: SyncedCopy<CodingState> | undefined;
+  #codingFresh = false;
+  #stopCodingCopy: (() => void) | undefined;
   constructor(private readonly device: (id: string) => Message<DeviceRecord> | undefined = () => undefined,
-    private readonly dispatchLighting: (action: Action) => Promise<ActionAnswer> = () => Promise.resolve(errorBody('unavailable'))) {}
+    private readonly dispatchOperator: (action: Action) => Promise<ActionAnswer> = () => Promise.resolve(errorBody('unavailable')),
+    private readonly handleInbox: InboxRecords['handle'] = () => Promise.resolve(errorBody('unavailable'))) {}
   /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
   seed(records: readonly Session30Record[]): void {
     this.#sessions.clear();
@@ -36,6 +43,19 @@ export class CompanionPart implements CorePart {
   }
   publishing(message: Message<unknown>): () => void {return this.#eligibility.publishing(message);}
   publicationEnded(change: CoreChange): void {this.#eligibility.ended(change.messages);}
+  /** Starts only after the host verifies that the coding-state owner actually serves sync. */
+  followCodingSelection(sdk: Sdk): void {
+    if (this.#closed || this.#stopCodingCopy !== undefined) return;
+    this.#stopCodingCopy = followCopy<CodingState>(
+      (changed, {onRestarted}) => sdk.sync([CODING_STATE], changed, {owner: COMPANIONS, timeoutMs: 5000, onRestarted}),
+      {
+        changed: change => {if (change.type === 'synced') this.#codingFresh = true;},
+        current: copy => {this.#coding = copy;},
+        restarted: () => {this.#codingFresh = false;},
+        refused: () => {this.#codingFresh = false; this.#coding = undefined;},
+      },
+    );
+  }
   async start(core: CoreHandle): Promise<void> {
     const validator = coreValidator();
     await core.sdk.respond<{requestId:string;target:string;gesture:'notice'|'attention';opportunityId:string;validUntilMs:number;expectedConfigurationRevision:number;expectedGeneration:{epoch:string;sequence:number}}>('bunny.cmd.reachy-dispatch.reachy', async command => {
@@ -76,8 +96,16 @@ export class CompanionPart implements CorePart {
       if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
       const checked = validator.validate(command, {nowMs: core.clock.now()});
       if (!checked.ok) return {error: checked.error};
+      const record = this.#codingFresh ? this.#coding?.get({family: CODING_STATE, id: 'coding'}) : undefined;
+      const selection = record !== undefined && validator.validate(record).ok && record.data.availability === 'available' &&
+        record.data.endpointId === command.data.endpointId ? record.data : undefined;
+      const selectionId = selection?.selectionId;
+      if (command.data.harness !== undefined && (selection === undefined || (selection.capacity === 'uncapped' && selectionId === undefined))) {
+        return errorBody('unavailable', {detail: 'the selected worker could not be verified'});
+      }
+      const version = selectionId === undefined ? command.data.harness === undefined ? '2.0' : '2.1' : '2.2';
       const answer = await core.dispatch({key: 'bunny.cmd.coding-run.assistant', requestedBy: command.source, requestId: command.data.requestId, parent: command,
-        draft: {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data}});
+        draft: {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/coding-run/${version}`, data: {...command.data, ...(selectionId === undefined ? {} : {selectionId})}}});
       return 'error' in answer ? answer : {status: 'accepted'};
     });
     await core.sdk.respond<AssistantDispatch>('bunny.cmd.assistant-dispatch.assistant', async command => {
@@ -86,7 +114,10 @@ export class CompanionPart implements CorePart {
       const checked = validator.validate(command, {nowMs: core.clock.now()});
       if (!checked.ok) return {error: checked.error};
       if (command.data.family === 'catalog-action') {
-        const answer = await dispatchCatalogAction(core, {...command, data: command.data}, this.device, this.dispatchLighting);
+        const answer = await dispatchCatalogAction(core, {...command, data: command.data}, this.device, this.dispatchOperator, async (action, input) => {
+          const result = await this.handleInbox(core, {target: action.draft.subject, input, source: command.source, parent: command, resendId: input.requestId});
+          return 'error' in result ? result : {status: 'accepted', requestId: input.requestId};
+        });
         return 'error' in answer ? answer : {status: 'accepted'};
       }
       const action = command.data;
@@ -138,5 +169,12 @@ export class CompanionPart implements CorePart {
       }
     }, {onOverflow: () => {this.#eligibility.clear();}})));
   }
-  close(): void {this.#closed = true; this.#eligibility.clear(); this.#sessions.clear();}
+  close(): void {
+    this.#closed = true;
+    this.#stopCodingCopy?.();
+    this.#coding = undefined;
+    this.#codingFresh = false;
+    this.#eligibility.clear();
+    this.#sessions.clear();
+  }
 }

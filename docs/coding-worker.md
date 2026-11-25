@@ -1,22 +1,45 @@
 # Run the coding worker on the Mac
 
 The coding worker (Hub #502) is one Node process on the owner's computer that
-lets B.U.N.N.Y. hand a bounded coding task to Claude Code and get a reviewable
-result back. It holds a `coding-worker` credential, opens one endpoint on the
-core's loopback gateway, and runs `claude -p` in a fresh worktree of an
-allowlisted repository when the companions module hands it owner-approved
+lets B.U.N.N.Y. hand a bounded coding task to Claude Code or Codex and get a
+reviewable result back. It holds a `coding-worker` credential, opens one endpoint on the
+core's loopback gateway, and starts the selected adapter in a fresh worktree
+of an allowlisted repository when the companions module hands it owner-approved
 work. The container gets no CLI and no repository; the worker gets no state,
 device or dashboard authority. Its credential role grants exactly three
 families on its endpoint: it answers `coding-work`, publishes `coding-progress`
 and declares `coding-endpoint`.
 
-The worker has three slots, one each for B.U.N.N.Y., Reachy and MicroDuck (Hub
-#2028). It runs one task per companion, three at once, and refuses another
-start with `capacity`. Each start names the companion that asked, and runs on
-the same repository each get their own fresh worktree; their fetch and worktree
-setup take turns, so git's locks never race.
+Workers configured with `coding-worker/1.2` declare uncapped admission.
+Companions can submit independent jobs regardless of which companion already
+has work running. The worker uses a fresh worktree for each attempt and
+serializes conflicting Git setup on the same underlying repository, including
+linked worktrees. A cancelled attempt waiting for that lock skips setup when
+its turn comes. Finite worker declarations keep their original slot behavior.
 
-## What a delegated task may do
+Approved uncapped jobs wait durably until their start can be delivered. The Hub
+paces the tracked dispatch and the worker's acknowledgement as one exchange.
+Acknowledgement frees the next delivery while the earlier job keeps running.
+When a worker disconnects or is disabled, the Hub drops starts assigned to
+that connection. A start the Hub had not sent ends with a definite failure.
+If the start may have reached the worker, the outcome stays uncertain. The Hub
+does not resend either start. A delayed explicit dispatch keeps its original
+connection binding even when the next worker uses the same endpoint name.
+The core reads current selection at startup and after a state-stream gap. It
+refuses explicit dispatch until that read confirms an available worker.
+Unassigned jobs keep their place for the next worker connection.
+
+An uncapped worker reports whether an attempt is waiting for Git setup,
+preparing its worktree or ready to run the harness. A waiting report renews
+only the wait deadline. Once setup starts, the attempt has its own setup
+deadline. A ready worktree starts the harness deadline. A spawn failure
+ends that attempt and leaves its siblings running. The worker reports usage
+limits only when the harness supplies that evidence.
+
+Open **Details**, then **Coding jobs**, to find active jobs and stop a named
+attempt. **Next jobs** reads later jobs without affecting admission.
+
+## Claude Code delegation
 
 For each run the worker creates `.local/worktrees/bunny-<task>-<random>` under the
 repository from `origin/main` (after a best-effort `git fetch`), runs the
@@ -167,6 +190,12 @@ be listed.
 
 ## Readiness
 
+Workers declare each configured adapter through `coding-endpoint/2.4`
+with `coding-worker/1.2`, or through `coding-endpoint/2.3` with
+`coding-worker/1.1`. The core includes those declarations and active
+session IDs in coding state. The existing readiness field still describes Claude
+Code.
+
 Before it connects, the worker asks its tool what it is, without starting a
 task or a session and without spending: `claude --version` and
 `claude auth status --json`. Each runs with no input, the harness's
@@ -197,6 +226,78 @@ probes again and sends one more enable from its endpoint with the new record.
 That enable is a report: if it is refused or lost, nothing is sent again. A
 disabled or lost endpoint clears the record.
 
+## Codex delegation
+
+Use the Codex worker on your own unmanaged Mac with a personal ChatGPT
+workspace. Managed Macs and organization-managed workspaces are unsupported.
+Disable the Codex worker if either becomes managed, pending review of the
+new setup. This is a setup decision. Jobs can run without asking again.
+The worker checks the reported sign-in and settings before sending a brief.
+
+Use `coding-worker/1.2` and add a `codex` object with absolute `executable`
+and `home` paths and, optionally, a `model` name. Select the local CLI in
+the worker configuration and give it a separate mode-700 directory outside
+every checkout. Standalone Codex 0.163.0 supports the app-server checks in
+a signed-out profile. Use a CLI that confirms the required effective settings,
+account mode and thread scope. Upgrade the core first so it accepts
+`coding-endpoint/2.4`. Existing Claude-only configuration and requests without
+a harness selection continue to use Claude Code.
+
+As the worker's host user, create that directory and sign in to ChatGPT in
+the dedicated profile. Use the same absolute directory for `codex.home`
+and preserve it for the native sessions it stores.
+
+```sh
+worker_codex_home="$HOME/.local/share/bunny/coding-worker/codex"
+install -d -m 700 "$worker_codex_home"
+CODEX_HOME="$worker_codex_home" HOME="$worker_codex_home" /ABSOLUTE/REVIEWED/codex \
+  -c 'cli_auth_credentials_store="file"' -c 'forced_login_method="chatgpt"' login
+```
+
+Keep this profile free of `config.toml` and a nested `.codex` directory.
+Use the dedicated ChatGPT login and keep personal credentials in their own profile.
+The worker launches the private stdio app-server from that directory with
+both `HOME` and `CODEX_HOME` set to it. It pins the SQLite files and logs to
+the profile's `sqlite` and `log` directories in the launch arguments.
+The process can open its local stores during startup. The worker checks the
+effective configuration before reading the account or opening a thread.
+A reported path or route override, enabled telemetry, configured MCP servers
+or plugins, enabled hooks, apps, shell snapshots or login shells, or unavailable
+settings evidence prevents a brief from being sent. The worker checks
+the personal ChatGPT account before opening a thread and again before sending
+a turn. An organization plan reported by the account or quota snapshot,
+or a report of a different backend, also refuses the run. Each run reads the
+current quota snapshot after checking the account and waits up to two seconds.
+Quota can be unavailable.
+After the adapter observes an organization quota, it requires a fresh personal
+account and matching quota plan before another run. An older probe cannot
+release that refusal. The effective settings and account checks do not attest
+that a host or workspace is unmanaged.
+Sign-in, plan and limit responses contribute only the declared readiness
+fields. The child receives no worker credential or provider API key. Codex
+owns its file-backed sign-in in the dedicated profile. The worker reads no
+authentication token.
+
+The run uses a fresh worktree, no interactive approvals and a profile with
+writes restricted to the worktree and disabled shell network access. The shared wall-clock
+deadline stops the process. Codex sends one model turn and supplies no
+per-turn dollar cap or subscription cost. Only declared subscription-plan
+exhaustion is a usage limit. Provider slowdown is an ordinary failure, and
+loss after dispatch is uncertain. There is no automatic retry.
+
+| Worker capability | Claude Code | Codex |
+| --- | --- | --- |
+| Subscription evidence | Preflight rejects contrary evidence. Stream init names the credential source. | Account must identify a ChatGPT sign-in before the turn. |
+| Usage limits | Windows observed during a run, or unknown | Account windows when reported, or unknown |
+| Cancellation | The worker terminates the child | The worker terminates the app-server process group |
+| Native identity | First validated session ID in the stream | Validated thread ID before the turn |
+| Review a named revision | Yes | Yes |
+| Live steering or resume through this worker | Unsupported | Unsupported |
+
+Claude Code's first-event check observes the credential after the CLI starts.
+Installed qualification in #2115 still owns evidence of real sign-in,
+billing, sandbox behavior and opening the reported session in a native client.
+
 ## Install once
 
 Upgrade the core before the worker. A worker from Hub #1743 on declares with
@@ -206,6 +307,13 @@ such a worker cannot declare until the core knows them. Its first start ends
 with `coding-worker-enable-refused: unsupported-version`. A core from #2028 on
 works with an older worker as one slot for every companion (see
 [the runtime upgrade procedure](../apps/runtime/UPGRADE.md)).
+
+For the established worker, #2115 owns the compatible release and installed
+verification. Upgrade the core and then the worker executable before changing
+the existing private configuration's `schema` to `coding-worker/1.2`. Preserve
+its allowlisted repositories, token file and harness settings. A configuration
+using the older worker contract keeps finite admission. No host cap field is
+needed in the current contract.
 
 1. Grant the credential. Add one entry with the `coding-worker` role to the
    installation's private `edge-credentials/1.0` file, bound to the source
@@ -225,7 +333,7 @@ works with an older worker as one slot for every companion (see
 3. Write the private configuration, mode 600, outside every checkout:
 
    ```json
-   {"schema": "coding-worker/1.0", "edge": "http://127.0.0.1:18788", "tokenFile": "/absolute/private/coding-worker.token",
+   {"schema": "coding-worker/1.2", "edge": "http://127.0.0.1:18788", "tokenFile": "/absolute/private/coding-worker.token",
     "repositories": [{"name": "agent-device-hub", "path": "/absolute/path/to/checkout"}],
     "claude": {"executable": "/opt/homebrew/bin/claude", "permissionMode": "acceptEdits"}}
    ```
@@ -314,23 +422,18 @@ keeps its process, reconnects and declares again with backoff, as above.
 
 On the Conversation page, ask B.U.N.N.Y. to delegate a task, naming the
 repository. The model proposes a delegation showing the repository, the brief
-and the coding worker revision it is bound to; approve it. The core tracks the
-hand-off as one operation that completes when the worker reports it started;
-the page then shows the delegated work waiting, with Cancel task asking the
-worker to stop. The worker's result arrives as the tool's later word (the
-model reads it as text naming the call) and the next reply reports it.
+and the bound coding worker revision. After approval, Conversation shows the
+saved Hub job ID. The core tracks the hand-off as an operation that completes
+when the worker reports it started. Conversation remains available and the
+worker's result links to the job receipt in its original exchange.
 
-Each companion has its own slot. A delegation is proposed while the worker is
-connected even when the companion's slot is busy, and the approval says so.
-Approved, it waits, saved, until that slot frees, and the page shows "Waiting
-for the coding worker: it is busy". It is then sent once, without asking again.
-Cancel task removes a waiting hand-off and sends nothing. A waiting hand-off
-keeps its place across a restart of the core. The proposal is bound to the
-worker's connection only, so another companion's run starting or ending never
-refuses it; a worker that disconnected and came back does. The Conversation
-details show the worker's slots, the companion's own slot and the plan usage
-windows the latest run reported, which every run shares. The per-run caps stay
-twenty minutes, sixty turns and five dollars.
+Each companion has its own slot. If that slot is busy, the approved job waits
+and sends once when the slot frees. A restart preserves unsent jobs and
+reports ambiguous starts as uncertain without repeating their dispatch.
+**Cancel task** ends the Conversation turn. A named job stop targets one
+worker attempt and remains unconfirmed until there is terminal evidence.
+Conversation details show occupied slots and the reported plan usage windows.
+The per-run caps are twenty minutes, sixty turns and five dollars.
 
 A worker that stays connected but never reports again has each of its runs
 given up as uncertain about 34 minutes after the run's start report: the

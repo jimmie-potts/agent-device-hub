@@ -637,7 +637,7 @@ void test('a harness that injects the fixed synthetic title provider gets its fi
 });
 
 const hub = (revision: number): ModeState => ({id: 'hub', revision, mode: 'work', selectedAtMs: 0});
-void test('an answered approval and a state-changing tool call each start a check with a fixed label and no tool result', {timeout: 20_000}, async context => {
+void test('a direct state-changing tool call starts a check with a fixed label and no tool result', {timeout: 20_000}, async context => {
   // Each task proposes a Hub mode change first; once the tool answered, the model replies.
   const turnModel: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: input => Promise.resolve(input.transcript.some(item => item.role === 'tool')
     ? done('Synthetic reply about the mode.') : {text: null, calls: [{id: `call-${String(input.transcript.length)}`, name: 'set_mode', input: {mode: 'free'}}], stop: 'tool', units: 10})};
@@ -645,27 +645,12 @@ void test('an answered approval and a state-changing tool call each start a chec
   const provider = titler([titled('Hub mode')]);
   const w = await world(context, {provider: turnModel, titleProvider: provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(7), synced: true}),
     dispatch: data => {dispatched.push(data.requestId); return Promise.resolve({status: 'accepted', requestId: data.requestId, reply: {}} as unknown as RequestResult);}});
-  const waiting = () => w.until(() => w.status()?.status === 'waiting' && w.status()?.hasAnswer === false);
   await w.start('Please switch the Hub to free mode.');
-  await waiting();
-  await w.settled(1);
-  await w.answer('approve');
   await w.until(() => w.status()?.status === 'succeeded');
-  const approved = await w.settled(provider.prompts.length);
   await turns();
   const events = (calls: readonly TitleCall[]) => [...new Set(calls.flatMap(call => call.events ?? []))];
   assert.deepEqual(events(await w.settled(provider.prompts.length)).sort(),
-    [MESSAGE, 'The owner approved set_mode.', 'A tool call changed state: set_mode was accepted.', SUCCEEDED].sort(), JSON.stringify(approved.map(call => call.events)));
-  assert.equal(dispatched.length, 1);
-  // A declined proposal is an answered approval too, and changes nothing.
-  const before = w.store().calls().length;
-  await w.start('Switch it to free again.');
-  await waiting();
-  await w.answer('decline');
-  await w.until(() => w.status()?.status === 'succeeded');
-  await turns();
-  const later = (await w.settled(provider.prompts.length)).slice(before);
-  assert.deepEqual(events(later).sort(), ['The owner declined set_mode.', SUCCEEDED].sort());
+    [MESSAGE, 'A tool call changed state: set_mode was accepted.', SUCCEEDED].sort());
   assert.equal(dispatched.length, 1);
   // The receipt the dispatch returned is a tool result: it is in the transcript, never in a title prompt.
   for (const prompt of provider.prompts) assert.doesNotMatch(prompt, /accepted: the core accepted|operation [0-9a-f-]+-step|nothing was changed/);
@@ -758,7 +743,7 @@ void test('a coding hand-off\'s result starts a check labelled with its outcome 
   await w.start('Please delegate: add a test.');
   await w.until(() => w.status()?.status === 'waiting');
   await w.answer('approve');
-  await w.until(() => work.length === 1 && w.status()?.status === 'waiting');
+  await w.until(() => work.length === 1 && w.status()?.status === 'succeeded');
   await progress({operationId: work[0]?.operationId, status: 'started'});
   await progress({operationId: work[0]?.operationId, status: 'completed', result: {outcome: 'tested-candidate', repository: 'agent-device-hub', base: 'a'.repeat(40), head: 'a'.repeat(40),
     changedFiles: ['scripts/tests/readout.test.mjs'], checks: [{name: 'node --test', status: 'passed'}], findings: [], limitations: [], summary: 'WORKER-PRIVATE-SUMMARY.', sessionId: null, usage: null}});
@@ -826,7 +811,7 @@ void test('startup reconciliation that finds a finished turn starts no title che
   assert.equal(w.calls().length, 2);
 });
 
-void test('a coding hand-off left pending at stop is settled at start without a title check; the resumed task\'s end is checked', {timeout: 20_000}, async context => {
+void test('a coding job left pending at stop is settled at start without a title check', {timeout: 20_000}, async context => {
   let turn = 0;
   const turnModel: ModelProvider = {name: 'synthetic', model: 'synthetic', turn: () => {
     turn += 1;
@@ -850,7 +835,7 @@ void test('a coding hand-off left pending at stop is settled at start without a 
   await w.start('Please delegate: add a test.');
   await w.until(() => w.status()?.status === 'waiting');
   await w.answer('approve');
-  await w.until(() => work.length === 1 && w.status()?.status === 'waiting');
+  await w.until(() => work.length === 1 && w.status()?.status === 'succeeded');
   await turns();
   const before = (await w.settled(provider.prompts.length)).length;
   // The module stops while the worker holds the hand-off; at start the coordinator settles it as an uncertain result.
@@ -860,7 +845,7 @@ void test('a coding hand-off left pending at stop is settled at start without a 
   const after = (await w.settled(provider.prompts.length)).slice(before);
   const labels = after.flatMap(call => call.events ?? []);
   assert.equal(labels.includes('A coding hand-off\'s result arrived: uncertain.'), false, JSON.stringify(labels));
-  assert.deepEqual(labels, [SUCCEEDED], 'only the resumed task\'s end is checked');
+  assert.deepEqual(labels, [], 'startup starts no title check');
 });
 
 void test('a check the spend limits refuse is never sent and leaves the title as it was; without prices the title model is priced at its built-in tier', {timeout: 20_000}, async context => {

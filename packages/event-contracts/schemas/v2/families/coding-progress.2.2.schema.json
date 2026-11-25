@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/coding-progress/2.2",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationId",
+        "status",
+        "harness"
+      ],
+      "properties": {
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/coding-progress/2.1#/oneOf/0/properties/operationId"
+        },
+        "status": {
+          "$ref": "https://bunny.invalid/events/coding-progress/2.1#/oneOf/0/properties/status"
+        },
+        "harness": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationId",
+        "status",
+        "result",
+        "harness"
+      ],
+      "properties": {
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/coding-progress/2.1#/oneOf/1/properties/operationId"
+        },
+        "status": {
+          "$ref": "https://bunny.invalid/events/coding-progress/2.1#/oneOf/1/properties/status"
+        },
+        "result": {
+          "$ref": "https://bunny.invalid/events/coding-progress/2.1#/oneOf/1/properties/result"
+        },
+        "harness": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operationId",
+        "status",
+        "reason",
+        "harness"
+      ],
+      "properties": {
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/coding-progress/2.1#/oneOf/2/properties/operationId"
+        },
+        "status": {
+          "$ref": "https://bunny.invalid/events/coding-progress/2.1#/oneOf/2/properties/status"
+        },
+        "reason": {
+          "$ref": "https://bunny.invalid/events/coding-progress/2.1#/oneOf/2/properties/reason"
+        },
+        "result": {
+          "$ref": "https://bunny.invalid/events/coding-progress/2.1#/oneOf/2/properties/result"
+        },
+        "harness": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+        }
+      }
+    }
+  ]
+}

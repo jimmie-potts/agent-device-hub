@@ -23,7 +23,6 @@ import type {ModelProvider, TurnInput, TurnReply} from '../src/assistant/provide
 const ZONE = 'America/Chicago';
 const reply = (text: string): TurnReply => ({text, calls: [], stop: 'end', units: 10});
 const ask = (text: string): TurnReply => ({text: null, calls: [{id: 'call-ask', name: 'ask_owner', input: {text}}], stop: 'tool', units: 10});
-const propose = (mode: string): TurnReply => ({text: null, calls: [{id: 'call-mode', name: 'set_mode', input: {mode}}], stop: 'tool', units: 10});
 async function settle(check: () => boolean, what = 'expected state arrived'): Promise<void> {
   for (let turn = 0; turn < 5000; turn += 1) {if (check()) return; await new Promise(resolve => {setImmediate(resolve);});}
   assert.ok(check(), what);
@@ -181,7 +180,8 @@ void test('queued messages can be edited, withdrawn and reordered, each checked 
 });
 
 void test('a queued message waits while the task waits on an answer or an approval, and starts only when the task ends', async context => {
-  const provider = gated(), w = await world(context, {provider});
+  const provider = gated(), w = await world(context, {provider, tools: ['create_artwork'],
+    dispatch: data => Promise.resolve({status: 'accepted', requestId: data.requestId, reply: {} as never})});
   await w.control('enable');
   await w.send('Synthetic request that asks');
   await settle(() => provider.pending.length === 1);
@@ -194,7 +194,8 @@ void test('a queued message waits while the task waits on an answer or an approv
   assert.equal(provider.calls(), 1);
   assert.equal((await w.send('Synthetic answer', 'bunny', true)).status, 'accepted');
   await settle(() => provider.pending.length === 1);
-  provider.next().resolve(propose('free'));
+  provider.next().resolve({text: null, calls: [{id: 'art-proposal', name: 'create_artwork',
+    input: {format: 'still', description: 'Synthetic canvas', showTargets: []}}], stop: 'tool', units: 10});
   await settle(() => w.task()?.status === 'waiting' && w.task()?.questionId?.endsWith('-q2') === true, 'the task waits on an approval');
   await quiet();
   assert.equal(provider.calls(), 2, 'nothing started during the approval');

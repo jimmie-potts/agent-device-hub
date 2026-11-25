@@ -1,3 +1,4 @@
+import type {StopCodingInput} from '../assistant/history-contract.js';
 import React, {useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore} from 'react';
 import type {AssistantProfile, AssistantState, AssistantStatus} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {CodingState} from '@jimmie-potts/event-contracts/v2/coding';
@@ -9,6 +10,7 @@ import {ConversationVoice, stopSpeakingButton} from './conversation-voice.js';
 
 import type {ConversationListEntry, SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, readConversationList, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
+import {CodingJobs} from './coding-jobs.js';
 import {ConversationDetails, useDetailsOverlay, type ConversationTitle} from './conversation-details.js';
 import {spendNotice, useSpend} from './conversation-spend.js';
 import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
@@ -241,6 +243,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   const detailsId = useId();
   const detailsTrigger = useRef<HTMLButtonElement>(null);
   const priorPanel = useRef<typeof panel>(undefined);
+  const readCodingJobs = useCallback((path: string) => api.read(path), [api]);
   const closeDetails = useCallback((): void => {
     setPanel(current => current === 'details' ? undefined : current);
   }, []);
@@ -417,6 +420,11 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
   return <section aria-label="B.U.N.N.Y. conversation" className="conversation-page">
     <Command context={context} target="assistant">{command => {
       const locked = command.locked || !live || !context.control || !context.operationsLive;
+      const stopCodingJob = (jobId: string, operationId: string): void => {
+        const input: StopCodingInput = {action: 'stop-coding-job', jobId, operationId};
+        void command.run({family: 'assistant-input', target: 'assistant', requestId: crypto.randomUUID(),
+          upload: {name: 'input.json', file: new Blob([JSON.stringify(input)], {type: 'application/json'})}});
+      };
       const speakReceipt = speakRequest !== undefined && command.requestId === speakRequest;
       const operation = context.operations.find(value => value.target === 'assistant' && value.requestId === command.requestId);
       const routineReceipt = !speakReceipt && !command.locked && (command.requestId === undefined || (
@@ -474,34 +482,41 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                 {operation.evidence !== undefined && operation.evidence !== 'none' ? ` · evidence ${operation.evidence}` : ''}
                 {operation.error !== undefined ? ` · ${operation.error.code}` : ''}{!context.operationsLive ? ' (Last known)' : ''}</p>;
             }}
-            renderMessage={message => <article aria-label={`${message.role} message`}>
-              <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
-              {/* A steer joined the running turn, and a reply it superseded was saved but not spoken (Hub #2031). */}
-              {steerMessage(message) && <small className="conversation-steer-note">Sent while working</small>}
-              {supersededReply(message) && <small className="conversation-steer-note">Earlier reply, before your next message</small>}
-              {message.follows !== undefined && (visibleMessageIds.has(message.follows)
-                ? <a href={`#conversation-message-${message.follows}`} onClick={event => {
-                  event.preventDefault();
-                  document.getElementById(`conversation-message-${message.follows}`)?.focus();
-                }}>Update to earlier reply</a>
-                : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
-              <p className="conversation-message-text" dir="auto">{message.text}</p>
-              {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
-                connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
-                artRevision={art?.revision}/>}
-              {message.role === 'assistant' && (unspoken !== undefined
-                ? <small className="conversation-voice-note">{unspoken}</small>
-                : message.text.length > LIMITS.spokenChars
-                ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>
-                : state !== undefined && <button type="button" aria-label={`Read aloud message ${message.seq}`}
-                className="secondary conversation-read-aloud" disabled={locked}
-                onClick={() => {
-                  const requestId = crypto.randomUUID();
-                  setSpeakRequest(requestId);
-                  void command.run({family: 'assistant-control', target: 'assistant', requestId,
-                    data: {action: 'speak', expectedRevision: state.revision, taskId: message.taskId, messageId: message.id}});
-                }}>Read aloud</button>)}
-            </article>}/>
+            renderMessage={message => {
+              const pendingJob = coding?.waiting?.find(attempt => message.id === `${attempt.operationId}-job`);
+              const runningJob = coding?.runs?.find(attempt => message.id === `${attempt.operationId}-job` && attempt.status !== 'cancelling');
+              const attempt = pendingJob ?? runningJob;
+              return <article aria-label={`${message.role} message`}>
+                <strong className="conversation-speaker">{message.role === 'owner' ? 'You' : profiles[profile].name}</strong>
+                {/* A steer joined the running turn, and a reply it superseded was saved but not spoken (Hub #2031). */}
+                {steerMessage(message) && <small className="conversation-steer-note">Sent while working</small>}
+                {supersededReply(message) && <small className="conversation-steer-note">Earlier reply, before your next message</small>}
+                {message.follows !== undefined && (visibleMessageIds.has(message.follows)
+                  ? <a href={`#conversation-message-${message.follows}`} onClick={event => {
+                    event.preventDefault();
+                    document.getElementById(`conversation-message-${message.follows}`)?.focus();
+                  }}>Update to earlier reply</a>
+                  : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
+                <p className="conversation-message-text" dir="auto">{message.text}</p>
+                {attempt !== undefined && <button type="button" className="secondary" disabled={locked}
+                  onClick={() => {stopCodingJob(message.id, attempt.operationId);}}>Stop coding job</button>}
+                {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
+                  connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
+                  artRevision={art?.revision}/>}
+                {message.role === 'assistant' && (unspoken !== undefined
+                  ? <small className="conversation-voice-note">{unspoken}</small>
+                  : message.text.length > LIMITS.spokenChars
+                  ? <small className="conversation-voice-note">Written only. Read aloud supports up to {LIMITS.spokenChars} characters.</small>
+                  : state !== undefined && <button type="button" aria-label={`Read aloud message ${message.seq}`}
+                  className="secondary conversation-read-aloud" disabled={locked}
+                  onClick={() => {
+                    const requestId = crypto.randomUUID();
+                    setSpeakRequest(requestId);
+                    void command.run({family: 'assistant-control', target: 'assistant', requestId,
+                      data: {action: 'speak', expectedRevision: state.revision, taskId: message.taskId, messageId: message.id}});
+                  }}>Read aloud</button>)}
+              </article>;
+            }}/>
           {viewing === undefined && <div className="conversation-compose">
             {state !== undefined && !state.enabled && <p>Conversation is off. <button type="button" disabled={locked} onClick={() => {present('enable');}}>Enable conversation</button></p>}
             {cue !== undefined && <p role="status" className={live && task?.status === 'succeeded' ? 'conversation-completed' : undefined}>
@@ -525,6 +540,8 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           {viewing !== undefined && !routineReceipt && <p role="status">{speakReceipt ? 'Read aloud receipt' : 'Command receipt'}: {command.text}</p>}
         </div>
         <ConversationDetails id={detailsId} open={detailsOpen} overlay={detailsOverlay} onClose={closeDetails}
+          codingJobs={coding?.counts === undefined || !detailsOpen ? null : <CodingJobs revision={coding.revision}
+            read={readCodingJobs} stop={stopCodingJob} locked={locked}/>}
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live} spend={spend}
           savedQuestion={currentQuestion === undefined ? null : <SavedQuestionContext question={currentQuestion}/>}
