@@ -376,7 +376,7 @@ test('the workflow runs after main pushes, by hand and on pull requests that cha
     assert.ok(Number.isInteger(job['timeout-minutes']) && job['timeout-minutes'] > 0);
     for (const step of job.steps) {
       assert.equal(step['continue-on-error'], undefined);
-      if (step.uses) assert.match(step.uses, /^actions\/(checkout|setup-node)@[0-9a-f]{40}$/, 'actions are pinned by commit');
+      if (step.uses) assert.match(step.uses, /^(actions\/(checkout|setup-node)@[0-9a-f]{40}|\.\/\.github\/actions\/failure-evidence)$/, 'actions are pinned by commit or local');
       if (step.uses?.startsWith('actions/checkout@')) assert.equal(step.with['persist-credentials'], false, 'no job keeps the token in Git');
     }
   }
@@ -410,6 +410,9 @@ test('the suite job runs every group in parallel, each under a finite limit and 
   assert.equal(job.steps.find(step => /playwright install/.test(step.run ?? ''))['timeout-minutes'], 20);
   assert.equal(job.steps.filter(step => step['timeout-minutes'] !== undefined).length, 1, 'only the Chromium install has a step limit');
   assert.equal(job.steps.find(step => step.id === 'suite').if, selected);
+  // Hub #2059: a failed group uploads what its journeys wrote, as its last step; a passing or unselected group skips it.
+  assert.deepEqual(workflow.env, { TEST_EVIDENCE_DIR: '/tmp/test-evidence' });
+  assert.deepEqual(job.steps.at(-1), { if: 'failure()', uses: './.github/actions/failure-evidence', with: { name: 'runtime-dashboard-browser-${{ matrix.group }}' } });
 });
 
 test('only the report job can write issues, and it runs once after every group\'s result', () => {

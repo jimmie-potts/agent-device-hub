@@ -350,10 +350,24 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
   // Each suite runs in exactly one job.
   const runs = Object.values(suites).flat().filter(run => run.startsWith('npm run test:'));
   assert.deepEqual(runs, [...new Set(runs)]);
+  // Hub #2059: a failed test job uploads what its tests wrote to TEST_EVIDENCE_DIR, as its last step; a passing job
+  // skips it. The runtime's node --test steps also write JUnit, through NODE_OPTIONS beside the spec reporter.
+  assert.deepEqual(checks.env, {
+    TEST_EVIDENCE_DIR: '/tmp/test-evidence',
+    NODE_TEST_JUNIT: '--test-reporter=spec --test-reporter-destination=stdout --test-reporter=${{ github.workspace }}/scripts/ci-selection/junit-file.mjs --test-reporter-destination=stdout',
+  });
+  const isEvidence = step => step.uses === './.github/actions/failure-evidence';
+  const withEvidence = ['core', 'runtime-unit', 'runtime-scenarios', 'app-verify', 'runtime-verify-captures', 'runtime-verify'];
+  const withJunit = { 'runtime-unit': 'npm run test:runtime:built', 'runtime-scenarios': 'npm run test:runtime:scenarios:built',
+    'runtime-verify-captures': 'npm run test:runtime:verify:captures:built', 'runtime-verify': 'npm run test:runtime:verify:rest:built' };
   let builds = 0;
   for (const [id, runs] of Object.entries(suites)) {
     const job = ci.jobs[id];
-    const setup = job.steps.filter(step => step.uses);
+    assert.deepEqual(job.steps.filter(isEvidence), withEvidence.includes(id) ? [{ if: 'failure()', uses: './.github/actions/failure-evidence', with: { name: id } }] : [], id);
+    if (withEvidence.includes(id)) assert.ok(isEvidence(job.steps.at(-1)), `${id}: the evidence step runs last`);
+    assert.deepEqual(job.steps.filter(step => step.env?.NODE_OPTIONS !== undefined).map(step => [step.run, step.env]),
+      withJunit[id] ? [[withJunit[id], { NODE_OPTIONS: '${{ env.NODE_TEST_JUNIT }}' }]] : [], id);
+    const setup = job.steps.filter(step => step.uses && !isEvidence(step));
     // The select and gate jobs check out only the dependency-free selector and install nothing.
     const expectedSetup = ['select', 'gate'].includes(id) ? [
       { uses: 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', with: { 'sparse-checkout': 'scripts/ci-selection' } },
@@ -408,7 +422,7 @@ test('CI runs eleven GitHub-hosted Linux jobs and retains every suite once', () 
     // until app-verify works under its systemd 255 (#873), so lifecycle tests skip as they did on Depot.
     assert.deepEqual(job.env, ['app-verify', 'runtime-verify-captures', 'runtime-verify'].includes(id) ? { XDG_RUNTIME_DIR: '', DBUS_SESSION_BUS_ADDRESS: '' } : undefined);
     assert.equal(job.steps.some(step => /loginctl|APP_VERIFY_REQUIRE_SYSTEMD/.test(step.run ?? '')), false);
-    const originalSteps = job.steps.filter(step => !linuxSteps.includes(step));
+    const originalSteps = job.steps.filter(step => !linuxSteps.includes(step) && !isEvidence(step));
     assert.deepEqual(originalSteps.filter(step => step.run).map(step => step.run), runs);
     // Steps are skipped only by the selection (Hub #1080); none may fail without failing its job.
     assert(originalSteps.every(step => !step['continue-on-error']));

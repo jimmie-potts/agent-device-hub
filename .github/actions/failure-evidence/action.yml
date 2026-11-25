@@ -1,0 +1,25 @@
+# Keeps what a failed test job's tests wrote (#2059). A job calls this as its last step with `if: failure()`, so a
+# passing job uploads nothing. The tests write into TEST_EVIDENCE_DIR, which the calling workflow sets; the script copies
+# its image, text and JUnit files, at most 50 MB, with a manifest, and the copy is uploaded for 14 days, as release
+# evidence is. Uploaded artifacts are public and hold synthetic fixtures only (ADR 0011).
+name: Keep failure evidence
+description: Upload the screenshots, dumps and JUnit files a failed test job wrote
+inputs:
+  name:
+    description: The job's name in the artifact name, unique within the run
+    required: true
+runs:
+  using: composite
+  steps:
+    # Steps inside a composite action check their own status; `always()` lets the upload follow a failed copy. The
+    # caller's `if: failure()` decides whether either runs.
+    - if: always()
+      shell: bash
+      run: node scripts/ci-selection/failure-evidence.mjs "$TEST_EVIDENCE_DIR" "$RUNNER_TEMP/failure-evidence"
+    - if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: failure-evidence-${{ inputs.name }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/failure-evidence
+        if-no-files-found: warn
+        retention-days: 14

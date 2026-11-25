@@ -14,6 +14,11 @@ on:
   workflow_dispatch: {}
 permissions:
   contents: read
+# A failed test job uploads what its tests wrote here (#2059): browser journeys' screenshots and dumps, and the JUnit
+# files that NODE_TEST_JUNIT, the NODE_OPTIONS of the runtime's node --test steps, adds beside the usual spec output.
+env:
+  TEST_EVIDENCE_DIR: /tmp/test-evidence
+  NODE_TEST_JUNIT: --test-reporter=spec --test-reporter-destination=stdout --test-reporter=${{ github.workspace }}/scripts/ci-selection/junit-file.mjs --test-reporter-destination=stdout
 concurrency:
   group: checks-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
@@ -191,6 +196,10 @@ jobs:
       # The runtime's dashboard (#922): its unit tests here, its browser smoke check in App verification.
       - if: contains(fromJSON(needs.select.outputs.groups), 'runtime')
         run: npm run test:runtime-dashboard:built
+      - if: failure()
+        uses: ./.github/actions/failure-evidence
+        with:
+          name: core
   # A job skipped before its matrix expands reports its name with the matrix expression unexpanded, so the jobs the
   # selection can skip name their single runner instead of using a matrix.
   # The runtime's unit and scenario suites took 16 of the core job's median 29 minutes and grow with each module; on a
@@ -211,6 +220,12 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test:runtime:built
+        env:
+          NODE_OPTIONS: ${{ env.NODE_TEST_JUNIT }}
+      - if: failure()
+        uses: ./.github/actions/failure-evidence
+        with:
+          name: runtime-unit
   runtime-scenarios:
     name: Runtime scenario tests on ubuntu-latest
     needs: select
@@ -226,6 +241,12 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test:runtime:scenarios:built
+        env:
+          NODE_OPTIONS: ${{ env.NODE_TEST_JUNIT }}
+      - if: failure()
+        uses: ./.github/actions/failure-evidence
+        with:
+          name: runtime-scenarios
   firmware:
     name: Firmware host tests and ARM build on ubuntu-latest
     needs: select
@@ -320,6 +341,10 @@ jobs:
         run: npm run test:art-theme:browser
       - if: contains(fromJSON(needs.select.outputs.groups), 'shared')
         run: npm run test:observability:browser
+      - if: failure()
+        uses: ./.github/actions/failure-evidence
+        with:
+          name: app-verify
   # The runtime verification suite runs as two jobs on separate runners, split as packaged qualification's lanes are
   # (scripts/release/packaged.mjs lanePlan, #1676): this one runs capture shard 1/2 of steps.test.js, and Runtime
   # verification runs every other verification file serially, then shard 2/2. Together they run each test once.
@@ -346,6 +371,12 @@ jobs:
       - run: npm run build
       # Capture shard 1/2 of the active catalog, with the capture file's tests outside the capture loop.
       - run: npm run test:runtime:verify:captures:built
+        env:
+          NODE_OPTIONS: ${{ env.NODE_TEST_JUNIT }}
+      - if: failure()
+        uses: ./.github/actions/failure-evidence
+        with:
+          name: runtime-verify-captures
   runtime-verify:
     name: Runtime verification on ubuntu-latest
     needs: select
@@ -369,6 +400,12 @@ jobs:
       - run: npm run build
       # Every other verification file, then capture shard 2/2 of the active catalog, including shared keyboard and phone checks.
       - run: npm run test:runtime:verify:rest:built
+        env:
+          NODE_OPTIONS: ${{ env.NODE_TEST_JUNIT }}
+      - if: failure()
+        uses: ./.github/actions/failure-evidence
+        with:
+          name: runtime-verify
   gate:
     name: Selected checks gate
     needs: [select, core, runtime-unit, runtime-scenarios, firmware, app-verify, runtime-verify-captures, runtime-verify]

@@ -443,9 +443,13 @@ const STEP_GROUPS = {
   },
 };
 
+// Hub #2059: a test job's last step uploads its evidence when the job fails. It runs on the job's outcome, not the
+// selection, so the selection checks below leave it out.
+const selectionSteps = job => job.steps.filter(step => !(step.uses === './.github/actions/failure-evidence' && step.if === 'failure()'));
+
 test('every conditional Checks step keeps its pinned group', () => {
   for (const [id, expected] of Object.entries(STEP_GROUPS)) {
-    const actual = Object.fromEntries(checks.jobs[id].steps.filter(step => step.if !== undefined && !stepOwner(step.if))
+    const actual = Object.fromEntries(selectionSteps(checks.jobs[id]).filter(step => step.if !== undefined && !stepOwner(step.if))
       .map(step => [step.run ?? step.uses.split('@')[0], stepGroup(step.if)]));
     assert.deepEqual(actual, expected, `${id}: a suite moved group, or a conditional step was added or removed`);
   }
@@ -502,12 +506,12 @@ test('Checks selects jobs and steps only through the selection outputs, and the 
     assert.equal(job.strategy, undefined, `${id} has no matrix`);
     assert.equal(job['runs-on'], 'ubuntu-latest');
     assert.match(job.name, / on ubuntu-latest$/);
-    const stepGroups = new Set(job.steps.map(step => stepGroup(step.if)).filter(Boolean));
+    const stepGroups = new Set(selectionSteps(job).map(step => stepGroup(step.if)).filter(Boolean));
     groups.forEach(group => used.add(group));
     if (stepGroups.size) assert.deepEqual([...stepGroups].sort(), [...groups].sort(), `${id} runs when any of its steps' groups is selected`);
   }
   for (const [id, job] of Object.entries(checks.jobs)) {
-    for (const step of job.steps) {
+    for (const step of selectionSteps(job)) {
       if (step.if === undefined) continue;
       if (id === 'core' || id === 'app-verify') {
         if(stepOwner(step.if)){assert.equal(id,'core');assert.equal(stepOwner(step.if),'microduck-browser');continue;}
