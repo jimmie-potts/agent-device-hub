@@ -168,7 +168,7 @@ export class CodingCoordinator {
         const status = active?.phase ?? job.status;
         const attempt = this.#store.attempt(job.operationId);
         const {nativeObservation, ...context} = attempt?.context ?? {};
-        const nativeView = this.#nativeView(job.operationId, nativeObservation);
+        const nativeView = attempt === undefined ? undefined : this.#nativeView(attempt.operationId, nativeObservation);
         const nativeClient = nativeView !== undefined && original !== undefined && this.#canUseCodingBrief(original, companion) ? nativeView : undefined;
         jobs.push({...job, companion, status, ...(label === '' ? {} : {label}), ...(nativeClient === undefined ? {} : {nativeClient}),
           ...(attempt?.harness == null ? {} : {harness: attempt.harness}), steering: this.#steering(active), messages: this.#store.messages(job.jobId).filter(message =>

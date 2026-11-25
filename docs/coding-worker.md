@@ -290,11 +290,10 @@ Before it connects, the worker asks its tool what it is, without starting a
 task or a session and without spending: `claude --version` and
 `claude auth status --json`. Each runs with no input, the harness's
 environment, the first allowlisted repository as its working directory and a
-ten-second deadline, after which the probe is killed outright. Its
-declaration (`coding-endpoint/2.2`, which also declares its slots) carries the
-record, and the companions module publishes it in the coding state
-(`coding-state/2.2`, which also lists every active run and the hand-offs waiting
-for a slot):
+ten-second deadline, after which the probe is killed outright. The legacy
+finite declaration `coding-endpoint/2.2` carries this record and the number of
+slots. The companions module publishes the record in coding state along with
+visible active runs and waiting hand-offs.
 
 | Field | Value |
 | --- | --- |
@@ -396,8 +395,9 @@ Upgrade the core before the worker. A worker from Hub #1743 on declares with
 #2028 on declares with `coding-endpoint/2.2`; an older core refuses them, so
 such a worker cannot declare until the core knows them. Its first start ends
 with `coding-worker-enable-refused: unsupported-version`. A core from #2028 on
-works with an older worker as one slot for every companion (see
-[the runtime upgrade procedure](../apps/runtime/UPGRADE.md)).
+can use an older worker with a single shared slot. A finite worker that
+declares three slots has one per companion. See the
+[runtime upgrade procedure](../apps/runtime/UPGRADE.md).
 
 For the established worker, #2115 owns the compatible release and installed
 verification. Upgrade the core and then the worker executable before changing
@@ -462,16 +462,13 @@ needed in the current contract.
    and declares a fresh endpoint, trying again with backoff while the core
    still names the old one, which the core then shows as the new worker; each
    task that was running is ended uncertain and its task says so, and the
-   worker never resends. The worker stops those runs, which keep their slots
-   until they end, and declares the fresh endpoint once they have, or after
-   fifteen seconds (ten until the forced kill, and five more). A run that
-   still has not ended then, such as one whose output a leftover process holds
-   open, keeps only its own companion's slot busy: that companion's next start
-   is refused with `capacity` until it ends, and the other companions' starts
-   are taken. The core does not know that slot is still busy, so that
-   companion's next hand-off is not held to wait: it fails with `capacity`,
-   and its task is told so. A stopped run's report is not sent on the fresh
-   endpoint.
+   worker never resends. The worker stops those runs and declares the fresh
+   endpoint once they end or after fifteen seconds. That allows ten seconds
+   before the forced kill and five seconds after it. A finite worker still
+   counts any surviving run against its companion's slot. Its next hand-off
+   for that companion fails with `capacity` until the run ends. The worker
+   can accept starts for other companions. A stopped run's report stays on
+   its original endpoint.
 
 ## One credential, one endpoint
 
@@ -518,21 +515,21 @@ saved Hub job ID. The core tracks the hand-off as an operation that completes
 when the worker reports it started. Conversation remains available and the
 worker's result links to the job receipt in its original exchange.
 
-Each companion has its own slot. If that slot is busy, the approved job waits
-and sends once when the slot frees. A restart preserves unsent jobs and
-reports ambiguous starts as uncertain without repeating their dispatch.
-**Cancel task** ends the Conversation turn. A named job stop targets one
-worker attempt and remains unconfirmed until there is terminal evidence.
-Conversation details show occupied slots and the reported plan usage windows.
+With uncapped admission, approved jobs wait for the Hub to deliver their
+starts. A finite worker that declares three slots has one per companion. Its
+approved job waits until that companion's slot frees. A restart preserves
+unsent jobs and reports ambiguous starts as uncertain without repeating their
+dispatch. **Cancel task** ends the Conversation turn. A named job stop targets
+one worker attempt and remains unconfirmed until there is terminal evidence.
+Conversation details show active runs and the reported plan usage windows.
 The per-run caps are twenty minutes, sixty turns and five dollars.
 
-A worker that stays connected but never reports again has each of its runs
-given up as uncertain about 34 minutes after the run's start report: the
-twenty-minute wall clock, a two-minute grace, and twelve minutes for git
-setup. The worker reports a start before its fetch and worktree setup, which
-takes turns per repository, so a run may wait for two other runs' setup
-(240 seconds each at most) before its own. A lost worker is different: the
-gateway reports its endpoint lost and its runs end uncertain at once.
+For a finite worker that stays connected and stops reporting, the Hub records
+a run as uncertain about 34 minutes after its start report. That includes the
+twenty-minute wall clock, a two-minute grace period and twelve minutes for Git
+setup. Uncapped workers use the separate wait, setup and harness deadlines
+described above. When the gateway reports a lost endpoint, the Hub records the
+runs as uncertain at once.
 
 Source tests cover the worker over a fake harness and a fake edge, and its real
 entry point as a child process over the SDK's edge with a fake core. They also

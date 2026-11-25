@@ -238,6 +238,25 @@ void test('native continuation respects current job and brief grants and retains
 
   const savedObservation = async () => (await w.jobDetail(jobId)).attempts.find(item => item.operationId === operationId)?.context?.nativeObservation;
   assert.equal((await savedObservation())?.state, 'available');
+
+  const db = w.database();
+  db.prepare('CREATE TEMP TABLE saved_native_attempt AS SELECT * FROM companion_coding_attempts WHERE operation_id=?').run(operationId);
+  assert.equal(db.prepare('DELETE FROM companion_coding_attempts WHERE operation_id=?').run(operationId).changes, 1);
+  try {
+    const card = (await w.jobs({jobId})).jobs[0];
+    assert.equal(card?.operationId, operationId, 'the stable job receipt remains readable');
+    assert.equal(card?.nativeClient, undefined);
+    assert.equal(card?.sessionId, undefined);
+    assert.equal(await savedObservation(), undefined);
+    const missing = await w.openNative(jobId, operationId);
+    assert.equal(missing.status === 'rejected' && missing.error.error.code, 'not-found');
+    assert.equal(w.work.length, 1, 'no prepare or launch was sent');
+  } finally {
+    db.exec('INSERT INTO companion_coding_attempts SELECT * FROM saved_native_attempt; DROP TABLE saved_native_attempt');
+  }
+  assert.equal((await current())?.state, 'available');
+  assert.equal((await savedObservation())?.state, 'available');
+
   for (const destination of ['private-conversation', 'coding-worker'] as const) {
     revoked = destination;
     assert.equal(await current(), undefined);
