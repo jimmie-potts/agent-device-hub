@@ -1,3 +1,5 @@
+import type {DisclosedField} from './sharing.js';
+import type {BoundControl} from './control-intent.js';
 import type {Confirmation} from './confirmation.js';
 import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
 import {Messages} from '../knowledge/messages.js';
@@ -26,6 +28,7 @@ import {LIMITS} from './limits.js';
 export {LIMITS} from './limits.js';
 export type Question = SavedQuestion & {call: string};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
+  control?: BoundControl;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
   traceparent: string | null; transcript: TranscriptItem[];
@@ -36,7 +39,7 @@ export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id
    */
   contextThrough?: number};
 export type Call = {version: 1; id: string; taskId: string; runId: string; ordinal: number; kind: 'model' | 'tool'; action?: ApprovedAction;
-  status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; result: string | null; units: number | null; reservedUnits: number;
+  status: 'admitted' | 'succeeded' | 'uncertain' | 'failed'; code?: ErrorCode; disclosures?: readonly DisclosedField[]; result: string | null; units: number | null; reservedUnits: number;
   reservedMs: number; elapsedMs: number | null; traceparent: string;
   /**
    * A model call whose answer was saved while the task held an unread steer (Hub #2031): the steer reached the task
@@ -61,6 +64,10 @@ export type ConversationPage = {version: 1; conversationId: string | null; messa
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = TranscriptItem & {effect: string};
 type RecordRow = {record: string};
+type MessageVisibility = {
+  shows(message: Pick<ConversationMessage, 'id' | 'role' | 'taskId'>): boolean;
+  attachment(requestId: string): boolean;
+};
 type MessageRow = Omit<ConversationMessage, 'attachment' | 'follows'> & {follows: string | null} & {artRequestId: string | null; artDescription: string | null; artTargets: string | null;
   artStatus: Call['status'] | null; artResult: string | null};
 const messagesWithAttachments = `SELECT msg.seq,msg.id,msg.task_id AS taskId,msg.role,msg.text,msg.at_ms AS atMs,msg.follows,
@@ -252,7 +259,7 @@ export class AssistantStore {
    * A tool result names its tool from its task's saved transcript when that still holds it; an artwork attachment keeps
    * its request identity.
    */
-  recentContext(profile: AssistantProfile, conversationId: string, through: number): {messages: RecentMessage[]; total: number} {
+  recentContext(profile: AssistantProfile, conversationId: string, through: number, permits?: (message: {id: string; role: ConversationMessage['role']; taskId: string}) => boolean): {messages: RecentMessage[]; total: number} {
     const bound = this.messages.conversation(conversationId)?.profile === profile ? 1 : 0;
     const filter = `msg.conversation_id=? AND msg.seq<=?
       AND (CASE WHEN msg.record IS NULL THEN msg.role='tool' ELSE json_extract(msg.record,'$.speakerId')=?
@@ -262,8 +269,18 @@ export class AssistantStore {
       AND NOT (msg.role='tool' AND EXISTS (SELECT 1 FROM companion_removals removed
         WHERE removed.id=msg.task_id || '-prompt' OR (removed.id LIKE msg.task_id || '-q%' AND removed.id LIKE '%-answer')))`;
     const params = [conversationId, through, profile, profile, bound];
-    const total = (this.database.prepare(`SELECT COUNT(*) AS count FROM assistant_messages msg WHERE ${filter}`).get(...params) as {count: number}).count;
-    const rows = (this.database.prepare(`${messagesWithAttachments} WHERE ${filter} ORDER BY msg.seq DESC LIMIT ?`).all(...params, RECENT_MESSAGES) as MessageRow[]).reverse();
+    let total: number;
+    let rows: MessageRow[];
+    if (permits === undefined) {
+      total = (this.database.prepare(`SELECT COUNT(*) AS count FROM assistant_messages msg WHERE ${filter}`).get(...params) as {count: number}).count;
+      rows = (this.database.prepare(`${messagesWithAttachments} WHERE ${filter} ORDER BY msg.seq DESC LIMIT ?`).all(...params, RECENT_MESSAGES) as MessageRow[]).reverse();
+    } else {
+      const eligible = (this.database.prepare(`SELECT msg.id, msg.role, msg.task_id AS taskId FROM assistant_messages msg WHERE ${filter} ORDER BY msg.seq DESC`)
+        .all(...params) as {id: string; role: ConversationMessage['role']; taskId: string}[]).filter(permits);
+      total = eligible.length;
+      const ids = eligible.slice(0, RECENT_MESSAGES).map(row => row.id);
+      rows = (this.database.prepare(`${messagesWithAttachments} WHERE msg.id IN (${ids.map(() => '?').join(',')}) ORDER BY msg.seq`).all(...ids) as MessageRow[]);
+    }
     const tools = new Map<string, Map<string, string>>();
     const toolOf = (owner: string, id: string): string | undefined => {
       let names = tools.get(owner);
@@ -294,8 +311,28 @@ export class AssistantStore {
    * of the previous page's last earlier conversation (its last message time, or -1 without one, and its row), so a
    * conversation that changes between reads never repeats or hides an unchanged one. `older` is the next page's cursor.
    */
-  conversations(profile: AssistantProfile, after?: {last: number; row: number}): {conversations: ConversationSummary[]; older: string | null} {
+  conversations(profile: AssistantProfile, after?: {last: number; row: number}, visibility?: {
+    conversation(id: string): boolean;
+    message(message: {id: string; role: ConversationMessage['role']; taskId: string}): boolean;
+  }): {conversations: ConversationSummary[]; older: string | null} {
     const current = this.conversation(profile) ?? null;
+    if (visibility !== undefined) {
+      const conversations = (this.database.prepare("SELECT rowid AS row,id FROM companion_conversations WHERE json_extract(record,'$.profile')=?")
+        .all(profile) as {row: number; id: string}[]).filter(({id}) => visibility.conversation(id)).map(({id, row}) => {
+        const messages = (this.database.prepare('SELECT id,role,task_id AS taskId,at_ms AS atMs FROM assistant_messages WHERE conversation_id=? ORDER BY at_ms')
+          .all(id) as {id: string; role: ConversationMessage['role']; taskId: string; atMs: number}[]).filter(message => visibility.message(message));
+        const lastAtMs = messages.at(-1)?.atMs ?? null;
+        return {row, last: lastAtMs ?? -1, summary: {conversationId: id, current: id === current, messages: messages.length,
+          firstAtMs: messages[0]?.atMs ?? null, lastAtMs}};
+      });
+      const first = after === undefined ? conversations.find(row => row.summary.current) : undefined;
+      const ordered = conversations.filter(row => !row.summary.current &&
+        (after === undefined || row.last < after.last || row.last === after.last && row.row < after.row))
+        .sort((a, b) => a.last === b.last ? b.row - a.row : b.last - a.last);
+      const size = first === undefined ? 16 : 15, page = ordered.slice(0, size), end = page.at(-1);
+      return {conversations: [...(first === undefined ? [] : [first.summary]), ...page.map(row => row.summary)],
+        older: ordered.length > size && end !== undefined ? `${String(end.last)}:${String(end.row)}` : null};
+    }
     const rows = this.database.prepare(`SELECT c.rowid AS row,c.id AS id,COUNT(m.seq) AS messages,MIN(m.at_ms) AS firstAtMs,MAX(m.at_ms) AS lastAtMs,
         COALESCE(MAX(m.at_ms),-1) AS last
       FROM companion_conversations c LEFT JOIN assistant_messages m ON m.conversation_id=c.id
@@ -340,15 +377,21 @@ export class AssistantStore {
    * A failed turn's closing reply (Hub #2042) is the engine's own status text about the turn, not what the conversation is
    * about, so it is left out and can never become a title.
    */
-  titleMessages(conversationId: string, limit = 8): {role: 'owner' | 'assistant'; text: string}[] {
-    return (this.database.prepare("SELECT role,text FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' ORDER BY seq DESC LIMIT ?")
-      .all(conversationId, limit) as {role: 'owner' | 'assistant'; text: string}[]).reverse();
+  titleMessages(conversationId: string, limit = 8, permits?: (message: {id: string; role: 'owner' | 'assistant'; text: string; taskId: string}) => boolean): {role: 'owner' | 'assistant'; text: string}[] {
+    const query = "SELECT id,role,text,task_id AS taskId FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' ORDER BY seq DESC";
+    const rows = (permits === undefined ? this.database.prepare(query + ' LIMIT ?').all(conversationId, limit)
+      : this.database.prepare(query).all(conversationId)) as {id: string; role: 'owner' | 'assistant'; text: string; taskId: string}[];
+    return (permits === undefined ? rows : rows.filter(permits).slice(0, limit)).reverse().map(({role, text}) => ({role, text}));
   }
   /** One saved message of the task, by its id, for the owner to hear again (Hub #500). */
   savedMessage(taskId: string, id: string): Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined {
     return this.database.prepare('SELECT id,role,text FROM assistant_messages WHERE id=? AND task_id=?').get(id, taskId) as Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined;
   }
   call(id: string): Call | undefined {return parsed<Call>(this.database.prepare('SELECT record FROM assistant_calls WHERE id=?').get(id) as RecordRow | undefined);}
+  ownsAction(conversationId: string, requestId: string): boolean {
+    const call = this.call(requestId);
+    return call?.action !== undefined && this.task(call.taskId)?.conversationId === conversationId;
+  }
   calls(taskId: string): Call[] {return this.database.prepare('SELECT record FROM assistant_calls WHERE task_id=?').all(taskId).map(row => JSON.parse(row.record as string) as Call);}
   saveCall(call: Call): void {this.database.prepare('INSERT INTO assistant_calls VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record').run(call.id, call.taskId, JSON.stringify(call));}
   confirmation(requestId: string): Confirmation | undefined {
@@ -413,15 +456,36 @@ export class AssistantStore {
       code: task.code, modelCalls: task.modelCalls, toolCalls: task.toolCalls, questions: task.questions, activeMs: task.activeMs,
       reservedUnits: task.reservedUnits, usageUnits: calls.some(call => call.units === null) ? null : calls.reduce((sum, call) => sum + (call.units ?? 0), 0)};
   }
-  page(profile: AssistantProfile, after: number): ConversationPage {
+  #visibleRows(conversationId: string, condition: 'seq>?' | 'seq<?', position: number, order: 'ASC' | 'DESC',
+    size: number, visibility?: MessageVisibility): MessageRow[] {
+    const filter = `WHERE conversation_id=? AND ${condition}`;
+    if (visibility === undefined) return this.database.prepare(`${messagesWithAttachments} ${filter} ORDER BY seq ${order} LIMIT ?`).all(conversationId, position, size) as MessageRow[];
+    const candidates = this.database.prepare(`SELECT id,role,task_id AS taskId FROM assistant_messages ${filter} ORDER BY seq ${order}`)
+      .all(conversationId, position) as Pick<ConversationMessage, 'id' | 'role' | 'taskId'>[];
+    const ids = candidates.filter(message => visibility.shows(message)).slice(0, size).map(message => message.id);
+    return this.database.prepare(`${messagesWithAttachments} WHERE msg.id IN (${ids.map(() => '?').join(',')}) ORDER BY seq ${order}`).all(...ids) as MessageRow[];
+  }
+  #visibleMessage(row: MessageRow, visibility?: MessageVisibility): ConversationMessage {
+    if (visibility === undefined) return messageOf(row);
+    const followed = row.follows === null ? undefined : this.database.prepare('SELECT id,role,task_id AS taskId FROM assistant_messages WHERE id=?')
+      .get(row.follows) as Pick<ConversationMessage, 'id' | 'role' | 'taskId'> | undefined;
+    const follows = followed !== undefined && visibility.shows(followed) ? row.follows : null;
+    const visible = row.artRequestId !== null && !visibility.attachment(row.artRequestId)
+      ? {...row, artRequestId: null, artDescription: null} : row;
+    return messageOf({...visible, follows});
+  }
+  page(profile: AssistantProfile, after: number, visibility?: MessageVisibility): ConversationPage {
     const id = this.conversation(profile);
     const page: ConversationPage = {version: 1, conversationId: id ?? null, messages: [], currentTask: null, next: null};
     if (id === undefined) return page;
     const task = this.latest().find(task => task.profile === profile);
-    if (task !== undefined && after === 0) page.currentTask = {taskId: task.id, question: task.question};
-    const rows = this.database.prepare(`${messagesWithAttachments} WHERE conversation_id=? AND seq>? ORDER BY seq LIMIT 17`).all(id, after) as MessageRow[];
+    if (task !== undefined && after === 0) {
+      const question = task.question;
+      page.currentTask = {taskId: task.id, question: question === null || visibility?.shows({id: question.id, role: 'assistant', taskId: task.id}) === false ? null : question};
+    }
+    const rows = this.#visibleRows(id, 'seq>?', after, 'ASC', 17, visibility);
     for (const item of rows.slice(0, 16)) {
-      const row = messageOf(item);
+      const row = this.#visibleMessage(item, visibility);
       const candidate = {...page, messages: [...page.messages, row], next: row.seq};
       if (Buffer.byteLength(JSON.stringify(candidate)) > LIMITS.pageBytes) break;
       page.messages.push(row);
@@ -433,7 +497,7 @@ export class AssistantStore {
    * The recent view of the profile's current conversation, or of an earlier one by its ID (Hub #2029), which has no
    * current task. An ID that is not one of the profile's conversations is not found.
    */
-  recentPage(profile: AssistantProfile, before: string | undefined, requested?: string): RecentConversationPage | 'invalid-request' | 'capacity' | 'not-found' {
+  recentPage(profile: AssistantProfile, before: string | undefined, requested?: string, visibility?: MessageVisibility): RecentConversationPage | 'invalid-request' | 'capacity' | 'not-found' {
     const current = this.conversation(profile) ?? null;
     if (requested !== undefined && !this.owns(profile, requested)) return 'not-found';
     const conversationId = requested ?? current;
@@ -445,17 +509,14 @@ export class AssistantStore {
       const task = parsed<Task>(this.database.prepare('SELECT record FROM assistant_tasks WHERE profile=? ORDER BY seq DESC LIMIT 1').get(profile) as RecordRow | undefined);
       if (task !== undefined && task.conversationId === conversationId) {
         const question = task.question;
-        page.currentTask = {taskId: task.id, question: question === null ? null : {
+        page.currentTask = {taskId: task.id, question: question === null || visibility?.shows({id: question.id, role: 'assistant', taskId: task.id}) === false ? null : {
           id: question.id, text: question.text, answer: question.answer, kind: question.kind, proposal: question.proposal,
         }};
       }
     }
-    const columns = messagesWithAttachments;
-    const rows = (cursor === undefined
-      ? this.database.prepare(`${columns} WHERE conversation_id=? ORDER BY seq DESC LIMIT ?`).all(conversationId, HISTORY_ROWS + 1)
-      : this.database.prepare(`${columns} WHERE conversation_id=? AND seq<? ORDER BY seq DESC LIMIT ?`).all(conversationId, cursor.seq, HISTORY_ROWS + 1)) as MessageRow[];
+    const rows = this.#visibleRows(conversationId, 'seq<?', cursor?.seq ?? Number.MAX_SAFE_INTEGER, 'DESC', HISTORY_ROWS + 1, visibility);
     for (const item of rows.slice(0, HISTORY_ROWS)) {
-      const row = messageOf(item);
+      const row = this.#visibleMessage(item, visibility);
       const older = page.messages.length + 1 < rows.length ? historyCursor({profile, conversationId, seq: row.seq}) : null;
       const messages = [row, ...page.messages];
       if (Buffer.byteLength(JSON.stringify({...page, messages, older})) > LIMITS.pageBytes) break;

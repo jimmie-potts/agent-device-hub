@@ -773,43 +773,41 @@ worker's question among the findings; neither is retried.
 
 ### Turns, tools and approval
 
-A task runs turn → (question | read tool | proposal → approval → act) → turn
-until the model answers without a tool call. `ask_owner` pauses the task with a
-clarification question. `read_sessions` summarizes the core's synced sessions
-through the shared session read function (provider, client, label or title, the
-hub's status class and detail, work state and confirmation, attention and
-evidence age; at most 16 sessions and 4 KiB) and needs no approval; an unsynced
-copy says so instead of pretending the list is current. `set_mode` is a
-proposal: the task pauses with an approval question naming the family
-(`mode-set`), the target (`hub`) and the mode, and records the synced Hub-mode
-revision seen when proposed; while the module's copy of the core is not synced,
-or when the model names a value that is not a mode, the call is refused to the
-model and nothing is proposed. Only the literal answers `approve` and `decline`
-are accepted for it. Approval sends one `assistant-dispatch` command to the core,
-which forwards an allowlisted `mode-set` through its tracked dispatcher as an
-operation requested by this module, with the recorded revision as
-`expectedRevision`. The dispatcher's answer becomes the tool result,
-`accepted: …` or `refused: <code>` such as `revision-conflict` after the mode
-changed by hand. The approval keeps the revision it was proposed against, so it
-never overrides that manual choice; the result then says the mode changed since
-the proposal and nothing was changed. The operation's outcome, inbox item and
-history belong to the core: a stale refusal like this opens no inbox item,
-because sending its saved revision again would always be refused (#1657). The
-conversation never claims a device effect. The dispatcher's own
-uncertainty, a reply deadline that passed while the mode owner held the
-command, reaches the module as `uncertain-result` and leaves the call
-uncertain like a lost answer. A decline sends
-nothing. A tool the section does not list, or that the model names wrongly,
-returns a refusal to the model and has no effect. An uncertain dispatch answer
-leaves the call uncertain and the task refuses resume, as any uncertain call
-does.
+A task can answer, read, ask a clarifying question or execute a control. The
+three companions use the same configured tool allowlist. Conversation Details
+shows which tools the runtime allows and which it refuses. A missing
+permission or capability refuses the action at execution too.
 
-The synthetic provider is a fixed script behind the same contract: it proposes
-the mode the message names when `set_mode` is allowed, otherwise asks its fixed
-clarification question; after the answer it reads `read_sessions` when allowed
-or its immutable fixture; then it composes a result from the evidence it was
-given. The `assistant-task` and `assistant-mode-approval` catalog scenarios and
-the companions browser journey walk those paths.
+An explicit owner instruction authorizes a configured Hub or device control
+once Conversation resolves the target and setting. “Turn off the shelf lamp”
+and “Set the Hub mode to quiet” send directly. Conversation asks for an exact
+choice when names match more than one device. Earlier owner messages can
+identify a reference such as “it.” A status question or model suggestion
+cannot authorize a write. Paid artwork and coding delegation still use an
+approval question.
+
+The task saves the authorizing message IDs, exact target and setting, current
+revision, and request ID before dispatch. The core routes the existing typed
+command through its designated writer. A changed revision or device hold
+refuses the request. A lost reply stays uncertain and the task never resends
+the command after restart. A receipt reports whether the command was
+accepted. The tracked operation and correlated owner readback report its
+effect.
+
+`read_sessions` reports bounded session labels, shared status, work evidence
+and attention from the current core copy. It reports when that copy is
+unsynced. The synthetic provider exercises the direct control, question and
+read paths without network or paid calls. The `assistant-task` and
+`assistant-mode-approval` catalog scenarios and the companions browser journey
+cover these paths.
+
+Conversation checks sharing before it builds a page, provider transcript,
+title prompt or coding brief. The private Companions section accepts
+`sharing` rules with `caller`, `companion`, `destination`, `purpose`, `source`,
+`field`, optional `record` and `allow`. A matching denial takes precedence.
+Changing a tool allowlist does not grant sharing. The current policy and
+OpenAI supervisor grant are recorded in
+[ADR 0011](../../docs/decisions/0011-private-personal-data-retention.md).
 
 ### Identities, staging and bounds
 
@@ -1247,21 +1245,17 @@ The title instruction, prompt and normalization are adapted from OpenAI Codex
 Allow `read_lifx`, `set_lifx_power`, or `set_lifx_brightness` in the private
 Conversation tool list. Read status by a configured light name or routing ID.
 A read reports the last observation and supported controls. Conversation labels an observation stale after 30 seconds or when it predates a command. An explicit stale read requests the owner's rate-limited refresh. An unchanged result can retain its original observation timestamp. If several lights
-match a write, Conversation asks for the exact ID before proposing it.
-
-The approval shows the selected light and value. It binds the action to the
-light's configuration revision and generation. The core forwards the approved
-action through the tracked dispatcher. Expand **Tool result** to see the
-operation result and its available evidence. Device availability, changed
-configuration, a restart, or a revoked tool can invalidate an approval.
+match a write, Conversation asks for the exact ID. It binds the setting to the
+selected light's configuration revision and generation. The core tracks the
+operation. Expand **Tool result** to inspect its receipt and evidence.
 
 ### Wemo status and power
 
 `read_wemo` reports the plug's observed power, freshness, and hold state.
-`set_wemo_power` proposes on or off for one named plug. The approval binds
-the Wemo owner and the plug's configuration revision and generation. The
-core tracks the existing power command. The plug's queue and hold still
-govern the write, and the core's existing maximum-on policy still applies.
+`set_wemo_power` switches the named plug to the requested state. An explicit
+request for “all Wemo plugs” binds the current eligible set and gives each
+plug its own operation ID. The Wemo owner checks each plug's configuration,
+generation, queue and hold. The existing maximum-on policy applies.
 
 ### Device controls and saved content
 
@@ -1275,10 +1269,21 @@ Each added command has its own name in `assistant.tools`. The
 [Conversation action catalog](../../packages/event-contracts/src/v2/assistant-actions.ts)
 lists the exact command families and eligible owners. Command names take
 the form `control_<family>` with underscores. Existing LIFX and Wemo power
-permissions keep their original names. Conversation shows the target, owner
-and exact values for approval. The existing owner command checks device
-revisions, generation and capability. The tracked operation shows acceptance
-and the available effect evidence separately.
+permissions keep their original names. The existing owner command checks
+device revisions, generation and capability. The tracked operation shows
+acceptance and available effect evidence.
+
+| Configured owner | Conversation operations |
+| --- | --- |
+| LIFX and Wemo | Device reads, power, LIFX brightness and color, Wemo hold release |
+| Nanoleaf | Power, brightness, operating mode, scenes, moments, animations, wall and machine edits, favorites, notice acknowledgment, reactive presets and saved show versions |
+| Pixoo and Tidbyt | Supported display power, brightness, operating modes, moments and saved artwork. Pixoo also offers Monitor, Media, now playing, playlists, assets and notices |
+| Playback and Volcano | Playback controls and the Volcano software session-gap setting |
+| Core | Hub mode, device mode overrides, session labels, notice clearing, Inbox handling, layouts and tracked light show playback |
+| Art | Saved artwork edits and presentation. Paid generation keeps its explicit approval |
+
+Roborock offers status only. ONN is hibernated. Conversation's Inbox Send
+again follows the existing requester and replay rules for the saved command.
 
 For Pixoo brightness and Wemo power, Conversation waits up to a second within the tool budget
 for the owner's reading for that request. The original reply reports the
@@ -1287,22 +1292,21 @@ reply is saved, a later result appears once with a link to the earlier reply.
 The saved dispatch receipt lets Companions resume observation on restart. A
 follow-up expires after one day.
 
-`read_saved_art` offers saved artwork IDs and compositions. After approval,
+`read_saved_art` offers saved artwork IDs and compositions.
 `control_art_show` uses the existing `art-show` preparation and presentation
-path. `read_art_show_effects` uses the approved request ID to show each
+path. `read_art_show_effects` uses the tracked request ID to show each
 display's preparation and presentation evidence. A skipped phase shows its owner refusal.
 If the evidence is unavailable, the phase reports that separately.
 
 For light shows, `create_light_show_draft` uses a Nanoleaf starter timeline.
 `edit_light_show_cue` applies edits against the current draft revision.
 `preview_light_show_draft` shows cue timing, colors and intensity.
-`save_light_show` uses a separate approval to write a version to the existing
-Nanoleaf catalog. Each immutable version can confirm its save by request
+`save_light_show` writes the requested version to the existing Nanoleaf catalog. Each immutable version can confirm its save by request
 identity after a lost reply. If the save expires without a matching version,
-the owner can make a new approval against the catalog's current revision.
+the owner can make a new save request against the catalog's current revision.
 `read_light_shows` pages through drafts, saved versions and lighting sessions.
 Supply an exact ID for its records, or leave it empty to list a category.
-`control_music_lighting_control` approves playback of one exact saved version
+`control_music_lighting_control` starts playback of one exact saved version
 on an eligible light. Stop, pause, resume and seek bind the active generation.
 Drafting, editing, previewing and saving send no lighting command.
 

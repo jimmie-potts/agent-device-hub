@@ -31,6 +31,7 @@ export type HandOffAnswer = RequestResult | {status: 'waiting'; requestId: strin
  * or ended, even while the coordinator was stopped, is dropped unsent; and the news that a waiting hand-off was sent.
  */
 export type CodingSeams = {
+  mayShare?: (companion: CodingCompanion, repository: string) => boolean;
   companionOf?: (taskId: string) => CodingCompanion | undefined;
   awaits?: (taskId: string) => boolean;
   sent?: (taskId: string, parent: TraceContext) => void;
@@ -152,8 +153,9 @@ export class CodingCoordinator {
    * answers with the core's answer; a busy one, or one with a line, keeps it waiting in order and answers `waiting`.
    */
   async handOff(data: HandOff, parent: TraceContext): Promise<HandOffAnswer> {
-    const refused = (code: 'unavailable' | 'revision-conflict' | 'capacity' | 'internal', detail: string): HandOffAnswer => ({status: Outcome.rejected, requestId: data.requestId, error: errorBody(code, {detail})});
+    const refused = (code: 'unavailable' | 'revision-conflict' | 'capacity' | 'internal' | 'forbidden', detail: string): HandOffAnswer => ({status: Outcome.rejected, requestId: data.requestId, error: errorBody(code, {detail})});
     if (!this.#connected()) return refused('unavailable', 'no coding worker is connected');
+    if (this.#seams.mayShare?.(data.companion, data.repository) === false) return refused('forbidden', 'coding brief sharing is not permitted');
     if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
     const slot = this.#slotOf(data.companion);
     let waiting: CodingWaitingRecord[];
@@ -170,8 +172,11 @@ export class CodingCoordinator {
     this.#changed();
     return {status: 'waiting', requestId: data.requestId};
   }
-  #dispatch(data: Omit<HandOff, 'expectedRevision' | 'companion'>, parent: TraceContext): Promise<RequestResult> {
+  #dispatch(data: Omit<HandOff, 'expectedRevision'>, parent: TraceContext): Promise<RequestResult> {
     const endpointId = this.#state.endpointId;
+    if (this.#seams.mayShare?.(data.companion, data.repository) === false) {
+      return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('forbidden')});
+    }
     if (endpointId === null) return Promise.resolve({status: Outcome.rejected, requestId: data.requestId, error: errorBody('unavailable', {detail: 'no coding worker is connected'})});
     return this.context.sdk.request('bunny.cmd.coding-dispatch.assistant', {type: 'org.bunny.coding.dispatch.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-dispatch/2.0',
       data: {requestId: data.requestId, endpointId, taskId: data.taskId, repository: data.repository, brief: data.brief, bounds: DEFAULT_CODING_BOUNDS}},
@@ -207,7 +212,7 @@ export class CodingCoordinator {
   }
   async #sendWaiting(record: CodingWaitingRecord, slot: string): Promise<void> {
     let answer: RequestResult;
-    try {answer = await this.#dispatch({requestId: record.operationId, taskId: record.taskId, repository: record.repository, brief: record.brief}, {traceparent: record.traceparent});}
+    try {answer = await this.#dispatch({requestId: record.operationId, taskId: record.taskId, companion: record.companion, repository: record.repository, brief: record.brief}, {traceparent: record.traceparent});}
     catch {answer = {status: Outcome.uncertain, requestId: record.operationId, error: errorBody('uncertain-result')};}
     if (this.#reserved.get(slot) === record.operationId) this.#reserved.delete(slot);
     // An answer lost to the module's own stop is left to the next start, which finds the hand-off's fate unknown.
@@ -299,6 +304,7 @@ export class CodingCoordinator {
     }
     const companion = this.#seams.companionOf?.(data.taskId);
     if (companion === undefined) return errorBody('not-found', {detail: 'the dispatch names no companion task'});
+    if (this.#seams.mayShare?.(companion, data.repository) === false) return errorBody('forbidden');
     const slot = this.#slotOf(companion), reserved = this.#reserved.get(slot);
     if (reserved !== data.requestId && this.#busy(slot)) return errorBody('capacity', {detail: 'that companion\'s coding slot is busy'});
     const active: Active = {operationId: data.requestId, taskId: data.taskId, endpointId: data.endpointId, traceparent: command.traceparent, started: false, status: 'pending',
@@ -313,10 +319,14 @@ export class CodingCoordinator {
     return {status: 'accepted'};
   }
   async #start(active: Active, data: CodingRun): Promise<void> {
-    if (this.#active.get(active.operationId) !== active || active.settling) return;
+    if (this.#active.get(active.operationId) !== active || active.settling || this.#closed || this.context.signal.aborted) return;
     // A worker that declared slots (2.2) hears which companion asked; an older one gets the 2.0 start it knows.
     const tagged = this.#state.slots !== null;
     try {
+      if (this.#seams.mayShare?.(active.companion, data.repository) === false) {
+        await this.#settle(active, 'failed', undefined, 'coding brief sharing was revoked', {result: Outcome.failed, code: 'forbidden'});
+        return;
+      }
       const result = await this.context.sdk.request(`bunny.cmd.coding-work.${active.endpointId}`, {type: 'org.bunny.coding.work.requested', subject: active.endpointId,
         dataschema: `https://bunny.invalid/events/coding-work/${tagged ? '2.1' : '2.0'}`,
         data: {requestId: active.operationId, operationId: active.operationId, action: 'start', taskId: data.taskId, ...(tagged ? {companion: active.companion} : {}), repository: data.repository, brief: data.brief, bounds: data.bounds}},

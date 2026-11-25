@@ -454,24 +454,19 @@ void test('a device follow-up resolves the light discussed, asks which of two, a
     dispatch: data => {requests.push(data); return Promise.resolve({status: 'accepted', requestId: data.requestId, reply: {} as never});}});
   accepted(await w.control('enable'));
   await exchange(w, 'How is the desk lamp?', call('read_lifx', {device: 'desk-lamp'}), reply('The desk lamp is available.'));
-  // The device's configuration changes after the discussion: the proposal binds what is current, not what was said.
+  // The configuration changed after the discussion. Bind the current revision.
   devices = [light('desk-lamp', 4), light('hall-lamp')];
-  accepted(await w.send('bunny', 'Dim it'));
+  accepted(await w.send('bunny', 'Dim it to 30%'));
   const dim = await w.providers.bunny.next();
   const discussed = [...text(dim.input, 'recent').matchAll(/\b(desk|hall)-lamp\b/g)].map(match => match[0]);
   assert.deepEqual([...new Set(discussed)], ['desk-lamp'], 'only the discussed light is in context');
   dim.resolve(call('set_lifx_brightness', {device: 'desk-lamp', percent: 30}));
-  await settle(() => w.task('bunny')?.status === 'waiting');
-  const approval = (await w.recent('bunny')).currentTask?.question;
-  assert.equal(approval?.kind, 'approval');
-  assert.partialDeepStrictEqual(approval?.proposal, {family: 'brightness-set', target: 'desk-lamp', data: {percent: 30, expectedConfigurationRevision: 4}});
-  assert.equal(requests.length, 0, 'context grants no approval: nothing is sent before the owner approves');
-  accepted(await w.send('bunny', 'decline', true));
-  (await w.providers.bunny.next()).resolve(reply('Nothing changed.'));
+  (await w.providers.bunny.next()).resolve(reply('The change was accepted.'));
   await settle(() => w.task('bunny')?.status === 'succeeded');
+  assert.partialDeepStrictEqual(requests[0], {family: 'brightness-set', target: 'desk-lamp', data: {percent: 30, expectedConfigurationRevision: 4}});
   // After both lights are discussed, "dim it" could mean either: the companion asks which.
   await exchange(w, 'How is the hall lamp?', call('read_lifx', {device: 'hall-lamp'}), reply('The hall lamp is available.'));
-  accepted(await w.send('bunny', 'Dim it'));
+  accepted(await w.send('bunny', 'Dim it to 30%'));
   const ambiguous = await w.providers.bunny.next();
   assert.deepEqual([...new Set([...text(ambiguous.input, 'recent').matchAll(/\b(desk|hall)-lamp\b/g)].map(match => match[0]))].sort(), ['desk-lamp', 'hall-lamp']);
   ambiguous.resolve(ask('Which light, desk-lamp or hall-lamp?'));
@@ -485,12 +480,15 @@ void test('a device follow-up resolves the light discussed, asks which of two, a
   assert.match(JSON.stringify(refused.input.transcript.at(-1)), /refused: not-found; no light change was proposed/);
   refused.resolve(reply('That light is gone.'));
   await settle(() => w.task('bunny')?.status === 'succeeded');
-  assert.equal(requests.length, 0);
+  assert.equal(requests.length, 1);
 });
 
 void test('an artwork follow-up resolves "that animation" to the attachment of this conversation, not another library item', async context => {
   const target = 'display-blue';
-  const w = await world(context, {tools: ['read_saved_art', 'control_art_show'], dispatch: () => assert.fail('approval is still pending')});
+  const requests: AssistantDispatch[] = [];
+  const w = await world(context, {tools: ['read_saved_art', 'control_art_show'], dispatch: data => {
+    requests.push(data); return Promise.resolve({status: 'accepted', requestId: data.requestId, reply: {} as never});
+  }});
   await w.core.serveSync(['art-targets'], () => ({revision: 1, states: [{
     type: 'org.bunny.art-targets.updated', subject: 'art', dataschema: 'https://bunny.invalid/events/art-targets/2.0',
     data: {id: 'art', revision: 1, targets: [{target, kind: 'pixoo'}]},
@@ -529,10 +527,11 @@ void test('an artwork follow-up resolves "that animation" to the attachment of t
   assert.equal(attached?.artworkId, 'pennant');
   assert.equal(library.artworks.length, 2);
   second.resolve(call('control_art_show', {owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: attached.artworkId, targets: [target]})}));
-  await settle(() => w.task('bunny')?.status === 'waiting');
-  const question = (await w.recent('bunny')).currentTask?.question;
-  assert.equal(question?.kind, 'approval');
-  assert.match(question?.text ?? '', /Show Striped pennant animation on Blue panel \(display-blue\)/);
+  (await w.providers.bunny.next()).resolve(reply('The request was accepted.'));
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  assert.equal(requests.length, 1);
+  assert.partialDeepStrictEqual(requests[0], {family: 'catalog-action', command: 'art-show', data: {artworkId: 'pennant', targets: [target]}});
+  assert.equal((await w.recent('bunny')).currentTask?.question, null);
 });
 
 void test('a troubleshooting follow-up drafts the brief from the reported symptom, and approval still decides', async context => {

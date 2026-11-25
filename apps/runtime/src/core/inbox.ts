@@ -1,9 +1,9 @@
 // Shared operation inbox (Hub #923), owned by the core store. Handling never changes device state or releases a hold.
 import {randomUUID} from 'node:crypto';
 import type {DatabaseSync, StatementSync} from 'node:sqlite';
-import {errorBody, type ErrorBody} from '@jimmie-potts/event-contracts/v2';
+import {errorBody, type ErrorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import {operationEntityId, coreValidator, type InboxItem} from '@jimmie-potts/event-contracts/v2/families';
-import {fullDisk, type Command, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
+import {fullDisk, type Reply, type StateDraft, Outcome} from '@jimmie-potts/sdk';
 import type {CoreHandle} from './core.js';
 import {REMOVAL_SCHEMA} from './schemas.js';
 import type {Operation} from './operations.js';
@@ -13,6 +13,7 @@ import {DASHBOARD_SOURCE} from '../credentials.js';
 
 export const INBOX_SCHEMA = 'https://bunny.invalid/events/inbox-item/2.1';
 export type InboxHandleRequest = {requestId: string; expectedRevision: number; action: 'dismiss' | 'send-again'};
+type Handling = {target: string; input: InboxHandleRequest; source: string; parent: Message; resendId: string};
 const draftOf = (record: InboxItem): StateDraft => ({type: 'org.bunny.inbox-item.updated', subject: record.id, dataschema: INBOX_SCHEMA, data: record});
 type Row = {record: string; handled_by: string | null};
 /** The Hub mode's own families, whose expected revision is the core's monotonic store revision. */
@@ -107,15 +108,15 @@ export class InboxRecords {
     }
     this.#publications.delete(tx);
   };
-  #handle(command: Command<InboxHandleRequest>, tx: CoreTransaction): ErrorBody | undefined {
-    const row = this.#statements?.get.get(command.subject) as Row | undefined;
+  #handle({target, input, source, parent}: Handling, tx: CoreTransaction): ErrorBody | undefined {
+    const row = this.#statements?.get.get(target) as Row | undefined;
     if (row === undefined) return errorBody('not-found', {detail: 'no such inbox item'});
     if (row.handled_by !== null) return errorBody('invalid-state', {detail: 'the inbox item was already handled'});
     const record = JSON.parse(row.record) as InboxItem;
-    if (record.revision !== command.data.expectedRevision) return errorBody('revision-conflict', {detail: 'the inbox item changed since it was read'});
-    this.#statements?.handle.run(command.source, tx.atMs, tx.revision(), command.subject);
+    if (record.revision !== input.expectedRevision) return errorBody('revision-conflict', {detail: 'the inbox item changed since it was read'});
+    this.#statements?.handle.run(source, tx.atMs, tx.revision(), target);
     tx.add(`bunny.state.inbox-item.${record.id}`, {kind: 'removal', type: 'org.bunny.inbox-item.removed', subject: record.id,
-      dataschema: REMOVAL_SCHEMA, data: {entity: {family: 'inbox-item', id: record.id}, revision: tx.revision(), reason: 'deleted'}}, {parent: command});
+      dataschema: REMOVAL_SCHEMA, data: {entity: {family: 'inbox-item', id: record.id}, revision: tx.revision(), reason: 'deleted'}}, {parent});
     return undefined;
   }
   readonly start = async (core: CoreHandle): Promise<void> => {
@@ -123,24 +124,30 @@ export class InboxRecords {
       await core.ready;
       const checked = this.#validator.validate(command);
       if (!checked.ok) return errorBody('invalid-request', {detail: 'the inbox handling command is invalid'});
-      try {
-        if (command.data.action === 'dismiss') {
-          const refused = await core.transaction(tx => this.#handle(command, tx));
-          return refused ?? {status: 'accepted'};
-        }
-        const row = this.#statements?.get.get(command.subject) as Row | undefined;
-        if (row === undefined) return errorBody('not-found', {detail: 'no such inbox item'});
-        const record = JSON.parse(row.record) as InboxItem, operation = core.operation(record.item.requestId);
-        if (operation === undefined) return errorBody('not-found', {detail: 'the inbox operation is unavailable'});
-        const refused = resendRefusal(operation, command.source);
-        if (refused !== undefined) return refused;
-        const answer = await this.#resend({key: operation.key,
-          draft: {type: operation.command, subject: operation.target, dataschema: operation.dataschema, data: operation.data},
-          requestedBy: command.source, requestId: randomUUID(), parent: command}, tx => this.#handle(command, tx));
-        return 'error' in answer ? answer : {status: 'accepted'} satisfies Reply;
-      } catch (error) {
-        return errorBody(fullDisk(error) ? 'capacity' : 'internal', {detail: 'the core could not commit inbox handling'});
-      }
+      return this.handle(core, {target: command.subject, input: command.data, source: command.source, parent: command, resendId: randomUUID()});
     });
   };
+  /** The authenticated gateway and the validated Conversation dispatcher use the same handling transaction. */
+  async handle(core: CoreHandle, handling: Handling): Promise<Reply> {
+    const {input, parent, resendId, source, target} = handling;
+    await core.ready;
+    try {
+      if (input.action === 'dismiss') {
+        const refused = await core.transaction(tx => this.#handle(handling, tx));
+        return refused ?? {status: 'accepted'};
+      }
+      const row = this.#statements?.get.get(target) as Row | undefined;
+      if (row === undefined) return errorBody('not-found', {detail: 'no such inbox item'});
+      const record = JSON.parse(row.record) as InboxItem, operation = core.operation(record.item.requestId);
+      if (operation === undefined) return errorBody('not-found', {detail: 'the inbox operation is unavailable'});
+      const refused = resendRefusal(operation, source);
+      if (refused !== undefined) return refused;
+      const answer = await this.#resend({key: operation.key,
+        draft: {type: operation.command, subject: operation.target, dataschema: operation.dataschema, data: operation.data},
+        requestedBy: source, requestId: resendId, parent}, tx => this.#handle(handling, tx));
+      return 'error' in answer ? answer : {status: 'accepted'};
+    } catch (error) {
+      return errorBody(fullDisk(error) ? 'capacity' : 'internal', {detail: 'the core could not commit inbox handling'});
+    }
+  }
 }

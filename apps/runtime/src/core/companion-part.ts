@@ -13,6 +13,7 @@ import type {CoreHandle, CorePart} from './core.js';
 import type {CoreChange} from './store.js';
 import {dispatchCatalogAction} from './assistant-actions.js';
 import type {Action, ActionAnswer} from './tracker.js';
+import type {InboxRecords} from './inbox.js';
 import {LivePublication} from './live-publication.js';
 
 const TYPES = new Set(['org.bunny.attention.raised', 'org.bunny.turn.ended']);
@@ -21,7 +22,8 @@ export class CompanionPart implements CorePart {
   readonly #sessions = new Map<string, Session30Record>();
   #closed = false;
   constructor(private readonly device: (id: string) => Message<DeviceRecord> | undefined = () => undefined,
-    private readonly dispatchLighting: (action: Action) => Promise<ActionAnswer> = () => Promise.resolve(errorBody('unavailable'))) {}
+    private readonly dispatchOperator: (action: Action) => Promise<ActionAnswer> = () => Promise.resolve(errorBody('unavailable')),
+    private readonly handleInbox: InboxRecords['handle'] = () => Promise.resolve(errorBody('unavailable'))) {}
   /** Starts the session copy from every record the core store holds once it opens (#1865 step 8). */
   seed(records: readonly Session30Record[]): void {
     this.#sessions.clear();
@@ -86,7 +88,10 @@ export class CompanionPart implements CorePart {
       const checked = validator.validate(command, {nowMs: core.clock.now()});
       if (!checked.ok) return {error: checked.error};
       if (command.data.family === 'catalog-action') {
-        const answer = await dispatchCatalogAction(core, {...command, data: command.data}, this.device, this.dispatchLighting);
+        const answer = await dispatchCatalogAction(core, {...command, data: command.data}, this.device, this.dispatchOperator, async (action, input) => {
+          const result = await this.handleInbox(core, {target: action.draft.subject, input, source: command.source, parent: command, resendId: input.requestId});
+          return 'error' in result ? result : {status: 'accepted', requestId: input.requestId};
+        });
         return 'error' in answer ? answer : {status: 'accepted'};
       }
       const action = command.data;

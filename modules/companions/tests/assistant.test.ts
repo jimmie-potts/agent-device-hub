@@ -27,8 +27,9 @@ import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.
 import type {SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {readDevices} from '../src/assistant/devices.js';
 import {confirmationEvidence, type Confirmation} from '../src/assistant/confirmation.js';
+import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
 import {catalogTools} from '../src/assistant/catalog-tools.js';
-import {deviceToolOwner, FIXTURE_TEXT, profileTools, summarizeSessions, TOOLS} from '../src/assistant/tools.js';
+import {deviceToolOwner, FIXTURE_TEXT, summarizeSessions, TOOLS} from '../src/assistant/tools.js';
 import {DEVICE_TOOLS} from '../src/assistant/tool-scope.js';
 
 function deferred<T>() {let resolve: (value: T) => void = () => {}; const promise = new Promise<T>(done => {resolve = done;}); return {promise, resolve};}
@@ -95,6 +96,133 @@ const light = (id: string, label = id): DeviceRecord => ({
   lastOutcome: unknown, lastTransmission: unknown, externalControl: unknown,
 });
 
+for (const profile of ['bunny', 'reachy', 'microduck'] as const) {
+  void test(`${profile} acts on explicit plug and mode requests without approval`, async context => {
+    const plug = {...light('studio-plug', 'Studio Plug'), kind: 'wemo' as const};
+    const requests: AssistantDispatch[] = [];
+    const provider = counted((request) => {
+      const last = request.transcript.at(-1);
+      if (last?.role !== 'owner') return reply('The dispatcher accepted the request.');
+      return last.text.includes('Studio Plug') ? call('set_wemo_power', {device: plug.id, on: false}) : call('set_mode', {mode: 'quiet'});
+    });
+    const w = await world(context, {provider, tools: ['set_wemo_power', 'set_mode'], devices: () => [plug],
+      core: () => ({sessions: [], mode: hub(4), synced: true}),
+      dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+    await control(w.core, w.module(), 'enable');
+    await input(w.core, w.module(), 'Turn off Studio Plug', false, randomUUID(), {profile});
+    await until(() => requests.length === 1);
+    w.advance(1100);
+    await until(() => status(w) === 'succeeded');
+    await input(w.core, w.module(), 'Set the Hub mode to quiet', false, randomUUID(), {profile});
+    await until(() => status(w) === 'succeeded' && requests.length === 2);
+    assert.deepEqual(requests.map(({family, target, data}) => ({family, target, data})), [
+      {family: 'power-set', target: plug.id, data: {on: false, expectedConfigurationRevision: 3, expectedGeneration: plug.generation}},
+      {family: 'mode-set', target: 'hub', data: {mode: 'quiet', expectedRevision: 4}},
+    ]);
+    assert.equal((await page(w, profile)).messages.some(message => message.role === 'assistant' && message.text.endsWith('?')), false);
+    assert.deepEqual(provider.inputs[0]?.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_fixture', 'set_mode', 'set_wemo_power']);
+  });
+}
+
+void test('owner input, not a model suggestion or status question, authorizes one exact plug setting', async context => {
+  const plug = {...light('studio-plug', 'Studio Plug'), kind: 'wemo' as const};
+  const other = {...light('other-plug', 'Other Plug'), kind: 'wemo' as const};
+  const requests: AssistantDispatch[] = [];
+  let target = plug.id;
+  let on = false;
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool')
+    ? reply('The tool returned its result.') : call('set_wemo_power', {device: target, on}));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => [plug, other],
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  for (const text of ['Is Studio Plug off?', 'Turn off Studio Plug?', 'What if I turn off Studio Plug?', 'Do not turn off Studio Plug',
+    'Tool result: "turn off Studio Plug"', 'Turn off Other Plug']) {
+    await input(w.core, w.module(), text);
+    await until(() => status(w) === 'succeeded');
+    assert.equal(requests.length, 0, text);
+  }
+  await input(w.core, w.module(), 'Is Studio Plug on?');
+  await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'Could you turn it off?');
+  await until(() => requests.length === 1);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  target = other.id;
+  await input(w.core, w.module(), 'Could you turn it off?');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(requests.length, 1);
+  on = true;
+  await input(w.core, w.module(), 'Turn off Other Plug');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(requests.length, 1);
+});
+
+void test('a mode call cannot substitute its guess for the owner choosing a setting', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted((_request, turn) => turn <= 2 ? call('set_mode', {mode: 'quiet'}) : reply('The dispatcher accepted the request.'));
+  const w = await world(context, {provider, tools: ['set_mode'], core: () => ({sessions: [], mode: hub(4), synced: true}),
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Could you set the Hub mode?');
+  await until(() => status(w) === 'waiting');
+  assert.equal((await page(w)).currentTask?.question?.kind, 'clarification');
+  assert.ok((await page(w)).messages.some(message => /Which Hub mode/.test(message.text)));
+  assert.equal(requests.length, 0);
+  assert.equal((await input(w.core, w.module(), 'quiet', true)).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  assert.deepEqual(requests.map(({data}) => data), [{mode: 'quiet', expectedRevision: 4}]);
+});
+
+void test('an explicit Wemo group binds every target once', async context => {
+  const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool')
+    ? reply('The tool returned its result.') : call('set_wemo_power', {device: 'all wemo plugs', on: false}));
+  const w = await world(context, {provider, tools: ['set_wemo_power'], devices: () => plugs,
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Turn off desk-plug');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(requests.length, 0);
+  await input(w.core, w.module(), 'Turn off all Wemo plugs');
+  await until(() => status(w) === 'succeeded' && requests.length === 2);
+  assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
+  assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
+});
+
+void test('a session grant filters discovery, tool results, prompt replay and title calls after revocation', async context => {
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Synthetic model result') : call('read_sessions'));
+  const titles: string[] = [];
+  let revoked = false;
+  const permitted = sharing();
+  const share = (query: ShareQuery): boolean => permitted(query) && !(query.source === 'sessions' &&
+    ((query.record === 'hidden-session' && query.field === 'index') || (revoked && query.record === 'session-1')));
+  const w = await world(context, {provider, share,
+    titleProvider: {name: 'synthetic', model: 'synthetic', title: prompt => {
+      titles.push(prompt);
+      return Promise.resolve({text: 'KEEP', usage: null});
+    }},
+    tools: ['read_sessions'], core: () => ({sessions: [session('Allowed synthetic session'),
+      session('Hidden synthetic data', {id: 'hidden-session'})], mode: hub(1), synced: true})});
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Read current coding status');
+  await until(() => status(w) === 'succeeded');
+  const first = JSON.stringify(provider.inputs);
+  assert.ok(first.includes('Allowed synthetic session'));
+  assert.ok(first.includes('1 coding agent session'));
+  assert.ok(!first.includes('Hidden synthetic data'));
+  assert.ok(!titles.some(prompt => prompt.includes('Hidden synthetic data')));
+  revoked = true;
+  await w.restart();
+  const offset = provider.inputs.length;
+  await input(w.core, w.module(), 'Read refreshed coding status');
+  await until(() => status(w) === 'succeeded');
+  const later = JSON.stringify(provider.inputs.slice(offset));
+  assert.ok(!later.includes('Allowed synthetic session'));
+  assert.ok(!later.includes('Hidden synthetic data'));
+  assert.ok(!JSON.stringify(await page(w)).includes('Allowed synthetic session'));
+});
+
 void test('light status preserves unknown state after copy loss and evidence older than a write', () => {
   assert.match(readDevices(undefined, 'desk-lamp', 1000), /unavailable/);
   assert.match(readDevices([light('desk-lamp')], 'desk-lamp', 1000), /Observed power and brightness are unknown/);
@@ -118,6 +246,7 @@ for (const kind of ['pixoo', 'wemo'] as const) for (const resume of [false, true
   const requests: AssistantDispatch[] = [];
   const w = await world(context, {provider, tools: [tool], devices: () => [display], dispatch: data => {
     requests.push(data);
+    deviceSyncAvailable = false;
     return Promise.resolve(accepted(data.requestId));
   }});
   const events: LifecycleObservation[] = [];
@@ -140,10 +269,7 @@ for (const kind of ['pixoo', 'wemo'] as const) for (const resume of [false, true
       dataschema: 'https://bunny.invalid/events/operation/2.0', data: operation}]};
   });
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Set one device');
-  await until(() => status(w) === 'waiting');
-  deviceSyncAvailable = false;
-  await input(w.core, w.module(), 'approve', true);
+  await input(w.core, w.module(), kind === 'pixoo' ? 'Set Studio Display brightness to 35%' : 'Turn on Studio Display');
   await until(() => w.store().confirmations()[0]?.sent === true);
   const requestId = requests[0]?.requestId ?? assert.fail('request reserved');
   const originalTask = task(w)?.taskId ?? assert.fail('task saved');
@@ -182,7 +308,7 @@ for (const kind of ['pixoo', 'wemo'] as const) for (const resume of [false, true
   assert.equal(provider.calls(), resume ? before + 1 : before);
   assert.equal(status(w), 'succeeded');
   const turn = events.filter(event => event.turn.status === 'known' && event.turn.id === originalTask);
-  assert.equal(turn.filter(event => event.event.kind === 'attention-resolved').length, 1);
+  assert.equal(turn.filter(event => event.event.kind === 'attention-resolved').length, 0);
   assert.equal(turn.filter(event => event.event.kind === 'turn-ended').length, 1);
 });
 
@@ -223,26 +349,29 @@ void test('an admitted Wemo request that expires before the write is reported as
     {result: 'The power request has conflicting results.'});
 });
 
-void test('a duplicate light label asks for an exact device ID and sends nothing without a specific approval', async context => {
+void test('a duplicate light label asks for an exact device ID and dispatches when the owner identifies it', async context => {
   const names = [light('first', 'Desk lamp'), light('second', 'Desk lamp')];
   const provider = counted((_input, turn) => turn === 1 ? call('set_lifx_power', {device: 'Desk lamp', on: false})
     : turn === 2 ? call('set_lifx_power', {device: 'second', on: false}) : reply('Done.'));
+  const requests: AssistantDispatch[] = [];
   const w = await world(context, {provider, tools: ['set_lifx_power'], devices: () => names,
-    dispatch: () => assert.fail('no approval was given')});
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Turn off the desk light');
+  await input(w.core, w.module(), 'Turn off the Desk lamp');
   await until(() => status(w) === 'waiting');
   const clarification = (await page(w)).currentTask?.question;
   assert.equal(clarification?.kind, 'clarification');
   assert.match(JSON.stringify(clarification), /first, second/);
+  assert.equal(requests.length, 0);
   await input(w.core, w.module(), 'second', true);
-  await until(() => status(w) === 'waiting' && task(w)?.questions === 2);
-  assert.deepEqual((await page(w)).currentTask?.question?.proposal, {
+  await until(() => status(w) === 'succeeded');
+  assert.equal(task(w)?.questions, 1);
+  assert.deepEqual(requests.map(({family, target, data}) => ({family, target, data})), [{
     family: 'power-set', target: 'second', data: {on: false, expectedConfigurationRevision: 3, expectedGeneration: {epoch: 'start-1', sequence: 0}},
-  });
+  }]);
 });
 
-void test('an owner-approved Wemo power request preserves the exact plug, owner and guards', async context => {
+void test('a direct Wemo power request preserves the exact plug, owner and guards', async context => {
   const plug: DeviceRecord = {...light('table-plug', 'Table plug'), kind: 'wemo'};
   const provider = counted((_input, turn) => turn === 1 ? call('set_wemo_power', {device: 'Table plug', on: true}) : reply('Done.'));
   const commands: AssistantDispatch[] = [];
@@ -250,15 +379,10 @@ void test('an owner-approved Wemo power request preserves the exact plug, owner 
     dispatch: data => {commands.push(data); return Promise.resolve(accepted(data.requestId));}});
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'Turn on the table plug');
-  await until(() => status(w) === 'waiting' || status(w) === 'succeeded');
-  assert.equal(status(w), 'waiting', 'the Wemo action needs an explicit approval');
   const proposal = {
     family: 'power-set', target: plug.id, owner: 'bunny/modules/wemo',
     data: {on: true, expectedConfigurationRevision: plug.configurationRevision, expectedGeneration: plug.generation},
   };
-  assert.deepEqual((await page(w)).currentTask?.question?.proposal, proposal);
-  assert.equal(commands.length, 0);
-  await input(w.core, w.module(), 'approve', true);
   await until(() => w.store().confirmations().length === 1);
   w.advance(1100);
   await until(() => status(w) === 'succeeded');
@@ -268,7 +392,7 @@ void test('an owner-approved Wemo power request preserves the exact plug, owner 
   assert.ok(saved.requestId.startsWith(`${task(w)?.taskId}-step-`));
   const {requestId, ...effect} = saved;
   assert.deepEqual(effect, proposal);
-  assert.ok((await page(w)).messages.some(message => message.text.includes(`as operation ${requestId}`)));
+  assert.equal(task(w)?.questions, 0);
 });
 
 void test('duplicate Wemo labels ask for an exact plug before proposing power', async context => {
@@ -295,30 +419,34 @@ void test('a Wemo hold refuses a power proposal without dispatch', async context
   assert.ok((await page(w)).messages.some(message => message.text.includes('refused: unavailable')));
 });
 
-void test('a saved Wemo proposal does not use a different power permission after restart', async context => {
+void test('revoking Wemo control during clarification survives restart', async context => {
   const tools = ['set_wemo_power'];
-  const w = await world(context, {tools, devices: () => [{...light('table-plug'), kind: 'wemo'}],
-    dispatch: () => assert.fail('the Wemo power permission was revoked')});
+  const records = ['table-plug', 'another-device'].map(id => ({...light(id, 'Shared desk device'), kind: 'wemo' as const}));
+  const provider = counted((_request, turn) => turn <= 2 ? call('set_wemo_power', {device: turn === 1 ? 'Shared desk device' : 'table-plug', on: false}) : reply('The tool gave its result.'));
+  const w = await world(context, {provider, tools, devices: () => records,
+    dispatch: () => assert.fail('the revoked tool cannot dispatch')});
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'SYNTHETIC_WEMO power table-plug off');
+  await input(w.core, w.module(), 'Turn off Shared desk device');
   await until(() => status(w) === 'waiting');
   tools.splice(0, 1, 'set_lifx_power');
   await w.restart();
-  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
+  assert.equal((await input(w.core, w.module(), 'table-plug', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
   assert.ok((await page(w)).messages.some(message => message.text.includes('This tool is not permitted')));
 });
 
-void test('revoking a light tool across a restart stops the saved approval before dispatch', async context => {
+void test('revoking light control during clarification survives restart', async context => {
   const tools = ['set_lifx_power'];
-  const w = await world(context, {tools, devices: () => [light('desk-lamp')],
-    dispatch: () => assert.fail('permission was revoked')});
+  const records = ['desk-lamp', 'another-device'].map(id => ({...light(id, 'Shared desk device'), kind: 'lifx' as const}));
+  const provider = counted((_request, turn) => turn <= 2 ? call('set_lifx_power', {device: turn === 1 ? 'Shared desk device' : 'desk-lamp', on: false}) : reply('The tool gave its result.'));
+  const w = await world(context, {provider, tools, devices: () => records,
+    dispatch: () => assert.fail('the revoked tool cannot dispatch')});
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'SYNTHETIC_LIFX power desk-lamp off');
+  await input(w.core, w.module(), 'Turn off Shared desk device');
   await until(() => status(w) === 'waiting');
-  tools.length = 0;
+  tools.splice(0, 1, 'read_sessions');
   await w.restart();
-  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
+  assert.equal((await input(w.core, w.module(), 'desk-lamp', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
   assert.ok((await page(w)).messages.some(message => message.text.includes('This tool is not permitted')));
 });
@@ -330,9 +458,7 @@ void test('the light command stays uncertain after a lost dispatch reply and doe
     return Promise.resolve({status: 'rejected', requestId: data.requestId, error: errorBody('uncertain-result')});
   }});
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'SYNTHETIC_LIFX power desk-lamp off');
-  await until(() => status(w) === 'waiting');
-  await input(w.core, w.module(), 'approve', true);
+  await input(w.core, w.module(), 'Turn off desk-lamp');
   await until(() => status(w) === 'uncertain');
   assert.equal(task(w)?.code, 'uncertain-result');
   await w.restart();
@@ -382,7 +508,8 @@ void test('Conversation pages through large show catalogs and can read a saved t
 
 void test('a lost saved-show playback answer stays uncertain and never sends a second request', async context => {
   const requests: AssistantDispatch[] = [];
-  const w = await world(context, {tools: ['control_music_lighting_control'], dispatch: data => {
+  const provider = counted(() => call('control_music_lighting_control', {owner: 'bunny/core', target: 'wall', arguments: '{"action":"stop"}'}));
+  const w = await world(context, {provider, tools: ['control_music_lighting_control'], dispatch: data => {
     requests.push(data);
     return Promise.resolve({status: 'uncertain', requestId: data.requestId, error: errorBody('uncertain-result')});
   }});
@@ -392,10 +519,7 @@ void test('a lost saved-show playback answer stays uncertain and never sends a s
       startedAtMs: 1000, show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0}}, last: null},
   }]}));
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'SYNTHETIC_CATALOG ' + JSON.stringify({name: 'control_music_lighting_control',
-    input: {owner: 'bunny/core', target: 'wall', arguments: '{"action":"stop"}'}}));
-  await until(() => status(w) === 'waiting');
-  await input(w.core, w.module(), 'approve', true);
+  await input(w.core, w.module(), 'Stop the light show on wall');
   await until(() => status(w) === 'uncertain');
   assert.equal(task(w)?.code, 'uncertain-result');
   assert.deepEqual(requests[0]?.data, {action: 'stop', generation: 'specific-show'});
@@ -432,7 +556,7 @@ void test('private task pauses, restarts without execution and consumes an expli
   assert.ok(provider.inputs.every(turn => turn.transcript.every(item => item.role !== 'owner' || item.text.startsWith('PRIVATE-SYNTHETIC'))));
 });
 
-void test('an approved proposal dispatches one mode-set bound to the proposal and its recorded revision', async context => {
+void test('a direct request dispatches one mode-set bound to the recorded revision', async context => {
   const dispatched: {requestId: string; data: {mode: string; expectedRevision?: number}}[] = [];
   const provider = counted();
   const w = await world(context, {provider, tools: ['read_sessions', 'set_mode'], core: () => ({sessions: [], mode: hub(7), synced: true}),
@@ -440,16 +564,8 @@ void test('an approved proposal dispatches one mode-set bound to the proposal an
   assert.deepEqual(w.module().inspectAssistant()?.tools, ['read_sessions', 'set_mode']);
   await control(w.core, w.module(), 'enable');
   assert.equal((await input(w.core, w.module(), 'Please switch the Hub to free mode')).status, 'accepted');
-  await until(() => status(w) === 'waiting');
-  const proposal = (await page(w)).currentTask?.question;
-  assert.equal(proposal?.kind, 'approval'); assert.deepEqual(proposal?.proposal, {family: 'mode-set', target: 'hub', data: {mode: 'free'}, expectedRevision: 7});
-  assert.equal(task(w)?.questions, 1);
-  await w.restart();
-  assert.deepEqual((await page(w)).currentTask?.question?.proposal?.data, {mode: 'free'}); assert.equal(dispatched.length, 0);
-  const free = await input(w.core, w.module(), 'yes please', true); assert.equal(free.status, 'rejected');
-  if (free.status === 'rejected') assert.equal(free.error.error.code, 'invalid-request');
-  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
+  assert.equal(task(w)?.questions, 0);
   assert.equal(dispatched.length, 1); assert.deepEqual(dispatched[0]?.data, {mode: 'free', expectedRevision: 7});
   assert.equal(dispatched[0]?.requestId, `${task(w)?.taskId ?? ''}-step-1`);
   const final = (await page(w)).messages.at(-1); assert.ok(final);
@@ -457,48 +573,45 @@ void test('an approved proposal dispatches one mode-set bound to the proposal an
   await w.restart(); assert.equal(dispatched.length, 1);
 });
 
-void test('an approval stays bound to the revision it was proposed against after an owner mode change, and the reply explains the refusal', async context => {
-  // #1657 (AC3): the owner changed the mode by hand after the proposal and before approving it. The approval must not
-  // override that choice, so it still carries the proposed revision, and the core's refusal is explained in the reply.
-  let revision = 3;
+void test('a stale direct revision is reported without substituting the newer revision', async context => {
   const dispatched: {mode: string; expectedRevision?: number}[] = [];
-  const w = await world(context, {provider: counted(), tools: ['set_mode'], core: () => ({sessions: [], mode: hub(revision), synced: true}),
-    dispatch: data => {assert.equal(data.family, 'mode-set'); dispatched.push(data.data); return Promise.resolve({status: 'rejected', requestId: data.requestId, error: errorBody('revision-conflict')});}});
+  const w = await world(context, {provider: counted(), tools: ['set_mode'], core: () => ({sessions: [], mode: hub(3), synced: true}),
+    dispatch: data => {
+      assert.equal(data.family, 'mode-set');
+      dispatched.push(data.data);
+      return Promise.resolve({status: 'rejected', requestId: data.requestId, error: errorBody('revision-conflict')});
+    }});
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'quiet mode now'); await until(() => status(w) === 'waiting');
-  assert.equal((await page(w)).currentTask?.question?.proposal?.expectedRevision, 3);
-  revision = 9;
-  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
+  await input(w.core, w.module(), 'Set the Hub to quiet mode');
   await until(() => status(w) === 'succeeded');
-  assert.deepEqual(dispatched, [{mode: 'quiet', expectedRevision: 3}], 'the proposed revision, never the newer one');
-  assert.match((await page(w)).messages.at(-1)?.text ?? '', /not applied: refused: revision-conflict: the Hub mode changed since this was proposed; nothing was changed/);
+  assert.deepEqual(dispatched, [{mode: 'quiet', expectedRevision: 3}]);
+  assert.match((await page(w)).messages.at(-1)?.text ?? '', /not applied: refused: revision-conflict: the Hub mode changed after the request was resolved/);
 });
 
-void test('a declined proposal sends nothing and a stale approval is reported as refused', async context => {
-  let answer: RequestResult = {status: 'rejected', requestId: 'r', error: errorBody('revision-conflict')}; let sends = 0;
-  const w = await world(context, {provider: counted(), tools: ['set_mode'], core: () => ({sessions: [], mode: hub(3), synced: true}), dispatch: () => {sends += 1; return Promise.resolve(answer);}});
+void test('a declined coding proposal sends nothing and a lost Hub reply is uncertain', async context => {
+  const answer: RequestResult = {status: 'rejected', requestId: 'r', error: errorBody('uncertain-result')};
+  let sends = 0;
+  const w = await world(context, {provider: counted(), tools: ['set_mode', 'delegate_coding'],
+    core: () => ({sessions: [], mode: hub(3), synced: true}),
+    coding: () => ({available: true, endpointId: 'worker', revision: 1}),
+    delegate: () => assert.fail('a declined hand-off must not send'),
+    dispatch: () => {sends += 1; return Promise.resolve(answer);}});
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'quiet mode now'); await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'Delegate this fixture');
+  await until(() => status(w) === 'waiting');
   assert.equal((await input(w.core, w.module(), 'decline', true)).status, 'accepted');
   await until(() => status(w) === 'succeeded');
-  assert.equal(sends, 0); assert.equal(task(w)?.toolCalls, 0);
-  const declined = await page(w); assert.equal(declined.messages.at(-1)?.text.includes(DECLINED), true);
-  await input(w.core, w.module(), 'back to work mode'); await until(() => status(w) === 'waiting');
-  assert.equal((await input(w.core, w.module(), 'approve', true)).status, 'accepted');
-  await until(() => status(w) === 'succeeded');
-  assert.equal(sends, 1); assert.match((await page(w)).messages.at(-1)?.text ?? '', /not applied: refused: revision-conflict/);
-  // The dispatcher's own uncertainty reaches the module as a rejection carrying `uncertain-result`, the shape the SDK delivers for a responder's error body.
-  answer = {status: 'rejected', requestId: 'r', error: errorBody('uncertain-result')};
-  await input(w.core, w.module(), 'free mode'); await until(() => status(w) === 'waiting');
-  await input(w.core, w.module(), 'approve', true); await until(() => status(w) === 'uncertain');
+  assert.equal(sends, 0);
+  assert.equal(task(w)?.toolCalls, 0);
+  assert.equal((await page(w)).messages.at(-1)?.text.includes(DECLINED), true);
+  await input(w.core, w.module(), 'Set the Hub mode to free');
+  await until(() => status(w) === 'uncertain');
   assert.equal(task(w)?.code, 'uncertain-result');
-  const id = task(w)?.taskId; assert.ok(id !== undefined);
-  assert.equal((await control(w.core, w.module(), 'resume', id)).status, 'rejected'); assert.equal(sends, 2);
+  const id = task(w)?.taskId;
+  assert.ok(id !== undefined);
+  assert.equal((await control(w.core, w.module(), 'resume', id)).status, 'rejected');
+  assert.equal(sends, 1);
   assert.equal(JSON.stringify(await page(w)).includes('refused: uncertain-result'), false);
-  await control(w.core, w.module(), 'cancel', id); await until(() => status(w) === 'cancelled');
-  answer = {status: 'uncertain', requestId: 'r', error: errorBody('uncertain-result')};
-  await input(w.core, w.module(), 'quiet mode'); await until(() => status(w) === 'waiting');
-  await input(w.core, w.module(), 'approve', true); await until(() => status(w) === 'uncertain'); assert.equal(sends, 3);
 });
 
 void test('a proposal needs a synced Hub-mode revision and a real mode, otherwise the call is refused to the model without a question', async context => {
@@ -618,7 +731,6 @@ void test('each model call carries the bunny persona and the owner\'s active pre
 
 void test('Reachy and MicroDuck use the configured provider with their own curated persona, and a harness may still give a profile the synthetic one', async context => {
   const provider = Object.assign(counted(() => reply('Configured answer')), {name: 'anthropic' as const, model: 'model-a'});
-  // A device tool and a catalog tool are allowlisted too; they stay B.U.N.N.Y.'s.
   const w = await world(context, {provider, tools: ['read_sessions', 'set_lifx_power', 'read_devices'], devices: () => [], readDevice: () => Promise.resolve(undefined)});
   await control(w.core, w.module(), 'enable');
   for (const profile of ['reachy', 'microduck'] as const) {
@@ -633,12 +745,10 @@ void test('Reachy and MicroDuck use the configured provider with their own curat
     [['reachy', `You are Reachy, the owner's home assistant. ${persona('reachy').character} Answer in one to three short sentences.`],
       ['microduck', `You are MicroDuck, the owner's home assistant. ${persona('microduck').character} Answer in one to three short sentences.`]]);
   assert.match(sectionOf(provider.inputs[1]?.context ?? assert.fail('MicroDuck call'), 'personality').text ?? '', /English text is intended meaning, never spoken English\./);
-  for (const sent of provider.inputs) assert.deepEqual(sent.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_sessions'], 'the configured tools that are neither device nor catalog tools, without the synthetic fixture');
+  for (const sent of provider.inputs) assert.deepEqual(sent.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'read_sessions', 'set_lifx_power'], 'every companion receives the configured tools');
   assert.equal((await input(w.core, w.module(), 'Synthetic bunny request')).status, 'accepted');
   await until(() => w.module().inspectAssistant()?.tasks.find(t => t.profile === 'bunny')?.status === 'succeeded');
   assert.deepEqual(provider.inputs[2]?.tools.map(tool => tool.name).sort(), ['ask_owner', 'read_devices', 'read_sessions', 'set_lifx_power'], 'B.U.N.N.Y. is offered every listed tool');
-  assert.deepEqual(['bunny', 'reachy', 'microduck'].map(profile => profileTools(['read_sessions', 'set_lifx_power', 'read_devices', 'set_mode'], profile as 'bunny')),
-    [['read_sessions', 'set_lifx_power', 'read_devices', 'set_mode'], ['read_sessions', 'set_mode'], ['read_sessions', 'set_mode']], 'Details lists the same scope');
   assert.deepEqual(TOOLS.filter(tool => deviceToolOwner(tool.name) !== undefined).map(tool => tool.name).sort(), [...DEVICE_TOOLS].sort(), 'the shared scope names every device tool');
   assert.equal(w.module().inspectAssistant()?.provider, 'anthropic');
   // A test or harness may still give one profile the labelled synthetic provider; the others keep the configured one.
@@ -848,10 +958,10 @@ void test('unsupported graph stays readable and resume is refused without resett
 void test('a hanging dispatch hits the tool deadline, leaves the effect uncertain and refuses a retry', async context => {
   let sends = 0;
   const w = await world(context, {provider: counted(), tools: ['set_mode'], core: () => ({sessions: [], mode: hub(2), synced: true}), dispatch: () => {sends += 1; return new Promise(() => {});}});
-  await control(w.core, w.module(), 'enable'); await input(w.core, w.module(), 'quiet mode');
-  await until(() => status(w) === 'waiting');
+  await control(w.core, w.module(), 'enable'); await input(w.core, w.module(), 'Set the Hub mode to quiet');
+  await until(() => sends === 1);
   assert.notEqual(task(w)?.usageUnits, null);
-  await input(w.core, w.module(), 'approve', true); await until(() => sends === 1); w.advance(LIMITS.toolMs);
+  w.advance(LIMITS.toolMs);
   await until(() => status(w) === 'uncertain'); assert.equal(task(w)?.modelCalls, 1);
   assert.match((await page(w)).messages.at(-1)?.text ?? '', /tool call timed out/i);
   await w.restart(); assert.equal(task(w)?.activeMs, LIMITS.toolMs); assert.equal(sends, 1);
@@ -1202,18 +1312,19 @@ void test('the exact configured display ui stays independent of the reserved bro
   assert.partialDeepStrictEqual(question?.proposal, {data: {showTargets: ['ui', 'browser']}});
 });
 
-void test('an exact saved artwork outside the recent SDK state is read from the retained catalog for approval', async context => {
+void test('an exact saved artwork outside the recent SDK state is read from the retained catalog for direct display', async context => {
   const artworkId = 'retained-flag';
   const reads: string[] = [];
-  const provider = counted(() => call('control_art_show', {owner: 'bunny/core', target: 'hub',
-    arguments: JSON.stringify({artworkId, targets: ['browser']})}));
+  const provider = counted((_request, turn) => turn === 1 ? call('control_art_show', {owner: 'bunny/core', target: 'hub',
+    arguments: JSON.stringify({artworkId, targets: ['browser']})}) : reply('Show result.'));
+  const writes: AssistantDispatch[] = [];
   const w = await world(context, {provider, tools: ['control_art_show'], retainedArtwork: id => {
     reads.push(id);
     return Promise.resolve({artworkId, sourceRequestId: 'flag-generation', createdAtMs: 0, compositions: [{target: 'ui', compositionId: 'a'.repeat(64),
       outcome: 'succeeded', motion: 'still', renditions: [{renditionId: 'b'.repeat(64), width: 1, height: 1,
         frames: 1, durationMs: 0, format: 'png', bytes: 1, ref: 'rendition.' + 'b'.repeat(64)}]}],
       favorite: true, feedback: null, variationOf: null, palette: [], provenance: {generatedBy: 'local', factual: false}});
-  }, dispatch: () => assert.fail('approval is still pending')});
+  }, dispatch: data => {writes.push(data); return Promise.resolve(accepted(data.requestId));}});
   const store = w.store();
   const original = store.newTask('bunny', 'Draw a striped pennant');
   original.status = 'succeeded'; store.save(original);
@@ -1225,13 +1336,11 @@ void test('an exact saved artwork outside the recent SDK state is read from the 
     data: {id: 'art', revision: 1, jobs: [], artworks: []},
   }]}));
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Show my retained flag');
-  await until(() => status(w) === 'waiting');
+  await input(w.core, w.module(), 'Show retained-flag on Browser');
+  await until(() => status(w) === 'succeeded');
   assert.deepEqual(reads, [artworkId]);
-  const question = (await page(w)).currentTask?.question;
-  assert.equal(question?.kind, 'approval');
-  assert.match(JSON.stringify(question?.proposal), /retained-flag/);
-  assert.match(JSON.stringify(question), /Show Striped pennant animation on Browser/);
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0]?.data, {artworkId, targets: ['browser'], guards: []});
 });
 
 for (const artworkId of ['missing-art', 'incompatible-art']) {
@@ -1476,10 +1585,8 @@ void test('a failed compound turn reports the saved artwork and exact rejected d
   }});
   await serveKiteDisplay(context, w, () => requests[0]?.requestId);
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Create and show the synthetic poster.');
+  await input(w.core, w.module(), 'Create a synthetic kite and show it on display-blue.');
   await until(() => status(w) === 'waiting');
-  await input(w.core, w.module(), 'approve', true);
-  await until(() => status(w) === 'waiting' && task(w)?.questions === 2);
   await input(w.core, w.module(), 'approve', true);
   await until(() => status(w) === 'failed');
   const messages = (await page(w)).messages;
@@ -1513,18 +1620,18 @@ void test('the exhausted model budget saves a single read-only closing reply wit
 });
 
 void test('an approval that runs out of tool calls before dispatch closes without a write', async context => {
-  const provider = counted(() => call('set_mode', {mode: 'quiet'}));
-  const w = await world(context, {provider, tools: ['set_mode'], core: () => ({synced: true, sessions: [], mode: hub(5)}),
+  const provider = counted(() => call('create_artwork', {format: 'still', description: 'Synthetic canvas', showTargets: []}));
+  const w = await world(context, {provider, tools: ['create_artwork'],
     dispatch: () => assert.fail('the tool budget refused the reservation')});
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Propose quiet mode.');
+  await input(w.core, w.module(), 'Create a synthetic canvas.');
   await until(() => status(w) === 'waiting');
   const saved = w.store().task(task(w)?.taskId ?? '') ?? assert.fail('saved task');
   saved.toolCalls = LIMITS.toolCalls;
   w.store().save(saved);
   await input(w.core, w.module(), 'approve', true);
   await until(() => status(w) === 'failed');
-  assert.match((await page(w)).messages.at(-1)?.text ?? '', /Set the Hub mode to quiet.*stopped before dispatch.*tool call/i);
+  assert.match((await page(w)).messages.at(-1)?.text ?? '', /Create the image.*stopped before dispatch.*tool call/i);
   assert.equal(provider.calls(), 1);
 });
 
@@ -1553,9 +1660,7 @@ for (const rejected of [true, false]) {
     }] : []}));
     await w.core.serveSync(['art-show-effects'], () => ({revision: 1, states: []}));
     await control(w.core, w.module(), 'enable');
-    await input(w.core, w.module(), 'Show the synthetic kite.');
-    await until(() => status(w) === 'waiting');
-    await input(w.core, w.module(), 'approve', true);
+    await input(w.core, w.module(), 'Show the kite on display-blue.');
     await until(() => status(w) === 'failed');
     assert.equal(reads, 2);
     const closing = (await page(w)).messages.at(-1)?.text ?? '';
@@ -1570,9 +1675,7 @@ void test('an unclassified failure after a recorded action explains that the tur
       throw new ProviderFault('internal');
     }), dispatch: data => Promise.resolve(accepted(data.requestId))});
   await control(w.core, w.module(), 'enable');
-  await input(w.core, w.module(), 'Synthetic mode change followed by a question.');
-  await until(() => status(w) === 'waiting');
-  await input(w.core, w.module(), 'approve', true);
+  await input(w.core, w.module(), 'Set the Hub mode to free.');
   await until(() => status(w) === 'failed');
   assert.match((await page(w)).messages.at(-1)?.text ?? '', /request was accepted.*turn stopped.*cause is unknown/i);
 });
@@ -1595,8 +1698,8 @@ for (const [name, response, expected] of [
 }
 
 void test('the closing reply explains an oversized tool result', async context => {
-  const w = await world(context, {provider: counted(() => call('read_lifx')), tools: ['read_lifx'],
-    readDevice: () => Promise.resolve('x'.repeat(LIMITS.toolBytes + 1))});
+  const w = await world(context, {provider: counted(() => call('read_lifx', {device: 'desk-lamp'})), tools: ['read_lifx'],
+    devices: () => [light('desk-lamp')], readDevice: () => Promise.resolve('x'.repeat(LIMITS.toolBytes + 1))});
   await control(w.core, w.module(), 'enable');
   await input(w.core, w.module(), 'Read the synthetic light.');
   await until(() => status(w) === 'failed');

@@ -364,6 +364,7 @@ export type TitleDependencies = {
   provider: (profile: AssistantProfile) => TitleProvider | undefined;
   /** The conversation's saved owner and assistant messages, oldest first. */
   messages: (conversationId: string) => TitleMessage[];
+  previousTitle?: (conversationId: string, profile: AssistantProfile, title: StoredTitle | null) => StoredTitle | null;
   /** Whether the conversation has reported lifecycle evidence, so the core may hold its session. */
   reported: (conversationId: string) => boolean;
   /** The metadata observation that carries a title to the conversation's session now. */
@@ -491,12 +492,14 @@ export class ConversationTitles {
   async #ask(conversationId: string, profile: AssistantProfile, controller: AbortController, events: readonly string[]): Promise<void> {
     const provider = this.deps.provider(profile);
     if (provider === undefined) return;
-    let call: TitleCall | undefined, prompt: string | undefined, said: TitleMessage[] = [];
+    const previousTitle = (title: StoredTitle | null) => this.deps.previousTitle === undefined ? title : this.deps.previousTitle(conversationId, profile, title);
+    let call: TitleCall | undefined, prompt: string | undefined, said: TitleMessage[] = [], priorTitle: StoredTitle | null = null;
     await this.deps.outbox.transaction(() => {
       const record = this.record(conversationId) ?? this.#fresh();
       if (controller.signal.aborted) return;
       const messages = this.deps.messages(conversationId);
-      prompt = titlePrompt(messages, record.title, events);
+      priorTitle = record.title;
+      prompt = titlePrompt(messages, previousTitle(priorTitle), events);
       if (prompt === undefined) return;
       // The echo guard compares the answer with every message the prompt carried, the owner's and the assistant's.
       said = messages;
@@ -521,6 +524,8 @@ export class ConversationTitles {
     let reply: TitleReply | undefined, fault: unknown;
     const cancel = this.deps.after(TITLE_DEADLINE_MS, () => {controller.abort();});
     try {
+      const current = titlePrompt(this.deps.messages(conversationId), previousTitle(priorTitle), events);
+      if (current !== prompt) throw new ProviderFault('forbidden');
       const aborted = new Promise<never>((_resolve, reject) => {
         if (controller.signal.aborted) reject(new ProviderFault('cancelled', true));
         controller.signal.addEventListener('abort', () => {reject(new ProviderFault('cancelled', true));}, {once: true});

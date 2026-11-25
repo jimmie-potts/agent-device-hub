@@ -32,7 +32,7 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
   const waiting: Waiting[] = [];
   let arrived: (() => void) | undefined;
   const provider: Provider = {name: 'synthetic', model: 'synthetic', turn: input => new Promise<Reply>(resolve => {waiting.push({input, resolve}); arrived?.();})};
-  const world = await startWorld({companions: true, coding: true, assistantProvider: provider});
+  const world = await startWorld({companions: true, coding: true, assistantProvider: provider, assistantCatalog: ['create_artwork']});
   /** The model call that waits next, once it arrives. */
   const call = async (what: string): Promise<Waiting> => {
     if (waiting.length === 0) {
@@ -178,16 +178,16 @@ export async function conversationSteerJourney(browser: Browser): Promise<void> 
 
     // 5. Decline with message: free text during an approval only queues, and the decline steers in one step.
     const proposing = await start('Synthetic request that proposes');
-    proposing.resolve(tool('call-mode', 'set_mode', {mode: 'quiet'}));
+    proposing.resolve(tool('call-mode', 'create_artwork', {format: 'still', showTargets: [], description: 'Blue synthetic fixture'}));
     const proposal = conversation.getByRole('article', {name: 'Proposed command', exact: true});
-    await proposal.getByText('Set the Hub mode to quiet?', {exact: true}).waitFor();
+    await proposal.getByText('Create a still image for this reply? This may use the art allowance. Blue synthetic fixture', {exact: true}).waitFor();
     assert.equal(await send.count(), 0, 'during an approval free text only queues');
     const decline = conversation.getByRole('button', {name: 'Decline with message', exact: true});
     await message.fill('Synthetic keep the current mode and explain why');
     await shot(page, '06-decline-with-message');
     await decline.click();
     const declined = await call('after the decline');
-    assert.deepEqual(declined.input.transcript.slice(-2).map(brief), [toolLine('set_mode', DECLINED), 'owner: Synthetic keep the current mode and explain why']);
+    assert.deepEqual(declined.input.transcript.slice(-2).map(brief), [toolLine('create_artwork', DECLINED), 'owner: Synthetic keep the current mode and explain why']);
     declined.resolve(end('Synthetic: the mode stays work.'));
     await completed();
 

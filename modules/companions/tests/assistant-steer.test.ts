@@ -29,7 +29,6 @@ import {ProviderFault, type ModelProvider, type TranscriptItem, type TurnInput, 
 const ZONE = 'America/Chicago';
 const reply = (text: string): TurnReply => ({text, calls: [], stop: 'end', units: 10});
 const ask = (text: string): TurnReply => ({text: null, calls: [{id: 'call-ask', name: 'ask_owner', input: {text}}], stop: 'tool', units: 10});
-const propose = (mode: string): TurnReply => ({text: null, calls: [{id: 'call-mode', name: 'set_mode', input: {mode}}], stop: 'tool', units: 10});
 const read = (): TurnReply => ({text: 'Synthetic reading the fixture.', calls: [{id: 'call-read', name: 'read_fixture', input: {}}], stop: 'tool', units: 10});
 async function settle(check: () => boolean, what = 'expected state arrived'): Promise<void> {
   for (let turn = 0; turn < 5000; turn += 1) {if (check()) return; await new Promise(resolve => {setImmediate(resolve);});}
@@ -285,11 +284,12 @@ void test('Skip question and send drops the pending clarification and steers the
 void test('Decline with message declines an approval and steers in one step; free text during an approval is queued', async context => {
   const prompts: string[] = [];
   const titleProvider: TitleProvider = {name: 'synthetic', model: 'synthetic', title: prompt => {prompts.push(prompt); return Promise.resolve({text: 'Title', usage: {input: 0, output: 0, cacheWrite: 0, cacheRead: 0}});}};
-  const provider = gated(), w = await world(context, {provider, syntheticTitleProvider: titleProvider});
+  const provider = gated(), w = await world(context, {provider, syntheticTitleProvider: titleProvider, tools: ['create_artwork']});
   await w.control('enable');
   await w.send('Synthetic request that proposes');
   await settle(() => provider.pending.length === 1);
-  provider.next().resolve(propose('free'));
+  provider.next().resolve({text: null, calls: [{id: 'call-art', name: 'create_artwork',
+    input: {format: 'still', description: 'Synthetic canvas', showTargets: []}}], stop: 'tool', units: 10});
   await settle(() => w.task()?.status === 'waiting' && w.task()?.questionId !== null);
   const questionId = w.task()?.questionId ?? assert.fail();
   // Free text during an approval is queued: it neither applies nor dismisses the proposal.
@@ -304,7 +304,7 @@ void test('Decline with message declines an approval and steers in one step; fre
   assert.equal((await w.steer('Synthetic steer: keep the work mode', {questionId})).result.status, 'accepted');
   await settle(() => provider.pending.length === 1, 'the declined task continues');
   const next = provider.next();
-  assert.deepEqual(plain(next.input.transcript).slice(2), [{role: 'tool', call: 'call-mode', name: 'set_mode', result: DECLINED, ok: false},
+  assert.deepEqual(plain(next.input.transcript).slice(2), [{role: 'tool', call: 'call-art', name: 'create_artwork', result: DECLINED, ok: false},
     {role: 'owner', text: 'Synthetic steer: keep the work mode'}]);
   assert.deepEqual(w.dispatched, [], 'nothing was dispatched');
   next.resolve(reply('Synthetic answer keeping work'));
@@ -312,7 +312,7 @@ void test('Decline with message declines an approval and steers in one step; fre
   await settle(() => provider.pending.length === 1);
   assert.equal(ownerText(provider.next().input), 'Synthetic text during the approval');
   const messages = (await w.messages()).map(message => [message.role, message.text]);
-  assert.deepEqual(messages.slice(1, 5), [['assistant', 'Set the Hub mode to free?'], ['owner', 'decline'], ['tool', DECLINED], ['owner', 'Synthetic steer: keep the work mode']]);
+  assert.deepEqual(messages.slice(1, 5), [['assistant', 'Create a still image for this reply? This may use the art allowance. Synthetic canvas'], ['owner', 'decline'], ['tool', DECLINED], ['owner', 'Synthetic steer: keep the work mode']]);
   // The declined approval is still the title's major event; the steer adds no check.
   await settle(() => prompts.slice(checks).some(prompt => prompt.includes('The owner declined')));
 });
