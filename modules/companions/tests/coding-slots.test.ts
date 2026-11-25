@@ -11,11 +11,13 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {test, type TestContext} from 'node:test';
 import type {AssistantProfile, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
-import type {CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingHarnessReadiness, CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, type Command, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
+import {CodingStore} from '../src/coding/store.js';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
-import type {ModelProvider, TranscriptItem, TurnReply} from '../src/assistant/provider.js';
+import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
 
 const PROFILES = ['bunny', 'reachy', 'microduck'] as const;
 const ENDPOINT = 'worker-endpoint-1';
@@ -38,13 +40,30 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   // The core's tracked dispatcher forwards a dispatch to the module's coding-run responder, once per request ID.
   const dispatched: string[] = [], work: Command<CodingWork>[] = [];
+  let heldDispatch: Promise<void> | undefined;
+  let refusesDispatch = false;
+  const holdDispatch = (): (() => void) => {
+    let release = (): void => {};
+    heldDispatch = new Promise(resolve => {release = resolve;});
+    return release;
+  };
   await core.respond<{requestId: string}>('bunny.cmd.coding-dispatch.assistant', async command => {
     dispatched.push(command.data.requestId);
+    if (heldDispatch !== undefined) {
+      const held = heldDispatch;
+      heldDispatch = undefined;
+      await held;
+    }
+    if (refusesDispatch) return errorBody('unavailable');
     const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data},
       {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
   });
-  await worker.respond<CodingWork>('bunny.cmd.coding-work.*', command => {work.push(command); return {status: 'accepted'};});
+  let refusesStop = false;
+  await worker.respond<CodingWork>('bunny.cmd.coding-work.*', command => {
+    work.push(command);
+    return command.data.action === 'cancel' && refusesStop ? errorBody('unavailable') : {status: 'accepted'};
+  });
   const make = () => {
     const module = createCompanionsModule({timeZone: 'America/Chicago', tools: ['delegate_coding'], provider: delegating('bunny'), profileProviders: {reachy: delegating('reachy'), microduck: delegating('microduck')}, ...options});
     return {module, host: new ModuleHarness(module, {bus, stateDir: dir, section: {}, ...time})};
@@ -68,34 +87,89 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
   };
-  /** Steers the profile's unfinished task with a new message (Hub #2031). */
-  const steer = async (profile: AssistantProfile, text: string): Promise<RequestResult> => {
+  const newConversation = async (profile: AssistantProfile): Promise<RequestResult> => {
     const requestId = randomUUID();
     const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
-      bytes: Buffer.from(JSON.stringify({action: 'steer', profile, expectedRevision: state().revision, text, taskId: task(profile)?.taskId}))});
-    assert.ok(staged !== undefined && !('error' in staged), JSON.stringify(staged));
+      bytes: Buffer.from(JSON.stringify({action: 'new-conversation', profile, expectedRevision: state().revision}))});
+    assert.ok(staged !== undefined && !('error' in staged));
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
   };
-  const messages = async (profile: AssistantProfile): Promise<{role: string; text: string}[]> => {
-    const content = await module.manifest.content?.('conversation', {query: {profile}, signal: new AbortController().signal});
+  const stop = async (jobId: string, operationId: string): Promise<RequestResult> => {
+    const requestId = randomUUID();
+    const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
+      bytes: Buffer.from(JSON.stringify({action: 'stop-coding-job', jobId, operationId}))});
+    if (staged === undefined || 'error' in staged) return {status: 'rejected', requestId, error: staged ?? errorBody('unavailable')};
+    return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
+  };
+  type SavedMessage = {id: string; taskId: string; role: string; text: string; follows?: string};
+  const messages = async (profile: AssistantProfile, conversationId?: string): Promise<SavedMessage[]> => {
+    const content = await module.manifest.content?.('conversation', {query: conversationId === undefined ? {profile} : {profile, view: 'recent', conversationId}, signal: new AbortController().signal});
     assert.ok(content !== undefined && !('error' in content), JSON.stringify(content));
-    return (JSON.parse(Buffer.from(content.bytes).toString()) as {messages: {role: string; text: string}[]}).messages;
+    return (JSON.parse(Buffer.from(content.bytes).toString()) as {messages: SavedMessage[]}).messages;
   };
   /** The worker declares itself: a worker from Hub #2028 with three slots (2.2), or an older one that declares none (2.0). */
-  const enable = (slots?: number) => worker.request(`bunny.cmd.coding-endpoint.${ENDPOINT}`, {type: 'org.bunny.coding.endpoint.requested', subject: ENDPOINT,
-    dataschema: `https://bunny.invalid/events/coding-endpoint/${slots === undefined ? '2.0' : '2.2'}`, data: {requestId: randomUUID(), action: 'enable', ...(slots === undefined ? {} : {slots})}}, {timeoutMs: 5000});
+  const enable = (slots?: number, harnesses?: CodingHarnessReadiness[]) => worker.request(`bunny.cmd.coding-endpoint.${ENDPOINT}`, {
+    type: 'org.bunny.coding.endpoint.requested', subject: ENDPOINT,
+    dataschema: `https://bunny.invalid/events/coding-endpoint/${harnesses !== undefined ? '2.3' : slots === undefined ? '2.0' : '2.2'}`,
+    data: {requestId: randomUUID(), action: 'enable', ...(slots === undefined ? {} : {slots}), ...(harnesses === undefined ? {} : {harnesses})},
+  }, {timeoutMs: 5000});
   const progress = (data: object) => worker.publish(`bunny.event.coding-progress.${ENDPOINT}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: ENDPOINT,
-    dataschema: 'https://bunny.invalid/events/coding-progress/2.1', data});
+    dataschema: `https://bunny.invalid/events/coding-progress/${'harness' in data ? '2.2' : '2.1'}`, data});
   const starts = () => work.filter(command => command.data.action === 'start');
   /** A profile's task asks, waits at its approval and is approved. */
   const approved = async (profile: AssistantProfile): Promise<void> => {
     await settle(() => task(profile)?.status === 'waiting' && task(profile)?.questionId !== null && task(profile)?.hasAnswer === false, `${profile} waits for approval`);
     assert.equal((await send(profile, 'approve', true)).status, 'accepted');
   };
-  return {module: () => module, task, control, send, steer, messages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
+  const waitMessages = async (profile: AssistantProfile, pattern: RegExp, conversationId?: string): Promise<SavedMessage[]> => {
+    for (let i = 0; i < 500; i += 1) {
+      const saved = await messages(profile, conversationId);
+      if (saved.some(message => pattern.test(message.text))) return saved;
+      await new Promise(resolve => {setImmediate(resolve);});
+    }
+    return assert.fail(`Missing message ${String(pattern)}`);
+  };
+  return {module: () => module, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
     restart: async () => {await host.stop(); ({module, host} = make()); await host.start();}, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}};
 }
+
+void test('an attributed background job keeps its first native session and delivers one result to the original exchange', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  const readiness: CodingHarnessReadiness = {
+    harness: 'claude-code', capabilities: {steering: 'unsupported', resume: 'unsupported', review: true},
+    installed: 'yes', signedIn: 'yes', version: '2.1.292', plan: 'max', checkedAtMs: Date.parse('2026-11-24T18:00:00Z'),
+    limits: null, limitsObservedAtMs: null,
+  };
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable(3, [readiness])).status, 'accepted');
+  assert.deepEqual(w.coding().harnesses, [readiness]);
+  assert.equal((await w.send('bunny', 'Synthetic background job with session evidence')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1 && w.task('bunny')?.status === 'succeeded');
+  const start = w.starts()[0] ?? assert.fail('worker start');
+  const {operationId} = start.data;
+  const jobId = `${operationId}-job`;
+  const origin = w.task('bunny')?.conversationId ?? assert.fail('originating conversation');
+  assert.equal(start.dataschema, 'https://bunny.invalid/events/coding-work/2.1');
+  assert.equal('harness' in start.data, false, 'an implicit job keeps the default Claude selection');
+  await w.progress({operationId, harness: 'claude-code', status: 'started'});
+  await settle(() => w.coding().runs?.some(run => run.operationId === operationId && run.status === 'started') === true);
+  await w.progress({operationId, harness: 'claude-code', status: 'started', sessionId: 'native-first'});
+  await settle(() => w.coding().runs?.some(run => run.operationId === operationId && run.sessionId === 'native-first') === true);
+  await w.progress({operationId, harness: 'claude-code', status: 'started', sessionId: 'native-conflict'});
+  assert.equal((await w.newConversation('bunny')).status, 'accepted');
+  assert.equal(w.coding().runs?.find(run => run.operationId === operationId)?.sessionId, 'native-first');
+  const ended = {operationId, harness: 'claude-code', sessionId: 'native-first', status: 'completed',
+    result: {...result('Synthetic attributed result.'), sessionId: 'native-first'}};
+  await w.progress(ended);
+  await w.progress({...ended, result: result('Synthetic late duplicate.')});
+  const original = await w.waitMessages('bunny', /Synthetic attributed result/, origin);
+  assert.deepEqual(original.filter(message => message.follows === jobId).map(message => message.id), [`${jobId}-sent`, `${jobId}-result`]);
+  assert.ok(!(await w.messages('bunny')).some(message => message.follows === jobId));
+  assert.deepEqual(w.dispatched, [operationId]);
+});
 
 void test('three companions hand off at once, each run tagged and each result back in its own conversation; another companion\'s run never refuses an approval', {timeout: 30_000}, async context => {
   const w = await world(context);
@@ -114,21 +188,20 @@ void test('three companions hand off at once, each run tagged and each result ba
   assert.deepEqual(w.coding().runs?.map(run => run.companion), ['reachy', 'microduck', 'bunny']);
   assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), /revision-conflict/);
   // Each result resumes only its own conversation.
-  for (const command of w.starts()) {
+  for (const command of w.starts().reverse()) {
     const id = command.data.operationId, companion = command.data.action === 'start' ? command.data.companion ?? 'unknown' : 'unknown';
     if (companion !== 'reachy') await w.progress({operationId: id, status: 'started'});
     await w.progress({operationId: id, status: 'completed', result: result(`Synthetic ${companion} result.`)});
   }
   await settle(() => PROFILES.every(profile => w.task(profile)?.status === 'succeeded'), 'every conversation finished');
   for (const profile of PROFILES) {
-    const text = JSON.stringify(await w.messages(profile));
-    assert.match(text, new RegExp(`Synthetic ${profile} result`));
+    const text = JSON.stringify(await w.waitMessages(profile, new RegExp(`Synthetic ${profile} result`)));
     for (const other of PROFILES.filter(value => value !== profile)) assert.doesNotMatch(text, new RegExp(`Synthetic ${other} result`));
   }
   assert.deepEqual(w.coding().runs, []);
 });
 
-void test('with an older worker\'s one slot, an approved hand-off waits busy, Cancel removes it unsent, and a waiting one survives a restart and is sent once', {timeout: 30_000}, async context => {
+void test('with an older worker\'s one slot, an approved hand-off waits busy, a named stop removes it unsent, and a waiting one survives a restart and is sent once', {timeout: 30_000}, async context => {
   const w = await world(context);
   assert.equal((await w.control('enable')).status, 'accepted');
   assert.equal((await w.enable()).status, 'accepted');
@@ -142,17 +215,13 @@ void test('with an older worker\'s one slot, an approved hand-off waits busy, Ca
   await w.approved('reachy');
   await settle(() => w.coding().waiting?.length === 1);
   assert.deepEqual(w.coding().waiting?.map(entry => entry.companion), ['reachy']);
-  const waitingText = JSON.stringify(await w.messages('reachy'));
-  assert.match(waitingText, /accepted: the coding worker is busy, so this hand-off waits for Reachy's slot/);
-  assert.doesNotMatch(waitingText, /No coding worker is connected/);
-  // The conversation says the hand-off waits; it says "delegated" only once it is sent.
-  assert.match(waitingText, /Waiting to delegate to the coding worker in agent-device-hub: Synthetic reachy brief\./);
-  assert.doesNotMatch(waitingText, /Delegated to the coding worker/);
+  const waiting = w.coding().waiting?.[0] ?? assert.fail('saved hand-off');
+  const waitingText = await w.waitMessages('reachy', /Coding job .* was queued/);
+  assert.ok(waitingText.some(message => message.id === `${waiting.operationId}-job`));
   assert.equal(w.dispatched.length, 1, 'nothing left for the waiting hand-off');
-  // Cancel removes it and sends nothing.
-  const reachyTask = w.task('reachy')?.taskId ?? assert.fail('reachy task');
-  assert.equal((await w.control('cancel', {taskId: reachyTask})).status, 'accepted');
-  await settle(() => w.coding().waiting?.length === 0 && w.task('reachy')?.status === 'cancelled');
+  assert.deepEqual(await w.module().stopCodingJob(`${waiting.operationId}-job`, waiting.operationId), {status: 'accepted'});
+  await settle(() => w.coding().waiting?.length === 0 && w.task('reachy')?.status === 'succeeded');
+  await w.waitMessages('reachy', /Cancelled before dispatch/);
   assert.equal(w.work.length, 1); assert.equal(w.dispatched.length, 1);
   // MicroDuck's approved hand-off waits in its place, across a restart, and is sent once when the slot frees.
   assert.equal((await w.send('microduck', 'Synthetic microduck request')).status, 'accepted'); await w.approved('microduck');
@@ -171,30 +240,8 @@ void test('with an older worker\'s one slot, an approved hand-off waits busy, Ca
   await w.progress({operationId: second.operationId, status: 'started'});
   await w.progress({operationId: second.operationId, status: 'completed', result: result('Synthetic microduck result.')});
   await settle(() => w.task('microduck')?.status === 'succeeded');
-  const microduck = JSON.stringify(await w.messages('microduck'));
-  assert.match(microduck, /Synthetic microduck result/);
-  assert.ok(microduck.indexOf('Waiting to delegate to the coding worker') < microduck.indexOf('Delegated to the coding worker'), 'the line changes from waiting to delegated once sent');
-});
-
-void test('a waiting hand-off whose task was cancelled without the coordinator hearing it is never sent', {timeout: 30_000}, async context => {
-  // The engine commits the cancel; the call that would remove the waiting hand-off is lost, as during a stop.
-  const w = await world(context, {onCancelled: () => {}});
-  assert.equal((await w.control('enable')).status, 'accepted');
-  assert.equal((await w.enable()).status, 'accepted');
-  assert.equal((await w.send('bunny', 'Synthetic bunny request')).status, 'accepted'); await w.approved('bunny');
-  await settle(() => w.starts().length === 1);
-  assert.equal((await w.send('reachy', 'Synthetic reachy request')).status, 'accepted'); await w.approved('reachy');
-  await settle(() => w.coding().waiting?.length === 1);
-  const reachyTask = w.task('reachy')?.taskId ?? assert.fail('reachy task');
-  assert.equal((await w.control('cancel', {taskId: reachyTask})).status, 'accepted');
-  await settle(() => w.task('reachy')?.status === 'cancelled');
-  assert.equal(w.coding().waiting?.length, 1, 'the coordinator never heard the cancel');
-  const bunnyRun = w.starts()[0]?.data.operationId;
-  await w.progress({operationId: bunnyRun, status: 'started'});
-  await w.progress({operationId: bunnyRun, status: 'completed', result: result('Synthetic bunny result.')});
-  await settle(() => w.coding().waiting?.length === 0 && w.task('bunny')?.status === 'succeeded');
-  for (let turn = 0; turn < 50; turn += 1) await new Promise(resolve => {setImmediate(resolve);});
-  assert.equal(w.starts().length, 1, 'the cancelled hand-off was never sent'); assert.equal(w.dispatched.length, 1);
+  const microduck = await w.waitMessages('microduck', /Synthetic microduck result/);
+  assert.ok(microduck.some(message => message.follows === `${second.operationId}-job` && message.text.includes('Synthetic microduck result')));
 });
 
 void test('a waiting hand-off that the module sent before its waiting line was saved reads "Delegated to" at once', {timeout: 30_000}, async context => {
@@ -212,40 +259,418 @@ void test('a waiting hand-off that the module sent before its waiting line was s
   assert.doesNotMatch(text, /Waiting to delegate/);
 });
 
-void test('a steer during a delegation wait, a hand-off waiting for its slot included, is kept until the worker\'s result arrives (Hub #2031)', {timeout: 30_000}, async context => {
-  const seen: {profile: AssistantProfile; transcript: readonly TranscriptItem[]}[] = [];
-  const recording = (profile: AssistantProfile): ModelProvider => {
-    const inner = delegating(profile);
-    return {...inner, turn: (input, signal) => {seen.push({profile, transcript: input.transcript}); return inner.turn(input, signal);}};
-  };
-  const w = await world(context, {provider: recording('bunny'), profileProviders: {reachy: recording('reachy'), microduck: recording('microduck')}});
+void test('Conversation answers a Hub question and takes another job while a worker is held', {timeout: 30_000}, async context => {
+  const workerModel = delegating('bunny');
+  const w = await world(context, {
+    provider: {...workerModel, turn: (input, signal) => input.transcript.some(item => item.role === 'owner' && item.text === 'Synthetic Hub question')
+      ? Promise.resolve({text: 'Synthetic Hub answer.', calls: [], stop: 'end', units: 10}) : workerModel.turn(input, signal)},
+  });
   assert.equal((await w.control('enable')).status, 'accepted');
-  // An older worker holds one run for every companion, so Reachy's approved hand-off waits for its slot.
   assert.equal((await w.enable()).status, 'accepted');
-  assert.equal((await w.send('bunny', 'Synthetic bunny request')).status, 'accepted'); await w.approved('bunny');
+  assert.equal((await w.send('bunny', 'Synthetic first job')).status, 'accepted');
+  await w.approved('bunny');
   await settle(() => w.starts().length === 1);
-  assert.equal((await w.send('reachy', 'Synthetic reachy request')).status, 'accepted'); await w.approved('reachy');
-  await settle(() => w.coding().waiting?.length === 1);
-  const calls = seen.length;
-  assert.equal((await w.steer('bunny', 'Synthetic bunny steer during the run')).status, 'accepted');
-  assert.equal((await w.steer('reachy', 'Synthetic reachy steer while the hand-off waits')).status, 'accepted');
-  for (let turn = 0; turn < 50; turn += 1) await new Promise(resolve => {setImmediate(resolve);});
-  assert.equal(seen.length, calls, 'neither steer makes a model call before the worker\'s result');
-  assert.deepEqual([w.task('bunny')?.status, w.task('reachy')?.status], ['waiting', 'waiting']);
-  const tail = (profile: AssistantProfile): unknown[] => (seen.filter(entry => entry.profile === profile).at(-1)?.transcript ?? []).slice(-2)
-    .map(item => item.role === 'tool' ? {role: item.role, name: item.name, result: item.result.slice(0, 9)} : item.role === 'owner' ? {role: item.role, text: item.text} : {role: item.role});
-  const run = w.starts()[0]?.data.operationId;
-  await w.progress({operationId: run, status: 'started'});
-  await w.progress({operationId: run, status: 'completed', result: result('Synthetic bunny result.')});
+  const first = w.starts()[0]?.data; assert.ok(first?.action === 'start');
+  await w.progress({operationId: first.operationId, status: 'started'});
+  await settle(() => w.task('bunny')?.status === 'succeeded', 'the turn closes while its worker is still held');
+  assert.equal((await w.send('bunny', 'Synthetic Hub question')).status, 'accepted');
   await settle(() => w.task('bunny')?.status === 'succeeded');
-  assert.deepEqual(tail('bunny'), [{role: 'tool', name: 'delegate_coding', result: 'completed'}, {role: 'owner', text: 'Synthetic bunny steer during the run'}],
-    'the steer follows the worker\'s result in the next call');
-  // The freed slot sends Reachy's hand-off; its steer still waits for that worker's result.
+  assert.match(JSON.stringify(await w.messages('bunny')), /Synthetic Hub answer/);
+  assert.equal((await w.send('bunny', 'Synthetic second job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  assert.equal(w.starts().length, 1);
+  assert.equal(w.coding().waiting?.length, 1);
+  const conversation = w.task('bunny')?.conversationId ?? assert.fail('originating conversation');
+  assert.equal((await w.newConversation('bunny')).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic Hub question')).status, 'accepted');
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  await w.progress({operationId: first.operationId, status: 'completed', result: result('Synthetic original exchange result.')});
+  await w.progress({operationId: first.operationId, status: 'completed', result: result('Synthetic duplicate result.')});
+  const old = await w.waitMessages('bunny', /Synthetic original exchange result/, conversation);
+  assert.ok(old.some(message => message.id === `${first.operationId}-job-result` && message.follows === `${first.operationId}-job`));
+  assert.doesNotMatch(JSON.stringify(old), /Synthetic duplicate result/);
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), /Synthetic original exchange result/);
+  // A process can stop after the transcript commits and before the coordinator acknowledges delivery.
+  w.database().prepare("UPDATE companion_coding_job_updates SET delivered=0 WHERE operation_id=? AND kind='result'").run(first.operationId);
+  await w.restart();
+  const restored = await w.messages('bunny', conversation);
+  assert.equal(restored.filter(message => message.id === `${first.operationId}-job-result`).length, 1);
+  assert.equal(w.starts().filter(command => command.data.operationId === first.operationId).length, 1);
+});
+
+
+void test('a named stop with no worker confirmation leaves a sibling running', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable(3)).status, 'accepted');
+  for (const profile of ['bunny', 'reachy'] as const) {
+    assert.equal((await w.send(profile, `Synthetic ${profile} job`)).status, 'accepted');
+    await w.approved(profile);
+  }
   await settle(() => w.starts().length === 2);
-  assert.equal(seen.filter(entry => entry.profile === 'reachy').length, 1);
-  const second = w.starts()[1]?.data.operationId;
-  await w.progress({operationId: second, status: 'started'});
-  await w.progress({operationId: second, status: 'completed', result: result('Synthetic reachy result.')});
-  await settle(() => w.task('reachy')?.status === 'succeeded');
-  assert.deepEqual(tail('reachy'), [{role: 'tool', name: 'delegate_coding', result: 'completed'}, {role: 'owner', text: 'Synthetic reachy steer while the hand-off waits'}]);
+  const bunny = w.starts().find(command => command.data.action === 'start' && command.data.companion === 'bunny')?.data;
+  const reachy = w.starts().find(command => command.data.action === 'start' && command.data.companion === 'reachy')?.data;
+  assert.ok(bunny?.action === 'start' && reachy?.action === 'start');
+  await w.progress({operationId: bunny.operationId, status: 'started'});
+  await w.progress({operationId: reachy.operationId, status: 'started'});
+  await settle(() => w.coding().runs?.every(run => run.status === 'started') === true);
+  w.refuseStop();
+  const wrong = await w.stop(`${bunny.operationId}-job`, reachy.operationId);
+  assert.equal(wrong.status, 'rejected');
+  assert.equal((await w.stop(`${bunny.operationId}-job`, bunny.operationId)).status, 'accepted');
+  await w.waitMessages('bunny', /stop is unconfirmed/);
+  assert.deepEqual(w.work.filter(command => command.data.action === 'cancel').map(command => command.data.operationId), [bunny.operationId]);
+  assert.equal(w.coding().runs?.find(run => run.operationId === reachy.operationId)?.status, 'started');
+  await w.progress({operationId: reachy.operationId, status: 'completed', result: result('Synthetic sibling result.')});
+  await w.waitMessages('reachy', /Synthetic sibling result/);
+  assert.equal(w.coding().runs?.find(run => run.operationId === bunny.operationId)?.status, 'cancelling');
+  await w.progress({operationId: bunny.operationId, status: 'cancelled', reason: 'cancelled', result: null});
+  await w.waitMessages('bunny', /cancelled \(cancelled\)/);
+});
+
+void test('an earlier saved delegation interrupt and unsent hand-off survive the migration', {timeout: 30_000}, async context => {
+  let operationId: string | undefined;
+  const options: CompanionsOptions = {
+    delegate: data => {
+      operationId = data.requestId;
+      return Promise.resolve({status: 'waiting', requestId: data.requestId});
+    },
+  };
+  const w = await world(context, options);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic pre-change job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.task('bunny')?.status === 'waiting' && w.task('bunny')?.questionId?.includes('-delegation-') === true);
+  const taskId = w.task('bunny')?.taskId ?? assert.fail('legacy task');
+  assert.ok(operationId !== undefined);
+  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic earlier approved brief.',
+    traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
+  delete options.delegate;
+  await w.restart();
+  assert.equal(w.starts().length, 0);
+  assert.equal(w.task('bunny')?.status, 'waiting');
+  const db = w.database();
+  let sentAttempts = 0, resultAttempts = 0, markAttempts = 0;
+  db.function('fail_legacy_sent', () => {sentAttempts += 1; return sentAttempts === 1 ? 1 : 0;});
+  db.function('fail_legacy_result', () => {resultAttempts += 1; return resultAttempts === 1 ? 1 : 0;});
+  db.function('fail_legacy_mark', () => {markAttempts += 1; return markAttempts === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_legacy_sent BEFORE INSERT ON assistant_messages
+    WHEN NEW.id LIKE '%-delegation-%-sent' AND fail_legacy_sent()=1 BEGIN SELECT RAISE(ABORT, 'synthetic legacy sent copy failure'); END;
+    CREATE TEMP TRIGGER fail_legacy_result BEFORE UPDATE ON assistant_tasks
+    WHEN json_extract(NEW.record, '$.question.answer') LIKE '%Synthetic pre-change result%' AND fail_legacy_result()=1
+    BEGIN SELECT RAISE(ABORT, 'synthetic legacy result copy failure'); END;
+    CREATE TEMP TRIGGER fail_legacy_mark BEFORE UPDATE OF delivered ON companion_coding_job_updates
+    WHEN NEW.kind='result' AND fail_legacy_mark()=1 BEGIN SELECT RAISE(ABORT, 'synthetic legacy marker failure'); END`);
+  assert.equal((await w.enable()).status, 'accepted');
+  await settle(() => sentAttempts === 1);
+  await settle(() => w.starts().length === 1);
+  assert.equal(w.starts()[0]?.data.operationId, operationId);
+  w.advance(1000);
+  await w.waitMessages('bunny', /Delegated to the coding worker/);
+  await w.progress({operationId, status: 'started'});
+  await settle(() => w.coding().active?.status === 'started');
+  await w.progress({operationId, status: 'completed', result: result('Synthetic pre-change result.')});
+  await settle(() => resultAttempts === 1);
+  assert.equal(w.task('bunny')?.hasAnswer, false);
+  w.advance(1000);
+  await settle(() => markAttempts === 1);
+  await w.waitMessages('bunny', /Synthetic pre-change result/);
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  w.advance(2000);
+  await settle(() => new CodingStore(db).undelivered(operationId).length === 0);
+  assert.equal((await w.messages('bunny')).filter(message => message.role === 'tool' && message.text.includes('Synthetic pre-change result')).length, 1);
+  assert.deepEqual(w.dispatched, [operationId]);
+});
+
+
+for (const previous of ['sending', 'running'] as const) {
+  void test(`recovery of a legacy ${previous} delegation retains uncertainty across a failed conversation write`, {timeout: 30_000}, async context => {
+    let operationId: string | undefined;
+    const options: CompanionsOptions = {delegate: data => {
+      operationId = data.requestId;
+      return Promise.resolve({status: 'waiting', requestId: data.requestId});
+    }};
+    const w = await world(context, options);
+    assert.equal((await w.control('enable')).status, 'accepted');
+    assert.equal((await w.enable()).status, 'accepted');
+    assert.equal((await w.send('bunny', 'Synthetic recovered legacy job')).status, 'accepted');
+    await w.approved('bunny');
+    await settle(() => w.task('bunny')?.status === 'waiting' && w.task('bunny')?.questionId?.includes('-delegation-') === true);
+    const taskId = w.task('bunny')?.taskId ?? assert.fail('legacy task');
+    assert.ok(operationId !== undefined);
+    const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+    const store = new CodingStore(w.database());
+    if (previous === 'sending') {
+      store.wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic prior brief.', traceparent});
+      store.sending(operationId);
+    } else {
+      store.accept({operationId, taskId, endpointId: ENDPOINT, traceparent});
+      store.started(operationId);
+    }
+    w.database().exec(`CREATE TRIGGER fail_legacy_recovery BEFORE UPDATE ON assistant_tasks
+      WHEN json_extract(NEW.record, '$.question.answer') LIKE 'uncertain (lost)%'
+      BEGIN SELECT RAISE(ABORT, 'synthetic recovery copy failure'); END`);
+    delete options.delegate;
+    await w.restart();
+    const reopened = w.database();
+    assert.ok(new CodingStore(reopened).resultSaved(operationId));
+    assert.equal(w.task('bunny')?.hasAnswer, false);
+    reopened.exec('DROP TRIGGER fail_legacy_recovery');
+    w.advance(1000);
+    await settle(() => w.task('bunny')?.hasAnswer === true);
+    assert.equal(w.task('bunny')?.status, 'paused', 'startup delivery keeps the original graph paused');
+    assert.equal((await w.enable()).status, 'accepted');
+    assert.deepEqual(w.dispatched, []);
+    assert.deepEqual(w.starts(), []);
+  });
+}
+
+void test('a failed terminal commit retries the first evidence without sending another worker command', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic persistence job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  const operationId = w.starts()[0]?.data.operationId ?? assert.fail('attempt');
+  const db = w.database();
+  await w.progress({operationId, status: 'started'});
+  await settle(() => w.coding().active?.status === 'started');
+  let failures = 0;
+  db.function('fail_first_result', () => {failures += 1; return failures === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_result BEFORE INSERT ON companion_coding_job_updates
+    WHEN NEW.kind='result' AND fail_first_result()=1 BEGIN SELECT RAISE(ABORT,'synthetic result insert failure'); END`);
+  await w.progress({operationId, status: 'completed', result: result('Synthetic first saved completion.')});
+  await settle(() => failures === 1);
+  assert.equal(w.coding().active?.operationId, operationId);
+  await w.progress({operationId, status: 'failed', reason: 'refused', result: result('Synthetic conflicting later evidence.')});
+  w.advance(1000);
+  const saved = await w.waitMessages('bunny', /Synthetic first saved completion/);
+  assert.doesNotMatch(JSON.stringify(saved), /Synthetic conflicting later evidence/);
+  assert.equal(w.starts().length, 1);
+  await w.restart();
+  assert.equal((await w.messages('bunny')).filter(message => message.id === `${operationId}-job-result`).length, 1);
+});
+
+void test('a dispatch refusal survives failed result persistence without resending the attempt', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  w.refuseDispatch();
+  const db = w.database();
+  let attempts = 0;
+  db.function('fail_refusal_save', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_refusal_save BEFORE INSERT ON companion_coding_job_updates
+    WHEN NEW.kind='result' AND fail_refusal_save()=1 BEGIN SELECT RAISE(ABORT,'synthetic refusal insert failure'); END`);
+  assert.equal((await w.send('bunny', 'Synthetic refused job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => attempts === 1);
+  const operationId = w.dispatched[0] ?? assert.fail('attempt');
+  assert.equal(w.coding().waiting?.[0]?.operationId, operationId);
+  w.advance(1000);
+  await w.waitMessages('bunny', /failed \(refused: unavailable\)/);
+  assert.equal(w.coding().waiting?.length, 0);
+  await w.restart();
+  assert.equal((await w.enable()).status, 'accepted');
+  const saved = (await w.messages('bunny')).filter(message => message.id === `${operationId}-job-result`);
+  assert.equal(saved.length, 1);
+  assert.match(saved[0]?.text ?? '', /failed \(refused: unavailable\)/);
+  assert.deepEqual(w.dispatched, [operationId]);
+  assert.equal(w.starts().length, 0);
+});
+
+void test('a legacy accepted hand-off is delivered before a fast terminal result after a receipt insert fails', {timeout: 30_000}, async context => {
+  let operationId: string | undefined;
+  const options: CompanionsOptions = {delegate: data => {
+    operationId = data.requestId;
+    return Promise.resolve({status: 'waiting', requestId: data.requestId});
+  }};
+  const w = await world(context, options);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic pre-upgrade hand-off')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.task('bunny')?.status === 'waiting' && w.task('bunny')?.questionId?.includes('-delegation-') === true);
+  assert.ok(operationId !== undefined);
+  const taskId = w.task('bunny')?.taskId ?? assert.fail('legacy task');
+  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic earlier approved brief.',
+    traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
+  delete options.delegate;
+  await w.restart();
+  const db = w.database();
+  let attempts = 0;
+  db.function('fail_legacy_sent_save', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_legacy_sent_save BEFORE INSERT ON companion_coding_job_updates
+    WHEN NEW.kind='sent' AND fail_legacy_sent_save()=1 BEGIN SELECT RAISE(ABORT, 'synthetic legacy send receipt insert failure'); END`);
+  assert.equal((await w.enable()).status, 'accepted');
+  await settle(() => attempts === 1 && w.starts().length === 1);
+  await w.progress({operationId, status: 'started'});
+  await settle(() => w.coding().active?.status === 'started');
+  await w.progress({operationId, status: 'completed', result: result('Synthetic fast legacy result.')});
+  await w.waitMessages('bunny', /Synthetic fast legacy result/);
+  w.advance(1000);
+  const receipts = (await w.messages('bunny')).filter(message => message.id.includes('-delegation-') && /-(sent|result)$/.test(message.id));
+  assert.deepEqual(receipts.map(message => message.id.split('-').at(-1)), ['sent', 'result']);
+  assert.deepEqual(w.dispatched, [operationId]);
+});
+
+for (const restarted of [false, true]) {
+  void test(`an accepted dispatch survives a failed receipt insert and ${restarted ? 'restart' : 'fast terminal progress'}`, {timeout: 30_000}, async context => {
+    const w = await world(context);
+    assert.equal((await w.control('enable')).status, 'accepted');
+    assert.equal((await w.enable()).status, 'accepted');
+    const db = w.database();
+    let attempts = 0;
+    db.function('fail_sent_save', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
+    db.exec(`CREATE TEMP TRIGGER fail_sent_save BEFORE INSERT ON companion_coding_job_updates
+      WHEN NEW.kind='sent' AND fail_sent_save()=1 BEGIN SELECT RAISE(ABORT, 'synthetic send receipt insert failure'); END`);
+    assert.equal((await w.send('bunny', 'Synthetic accepted dispatch')).status, 'accepted');
+    await w.approved('bunny');
+    await settle(() => attempts === 1 && w.starts().length === 1);
+    const operationId = w.dispatched[0] ?? assert.fail('attempt');
+    if (restarted) await w.restart();
+    else {
+      await w.progress({operationId, status: 'started'});
+      await settle(() => w.coding().active?.status === 'started');
+      await w.progress({operationId, status: 'completed', result: result('Synthetic fast result.')});
+    }
+    await w.waitMessages('bunny', restarted ? /uncertain \(lost\)/ : /Synthetic fast result/);
+    w.advance(1000);
+    const receipts = (await w.messages('bunny')).filter(message => message.id === `${operationId}-job-sent` || message.id === `${operationId}-job-result`);
+    assert.deepEqual(receipts.map(message => message.id), [`${operationId}-job-sent`, `${operationId}-job-result`]);
+    assert.deepEqual(w.dispatched, [operationId]);
+    assert.equal(w.starts().length, 1);
+  });
+}
+
+for (const sequence of ['restart', 'a repeated stop and a fast terminal result', 'local retry while the job runs'] as const) {
+  void test(`a failed stop observation survives ${sequence}`, {timeout: 30_000}, async context => {
+    const w = await world(context);
+    assert.equal((await w.control('enable')).status, 'accepted');
+    assert.equal((await w.enable()).status, 'accepted');
+    assert.equal((await w.send('bunny', 'Synthetic stopped dispatch')).status, 'accepted');
+    await w.approved('bunny');
+    await w.waitMessages('bunny', /accepted the worker dispatch/);
+    const operationId = w.dispatched[0] ?? assert.fail('attempt');
+    const jobId = `${operationId}-job`;
+    await w.progress({operationId, status: 'started'});
+    await settle(() => w.coding().active?.status === 'started');
+    const db = w.database();
+    let attempts = 0;
+    db.function('fail_stop_save', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
+    db.exec(`CREATE TEMP TRIGGER fail_stop_save BEFORE INSERT ON companion_coding_job_updates
+      WHEN NEW.kind='stop-unconfirmed' AND fail_stop_save()=1 BEGIN SELECT RAISE(ABORT, 'synthetic stop receipt insert failure'); END`);
+    assert.equal((await w.stop(jobId, operationId)).status, 'accepted');
+    await settle(() => attempts === 1);
+    assert.equal((await w.stop(jobId, operationId)).status, 'accepted');
+    const restarted = sequence === 'restart';
+    if (sequence === 'local retry while the job runs') {
+      w.advance(1000);
+      await w.waitMessages('bunny', /worker accepted the stop request.*unconfirmed/);
+      assert.equal(w.coding().active?.status, 'cancelling');
+    }
+    if (restarted) await w.restart();
+    else await w.progress({operationId, status: 'cancelled', reason: 'cancelled', result: result('Synthetic fast stop result.')});
+    await w.waitMessages('bunny', restarted ? /uncertain \(lost\)/ : /Synthetic fast stop result/);
+    w.advance(1000);
+    const receipts = (await w.messages('bunny')).filter(message => message.id === `${jobId}-stop-unconfirmed` || message.id === `${jobId}-result`);
+    assert.deepEqual(receipts.map(message => message.id), [`${jobId}-stop-unconfirmed`, `${jobId}-result`]);
+    assert.match(receipts[0]?.text ?? '', restarted ? /A stop was requested.*unconfirmed/ : /worker accepted the stop request.*unconfirmed/);
+    assert.deepEqual(w.work.filter(command => command.data.action === 'cancel').map(command => command.data.operationId), [operationId]);
+    assert.deepEqual(w.dispatched, [operationId]);
+  });
+}
+
+void test('a saved result retries original-exchange delivery and deduplicates after a failed delivery marker', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic result delivery job')).status, 'accepted');
+  const conversation = w.task('bunny')?.conversationId ?? assert.fail('originating conversation');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  const operationId = w.starts()[0]?.data.operationId ?? assert.fail('attempt');
+  const id = `${operationId}-job-result`;
+  await w.waitMessages('bunny', /accepted the worker dispatch/);
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  assert.equal((await w.newConversation('bunny')).status, 'accepted');
+  const db = w.database();
+  const store = new CodingStore(db);
+  let insertAttempts = 0, markAttempts = 0;
+  db.function('fail_result_copy', () => {insertAttempts += 1; return insertAttempts === 1 ? 1 : 0;});
+  db.function('fail_delivery_mark', () => {markAttempts += 1; return markAttempts === 1 ? 1 : 0;});
+  db.exec(`CREATE TEMP TRIGGER fail_result_copy BEFORE INSERT ON assistant_messages
+    WHEN NEW.id LIKE '%-job-result' AND fail_result_copy()=1 BEGIN SELECT RAISE(ABORT,'synthetic result copy failure'); END;
+    CREATE TEMP TRIGGER fail_delivery_mark BEFORE UPDATE OF delivered ON companion_coding_job_updates
+    WHEN NEW.kind='result' AND fail_delivery_mark()=1 BEGIN SELECT RAISE(ABORT,'synthetic delivered mark failure'); END`);
+  await w.progress({operationId, status: 'started'});
+  await settle(() => w.coding().active?.status === 'started');
+  await w.progress({operationId, status: 'completed', result: result('Synthetic retried result delivery.')});
+  await settle(() => insertAttempts === 1);
+  assert.ok(store.resultSaved(operationId));
+  assert.ok(!(await w.messages('bunny', conversation)).some(message => message.id === id));
+  await w.progress({operationId, status: 'completed', result: result('Synthetic conflicting duplicate.')});
+  w.advance(1000);
+  await settle(() => markAttempts === 1);
+  const saved = await w.waitMessages('bunny', /Synthetic retried result delivery/, conversation);
+  assert.equal(saved.filter(message => message.id === id && message.follows === `${operationId}-job`).length, 1);
+  assert.ok(!(await w.messages('bunny')).some(message => message.id === id));
+  w.advance(2000);
+  await settle(() => store.undelivered(operationId).length === 0);
+  assert.equal(insertAttempts, 2);
+  await w.restart();
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.messages('bunny', conversation)).filter(message => message.id === id).length, 1);
+  assert.deepEqual(w.dispatched, [operationId]);
+  assert.equal(w.starts().length, 1);
+});
+
+void test('an interrupted dispatch restores the job receipt, reports uncertainty and never resends', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  const release = w.holdDispatch();
+  try {
+    assert.equal((await w.send('bunny', 'Synthetic ambiguous job')).status, 'accepted');
+    await w.approved('bunny');
+    await settle(() => w.dispatched.length === 1);
+    const operationId = w.dispatched[0] ?? assert.fail('dispatch');
+    const messages = await w.waitMessages('bunny', /Coding job .* was queued/);
+    assert.ok(messages.some(message => message.id === `${operationId}-job`));
+    assert.equal(w.starts().length, 0);
+    await w.restart();
+    const restored = await w.waitMessages('bunny', /uncertain \(lost\)/);
+    assert.equal(restored.filter(message => message.id === `${operationId}-job`).length, 1);
+    assert.ok(restored.some(message => message.id === `${operationId}-job-result` && message.follows === `${operationId}-job`));
+    assert.ok(!restored.some(message => message.id === `${operationId}-job-sent`), 'an ambiguous start does not create an accepted receipt');
+    assert.equal((await w.enable()).status, 'accepted');
+    release();
+    for (let turns = 0; turns < 20; turns += 1) await new Promise(resolve => {setImmediate(resolve);});
+    assert.deepEqual(w.dispatched, [operationId]);
+    assert.equal(w.starts().length, 0);
+  } finally {release();}
+});
+
+
+void test('a failed job receipt rolls back job admission and prevents dispatch', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic job with failed receipt')).status, 'accepted');
+  const db = w.database();
+  let attempts = 0;
+  db.function('reject_job_receipt', () => {attempts += 1; return 1;});
+  db.exec(`CREATE TEMP TRIGGER fail_job_receipt BEFORE INSERT ON assistant_messages
+    WHEN NEW.id LIKE '%-job' AND reject_job_receipt()=1 BEGIN SELECT RAISE(ABORT,'synthetic receipt insert failure'); END`);
+  await w.approved('bunny');
+  await settle(() => attempts === 1 && w.task('bunny')?.status === 'succeeded');
+  assert.equal(db.prepare('SELECT job_id FROM companion_coding_jobs').get(), undefined);
+  assert.equal(db.prepare('SELECT operation_id FROM companion_coding_waiting').get(), undefined);
+  assert.equal(w.dispatched.length, 0);
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), /was queued/);
+  await w.restart();
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal(w.dispatched.length, 0);
 });

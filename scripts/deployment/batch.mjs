@@ -88,8 +88,9 @@ async function backupIdentity(request,info,run) {
     '--entrypoint','node',info.Image,'-e',"const fs=require('node:fs'),c=require('node:crypto');const b=fs.readFileSync(process.argv[1]);const m=JSON.parse(b);console.log(JSON.stringify({manifestSha256:c.createHash('sha256').update(b).digest('hex'),stateSha256:c.createHash('sha256').update(JSON.stringify({configSha256:m.configSha256,references:m.references,directories:m.directories,files:m.files})).digest('hex'),configSha256:m.configSha256}));",'/backup/'+request.backup.name+'/manifest.json']));
   if(!/^[a-f0-9]{64}$/.test(result.stateSha256??'')||!/^[a-f0-9]{64}$/.test(result.manifestSha256??'')||!/^[a-f0-9]{64}$/.test(result.configSha256??''))refuse();return result;
 }
-export async function deployBatch(request,{run,qualification,root,compatibility}={}) {
+export async function deployBatch(request,{run,qualification,root,compatibility,verifySignIn}={}) {
   validateRequest(request);
+  await verifySignIn?.({revision:request.candidate,compose:request.compose});
   const target=await qualification(request);
   if(target.runId!==request.runId||target.runAttempt!==request.runAttempt||target.candidate!==request.candidate||!IMAGE.test(target.image?.id??'')||target.architecture!=='linux/arm64'||target.outcome!=='qualified')refuse();
   const imageRows=JSON.parse(await run(['image','inspect',target.image.id]));
@@ -161,6 +162,7 @@ export async function deployBatch(request,{run,qualification,root,compatibility}
       record.health={status:health.status,modules:request.requiredModules};await phase('checking-client');
       const client=JSON.parse(await run(['exec',replacementId,'node','-e',CLIENT_PROBE]));
       if(client.client!=='trusted-browser'||client.status!=='passed')refuse();
+      await verifySignIn?.({revision:request.candidate,compose:replacementPath},after);
       record={...record,clientResult:client,phase:'succeeded',outcome:Outcome.succeeded,completedAt:new Date().toISOString(),replacementCompose:replacementPath};
       await lease.complete(record);return {operation:request.id,outcome:Outcome.succeeded,revision:request.candidate,image:target.image.id,writerRelease:'recorded-after-unlock'};
     } catch(error) {

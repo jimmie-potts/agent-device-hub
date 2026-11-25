@@ -3154,6 +3154,13 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+The Conversation maximum-on read uses a disposable Companions engine with
+synthetic Wemo and core SDK records. After the root build, the
+`assistant.test.js` cases exercise both named device reads, every limit status,
+local-time rendering and loss and recovery of the core copy. The existing
+`npm run test:companions:built` CI command discovers those cases and verifies
+the read-only module consumer.
+
 For Conversation uploads, build and run `node apps/runtime/dashboard/tests/conversation-upload.browser.ts`
 to isolate the keyboard picker, drop, private preview, display-only, save-only
 and combined actions. The companions browser suite runs the journey in CI.
@@ -3437,8 +3444,9 @@ replays that model step with one forced call and the steer read once. After the 
 and `node apps/runtime/dashboard/tests/conversation-steer.browser.ts`, which
 `npm run test:companions:browser` also runs: a steer during tool use, a forced
 call, a late steer held on the network until its turn ended, Skip question and
-send, Decline with message, a steer during a delegation wait with a fake worker
-on the real gateway, Stop returning steers past the limit, a restart, and the
+send, Decline with message, a steer in a separate Hub turn while a fake worker
+runs a background job on the real gateway, Stop returning steers past the
+limit, a restart, and the
 phone layout at 390 px. With 8 queued messages and 8 steers at 1280x900,
 1024x768 and 390x844, the page does not scroll, the header and transcript stay
 in view and each new steer shows at the top of the shared box; at 320x640 the
@@ -3491,8 +3499,8 @@ account value or non-synthetic identifier in any fixture (Hub #1743);
 `test:events:built` discovers `coding.test.mjs` for the seven families and
 their 2.1 versions. The companions browser entry calls `coding-delegation.browser.ts`,
 which connects a fake worker through the real gateway with the coding-worker
-credential and drives a proposal, approval, wait and result on the Conversation
-page. Installing the worker on the Mac is the [worker guide](coding-worker.md);
+credential and drives a proposal, approval, background job receipt and linked
+result on the Conversation page. Installing the worker on the Mac is the [worker guide](coding-worker.md);
 source evidence establishes no installed run.
 
 Subscription worker adapters use the existing runtime unit, event contract
@@ -3500,6 +3508,17 @@ and Companions checks. After the root build, run the coding worker process,
 stream and adapter test entries against their scripted commands. The event
 suite covers the added family versions and older layouts. The worker boundary
 tests use disposable repositories and synthetic accounts.
+
+Background coding jobs (#2109) use the same suites. `coding-slots.test.js`
+holds a worker open while Conversation answers another question and accepts
+another delegation. It exercises out-of-order result delivery, chat replacement,
+an unconfirmed named stop while another job runs, and recovery of a saved
+pre-change delegation. It injects failed writes while saving an accepted
+dispatch or an unconfirmed stop, and while delivering results to current jobs
+and pre-change delegations. A fast result or restart preserves earlier receipts. Repeated
+delivery leaves one conversation result and sends no new worker command. The
+browser journeys verify the job reference and its
+linked result through the real gateway with a disposable worker.
 
 Coding-worker slots (#2028) use the same suites. `coding-coordinator.test.js`
 also covers three companions at once with tagged starts, a proposal bound to

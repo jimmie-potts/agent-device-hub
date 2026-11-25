@@ -241,6 +241,13 @@ neither installed-client usefulness nor physical acceptance.
 
 ## Conversation and assistant tasks
 
+A named Wemo read in Conversation includes the plug's maximum-on settings and
+the core's current limit status. A running limit includes the observed run
+start, shutoff deadline and time remaining as of the read. Observation,
+start and deadline times include the runtime's local clock alongside the ISO
+instant. A missing or recovering core copy leaves the limit unknown. The Hub
+must be running and the plug reachable for enforcement.
+
 The **Conversation** page (`assistant`) is B.U.N.N.Y.'s text conversation beside
 Reachy (Hub #46). B.U.N.N.Y., Reachy and MicroDuck all talk to the provider and
 model the private section selects (Hub #2026), each with its own curated persona,
@@ -316,7 +323,7 @@ Use **Close**, Escape, or click outside to dismiss the panel. During playback,
 **Stop speaking** stays in the toolbar and moves into the narrow Details
 overlay while it is open.
 
-Questions, approvals, worker waits and task controls appear above the composer.
+Questions, approvals and task controls appear above the composer. Coding job updates appear in their original exchanges.
 A successful task leaves a short **Task completed** cue by the composer.
 Open **Details** to inspect the task. Failed, cancelled, paused and uncertain
 outcomes remain visible by the relevant controls.
@@ -459,9 +466,8 @@ running call, starts no title check and reports no session turn of its own.
   **Skip question and send** sets the question aside and steers in one step.
   During an approval, text is queued, and **Decline with message** declines
   the proposal and steers in one step; the declined command is never sent.
-- **Delegation.** While the task waits on the coding worker, including a
-  hand-off that waits for its companion's slot, a steer waits for the worker's
-  result and is read after it.
+- **Coding jobs.** A coding job continues while the conversation takes new
+  messages. A steer applies to the conversation turn.
 - **Limits.** When fewer than two model calls remain in the turn's limits, by
   model calls, active time or usage units, the message is queued instead. A
   task holds at most 8 unread steers, and its steers and the queue together at
@@ -720,43 +726,32 @@ nothing is proposed. The proposal is bound to the worker's connection: its
 revision moves only when a worker endpoint is selected, disabled or lost, so a
 worker that went away and came back refuses the dispatch with
 `revision-conflict`, and another companion's run starting or ending never does
-(Hub #2028). An approved delegation goes to the core as `coding-dispatch` and
-through its tracked dispatcher as one `coding-run` the module answers: the
-coding coordinator saves responsibility, sends one `coding-work` start to the
-worker's endpoint, reports the tracked outcome succeeded when the worker
-reports it started (observed), failed when the start is refused, and uncertain
-when no start arrives within twenty seconds. The task then waits on a
-delegation only the worker's word answers; the owner's input is refused for it,
-it counts no owner question, and **Cancel task** asks the worker to stop. The
-worker's completed, failed, cancelled or uncertain report settles the
-responsibility and resumes the task with the result as the tool's later word,
-bounded text naming outcome, git facts, checks, findings, limitations and usage
-(the model sees it as text naming the call, since the call's own result was the
-hand-off acceptance and the Messages API takes one result per call, Hub #1360);
-nothing is resent, and a restart or a lost worker leaves each of its operations
-uncertain. The dispatch carries twenty minutes, sixty turns and five dollars as
-bounds.
+(Hub #2028). Companions records the approved repository and brief with a Hub job ID, the
+original conversation and exchange, and the worker attempt's operation ID.
+Conversation shows the job ID and can finish the turn while the job waits or
+runs. The result links to the original job receipt, including in an older chat.
 
-The worker has one slot per companion (Hub #2028): B.U.N.N.Y., Reachy and
-MicroDuck can each have a run at once, and each run is tagged with the companion
-whose task asked, which the coordinator reads from the task. A worker from
-before #2028 declares no slots and holds one run for every companion. A
-delegation is still proposed while the companion's slot is busy, and the page's
-approval says so. Once approved, such a hand-off waits, saved in the store and
-first in first out per slot, and the tool result says the coding worker is busy
-and the hand-off waits for that companion's slot; it is sent once, through the
-tracked dispatcher with its own request ID, when the slot frees and a worker is
-selected. Until then the conversation says "Waiting to delegate to the coding
-worker in …", and "Delegated to …" once it is sent. **Cancel task** removes a
-waiting hand-off and sends nothing; a hand-off is also sent only while its task
-still waits on it, so a cancel the coordinator missed, as during a stop, still
-sends nothing. A
-waiting hand-off keeps its place across a restart; one whose dispatch had left
-without its acceptance recorded is uncertain at the next start and never sent
-again. A dispatch the core refuses ends the wait and reaches the task as
-`failed (refused: <code>)`. At most 32 hand-offs wait at once. A companion has
-one conversation until New conversation (#2029), so today only an older
-worker's shared slot makes another companion's hand-off wait end to end.
+The coordinator sends the attempt through the core's tracked dispatcher as
+`coding-dispatch`, then `coding-run`, and records responsibility before
+sending one `coding-work` start. The tracked outcome reports a start only
+after the worker says it started. A refused start fails the operation. A start
+without evidence after twenty seconds is uncertain. The worker's eventual
+result records its outcome, git facts, checks, findings, limitations and usage
+when supplied. A worker result does not verify installation. The dispatch
+carries twenty minutes, sixty turns and five dollars as bounds.
+
+The worker holds one slot per companion. A worker that declares no slots
+shares one slot across companions. An approved job may wait for its slot.
+At most 32 attempts wait at once, and each slot takes its oldest waiting
+attempt first. A restart preserves unsent jobs and reports an ambiguous start
+as uncertain without reissuing it. A result saved before an interruption can
+still reach its original exchange.
+
+**Cancel task** ends the Conversation turn. **Stop coding job** on the saved
+job receipt targets one attempt. It removes a known unsent attempt, or asks the worker to stop a
+running attempt. A stop stays unconfirmed until the worker reports a terminal
+observation. The coordinator still handles saved pre-change delegation
+interrupts, including their task cancellation behavior.
 
 The page shows the worker's availability beside the provider: how many of its
 slots are busy and how many hand-offs wait, the conversation companion's own

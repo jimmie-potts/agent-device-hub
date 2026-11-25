@@ -9,6 +9,7 @@ import {refusalMessage} from './operator-refusal.mjs';
 import {hostedArtifact} from './deployment/hosted-artifact.mjs';
 export {hostedArtifact} from './deployment/hosted-artifact.mjs';
 import {deployBatch,readRequest} from './deployment/batch.mjs';
+import {installedSigninReleases,verifySigninRelease} from './deployment/signin-release.mjs';
 export async function main(argv) {
   process.umask(0o077);
   const {values,positionals}=parseArgs({args:argv,allowPositionals:true,strict:true,options:{request:{type:'string'},compatibility:{type:'string'}}});
@@ -25,7 +26,10 @@ export async function main(argv) {
     return {id:info.Id,image:info.Image,status:info.State.Status,pid:info.State.Pid};
   });
   const compatibility=values.compatibility===undefined?undefined:await privateJson(resolve(values.compatibility));
-  return deployBatch(request,{root,run:docker,compatibility,qualification:r=>hostedArtifact(r,root)});
+  const releases=await installedSigninReleases(request.project);
+  const source=dirname(dirname(fileURLToPath(import.meta.url)));
+  const verifySignIn=releases===undefined?undefined:(expected,info)=>verifySigninRelease({releases,source,...expected},info);
+  return deployBatch(request,{root,run:docker,compatibility,verifySignIn,qualification:r=>hostedArtifact(r,root)});
 }
 function isEntryPoint() {
   // Node resolves a symlink for import.meta.url but keeps it in argv, and a missed match would exit 0 having done nothing.
