@@ -7,10 +7,11 @@ import {defineFamily, registerFamilies} from './registry.js';
 export type AssistantProfile = 'bunny' | 'reachy' | 'microduck';
 export type AssistantStatus = 'running' | 'waiting' | 'paused' | 'succeeded' | 'failed' | 'cancelled' | 'uncertain';
 /** Which provider answers the `bunny` profile's turns: the labelled synthetic one, or a configured hosted one (Hub #46). */
-export type AssistantProvider = 'synthetic' | 'anthropic';
+export type AssistantProvider = 'synthetic' | 'anthropic' | 'openai';
+export type AssistantSupervisor = {provider: AssistantProvider; model: string};
 export type AssistantTaskSummary = {taskId: string; conversationId: string; profile: AssistantProfile; status: AssistantStatus;
   runId: string | null; questionId: string | null; hasAnswer: boolean; code: ErrorCode | null;
-  modelCalls: number; toolCalls: number; questions: number; activeMs: number; usageUnits: number | null; reservedUnits: number};
+  modelCalls: number; toolCalls: number; questions: number; activeMs: number; usageUnits: number | null; reservedUnits: number; supervisor?: AssistantSupervisor};
 export const ASSISTANT_LEGACY_TOOL_LIMIT = 32;
 export const ASSISTANT_TOOL_LIMIT = 64;
 /** Why a conversation's message queue is held (Hub #2030): the owner stopped its task, the runtime started again, or the next message could not start. */
@@ -23,7 +24,7 @@ export type AssistantQueueHold = 'stop' | 'restart' | 'refused';
 export type AssistantQueueSummary = {conversationId: string; profile: AssistantProfile; messages: number; held: AssistantQueueHold | null; code: ErrorCode | null};
 export type AssistantState = {id: 'assistant'; revision: number; enabled: boolean; available: boolean;
   /** The configured provider and model, and the tool names the private section allows; never a key, prompt or transcript. */
-  provider: AssistantProvider; model: string; tools: string[]; tasks: AssistantTaskSummary[];
+  provider: AssistantProvider; model: string; providers?: AssistantSupervisor[]; tools: string[]; tasks: AssistantTaskSummary[];
   /**
    * Version 2.2 (Hub #2030): each current conversation whose queue holds messages; absent when none does. Version 2.3
    * (Hub #2031) is published while a queue holds more than 8, after a stopped turn returned its unread steers.
@@ -64,5 +65,6 @@ export const assistantFamilies = [
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.1'),
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.2'),
   defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.3'),
+  defineFamily('assistant-state', 'state', 'org.bunny.assistant-state.updated', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.4'),
 ] as const;
 export function registerAssistantFamilies(validator: MessageValidator): void {registerFamilies(validator, assistantFamilies);}

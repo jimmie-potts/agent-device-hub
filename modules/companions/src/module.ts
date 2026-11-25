@@ -8,6 +8,7 @@ import {Knowledge} from './knowledge/engine.js';
 import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './preferences/engine.js';
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {AnthropicProvider, DEFAULT_MODEL, EFFORTS, type Effort, type Transport} from './assistant/anthropic.js';
+import {OPENAI_MODEL, OpenAIProvider, OpenAITitleProvider} from './assistant/openai.js';
 import {AnthropicTitleProvider, DEFAULT_TITLE_MODEL} from './assistant/titles.js';
 import {canRevokeFields, parseSharingGrants, sharing, type SharingGrant} from './assistant/sharing.js';
 import {deviceToolOwner, allowlistable} from './assistant/tools.js';
@@ -38,6 +39,7 @@ export const isCompanionsModule = (module: BunnyModule): module is CompanionsMod
 export type CompanionsModule = BunnyModule & {setArtCatalog(read: RetainedArtworkRead): void; inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; stopCodingJob(jobId: string, operationId: string): Promise<Reply>; pending(): number};
 /** The name under the section's `secrets` of the file holding the hosted provider's API key. */
 export const API_KEY_SECRET = 'anthropic-api-key';
+export const OPENAI_KEY_SECRET = 'openai-responses-api-key';
 /**
  * The companions section of the private runtime configuration (Hub #46): `{assistant?, secrets?}`. `assistant` names the
  * provider, `synthetic` without one, with its model, effort, conversation title model (Hub #2025) and the allowlisted
@@ -45,8 +47,8 @@ export const API_KEY_SECRET = 'anthropic-api-key';
  * B.U.N.N.Y., Reachy and MicroDuck (Hub #2026). An empty section keeps every default and makes no network call.
  */
 export type CompanionsConfig = {readonly sharing?: readonly SharingGrant[]; readonly assistant: {readonly provider: 'synthetic'; readonly tools: readonly string[]}
-  | {readonly provider: 'anthropic'; readonly model: string; readonly effort: Effort; readonly titleModel: string; readonly tools: readonly string[]; readonly prices: PriceTable;
-    readonly monthlyLimitMicros: number}};
+  | {readonly provider: 'anthropic' | 'openai'; readonly model: string; readonly effort: Effort; readonly titleModel: string; readonly tools: readonly string[]; readonly prices: PriceTable;
+    readonly monthlyLimitMicros: number; readonly openAI?: {readonly model: string; readonly effort: Effort}}};
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const only = (value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean => Object.keys(value).every(key => keys.includes(key));
 const refuse = (detail: string): ErrorBody => errorBody('invalid-request', {detail});
@@ -88,18 +90,19 @@ export function configureCompanions(section: unknown): Configured<CompanionsConf
   if (grants === undefined) return refuse('sharing must list valid field grants');
   const configuredSharing = grants.length === 0 ? {} : {sharing: grants};
   const assistant = section.assistant === undefined ? {} : section.assistant;
-  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'titleModel', 'tools', 'prices', 'monthlyLimit'])) return refuse('assistant has only provider, model, effort, titleModel, tools, prices and monthlyLimit');
+  if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'titleModel', 'tools', 'prices', 'monthlyLimit', 'openAI'])) return refuse('assistant has only provider, model, effort, titleModel, tools, prices, monthlyLimit and openAI');
   const provider = assistant.provider ?? 'synthetic';
-  if (provider !== 'synthetic' && provider !== 'anthropic') return refuse('assistant.provider must be synthetic or anthropic');
+  if (provider !== 'synthetic' && provider !== 'anthropic' && provider !== 'openai') return refuse('assistant.provider must be synthetic, anthropic or openai');
   const tools = assistant.tools ?? [];
   if (!Array.isArray(tools) || tools.length > ASSISTANT_TOOL_LIMIT || !tools.every(allowlistable) || new Set(tools).size !== tools.length) return refuse('assistant.tools must list each permitted tool name once');
   if (provider === 'synthetic') {
-    if (assistant.model !== undefined || assistant.effort !== undefined || assistant.titleModel !== undefined || assistant.prices !== undefined || assistant.monthlyLimit !== undefined) {
+    if (assistant.model !== undefined || assistant.effort !== undefined || assistant.titleModel !== undefined || assistant.prices !== undefined || assistant.monthlyLimit !== undefined || assistant.openAI !== undefined) {
       return refuse('the synthetic provider takes no model, effort, title model, prices or monthly limit');
     }
     return {config: {...configuredSharing, assistant: {provider, tools: [...tools]}}};
   }
-  const model = assistant.model ?? DEFAULT_MODEL, effort = assistant.effort ?? 'medium', titleModel = assistant.titleModel ?? DEFAULT_TITLE_MODEL;
+  const model = assistant.model ?? (provider === 'openai' ? OPENAI_MODEL : DEFAULT_MODEL), effort = assistant.effort ?? 'medium';
+  const titleModel = assistant.titleModel ?? (provider === 'openai' ? model : DEFAULT_TITLE_MODEL);
   if (typeof model !== 'string' || !MODEL.test(model)) return refuse('assistant.model is a model identifier of at most 128 lowercase letters, digits, dots and hyphens');
   if (typeof titleModel !== 'string' || !MODEL.test(titleModel)) return refuse('assistant.titleModel is a model identifier of at most 128 lowercase letters, digits, dots and hyphens');
   if (!EFFORTS.includes(effort as Effort)) return refuse('assistant.effort is low, medium or high');
@@ -107,8 +110,20 @@ export function configureCompanions(section: unknown): Configured<CompanionsConf
   if (typeof prices === 'string') return refuse(prices);
   const monthlyLimitMicros = monthlyLimitOf(assistant.monthlyLimit);
   if (typeof monthlyLimitMicros === 'string') return refuse(monthlyLimitMicros);
-  if (!isObject(section.secrets) || !Object.hasOwn(section.secrets, API_KEY_SECRET)) return refuse(`a hosted provider names its API key file as secrets.${API_KEY_SECRET}`);
-  return {config: {...configuredSharing, assistant: {provider, model, effort: effort as Effort, titleModel, tools: [...tools], prices, monthlyLimitMicros}}};
+  const primaryKey = provider === 'openai' ? OPENAI_KEY_SECRET : API_KEY_SECRET;
+  if (!isObject(section.secrets) || !Object.hasOwn(section.secrets, primaryKey)) return refuse(`a hosted provider names its API key file as secrets.${primaryKey}`);
+  if (provider === 'openai' && (model !== OPENAI_MODEL || titleModel !== model)) return refuse('OpenAI requires the published supervisor model for tasks and titles');
+  const extra = assistant.openAI;
+  let openAI: {model: string; effort: Effort} | undefined;
+  if (extra !== undefined) {
+    if (provider !== 'anthropic' || !isObject(extra) || !only(extra, ['model', 'effort'])) return refuse('assistant.openAI configures the second hosted provider for Anthropic');
+    const model = extra.model ?? OPENAI_MODEL, effort = extra.effort ?? 'medium';
+    if (model !== OPENAI_MODEL || !EFFORTS.includes(effort as Effort)) return refuse('assistant.openAI requires the published supervisor model and low, medium or high effort');
+    if (!Object.hasOwn(section.secrets, OPENAI_KEY_SECRET)) return refuse(`OpenAI names its API key file as secrets.${OPENAI_KEY_SECRET}`);
+    openAI = {model, effort: effort as Effort};
+  }
+  return {config: {...configuredSharing, assistant: {provider, model, effort: effort as Effort, titleModel, tools: [...tools], prices, monthlyLimitMicros,
+    ...(openAI === undefined ? {} : {openAI})}}};
 }
 /** What a test or the runtime gives the module: the engine's seams and, for a hosted provider, the transport behind its fetch. */
 export type CompanionsOptions = AssistantOptions & {readonly transport?: Transport};
@@ -203,7 +218,7 @@ class Companions {
     // A waiting hand-off is sent only while its task still waits on it, so a cancel that the coordinator missed, as during
     // a stop, still sends nothing.
     const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
-      mayShare: (taskId, repository) => this.assistant?.canShareCodingBrief(taskId, repository) === true,
+      briefRefusal: brief => this.assistant === undefined ? 'unverified-supervisor' : this.assistant.codingBriefRefusal(brief),
       jobQueued: (job, add, parent) => this.assistant?.codingJobQueued(job, add, parent),
       jobUpdate: (job, kind, text, parent, startup) => this.assistant?.codingJobUpdate(job, kind, text, parent, startup) ?? Promise.resolve(),
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
@@ -269,12 +284,21 @@ class Companions {
     const {options} = this, assistant = (context.config as CompanionsConfig | undefined)?.assistant;
     const tools = options.tools ?? assistant?.tools ?? [];
     let provider = options.provider, titleProvider = options.titleProvider;
+    let alternateProvider = options.alternateProvider, openAITitleProvider = options.openAITitleProvider;
+    const transport = options.transport === undefined ? {} : {transport: options.transport};
     if ((provider === undefined || titleProvider === undefined) && assistant?.provider === 'anthropic') {
       // The key is read once, at start, and lives only in the providers; the runtime redacts it from its own records.
-      const key = await context.secrets.read(API_KEY_SECRET), transport = options.transport === undefined ? {} : {transport: options.transport};
+      const key = await context.secrets.read(API_KEY_SECRET).catch(() => '');
       provider ??= new AnthropicProvider({key, model: assistant.model, effort: assistant.effort, ...transport});
       // The conversation title call uses the same key and transport with its own small model (Hub #2025).
-      titleProvider ??= new AnthropicTitleProvider({key, model: assistant.titleModel, ...transport});
+      if (key.trim() !== '') titleProvider ??= new AnthropicTitleProvider({key, model: assistant.titleModel, ...transport});
+    }
+    const openAI = assistant?.provider === 'openai' ? assistant : assistant?.provider === 'anthropic' ? assistant.openAI : undefined;
+    if (openAI !== undefined) {
+      const key = await context.secrets.read(OPENAI_KEY_SECRET).catch(() => '');
+      const selected = new OpenAIProvider({key, model: openAI.model, effort: openAI.effort, ...transport});
+      if (assistant?.provider === 'openai') provider ??= selected; else alternateProvider ??= selected;
+      if (selected.available) openAITitleProvider ??= new OpenAITitleProvider({key, model: openAI.model, ...transport});
     }
     const core = options.core ?? (() => {
       const records = this.#copy?.states().map(message => message.data) ?? [];
@@ -300,9 +324,10 @@ class Companions {
       return context.sdk.request('bunny.cmd.assistant-dispatch.assistant',
         {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.family === 'mode-set' ? '2.0' : data.family === 'catalog-action' ? '2.3' : 'owner' in data ? '2.2' : '2.1'}`, data}, request);
     });
-    const prices = options.prices ?? (assistant?.provider === 'anthropic' ? assistant.prices : undefined);
-    const monthlyLimitMicros = options.monthlyLimitMicros ?? (assistant?.provider === 'anthropic' ? assistant.monthlyLimitMicros : undefined);
+    const prices = options.prices ?? (assistant !== undefined && assistant.provider !== 'synthetic' ? assistant.prices : undefined);
+    const monthlyLimitMicros = options.monthlyLimitMicros ?? (assistant !== undefined && assistant.provider !== 'synthetic' ? assistant.monthlyLimitMicros : undefined);
     return {...(provider === undefined ? {} : {provider}), ...(prices === undefined ? {} : {prices}), ...(monthlyLimitMicros === undefined ? {} : {monthlyLimitMicros}), ...(options.timeZone === undefined ? {} : {timeZone: options.timeZone}),
+      ...(alternateProvider === undefined ? {} : {alternateProvider}), ...(openAITitleProvider === undefined ? {} : {openAITitleProvider}),
       ...(titleProvider === undefined ? {} : {titleProvider}), ...(options.syntheticTitleProvider === undefined ? {} : {syntheticTitleProvider: options.syntheticTitleProvider}),
       ...(options.profileProviders === undefined ? {} : {profileProviders: options.profileProviders}),
       tools, core, dispatch, devices: options.devices ?? (owner => this.#deviceCopies.get(owner)?.records()),

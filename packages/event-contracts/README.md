@@ -1265,3 +1265,9 @@ display timing through this contract.
 
 The tests are in `tests/music-lighting.test.mjs`.
 
+
+
+`assistant-state/2.4` adds the available companion supervisor and model pairs
+and may record the bound pair on current task summaries. The existing
+default, task and queue fields remain available. The state carries only
+public identifiers and counters.

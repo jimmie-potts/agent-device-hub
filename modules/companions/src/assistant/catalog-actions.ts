@@ -391,7 +391,7 @@ export class ConversationActions {
     }
   }
 
-  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean): Promise<string | undefined> {
+  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined}): Promise<string | undefined> {
     const input = call.input;
     switch (call.name) {
       case CREATE_SHOW: case EDIT_SHOW: case PREVIEW_SHOW: {
@@ -400,7 +400,7 @@ export class ConversationActions {
         const result = call.name === CREATE_SHOW ? drafts.create(input) : call.name === EDIT_SHOW ? drafts.edit(input) : drafts.preview(input.draftId);
         return 'code' in result ? `refused: ${result.code}` : result.text;
       }
-      case READ_DEVICES: return this.#readDevices(input, parent, access);
+      case READ_DEVICES: return this.#readDevices(input, parent, access, scopedDeviceFacts);
       case READ_SHOWS: return this.#readShows(input, parent, access);
       case READ_ART: {
         const art = (await this.#snapshot<ArtRecord>(ART, 'art', parent))?.[0];
@@ -480,11 +480,24 @@ export class ConversationActions {
     return textResult(records?.filter(record => typeof record.id === 'string' && access('status', 'index', record.id) && access('status', 'details', record.id)).map(record => Object.fromEntries(fields.map(key => [key, record[key]]))) ?? 'Status unavailable.');
   }
 
-  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess): Promise<string> {
+  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: {subject: string | undefined}): Promise<string> {
     const {target, owner} = input;
     if (typeof target !== 'string' || typeof owner !== 'string') return 'refused: invalid-request';
     const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
     if (owners.length === 0) return 'refused: unsupported-capability';
+    if (scopedFacts !== undefined) {
+      if (scopedFacts.subject === undefined) return textResult({devices: []});
+      const {rows} = await this.#deviceRecords(assistantDeviceOwners, parent);
+      const matches = rows.filter(({device}) => [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === scopedFacts.subject));
+      const selected = matches.length === 1 ? matches[0] : undefined;
+      if (selected === undefined || !owners.some(value => value === selected.owner) ||
+          target !== '' && matchingDevices([selected], target, owner).length !== 1 ||
+          !access('devices', 'label', selected.device.id)) return textResult({devices: []});
+      const {owner: source, device} = selected;
+      return textResult({devices: [{owner: source, id: device.id, name: deviceLabel(device),
+        ...(access('devices', 'status', device.id) ? {lastReportedAvailability: device.availability, observation: device.observed,
+          ...(source === WEMO ? {maximumOnLimit: this.deviceDisplay.powerLimit(device.id, this.context.clock.now())} : {})} : {})}]});
+    }
     const {rows, unreadable} = await this.#deviceRecords(owners, parent);
     const visible = rows.filter(({device}) => access('devices', 'index', device.id) && access('devices', 'label', device.id));
     const selected = target === '' ? visible : matchingDevices(visible, target, owner).filter(({device}) => access('devices', 'details', device.id) && access('devices', 'status', device.id));
