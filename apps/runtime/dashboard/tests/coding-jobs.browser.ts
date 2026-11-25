@@ -18,10 +18,11 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
   }});
   const context = await browser.newContext();
   const worker = await connectRemote({url: world.url, source: 'bunny/parts/coding-worker', token: world.codingToken});
-  const commands: CodingWork[] = [];
+  const commands: CodingWork[] = [], prepared: Extract<CodingWork, {action: 'prepare-native-client'}>[] = [];
   let acceptMessage = (): void => {};
   const pendingMessage = new Promise<void>(resolve => {acceptMessage = resolve;});
   const endpoint = await worker.openEndpoint<CodingWork>({family: 'coding-work', respond: async command => {
+    if (command.data.action === 'prepare-native-client') {prepared.push(command.data); return {status: 'accepted'};}
     commands.push(command.data);
     if (command.data.action === 'message') await pendingMessage;
     return {status: 'accepted'};
@@ -181,7 +182,13 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     if (!await nativeDetails.evaluate(element => element.hasAttribute('open'))) await card(second).getByText('Native clients', {exact: true}).click();
     await card(second).getByRole('button', {name: native}).click();
     await waitFor(() => commands.length === 8);
-    assert.deepEqual(commands.slice(7).map(command => [command.action, command.operationId]), [['open-native-terminal', successor]]);
+    const nativeLaunch = commands[7];
+    assert.ok(nativeLaunch?.action === 'open-native-terminal');
+    assert.equal(nativeLaunch.operationId, successor);
+    assert.deepEqual(prepared.at(-1), {requestId: nativeLaunch.intentId, operationId: successor, action: 'prepare-native-client', client: 'terminal'});
+    await progress({operationId: successor, status: 'native-client', clients: ['terminal'], state: 'terminal-pending', observedAtMs: Date.now()}, '2.6');
+    await card(second).getByText('Reserved for terminal, launch unconfirmed', {exact: true}).waitFor();
+    assert.equal(await card(second).getByText('Native terminal', {exact: true}).count(), 0);
     await progress({operationId: successor, status: 'native-client', clients: ['terminal'], state: 'terminal', observedAtMs: Date.now()}, '2.6');
     await card(second).getByText('Native terminal', {exact: true}).waitFor();
     await progress({operationId: successor, status: 'native-client', clients: ['terminal'], state: 'terminal-closed', observedAtMs: Date.now()}, '2.6');

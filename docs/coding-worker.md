@@ -71,8 +71,11 @@ sandbox also protects the original checkout and its shared Git metadata.
 This route reserves the same attempt as **Continue with Claude Code**, which instead
 starts a new attempt. Only one can take write control.
 
-The terminal helper reports client exit. A detached background writer may
-outlive the native terminal, so the worker keeps the attempt reserved after
+The worker prepares the launch privately. The Hub rechecks both the private
+read grant and worker brief grant before authorizing that prepared launch.
+The terminal helper acknowledges process start and reports client exit. A
+plan sent without that acknowledgment leaves the launch unconfirmed. A
+detached background writer may outlive the native terminal, so the worker keeps the attempt reserved after
 exit. Native messages and progress stay with the native client.
 
 Claude terminal and Desktop use the original checkout of a saved session.

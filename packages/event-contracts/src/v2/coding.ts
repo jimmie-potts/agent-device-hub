@@ -38,7 +38,8 @@ export const CODING_WORKER_SLOTS = 3;
  */
 export type CodingEndpointControl = {requestId: string; action: 'enable' | 'disable'; readiness?: CodingReadiness; slots?: number; capacity?: 'uncapped'; harnesses?: CodingHarnessReadiness[]};
 /** Version 2.1 (Hub #2028) tags a start with the companion that asked; a 2.0 start has no companion. */
-export type CodingWork = {requestId: string; operationId: string} & ({action: 'start'; taskId: string; companion?: CodingCompanion; repository: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId; continuation?: CodingContinuation} | {action: 'cancel'} | {action: 'message'; text: string} | {action: 'open-native-terminal'} | {action: 'open-claude-desktop'});
+export type CodingWork = {requestId: string; operationId: string} & ({action: 'start'; taskId: string; companion?: CodingCompanion; repository: string; brief: string; bounds: CodingBounds; harness?: CodingHarnessId; continuation?: CodingContinuation} | {action: 'cancel'} | {action: 'message'; text: string} | {action: 'prepare-native-client'; client: CodingNativeClientKind} |
+  {action: 'open-native-terminal'; intentId: string} | {action: 'open-claude-desktop'; intentId: string});
 export type CodingCheck = {name: string; status: 'passed' | 'failed' | 'skipped' | 'unrun' | 'unknown'; detail?: string};
 /** A usage limit the harness reported: the window it named and when it resets, each null when the tool did not say. */
 export type CodingLimit = {window: string | null; resetsAtMs: number | null};
@@ -71,7 +72,7 @@ export type CodingMessageObserved = {operationId: string; sessionId: string; mes
 export type CodingAttemptContext = {operationId: string; status: 'attempt-context'; worktreeRef?: string; branch?: string | null; model?: string};
 export type CodingNativeClientKind = 'terminal' | 'claude-desktop';
 export type CodingNativeClient = {operationId: string; status: 'native-client'; clients: CodingNativeClientKind[];
-  state: 'available' | 'terminal' | 'terminal-closed' | 'desktop' | 'uncertain'; observedAtMs: number};
+  state: 'available' | 'terminal-pending' | 'terminal' | 'terminal-closed' | 'desktop' | 'uncertain'; observedAtMs: number};
 export type CodingWorkerProgress = CodingProgress | CodingMessageObserved | CodingAttemptContext | CodingNativeClient;
 export type CodingLost = {id: string};
 /** One run the worker holds for a companion's slot, from dispatch to its end. */
@@ -105,7 +106,7 @@ function checkProgress(message: Message): string | undefined {
   if (data.status === 'message-observed' || data.status === 'attempt-context') return undefined;
   if (data.status === 'native-client') {
     if ((data.state === 'desktop' && !data.clients.includes('claude-desktop')) ||
-      ((data.state === 'terminal' || data.state === 'terminal-closed') && !data.clients.includes('terminal'))) return 'native writer must be an offered client';
+      ((data.state === 'terminal-pending' || data.state === 'terminal' || data.state === 'terminal-closed') && !data.clients.includes('terminal'))) return 'native writer must be an offered client';
     return undefined;
   }
   if (data.status === 'completed' && data.result.summary.trim() === '') return 'payload summary must not be blank';

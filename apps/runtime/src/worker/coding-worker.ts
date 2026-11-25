@@ -566,13 +566,13 @@ export class CodingWorker {
   #work(command: Command<CodingWork>): Reply | Promise<Reply> {
     if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
     const data = command.data;
-    if (data.action === 'open-native-terminal' || data.action === 'open-claude-desktop') {
+    if (data.action === 'prepare-native-client' || data.action === 'open-native-terminal' || data.action === 'open-claude-desktop') {
       if (this.#running.has(data.operationId)) return errorBody('invalid-state');
       const endpoint = this.#endpoint;
-      const mayLaunch = () => endpoint !== undefined && this.#endpoint === endpoint && Date.parse(command.expiresat ?? '') > this.#now();
-      const opening = data.action === 'open-claude-desktop'
-        ? this.#native?.openDesktop(data.operationId, mayLaunch) : this.#native?.open(data.operationId, mayLaunch);
-      return opening?.catch(() => errorBody('unavailable')) ?? errorBody('unsupported-capability');
+      const fresh = () => endpoint !== undefined && this.#endpoint === endpoint && Date.parse(command.expiresat ?? '') > this.#now();
+      const native = data.action === 'prepare-native-client' ? this.#native?.prepare(data.operationId, data.client, data.requestId, fresh)
+        : this.#native?.launch(data.operationId, data.action === 'open-claude-desktop' ? 'claude-desktop' : 'terminal', data.intentId, fresh);
+      return native?.catch(() => errorBody('unavailable')) ?? errorBody('unsupported-capability');
     }
     if (data.action === 'message') return this.#message(data);
     if (data.action === 'cancel') {

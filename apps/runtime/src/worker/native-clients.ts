@@ -14,6 +14,8 @@ const MAX_LINE = 32_768;
 export const NATIVE_UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu;
 type State = CodingNativeClient['state'];
 export type NativeTerminalPlan = {executable: string; cwd: string; args: string[]; env: Record<string, string>};
+type PreparedLaunch = {intentId: string; client: CodingNativeClientKind; plan: NativeTerminalPlan;
+  fresh: () => boolean; socket: Socket | undefined};
 type Target = {
   session: string;
   clients: readonly CodingNativeClientKind[];
@@ -21,6 +23,7 @@ type Target = {
   changed: (state: State) => Promise<void>;
   state: State;
   opening: boolean;
+  prepared?: PreparedLaunch;
   socket?: Socket;
 };
 
@@ -96,47 +99,53 @@ export class NativeClients {
     this.#waiting.get(operationId)?.destroy();
   }
 
-  async openDesktop(operationId: string, mayLaunch: () => boolean): Promise<Reply> {
-    const target = this.#targets.get(operationId);
-    if (target?.clients.includes('claude-desktop') !== true) return errorBody('unsupported-capability');
+  async prepare(operationId: string, client: CodingNativeClientKind, intentId: string, fresh: () => boolean): Promise<Reply> {
+    const target = this.#targets.get(operationId), socket = this.#waiting.get(operationId);
+    if (target?.clients.includes(client) !== true) return errorBody('unsupported-capability');
     if (target.opening || target.state !== 'available') return errorBody('invalid-state');
+    if (client === 'terminal' && (socket === undefined || socket.destroyed)) {
+      return errorBody('unavailable', {detail: 'Wait for this attempt in a terminal on the worker host first.'});
+    }
     target.opening = true;
+    delete target.prepared;
     try {
-      const plan = await target.build('claude-desktop');
-      if (plan === undefined || !mayLaunch() || this.#targets.get(operationId) !== target) return errorBody('unavailable');
+      const plan = await target.build(client);
+      if (plan === undefined || !fresh() || this.#targets.get(operationId) !== target || socket?.destroyed === true) return errorBody('unavailable');
+      target.prepared = {intentId, client, plan, fresh, socket};
+      return {status: 'accepted'};
+    } finally {target.opening = false;}
+  }
+
+  async launch(operationId: string, client: CodingNativeClientKind, intentId: string, fresh: () => boolean): Promise<Reply> {
+    const target = this.#targets.get(operationId), prepared = target?.prepared;
+    if (target?.clients.includes(client) !== true) return errorBody('unsupported-capability');
+    if (target.opening || target.state !== 'available') return errorBody('invalid-state');
+    if (prepared?.intentId !== intentId || prepared.client !== client || !prepared.fresh() || !fresh()) return errorBody('unavailable');
+    const {plan, socket} = prepared;
+    if (client === 'terminal' && (socket === undefined || socket.destroyed || this.#waiting.get(operationId) !== socket)) return errorBody('unavailable');
+    delete target.prepared;
+    if (client === 'claude-desktop') {
       this.#waiting.get(operationId)?.destroy();
       // The CLI can acknowledge the exact launch request. Desktop supplies no writer release receipt.
       target.state = 'uncertain';
       const acknowledged = await this.launchDesktop(plan).catch(() => false);
       if (acknowledged && this.#targets.get(operationId) === target) target.state = 'desktop';
       await target.changed(target.state);
-      return {status: 'accepted'};
-    } finally {target.opening = false;}
-  }
-
-  async open(operationId: string, mayLaunch: () => boolean): Promise<Reply> {
-    const target = this.#targets.get(operationId), socket = this.#waiting.get(operationId);
-    if (target?.clients.includes('terminal') !== true) return errorBody('unsupported-capability');
-    if (target.opening || target.state !== 'available') return errorBody('invalid-state');
-    if (socket === undefined || socket.destroyed) return errorBody('unavailable', {detail: 'Wait for this attempt in a terminal on the worker host first.'});
-    target.opening = true;
-    try {
-      const plan = await target.build('terminal');
-      if (plan === undefined || !mayLaunch() || this.#targets.get(operationId) !== target || socket.destroyed) return errorBody('unavailable');
+    } else if (socket !== undefined) {
       this.#waiting.delete(operationId);
-      target.state = 'terminal';
+      target.state = 'terminal-pending';
       target.socket = socket;
       socket.setTimeout(0);
       socket.once('close', () => {
-        if (target.state === 'terminal' && this.#targets.get(operationId) === target) {
+        if ((target.state === 'terminal-pending' || target.state === 'terminal') && this.#targets.get(operationId) === target) {
           target.state = 'uncertain';
           void target.changed('uncertain');
         }
       });
       socket.write(JSON.stringify(plan) + '\n');
-      await target.changed('terminal');
-      return {status: 'accepted'};
-    } finally {target.opening = false;}
+      await target.changed('terminal-pending');
+    }
+    return {status: 'accepted'};
   }
 
   #listen(socket: Socket): void {
@@ -157,8 +166,11 @@ export class NativeClients {
         return;
       }
       const target = this.#targets.get(operationId);
-      if (target?.socket !== socket || target.state !== 'terminal') {socket.destroy(); return;}
-      if (line === 'closed') {
+      if (target?.socket !== socket) {socket.destroy(); return;}
+      if (line === 'spawned' && target.state === 'terminal-pending') {
+        target.state = 'terminal';
+        void target.changed('terminal');
+      } else if (line === 'closed' && target.state === 'terminal') {
         target.state = 'terminal-closed';
         delete target.socket;
         void target.changed('terminal-closed');
@@ -185,10 +197,9 @@ function parsePlan(line: string): NativeTerminalPlan | undefined {
 }
 
 async function foregroundHelper(): Promise<boolean> {
-  const {stdout} = await exec('/bin/ps', ['-axo', 'pid=,pgid='], {timeout: 2000});
-  const members = stdout.trim().split('\n').map(line => line.trim().split(/\s+/u).map(Number));
-  const self = members.find(([pid]) => pid === process.pid);
-  return self?.[1] === process.pid && members.filter(([, group]) => group === process.pid).length === 1;
+  const {stdout} = await exec('/bin/ps', ['-p', String(process.pid), '-o', 'pgid=,tpgid='], {timeout: 2000});
+  const [group, foreground] = stdout.trim().split(/\s+/u).map(Number);
+  return group !== undefined && group > 0 && group === foreground;
 }
 
 /** Run on the worker's own account from a foreground terminal. The helper never reads Hub credentials. */
@@ -215,6 +226,7 @@ export async function nativeTerminal(path: string, operationId: string, foregrou
       if (plan === undefined) {socket.destroy(); return;}
       const {executable, cwd, args, env} = plan;
       const child = spawn(executable, args, {cwd, env: {...env, ...(process.env.TERM === undefined ? {} : {TERM: process.env.TERM})}, stdio: 'inherit'});
+      child.once('spawn', () => {if (!socket.destroyed) socket.write('spawned\n');});
       child.once('error', () => {socket.destroy();});
       child.once('close', () => {
         if (socket.destroyed) return;

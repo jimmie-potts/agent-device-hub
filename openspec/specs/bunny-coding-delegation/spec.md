@@ -312,3 +312,13 @@ An authorized owner SHALL be able to request a qualified native client for the c
 
 - **WHEN** no qualified client route can bind the requested attempt under its subscription and writer rules, or its owner grant is revoked
 - **THEN** the operation is unavailable and no native launch is attempted
+
+#### Scenario: A grant changes while the worker prepares a launch
+
+- **WHEN** the worker prepares a native launch and the current private read or worker brief grant is revoked before authorization is sent
+- **THEN** the Hub sends no launch authorization and a later eligible request can try again
+
+#### Scenario: The helper has received the plan but has not acknowledged a process start
+
+- **WHEN** the worker reserves write control and sends a launch plan to the terminal helper
+- **THEN** Jobs reports that launch is unconfirmed until the helper acknowledges process start and retains the reservation if contact is lost

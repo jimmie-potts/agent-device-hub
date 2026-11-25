@@ -1,25 +1,60 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://bunny.invalid/events/coding-work/2.5",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "requestId",
-    "operationId",
-    "action"
-  ],
-  "properties": {
-    "requestId": {
-      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "operationId",
+        "action",
+        "client"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "const": "prepare-native-client"
+        },
+        "client": {
+          "enum": [
+            "terminal",
+            "claude-desktop"
+          ]
+        }
+      }
     },
-    "operationId": {
-      "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
-    },
-    "action": {
-      "enum": [
-        "open-native-terminal",
-        "open-claude-desktop"
-      ]
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "operationId",
+        "action",
+        "intentId"
+      ],
+      "properties": {
+        "requestId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "operationId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        },
+        "action": {
+          "enum": [
+            "open-native-terminal",
+            "open-claude-desktop"
+          ]
+        },
+        "intentId": {
+          "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
+        }
+      }
     }
-  }
+  ]
 }

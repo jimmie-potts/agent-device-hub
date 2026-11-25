@@ -70,6 +70,13 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     forwarded.set(command.data.requestId, answer.status);
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
   });
+  let nativePreparation: Promise<void> | undefined;
+  const holdNativePreparation = () => {
+    let release = () => {};
+    nativePreparation = new Promise(resolve => {release = resolve;});
+    context.after(release);
+    return release;
+  };
   let refusesStop = false;
   let serialStarts = false;
   let serial = Promise.resolve();
@@ -84,6 +91,11 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
       serial = pending;
       await pending;
     } else work.push(command);
+    if (command.data.action === 'prepare-native-client') {
+      const waiting = nativePreparation;
+      nativePreparation = undefined;
+      await waiting;
+    }
     return command.data.action === 'cancel' && refusesStop ? errorBody('unavailable') : {status: 'accepted'};
   });
   const make = () => {
@@ -181,7 +193,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     assert.ok(reply !== undefined && !('error' in reply));
     return JSON.parse(Buffer.from(reply.bytes).toString()) as CodingJobDetail;
   };
-  return {continueJob, jobDetail, jobs, message, openNative, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
+  return {continueJob, jobDetail, jobs, message, openNative, holdNativePreparation, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
     const release = releaseStart ?? assert.fail('serial responder has a delivered start to acknowledge');
     releaseStart = undefined; release();
   }, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, lose, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
@@ -190,9 +202,9 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
 
 void test('native continuation respects current brief grants and retains only last-observed authority after restart', async context => {
   const permitted = sharing();
-  let revoked = false;
+  let revoked: ShareQuery['destination'] | undefined;
   const share = Object.assign((query: ShareQuery) => permitted(query) &&
-    !(revoked && query.destination === 'private-conversation' && query.source === 'coding' && query.field === 'brief'),
+    !(query.destination === revoked && query.source === 'coding' && query.field === 'brief'),
   {revokesFields: true, allowsDerived: (query: ShareQuery) => permitted.allowsDerived?.(query) !== false});
   const w = await world(context, {share});
   const readiness: CodingHarnessReadiness = {
@@ -220,23 +232,48 @@ void test('native continuation respects current brief grants and retains only la
   await settle(() => w.coding().revision > revision);
   assert.deepEqual(await current(), {clients: ['terminal'], state: 'available', observedAtMs: 10});
 
-  revoked = true;
-  assert.equal(await current(), undefined);
-  const denied = await w.openNative(jobId, operationId);
-  assert.equal(denied.status === 'rejected' && denied.error.error.code, 'forbidden');
-  assert.equal(w.work.length, 1);
+  const savedObservation = async () => (await w.jobDetail(jobId)).attempts.find(item => item.operationId === operationId)?.context?.nativeObservation;
+  assert.equal((await savedObservation())?.state, 'available');
+  for (const destination of ['private-conversation', 'coding-worker'] as const) {
+    revoked = destination;
+    assert.equal(await current(), undefined);
+    assert.equal(await savedObservation(), undefined);
+    const denied = await w.openNative(jobId, operationId);
+    assert.equal(denied.status === 'rejected' && denied.error.error.code, 'forbidden');
+    assert.equal(w.work.length, 1);
+  }
 
-  revoked = false;
+  revoked = undefined;
+  const release = w.holdNativePreparation();
   assert.equal((await w.openNative(jobId, operationId)).status, 'accepted');
-  await settle(() => w.work.some(command => command.data.action === 'open-native-terminal'));
+  await settle(() => w.work.length === 2);
+  assert.equal(w.work[1]?.data.action, 'prepare-native-client');
+  const preparingRevision = w.coding().revision;
+  revoked = 'coding-worker';
+  release();
+  await settle(() => w.coding().revision > preparingRevision);
+  assert.equal(w.work.some(command => command.data.action === 'open-native-terminal'), false);
+
+  revoked = undefined;
+  assert.equal((await current())?.state, 'available');
+  assert.equal((await w.openNative(jobId, operationId)).status, 'accepted');
+  await settle(() => w.work.length === 4);
+  const prepared = w.work[2]?.data, launched = w.work[3]?.data;
+  assert.ok(prepared?.action === 'prepare-native-client' && launched?.action === 'open-native-terminal');
+  assert.equal(launched.intentId, prepared.requestId);
+  assert.equal(launched.operationId, operationId);
   const prompted = w.coding().revision;
   await observe('terminal', 11);
   await settle(() => w.coding().revision > prompted);
   assert.equal((await current())?.state, 'terminal');
+  revoked = 'private-conversation';
   await w.restart();
+  assert.equal(await current(), undefined);
+  assert.equal(await savedObservation(), undefined);
+  revoked = undefined;
   assert.deepEqual(await current(), {clients: ['terminal'], state: 'uncertain', observedAtMs: 11});
   assert.equal((await w.openNative(jobId, operationId)).status, 'rejected');
-  assert.equal(w.work.length, 2);
+  assert.equal(w.work.length, 4);
 });
 
 void test('an attributed background job keeps its first native session and delivers one result to the original exchange', {timeout: 30_000}, async context => {

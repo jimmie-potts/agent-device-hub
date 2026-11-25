@@ -19,7 +19,7 @@ function isNativeClient(value: unknown): boolean {
   const native = record(value);
   return native !== undefined && typeof native.observedAtMs === 'number' && Array.isArray(native.clients) &&
     native.clients.every(client => client === 'terminal' || client === 'claude-desktop') &&
-    ['available', 'opening', 'terminal', 'terminal-closed', 'desktop', 'offline', 'uncertain'].includes(String(native.state)) &&
+    ['available', 'opening', 'terminal-pending', 'terminal', 'terminal-closed', 'desktop', 'offline', 'uncertain'].includes(String(native.state)) &&
     (native.refusal === undefined || typeof native.refusal === 'string');
 }
 
@@ -204,6 +204,7 @@ function NativeClients({job, openNative, locked}: {job: CodingJobEntry; openNati
   const active = job.status === 'queued' || job.status === 'dispatching' || job.status === 'started' || job.status === 'cancelling';
   const writer = active ? 'Coding worker' : client?.state === 'terminal' ? 'Native terminal' :
     client?.state === 'desktop' ? 'Claude Desktop, activity unobserved' :
+      client?.state === 'terminal-pending' ? 'Reserved for terminal, launch unconfirmed' :
       client?.state === 'terminal-closed' ? 'Terminal exited, writer release unverified' :
       client?.state === 'opening' || client?.state === 'uncertain' ? 'Unconfirmed' : client === undefined ? 'Native writer unknown' : 'No active writer reported';
   const available = client?.state === 'available' && !active;
@@ -220,6 +221,7 @@ function NativeClients({job, openNative, locked}: {job: CodingJobEntry; openNati
         ? desktop ? 'Saved session takeover. The Hub cannot observe a return from Desktop.' : 'Saved takeover requires verified release of the original checkout.'
         : 'Access to this worker profile’s exact thread in Codex Desktop is unverified.'}</dd>
     </dl>
+    {client?.state === 'terminal-pending' && <p>The worker sent the launch plan. The helper has yet to report a process start.</p>}
     {client?.state === 'terminal' && <p>The Hub can observe the terminal exit. Native messages and progress stay in the terminal.</p>}
     {client?.state === 'terminal-closed' && <p>A background writer may still be active. This attempt stays reserved.</p>}
     {client?.state === 'desktop' && <p>The launcher acknowledged the exact attempt. The Hub cannot observe Desktop activity or release its writer.</p>}

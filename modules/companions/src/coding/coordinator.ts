@@ -165,7 +165,8 @@ export class CodingCoordinator {
         const status = active?.phase ?? job.status;
         const attempt = this.#store.attempt(job.operationId);
         const {nativeObservation, ...context} = attempt?.context ?? {};
-        const nativeClient = canReadBrief ? this.#nativeView(job.operationId, nativeObservation) : undefined;
+        const nativeView = this.#nativeView(job.operationId, nativeObservation);
+        const nativeClient = nativeView !== undefined && original !== undefined && this.#canUseCodingBrief(original, companion) ? nativeView : undefined;
         jobs.push({...job, companion, status, ...(label === '' ? {} : {label}), ...(nativeClient === undefined ? {} : {nativeClient}),
           ...(attempt?.harness == null ? {} : {harness: attempt.harness}), steering: this.#steering(active), messages: this.#store.messages(job.jobId).filter(message =>
             this.#seams.jobVisible?.({...job, operationId: message.operationId}, companion) !== false),
@@ -194,7 +195,7 @@ export class CodingCoordinator {
     if (choice.harness === undefined) return null;
     return {fromOperationId: attempt.operationId, harness, head: attempt.result.head, changedFiles: attempt.result.changedFiles};
   }
-  #canContinue(job: CodingJob, companion: CodingCompanion): boolean {
+  #canUseCodingBrief(job: CodingJob, companion: CodingCompanion): boolean {
     return this.#seams.jobBriefVisible?.(job, companion) !== false && this.#seams.mayShare?.(job.taskId, job.repository) !== false;
   }
   jobDetail(jobId: string): CodingJobDetail | undefined {
@@ -203,15 +204,17 @@ export class CodingCoordinator {
     const saved = this.#store.attempts(jobId);
     const last = saved.at(-1);
     const companion = last?.companion ?? this.#seams.companionOf?.(job.taskId);
-    const visible = (operationId: string): boolean => companion !== undefined &&
-      this.#seams.jobVisible?.({...job, operationId}, companion) !== false;
+    const visible = (operationId: string, owner = companion): boolean => owner !== undefined &&
+      this.#seams.jobVisible?.({...job, operationId}, owner) !== false;
     const current = last?.operationId ?? job.operationId;
     if (!visible(current)) return undefined;
-    const attempts: CodingAttemptEntry[] = saved.filter(attempt => visible(attempt.operationId))
-      .map(({operationId, harness, sessionId, status, selectionReason, result, context}) => {
+    const attempts: CodingAttemptEntry[] = saved.filter(attempt => visible(attempt.operationId, attempt.companion))
+      .map(({operationId, companion: owner, harness, sessionId, status, selectionReason, result, context}) => {
         const active = this.#active.get(operationId);
+        const {nativeObservation, ...attemptContext} = context ?? {};
+        const nativeVisible = nativeObservation !== undefined && this.#canUseCodingBrief({...job, operationId}, owner);
         return {operationId, harness, sessionId: active?.sessionId ?? sessionId, status: active?.phase ?? status, selectionReason, result,
-          ...(context === undefined ? {} : {context})};
+          ...(context === undefined ? {} : {context: {...attemptContext, ...(nativeVisible ? {nativeObservation} : {})}})};
       });
     if (saved.length === 0) {
       const active = this.#active.get(job.operationId);
@@ -220,7 +223,7 @@ export class CodingCoordinator {
         selectionReason: 'Legacy worker selection.', result: null});
     }
     const latest = last, candidate = this.#continuation(latest);
-    const briefDenied = candidate !== null && (companion === undefined || !this.#canContinue({...job, operationId: current}, companion));
+    const briefDenied = candidate !== null && (companion === undefined || !this.#canUseCodingBrief({...job, operationId: current}, companion));
     const continuation = briefDenied ? null : candidate;
     const activeOperationId = this.#store.resultSaved(current) ? null : current;
     const continuationReason = continuation !== null || activeOperationId !== null || latest === undefined ? undefined :
@@ -241,7 +244,7 @@ export class CodingCoordinator {
     const next = this.#continuation(attempt);
     if (next === null || attempt.handoffToken === undefined) return {code: 'unavailable', detail: 'A verified stopped writer, worktree and eligible second harness are required.'};
     if (next.harness !== data.harness) return {code: 'invalid-state', detail: 'Choose the other harness to continue.'};
-    if (!this.#canContinue(job, attempt.companion)) return {code: 'forbidden', detail: 'Coding brief sharing is not permitted.'};
+    if (!this.#canUseCodingBrief(job, attempt.companion)) return {code: 'forbidden', detail: 'Coding brief sharing is not permitted.'};
     const operationId = randomUUID();
     this.#store.createAttempt({jobId: job.jobId, operationId, companion: attempt.companion, choice: data.harness, harness: data.harness,
       selectionReason: `Explicit continuation of ${data.operationId}.`, continuation: {fromOperationId: data.operationId, token: attempt.handoffToken}});
@@ -539,30 +542,42 @@ export class CodingCoordinator {
     {code: ErrorCode} | {committed: () => Promise<void>} {
     const {action, jobId, operationId, requestId} = input;
     const job = this.#store.job(operationId), attempt = this.#store.attempt(operationId);
-    if (job?.jobId !== jobId || attempt === undefined || this.#seams.jobVisible?.({...job, operationId}, attempt.companion) === false) return {code: 'not-found'};
-    if (this.#seams.jobBriefVisible?.(job, attempt.companion) === false) return {code: 'forbidden'};
+    if (job?.jobId !== jobId || attempt === undefined || this.#seams.jobVisible?.(job, attempt.companion) === false) return {code: 'not-found'};
+    if (!this.#canUseCodingBrief(job, attempt.companion)) return {code: 'forbidden'};
     if (this.#store.attempts(jobId).at(-1)?.operationId !== operationId || !this.#store.resultSaved(operationId)) return {code: 'invalid-state'};
     const endpointId = this.#state.endpointId, offer = this.#native.get(operationId);
     if (endpointId === null || offer === undefined || this.#nativeView(operationId)?.state !== 'available') return {code: 'unavailable'};
-    if (!offer.view.clients.includes(action === 'open-claude-desktop' ? 'claude-desktop' : 'terminal')) return {code: 'unsupported-capability'};
+    const client = action === 'open-claude-desktop' ? 'claude-desktop' : 'terminal';
+    if (!offer.view.clients.includes(client)) return {code: 'unsupported-capability'};
+    const current = () => this.#connected() && this.#state.endpointId === endpointId && this.#state.selectionId === offer.selectionId &&
+      this.#store.attempts(jobId).at(-1)?.operationId === operationId;
+    const visible = () => this.#seams.jobVisible?.(job, attempt.companion) !== false && this.#canUseCodingBrief(job, attempt.companion);
+    const draft = {type: 'org.bunny.coding.work.requested', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-work/2.5'};
     return {committed: async () => {
-      if (!this.#connected() || this.#state.endpointId !== endpointId || this.#native.get(operationId) !== offer ||
-        offer.view.state !== 'available' || this.#store.attempts(jobId).at(-1)?.operationId !== operationId ||
-        this.#seams.jobVisible?.({...job, operationId}, attempt.companion) === false ||
-        this.#seams.jobBriefVisible?.(job, attempt.companion) === false) return;
+      if (!current() || !visible() || this.#native.get(operationId) !== offer || offer.view.state !== 'available') return;
       const opening = {...offer, view: {...offer.view, state: 'opening'} as const};
       this.#native.set(operationId, opening);
       this.#changed();
+      let launchSent = false;
       let refusal: ErrorCode | undefined;
       try {
-        const answer = await this.context.sdk.request(`bunny.cmd.coding-work.${endpointId}`, {
-          type: 'org.bunny.coding.work.requested', subject: endpointId, dataschema: 'https://bunny.invalid/events/coding-work/2.5',
-          data: {requestId, operationId, action},
+        const prepared = await this.context.sdk.request(`bunny.cmd.coding-work.${endpointId}`, {
+          ...draft, data: {requestId, operationId, action: 'prepare-native-client', client},
         }, {requestId, timeoutMs: 25_000, parent});
-        if (answer.status !== 'accepted') refusal = answer.status === 'uncertain' ? 'uncertain-result' : answer.error.error.code;
+        if (prepared.status !== 'accepted') refusal = prepared.error.error.code;
+        else if (!current() || this.#native.get(operationId) !== opening) refusal = 'unavailable';
+        else if (!visible()) refusal = 'forbidden';
+        else {
+          const launchId = randomUUID();
+          launchSent = true;
+          const answer = await this.context.sdk.request(`bunny.cmd.coding-work.${endpointId}`, {
+            ...draft, data: {requestId: launchId, operationId, action, intentId: requestId},
+          }, {requestId: launchId, timeoutMs: 12_000, parent});
+          if (answer.status !== 'accepted') refusal = answer.error.error.code;
+        }
       } catch {refusal = 'uncertain-result';}
       if (this.#native.get(operationId) !== opening) return;
-      const state = refusal === undefined || refusal === 'uncertain-result' ? 'uncertain' : 'available';
+      const state = launchSent && (refusal === undefined || refusal === 'uncertain-result') ? 'uncertain' : 'available';
       this.#native.set(operationId, {...offer, view: {...offer.view, state, ...(refusal === undefined ? {} : {refusal})}});
       this.#changed();
     }};

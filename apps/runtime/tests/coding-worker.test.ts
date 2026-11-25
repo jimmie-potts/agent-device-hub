@@ -700,7 +700,8 @@ for (const [origin, destination, scenarios] of [
 
 for (const committed of [false, true]) {
   void test(`a completed Codex attempt can offer exact terminal continuation without a cross-harness token (commit: ${String(committed)})`, async t => {
-    const repo = await repository(t), edge = fakeEdge(), home = join(dirname(repo), 'native-profile');
+    const repo = await repository(t), edge = fakeEdge(), root = await realpath(dirname(repo));
+    const home = join(root, 'native-profile');
     await mkdir(home);
     const sessionId = '7eedd100-0000-4000-8000-000000000001';
     const codex: CodingAdapter = {
@@ -718,7 +719,7 @@ for (const committed of [false, true]) {
       },
     };
     const worker = new CodingWorker(parseConfiguration({...configuration(repo), schema: 'coding-worker/1.2',
-      nativeClients: {socket: join(dirname(repo), 'native.sock'), harnesses: ['codex']}}),
+      nativeClients: {socket: join(root, 'native.sock'), harnesses: ['codex']}}),
     'fake-token', undefined, undefined, edge.connect, undefined, undefined, undefined, [codex]);
     await worker.start();
     t.after(() => worker.stop());

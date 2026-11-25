@@ -240,11 +240,15 @@ test('a continuation carries only a prior attempt and an opaque stopped-writer p
 test('a saved native handoff is attempt-bound and never carries private launch material', () => {
   const {requestId, operationId} = family('coding-work').data;
   for (const action of ['open-native-terminal', 'open-claude-desktop']) {
-    const work = {requestId, operationId, action};
+    const work = {requestId, operationId, action, intentId: 'fixture-native-intent'};
     valid(at('coding-work', '2.5', work));
     invalid(at('coding-work', '2.4', work));
     invalid(at('coding-work', '2.5', {...work, path: '/private/checkout', sessionId: 'owner-session'}));
   }
+  const prepare = {requestId, operationId, action: 'prepare-native-client', client: 'terminal'};
+  valid(at('coding-work', '2.5', prepare));
+  invalid(at('coding-work', '2.5', {...prepare, intentId: 'not-a-launch'}));
+  invalid(at('coding-work', '2.5', {requestId, operationId, action: 'open-native-terminal'}));
   const progress = {operationId, status: 'native-client', clients: ['terminal', 'claude-desktop'], state: 'desktop', observedAtMs: 7};
   valid(at('coding-progress', '2.6', progress));
   invalid(at('coding-progress', '2.5', progress));

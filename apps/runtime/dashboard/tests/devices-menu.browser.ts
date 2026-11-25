@@ -354,8 +354,11 @@ try {
   await overview.getByRole('heading', {name: 'Companions', level: 1, exact: true}).waitFor();
   assert.deepEqual(await overview.getByRole('link').evaluateAll(links => links.map(link => `${link.textContent ?? ''} ${link.getAttribute('href') ?? ''}`)), [
     'Open Habitat #/habitat', 'Reachy #/module/companions/reachy', 'MicroDuck #/module/companions/microduck', 'Duck conversation #/module/companions/duck-conversation',
-    'Open Preferences #/module/companions/preferences', 'Open Companion knowledge #/module/companions/knowledge']);
+    'Open Jobs #/module/companions/jobs', 'Open Preferences #/module/companions/preferences', 'Open Companion knowledge #/module/companions/knowledge']);
   assert.equal(await companionsRow().getAttribute('aria-current'), 'page');
+  await overview.getByRole('link', {name: 'Open Jobs', exact: true}).click();
+  await page.locator('.coding-jobs-page').getByRole('heading', {name: 'Jobs', level: 1, exact: true}).waitFor();
+  assert.equal(hash(), '#/module/companions/jobs');
   await page.goto(`${world.url}/#/habitat`); await feed(page, 'connected');
   await page.getByRole('heading', {name: 'Habitat', level: 1, exact: true}).waitFor();
   assert.deepEqual([await companionsRow().getAttribute('aria-current'), await page.getByRole('navigation', {name: 'Breadcrumb', exact: true}).getByRole('link').textContent()],
@@ -370,7 +373,7 @@ try {
   await page.frameLocator('iframe.module-page').getByRole('heading', {name: 'Passive preview', exact: true}).waitFor();
   assert.deepEqual([await primary.getByRole('link', {name: 'Home', exact: true}).getAttribute('aria-current'), await devices.getAttribute('aria-current'),
     await page.getByRole('navigation', {name: 'Breadcrumb', exact: true}).getByRole('link').textContent()], ['page', null, 'Home'], 'a page outside the hardware inventory selects Home');
-  checks.push('Companions opens from the rail and links Habitat and the companion features; old Habitat bookmarks select it; the conversations stay in the rail; pages outside the hardware inventory select Home');
+  checks.push('Companions opens from the rail and links Jobs and other companion features. Old Habitat bookmarks select Companions. Conversations stay in the rail. Pages outside the hardware inventory select Home.');
 
   // A page under Devices: the row is marked lightly, and the open page is a temporary row with a pin button.
   await choose('LIFX overview', 'LIFX');
