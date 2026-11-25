@@ -16,7 +16,14 @@ export type CodingJob = CodingOrigin & {jobId: string; operationId: string; repo
 export type CodingAttempt = CodingAttemptEntry & {
   jobId: string; choice: CodingChoice; companion: CodingCompanion; handoffToken?: string; selectionId?: string; continuation?: CodingContinuation;
 };
-type CodingObservation = {operationId: string; taskId: string; kind: 'sent' | 'stop-unconfirmed' | 'result'; text: string; traceparent: string; legacyEvidence?: string; startup?: boolean};
+export type CodingUpdateKind = 'sent' | 'stop-unconfirmed' | 'result';
+export type CodingJobRead = Pick<CodingJob, 'jobId' | 'operationId' | 'taskId' | 'conversationId' | 'repository'> & {originalOperationId: string};
+
+export function codingUpdateMessageId(job: Pick<CodingJob, 'jobId' | 'operationId'>, kind: CodingUpdateKind): string {
+  return job.jobId === `${job.operationId}-job` ? `${job.jobId}-${kind}` : `${job.operationId}-${kind}`;
+}
+
+type CodingObservation = {operationId: string; taskId: string; kind: CodingUpdateKind; text: string; traceparent: string; legacyEvidence?: string; startup?: boolean};
 /**
  * Durable responsibility, final receipts and the hand-offs waiting for a slot (Hub #502, #2028). Availability, the
  * worker endpoint and its slots are never recovered.
@@ -80,6 +87,17 @@ export class CodingStore {
   jobById(jobId: string): CodingJob | undefined {
     const row = this.database.prepare('SELECT operation_id FROM companion_coding_jobs WHERE job_id=?').get(jobId);
     return typeof row?.operation_id === 'string' ? this.job(row.operation_id) : undefined;
+  }
+  jobRead(operationId: string, update?: {jobId: string; kind: CodingUpdateKind}): CodingJobRead | undefined {
+    const job = this.job(operationId);
+    if (job === undefined) return undefined;
+    const original = this.jobById(job.jobId);
+    if (original === undefined) return undefined;
+    if (update !== undefined && (update.jobId !== job.jobId || this.database.prepare(
+      'SELECT 1 FROM companion_coding_job_updates WHERE operation_id=? AND task_id=? AND kind=?',
+    ).get(operationId, job.taskId, update.kind) === undefined)) return undefined;
+    const {jobId, taskId, conversationId, repository} = job;
+    return {jobId, taskId, conversationId, repository, operationId, originalOperationId: original.operationId};
   }
   jobs({after, limit, includeEnded, jobId}: {after: string; limit: number; includeEnded: boolean; jobId?: string}): CodingJobEntry[] {
     return this.database.prepare(`WITH current AS (

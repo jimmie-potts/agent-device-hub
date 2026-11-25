@@ -258,6 +258,12 @@ A new coding job SHALL bind approval to Auto or a named harness. Auto SHALL choo
 - **WHEN** a worker may still be writing, or the previous writer's proof is unavailable after restart
 - **THEN** the coordinator or worker refuses a competing writer and sends no automatic retry
 
+#### Scenario: Revoked sharing after a continuation
+
+- **WHEN** a saved coding update belongs to a continuation and the destination loses the repository, original task, original job or attempt grant
+- **THEN** Conversation, Jobs and later prompts withhold the affected facts and derived replies for that destination, including after restart
+- **AND** a continuation update and any derived reply stay private if the saved job and attempt association cannot be verified
+
 ### Requirement: Inspect coding jobs and direct individual attempts
 
 Jobs SHALL offer a bounded authenticated listing and exact job lookup across the owner's permitted Conversations. Each entry SHALL carry the stable job and attempt identity, owning companion and conversation, repository, and reported attempt evidence. Available attempt evidence SHALL include branch and worktree reference, native session, harness and model, usage, status and updates, pending decisions, checks, changed files and limitations. Unknown values SHALL remain unknown. Private host paths SHALL remain outside the shared projection. An explicit Message job or Stop job SHALL bind to the named current attempt. An unsupported, stale or disconnected target SHALL never silently send to a different attempt.

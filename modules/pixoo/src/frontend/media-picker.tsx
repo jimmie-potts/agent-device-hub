@@ -1,5 +1,6 @@
 import React, {useEffect, useId, useRef, useState} from 'react';
 import type {FrontendContext, FrontendApi} from '@jimmie-potts/sdk/frontend';
+import {useCanvasBitmaps} from './bitmaps.js';
 import {PreviewFrame, previewOf} from './preview.js';
 
 export type PickerMedia = {renditionId: string; name: string; frameCount: number; compatible?: boolean};
@@ -24,6 +25,8 @@ export function AnimatedMedia({api, renditionId, label, active, animate = true}:
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [bitmap, setBitmap] = useState<ImageBitmap>(), [frame, setFrame] = useState(0);
   const [status, setStatus] = useState('still');
+  // Frames are kept while cached; the one on the canvas outlives the cache until it is replaced (Hub #2133).
+  const {keep, drop} = useCanvasBitmaps(bitmap);
   useEffect(() => {
     const media = matchMedia('(prefers-reduced-motion: reduce)');
     const motion = (): void => { setReduced(media.matches); };
@@ -39,7 +42,7 @@ export function AnimatedMedia({api, renditionId, label, active, animate = true}:
     const frames = new Map<number, ImageBitmap>();
     setBitmap(undefined); setFrame(0); setStatus('still');
     if (!active || !visible || !foreground) return;
-    const closeFrames = (): void => { for (const image of frames.values()) image.close(); frames.clear(); };
+    const closeFrames = (): void => { for (const image of frames.values()) drop(image); frames.clear(); };
     void (async () => {
       setStatus('loading');
       const preview = previewOf(await api.read(`/modules/pixoo/content/preview.${renditionId}`), renditionId);
@@ -52,10 +55,11 @@ export function AnimatedMedia({api, renditionId, label, active, animate = true}:
           if (disposed) return;
           image = await createImageBitmap(blob);
           if (disposed) { image.close(); return; }
+          keep(image);
           // A tile keeps at most 128 KiB of decoded RGBA pixels, independent of the animation length.
           if (frames.size >= 8) {
             const oldest = frames.keys().next().value;
-            if (oldest !== undefined) { frames.get(oldest)?.close(); frames.delete(oldest); }
+            if (oldest !== undefined) { const evicted = frames.get(oldest); frames.delete(oldest); if (evicted !== undefined) drop(evicted); }
           }
           frames.set(index, image);
         }
@@ -70,7 +74,7 @@ export function AnimatedMedia({api, renditionId, label, active, animate = true}:
       if (!disposed) { setStatus('unavailable'); closeFrames(); setBitmap(undefined); }
     }
     return () => { disposed = true; window.clearTimeout(timer); closeFrames(); };
-  }, [api, renditionId, active, visible, foreground, playing]);
+  }, [api, renditionId, active, visible, foreground, playing, keep, drop]);
   return <div ref={ref} className="pixoo-thumbnail" data-preview-state={status} data-preview-frame={frame}>
     <PreviewFrame bitmap={bitmap} label={label}/>
     {status === 'unavailable' && <span className="hint">Preview unavailable</span>}
