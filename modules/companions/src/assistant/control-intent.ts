@@ -46,6 +46,17 @@ export function missingMode(text: string): boolean {
   return words !== undefined && /^(?:set|change|switch) (?:the )?(?:hub )?mode(?: to)?$/u.test(words);
 }
 
+const brightnessAfterTarget = /^(?:set|change) (.+?) brightness (?:to|at) (\d+)(?: percent)?(?: now| please)?$/u;
+const brightnessBeforeTarget = /^(?:set|change) (?:the )?brightness (?:of|on|for) (.+?) (?:to|at) (\d+)(?: percent)?(?: now| please)?$/u;
+const brightnessWithDetail = /^(?:set|change) (.+?) brightness (?:to )?(\d+)(?: percent)?$/u;
+
+export function brightnessSubject(text: string): string | undefined {
+  const words = explicitWords(text);
+  if (words === undefined) return undefined;
+  const match = brightnessAfterTarget.exec(words) ?? brightnessBeforeTarget.exec(words) ?? brightnessWithDetail.exec(words);
+  return match?.[1] !== undefined && match[2] !== undefined && Number(match[2]) <= 100 ? optionalArticle(match[1]) : undefined;
+}
+
 export function missingBrightness(text: string): boolean {
   const words = explicitWords(text);
   return words !== undefined && /^(?:set|change) .+ brightness(?: to| at)?$/u.test(words);
@@ -134,9 +145,9 @@ function setting(instruction: string, answer: string, rawInstruction: string, ra
       return mode?.[1] !== undefined && mode[2] === data.mode ? {subject: optionalArticle(mode[1])} : undefined;
     }
     case 'brightness-set':
-      return matchNumber(/^(?:set|change) (.+?) brightness (?:to|at) (\d+)(?: percent)?(?: now| please)?$/u, instruction, data.percent)
-        ?? matchNumber(/^(?:set|change) (?:the )?brightness (?:of|on|for) (.+?) (?:to|at) (\d+)(?: percent)?(?: now| please)?$/u, instruction, data.percent)
-        ?? matchNumber(/^(?:set|change) (.+?) brightness (?:to )?(\d+)(?: percent)?$/u, input, data.percent);
+      return matchNumber(brightnessAfterTarget, instruction, data.percent)
+        ?? matchNumber(brightnessBeforeTarget, instruction, data.percent)
+        ?? matchNumber(brightnessWithDetail, input, data.percent);
     case 'lifx-temperature-set':
       return matchNumber(/^(?:set|change) (.+?) (?:color )?temperature to (\d+) kelvin(?: now| please)?$/u, input, data.kelvin);
     case 'volcano-session-gap':

@@ -21,7 +21,7 @@ import type {ContextPreview, ConversationList, Proposal} from './history-contrac
 import {steerMessageId, supersededReplyId} from './queue-contract.js';
 import {ProviderFault, textBytes, type ModelProvider, type SupervisorIdentity, type PromptContext, type ToolCall, type TurnInput, type TurnReply} from './provider.js';
 import {accessFor, canRevokeFields, recordedSupervisorField, supervisorFields, type DisclosedField, type FieldAccess, type Share, type ShareQuery} from './sharing.js';
-import {ALL_WEMO_PLUGS, authorizesControl, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
+import {ALL_WEMO_PLUGS, authorizesControl, brightnessSubject, missingBrightness, missingCatalogDetail, missingMode, namedControlTargets, normalizedControlText, powerSubject, type BoundControl} from './control-intent.js';
 import {buildContext, sectionOf, type ContextEntry, type RecentMessage} from './context.js';
 import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type SpendView, type TokenUsage} from './spend.js';
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
@@ -1469,8 +1469,9 @@ export class AssistantEngine {
           message => message.role === 'owner' && !privateJobMessage(message) && allowsExcerpt(message.id), true).messages;
       }
     }
-    const subjectForRead = purpose === 'supervisor' ? deviceRequestSubject(request) : undefined;
-    const group = deviceGroup(subjectForRead);
+    const brightnessTarget = purpose === 'supervisor' ? brightnessSubject(request) : undefined;
+    const subjectForRead = brightnessTarget ?? (purpose === 'supervisor' ? deviceRequestSubject(request) : undefined);
+    const group = brightnessTarget === undefined ? deviceGroup(subjectForRead) : undefined;
     const configured = purpose === 'supervisor' ? this.#historyDevices() : [];
     const named = (subject: string | undefined, device: DeviceRecord): boolean =>
       [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject);
@@ -1515,7 +1516,7 @@ export class AssistantEngine {
         recent = [];
       }
     }
-    return {request, requestId, recent, fields, transcript, effects, referencedDevice, catalogSubject, selectedDevice, historySummary};
+    return {request, requestId, recent, fields, transcript, effects, referencedDevice, catalogSubject, brightnessTarget, selectedDevice, historySummary};
   }
   #taskFields(task: Task): FieldAccess {
     if (this.#taskProvider(task).name !== 'openai') return this.#modelFields(task.profile, this.#taskProvider(task).name);
@@ -2058,7 +2059,7 @@ export class AssistantEngine {
       } else if (isCatalogTool(call.name)) {
         const evidence: ActionEvidence[] = [];
         text = await this.#catalog().read(call, parent, item => evidence.push(item), access,
-          id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id), scope === undefined ? undefined : {subject: scope.catalogSubject}) ?? fail('invalid-state');
+          id => typeof id === 'string' && this.store.ownsAction(task.conversationId, id), scope === undefined ? undefined : {subject: scope.catalogSubject, brightnessControl: scope.brightnessTarget !== undefined}) ?? fail('invalid-state');
         return {text, units: 0, evidence, disclosures: ledger.fields, ...(ledger.incompleteDisclosures === true ? {incompleteDisclosures: true} : {})};
       } else {
         text = call.name === READ_FIXTURE ? FIXTURE_TEXT : call.name === READ_SESSIONS ? summarizeSessions(this.#core(), now, access) : fail('invalid-state');

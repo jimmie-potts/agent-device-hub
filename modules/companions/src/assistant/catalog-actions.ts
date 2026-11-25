@@ -15,7 +15,7 @@ import {Outcome, usableArtComposition, type ModuleContext, type TraceContext} fr
 import {deviceLabel, MAX_OBSERVATION_AGE_MS, observationStale, WEMO_OBSERVATION_AGE_MS, type DeviceReadDisplay} from './devices.js';
 import {ShowDrafts} from './show-drafts.js';
 import {textBytes, type ToolCall} from './provider.js';
-import {CREATE_SHOW, EDIT_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
+import {catalogTool, CREATE_SHOW, EDIT_SHOW, MAX_CATALOG_ARGUMENTS, PREVIEW_SHOW, READ_ART, READ_ART_EFFECTS, READ_DEVICES, READ_OPERATION,
   READ_PLAYBACK, READ_SHOWS, READ_VACUUM, READ_VOLCANO} from './catalog-tools.js';
 
 const CORE = 'bunny/core', NANOLEAF = 'bunny/modules/nanoleaf';
@@ -391,7 +391,7 @@ export class ConversationActions {
     }
   }
 
-  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined}): Promise<string | undefined> {
+  async read(call: ToolCall, parent: TraceContext, observe: (evidence: ActionEvidence) => void, access: FieldAccess, ownsOperation: (id: unknown) => boolean, scopedDeviceFacts?: {subject: string | undefined; brightnessControl: boolean}): Promise<string | undefined> {
     const input = call.input;
     switch (call.name) {
       case CREATE_SHOW: case EDIT_SHOW: case PREVIEW_SHOW: {
@@ -480,7 +480,7 @@ export class ConversationActions {
     return textResult(records?.filter(record => typeof record.id === 'string' && access('status', 'index', record.id) && access('status', 'details', record.id)).map(record => Object.fromEntries(fields.map(key => [key, record[key]]))) ?? 'Status unavailable.');
   }
 
-  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: {subject: string | undefined}): Promise<string> {
+  async #readDevices(input: ToolCall['input'], parent: TraceContext, access: FieldAccess, scopedFacts?: {subject: string | undefined; brightnessControl: boolean}): Promise<string> {
     const {target, owner} = input;
     if (typeof target !== 'string' || typeof owner !== 'string') return 'refused: invalid-request';
     const owners = owner === 'auto' ? assistantDeviceOwners : assistantDeviceOwners.filter(source => source === owner);
@@ -494,6 +494,14 @@ export class ConversationActions {
           target !== '' && matchingDevices([selected], target, owner).length !== 1 ||
           !access('devices', 'label', selected.device.id)) return textResult({devices: []});
       const {owner: source, device} = selected;
+      if (scopedFacts.brightnessControl) {
+        if (!access('devices', 'status', device.id)) return textResult({devices: []});
+        const route = catalogRoute('brightness-set'), tool = catalogTool('brightness-set');
+        const supported = route.binding === 'device' && route.owners.some(owner => owner === source) &&
+          permitsDevice(route, device) && this.enabled.includes(tool);
+        return textResult({devices: [{owner: source, id: device.id, name: deviceLabel(device),
+          lastReportedAvailability: device.availability, controls: supported ? [tool] : []}]});
+      }
       return textResult({devices: [{owner: source, id: device.id, name: deviceLabel(device),
         ...(access('devices', 'status', device.id) ? {lastReportedAvailability: device.availability, observation: device.observed,
           ...(source === WEMO ? {maximumOnLimit: this.deviceDisplay.powerLimit(device.id, this.context.clock.now())} : {})} : {})}]});

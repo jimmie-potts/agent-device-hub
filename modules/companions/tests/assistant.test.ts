@@ -3152,3 +3152,99 @@ for (const invalidation of ['device registry remap', 'local owner-message revoca
     assert.doesNotMatch(JSON.stringify(turns), /device-history\/1\.0/u);
   });
 }
+
+void test('Responses resolves an exact brightness instruction before sending one guarded command', async context => {
+  const owner = 'bunny/modules/pixoo', target = 'fixture-display';
+  const display: DeviceRecord = {...light(target, 'Test Display'), kind: 'pixoo'};
+  const unsupported: DeviceRecord = {...display, id: 'unsupported-display',
+    capabilities: {...display.capabilities, brightness: {supported: false}}};
+  const devices = [display, unsupported, {...display, id: 'private-other', label: 'PRIVATE_OTHER_DISPLAY'},
+    {...display, id: 'shared-a', label: 'Shared Display'}, {...display, id: 'shared-b', label: 'Shared Display'}];
+  const requests: AssistantDispatch[] = [], lookup: string[] = [];
+  let active = {id: target, attempt: true, repeat: false, wrongAmount: false, bypassLookup: false};
+  let denied: 'private-conversation' | 'openai-supervisor' | undefined;
+  const standard = sharing();
+  const share = (grant: ShareQuery) => standard(grant) && !(grant.destination === denied &&
+    grant.source === 'devices' && grant.record === target && (grant.field === 'status' || grant.field === 'label'));
+  const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]; tools: {name: string}[]};
+    assert.ok(body.tools.some(tool => tool.name === 'control_brightness_set'));
+    const results = body.input.filter(item => item.type === 'function_call_output').map(item => item.output ?? '');
+    const tool = (name: string, args: Record<string, unknown>, id: string) =>
+      [{type: 'function_call', id: 'fc_'+id, call_id: id, name, arguments: JSON.stringify(args)}];
+    const control = (id: string) => tool('control_brightness_set', {owner, target: active.id,
+      arguments: JSON.stringify({percent: active.wrongAmount ? 82 : 37})}, id);
+    const done = [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic answer.', annotations: []}]}];
+    if (results.length === 1) lookup.push(results[0] ?? '');
+    const output = results.length === 0 ? tool('read_devices', {owner: 'auto', target: ''}, 'lookup')
+      : results.length === 1 && active.attempt && (active.bypassLookup || results[0]?.includes(JSON.stringify(active.id)) === true) ? control('first')
+      : results.length === 2 && active.repeat ? control('repeated') : done;
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 30, output_tokens: 30}})));
+  }});
+  const w = await world(context, {provider, share, tools: ['read_devices', 'control_brightness_set'],
+    dispatch: data => {requests.push(data); return Promise.resolve(accepted(data.requestId));}});
+  const participant = w.bus.connect(owner);
+  context.after(() => participant.close());
+  await participant.serveSync(['device'], () => ({revision: 1, states: devices.map(data => ({
+    type: 'org.bunny.device.updated', subject: data.id, dataschema: DEVICE_READBACK_SCHEMA, data,
+  }))}));
+  await control(w.core, w.module(), 'enable');
+  const ask = async (text: string, profile = 'bunny') => {
+    const current = () => w.module().inspectAssistant()?.tasks.find(item => item.profile === profile);
+    const before = current()?.taskId, beforeDispatch = requests.length;
+    assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
+    await until(() => current()?.taskId !== before && (current()?.status === 'succeeded' || current()?.status === 'waiting' || requests.length > beforeDispatch));
+    if (requests.length > beforeDispatch) w.advance(1200);
+    await until(() => current()?.status === 'succeeded' || current()?.status === 'waiting');
+  };
+  active = {...active, repeat: true};
+  for (const [index, profile] of ['bunny', 'reachy', 'microduck'].entries()) {
+    await ask('Set fixture-display brightness to 37%', profile);
+    assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+    assert.match(lookup.at(-1) ?? '', /"controls":\["control_brightness_set"\]/u);
+    assert.doesNotMatch(lookup.at(-1) ?? '', /PRIVATE_OTHER_DISPLAY|configurationRevision|generation|observation/u);
+    assert.equal(requests.length, index + 1);
+    const sent = requests.at(-1);
+    assert.ok(sent?.family === 'catalog-action');
+    assert.equal(sent.target, target);
+    assert.equal(sent.command, 'brightness-set');
+    assert.equal(sent.data.percent, 37);
+    assert.deepEqual(sent.binding, {kind: 'device', target, owner, configurationRevision: display.configurationRevision, generation: display.generation});
+    const receipt = w.store().call(sent.requestId);
+    assert.equal(receipt?.kind, 'tool');
+    assert.match(receipt?.result ?? '', /^accepted: the command entered the tracked dispatcher/u);
+    assert.equal(receipt?.action?.control?.ownerMessageIds.length, 1);
+    assert.equal((await page(w, profile)).messages.some(message => message.role === 'assistant' && message.text.endsWith('?')), false);
+    assert.equal(w.module().inspectAssistant()?.tasks.find(item => item.profile === profile)?.status, 'succeeded');
+  }
+  active = {...active, repeat: false, wrongAmount: true};
+  await ask('Set fixture-display brightness to 37%');
+  assert.equal(requests.length, 3);
+  active = {...active, id: 'private-other', wrongAmount: false, bypassLookup: true};
+  await ask('Set fixture-display brightness to 37%');
+  assert.equal(requests.length, 3);
+  active = {...active, id: 'unsupported-display', bypassLookup: false};
+  await ask('Set unsupported-display brightness to 37%');
+  assert.match(lookup.at(-1) ?? '', /"controls":\[\]/u);
+  assert.equal(requests.length, 3);
+  active = {...active, id: 'shared-a', attempt: false};
+  await ask('Set Shared Display brightness to 37%');
+  assert.equal(lookup.at(-1), '{"devices":[]}');
+  active = {...active, id: target};
+  for (const destination of ['private-conversation', 'openai-supervisor'] as const) {
+    denied = destination;
+    await ask('Set fixture-display brightness to 37%');
+    assert.equal(lookup.at(-1), '{"devices":[]}');
+  }
+  denied = undefined;
+  active = {...active, attempt: true};
+  await ask('What is the currently reported brightness of fixture-display?');
+  assert.match(lookup.at(-1) ?? '', /"id":"fixture-display"/u);
+  assert.equal(requests.length, 3);
+  active = {...active, id: 'shared-a', bypassLookup: true};
+  await ask('Set Shared Display brightness to 37%');
+  const question = (await page(w)).currentTask?.question;
+  assert.equal(question?.kind, 'clarification');
+  assert.doesNotMatch(JSON.stringify(question), /shared-a|shared-b/u);
+  assert.equal(requests.length, 3);
+});
