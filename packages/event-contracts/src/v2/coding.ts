@@ -52,6 +52,11 @@ export type CodingResult = {
   usage: {turns: number | null; costUsd: number | null; durationMs: number | null} | null;
   limit?: CodingLimit;
 };
+export function continuationChecks(checks: readonly CodingCheck[]): Pick<CodingCheck, 'name' | 'status'>[] {
+  return checks.map(({name, status}, index) => ({
+    name: /^[A-Za-z0-9_. -]{1,80}$/u.test(name) ? name : `Check ${String(index + 1)} (name withheld)`, status,
+  }));
+}
 export type CodingSetup = 'waiting' | 'running' | 'ready';
 export const CODING_SETUP_HEARTBEAT_MS = 10_000;
 export const CODING_SETUP_WAIT_MS = 45_000;

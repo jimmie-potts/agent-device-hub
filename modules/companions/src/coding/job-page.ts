@@ -34,5 +34,6 @@ export type CodingJobDetail = {
   choice: CodingChoice;
   activeOperationId: string | null;
   attempts: CodingAttemptEntry[];
+  continuationReason?: string;
   continuation: {fromOperationId: string; harness: CodingHarness; head: string; changedFiles: string[]} | null;
 };

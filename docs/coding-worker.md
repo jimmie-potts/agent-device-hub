@@ -48,13 +48,21 @@ uses only that subscription. An unknown quota remains unknown. The Hub can
 resolve Auto again while a job is still local and queued. After dispatch,
 slowdown or uncertainty stays with the selected attempt.
 
-The owner can continue a partial attempt on the other available subscription
-after the worker confirms the prior writer stopped. The next attempt uses the
-same worktree and verifies its Git revision and file contents before invoking
-the second harness. Each attempt keeps its own native session, outcome and
-checks. The continuation receives the approved brief and bounded handoff
-facts. If the connection goes away, the worker restarts or the worktree
-changes, the old proof no longer admits a writer.
+A partially completed Codex attempt can continue on Claude Code on a Mac
+when the Codex process has stopped and its native sandbox denies the
+successor path. The worker checks that boundary offline, then creates a
+distinct checkout and Git store at the accepted revision. It verifies the
+source directory, Git directory, staged index and tracked file contents.
+A staged new source file can travel with the partial work. Git-visible
+unstaged new files, symlinks and aliased files block continuation. Ignored
+build artifacts stay with the previous attempt.
+
+Each attempt keeps its own native session, outcome and checks. The worker
+pairs the exact approved brief with bounded Git and check facts at launch.
+Claude Code can receive a continuation. Continuing from Claude Code requires
+equivalent writer confinement and is currently unavailable. Losing the
+connection, restarting the worker or changing the source checkout invalidates
+the old proof.
 
 ## Claude Code delegation
 

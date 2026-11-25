@@ -29,12 +29,14 @@ export type AdapterEvidence = {
   reason?: CodingProgressReason;
   uncertain?: boolean;
   writerStopped?: true;
+  writerHome?: string;
   summary?: string;
   limitations?: string[];
 };
 
 export type AdapterRun = {
   worktree: string;
+  continuationRoot?: string;
   brief: string;
   bounds: CodingBounds;
   signal: AbortSignal;

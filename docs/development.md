@@ -3523,8 +3523,11 @@ linked result through the real gateway with a disposable worker.
 Harness routing and continuation (#2112) use the same checks. The Companions
 suite drives staged Auto and pinned approvals, durable attempt readback and
 the explicit continuation command. Worker tests stop a synthetic partial
-writer, compare the replacement's actual worktree and revision, and refuse
-changed files, uncertain stops and proof from an earlier worker process.
+writer, compare the successor's contents and independent Git directory, and
+refuse changes to files, directory identity, Git identity or writer evidence.
+They cover the full-size approved brief and staged new files. On a Mac with
+the standalone Codex CLI, an offline native sandbox test exercises a detached
+source watcher and a signed-out disposable profile.
 
 Uncapped coding jobs (#2110) use the same runtime, Companions, event contract
 and browser checks. The coding-slots suites exercise same-companion starts,

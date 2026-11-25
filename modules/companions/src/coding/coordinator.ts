@@ -10,7 +10,7 @@ import type {ActionEvidence} from '../assistant/closing-reply.js';
 // companion's slot is busy waits, durably and first in first out, and is dispatched once when that slot frees.
 import {errorBody, isErrorCode, type Message} from '@jimmie-potts/event-contracts/v2';
 import {coreValidator} from '@jimmie-potts/event-contracts/v2/families';
-import {CODING_SETUP_WAIT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingEndpointControl, type CodingHarnessId, type CodingLost, type CodingProgress, type CodingResult, type CodingRun,
+import {continuationChecks, CODING_SETUP_WAIT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type CodingCompanion, type CodingEndpointControl, type CodingHarnessId, type CodingLost, type CodingProgress, type CodingResult, type CodingRun,
   type CodingRunEntry, type CodingSetup, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {Outcome, fullDisk, recordLog, type AddMessage, type Cancel, type Command, type ModuleContext, type Outbox, type Reply, type RequestResult, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {advanceRevision} from '../revision.js';
@@ -49,7 +49,7 @@ function attemptResult(result: CodingResult): CodingAttemptResult {
   return {outcome: result.outcome, base: result.base, head: result.head,
     changedFiles: result.changedFiles.filter(path => /^(?![-/]|[A-Za-z]:)[^\\]+$/u.test(path) &&
       !path.split('/').some(part => part === '' || part === '.' || part === '..')),
-    checks: result.checks.filter(check => /^[A-Za-z0-9_. -]{1,80}$/u.test(check.name)).map(({name, status}) => ({name, status}))};
+    checks: continuationChecks(result.checks)};
 }
 const DISCONNECTED_BEFORE_START = 'worker became unavailable before start was sent';
 const STOP_UNCONFIRMED = "A stop was requested. The worker's stop is unconfirmed.";
@@ -136,10 +136,10 @@ export class CodingCoordinator {
   }
   #continuation(attempt: CodingAttempt | undefined): CodingJobDetail['continuation'] {
     if (attempt === undefined || attempt.handoffToken === undefined || attempt.selectionId === undefined ||
-      attempt.selectionId !== this.#state.selectionId || attempt.harness === null ||
+      attempt.selectionId !== this.#state.selectionId || attempt.harness !== 'codex' ||
       attempt.result?.head == null || attempt.result.changedFiles.length === 0 ||
       (attempt.status === 'completed' && attempt.result.outcome === 'tested-candidate') || !this.#connected() || !this.#uncapped()) return null;
-    const harness = attempt.harness === 'codex' ? 'claude-code' : 'codex';
+    const harness = 'claude-code';
     const choice = chooseCodingHarness(harness, this.#state.harnesses ?? [], this.context.clock.now());
     if (choice.harness === undefined) return null;
     return {fromOperationId: attempt.operationId, harness, head: attempt.result.head, changedFiles: attempt.result.changedFiles};
@@ -159,8 +159,15 @@ export class CodingCoordinator {
         selectionReason: 'Legacy worker selection.', result: null});
     }
     const last = attempts.at(-1);
-    return {version: 1, jobId, choice: saved[0]?.choice ?? 'auto', activeOperationId: last !== undefined && !this.#store.resultSaved(last.operationId) ? last.operationId : null,
-      attempts, continuation: this.#continuation(saved.at(-1))};
+    const latest = saved.at(-1), continuation = this.#continuation(latest);
+    const activeOperationId = last !== undefined && !this.#store.resultSaved(last.operationId) ? last.operationId : null;
+    const continuationReason = continuation !== null || activeOperationId !== null || latest === undefined ? undefined :
+      latest.harness === 'claude-code' ? 'Continuation from Claude Code is unavailable until its writers can be confined to the original checkout.' :
+      latest.status === 'uncertain' ? 'The previous writer may still be active.' :
+      latest.status === 'completed' && latest.result?.outcome === 'tested-candidate' ? 'The previous attempt completed without a partial result.' :
+      'Continuation requires a stopped, confined Codex writer, an unchanged checkout and an eligible Claude Code subscription.';
+    return {version: 1, jobId, choice: saved[0]?.choice ?? 'auto', activeOperationId, attempts, continuation,
+      ...(continuationReason === undefined ? {} : {continuationReason})};
   }
   /** Called inside the assistant admission transaction. Dispatch starts only after commit. */
   prepareContinuation(data: ContinueCodingControl, parent: TraceContext): {committed: () => void} | {code: 'not-found' | 'invalid-state' | 'unavailable'; detail: string} {
@@ -172,14 +179,9 @@ export class CodingCoordinator {
     if (next === null || attempt.handoffToken === undefined) return {code: 'unavailable', detail: 'A verified stopped writer, worktree and eligible second harness are required.'};
     if (next.harness !== data.harness) return {code: 'invalid-state', detail: 'Choose the other harness to continue.'};
     const operationId = randomUUID();
-    const checks = attempt.result?.checks.map(check => `${check.name} (${check.status})`).join(', ') ?? '';
-    const context = `Continue the approved work in the supplied worktree at revision ${next.head}. ${checks === '' ? '' : `Recorded checks from the previous attempt: ${checks.slice(0, 600)}. `}`;
-
-    if (context.length + job.brief.length > 4096) return {code: 'invalid-state', detail: 'The approved brief and verified handoff exceed the worker request bound.'};
-    const brief = context + job.brief;
     this.#store.createAttempt({jobId: job.jobId, operationId, companion: attempt.companion, choice: data.harness, harness: data.harness,
       selectionReason: `Explicit continuation of ${data.operationId}.`, continuation: {fromOperationId: data.operationId, token: attempt.handoffToken}});
-    this.#store.wait({operationId, taskId: job.taskId, companion: attempt.companion, repository: job.repository, brief, traceparent: parent.traceparent});
+    this.#store.wait({operationId, taskId: job.taskId, companion: attempt.companion, repository: job.repository, brief: job.brief, traceparent: parent.traceparent});
     return {committed: () => {this.#changed(); this.#drain();}};
   }
   #runContext(active: Active): Pick<CodingRunEntry, 'setup' | 'harness' | 'sessionId'> {
@@ -269,7 +271,7 @@ export class CodingCoordinator {
           if (!this.#connected()) return refused('unavailable', 'no coding worker is connected');
           if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
           const choice = data.choice ?? 'auto';
-          const legacy = data.choice === undefined || (choice === 'auto' && this.#state.harnesses === undefined);
+          const legacy = (data.choice === undefined && !this.#uncapped()) || (choice === 'auto' && this.#state.harnesses === undefined);
           const route = legacy ? {harness: undefined, reason: 'The default Claude Code worker was selected.'}
             : chooseCodingHarness(choice, this.#state.harnesses ?? [], this.context.clock.now());
           if (!legacy && route.harness === undefined) return refused('unavailable', route.reason);
