@@ -159,9 +159,9 @@ function setting(instruction: string, answer: string, rawInstruction: string, ra
       const request = /^(?:show|display|put) (.+?) (?:on|in) (.+)$/u.exec(instruction.replace(keepStatus, ''));
       if (request?.[1] === undefined || request[2] === undefined || typeof data.artworkId !== 'string' ||
         (data.coversStatus === false) !== requestedKeep) return undefined;
-      const artwork = request[1];
-      if (normalizedControlText(data.artworkId) !== optionalArticle(artwork) &&
-        !(knownArtwork && /^(?:it|(?:this|that) (?:artwork|animation|image|picture))$/u.test(artwork))) return undefined;
+      const rawArtwork = /(?:^|\s)(?:show|display|put)\s+(?:(?:the|my)\s+)?([a-z0-9_.-]+)\s+(?:on|in)\s/iu.exec(rawInstruction)?.[1];
+      if (rawArtwork !== data.artworkId &&
+        !(knownArtwork && /^(?:it|(?:this|that) (?:artwork|animation|image|picture))$/u.test(request[1]))) return undefined;
       const recipients = request[2].split(' and ').map(optionalArticle);
       return {recipients};
     }

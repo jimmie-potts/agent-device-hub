@@ -329,6 +329,9 @@ void test('showing saved art binds status visibility and the whole display set',
   assert.equal(authorizesControl(proposal, prompt, '', [['pixoo'], ['tidbyt']], ''), true);
   assert.equal(authorizesControl({...proposal, data: {...proposal.data, coversStatus: true}}, prompt, '', [['pixoo'], ['tidbyt']], ''), false);
   assert.equal(authorizesControl({...proposal, data: {...proposal.data, targets: ['pixoo']}}, prompt, '', [['pixoo']], ''), false);
+  const opaque = {...proposal, data: {...proposal.data, artworkId: 'kite-blue'}};
+  assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite-blue'), '', [['pixoo'], ['tidbyt']], ''), true);
+  assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite_blue'), '', [['pixoo'], ['tidbyt']], ''), false);
 });
 
 void test('an explicit Wemo group binds every target once', async context => {
