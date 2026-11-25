@@ -1,15 +1,17 @@
 // A card that throws is contained to that card (Hub #2139). The built runtime and its real Pixoo and Tidbyt modules over
 // synthetic devices; the page is the faultable test build (card-faults.ts), so one chosen card throws while it renders or
 // from an effect. Without containment the page's React root unmounts and `main#main` is gone; with it, the failed card
-// says so in its own place, offers one Retry that remounts it, records the failure, and every other card, the rail,
-// the feed indicator and navigation keep working. Neither the failure nor a Retry sends a command. It contacts no device
-// and no installed service.
+// says so in its own place, offers one Retry that draws it again, records the failure, and every other card, the rail,
+// the feed indicator and navigation keep working. A route page and the always-mounted device directory are contained the
+// same way. Neither the failure nor a Retry sends a command. It also shows that the harness fails a run on a card that
+// failed after the journey's last health check. It contacts no device and no installed service.
 import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium, type Page} from 'playwright';
 import {sessionStarted} from '../../dist/tests/fixtures/agents.js';
 import {serveFaultable, type CardFault} from './card-faults.ts';
-import {changes, feed, startWorld} from './harness.ts';
+import {unreportedCardFaults} from './card-watch.ts';
+import {changes, expectCardFaults, feed, startWorld} from './harness.ts';
 import {textOverlaps} from './layout.ts';
 import {openSettings} from './navigation-helpers.ts';
 
@@ -20,13 +22,17 @@ if (output !== undefined) await mkdir(output, {recursive: true});
 const shot = async (page: Page, name: string): Promise<void> => { if (output !== undefined) await page.screenshot({path: `${output}/card-errors-${name}.png`, fullPage: true}); };
 const checks: string[] = [];
 const context = await browser.newContext({viewport: {width: 1440, height: 900}, reducedMotion: 'reduce'});
-// CARD_ERRORS_PART runs one part: render, effect, component or module.
+// CARD_ERRORS_PART runs one part: render, effect, component, module, page, directory or late.
 const part = process.env.CARD_ERRORS_PART;
 const runs = (name: string): boolean => part === undefined || part === name;
 const failed = (page: Page, card: string) => page.locator(`[data-card-failed="${card}"]`);
 
-/** The page is still mounted: a contained fault leaves the shell, its main region and the rail in place. */
-async function mounted(page: Page, why: string): Promise<void> {
+/**
+ * Waits until `card` shows its failure or the page unmounts, then requires the page to be still mounted: a contained
+ * fault leaves the shell, its main region and the rail in place. Without containment this is where a part fails.
+ */
+async function contained(page: Page, card: string, why: string): Promise<void> {
+  await page.waitForFunction(name => document.querySelector(`[data-card-failed="${name}"]`) !== null || document.querySelector('main#main') === null, card);
   if (await page.locator('main#main').count() === 0) {
     throw new Error(`${why}: the page unmounted (no main#main); the root holds ${JSON.stringify(await page.locator('#root').innerHTML())}`);
   }
@@ -39,7 +45,7 @@ async function failedFace(page: Page, card: string, type: string, name: string):
   await face.waitFor();
   assert.equal(await face.getAttribute('data-error-type'), type, `${card} names the error's type`);
   assert.equal(await face.getByRole('heading').textContent(), name);
-  assert.equal(await face.getByRole('status').textContent(), `${name} failed to show. Its controls are unavailable.`);
+  assert.equal(await face.getByRole('status').textContent(), `${name} failed to show. Retry draws it again and sends nothing.`);
   assert.deepEqual(await face.locator('button, a, input, select, textarea, [role=button], [tabindex]').evaluateAll(all => all.map(node => node.textContent)), ['Retry'],
     'a failed card offers Retry and no control that could send a command');
 }
@@ -49,6 +55,16 @@ const HOME_CARDS = ['device:bunny/modules/tidbyt:tidbyt', 'music:bunny/modules/p
 async function allCards(page: Page): Promise<void> {
   for (const card of HOME_CARDS) await page.locator(`.home-layout-grid > [data-home-card="${card}"]`).waitFor();
   await page.locator('[data-tidbyt-artwork], [data-tidbyt-shape]').first().waitFor();
+}
+
+/** The records of the page's own log (card-fault.ts), as the faultable build exposes them. */
+const records = (page: Page) => page.evaluate(() => (globalThis as unknown as {cardFaultRecords: () => unknown[]}).cardFaultRecords());
+const record = (card: string, type: string) => ({level: 'error', event: 'dashboard.card.failed', fields: {'bunny.card': card, 'bunny.code': 'internal', 'error.type': type}});
+
+/** Retries `card` and waits until it has recorded one more failure. */
+async function retryFails(page: Page, card: string, count: number): Promise<void> {
+  await failed(page, card).getByRole('button', {name: 'Retry', exact: true}).click();
+  await recorded(page, card, count);
 }
 
 /** Waits until `card` has recorded `count` failures, then checks that no more follow. */
@@ -64,8 +80,10 @@ const boxes = (page: Page) => page.locator('.home-layout-grid > [data-home-card]
   return [(node as HTMLElement).dataset.homeCard ?? '', [box.x, box.y, box.width, box.height].map(Math.round).join(',')];
 })));
 
-async function open(fault: Record<string, CardFault>): Promise<{page: Page; errors: string[]; sent: string[]; set: (card: string, fault: CardFault | undefined) => Promise<void>}> {
+/** Opens the faultable page; `expected` are the cards this part fails on purpose, which therefore do not fail the run. */
+async function open(fault: Record<string, CardFault>, expected: readonly string[]): Promise<{page: Page; errors: string[]; sent: string[]; set: (card: string, fault: CardFault | undefined) => Promise<void>}> {
   const page = await context.newPage();
+  expectCardFaults(page, expected);
   page.setDefaultTimeout(12_000);
   const errors: string[] = [];
   page.on('pageerror', error => { errors.push(error.name); });
@@ -79,7 +97,7 @@ async function open(fault: Record<string, CardFault>): Promise<{page: Page; erro
 try {
   if (runs('render')) {
   // The healthy Home: the reference places of its cards at each width.
-  const healthy = await open({});
+  const healthy = await open({}, []);
   await feed(healthy.page, 'connected');
   await healthy.page.locator('[data-home-card=inbox] h2', {hasText: 'Inbox'}).first().waitFor();
   await allCards(healthy.page);
@@ -93,13 +111,14 @@ try {
   await healthy.page.close();
 
   // A card that throws while it renders, on the first render of Home.
-  const home = await open({inbox: 'render'});
-  await mounted(home.page, 'a card that throws while it renders');
+  const home = await open({inbox: 'render'}, ['inbox']);
+  await contained(home.page, 'inbox', 'a card that throws while it renders');
   await feed(home.page, 'connected', {failedCards: ['inbox']});
   await failedFace(home.page, 'inbox', 'TypeError', 'Inbox');
   assert.equal(await home.page.locator('[data-home-card=inbox] [data-card-failed=inbox]').count(), 1, 'the failure shows in the card\'s own place');
   await recorded(home.page, 'inbox', 1);
   assert.deepEqual(home.errors, ['TypeError'], 'the page reports the contained error once, as a page error');
+  assert.deepEqual(await records(home.page), [record('inbox', 'TypeError')], 'the page formed one record: the card, its code and the error\'s type, no message');
   checks.push('a card that throws while it renders shows its failure in its own place; the page stays mounted');
 
   // The harness's health check names a failed card that a journey did not expect.
@@ -151,8 +170,9 @@ try {
   const before = home.sent.length;
   await failed(home.page, 'inbox').getByRole('button', {name: 'Retry', exact: true}).click();
   await recorded(home.page, 'inbox', 2);
-  // Returning to Home mounted the card again, which failed again: three failures in all, each reported once.
+  // Returning to Home mounted the card again, which failed again: three failures in all, each reported and recorded once.
   assert.deepEqual(home.errors, ['TypeError', 'TypeError', 'TypeError']);
+  assert.deepEqual(await records(home.page), [1, 2, 3].map(() => record('inbox', 'TypeError')));
   await home.set('inbox', undefined);
   await failed(home.page, 'inbox').getByRole('button', {name: 'Retry', exact: true}).click();
   await failed(home.page, 'inbox').waitFor({state: 'detached'});
@@ -160,14 +180,14 @@ try {
   assert.equal(home.sent.length, before, 'neither the failure nor a Retry sends a command');
   assert.deepEqual(home.sent, [], 'the page sent no command');
   await feed(home.page, 'connected');
-  checks.push('Retry remounts the card; a card that throws again is contained again; no command is sent');
+  checks.push('Retry draws the card again; a card that throws again is contained again; no command is sent');
   await home.page.close();
   }
 
   // A card that throws from an effect.
   if (runs('effect')) {
-  const effect = await open({inbox: 'effect'});
-  await mounted(effect.page, 'a card that throws from an effect');
+  const effect = await open({inbox: 'effect'}, ['inbox']);
+  await contained(effect.page, 'inbox', 'a card that throws from an effect');
   await feed(effect.page, 'connected', {failedCards: ['inbox']});
   await failedFace(effect.page, 'inbox', 'RangeError', 'Inbox');
   await recorded(effect.page, 'inbox', 1);
@@ -178,6 +198,7 @@ try {
   await failed(effect.page, 'inbox').getByRole('button', {name: 'Retry', exact: true}).click();
   await effect.page.locator('[data-home-card=inbox] h2', {hasText: 'Inbox'}).first().waitFor();
   assert.deepEqual(effect.errors, ['RangeError', 'RangeError'], 'the first mount and the one after navigating back');
+  assert.deepEqual(await records(effect.page), [record('inbox', 'RangeError'), record('inbox', 'RangeError')]);
   assert.deepEqual(effect.sent, []);
   checks.push('a card that throws from an effect is contained and recovers on Retry');
   await effect.page.close();
@@ -185,14 +206,24 @@ try {
 
   // A component page: the Tidbyt device card throws on its route; the heading, tabs and rail stay.
   if (runs('component')) {
-  const component = await open({});
+  const component = await open({}, ['component:tidbyt']);
   await feed(component.page, 'connected');
   await openSettings(component.page);
   await component.set('tidbyt', 'render');
   await component.page.evaluate(() => { location.hash = '#/component/tidbyt'; });
-  await mounted(component.page, 'a component page whose card throws');
+  await contained(component.page, 'component:tidbyt', 'a component page whose card throws');
   await failedFace(component.page, 'component:tidbyt', 'TypeError', 'Tidbyt');
   await component.page.getByRole('heading', {level: 1}).waitFor();
+  // Retry draws the card again: still failing, it is contained again; once it no longer throws, it shows.
+  await retryFails(component.page, 'component:tidbyt', 2);
+  await component.set('tidbyt', undefined);
+  await failed(component.page, 'component:tidbyt').getByRole('button', {name: 'Retry', exact: true}).click();
+  await component.page.locator('[data-tidbyt-artwork]').first().waitFor();
+  assert.equal(await failed(component.page, 'component:tidbyt').count(), 0);
+  await openSettings(component.page);
+  await component.set('tidbyt', 'render');
+  await component.page.goBack();
+  await failedFace(component.page, 'component:tidbyt', 'TypeError', 'Tidbyt');
   await openSettings(component.page);
   await component.page.getByRole('heading', {name: 'Settings', exact: true}).waitFor();
   await component.set('tidbyt', undefined);
@@ -200,19 +231,19 @@ try {
   // A remount by navigation is a new card: it shows again without a Retry.
   await component.page.locator('[data-tidbyt-artwork]').first().waitFor();
   assert.equal(await failed(component.page, 'component:tidbyt').count(), 0);
-  assert.deepEqual(component.errors, ['TypeError']);
-  assert.deepEqual(component.sent, []);
+  assert.deepEqual(component.errors, ['TypeError', 'TypeError', 'TypeError']);
+  assert.deepEqual(component.sent, [], 'neither the failures nor a Retry sent a command');
   await shot(component.page, 'component');
-  checks.push('a component page contains its failed card; navigation away and back shows it again');
+  checks.push('a component page contains its failed card; Retry draws it again; navigation away and back shows it again');
   await component.page.close();
   }
 
   // A module page on its route, from an effect. Its boundary resets when the page it holds changes.
   if (runs('module')) {
-  const modulePage = await open({'module:pixoo/playlists': 'effect'});
+  const modulePage = await open({'module:pixoo/playlists': 'effect'}, ['module:pixoo/playlists']);
   await feed(modulePage.page, 'connected');
   await modulePage.page.evaluate(() => { location.hash = '#/module/pixoo/playlists'; });
-  await mounted(modulePage.page, 'a module page that throws');
+  await contained(modulePage.page, 'module:pixoo/playlists', 'a module page that throws');
   await failedFace(modulePage.page, 'module:pixoo/playlists', 'RangeError', 'Playlists');
   await shot(modulePage.page, 'module');
   await modulePage.page.evaluate(() => { location.hash = '#/module/pixoo/library'; });
@@ -225,9 +256,75 @@ try {
   await failed(modulePage.page, 'module:pixoo/playlists').getByRole('button', {name: 'Retry', exact: true}).click();
   await failed(modulePage.page, 'module:pixoo/playlists').waitFor({state: 'detached'});
   assert.deepEqual(modulePage.errors, ['RangeError', 'RangeError']);
+  // After a Retry that worked, another page mounts once: its boundary starts again without mounting it twice.
+  const mounts = (page: Page) => page.evaluate(() => (globalThis as unknown as {cardMounts?: Record<string, number>}).cardMounts?.['module:pixoo/library'] ?? 0);
+  const before = await mounts(modulePage.page);
+  await modulePage.page.evaluate(() => { location.hash = '#/module/pixoo/library'; });
+  await modulePage.page.waitForFunction(count => ((globalThis as unknown as {cardMounts?: Record<string, number>}).cardMounts?.['module:pixoo/library'] ?? 0) > count, before);
+  assert.equal(await mounts(modulePage.page), before + 1, 'the next module page mounts once');
   assert.deepEqual(modulePage.sent, []);
-  checks.push('a module page contains its failure, resets on another page and recovers on Retry');
+  checks.push('a module page contains its failure, resets on another page, recovers on Retry and mounts the next page once');
   await modulePage.page.close();
+  }
+
+  // A route page: Automation throws while it renders. Its place shows the failure under its own heading; the rail stays.
+  if (runs('page')) {
+  const route = await open({'page:automation': 'render'}, ['page:automation']);
+  await feed(route.page, 'connected');
+  await route.page.evaluate(() => { location.hash = '#/automation'; });
+  await contained(route.page, 'page:automation', 'a route page that throws');
+  await failedFace(route.page, 'page:automation', 'TypeError', 'Automation');
+  assert.equal(await failed(route.page, 'page:automation').getByRole('heading', {level: 1}).textContent(), 'Automation', 'the page keeps its heading');
+  await shot(route.page, 'page');
+  await openSettings(route.page);
+  await route.page.getByRole('heading', {name: 'Settings', exact: true}).waitFor();
+  await route.page.goBack();
+  await failedFace(route.page, 'page:automation', 'TypeError', 'Automation');
+  await route.set('page:automation', undefined);
+  await failed(route.page, 'page:automation').getByRole('button', {name: 'Retry', exact: true}).click();
+  await failed(route.page, 'page:automation').waitFor({state: 'detached'});
+  await route.page.locator('section.automation-workspace h1', {hasText: 'Automation'}).waitFor();
+  assert.deepEqual(route.errors, ['TypeError', 'TypeError']);
+  assert.deepEqual(await records(route.page), [record('page:automation', 'TypeError'), record('page:automation', 'TypeError')]);
+  assert.deepEqual(route.sent, []);
+  checks.push('a route page contains its failure in its place; navigation works; Retry draws it again');
+  await route.page.close();
+  }
+
+  // An always-mounted part: the device directory throws on every route. Elsewhere it draws nothing and Home works; on its
+  // own route it shows its failure.
+  if (runs('directory')) {
+  const directory = await open({'page:devices': 'render'}, ['page:devices']);
+  await contained(directory.page, 'page:devices', 'an always-mounted part that throws');
+  await feed(directory.page, 'connected', {failedCards: ['page:devices']});
+  await directory.page.locator('[data-home-card=inbox] h2', {hasText: 'Inbox'}).first().waitFor();
+  assert.equal(await failed(directory.page, 'page:devices').isHidden(), true, 'off its route the failed directory draws nothing');
+  await directory.page.evaluate(() => { location.hash = '#/devices'; });
+  await failedFace(directory.page, 'page:devices', 'TypeError', 'Devices');
+  await directory.set('page:devices', undefined);
+  await failed(directory.page, 'page:devices').getByRole('button', {name: 'Retry', exact: true}).click();
+  await failed(directory.page, 'page:devices').waitFor({state: 'detached'});
+  await directory.page.locator('section[aria-label=Devices] h1', {hasText: 'Devices'}).waitFor();
+  assert.deepEqual(directory.errors, ['TypeError']);
+  assert.deepEqual(await records(directory.page), [record('page:devices', 'TypeError')]);
+  assert.deepEqual(directory.sent, []);
+  checks.push('an always-mounted part draws nothing off its route when it fails, shows its failure on its route and recovers on Retry');
+  await directory.page.close();
+  }
+
+  // A card that fails after the journey's last health check: the harness records it as it happens, by its card, and the
+  // world's close() would fail the run on it. This page expects no fault, so the record is taken back here.
+  if (runs('late')) {
+  const late = await open({}, []);
+  await feed(late.page, 'connected');
+  await late.page.locator('[data-home-card=inbox] h2', {hasText: 'Inbox'}).first().waitFor();
+  await late.set('inbox', 'render');
+  await openSettings(late.page);
+  await late.page.goBack();
+  await failed(late.page, 'inbox').waitFor();
+  await late.page.close();
+  assert.deepEqual(unreportedCardFaults(), ['inbox (TypeError)'], 'the harness recorded the late failure by its card, after its page closed');
+  checks.push('the harness records a card that fails after the last health check, for the world\'s close() to fail the run');
   }
 
   process.stdout.write(`${JSON.stringify({passed: true, checks})}\n`);

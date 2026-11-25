@@ -3,8 +3,10 @@
 // ERROR. It names the card's identity and the error's type, never its message, stack or cause, which may hold anything a
 // library quoted; the error itself stays in memory.
 //
-// The page has no diagnostic route to the runtime yet (the diagnostic contract's browser relay is not adopted), so the
-// records stay in this page's memory, in a bounded log that a later relay can read.
+// The record is formed here and delivered nowhere: the page has no diagnostic route to the runtime yet (the diagnostic
+// contract's browser relay is not adopted), so the records stay in this page's memory, in a bounded log that a later
+// relay can read. Delivery is a named follow-up (follow-up issue to be filed by the coordinator), and so is registering
+// the event and `bunny.card` in the diagnostic catalog, which the contract requires before a record is exported.
 import {errorType, recordLog, type LogEvent, type LogFields, type Logger} from '@jimmie-potts/sdk/remote';
 
 export const CARD_FAULT_EVENT = 'dashboard.card.failed' satisfies LogEvent;
@@ -33,4 +35,14 @@ const IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 /** Records that `card` failed with `error`, on `log` or the page's own log. */
 export function recordCardFault(log: Logger | undefined, card: string, error: unknown): void {
   recordLog(log ?? pageLog, CARD_FAULT_EVENT, {'bunny.card': IDENTITY.test(card) ? card : 'unknown', 'bunny.code': 'internal', 'error.type': errorType(error)});
+}
+
+/**
+ * Reports a contained error to the page as an uncaught error would be, so the browser's console shows it and a test that
+ * watches page errors sees it. A browser without `reportError` gets it on the console only.
+ */
+export function reportCardError(error: unknown): void {
+  const report = (globalThis as {reportError?: (error: unknown) => void}).reportError;
+  if (typeof report === 'function') report(error);
+  else console.error(error);
 }

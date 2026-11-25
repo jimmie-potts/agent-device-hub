@@ -41,6 +41,8 @@ import {createWisprModule} from '@jimmie-potts/wispr';
 import {prepareWisprFixture} from '../../dist/tests/fixtures/wispr.js';
 import {editorFixture} from './editor-fixture.ts';
 import {waitForFeed} from './feed-wait.ts';
+import {cardFaultsReported, failOnCardFaults, watchCards} from './card-watch.ts';
+export {expectCardFaults} from './card-watch.ts';
 import {INSTALLED_PORTS, PortAllocationError, startWorldRuntime, worldDeadline} from './world-runtime.ts';
 export {INSTALLED_PORTS} from './world-runtime.ts';
 
@@ -621,6 +623,8 @@ export async function startWorld(options: WorldOptions = {}): Promise<World> {
       deadline.clear();
       await rm(root, {recursive: true, force: true});
       assert.equal(JSON.stringify(logs).includes(TOKEN_MARKER), false, 'no record holds the hook\'s token');
+      // A card that failed after the journey's last health check fails the run here (card-watch.ts).
+      failOnCardFaults();
     },
   };
 }
@@ -640,6 +644,7 @@ export function changes(page: Page, sent: string[] = []): string[] {
  * `data-feed` values the page showed, its `data-copies` and `data-syncs`, and how its latest SDK streams stood (#2068).
  */
 export async function feed(page: Page, value: string, expect: {failedCards?: readonly string[]} = {}): Promise<void> {
+  await watchCards(page);
   await waitForFeed(page, value);
   await noFailedCards(page, expect.failedCards);
 }
@@ -647,11 +652,13 @@ export async function feed(page: Page, value: string, expect: {failedCards?: rea
 /**
  * A contained card fault (Hub #2139) leaves the page mounted, so a journey would not see it as a blank page: a failed
  * card carries `data-card-failed` with its identity, and this fails the journey on any card it did not expect to fail.
- * `feed()` checks it at each health point.
+ * `feed()` checks it at each health point; a card that fails after the last one fails the run at the world's `close()`
+ * (card-watch.ts), unless the journey expects it with `expectCardFaults`.
  */
 export async function noFailedCards(page: Page, expected: readonly string[] = []): Promise<void> {
-  const found = await page.locator('[data-card-failed]').evaluateAll(all => all.map(node => `${node.getAttribute('data-card-failed') ?? ''} (${node.getAttribute('data-error-type') ?? 'unknown'})`));
-  const unexpected = found.filter(card => !expected.some(name => card.startsWith(`${name} (`)));
+  const found = await page.locator('[data-card-failed]').evaluateAll(all => all.map(node => ({card: node.getAttribute('data-card-failed') ?? '', type: node.getAttribute('data-error-type') ?? 'unknown'})));
+  cardFaultsReported(page, found.map(({card}) => card));
+  const unexpected = found.filter(({card}) => !expected.includes(card)).map(({card, type}) => `${card} (${type})`);
   if (unexpected.length > 0) throw new Error(`a card failed: ${unexpected.join(', ')}. The page contained the error, so this journey would otherwise pass over a broken card.`);
 }
 
@@ -660,6 +667,7 @@ export async function noFailedCards(page: Page, expected: readonly string[] = []
  * those syncs after its feed connects, so a check that no sync is sent starts after this (#1919).
  */
 export async function copiesSynced(page: Page): Promise<void> {
+  await watchCards(page);
   await page.locator('main#main[data-copies="synced"]').waitFor();
   await noFailedCards(page);
 }

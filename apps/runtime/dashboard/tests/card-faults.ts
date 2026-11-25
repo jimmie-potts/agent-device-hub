@@ -7,8 +7,13 @@
 // The probes, by the key a journey sets in `window.cardFaults`:
 // - `inbox`: the Inbox card on Home (`InboxPanel`);
 // - `tidbyt`: the Tidbyt module's display card, on Home and on its component page (`TidbytDisplay`);
-// - `module:<module>/<page>`: a module page on its route (`ModulePageView`).
-// A render fault throws a `TypeError`, an effect fault a `RangeError`, so a record shows which one it was.
+// - `module:<module>/<page>`: a module page on its route (`ModulePageView`);
+// - `page:automation`: the Automation route's page (`AutomationPage`);
+// - `page:devices`: the always-mounted device directory (`DeviceDirectory`).
+// A render fault throws a `TypeError`, an effect fault a `RangeError`, so a record shows which one it was. Each probe also
+// counts its mounts in `window.cardMounts`, by the same key, and the build exposes the page's own log of fault records
+// (card-fault.ts) as `window.cardFaultRecords()`.
+import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {build, type Plugin} from 'esbuild';
 import type {Page} from 'playwright';
@@ -22,6 +27,8 @@ const TARGETS: readonly Target[] = [
   {specifier: './inbox.tsx', importer: 'main.tsx', name: 'InboxPanel', key: `'inbox'`},
   {specifier: '@jimmie-potts/tidbyt/frontend', importer: 'main.tsx', name: 'TidbytDisplay', key: `'tidbyt'`},
   {specifier: './module-page.tsx', importer: 'main.tsx', name: 'ModulePageView', key: '`module:${props.module.name}/${props.page.id}`'},
+  {specifier: './automation.tsx', importer: 'main.tsx', name: 'AutomationPage', key: `'page:automation'`},
+  {specifier: './device-directory.tsx', importer: 'main.tsx', name: 'DeviceDirectory', key: `'page:devices'`},
 ];
 
 const PROBE = `
@@ -29,6 +36,7 @@ function CardFaultProbe({card}) {
   const faults = globalThis.cardFaults ?? {};
   if (faults[card] === 'render') throw new TypeError('synthetic render fault');
   React.useEffect(() => { if ((globalThis.cardFaults ?? {})[card] === 'effect') throw new RangeError('synthetic effect fault'); });
+  React.useEffect(() => { const mounts = (globalThis.cardMounts ??= {}); mounts[card] = (mounts[card] ?? 0) + 1; }, []);
   return null;
 }`;
 
@@ -56,6 +64,9 @@ const faults: Plugin = {
           return React.createElement(React.Fragment, null, React.createElement(CardFaultProbe, {card: ${target.key}}), React.createElement(Real, props));
         }`};
     });
+    // The page's log of fault records, readable by the journey; the product build keeps it in the module only.
+    builder.onLoad({filter: /[/\\]src[/\\]card-fault\.ts$/}, async args => ({loader: 'ts',
+      contents: `${await readFile(args.path, 'utf8')}\n(globalThis as {cardFaultRecords?: unknown}).cardFaultRecords = pageRecords;\n`}));
     // The stand-in's own import of the real file must not resolve to the stand-in again.
     builder.onResolve({filter: /.*/, namespace: 'card-fault'}, args => args.path.startsWith('/') ? {path: args.path} : undefined);
   },

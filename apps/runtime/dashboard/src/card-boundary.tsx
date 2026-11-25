@@ -1,26 +1,47 @@
 import React from 'react';
 import {errorType} from '@jimmie-potts/sdk/remote';
-import {recordCardFault} from './card-fault.ts';
+import {recordCardFault, reportCardError} from './card-fault.ts';
+
+/**
+ * How a failed part shows in its place: a card's face, a route page's face under the page's own heading, or nothing for
+ * a part that draws nothing of its own (its marker element is hidden).
+ */
+export type FailedFace = 'card' | 'page' | 'hidden';
 
 type Props = {
-  /** The card's identity: a Home placement's widget, `component:<id>` or `module:<module>/<page>`. */
+  /** The part's identity: a Home placement's widget, `component:<id>`, `module:<module>/<page>`, `page:<route>` or `part:<name>`. */
   readonly id: string;
-  /** The card's name as the page already shows it. */
+  /** The part's name as the page already shows it. */
   readonly name: string;
-  readonly children: React.ReactNode;
+  readonly face?: FailedFace;
+  /**
+   * The part's content. A function is called inside the boundary, as its own component's render, so a throw while the
+   * content is worked out stays in the part too.
+   */
+  readonly children: React.ReactNode | (() => React.ReactNode);
 };
-type State = {readonly failed: string | undefined; readonly attempt: number; readonly faults: number};
+type State = {readonly id: string; readonly failed: string | undefined; readonly attempt: number; readonly faults: number};
+
+/** Draws a part's content inside its boundary. */
+function Draw({draw}: {readonly draw: () => React.ReactNode}): React.ReactNode {
+  return draw();
+}
 
 /**
  * Contains an error thrown while a card renders, or from one of its effects, to that card (Hub #2139). React unmounts the
- * whole page on an error no boundary catches; here the card's place shows that it failed and one Retry, which mounts it
+ * whole page on an error no boundary catches; here the card's place shows that it failed and one Retry, which draws it
  * again and sends nothing. The failed face holds no stale content and no control of the card. Each failure is recorded
- * once (card-fault.ts) and also reported to the page as an error, so a test that watches page errors still fails on it.
- * A change of identity is a new card, so the boundary starts again. Errors in event handlers and async work never reach a
- * boundary: React leaves the page mounted for those.
+ * once (card-fault.ts) and also reported to the page as an error. The failed face carries `data-card-failed` with the
+ * part's identity, `data-error-type` and `data-fault-count`, the failures recorded for this identity. A change of identity
+ * is a new card: the boundary starts again, in the same render, without mounting the new card twice. Errors in event
+ * handlers and async work never reach a boundary: React leaves the page mounted for those.
  */
 export class CardBoundary extends React.Component<Props, State> {
-  override state: State = {failed: undefined, attempt: 0, faults: 0};
+  override state: State = {id: this.props.id, failed: undefined, attempt: 0, faults: 0};
+
+  static getDerivedStateFromProps(props: Props, state: State): Partial<State> | null {
+    return props.id === state.id ? null : {id: props.id, failed: undefined, faults: 0};
+  }
 
   static getDerivedStateFromError(error: unknown): Partial<State> {
     return {failed: errorType(error)};
@@ -29,13 +50,7 @@ export class CardBoundary extends React.Component<Props, State> {
   override componentDidCatch(error: unknown): void {
     recordCardFault(undefined, this.props.id, error);
     this.setState(state => ({faults: state.faults + 1}));
-    globalThis.reportError(error);
-  }
-
-  override componentDidUpdate(previous: Props): void {
-    if (previous.id !== this.props.id && (this.state.failed !== undefined || this.state.faults > 0)) {
-      this.setState(state => ({failed: undefined, attempt: state.attempt + 1, faults: 0}));
-    }
+    reportCardError(error);
   }
 
   readonly #retry = (): void => {
@@ -43,12 +58,13 @@ export class CardBoundary extends React.Component<Props, State> {
   };
 
   override render(): React.ReactNode {
-    const {failed, attempt, faults} = this.state, {id, name} = this.props;
-    if (failed === undefined) return <React.Fragment key={attempt}>{this.props.children}</React.Fragment>;
-    return <article className="card card-failed" data-card-failed={id} data-error-type={failed} data-fault-count={faults}>
-      <h2>{name}</h2>
-      <p role="status">{name} failed to show. Its controls are unavailable.</p>
-      <div className="actions"><button type="button" className="secondary" onClick={this.#retry}>Retry</button></div>
-    </article>;
+    const {failed, attempt, faults} = this.state, {id, name, face = 'card', children} = this.props;
+    if (failed === undefined) return <React.Fragment key={attempt}>{typeof children === 'function' ? <Draw draw={children}/> : children}</React.Fragment>;
+    const marks = {'data-card-failed': id, 'data-error-type': failed, 'data-fault-count': faults};
+    if (face === 'hidden') return <span hidden {...marks}/>;
+    const statement = <p role="status">{name} failed to show. Retry draws it again and sends nothing.</p>;
+    const retry = <div className="actions"><button type="button" className="secondary" onClick={this.#retry}>Retry</button></div>;
+    if (face === 'page') return <section aria-label={name} {...marks}><header className="page"><h1>{name}</h1></header><article className="card card-failed">{statement}{retry}</article></section>;
+    return <article className="card card-failed" {...marks}><h2>{name}</h2>{statement}{retry}</article>;
   }
 }
