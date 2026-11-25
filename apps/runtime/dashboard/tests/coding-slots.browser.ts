@@ -10,7 +10,7 @@ import {feed, startWorld} from './harness.ts';
  * Coding-worker slots through the real runtime, gateway and page (Hub #2028), with fake workers on the coding-worker
  * credential. A three-slot worker runs B.U.N.N.Y.'s and Reachy's hand-offs at once, tagged, and the details show its
  * slots and plan usage windows. An older worker that declares no slots holds one run for every companion, so Reachy's
- * approved hand-off waits, worded as busy, and is sent by itself when B.U.N.N.Y.'s run ends. `shots` names a directory
+ * approved hand-off waits as a background job, and is sent by itself when B.U.N.N.Y.'s run ends. `shots` names a directory
  * for screenshots of each state; the suite passes none.
  */
 export async function codingSlotsJourney(browser: Browser, shots?: string): Promise<void> {
@@ -53,7 +53,9 @@ export async function codingSlotsJourney(browser: Browser, shots?: string): Prom
     const approve = async (): Promise<void> => {
       const button = conversation.getByRole('article', {name: 'Proposed command', exact: true}).getByRole('button', {name: 'Approve proposal', exact: true});
       await button.focus(); await button.press('Enter');
-      await conversation.getByRole('article', {name: 'Delegated work', exact: true}).waitFor();
+      await button.waitFor({state: 'detached'});
+      await conversation.getByText('Task completed', {exact: true}).waitFor();
+      await conversation.locator('[data-role="assistant"]').getByText(/^Coding job .* was queued/).last().waitFor();
     };
 
     // A three-slot worker that reported plan usage after an earlier run.
@@ -86,9 +88,9 @@ export async function codingSlotsJourney(browser: Browser, shots?: string): Prom
       await report(slotted, {operationId: entry.operationId, status: 'started'});
       await report(slotted, {operationId: entry.operationId, status: 'completed', result: result(`Synthetic result ${String(index + 1)}.`)});
     }
-    await conversation.getByText('Task completed', {exact: true}).waitFor();
+    await conversation.getByText(/Synthetic result 2\./).waitFor();
     await select('bunny', 'B.U.N.N.Y.');
-    await conversation.getByText('Task completed', {exact: true}).waitFor();
+    await conversation.getByText(/Synthetic result 1\./).waitFor();
     const off = await slotted.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.2', data: {requestId: randomUUID(), action: 'disable'}}, {timeoutMs: 5000});
     assert.equal(off.status, 'accepted'); await slotted.close();
 
@@ -105,12 +107,7 @@ export async function codingSlotsJourney(browser: Browser, shots?: string): Prom
     assert.equal(await conversation.getByText(/No coding worker is connected/).count(), 0);
     await shot(page, '03-busy-slot-approval');
     await approve();
-    const delegated = conversation.getByRole('article', {name: 'Delegated work', exact: true});
-    await delegated.getByText(/^Waiting for the coding worker: it is busy, and this hand-off starts when Reachy's slot frees\. Nothing has been sent yet; Cancel task removes it\.$/).waitFor();
-    await conversation.getByRole('button', {name: 'Cancel task', exact: true}).waitFor();
-    // The conversation says the hand-off waits; "Delegated" comes only once it is sent.
-    await conversation.getByText('Waiting to delegate to the coding worker in agent-device-hub: Please delegate: another synthetic test for Reachy.', {exact: true}).first().waitFor();
-    assert.equal(await conversation.getByText('Delegated to the coding worker in agent-device-hub: Please delegate: another synthetic test for Reachy.', {exact: true}).count(), 0);
+    assert.equal(await conversation.getByRole('button', {name: 'Cancel task', exact: true}).count(), 0);
     await detailsToggle.click();
     await details.getByText('Connected, 1 of 1 slot busy; 1 hand-off waiting', {exact: true}).waitFor();
     await shot(page, '04-hand-off-waiting');
@@ -121,17 +118,16 @@ export async function codingSlotsJourney(browser: Browser, shots?: string): Prom
     await report(older, {operationId: bunnyRun.operationId, status: 'started'});
     await report(older, {operationId: bunnyRun.operationId, status: 'completed', result: result('Synthetic older-worker result.')});
     await waitFor(() => starts().length === 4, 'the waiting hand-off was sent when the slot freed');
-    await delegated.getByText(/^Waiting for the coding worker on your computer\./).waitFor();
-    await conversation.getByText('Delegated to the coding worker in agent-device-hub: Please delegate: another synthetic test for Reachy.', {exact: true}).first().waitFor();
+    await conversation.getByText(/The core accepted the worker dispatch/).last().waitFor();
     const reachyRun = starts()[3] ?? assert.fail('Reachy start');
     assert.equal(reachyRun.brief, 'Please delegate: another synthetic test for Reachy.');
     await report(older, {operationId: reachyRun.operationId, status: 'started'});
     await report(older, {operationId: reachyRun.operationId, status: 'completed', result: result('Synthetic waited result.')});
-    await conversation.getByText('Task completed', {exact: true}).waitFor();
+    await conversation.getByText(/Synthetic waited result\./).waitFor();
     await shot(page, '05-waited-hand-off-completed');
     assert.equal(starts().filter(entry => entry.operationId === reachyRun.operationId).length, 1, 'sent once');
     assert.equal(JSON.stringify(world.logs).includes('synthetic test for Reachy'), false, 'briefs reach no diagnostic record');
     assert.deepEqual(errors, []);
   } finally {await worker.close(); await context.close(); await world.close();}
-  process.stdout.write('Coding slots browser: three-slot worker with plan usage, two companions running at once with tagged starts, an older worker\'s one slot making an approved hand-off wait worded as busy, and its automatic single send when the slot freed passed.\n');
+  process.stdout.write('Coding slots browser: three-slot worker with plan usage, two companions running at once with tagged starts, an older worker\'s one slot making an approved hand-off wait in the background, and its automatic single send when the slot freed passed.\n');
 }

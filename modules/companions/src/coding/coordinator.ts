@@ -11,7 +11,7 @@ import {CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, DEFAULT_CODING_BOUNDS, type C
   type CodingRunEntry, type CodingState} from '@jimmie-potts/event-contracts/v2/coding';
 import {Outcome, fullDisk, recordLog, type AddMessage, type Cancel, type Command, type ModuleContext, type Outbox, type Reply, type RequestResult, type Subscription, type TraceContext} from '@jimmie-potts/sdk';
 import {advanceRevision} from '../revision.js';
-import {CodingStore, type CodingResponsibility, type CodingWaitingRecord} from './store.js';
+import {CodingStore, type CodingJob, type CodingResponsibility, type CodingWaitingRecord} from './store.js';
 
 /** The module publishes `coding-state/2.2`, which adds the worker's slots, every active run and the waiting hand-offs (Hub #2028). */
 export const codingStateDraft = (data: CodingState) => ({kind: 'state' as const, type: 'org.bunny.coding-state.updated', subject: 'coding',
@@ -22,15 +22,17 @@ export const codingStateDraft = (data: CodingState) => ({kind: 'state' as const,
  */
 export type Delivery = (taskId: string, text: string, parent: TraceContext, evidence: ActionEvidence, startup: boolean) => Promise<void>;
 /** An approved hand-off as the engine gives it: the task, the companion whose slot it needs and the endpoint revision the proposal saw. */
-export type HandOff = {requestId: string; taskId: string; companion: CodingCompanion; repository: string; brief: string; expectedRevision: number};
+export type HandOff = {requestId: string; taskId: string; conversationId?: string; companion: CodingCompanion; repository: string; brief: string; expectedRevision: number};
 /** The core's answer for a hand-off sent now, or `waiting` for one held until its companion's slot frees. */
-export type HandOffAnswer = RequestResult | {status: 'waiting'; requestId: string};
+export type HandOffAnswer = RequestResult | {status: 'waiting'; requestId: string} | {status: 'queued'; requestId: string; jobId: string};
 /**
  * What the coordinator asks the engine (Hub #2028): the companion a task belongs to, so a run is tagged with the
  * companion that asked; whether a task still waits on this delegation, so a waiting hand-off whose task was cancelled
  * or ended, even while the coordinator was stopped, is dropped unsent; and the news that a waiting hand-off was sent.
  */
 export type CodingSeams = {
+  jobQueued?: (job: CodingJob, add: AddMessage, parent: TraceContext) => void;
+  jobUpdate?: (job: CodingJob, kind: 'sent' | 'stop-unconfirmed' | 'result', text: string, parent: TraceContext, startup: boolean) => Promise<void>;
   companionOf?: (taskId: string) => CodingCompanion | undefined;
   awaits?: (taskId: string) => boolean;
   sent?: (taskId: string, parent: TraceContext) => void;
@@ -94,6 +96,7 @@ export class CodingCoordinator {
     this.#seams = seams;
     this.#store = new CodingStore(context.database());
   }
+  jobForAttempt(operationId: string): CodingJob | undefined {return this.#store.job(operationId);}
   /** Whether a hand-off was accepted as a run, so one that waited is known to have been sent. */
   accepted(operationId: string): boolean {
     try {return this.#active.has(operationId) || this.#store.accepted(operationId);} catch {return false;}
@@ -132,6 +135,7 @@ export class CodingCoordinator {
     // A hand-off whose dispatch had left without its acceptance recorded may have reached the core: its fate is unknown
     // and it is never sent again. One that never left keeps its place and is sent when its slot frees.
     for (const record of this.#store.waiting().filter(waiting => waiting.sending)) await this.#endWait(record, 'uncertain', 'lost', true);
+    await this.#deliverJobUpdates(undefined, true);
     this.#starting = false;
     this.#subscriptions.push(await this.context.sdk.respond<CodingEndpointControl>('bunny.cmd.coding-endpoint.*', command => this.#control(command)));
     this.#subscriptions.push(await this.context.sdk.respond<CodingRun>('bunny.cmd.coding-run.assistant', command => this.#accept(command)));
@@ -153,6 +157,29 @@ export class CodingCoordinator {
    */
   async handOff(data: HandOff, parent: TraceContext): Promise<HandOffAnswer> {
     const refused = (code: 'unavailable' | 'revision-conflict' | 'capacity' | 'internal', detail: string): HandOffAnswer => ({status: Outcome.rejected, requestId: data.requestId, error: errorBody(code, {detail})});
+    if (data.conversationId !== undefined) {
+      const {requestId: operationId, conversationId, taskId, companion, repository, brief} = data;
+      const jobId = `${operationId}-job`;
+      try {
+        const existing = this.#store.job(operationId);
+        if (existing !== undefined && (existing.conversationId !== conversationId || existing.taskId !== taskId ||
+          existing.repository !== repository || existing.brief !== brief)) return refused('revision-conflict', 'the request ID names another coding job');
+        if (existing === undefined) {
+          if (!this.#connected()) return refused('unavailable', 'no coding worker is connected');
+          if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
+          if (this.#store.waiting().length >= WAITING_LIMIT) return refused('capacity', 'too many coding hand-offs are waiting');
+          await this.outbox.transaction(add => {
+            const job = {jobId, operationId, conversationId, taskId, repository, brief};
+            this.#store.create(job);
+            this.#store.wait({operationId, taskId, companion, repository, brief, traceparent: parent.traceparent});
+            this.#seams.jobQueued?.(job, add, parent);
+          });
+          this.#changed();
+          this.#drain();
+        }
+      } catch (error) {return refused(fullDisk(error) ? 'capacity' : 'internal', 'the coding job could not be saved');}
+      return {status: 'queued', requestId: operationId, jobId};
+    }
     if (!this.#connected()) return refused('unavailable', 'no coding worker is connected');
     if (this.#bound !== data.expectedRevision) return refused('revision-conflict', 'the coding worker changed since the proposal');
     const slot = this.#slotOf(data.companion);
@@ -190,7 +217,9 @@ export class CodingCoordinator {
       if (record.sending || held.has(slot) || this.#busy(slot)) continue;
       // A task cancelled or ended while its hand-off waited, even while this coordinator was stopped, sends nothing. A
       // task whose state could not be read keeps its hand-off waiting, ahead of the rest of its slot's line.
-      const awaits = this.#awaits(record.taskId);
+      let awaits: boolean | undefined;
+      try {awaits = this.#store.job(record.operationId) !== undefined || this.#awaits(record.taskId);}
+      catch (error) {this.#storageFailure(error, record);}
       if (awaits === undefined) {held.add(slot); continue;}
       if (!awaits) {
         try {this.#store.unwait(record.operationId); dropped = true;} catch (error) {this.#storageFailure(error, record);}
@@ -215,23 +244,106 @@ export class CodingCoordinator {
     // An accepted dispatch is a run now: its acceptance ended the wait. Any other answer ends the wait without a run.
     // An accepted dispatch is a run now, and so is one whose answer was lost after the module accepted its run: the run's
     // own progress settles it. The task's conversation now says the hand-off was sent.
-    if (answer.status === 'accepted' || this.#active.has(record.operationId)) {
-      try {this.#seams.sent?.(record.taskId, {traceparent: record.traceparent});} catch { /* the run goes on; only the conversation line is missing */ }
+    if (answer.status === 'accepted' || this.#store.accepted(record.operationId)) {
+      try {
+        if (this.#store.job(record.operationId) === undefined) this.#seams.sent?.(record.taskId, record);
+        else if (!this.#store.resultSaved(record.operationId)) {
+          this.#store.update({...record, kind: 'sent', text: 'The core accepted the worker dispatch. The worker start is a separate observation.'});
+          await this.#deliverJobUpdates(record.operationId);
+        }
+      } catch (error) {this.#storageFailure(error, record);}
       this.#drain(); return;
     }
     const code = answer.error.error.code, uncertain = answer.status === Outcome.uncertain || code === 'uncertain-result';
+    if (!uncertain && code === 'invalid-state' && this.#store.stopRequested(record.operationId)) {
+      await this.#endWait(record, 'cancelled', 'stopped before worker start');
+      this.#drain(); return;
+    }
     await this.#endWait(record, uncertain ? 'uncertain' : 'failed', uncertain ? 'lost' : `refused: ${code}`);
     this.#drain();
   }
   /** Ends a hand-off's wait without a run and tells its task, unless the owner cancelled it. */
-  async #endWait(record: CodingWaitingRecord, status: 'failed' | 'uncertain', reason: string, startup = false): Promise<void> {
+  async #endWait(record: CodingWaitingRecord, status: 'cancelled' | 'failed' | 'uncertain', reason: string, startup = false): Promise<void> {
+    const text = describeResult(status, undefined, reason);
+    if (this.#store.job(record.operationId) !== undefined) {
+      try {
+        await this.outbox.transaction(() => {
+          this.#store.unwait(record.operationId);
+          this.#store.update({...record, kind: 'result', text});
+        });
+        this.#changed();
+        await this.#deliverJobUpdates(record.operationId, startup);
+      } catch (error) {this.#storageFailure(error, record);}
+      return;
+    }
     try {this.#store.unwait(record.operationId);} catch (error) {this.#storageFailure(error, record);}
     const cancelled = this.#cancelled.delete(record.taskId);
     this.#changed();
     if (cancelled) return;
-    try {await this.deliver(record.taskId, describeResult(status, undefined, reason), {traceparent: record.traceparent},
+    try {await this.deliver(record.taskId, text, {traceparent: record.traceparent},
       {requestId: record.operationId, source: 'effect', text: status === 'uncertain' ? 'the coding worker outcome is unknown' : 'the coding hand-off was refused'}, startup);}
     catch (error) {this.#storageFailure(error, record);}
+  }
+  async #deliverJobUpdates(operationId?: string, startup = false): Promise<void> {
+    if (this.#seams.jobUpdate === undefined) return;
+    for (const update of this.#store.undelivered(operationId)) {
+      const job = this.#store.job(update.operationId);
+      if (job === undefined) continue;
+      try {
+        await this.#seams.jobUpdate(job, update.kind, update.text, update, startup);
+        this.#store.delivered(update);
+      } catch (error) {this.#storageFailure(error, update);}
+    }
+  }
+  /** Stops only the job and attempt the caller named. Terminal progress remains the evidence of a worker stop. */
+  async stopJob(jobId: string, operationId: string): Promise<Reply> {
+    if (this.#closed || this.context.signal.aborted) return errorBody('unavailable');
+    const job = this.#store.job(operationId);
+    if (job === undefined || job.jobId !== jobId) return errorBody('not-found');
+    if (this.#store.resultSaved(operationId)) return errorBody('invalid-state');
+    const waiting = this.#store.waiting().find(record => record.operationId === operationId);
+    const active = this.#active.get(operationId);
+    if (waiting === undefined && (active === undefined || active.settling)) return errorBody('invalid-state');
+    try {
+      let first = false;
+      await this.outbox.transaction(() => {
+        first = this.#store.requestStop(operationId);
+        if (!first || waiting === undefined || waiting.sending) return;
+        this.#store.unwait(operationId);
+        this.#store.update({...waiting, kind: 'result', text: 'Cancelled before dispatch. The worker was never sent a start.'});
+      });
+      if (!first) return {status: 'accepted'};
+      if (waiting !== undefined && !waiting.sending) {
+        await this.#deliverJobUpdates(operationId);
+        this.#changed();
+        this.#drain();
+      } else if (active !== undefined && this.#active.get(operationId) === active && !active.settling) {
+        active.phase = 'cancelling'; this.#changed();
+        void this.#stopAttempt(active);
+      }
+      return {status: 'accepted'};
+    } catch (error) {
+      this.#storageFailure(error);
+      return errorBody(fullDisk(error) ? 'capacity' : 'internal');
+    }
+  }
+  async #stopAttempt(active: Active): Promise<void> {
+    let confirmed = false;
+    try {
+      const answer = await this.#workerStop(active);
+      confirmed = answer.status === 'accepted';
+    } catch { /* An unanswered worker request provides no observation. */ }
+    if (this.#active.get(active.operationId) !== active || active.settling || this.#closed) return;
+    try {
+      this.#store.update({...active, kind: 'stop-unconfirmed', text: confirmed ? 'The worker accepted the stop request. The stop itself is unconfirmed.'
+          : 'The worker did not confirm receipt of the stop request. Its stop is unconfirmed.'});
+      await this.#deliverJobUpdates(active.operationId);
+    } catch (error) {this.#storageFailure(error, active);}
+  }
+  #workerStop(active: Active): Promise<RequestResult> {
+    return this.context.sdk.request(`bunny.cmd.coding-work.${active.endpointId}`, {type: 'org.bunny.coding.work.requested', subject: active.endpointId,
+      dataschema: 'https://bunny.invalid/events/coding-work/2.0', data: {requestId: `${active.operationId}-cancel`, operationId: active.operationId, action: 'cancel'}},
+    {timeoutMs: 5000, parent: active});
   }
   /**
    * The owner cancelled the task. A hand-off still waiting is removed and nothing is sent; one on its way from the queue is
@@ -240,18 +352,16 @@ export class CodingCoordinator {
   cancel(taskId: string): void {
     if (this.#closed) return;
     let waiting: CodingWaitingRecord[] = [];
-    try {waiting = this.#store.waiting().filter(record => record.taskId === taskId);} catch (error) {this.#storageFailure(error);}
+    try {waiting = this.#store.waiting().filter(record => record.taskId === taskId && this.#store.job(record.operationId) === undefined);} catch (error) {this.#storageFailure(error);}
     for (const record of waiting) {
       if (record.sending) {this.#cancelled.add(taskId); continue;}
       try {this.#store.unwait(record.operationId);} catch (error) {this.#storageFailure(error, record);}
     }
     if (waiting.length > 0) this.#changed();
-    const active = [...this.#active.values()].find(entry => entry.taskId === taskId);
+    const active = [...this.#active.values()].find(entry => entry.taskId === taskId && this.#store.job(entry.operationId) === undefined);
     if (active === undefined || active.settling) return;
     active.phase = 'cancelling'; this.#changed();
-    void this.context.sdk.request(`bunny.cmd.coding-work.${active.endpointId}`, {type: 'org.bunny.coding.work.requested', subject: active.endpointId,
-      dataschema: 'https://bunny.invalid/events/coding-work/2.0', data: {requestId: `${active.operationId}-cancel`, operationId: active.operationId, action: 'cancel'}},
-    {timeoutMs: 5000, parent: active}).catch(() => {});
+    void this.#workerStop(active).catch(() => {});
   }
   #control(command: Command<CodingEndpointControl>): Reply {
     if (this.#closed || this.context.signal.aborted) return errorBody('unavailable');
@@ -290,6 +400,14 @@ export class CodingCoordinator {
     if (!checked.ok) return {error: checked.error};
     const data = command.data;
     if (this.#active.has(data.requestId)) return {status: 'accepted'};
+    try {
+      if (this.#store.accepted(data.requestId) || this.#store.resultSaved(data.requestId)) return errorBody('invalid-state', {detail: 'the coding attempt has already settled'});
+      if (this.#store.stopRequested(data.requestId)) return errorBody('invalid-state', {detail: 'the job was stopped before the worker start'});
+      const job = this.#store.job(data.requestId);
+      if (job !== undefined && (job.taskId !== data.taskId || job.repository !== data.repository || job.brief !== data.brief)) {
+        return errorBody('revision-conflict', {detail: 'the dispatch does not match the approved job'});
+      }
+    } catch (error) {this.#storageFailure(error, command); return errorBody('internal');}
     if (!this.#connected() || this.#state.endpointId !== data.endpointId) return errorBody('unavailable', {detail: 'no coding worker endpoint is available for this dispatch'});
     // The wait's end, which follows this refusal, forgets the cancel and tells the cancelled task nothing.
     if (this.#cancelled.has(data.taskId)) {
@@ -313,10 +431,14 @@ export class CodingCoordinator {
     return {status: 'accepted'};
   }
   async #start(active: Active, data: CodingRun): Promise<void> {
-    if (this.#active.get(active.operationId) !== active || active.settling) return;
+    if (this.#active.get(active.operationId) !== active || active.settling || this.#closed) return;
     // A worker that declared slots (2.2) hears which companion asked; an older one gets the 2.0 start it knows.
     const tagged = this.#state.slots !== null;
     try {
+      if (this.#store.stopRequested(active.operationId)) {
+        await this.#settle(active, 'cancelled', undefined, 'stopped before worker start', {result: Outcome.failed, code: 'cancelled'});
+        return;
+      }
       const result = await this.context.sdk.request(`bunny.cmd.coding-work.${active.endpointId}`, {type: 'org.bunny.coding.work.requested', subject: active.endpointId,
         dataschema: `https://bunny.invalid/events/coding-work/${tagged ? '2.1' : '2.0'}`,
         data: {requestId: active.operationId, operationId: active.operationId, action: 'start', taskId: data.taskId, ...(tagged ? {companion: active.companion} : {}), repository: data.repository, brief: data.brief, bounds: data.bounds}},
@@ -359,14 +481,20 @@ export class CodingCoordinator {
     outcome?: {result: 'succeeded' | 'failed' | 'uncertain'; code?: string}, startup = false): Promise<void> {
     const active = 'settling' in record ? record : undefined;
     if (active !== undefined) {if (active.settling || this.#active.get(active.operationId) !== active) return; active.settling = true; active.cancel();}
+    const text = describeResult(status, result, reason);
+    let job: CodingJob | undefined;
     try {
+      job = this.#store.job(record.operationId);
       await this.outbox.transaction(add => {
         this.#store.settle(record.operationId, status);
+        if (job !== undefined) this.#store.update({...record, kind: 'result', text});
         if (outcome !== undefined) this.#addOutcome(add, record, outcome, record.started ? 'observed' : 'none');
       });
     } catch (error) {this.#storageFailure(error, record);}
     if (active !== undefined) {this.#active.delete(active.operationId); this.#changed();}
-    try {await this.deliver(record.taskId, describeResult(status, result, reason), {traceparent: record.traceparent},
+    try {
+      if (job !== undefined) await this.#deliverJobUpdates(record.operationId, startup);
+      else await this.deliver(record.taskId, text, {traceparent: record.traceparent},
       {requestId: record.operationId, source: 'effect', text: status === 'uncertain' ? 'the coding worker outcome is unknown' : `the coding worker reported that the task ${status}`}, startup);}
     catch (error) {this.#storageFailure(error, record);}
     if (active !== undefined) this.#drain();

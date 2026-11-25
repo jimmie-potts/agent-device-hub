@@ -8,6 +8,9 @@ export type CodingResponsibility = {operationId: string; taskId: string; endpoin
  * dispatch has left and whose acceptance has not been recorded; a start finds it of unknown fate, never resends it.
  */
 export type CodingWaitingRecord = {operationId: string; taskId: string; companion: CodingCompanion; repository: string; brief: string; traceparent: string; sending: boolean};
+export type CodingOrigin = {conversationId: string; taskId: string};
+export type CodingJob = CodingOrigin & {jobId: string; operationId: string; repository: string; brief: string};
+type JobUpdate = {operationId: string; kind: 'sent' | 'stop-unconfirmed' | 'result'; text: string; traceparent: string};
 const companions: readonly string[] = ['bunny', 'reachy', 'microduck'];
 /**
  * Durable responsibility, final receipts and the hand-offs waiting for a slot (Hub #502, #2028). Availability, the
@@ -24,6 +27,54 @@ export class CodingStore {
       operation_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, companion TEXT NOT NULL CHECK(companion IN ('bunny','reachy','microduck')),
       repository TEXT NOT NULL, brief TEXT NOT NULL, traceparent TEXT NOT NULL, sending INTEGER NOT NULL DEFAULT 0 CHECK(sending IN (0,1))
     ) STRICT`);
+    database.exec(`CREATE TABLE IF NOT EXISTS companion_coding_jobs (
+      job_id TEXT PRIMARY KEY, operation_id TEXT NOT NULL UNIQUE, conversation_id TEXT NOT NULL,
+      task_id TEXT NOT NULL, repository TEXT NOT NULL, brief TEXT NOT NULL,
+      stop_requested INTEGER NOT NULL DEFAULT 0 CHECK(stop_requested IN (0,1))
+    ) STRICT`);
+    database.exec(`CREATE TABLE IF NOT EXISTS companion_coding_job_updates (
+      operation_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('sent','stop-unconfirmed','result')),
+      text TEXT NOT NULL, traceparent TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0 CHECK(delivered IN (0,1)),
+      PRIMARY KEY(operation_id, kind)
+    ) STRICT`);
+  }
+  create(job: CodingJob): void {
+    this.database.prepare('INSERT INTO companion_coding_jobs(job_id,operation_id,conversation_id,task_id,repository,brief) VALUES(?,?,?,?,?,?)')
+      .run(job.jobId, job.operationId, job.conversationId, job.taskId, job.repository, job.brief);
+  }
+  job(operationId: string): CodingJob | undefined {
+    const row = this.database.prepare('SELECT * FROM companion_coding_jobs WHERE operation_id=?').get(operationId);
+    if (row === undefined) return undefined;
+    const {job_id: jobId, operation_id: attempt, conversation_id: conversationId, task_id: taskId, repository, brief} = row;
+    if (typeof jobId !== 'string' || typeof attempt !== 'string' || typeof conversationId !== 'string' || typeof taskId !== 'string' ||
+      typeof repository !== 'string' || typeof brief !== 'string') throw new Error('coding-job-invalid');
+    return {jobId, operationId: attempt, conversationId, taskId, repository, brief};
+  }
+  requestStop(operationId: string): boolean {
+    return this.database.prepare('UPDATE companion_coding_jobs SET stop_requested=1 WHERE operation_id=? AND stop_requested=0').run(operationId).changes === 1;
+  }
+  stopRequested(operationId: string): boolean {
+    return this.database.prepare('SELECT 1 FROM companion_coding_jobs WHERE operation_id=? AND stop_requested=1').get(operationId) !== undefined;
+  }
+  update({operationId, kind, text, traceparent}: JobUpdate): void {
+    this.database.prepare('INSERT OR IGNORE INTO companion_coding_job_updates(operation_id,kind,text,traceparent) VALUES(?,?,?,?)').run(operationId, kind, text, traceparent);
+  }
+  resultSaved(operationId: string): boolean {
+    return this.database.prepare("SELECT 1 FROM companion_coding_job_updates WHERE operation_id=? AND kind='result'").get(operationId) !== undefined;
+  }
+  undelivered(operationId?: string): JobUpdate[] {
+    const rows = operationId === undefined
+      ? this.database.prepare('SELECT * FROM companion_coding_job_updates WHERE delivered=0 ORDER BY rowid').all()
+      : this.database.prepare('SELECT * FROM companion_coding_job_updates WHERE delivered=0 AND operation_id=? ORDER BY rowid').all(operationId);
+    return rows.map(row => {
+      const {operation_id: id, kind, text, traceparent} = row;
+      if (typeof id !== 'string' || typeof text !== 'string' || typeof traceparent !== 'string' ||
+        (kind !== 'sent' && kind !== 'stop-unconfirmed' && kind !== 'result')) throw new Error('coding-job-update-invalid');
+      return {operationId: id, kind, text, traceparent};
+    });
+  }
+  delivered({operationId, kind}: JobUpdate): void {
+    this.database.prepare('UPDATE companion_coding_job_updates SET delivered=1 WHERE operation_id=? AND kind=?').run(operationId, kind);
   }
   /** Records the responsibility and, in the same transaction, ends the hand-off's wait if it waited. */
   accept(record: Omit<CodingResponsibility, 'started' | 'status'>): void {

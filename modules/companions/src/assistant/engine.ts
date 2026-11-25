@@ -8,6 +8,8 @@ import {ASSISTANT_LEGACY_TOOL_LIMIT, ASSISTANT_WEMO_OWNER, type AssistantControl
 import {SPOKEN_REPLY_TTL_MS, type SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
 import {fullDisk, startSpan, type AddMessage, type Cancel, type Command, type ModuleContent, type ModuleContentRequest,
   type ModuleContext, type ModuleStagedUpload, type ModuleUploadRequest, type Outbox, type Reply, type RequestResult, type Span, type Subscription, type TraceContext, recordLog, type LogEvent, Outcome} from '@jimmie-potts/sdk';
+import type {CodingJob} from '../coding/store.js';
+import type {HandOffAnswer} from '../coding/coordinator.js';
 import {actionDescription, closingReply, type ActionEvidence} from './closing-reply.js';
 import {CONFIRMATION_LIFETIME_MS, IN_TURN_CONFIRMATION_MS, confirmationTarget, followConfirmation, pending, type Confirmation} from './confirmation.js';
 import {CheckpointCapacityError, SqliteCheckpointSaver} from './checkpointer.js';
@@ -59,12 +61,14 @@ export type AssistantOptions = {
   coding?: (profile: AssistantProfile) => {available: boolean; endpointId: string | null; revision: number};
   /** Hands an approved delegation to the core's tracked dispatcher; the worker's result comes back through `deliver`. */
   delegate?: Delegate;
+  backgroundCoding?: boolean;
+  codingJob?: (operationId: string) => CodingJob | undefined;
   /**
    * Whether the module already sent a hand-off that answered `waiting` (Hub #2028), so a hand-off sent before its waiting
    * line is saved reads "Delegated to ..." at once.
    */
   handedOff?: (requestId: string) => boolean;
-  /** The owner cancelled a task whose delegation is still running; the module asks the worker to stop. */
+  /** Cancels a delegation on a saved pre-background graph. Background jobs have their own stop operation. */
   onCancelled?: (taskId: string) => void;
   /** The private section's prices per model for the spend ledger (Hub #2024); they override the built-in table (Hub #2047). */
   prices?: PriceTable;
@@ -89,9 +93,9 @@ export type AssistantOptions = {
  * An approved delegation as the module dispatches it, bound to the coding worker revision the proposal saw and tagged
  * with the companion whose slot it needs (Hub #2028).
  */
-export type Delegation = {requestId: string; taskId: string; companion: AssistantProfile; repository: string; brief: string; expectedRevision: number};
+export type Delegation = {requestId: string; taskId: string; conversationId: string; companion: AssistantProfile; repository: string; brief: string; expectedRevision: number};
 /** The core's answer for a hand-off sent now, or `waiting` when the companion's slot is busy and it waits for it (Hub #2028). */
-export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSignal) => Promise<RequestResult | {status: 'waiting'; requestId: string}>;
+export type Delegate = (data: Delegation, parent: TraceContext, signal: AbortSignal) => Promise<HandOffAnswer>;
 /** An engine refusal; `closingReason` is fixed text for the owner, such as the spend limit a new turn met. */
 class Fault extends Error {constructor(readonly code: ErrorCode, readonly closingReason?: string) {super(code);}}
 /** What one call answered: its text, its reported usage total, and a paid provider's usage by price class. */
@@ -143,6 +147,7 @@ export const INSTRUCTIONS = 'Answer the owner briefly and truthfully from the ev
 export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this hand-off waits for';
 /** How a waiting hand-off is worded in the conversation until it is sent; "Delegated to ..." replaces it then. */
 export const WAITING_PREFIX = 'Waiting to delegate';
+const jobReceipt = (job: CodingJob): string => `accepted: Coding job ${job.jobId} was queued for ${job.repository}. Updates will appear in this conversation.`;
 const waitingText = (delegated: string): string => `${WAITING_PREFIX}${delegated.slice('Delegated'.length)}`.slice(0, 1024);
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
@@ -902,6 +907,7 @@ export class AssistantEngine {
     let result: string | undefined;
     const publication = this.#change(taskId, task => {
       if (terminal(task.status)) return;
+      if (startup) this.#restoreCodingReceipts(task);
       if (unresolved(this.store.calls(taskId))) {task.status = 'uncertain'; task.code = 'uncertain-result';}
       else if (snapshot.next.length === 0 && typeof values.result === 'string') {
         task.status = 'succeeded'; task.code = null;
@@ -920,6 +926,19 @@ export class AssistantEngine {
     await publication;
     // Only a result this run just produced is offered; startup reconciliation never speaks an answer the owner did not just ask for.
     if (active !== undefined && result !== undefined) this.#speak(taskId, `${taskId}-result`, result, active.span.context);
+  }
+  #restoreCodingReceipts(task: Task): void {
+    if (this.options.codingJob === undefined) return;
+    for (const call of this.store.calls(task.id)) {
+      if (call.kind !== 'tool' || (call.status !== 'admitted' && call.status !== 'uncertain')) continue;
+      const job = this.options.codingJob(call.id);
+      if (job === undefined || job.taskId !== task.id || job.conversationId !== task.conversationId) continue;
+      const text = jobReceipt(job);
+      this.store.saveCall({...call, status: 'succeeded', result: text, units: 0});
+      task.nextOrdinal = Math.max(task.nextOrdinal, call.ordinal + 1);
+      this.store.message(task, call.id, 'tool', text, this.context.clock.now());
+      this.store.message(task, job.jobId, 'assistant', text.slice('accepted: '.length), this.context.clock.now());
+    }
   }
   #settle(task: Task, active: Active): void {
     task.activeMs += Math.max(0, this.context.clock.now() - active.accountedAt); active.accountedAt = this.context.clock.now();
@@ -1246,7 +1265,7 @@ export class AssistantEngine {
         ? 'refused: revision-conflict: the Hub mode changed since this was proposed; nothing was changed. Read the mode again before proposing another change.'
         : `refused: ${code}`, units: 0};
     };
-    let result: string, delegation: Question | undefined;
+    let result: string, delegation: Question | undefined, job: CodingJob | undefined;
     const startedAtMs = this.context.clock.now();
     const target = confirmationTarget(proposal, question.text);
     const action = {questionId: question.id, description: actionDescription(proposal, question.text)};
@@ -1295,11 +1314,21 @@ export class AssistantEngine {
       delegation = pending;
       // A hand-off whose companion's slot is busy waits for it; it was approved and is sent once when the slot frees.
       const companion = PROFILES.find(entry => entry.id === task.profile)?.name ?? task.profile;
-      result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, companion: task.profile, repository: proposal.data.repository, brief: proposal.data.brief,
+      result = await this.#call(state.taskId, state.step, 'tool', signal => delegate({requestId: id, taskId: state.taskId, conversationId: task.conversationId, companion: task.profile, repository: proposal.data.repository, brief: proposal.data.brief,
         expectedRevision: proposal.expectedRevision}, active.span.context, signal)
-        .then(answer => answer.status === 'waiting'
-          ? {text: `${WAITING_RECEIPT} ${companion}'s slot as operation ${id}; it is sent when that slot frees, and its structured result arrives as this tool's later result`, units: 0}
-          : settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`)), (current, call) => {current.question = pending; call.action = action;});
+        .then(answer => {
+          if (answer.status === 'queued') {
+            job = {jobId: answer.jobId, operationId: answer.requestId, taskId: task.id, conversationId: task.conversationId, repository: proposal.data.repository, brief: proposal.data.brief};
+            return {text: jobReceipt(job), units: 0};
+          }
+          return answer.status === 'waiting'
+            ? {text: `${WAITING_RECEIPT} ${companion}'s slot as operation ${id}; it is sent when that slot frees, and its structured result arrives as this tool's later result`, units: 0}
+            : settle(answer, `accepted: the coding worker was handed the task as operation ${id}; its structured result arrives as this tool's later result`);
+        }), (current, call) => {if (this.options.backgroundCoding !== true) current.question = pending; call.action = action;});
+      if (job === undefined && result.startsWith('accepted: Coding job ')) {
+        job = {jobId: `${id}-job`, operationId: id, taskId: task.id, conversationId: task.conversationId, repository: proposal.data.repository, brief: proposal.data.brief};
+      }
+
     }
     const accepted = result.startsWith('accepted');
     const confirmation = this.store.confirmation(id);
@@ -1314,6 +1343,11 @@ export class AssistantEngine {
     // A hand-off waiting for its companion's busy slot has not been sent: the conversation says it waits, and says
     // "delegated" once the coordinator reports it sent (Hub #2028).
     await this.#append(state.taskId, {role: 'tool', call: question.call, name, result, ok: accepted, effect: id}, active.span.context, current => {
+      if (job !== undefined) {
+        this.store.message(current, job.jobId, 'assistant', jobReceipt(job).slice('accepted: '.length), this.context.clock.now());
+        handedOff = true;
+        return;
+      }
       if (delegation === undefined) return;
       // Read in the transaction that saves the line: a hand-off the module sent meanwhile is already delegated.
       const waits = result.startsWith(WAITING_RECEIPT) && this.options.handedOff?.(id) !== true;
@@ -1329,7 +1363,7 @@ export class AssistantEngine {
     // and stays out of the check; the check runs beside the task and never delays it.
     if (handedOff) this.#checkTitle(task, {kind: 'hand-off'});
     else if (accepted && proposal.family !== 'coding-dispatch') this.#checkTitle(task, {kind: 'tool', tool: name});
-    return {step: state.step + 1, next: proposal.family === 'coding-dispatch' && accepted ? 'await' : 'turn'};
+    return {step: state.step + 1, next: proposal.family === 'coding-dispatch' && accepted && job === undefined ? 'await' : 'turn'};
   }
   #await(state: GraphState): Partial<GraphState> {
     const task = this.#task(state.taskId), question = task.question ?? fail('invalid-state');
@@ -1376,12 +1410,37 @@ export class AssistantEngine {
       if (question === null || question.kind !== 'delegation' || question.answer !== null) return;
       this.store.observeAction(taskId, evidence);
       question.answer = text.slice(0, LIMITS.toolBytes); delivered = task;
-      if (['waiting', 'paused'].includes(task.status) && this.store.meta().enabled && this.available() && !this.#active.has(task.conversationId) && !this.#unrecovered.has(task.conversationId) && !this.#closed) {this.#activate(task, parent); launch = true;}
+      if (startup && task.status === 'waiting') task.status = 'paused';
+      if (!startup && ['waiting', 'paused'].includes(task.status) && this.store.meta().enabled && this.available() && !this.#active.has(task.conversationId) && !this.#unrecovered.has(task.conversationId) && !this.#closed) {this.#activate(task, parent); launch = true;}
       this.store.save(task); this.#publish(add, parent);
     });
     if (launch && !this.#closed && !this.context.signal.aborted) this.#launch(taskId);
     // The hand-off's result is a major event for the title (Hub #2075): its outcome word goes to the check, its text does not.
     if (delivered !== undefined && !startup) this.#checkTitle(delivered, {kind: 'hand-off-result', outcome: handOffOutcome(text)});
+  }
+  codingJobQueued(job: CodingJob, add: AddMessage, parent: TraceContext): void {
+    const task = this.#task(job.taskId);
+    if (task.conversationId !== job.conversationId || terminal(task.status)) fail('invalid-state');
+    this.store.message(task, job.jobId, 'assistant', jobReceipt(job).slice('accepted: '.length), this.context.clock.now());
+    this.store.touch(task.conversationId);
+    this.#publish(add, parent);
+  }
+  /** Appends a job observation to the approved exchange, even after the owner starts another conversation. */
+  async codingJobUpdate(job: CodingJob, kind: 'sent' | 'stop-unconfirmed' | 'result', text: string, parent: TraceContext, startup: boolean): Promise<void> {
+    let delivered: Task | undefined;
+    await this.outbox.transaction(add => {
+      const task = this.store.task(job.taskId);
+      if (task === undefined || task.conversationId !== job.conversationId) return;
+      const id = `${job.jobId}-${kind}`;
+      if (this.store.savedMessage(task.id, id) !== undefined) return;
+      this.store.message(task, job.jobId, 'assistant', jobReceipt(job).slice('accepted: '.length), this.context.clock.now());
+      this.store.message(task, id, 'assistant', `Coding job ${job.jobId}: ${text}`, this.context.clock.now(), job.jobId);
+      this.store.touch(task.conversationId);
+
+      this.#publish(add, parent);
+      delivered = task;
+    });
+    if (delivered !== undefined && kind === 'result' && !startup) this.#checkTitle(delivered, {kind: 'hand-off-result', outcome: handOffOutcome(text)});
   }
   /** The per-turn limit the next call would pass, as the message naming it, or undefined while every bound has room. */
   #limitOf(task: Task, kind: 'model' | 'tool', timeout: number, budget: Budget): string | undefined {

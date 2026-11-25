@@ -34,7 +34,7 @@ const receiptKey = (event: CompanionOpportunity): string => createHash('sha256')
 type RetainedArtworkRead = NonNullable<AssistantOptions['retainedArtwork']>;
 export const isCompanionsModule = (module: BunnyModule): module is CompanionsModule =>
   module.manifest.name === 'companions' && 'setArtCatalog' in module && typeof module.setArtCatalog === 'function';
-export type CompanionsModule = BunnyModule & {setArtCatalog(read: RetainedArtworkRead): void; inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; pending(): number};
+export type CompanionsModule = BunnyModule & {setArtCatalog(read: RetainedArtworkRead): void; inspect(): CompanionState | undefined; inspectAssistant(): AssistantState | undefined; inspectSpeech(): SpeechState | undefined; inspectCoding(): CodingState | undefined; stopCodingJob(jobId: string, operationId: string): Promise<Reply>; pending(): number};
 /** The name under the section's `secrets` of the file holding the hosted provider's API key. */
 export const API_KEY_SECRET = 'anthropic-api-key';
 /**
@@ -116,7 +116,8 @@ export function createCompanionsModule(options: CompanionsOptions = {}): Compani
     content: (ref, request) => engine.qualifiedSpeech(ref, request) ?? engine.knowledge?.content(ref, request) ?? engine.preferences?.content(ref, request) ?? engine.assistant?.content(ref, request),
     upload: {family: 'assistant-input', maxBytes: PREFERENCE_UPLOAD_BYTES, stage: request => (request.target === 'knowledge' ? engine.knowledge?.stage(request) : request.target === 'preferences' ? engine.preferences?.stage(request) : engine.assistant?.stage(request)) ?? errorBody('unavailable')}},
     setArtCatalog: read => {engine.retainedArtwork = read;},
-    start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), inspectSpeech: () => engine.speech?.inspect(), inspectCoding: () => engine.coding?.inspect(), pending: () => engine.pending()};
+    start: context => engine.start(context), stop: () => engine.stop(), inspect: () => engine.inspect(), inspectAssistant: () => engine.assistant?.inspect(), inspectSpeech: () => engine.speech?.inspect(), inspectCoding: () => engine.coding?.inspect(),
+    stopCodingJob: (jobId, operationId) => engine.coding?.stopJob(jobId, operationId) ?? Promise.resolve(errorBody('unavailable')), pending: () => engine.pending()};
 }
 class Companions {
   retainedArtwork: RetainedArtworkRead | undefined;
@@ -182,6 +183,8 @@ class Companions {
     // A waiting hand-off is sent only while its task still waits on it, so a cancel that the coordinator missed, as during
     // a stop, still sends nothing.
     const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
+      jobQueued: (job, add, parent) => this.assistant?.codingJobQueued(job, add, parent),
+      jobUpdate: (job, kind, text, parent, startup) => this.assistant?.codingJobUpdate(job, kind, text, parent, startup) ?? Promise.resolve(),
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
       awaits: taskId => {
         const task = this.assistant?.store.task(taskId);
@@ -196,7 +199,7 @@ class Companions {
       retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries,
       // The owner's knowledge notes reach a companion's context only once the owner turns them on for it (Hub #2029).
       knowledge: () => this.knowledge?.store.active().entries ?? [], speak,
-      coding: this.options.coding ?? (() => coding.endpoint()), delegate, handedOff: this.options.handedOff ?? (requestId => coding.accepted(requestId)), onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
+      coding: this.options.coding ?? (() => coding.endpoint()), delegate, backgroundCoding: this.options.delegate === undefined, codingJob: requestId => coding.jobForAttempt(requestId), handedOff: this.options.handedOff ?? (requestId => coding.accepted(requestId)), onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();
     await this.preferences.start();
