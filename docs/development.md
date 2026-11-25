@@ -1182,6 +1182,33 @@ ID given together with `--job`. Downloaded artifacts and raw logs stay outside
 Git; summarize only the evidence needed for the task. See
 the [SDLC](sdlc.md#ci-evidence) for the evidence to record.
 
+When a hosted test job fails, its last step uploads the job's failure evidence
+(#2059): every test job in Checks except Firmware, and each group of the Runtime
+dashboard browser suite. A passing job uploads nothing. The artifact is named
+`failure-evidence-<job>-<run-id>-<attempt>` and is kept for 14 days; list and
+download it with the existing login, outside Git:
+
+```bash
+gh run view <run-id> --repo jimmie-potts/agent-device-hub --json jobs
+gh run download <run-id> --repo jimmie-potts/agent-device-hub --pattern 'failure-evidence-*' --dir <private-folder>
+```
+
+The tests write into `TEST_EVIDENCE_DIR`, which those workflows set to
+`/tmp/test-evidence`: the `bunny-browser-proof-*` folders of journeys that use
+`browserArtifactDirectory` (`DASHBOARD_RECEIPTS` still wins when set, and hosted
+CI leaves receipts mode off), and, from the runtime unit, scenario and
+verification steps, one `junit/node-test-<pid>.xml` per Node test process, which
+names each test, its duration and its failure. The
+[failure-evidence action](../.github/actions/failure-evidence/action.yml) copies
+only image, text, HTML, JSON and XML files, never a symbolic link, up to 50 MB,
+JUnit files first and then the newest. Its `MANIFEST.txt` lists every file with
+`kept`, `file type not kept`, `over the size limit` or `not a regular file`.
+Artifacts are a publication surface, so tests write synthetic fixtures only there
+([ADR 0011](decisions/0011-private-personal-data-retention.md)). Journeys that
+write only under `DASHBOARD_RECEIPTS`, and steps without the JUnit reporter,
+leave only their log. A job stopped by its own time limit may skip the upload,
+because GitHub can treat that stop as a cancellation.
+
 Runs before #870 were on Depot. Their GitHub check records stay readable as
 above, and their logs through the Depot CLI or dashboard while that account
 lasts.

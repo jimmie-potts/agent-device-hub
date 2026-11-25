@@ -684,6 +684,9 @@ the PR's changed files omits it and the `Selected checks gate` job succeeded.
 Merged-main source revisions run applicable integration jobs. Full release
 qualification has its separate immutable candidate and applicable job set.
 
+A failed hosted test job also uploads its failure evidence (screenshots,
+dumps and JUnit results) as a 14-day artifact; the
+[diagnostic access procedure](development.md#ci-diagnostic-access) says where.
 Inspect relevant job details, logs or artifacts when a job fails, results
 conflict, a job is missing or unexpectedly skipped, workflow changes leave actual
 coverage uncertain, or acceptance requires evidence beyond a success status.
