@@ -35,23 +35,6 @@
         "operationId",
         "status"
       ],
-      "anyOf": [
-        {
-          "required": [
-            "worktreeRef"
-          ]
-        },
-        {
-          "required": [
-            "branch"
-          ]
-        },
-        {
-          "required": [
-            "model"
-          ]
-        }
-      ],
       "properties": {
         "operationId": {
           "$ref": "https://bunny.invalid/events/blocks/2.0#/$defs/requestId"
@@ -81,7 +64,8 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         }
-      }
+      },
+      "minProperties": 3
     }
   ]
 }

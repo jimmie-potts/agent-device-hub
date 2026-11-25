@@ -42,7 +42,7 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     const conversation = page.getByRole('region', {name: 'B.U.N.N.Y. conversation'});
     const send = async (text: string) => {
       await conversation.getByRole('textbox', {name: 'Message', exact: true}).fill(text);
-      await conversation.getByRole('button', {name: 'Send', exact: true}).click();
+      await conversation.locator('.conversation-composer-actions').getByRole('button', {name: text.startsWith('Tell the') ? 'Message job' : 'Send', exact: true}).click();
     };
     const approve = async (name: string) => {
       await send(`Please delegate the ${name} logging check.`);
@@ -68,6 +68,7 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await waitFor(() => commands.length === 2);
     const second = commands[1] ?? assert.fail('second job missing');
     await progress({operationId: second.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: 'fixture-beta-session'});
+    await progress({operationId: second.operationId, status: 'attempt-context', branch: null, worktreeRef: 'bunny-fixture-beta', model: 'fixture-model'}, '2.5');
 
     await send('Tell the logging check job to retain the fixtures.');
     await conversation.getByText('Which job should receive this message?', {exact: true}).waitFor();
@@ -83,6 +84,8 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     const card = (run: CodingWork) => jobs.getByRole('article', {name: `Coding job ${run.operationId}-job`, exact: true});
     await card(first).getByText('fixture-alpha-session', {exact: true}).waitFor();
     await card(second).getByText('fixture-beta-session', {exact: true}).waitFor();
+    await card(second).getByText('fixture-model', {exact: true}).waitFor();
+    await card(second).getByText('bunny-fixture-beta', {exact: true}).waitFor();
     await card(second).getByText('Queued in the Hub', {exact: true}).waitFor();
     acceptMessage();
     await card(second).getByText('Accepted by the harness', {exact: true}).waitFor();
@@ -93,6 +96,8 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await conversation.getByText('What is the current Hub mode?', {exact: true}).waitFor();
     await conversation.getByText('Hub fixture answered.', {exact: true}).last().waitFor();
     assert.equal(commands.length, 3, 'ordinary chat sends no worker command');
+    await send('Please delegate a third logging check.');
+    await conversation.getByRole('button', {name: 'Approve proposal', exact: true}).waitFor();
     await page.goto(`${world.url}/#/module/companions/jobs`);
     await card(first).getByRole('button', {name: /Stop coding job/}).press('Enter');
     await waitFor(() => commands.length === 4);
@@ -102,6 +107,8 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await page.reload();
     await card(first).getByText(/ · cancelled$/).waitFor();
     await card(second).getByText('fixture-beta-session', {exact: true}).waitFor();
+    await card(second).getByText('fixture-model', {exact: true}).waitFor();
+    await card(second).getByText('bunny-fixture-beta', {exact: true}).waitFor();
     await card(second).getByText('Queued in the Hub', {exact: true}).waitFor();
     acceptMessage();
     await card(second).getByText('Accepted by the harness', {exact: true}).waitFor();
@@ -112,9 +119,14 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await conversation.getByText('What is the current Hub mode?', {exact: true}).waitFor();
     await conversation.getByText('Hub fixture answered.', {exact: true}).last().waitFor();
     assert.equal(commands.length, 3, 'ordinary chat sends no worker command');
+    await send('Please delegate a third logging check.');
+    await conversation.getByRole('button', {name: 'Approve proposal', exact: true}).waitFor();
     await page.goto(`${world.url}/#/module/companions/jobs`);
     await card(first).getByRole('link', {name: 'Open original conversation'}).click();
     await conversation.getByText('Please delegate the alpha logging check.', {exact: true}).waitFor();
     await conversation.getByText(/Earlier conversation, read only/).waitFor();
+    await conversation.getByRole('button', {name: 'Back to current conversation'}).click();
+    await conversation.getByRole('button', {name: 'Approve proposal', exact: true}).waitFor();
+    assert.equal(commands.length, 4, 'pending approval stayed in Conversation');
   } finally {acceptMessage(); await worker.close(); await context.close(); await world.close();}
 }

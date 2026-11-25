@@ -53,7 +53,7 @@ type StartDelivery = {endpointId: string; record: CodingWaitingRecord; discarded
 const noop = (): void => {};
 function privateDisplayText(value: string): string | undefined {
   // Shared job facts carry no absolute paths or unbounded worker output.
-  return /(?:^|[\s"'(`=:])(?:[A-Za-z]:[\\/]|\\\\|\/)[^\s]/u.test(value) ? undefined : value.slice(0, 240);
+  return /(?:^|[\s"'(`=:])(?:[A-Za-z]:[\\/]|\\\\|~?\/)[^\s]/u.test(value) ? undefined : value.slice(0, 240);
 }
 function attemptResult(result: CodingResult): CodingAttemptResult {
   const limitations = result.limitations.flatMap(line => {

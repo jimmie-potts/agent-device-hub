@@ -43,7 +43,6 @@ function TaskControls({context, command, state, profile, live, question, coding,
 }): React.JSX.Element {
   const formId = useId();
   const [routing, setRouting] = useState<{draft: string; status: 'loading' | 'choose' | 'unavailable' | 'missing' | 'unsupported'; jobs?: CodingJobEntry[]}>();
-  const currentRouting = routing?.draft === drafts[`${profile}:start`] ? routing : undefined;
   // The draft a sent or queued message came from, cleared once its command succeeded, so the composer is ready for the
   // next message while the task runs; a refused or uncertain command keeps it.
   const [submitted, setSubmitted] = useState<{requestId: string; key: string; text: string}>();
@@ -66,6 +65,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
     && (task.questionId === null || task.hasAnswer);
   const draftKey = `${profile}:${pending ? task.questionId ?? 'start' : 'start'}`;
   const draft = drafts[draftKey] ?? '';
+  const currentRouting = routing?.draft === draft ? routing : undefined;
+  const jobInstruction = explicitJobInstruction(draft);
   const bytes = new TextEncoder().encode(draft).byteLength;
   // The composer stays available while the task runs or waits (Hub #2030): during an approval or a hand-off it only queues.
   const showInput = state !== undefined && !unavailableDecision;
@@ -82,7 +83,7 @@ function TaskControls({context, command, state, profile, live, question, coding,
   // task to wait for has nothing to queue behind, so Send alone shows.
   const queued = queue?.messages.length ?? 0;
   const queueable = showInput && (open || queued > 0);
-  const canQueue = queueable && ready && queued < LIMITS.queuedMessages;
+  const canQueue = queueable && ready && jobInstruction === undefined && queued < LIMITS.queuedMessages;
   useEffect(() => {
     if (submitted === undefined) return;
     const operation = context.operations.find(value => value.requestId === submitted.requestId);
@@ -127,9 +128,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
   };
   // Enter sends, steering a task that works, or answers; during an approval, or while the task is paused, it queues.
   const submit = (): void => {
-    const instruction = pending ? undefined : explicitJobInstruction(draft);
-    if (instruction !== undefined) {
-      if (ready && currentRouting?.status !== 'loading') routeJob(instruction.target, instruction.text);
+    if (jobInstruction !== undefined) {
+      if (ready && currentRouting?.status !== 'loading') routeJob(jobInstruction.target, jobInstruction.text);
       return;
     }
     if (steerable) {if (canSteer) send(draft, 'steer');}
@@ -230,7 +230,8 @@ function TaskControls({context, command, state, profile, live, question, coding,
         {voice}
         {answerable && attach}
         {queueable && <button type="button" className="secondary conversation-queue-button" disabled={!canQueue} onClick={() => {if (canQueue) send(draft, 'queue');}}>Queue</button>}
-        {steerable ? <button type="submit" form={formId} disabled={!canSteer}>Send</button>
+        {jobInstruction !== undefined ? <button type="submit" form={formId} disabled={!ready || currentRouting?.status === 'loading'}>Message job</button>
+          : steerable ? <button type="submit" form={formId} disabled={!canSteer}>Send</button>
           : answerable && <button type="submit" form={formId} disabled={!canSubmit}>{pending ? 'Answer' : 'Send'}</button>}
       </div>
     </>}</ConversationUpload>
@@ -516,7 +517,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                   : <small>Update to an earlier reply. Load earlier messages to see it.</small>)}
                 <p className="conversation-message-text" dir="auto">{message.text}</p>
                 {jobReceipt && <ConversationCodingJob jobId={message.id} revision={coding?.revision}
-                  read={readCodingJobs} locked={locked} stop={stopJob}
+                  read={readCodingJobs} locked={locked} stop={stopJob} operations={context.operations}
                   message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}/>}
                 {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
                   connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
@@ -560,7 +561,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
         <ConversationDetails id={detailsId} open={detailsOpen} overlay={detailsOverlay} onClose={closeDetails}
           codingJobs={<><a href="#/module/companions/jobs">Open Jobs</a>
             {coding?.counts !== undefined && detailsOpen && <CodingJobs revision={coding.revision}
-              read={readCodingJobs} stop={stopJob} locked={locked}
+              read={readCodingJobs} stop={stopJob} locked={locked} operations={context.operations}
               message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}/>}</>}
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live} spend={spend}
