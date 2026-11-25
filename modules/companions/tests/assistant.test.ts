@@ -2488,3 +2488,32 @@ void test('selecting OpenAI scopes titles and device reads, and replays only its
   assert.equal(sent.length, count, 'restart sends no request');
 
 });
+
+
+void test('Responses device reads omit an excluded group and an excluded device', async context => {
+  const cases = [
+    ['What is the brightness of Desk Lamp, not all lights?', 'Desk Lamp (desk)'],
+    ['What is the brightness of Desk Lamp, rather than Hall Lamp?', 'Desk Lamp (desk)'],
+    ['List all lights', 'Desk Lamp (desk)\nHall Lamp (hall)'],
+    ['List all lights except Hall Lamp', 'No configured LIFX lights are known.'],
+  ] as const;
+  const outputs: string[] = [];
+  const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+    const output = body.input.find(item => item.type === 'function_call_output')?.output;
+    if (output !== undefined) outputs.push(output);
+    const items = output === undefined
+      ? [{type: 'function_call', id: 'fc_lights', call_id: 'call_lights', name: 'read_lifx', arguments: '{"device":""}'}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Read complete.', annotations: []}]}];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output: items, usage: {input_tokens: 40, output_tokens: 40}})));
+  }});
+  const w = await world(context, {provider, tools: ['read_lifx'], devices: () => [light('desk', 'Desk Lamp'), light('hall', 'Hall Lamp')]});
+  await control(w.core, w.module(), 'enable');
+  for (const [prompt, expected] of cases) {
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+    assert.equal(outputs.at(-1), expected);
+  }
+  assert.equal(outputs.length, cases.length);
+});

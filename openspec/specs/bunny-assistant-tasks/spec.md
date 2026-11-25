@@ -1067,6 +1067,12 @@ For [Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108), e
 - **WHEN** the task requests a model turn or title
 - **THEN** the OpenAI request contains only the allowed current owner request and relevant scoped data for that purpose, and a revoked disclosure prevents opaque replay
 
+#### Scenario: Respect device exclusions before a Responses tool result
+
+- **GIVEN** the owner asks for a named device's state and excludes another device or a device group
+- **WHEN** Responses requests a device listing
+- **THEN** the result can include the requested device and excludes the other device or group
+
 #### Scenario: A paid Responses call loses its answer
 
 - **GIVEN** a shared ledger with reservations from both hosted supervisors and their title calls

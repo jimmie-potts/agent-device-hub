@@ -177,6 +177,19 @@ export const WAITING_RECEIPT = 'accepted: the coding worker is busy, so this han
 /** How a waiting hand-off is worded in the conversation until it is sent; "Delegated to ..." replaces it then. */
 export const WAITING_PREFIX = 'Waiting to delegate';
 const jobReceipt = (job: CodingJob): string => `accepted: Coding job ${job.jobId} was queued for ${job.repository}. Updates will appear in this conversation.`;
+
+const DEVICE_EXCLUSION = /\b(?:not|no|never|don t|do not|except(?: for)?|excluding|exclude|without|but|rather than|instead of|other than|avoid|skip|ignore|omit)\b/u;
+function deviceRequestScope(text: string) {
+  const request = normalizedControlText(text);
+  const exclusion = DEVICE_EXCLUSION.exec(request);
+  const positive = (exclusion === null ? request : request.slice(0, exclusion.index)).trim();
+  const excluded = exclusion === null ? '' : request.slice(exclusion.index);
+  const readGroup = /^(?:please )?(?:(?:list|show|check|read|are|were)|what (?:is|was) (?:the )?(?:status|state|brightness|power) of) (?:the )?(all (?:wemo )?plugs|wemo plugs|all (?:lifx )?lights|lifx lights)(?: (?:on|off|status|state|please))?$/u.exec(positive)?.[1];
+  return {
+    names: (name: string) => !/\bor\b/u.test(positive) && containsControlValue(positive, name) && !containsControlValue(excluded, name),
+    group: exclusion === null ? readGroup ?? powerSubject(text) : undefined,
+  };
+}
 const waitingText = (delegated: string): string => `${WAITING_PREFIX}${delegated.slice('Delegated'.length)}`.slice(0, 1024);
 export const DECLINED = 'The owner declined the proposal; nothing was changed.';
 export const REFUSED = 'The model declined this request.';
@@ -1252,16 +1265,18 @@ export class AssistantEngine {
           message => message.role === 'owner' && allowsExcerpt(message.id), true).messages;
       }
     }
-    const named = (text: string, device: DeviceRecord): boolean =>
-      [device.id, deviceLabel(device)].some(value => containsControlValue(text, value));
+    const selection = deviceRequestScope(request);
+    const previousSelections = recent.map(message => deviceRequestScope(message.text));
+    const named = (scope: ReturnType<typeof deviceRequestScope>, device: DeviceRecord): boolean =>
+      [device.id, deviceLabel(device)].some(scope.names);
     const referenced = new Map<string, string>();
     if (purpose === 'supervisor') {
-      if (/\b(?:hub mode|current mode|set mode|work mode|free mode|quiet mode)\b/i.test(request)) devices.add('hub');
+      if (['hub mode', 'current mode', 'set mode', 'work mode', 'free mode', 'quiet mode'].some(selection.names)) devices.add('hub');
       for (const owner of [ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER] as const) {
-        const group = owner === ASSISTANT_WEMO_OWNER ? /\b(?:wemo plugs|all plugs)\b/i : /\b(?:lifx lights|all lights)\b/i;
+        const group = owner === ASSISTANT_WEMO_OWNER ? /^(?:all (?:wemo )?plugs|wemo plugs)$/u : /^(?:all (?:lifx )?lights|lifx lights)$/u;
         for (const device of this.options.devices?.(owner) ?? []) {
-          if (named(request, device) || group.test(request)) devices.add(device.id);
-          if (refersToDevice && recent.some(message => named(message.text, device))) referenced.set(device.id, deviceLabel(device));
+          if (named(selection, device) || group.test(selection.group ?? '')) devices.add(device.id);
+          if (refersToDevice && previousSelections.some(scope => named(scope, device))) referenced.set(device.id, deviceLabel(device));
         }
       }
     }
@@ -1276,7 +1291,7 @@ export class AssistantEngine {
       if (source === 'conversation' && (record === undefined || this.store.messages.removal(record) !== undefined || !local(source, 'text', record))) return false;
       if (source === 'devices') {
         if (!local(source, field, record)) return false;
-        if (purpose === 'supervisor' && record !== undefined && containsControlValue(request, record)) devices.add(record);
+        if (purpose === 'supervisor' && record !== undefined && selection.names(record)) devices.add(record);
       }
       return access(source, field, record);
     };
