@@ -1,3 +1,4 @@
+import {DEVICE_HISTORY_VERSION} from '@jimmie-potts/event-contracts/v2/assistant-actions';
 import {artShowSurfaces} from '@jimmie-potts/event-contracts/v2/art-show';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
@@ -402,6 +403,50 @@ void test('an explicit Wemo group binds every target once', async context => {
   await until(() => status(w) === 'succeeded' && requests.length === 2);
   assert.deepEqual(requests.map(request => request.target), plugs.map(plug => plug.id));
   assert.equal(new Set(requests.map(request => request.requestId)).size, 2);
+});
+
+void test('Conversation discovers an allowed device and answers a held-out power interval from bounded evidence', async context => {
+  const owner = 'bunny/modules/wemo', target = 'fixture-plug';
+  const read = {source: owner, target, period: '', fromAtMs: 1000, toAtMs: 1100};
+  const provider = counted((request, turn) => {
+    if (turn === 1) return call('read_hub_guide');
+    if (turn === 2) {
+      assert.match(JSON.stringify(request.transcript), /read_device_history/);
+      return call('read_devices', {owner, target: ''});
+    }
+    if (turn === 3) {
+      assert.match(JSON.stringify(request.transcript), /fixture-plug/);
+      return call('read_device_history', {...read, cursor: ''}, 'history-first');
+    }
+    const result = request.transcript.filter(item => item.role === 'tool').at(-1)?.result ?? '{}';
+    const page = JSON.parse(result) as {next: string | null; durations: {on: number; unknown: number}; evidence: {seq: number}[]};
+    if (page.next !== null) return call('read_device_history', {...read, cursor: page.next}, 'history-next');
+    assert.equal(page.evidence.at(-1)?.seq, 15);
+    return reply(`The evidence supports ${String(page.durations.on)} on and ${String(page.durations.unknown)} unknown.`);
+  });
+  let reads = 0;
+  const w = await world(context, {provider, tools: ['read_hub_guide', 'read_devices', 'read_device_history'],
+    dispatch: () => assert.fail('history sends no device command'),
+    deviceHistory: query => {
+      reads += 1;
+      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 15, complete: true,
+        durations: {on: 60, off: 10, unknown: 30}, lastChange: null, links: [],
+        evidence: Array.from({length: 16}, (_, seq) => ({seq, messageId: null, atMs: 1000 + seq, confirmedThroughMs: 1001 + seq,
+          kind: 'observation', power: 'on'}))};
+    },
+  });
+  const device = w.bus.connect(owner);
+  context.after(() => device.close());
+  await device.serveSync(['device'], () => ({revision: 1, states: [{
+    type: 'org.bunny.device.updated', subject: target, dataschema: DEVICE_READBACK_SCHEMA,
+    data: {...light(target, 'Fixture Plug'), kind: 'wemo'},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'How much of the Fixture Plug’s last interval can you prove it was on?');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(reads, 1);
+  await w.restart();
+  assert.match(JSON.stringify(await page(w)), /60 on and 30 unknown/);
 });
 
 void test('assistant-state updates and sync hide revoked task metadata, including after restart', async context => {
@@ -2521,6 +2566,102 @@ void test('Responses device reads bind the affirmative subject without widening 
     assert.equal(outputs.at(-1), expected, prompt);
   }
   assert.equal(outputs.length, cases.length);
+});
+
+
+void test('Responses history requires one exact device and current summary grants', async context => {
+  const target = 'desk', source = 'bunny/modules/lifx';
+  const baseline = sharing();
+  const day = Date.parse('2026-11-25T00:00:00Z');
+  let expected: {source: string; target: string} = {source, target};
+  let denied: 'local' | 'remote' | undefined, reads = 0, revokeAfterRead = false;
+  let args = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
+  const sent: string[] = [], results: string[] = [];
+  const titles: string[] = [];
+  const titleProvider = new OpenAITitleProvider({key: 'fake', model: OPENAI_MODEL, transport: (_url, init) => {
+    titles.push(init.body);
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output: [{type: 'message', role: 'assistant',
+      content: [{type: 'output_text', text: 'Fixture history title', annotations: []}]}], usage: {input_tokens: 20, output_tokens: 10}})));
+  }});
+  const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    sent.push(init.body);
+    const body = JSON.parse(init.body) as {input: {type?: string; output?: string}[]};
+    const result = body.input.find(item => item.type === 'function_call_output')?.output;
+    if (result !== undefined) results.push(result);
+    const output = result === undefined
+      ? [{type: 'function_call', id: 'fc_history', call_id: 'call_history', name: 'read_device_history', arguments: JSON.stringify(args)}]
+      : [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Synthetic history answer.', annotations: []}]}];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 40, output_tokens: 40}})));
+  }});
+  const share = (query: ShareQuery) => baseline(query) && !(query.source === 'devices' && query.field === 'summary' && query.record === target &&
+    (denied === 'local' && query.destination === 'private-conversation' || denied === 'remote' && query.destination === 'openai-supervisor'));
+  const w = await world(context, {provider, openAITitleProvider: titleProvider, timeZone: 'UTC', share, tools: ['read_device_history'],
+    devices: owner => owner === WEMO_OWNER ? [{...light('plug', 'Hall Plug'), kind: 'wemo'}]
+      : [light(target, 'Desk Lamp'), light('other', 'Hall Lamp'), light('first', 'Shared Name'), light('second', 'Shared Name')],
+    dispatch: () => assert.fail('history sends no device command'),
+    deviceHistory: query => {
+      reads += 1;
+      if (revokeAfterRead) denied = 'remote';
+      assert.equal(query.source, expected.source);
+      assert.equal(query.target, expected.target);
+      const total = query.toAtMs - query.fromAtMs;
+      return {schema: DEVICE_HISTORY_VERSION, query, boundary: 155, complete: true,
+        durations: {on: 421, off: 0, unknown: total - 421}, lastChange: {atMs: query.fromAtMs + 1, seq: 154, from: 'off', to: 'on'},
+        evidence: [{seq: 154, messageId: 'PRIVATE_EVIDENCE_ID', atMs: query.fromAtMs + 1, confirmedThroughMs: query.toAtMs,
+          kind: 'observation', power: 'on'}],
+        links: [{requestId: 'PRIVATE_OPERATION_ID', observationSeq: 154, sentSeq: 151, transmissionOutcomeSeq: 152, transmittedAtMs: query.fromAtMs}]};
+    }}, undefined, day + 5000);
+  await control(w.core, w.module(), 'enable');
+  const ask = async (prompt: string) => {
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), prompt)).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+    return results.at(-1) ?? '';
+  };
+  const affirmative = 'How long was Desk Lamp on yesterday?';
+  const summary = await ask(affirmative);
+  assert.equal(reads, 1);
+  assert.match(summary, /"on":421/);
+  assert.deepEqual((JSON.parse(summary) as {interval: unknown}).interval, {fromAtMs: day - 86_400_000, toAtMs: day});
+  assert.doesNotMatch(summary, /lastChange|PRIVATE_|"seq"|"cursor"|"boundary"|"target"|"source"/);
+  for (const side of ['remote', 'local'] as const) {
+    denied = side;
+    assert.match(await ask(affirmative), /forbidden/);
+  }
+  denied = undefined;
+  assert.match(await ask('How long was Shared Name on yesterday?'), /forbidden/);
+  assert.match(await ask('How long was Desk Lamp or Hall Plug on yesterday?'), /forbidden/);
+  args = {...args, target: 'other'};
+  assert.match(await ask(affirmative), /forbidden/);
+  args = {...args, target: '', source: WEMO_OWNER};
+  assert.match(await ask(affirmative), /forbidden/);
+  args = {...args, source: '', period: 'yesterday', fromAtMs: 1, toAtMs: 2};
+  assert.match(await ask(affirmative), /forbidden/);
+  assert.equal(reads, 1);
+  args = {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''};
+  const lastChange = await ask('When did Desk Lamp last change between 2026-11-24T12:00:00Z and 2026-11-24T13:00:00Z?');
+  assert.match(lastChange, /"lastChange":\{"atMs":1795521600001,"from":"off","to":"on"\}/);
+  assert.doesNotMatch(lastChange, /seq|durations/);
+  assert.match(await ask('How long was Desk Lamp on from 2026-11-31T12:00:00Z to 2026-12-01T13:00:00Z?'), /forbidden/);
+  assert.match(await ask('Tell me a synthetic joke.'), /forbidden/);
+  assert.equal(reads, 2);
+  assert.equal(results.filter(value => value.includes('"on":421')).length, 1);
+  assert.ok(titles.length > 0);
+  assert.doesNotMatch(titles.join(' '), /durations|lastChange|PRIVATE_/);
+  const beforeRevoke = sent.length;
+  const priorTask = task(w)?.taskId;
+  revokeAfterRead = true;
+  await input(w.core, w.module(), affirmative);
+  await until(() => task(w)?.taskId !== priorTask && status(w) === 'failed');
+  assert.equal(task(w)?.code, 'forbidden');
+  assert.equal(reads, 3);
+  assert.equal(sent.length, beforeRevoke + 1, 'revoked result did not reach a second provider call');
+  denied = undefined;
+  revokeAfterRead = false;
+  expected = {source: WEMO_OWNER, target: 'plug'};
+  assert.match(await ask('How long was Hall Plug on yesterday?'), /"on":421/);
+  assert.equal(reads, 4);
+  assert.doesNotMatch(sent.join(' '), /PRIVATE_EVIDENCE_ID|PRIVATE_OPERATION_ID/);
 });
 
 

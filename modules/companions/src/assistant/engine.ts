@@ -25,7 +25,9 @@ import {BUILT_IN_PRICES_AS_OF, inputBound, SpendLedger, type PriceTable, type Sp
 import {PROFILES, spokenAloud} from '../knowledge/model.js';
 import type {ActivePreference} from '../preferences/model.js';
 import {ConversationActions, deviceClarification, type RetainedArtworkRead} from './catalog-actions.js';
-import {catalogCommand, catalogTool, isCatalogTool, READ_DEVICES} from './catalog-tools.js';
+import {deviceHistoryQuery} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {catalogCommand, catalogTool, isCatalogTool, READ_DEVICE_HISTORY, READ_DEVICES, READ_HUB_GUIDE} from './catalog-tools.js';
+import {DeviceHistoryPages, deviceHistoryGuide, requestedHistory, type DeviceHistoryRead, type DeviceHistorySummary} from './device-history.js';
 import {SyntheticProvider} from './synthetic.js';
 import {changesOf, observationDraft, observationOf, titleObservationOf} from './sessions.js';
 import {ConversationTitles, ownerTitle, type TitleEvent, type TitleProvider} from './titles.js';
@@ -42,6 +44,7 @@ export type Dispatch = (data: AssistantDispatch, parent: TraceContext, signal: A
  * and the owner's currently active explicit preferences, read at each model call (none without the seam).
  */
 export type AssistantOptions = {
+  deviceHistory?: DeviceHistoryRead;
   share?: Share;
   provider?: ModelProvider;
   alternateProvider?: ModelProvider;
@@ -232,6 +235,7 @@ export class AssistantEngine {
   readonly spend: SpendLedger;
   readonly titles: ConversationTitles;
   readonly #validator = coreValidator();
+  readonly #history = new DeviceHistoryPages(() => this.options.deviceHistory);
   readonly #subscriptions: Subscription[] = [];
   readonly #graph;
   readonly #deviceDisplay: DeviceReadDisplay;
@@ -1277,8 +1281,9 @@ export class AssistantEngine {
     return provider.name !== 'openai' ? tools : tools.filter(tool => {
       const family = catalogCommand(tool.name);
       return tool.name === ASK_OWNER || tool.name === SET_MODE || tool.name === DELEGATE_CODING ||
-        tool.name === READ_DEVICES || deviceToolOwner(tool.name) !== undefined || family !== undefined && catalogRoute(family).binding === 'device';
-    });
+        tool.name === READ_DEVICES || tool.name === READ_DEVICE_HISTORY || deviceToolOwner(tool.name) !== undefined || family !== undefined && catalogRoute(family).binding === 'device';
+    }).map(tool => tool.name === READ_DEVICE_HISTORY ? {...tool,
+      description: 'Summarize the exact device and historical interval in the current owner request. Send empty source, target, period and cursor, and zero for both timestamp fields. A missing or ambiguous device or interval requires an explicit owner request.'} : tool);
   }
   #openAIScope(task: Task, purpose: 'supervisor' | 'title' = 'supervisor', boundDevice?: string) {
     const ownerInputs = task.transcript.filter(item => item.role === 'owner');
@@ -1312,6 +1317,19 @@ export class AssistantEngine {
       (this.options.devices?.(owner) ?? []).map(device => ({owner, device}))) : [];
     const named = (subject: string | undefined, device: DeviceRecord): boolean =>
       [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject);
+    const historyRequest = purpose === 'supervisor' ? this.store.messages.get(requestId) : undefined;
+    const history = historyRequest?.speakerId === 'owner' && historyRequest.conversationId === task.conversationId
+      ? requestedHistory(request, historyRequest.createdAtMs, this.spend.timeZone) : undefined;
+    const historyMatches = history === undefined ? [] : configured.filter(({device}) => named(history.subject, device));
+    const historyTarget = historyMatches.length === 1 ? historyMatches[0] : undefined;
+    let historySummary: DeviceHistorySummary | undefined;
+    if (historyTarget !== undefined && history !== undefined) {
+      const query = deviceHistoryQuery({source: historyTarget.owner, target: historyTarget.device.id, ...history.interval});
+      if (query !== undefined) {
+        historySummary = {query, kind: history.kind, yesterday: history.yesterday};
+        devices.add(query.target);
+      }
+    }
     const matches = configured.filter(({device}) => named(subjectForRead, device));
     const selected = group !== undefined ? configured.filter(({owner}) => owner === group) : matches.length === 1 ? matches : [];
     for (const {device} of selected) devices.add(device.id);
@@ -1331,7 +1349,8 @@ export class AssistantEngine {
       const id = item.role === 'tool' ? conversationMessageId(task.id, item) : undefined;
       if (id?.endsWith('-answer') === true) messages.set(id, {conversationId: task.conversationId});
     }
-    const access = supervisorFields(this.options.share, {companion: task.profile, requestId, conversationId: task.conversationId, messages, devices, purpose});
+    const access = supervisorFields(this.options.share, {companion: task.profile, requestId, conversationId: task.conversationId, messages, devices, purpose,
+      ...(historySummary === undefined ? {} : {requestedHistory: new Set([historySummary.query.target])})});
     const fields: FieldAccess = (source, field, record) => {
       if (source === 'conversation' && (record === undefined || this.store.messages.removal(record) !== undefined || !local(source, 'text', record))) return false;
       if (source === 'devices') {
@@ -1350,7 +1369,7 @@ export class AssistantEngine {
         recent = [];
       }
     }
-    return {request, requestId, recent, fields, transcript, effects, referencedDevice, catalogSubject, selectedDevice};
+    return {request, requestId, recent, fields, transcript, effects, referencedDevice, catalogSubject, selectedDevice, historySummary};
   }
   #taskFields(task: Task): FieldAccess {
     if (this.#taskProvider(task).name !== 'openai') return this.#modelFields(task.profile, this.#taskProvider(task).name);
@@ -1769,7 +1788,12 @@ export class AssistantEngine {
       const ledger: DisclosureLedger = {fields: []};
       const access = recordDisclosures(modelFields, ledger);
       let text: string;
-      if (owner !== undefined) {
+      if (call.name === READ_HUB_GUIDE) {
+        text = deviceHistoryGuide(new Set(tools.map(tool => tool.name)));
+      } else if (call.name === READ_DEVICE_HISTORY) {
+        text = scope === undefined ? this.#history.read(call.input, {taskId: task.id, destination: provider.name, now, timeZone: this.spend.timeZone}, access)
+          : this.#history.summary(call.input, scope.fields('conversation', 'request', scope.requestId) ? scope.historySummary : undefined, access);
+      } else if (owner !== undefined) {
         const name = call.input.device;
         if (scope !== undefined && !/\b(?:status|state|power|brightness|list|show|is|are|was|were|on|off)\b/i.test(scope.request)) {
           return {text: 'The current request does not ask for device status.', units: 0, disclosures: []};

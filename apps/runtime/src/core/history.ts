@@ -24,6 +24,8 @@ import type {DatabaseSync, StatementSync} from 'node:sqlite';
 import {compareDelivery, type ErrorDetail, type Message} from '@jimmie-potts/event-contracts/v2';
 import {bookkeeping as contractBookkeeping, sameState, type Bookkeeping} from '@jimmie-potts/event-contracts/v2/bookkeeping';
 import {OUTCOME_RECORDED_TYPE, type TraceContext} from '@jimmie-potts/sdk';
+import {type DeviceHistoryQuery, type DeviceHistorySnapshot} from '@jimmie-potts/event-contracts/v2/assistant-actions';
+import {projectDeviceHistory} from './device-history.js';
 import type {ActionKind, Evidence, OperationResult, OperationStatus} from './operations.js';
 
 /** What a history row records. */
@@ -292,6 +294,44 @@ export class History {
     const rows = this.read(filter);
     const open = this.open(rows);
     return open.length === 0 ? {rows} : {rows, open};
+  }
+
+  /** Bounded device projection. The seq range uses the existing primary key and adds no writer work. */
+  devicePower(query: DeviceHistoryQuery): DeviceHistorySnapshot {
+    const maxRows = 512, maxScan = 131_072, tail = 2048;
+    const newest = this.#database.prepare('SELECT MAX(seq) AS seq FROM core_history').get();
+    const boundary = Number(newest?.seq ?? 0);
+    // Commit times normally increase with seq. Use them only to position a bounded scan, never as proof that omitted rows are irrelevant.
+    const locate = this.#database.prepare('SELECT seq, at_ms FROM core_history WHERE seq >= ? ORDER BY seq LIMIT 1');
+    let lo = 0, hi = boundary;
+    while (lo < hi) {
+      const point = lo + Math.floor((hi - lo) / 2);
+      const candidate = locate.get(point);
+      if (candidate !== undefined && Number(candidate.at_ms) <= query.toAtMs) lo = Number(candidate.seq) + 1;
+      else hi = point;
+    }
+    const upper = Math.min(boundary, lo + tail);
+    const lower = Math.max(0, upper - maxScan);
+    const select = `SELECT seq, at_ms AS atMs, revision, kind, source, message_id AS messageId,
+      type, subject, request_id AS requestId, CASE WHEN length(CAST(record AS BLOB)) <= 16384 THEN record END AS record
+      FROM core_history WHERE seq > ? AND seq <= ? AND subject = ?`;
+    const device = "source = ? AND type IN ('org.bunny.device.updated', 'org.bunny.device.removed')";
+    const eligible = `((${device}) OR (kind = 'operation' AND type = 'power-set'))`;
+    const params = [lower, upper, query.target, query.source];
+    type Candidate = Omit<HistoryRow, 'record'> & {record: string | null};
+    const prior = this.#database.prepare(`${select} AND ${eligible} AND at_ms < ? ORDER BY seq DESC LIMIT 17`)
+      .all(...params, query.fromAtMs) as Candidate[];
+    const within = this.#database.prepare(`${select} AND ${eligible} AND at_ms >= ? AND at_ms < ? ORDER BY seq LIMIT ?`)
+      .all(...params, query.fromAtMs, query.toAtMs, maxRows + 1) as Candidate[];
+    const closing = within.length > maxRows ? undefined : this.#database.prepare(`${select} AND ${device} AND at_ms >= ? ORDER BY seq LIMIT 1`)
+      .get(...params, query.toAtMs) as Candidate | undefined;
+    const candidates = [...prior.slice(0, 16), ...within.slice(0, maxRows), ...(closing === undefined ? [] : [closing])]
+      .sort((left, right) => left.seq - right.seq);
+    const rows = candidates.map(row => ({...row, record: row.record === null ? {family: 'device', gapMs: 0} :
+      JSON.parse(row.record) as Record<string, unknown>}));
+    const complete = lower === 0 && upper === boundary && prior.length <= 16 && within.length <= maxRows &&
+      candidates.every(row => row.record !== null);
+    return projectDeviceHistory(query, boundary, rows, this.open(rows), complete);
   }
 
   /**

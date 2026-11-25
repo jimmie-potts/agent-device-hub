@@ -3154,6 +3154,13 @@ account/device compatibility or map attribution.
 
 ## Companions source checks
 
+For device history, build and run `node --test --test-concurrency=2 apps/runtime/dist/tests/device-history.test.js modules/companions/dist/tests/device-history.test.js`.
+Run the Companion and runtime suites for the synthetic conversation and the
+core history and MCP readers. The Companion suite also exercises Responses
+summary scope, mismatched queries, title isolation and revocation before the
+next provider call. Their existing CI commands discover these files.
+The fixture writes only its disposable store and uses no device or hosted model.
+
 The Conversation maximum-on read uses a disposable Companions engine with
 synthetic Wemo and core SDK records. After the root build, the
 `assistant.test.js` cases exercise both named device reads, every limit status,

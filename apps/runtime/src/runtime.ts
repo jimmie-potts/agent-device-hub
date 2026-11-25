@@ -1,3 +1,4 @@
+import {isCompanionsModule} from '@jimmie-potts/companions';
 import {registerReadReceiptFamily} from '@jimmie-potts/event-contracts/v2/read-receipts';
 // The runtime (ADR 0012, "Runtime and transport"): one process, one in-process bus and a fixed list of modules, with a
 // loopback health endpoint. It runs with zero modules. With an edge (#920), its gateway (#835) serves the SDK edge, the
@@ -358,6 +359,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
     core?.setModeParticipants(modeParticipants(hosted));
     await core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
     bindHostedArtCatalog(core, modules, host, scheduler);
+    if (core !== undefined) modules.find(isCompanionsModule)?.setDeviceHistory(core.history.devicePower);
   }
   if (credentials !== undefined && validator !== undefined && edgeConfig !== undefined && edgeOptions !== undefined) {
     // The gateway's action routes call the core's dispatcher (#782), when the runtime hosts the core.
