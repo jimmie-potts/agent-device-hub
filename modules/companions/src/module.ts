@@ -274,7 +274,7 @@ class Companions {
       ...(titleProvider === undefined ? {} : {titleProvider}), ...(options.syntheticTitleProvider === undefined ? {} : {syntheticTitleProvider: options.syntheticTitleProvider}),
       ...(options.profileProviders === undefined ? {} : {profileProviders: options.profileProviders}),
       tools, core, dispatch, devices: options.devices ?? (owner => this.#deviceCopies.get(owner)?.records()),
-      readDevice: options.readDevice ?? (async (owner, name, signal, parent) => this.#deviceCopies.get(owner)?.read(name, signal, parent)), ...(options.available === undefined ? {} : {available: options.available})};
+      readDevice: options.readDevice ?? (async (owner, name, signal, parent, display) => this.#deviceCopies.get(owner)?.read(name, signal, parent, display)), ...(options.available === undefined ? {} : {available: options.available})};
   }
   #replyPolicy(): Pick<Policy, 'mode' | 'synced'> {
     const records = this.#copy?.states().map(message => message.data) ?? [];

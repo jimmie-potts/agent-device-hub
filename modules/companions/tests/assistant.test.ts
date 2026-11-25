@@ -7,10 +7,10 @@ import {randomUUID} from 'node:crypto';
 import {errorBody, type Message} from '@jimmie-potts/event-contracts/v2';
 import type {AssistantDispatch} from '@jimmie-potts/event-contracts/v2/assistant';
 import {DEVICE_POWER_READBACK_SCHEMA, DEVICE_READBACK_SCHEMA, type DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
-import {coreValidator, operationEntityId, type LifecycleObservation, type ModeState, type OperationRecord} from '@jimmie-potts/event-contracts/v2/families';
+import {coreValidator, operationEntityId, type LifecycleObservation, type ModeState, type OperationRecord, type PowerLimitRecord} from '@jimmie-potts/event-contracts/v2/families';
 import {buildSession, type SessionFacts, type SessionView} from '@jimmie-potts/event-contracts/v2/session';
 import {test, type TestContext} from 'node:test';
-import {fullDisk, InProcessBus, type Participant, type ModuleContext, type RequestResult} from '@jimmie-potts/sdk';
+import {fullDisk, InProcessBus, type Participant, type ModuleContext, type RequestResult, type Snapshot} from '@jimmie-potts/sdk';
 import {checkModuleRecord, RecordedSpans, ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {createCompanionsModule, type CompanionsModule, type CompanionsOptions} from '../src/module.js';
 import {AnthropicProvider} from '../src/assistant/anthropic.js';
@@ -25,6 +25,7 @@ import {PreferenceStore} from '../src/preferences/store.js';
 import {ProviderFault, type ModelProvider, type TurnInput, type TurnReply} from '../src/assistant/provider.js';
 import {SyntheticProvider, SYNTHETIC_QUESTION} from '../src/assistant/synthetic.js';
 import type {SpokenReply} from '@jimmie-potts/event-contracts/v2/companions';
+import {describePowerLimit, localInstant} from '../src/assistant/power-limits.js';
 import {readDevices} from '../src/assistant/devices.js';
 import {confirmationEvidence, type Confirmation} from '../src/assistant/confirmation.js';
 import {catalogTools} from '../src/assistant/catalog-tools.js';
@@ -50,12 +51,12 @@ const session = (label: string, patch: Partial<SessionFacts> = {}): SessionView 
   parent: {status: 'top-level'}, turn: {status: 'unknown'}, work: 'active', attention: [{id: {status: 'known', id: 'a-1'}, kind: 'approval', turn: {status: 'unknown'}}], notices: [], read: 'unknown', unavailable: [],
   ordering: {status: 'unknown'}, observedAtMs: 1000, lastEvidenceAtMs: 1000, children: {working: 0, unconfirmed: 0}, label: {value: label, origin: 'user'}, ...patch});
 const accepted = (requestId: string): RequestResult => ({status: 'accepted', requestId, reply: {} as never});
-async function world(context: TestContext, options: CompanionsOptions = {}, adapt: (context: ModuleContext) => ModuleContext = context => context) {
+async function world(context: TestContext, options: CompanionsOptions = {}, adapt: (context: ModuleContext) => ModuleContext = context => context, clockStart = Date.now(), maxQueued?: number) {
   const spans = new RecordedSpans();
-  let now = Date.now();
+  let now = clockStart;
   const timers = new Map<number, {due: number; callback: () => void}>(); let timerId = 0;
   const time = {clock: {now: () => now}, scheduler: {after: (delay: number, callback: () => void) => {const id = ++timerId; timers.set(id, {due: now + delay, callback}); return () => {timers.delete(id);};}}};
-  const dir = await mkdtemp(join(tmpdir(), 'assistant-owner-')), bus = new InProcessBus({now: time.clock.now}), core = bus.connect('bunny/core');
+  const dir = await mkdtemp(join(tmpdir(), 'assistant-owner-')), bus = new InProcessBus({now: time.clock.now, ...(maxQueued === undefined ? {} : {maxQueued})}), core = bus.connect('bunny/core');
   await core.serveSync(['session', 'mode'], () => ({revision: 0, states: []}));
   const make = () => {const module = createCompanionsModule(options); return {module, host: new ModuleHarness({...module, start: context => module.start(adapt(context))}, {bus, stateDir: dir, spans, section: {}, ...time})};};
   let {module, host} = make();
@@ -80,8 +81,8 @@ async function input(core: Participant, module: CompanionsModule, text: string, 
 }
 const task = (w: {module: () => CompanionsModule}) => w.module().inspectAssistant()?.tasks[0];
 const status = (w: {module: () => CompanionsModule}) => task(w)?.status;
-async function page(w: {module: () => CompanionsModule}, profile = 'bunny') {
-  const content = await w.module().manifest.content?.('conversation', {query: {profile}, signal: new AbortController().signal});
+async function page(w: {module: () => CompanionsModule}, profile = 'bunny', view?: 'recent') {
+  const content = await w.module().manifest.content?.('conversation', {query: {profile, ...(view === undefined ? {} : {view})}, signal: new AbortController().signal});
   assert.ok(content !== undefined && !('error' in content));
   return JSON.parse(Buffer.from(content.bytes).toString()) as {messages: {role: string; text: string}[]; currentTask: {question: {kind: string; proposal: {data: {mode: string}; expectedRevision: number | null} | null; answer: string | null} | null} | null};
 }
@@ -240,6 +241,132 @@ void test('a duplicate light label asks for an exact device ID and sends nothing
   assert.deepEqual((await page(w)).currentTask?.question?.proposal, {
     family: 'power-set', target: 'second', data: {on: false, expectedConfigurationRevision: 3, expectedGeneration: {epoch: 'start-1', sequence: 0}},
   });
+});
+
+const TIMER_START = Date.parse('2025-01-12T12:03:15.000Z');
+const TIMER_READ = TIMER_START + 56 * 60_000;
+const TIMER_DURATION = 3 * 60 * 60_000;
+const WEMO_OWNER = 'bunny/modules/wemo';
+const PLUG_ID = 'test-plug';
+const NON_RUNNING_LIMITS = [
+  ['disabled', /disabled/], ['unavailable', /unavailable/], ['off', /recorded the plug off/],
+  ['elapsed-unknown', /elapsed on-time is unknown/], ['due', /already due/], ['attempted', /recorded a shutoff attempt/],
+  ['blocked', /shutoff was blocked/],
+] as const;
+
+function powerLimit(status: PowerLimitRecord['status'], revision = 1): PowerLimitRecord {
+  const timed = status === 'armed' || status === 'due' || status === 'attempted' || status === 'blocked';
+  return {id: PLUG_ID, revision, settingsRevision: 1, status, enabled: status !== 'disabled', durationMs: TIMER_DURATION, enforcement: 'hub-dependent',
+    startedAtMs: timed ? TIMER_START : null, deadlineMs: timed ? TIMER_START + TIMER_DURATION : null, updatedAtMs: TIMER_READ,
+    observedAtMs: TIMER_READ, lastAttempt: null};
+}
+
+const powerLimitDraft = (data: PowerLimitRecord) => ({type: 'org.bunny.power-limit.updated', subject: data.id,
+  dataschema: 'https://bunny.invalid/events/power-limit/2.0', data});
+
+void test('Conversation reads a Wemo maximum-on deadline and recovers a lost copy through both read tools', async context => {
+  const plug: DeviceRecord = {...light(PLUG_ID, 'Test plug'), kind: 'wemo', observed: {
+    status: 'known', observedAtMs: TIMER_READ, power: {status: 'known', value: true}, brightness: unknown,
+  }};
+  let tool = 'read_wemo';
+  const provider = counted((turn, count) => {
+    if (count % 2 === 1) return tool === 'read_wemo' ? call(tool, {device: 'Test plug'}) : call(tool, {target: 'Test plug', owner: WEMO_OWNER});
+    const reading = turn.transcript.at(-1);
+    return reply(reading?.role === 'tool' ? reading.result : assert.fail('expected the read evidence in the model transcript'));
+  });
+  const w = await world(context, {provider, tools: ['read_wemo', 'read_devices'], timeZone: 'America/New_York',
+    dispatch: () => assert.fail('a status question sends no device command')}, undefined, TIMER_READ, 1);
+  const owner = w.bus.connect(WEMO_OWNER);
+  context.after(() => owner.close());
+  await owner.serveSync(['device'], () => ({revision: 1, states: [{type: 'org.bunny.device.updated', subject: plug.id,
+    dataschema: DEVICE_POWER_READBACK_SCHEMA, data: plug}]}));
+  const resync = deferred<Snapshot>();
+  context.after(() => resync.resolve({revision: 4, states: []}));
+  let snapshots = 0;
+  await w.core.serveSync(['power-limit'], () => {
+    snapshots += 1;
+    if (snapshots === 1) return {revision: 1, states: []};
+    return resync.promise;
+  });
+  await w.restart();
+  await control(w.core, w.module(), 'enable');
+  const ask = async (name: string): Promise<string> => {
+    tool = name;
+    const previous = task(w)?.taskId;
+    assert.equal((await input(w.core, w.module(), 'Is the timer on for the test plug, and how much time is left?')).status, 'accepted');
+    await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+    const view = await page(w, 'bunny', 'recent');
+    assert.equal(view.currentTask?.question ?? null, null);
+    const last = view.messages.at(-1);
+    assert.equal(last?.role, 'assistant');
+    if (last === undefined) assert.fail('expected a Conversation reply');
+    assert.ok(Buffer.byteLength(last.text) < LIMITS.toolBytes);
+    return last.text;
+  };
+  const changed = (revision: number, status: PowerLimitRecord['status']) => w.core.publish(`bunny.state.power-limit.${PLUG_ID}`,
+    {kind: 'state', ...powerLimitDraft(powerLimit(status, revision))});
+  assert.match(await ask('read_wemo'), /No maximum-on limit has been set/);
+  await changed(2, 'armed');
+  for (const tool of ['read_wemo', 'read_devices']) {
+    const last = await ask(tool);
+    assert.match(last, /maximum-on limit is enabled/i);
+    assert.match(last, /2 hours 4 minutes/);
+    assert.match(last, /7:03:15 AM EST/);
+    assert.match(last, /10:03:15 AM EST/);
+    assert.match(last, /2025-01-12T15:03:15.000Z/);
+    assert.match(last, /7:59:15 AM EST/);
+    assert.match(last, /Hub.*running.*plug.*reachable/i);
+  }
+
+  // One delivery slot. Sending both updates together drops one and opens a replacement sync.
+  await Promise.all([changed(3, 'off'), changed(4, 'off')]);
+  await until(() => snapshots === 2);
+  for (const tool of ['read_wemo', 'read_devices']) {
+    const last = await ask(tool);
+    assert.match(last, /maximum-on limit is unknown/i);
+    assert.doesNotMatch(last, /Time remaining|No maximum-on limit has been set/i);
+  }
+  assert.equal(w.host().logs.filter(record => record.fields['bunny.code'] === 'unavailable' &&
+    record.fields['bunny.operation'] === 'status').length, 1, 'the gap is recorded once across both reads');
+  resync.resolve({revision: 4, states: [powerLimitDraft(powerLimit('armed', 4))]});
+  w.advance(60_000);
+  for (const tool of ['read_wemo', 'read_devices']) {
+    assert.match(await ask(tool), /2 hours 3 minutes/);
+  }
+  for (const [index, [status, wording]] of NON_RUNNING_LIMITS.entries()) {
+    await changed(index + 5, status);
+    const last = await ask('read_wemo');
+    assert.match(last, wording);
+    assert.doesNotMatch(last, /Time remaining/);
+  }
+  assert.equal(snapshots, 2, 'tool reads do not open additional limit syncs');
+  assert.equal(w.host().sent.filter(sent => sent.call === 'request').length, 0);
+});
+
+void test('maximum-on read distinguishes every core status and only counts down an active limit', () => {
+  const instant = localInstant('America/New_York');
+  const show = (status: PowerLimitRecord['status'], lastAttempt: PowerLimitRecord['lastAttempt'] = null) =>
+    describePowerLimit({...powerLimit(status), lastAttempt}, TIMER_READ, instant);
+  assert.match(describePowerLimit(null, TIMER_READ, instant), /No maximum-on limit has been set/);
+  assert.match(describePowerLimit(undefined, TIMER_READ, instant), /maximum-on limit is unknown/);
+  for (const [status, wording] of NON_RUNNING_LIMITS) {
+    assert.match(show(status), wording);
+    assert.match(show(status), /duration of 3 hours/);
+    assert.doesNotMatch(show(status), /Time remaining/);
+  }
+  assert.match(show('armed'), /about 2 hours 4 minutes/);
+  const expired = describePowerLimit(powerLimit('armed'), TIMER_START + TIMER_DURATION, instant);
+  assert.match(expired, /reports the limit as armed.*already due/);
+  assert.doesNotMatch(expired, /Time remaining/);
+  for (const [outcome, wording] of [
+    ['intent', /recorded its intent/], ['receipt', /received a shutoff attempt receipt/],
+    ['not-sent', /attempt was not sent/], ['uncertain', /uncertain outcome/],
+  ] as const) {
+    const status = outcome === 'not-sent' ? 'blocked' : 'attempted';
+    const result = show(status, {requestId: 'synthetic-request', outcome, reason: 'synthetic-reason'});
+    assert.match(result, wording);
+    assert.doesNotMatch(result, /Time remaining|synthetic-request|synthetic-reason/);
+  }
 });
 
 void test('an owner-approved Wemo power request preserves the exact plug, owner and guards', async context => {
