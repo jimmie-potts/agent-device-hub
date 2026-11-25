@@ -11,7 +11,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {test, type TestContext} from 'node:test';
 import type {AssistantProfile, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
-import type {CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingHarnessReadiness, CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, type Command, type RequestResult} from '@jimmie-potts/sdk';
 import {ModuleHarness} from '@jimmie-potts/sdk/testing';
@@ -110,10 +110,13 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return (JSON.parse(Buffer.from(content.bytes).toString()) as {messages: SavedMessage[]}).messages;
   };
   /** The worker declares itself: a worker from Hub #2028 with three slots (2.2), or an older one that declares none (2.0). */
-  const enable = (slots?: number) => worker.request(`bunny.cmd.coding-endpoint.${ENDPOINT}`, {type: 'org.bunny.coding.endpoint.requested', subject: ENDPOINT,
-    dataschema: `https://bunny.invalid/events/coding-endpoint/${slots === undefined ? '2.0' : '2.2'}`, data: {requestId: randomUUID(), action: 'enable', ...(slots === undefined ? {} : {slots})}}, {timeoutMs: 5000});
+  const enable = (slots?: number, harnesses?: CodingHarnessReadiness[]) => worker.request(`bunny.cmd.coding-endpoint.${ENDPOINT}`, {
+    type: 'org.bunny.coding.endpoint.requested', subject: ENDPOINT,
+    dataschema: `https://bunny.invalid/events/coding-endpoint/${harnesses !== undefined ? '2.3' : slots === undefined ? '2.0' : '2.2'}`,
+    data: {requestId: randomUUID(), action: 'enable', ...(slots === undefined ? {} : {slots}), ...(harnesses === undefined ? {} : {harnesses})},
+  }, {timeoutMs: 5000});
   const progress = (data: object) => worker.publish(`bunny.event.coding-progress.${ENDPOINT}`, {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', subject: ENDPOINT,
-    dataschema: 'https://bunny.invalid/events/coding-progress/2.1', data});
+    dataschema: `https://bunny.invalid/events/coding-progress/${'harness' in data ? '2.2' : '2.1'}`, data});
   const starts = () => work.filter(command => command.data.action === 'start');
   /** A profile's task asks, waits at its approval and is approved. */
   const approved = async (profile: AssistantProfile): Promise<void> => {
@@ -131,6 +134,42 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
   return {module: () => module, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
     restart: async () => {await host.stop(); ({module, host} = make()); await host.start();}, advance: (ms: number) => {now += ms; for (const [id, timer] of [...timers]) if (timer.due <= now) {timers.delete(id); timer.callback();}}};
 }
+
+void test('an attributed background job keeps its first native session and delivers one result to the original exchange', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  const readiness: CodingHarnessReadiness = {
+    harness: 'claude-code', capabilities: {steering: 'unsupported', resume: 'unsupported', review: true},
+    installed: 'yes', signedIn: 'yes', version: '2.1.292', plan: 'max', checkedAtMs: Date.parse('2026-11-24T18:00:00Z'),
+    limits: null, limitsObservedAtMs: null,
+  };
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable(3, [readiness])).status, 'accepted');
+  assert.deepEqual(w.coding().harnesses, [readiness]);
+  assert.equal((await w.send('bunny', 'Synthetic background job with session evidence')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1 && w.task('bunny')?.status === 'succeeded');
+  const start = w.starts()[0] ?? assert.fail('worker start');
+  const {operationId} = start.data;
+  const jobId = `${operationId}-job`;
+  const origin = w.task('bunny')?.conversationId ?? assert.fail('originating conversation');
+  assert.equal(start.dataschema, 'https://bunny.invalid/events/coding-work/2.1');
+  assert.equal('harness' in start.data, false, 'an implicit job keeps the default Claude selection');
+  await w.progress({operationId, harness: 'claude-code', status: 'started'});
+  await settle(() => w.coding().runs?.some(run => run.operationId === operationId && run.status === 'started') === true);
+  await w.progress({operationId, harness: 'claude-code', status: 'started', sessionId: 'native-first'});
+  await settle(() => w.coding().runs?.some(run => run.operationId === operationId && run.sessionId === 'native-first') === true);
+  await w.progress({operationId, harness: 'claude-code', status: 'started', sessionId: 'native-conflict'});
+  assert.equal((await w.newConversation('bunny')).status, 'accepted');
+  assert.equal(w.coding().runs?.find(run => run.operationId === operationId)?.sessionId, 'native-first');
+  const ended = {operationId, harness: 'claude-code', sessionId: 'native-first', status: 'completed',
+    result: {...result('Synthetic attributed result.'), sessionId: 'native-first'}};
+  await w.progress(ended);
+  await w.progress({...ended, result: result('Synthetic late duplicate.')});
+  const original = await w.waitMessages('bunny', /Synthetic attributed result/, origin);
+  assert.deepEqual(original.filter(message => message.follows === jobId).map(message => message.id), [`${jobId}-sent`, `${jobId}-result`]);
+  assert.ok(!(await w.messages('bunny')).some(message => message.follows === jobId));
+  assert.deepEqual(w.dispatched, [operationId]);
+});
 
 void test('three companions hand off at once, each run tagged and each result back in its own conversation; another companion\'s run never refuses an approval', {timeout: 30_000}, async context => {
   const w = await world(context);

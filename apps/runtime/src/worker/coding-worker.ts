@@ -13,13 +13,18 @@ import {promisify} from 'node:util';
 import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingLimitWindow, type CodingProgress, type CodingProgressReason,
+import {CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingProgress, type CodingProgressReason,
   type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
-import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
+import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
+
+import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type CodingAdapter} from './adapter.js';
+import {codexAdapter, type CodexConfiguration} from './codex-adapter.js';
 
 const run = promisify(execFile);
+const CLAUDE = 'claude-code';
+const CLAUDE_CAPABILITIES = {steering: 'unsupported', resume: 'unsupported', review: true} as const;
 export const WORKER_SCHEMA = 'coding-worker/1.0';
 const MAX_CONFIG_BYTES = 8192;
 /**
@@ -52,28 +57,21 @@ export const DEFAULT_ALLOWED_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', '
  */
 export const DENIED_TOOLS = ['Bash(git push*)', 'Bash(git -C *)', 'Bash(git --git-dir*)', 'Bash(git --work-tree*)', 'Bash(git remote*)', 'Bash(git worktree*)', 'Bash(git config*)', 'Bash(gh *)', 'Bash(claude *)', 'Bash(curl *)', 'Bash(wget *)',
   'Bash(ssh *)', 'Bash(scp *)', 'Bash(sudo *)', 'Edit(.claude/**)', 'Write(.claude/**)', 'Edit(~/.claude/**)', 'Write(~/.claude/**)', 'Edit(~/.claude.json)', 'Write(~/.claude.json)', 'WebFetch', 'WebSearch'];
-/** The JSON Schema the worker asks Claude Code to return as its structured output. */
-export const RESULT_SCHEMA = {type: 'object', additionalProperties: false, required: ['outcome', 'summary', 'checks', 'findings', 'limitations'], properties: {
-  outcome: {type: 'string', enum: ['tested-candidate', 'incomplete', 'failed', 'waiting-for-owner']},
-  summary: {type: 'string', description: 'What changed and what was verified, in a few sentences.'},
-  checks: {type: 'array', items: {type: 'object', additionalProperties: false, required: ['name', 'status'], properties: {name: {type: 'string'}, status: {type: 'string', enum: ['passed', 'failed', 'skipped', 'unrun', 'unknown']}, detail: {type: 'string'}}}},
-  findings: {type: 'array', items: {type: 'string'}, description: 'Unresolved problems, questions for the owner, or refused actions. With waiting-for-owner, the question first.'},
-  limitations: {type: 'array', items: {type: 'string'}},
-}};
-
 export type WorkerConfiguration = {
   edge: string; tokenFile: string;
   repositories: readonly {name: string; path: string}[];
   /** `environment` names further variables the harness may inherit; a provider credential or switch is refused. */
   claude: {executable: string; model?: string; permissionMode: string; allowedTools: readonly string[]; maxTurns?: number; environment?: readonly string[]};
+  codex?: CodexConfiguration;
+  adapterProtocol?: true;
 };
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 /** Reads and checks the worker's private configuration file. Throws `coding-worker-config` with a fixed reason; never quotes the file. */
 export function parseConfiguration(value: unknown): WorkerConfiguration {
   const bad = (reason: string): never => {throw new Error(`coding-worker-config: ${reason}`);};
-  if (!isRecord(value) || value.schema !== WORKER_SCHEMA) return bad('not a coding-worker/1.0 document');
-  if (Object.keys(value).some(key => !['schema', 'edge', 'tokenFile', 'repositories', 'claude'].includes(key))) return bad('unknown member');
-  const {edge, tokenFile, repositories, claude} = value;
+  if (!isRecord(value) || (value.schema !== WORKER_SCHEMA && value.schema !== 'coding-worker/1.1')) return bad('not a coding-worker/1.0 or 1.1 document');
+  if (Object.keys(value).some(key => !['schema', 'edge', 'tokenFile', 'repositories', 'claude', ...(value.schema === 'coding-worker/1.1' ? ['codex'] : [])].includes(key))) return bad('unknown member');
+  const {edge, tokenFile, repositories, claude, codex} = value;
   let url: URL;
   try {url = new URL(String(edge));} catch {return bad('edge is not a URL');}
   if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search !== '' || url.hash !== '' || url.username !== '') return bad('edge must be an origin');
@@ -95,13 +93,21 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
   if (environment !== undefined && (!Array.isArray(environment) || environment.length > 32 || environment.some(name => typeof name !== 'string' || !/^[A-Z_][A-Z0-9_]{0,63}$/.test(name) || !configurableVariable(name)))) {
     return bad('claude.environment must list at most 32 variable names without credentials, provider switches or loader variables');
   }
-  return {edge: url.origin, tokenFile, repositories: list, claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
+  let codexConfig: CodexConfiguration | undefined;
+  if (codex !== undefined) {
+    if (!isRecord(codex) || Object.keys(codex).some(key => !['executable', 'model', 'home'].includes(key)) ||
+      typeof codex.executable !== 'string' || !isAbsolute(codex.executable) ||
+      typeof codex.home !== 'string' || !isAbsolute(codex.home)) return bad('codex needs an absolute executable path and a private worker home');
+    if (codex.model !== undefined && (typeof codex.model !== 'string' || !/^[a-z0-9.-]{1,64}$/.test(codex.model))) return bad('codex.model is not a model name');
+    codexConfig = {executable: codex.executable, home: codex.home, ...(codex.model === undefined ? {} : {model: codex.model})};
+  }
+  return {edge: url.origin, tokenFile, repositories: list, ...(value.schema === 'coding-worker/1.1' ? {adapterProtocol: true} : {}), ...(codexConfig === undefined ? {} : {codex: codexConfig}), claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
     ...(claude.maxTurns === undefined ? {} : {maxTurns: Number(claude.maxTurns)}), ...(environment === undefined ? {} : {environment: environment as string[]})}};
 }
 
 /** One run in one of the worker's slots, with the companion that asked and the endpoint that started it. */
-type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; child: ChildProcess | undefined; cancelled: boolean;
-  timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>};
+type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
+  timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; controller: AbortController};
 export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean};
 export type Harness = {
   /**
@@ -113,6 +119,7 @@ export type Harness = {
   start(args: string[], cwd: string, input: string, onChild: (child: ChildProcess) => void, onLine?: (line: string) => void): Promise<HarnessRun>;
   /** Reports the tool's version and sign-in without starting a task or a session; absent means all unknown. */
   readiness?(): Promise<HarnessReadiness>;
+  subscriptionRefused?(): Promise<boolean>;
 };
 /**
  * Splits decoded output into lines for `onLine`. A line longer than `maxLength` is skipped, whole or in part and whether
@@ -177,6 +184,11 @@ export const claudeHarness = (executable: string, environment: NodeJS.ProcessEnv
     child.on('error', () => {resolvePromise({code: null, signal: null, truncated: lines.truncated});});
     child.on('close', (code, signal) => {lines.end(decoder.end()); resolvePromise({code, signal, truncated: lines.truncated});});
   }),
+  subscriptionRefused: async () => {
+    const result = await probe(executable, ['auth', 'status', '--json'], harnessEnvironment(environment, options.environment),
+      options.probeCwd, options.probeMs ?? PROBE_MS, options.probeTimer ?? realTimer);
+    return result.missing || (result.answered && claudeAuthRefused(result.stdout));
+  },
   readiness: async () => {
     const env = harnessEnvironment(environment, options.environment), timeoutMs = options.probeMs ?? PROBE_MS, timer = options.probeTimer ?? realTimer;
     const version = await probe(executable, ['--version'], env, options.probeCwd, timeoutMs, timer);
@@ -195,6 +207,35 @@ export function touchesSettingsDirectory(path: string): boolean {
   return path.split(' -> ').some(side => /^\.claude(?:\/|$)/i.test(side.trim().replace(/^"|"$/g, '')));
 }
 const bounded = (value: unknown, max: number): string | undefined => typeof value === 'string' && value.trim() !== '' ? value.slice(0, max) : undefined;
+function structuredReport(value: unknown) {
+  const structured = isRecord(value) ? value : undefined;
+  const outcome = structured !== undefined && ['tested-candidate', 'incomplete', Outcome.failed, 'waiting-for-owner'].includes(String(structured.outcome)) ? structured.outcome as CodingResult['outcome'] : 'incomplete';
+  const checks: CodingCheck[] = Array.isArray(structured?.checks) ? structured.checks.slice(0, 32).flatMap((check: unknown) => {
+    if (!isRecord(check) || typeof check.name !== 'string' || !['passed', 'failed', 'skipped', 'unrun', 'unknown'].includes(String(check.status))) return [];
+    const detail = bounded(check.detail, 1024);
+    const entry: CodingCheck = {name: check.name.slice(0, 128), status: check.status as CodingCheck['status'], ...(detail === undefined ? {} : {detail})};
+    return [entry];
+  }) : [];
+  const strings = (value: unknown): string[] => Array.isArray(value) ? value.slice(0, 32).flatMap(item => {const text = bounded(item, 1024); return text === undefined ? [] : [text];}) : [];
+  return {outcome, checks, findings: strings(structured?.findings), limitations: strings(structured?.limitations), summary: bounded(structured?.summary, 4096)};
+}
+
+function assembleAdapterResult(repository: string, base: string | null, head: string | null, changedFiles: string[], evidence: AdapterEvidence,
+  reason: CodingProgressReason | undefined, sessionId: string | undefined, elapsedMs: number): CodingResult {
+  const {summary, outcome, checks, findings, limitations} = structuredReport(evidence.structured);
+  const limit = reason === 'usage-limit' ? evidence.limit ?? {window: null, resetsAtMs: null} : undefined;
+  const usage = evidence.usage == null ? null : {...evidence.usage, durationMs: evidence.usage.durationMs ?? Math.max(0, elapsedMs)};
+  return {repository, base, head, changedFiles: changedFiles.slice(0, 200).map(file => file.slice(0, 512)), checks, findings,
+    outcome: limit !== undefined ? 'usage-limit' : reason === undefined ? outcome : Outcome.failed,
+    limitations: [...(evidence.limitations ?? []), ...limitations].slice(0, 32).flatMap(line => {
+      const text = bounded(line, 1024);
+      return text === undefined ? [] : [text];
+    }),
+    summary: bounded(evidence.summary, 4096) ?? summary ?? (limit === undefined ? 'The harness returned no structured summary.' : 'The harness stopped at a subscription usage limit.'),
+    sessionId: sessionId ?? null, usage, ...(limit === undefined ? {} : {limit})};
+}
+
+
 /**
  * The result from Claude Code's stream (or a buffered output read as one) and the git facts the worker observed itself.
  * The stream's final `result` event is the envelope. A usage limit the tool reported, on a run that did not end with a
@@ -213,24 +254,17 @@ export function assembleResult(repository: string, base: string | null, head: st
   const ownStop = envelope?.subtype === 'error_max_budget_usd' || envelope?.subtype === 'error_max_turns';
   const limited = limit !== undefined && !ownStop && (envelope === undefined || envelope.is_error === true || structured === undefined);
   if (reason === undefined && limited) reason = 'usage-limit';
-  const outcome = structured !== undefined && ['tested-candidate', 'incomplete', Outcome.failed, 'waiting-for-owner'].includes(String(structured.outcome)) ? structured.outcome as CodingResult['outcome'] : 'incomplete';
-  const checks: CodingCheck[] = Array.isArray(structured?.checks) ? structured.checks.slice(0, 32).flatMap((check: unknown) => {
-    if (!isRecord(check) || typeof check.name !== 'string' || !['passed', 'failed', 'skipped', 'unrun', 'unknown'].includes(String(check.status))) return [];
-    const detail = bounded(check.detail, 1024);
-    const entry: CodingCheck = {name: check.name.slice(0, 128), status: check.status as CodingCheck['status'], ...(detail === undefined ? {} : {detail})};
-    return [entry];
-  }) : [];
-  const strings = (value: unknown): string[] => Array.isArray(value) ? value.slice(0, 32).flatMap(item => {const text = bounded(item, 1024); return text === undefined ? [] : [text];}) : [];
+  const report = structuredReport(structured);
   const usage = envelope === undefined ? null : {
     turns: Number.isSafeInteger(envelope.num_turns) && Number(envelope.num_turns) >= 0 ? Number(envelope.num_turns) : null,
     costUsd: typeof envelope.total_cost_usd === 'number' && envelope.total_cost_usd >= 0 ? envelope.total_cost_usd : null,
     durationMs: Number.isSafeInteger(envelope.duration_ms) && Number(envelope.duration_ms) >= 0 ? Number(envelope.duration_ms) : null};
-  const sessionId = typeof envelope?.session_id === 'string' && /^[a-zA-Z0-9-]{1,128}$/.test(envelope.session_id) ? envelope.session_id : null;
+  const sessionId = stream.sessionId ?? null;
   // A run the harness ended for its dollar budget is a budget stop whatever its exit code says.
   if (reason === undefined && envelope?.subtype === 'error_max_budget_usd') reason = 'budget';
-  const summary = bounded(structured?.summary, 4096) ?? (envelope === undefined ? (reason === 'usage-limit' ? 'The harness stopped at a usage limit.' : 'The harness produced no readable result envelope.')
+  const summary = report.summary ?? (envelope === undefined ? (reason === 'usage-limit' ? 'The harness stopped at a usage limit.' : 'The harness produced no readable result envelope.')
     : bounded(envelope.result, 4096) ?? 'The harness ended without a summary.');
-  const limitations = strings(structured?.limitations).slice(0, 31);
+  const limitations = report.limitations.slice(0, 31);
   if (structured === undefined) limitations.push('No structured result was returned; the summary is the harness text or absent.');
   // The harness was started without provider credentials; a source it still names came from somewhere else, such as a setting.
   const keySource = stream.apiKeySource;
@@ -245,14 +279,10 @@ export function assembleResult(repository: string, base: string | null, head: st
     limitations.push('The run created or changed files under .claude/, the project settings directory, which the settings check before the start did not see.');
   }
   const usageLimited = reason === 'usage-limit' && limit !== undefined;
-  return {result: {outcome: usageLimited ? 'usage-limit' : reason === undefined ? outcome : Outcome.failed, repository, base, head, changedFiles: changedFiles.slice(0, 200).map(file => file.slice(0, 512)), checks,
-    findings: strings(structured?.findings), limitations, summary, sessionId, usage, ...(usageLimited ? {limit} : {})}, ...(reason === undefined ? {} : {reason})};
+  return {result: {outcome: usageLimited ? 'usage-limit' : reason === undefined ? report.outcome : Outcome.failed, repository, base, head, changedFiles: changedFiles.slice(0, 200).map(file => file.slice(0, 512)), checks: report.checks,
+    findings: report.findings, limitations, summary, sessionId, usage, ...(usageLimited ? {limit} : {})}, ...(reason === undefined ? {} : {reason})};
 }
 
-/** A refused run's result: the reason as its summary, and the facts it has; the outcome stays `failed`. */
-function refusedResult(result: CodingResult, summary: string): CodingResult {
-  return {...result, outcome: Outcome.failed, summary: summary.slice(0, 4096), limitations: result.limitations.filter(text => !text.startsWith('No structured result'))};
-}
 /** The project settings files a run with `--setting-sources project` loads, relative to its worktree. */
 export const PROJECT_SETTINGS = ['.claude/settings.json', '.claude/settings.local.json'] as const;
 /**
@@ -302,18 +332,38 @@ export class CodingWorker {
   /** Each repository's git setup (fetch and worktree add), one at a time, so runs on the same repository never race git's locks. */
   readonly #gitSetup = new Map<string, Promise<void>>();
   readonly #harness: Harness;
+  readonly #adapters: ReadonlyMap<string, CodingAdapter>;
+  readonly #adapterProtocol: boolean;
+  readonly #adapterHealth = new Map<string, CodingHarnessReadiness>();
   readonly #connect: typeof connectRemote;
   readonly #now: () => number;
   readonly #git: GitRunner;
   readonly #timer: ProbeTimer;
   /** What the declaration carries: the latest readiness probe and the limit windows the latest run reported. */
   #readiness: CodingReadiness | undefined;
-  #limits: {windows: CodingLimitWindow[]; atMs: number} | undefined;
   /** `log` is the process's own line writer, owned by the entry point; the library writes nothing itself. */
   constructor(readonly configuration: WorkerConfiguration, readonly token: string, harness?: Harness, readonly log: (line: string) => void = () => {}, connect: typeof connectRemote = connectRemote,
-    now: () => number = Date.now, runGit: GitRunner = git, timer: ProbeTimer = realTimer) {
+    now: () => number = Date.now, runGit: GitRunner = git, timer: ProbeTimer = realTimer, adapters: readonly CodingAdapter[] = []) {
     this.#harness = harness ?? claudeHarness(configuration.claude.executable, process.env,
       {...(configuration.claude.environment === undefined ? {} : {environment: configuration.claude.environment}), ...(configuration.repositories[0] === undefined ? {} : {probeCwd: configuration.repositories[0].path})});
+    const cwd = configuration.repositories[0]?.path;
+    const configured = configuration.codex === undefined || cwd === undefined ? [] : [codexAdapter(configuration.codex, {})];
+    const claudeAdapter: CodingAdapter = {
+      id: CLAUDE,
+      capabilities: CLAUDE_CAPABILITIES,
+      readiness: () => this.#harness.readiness?.() ?? Promise.resolve(UNKNOWN_READINESS),
+      run: input => this.#runClaude(input),
+    };
+    const available = new Map<string, CodingAdapter>([[CLAUDE, claudeAdapter]]);
+    for (const adapter of [...configured, ...adapters]) {
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(adapter.id) || adapter.id.length > 32 || adapter.id === CLAUDE || available.has(adapter.id)) {
+        throw new Error('coding-worker-config: duplicate or invalid harness identity');
+      }
+      available.set(adapter.id, adapter);
+    }
+    if (available.size > 8) throw new Error('coding-worker-config: too many harnesses');
+    this.#adapters = available;
+    this.#adapterProtocol = available.size > 1 || configuration.adapterProtocol === true;
     this.#connect = connect;
     this.#now = now;
     this.#git = runGit;
@@ -340,13 +390,32 @@ export class CodingWorker {
    * does not or the probe fails. The limit windows are the latest run's, with when they were observed, or null.
    */
   async #probe(): Promise<CodingReadiness> {
-    let found: HarnessReadiness = UNKNOWN_READINESS;
-    try {if (this.#harness.readiness !== undefined) found = await this.#harness.readiness();} catch {this.log('coding-worker: readiness probe failed; reporting unknown');}
-    return {tool: 'claude-code', installed: found.installed, version: found.version, signedIn: found.signedIn, plan: found.plan,
-      limits: this.#limits?.windows ?? null, limitsObservedAtMs: this.#limits?.atMs ?? null, checkedAtMs: this.#now()};
+    await Promise.all([...this.#adapters.values()].map(adapter => this.#probeAdapter(adapter)));
+    const found = this.#adapterHealth.get(CLAUDE);
+    return {tool: CLAUDE, installed: found?.installed ?? 'unknown', version: found?.version ?? null,
+      signedIn: found?.signedIn ?? 'unknown', plan: found?.plan ?? null, limits: found?.limits ?? null,
+      limitsObservedAtMs: found?.limitsObservedAtMs ?? null, checkedAtMs: found?.checkedAtMs ?? this.#now()};
+  }
+  async #probeAdapter(adapter: CodingAdapter): Promise<void> {
+    let found: Awaited<ReturnType<CodingAdapter['readiness']>> = UNKNOWN_READINESS;
+    try {found = await adapter.readiness();} catch {this.log('coding-worker: an adapter readiness probe failed; reporting unknown');}
+    const known = this.#adapterHealth.get(adapter.id);
+    const previouslyObserved = adapter.id === CLAUDE || (found.signedIn === 'yes' && known?.signedIn === 'yes' && found.plan === known.plan)
+      ? known : undefined;
+    const freshLimits = found.windows !== undefined && found.windows.length > 0 ? found.windows : undefined;
+    this.#adapterHealth.set(adapter.id, {harness: adapter.id, capabilities: adapter.capabilities, installed: found.installed,
+      version: found.version, signedIn: found.signedIn, plan: found.plan,
+      limits: freshLimits ?? previouslyObserved?.limits ?? null,
+      limitsObservedAtMs: freshLimits !== undefined ? this.#now() : previouslyObserved?.limitsObservedAtMs ?? null, checkedAtMs: this.#now()});
   }
   #enable(readiness: CodingReadiness | undefined): {type: string; dataschema: string; data: CodingEndpointControl} {
-    return {type: 'org.bunny.coding.endpoint.requested', dataschema: ENDPOINT_SCHEMA, data: {requestId: randomUUID(), action: 'enable', slots: CODING_WORKER_SLOTS, ...(readiness === undefined ? {} : {readiness})}};
+    const data: CodingEndpointControl = {requestId: randomUUID(), action: 'enable', slots: CODING_WORKER_SLOTS, ...(readiness === undefined ? {} : {readiness})};
+    if (!this.#adapterProtocol || readiness === undefined) return {type: 'org.bunny.coding.endpoint.requested', dataschema: ENDPOINT_SCHEMA, data};
+    data.harnesses = [...this.#adapters.keys()].flatMap(id => {
+      const health = this.#adapterHealth.get(id);
+      return health === undefined ? [] : [health];
+    });
+    return {type: 'org.bunny.coding.endpoint.requested', dataschema: 'https://bunny.invalid/events/coding-endpoint/2.3', data};
   }
   #stopping = false;
   #redeclaring = false;
@@ -440,9 +509,8 @@ export class CodingWorker {
   #stopAll(): void {for (const running of this.#running.values()) this.#stopRun(running);}
   #stopRun(running: Running): void {
     running.cancelled = true;
+    running.controller.abort();
     if (running.timer !== undefined) {clearTimeout(running.timer); running.timer = undefined;}
-    running.child?.kill('SIGTERM');
-    setTimeout(() => {running.child?.kill('SIGKILL');}, 10_000).unref();
   }
   #work(command: Command<CodingWork>): Reply {
     if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
@@ -453,16 +521,20 @@ export class CodingWorker {
       this.#stopRun(running); return {status: 'accepted'};
     }
     if (this.#running.has(data.operationId)) return {status: 'accepted'};
+    const harness = data.harness ?? CLAUDE;
+    const adapter = this.#adapters.get(harness);
+    if (adapter === undefined) return errorBody('unsupported-capability', {detail: 'the worker does not provide that harness'});
     // One slot per companion, three at once; a start from an older core names no companion and takes any free slot.
     if (this.#running.size >= CODING_WORKER_SLOTS) return errorBody('capacity', {detail: 'every slot is busy'});
     if (data.companion !== undefined && [...this.#running.values()].some(running => running.companion === data.companion)) return errorBody('capacity', {detail: 'that companion\'s slot is busy'});
     const repository = this.configuration.repositories.find(entry => entry.name === data.repository);
     if (repository === undefined) return errorBody('invalid-request', {detail: 'the repository is not on the worker\'s allowlist'});
     let end = (): void => {};
-    const running: Running = {operationId: data.operationId, companion: data.companion, endpoint: this.#endpoint, child: undefined, cancelled: false, timer: undefined,
+    const running: Running = {operationId: data.operationId, companion: data.companion, endpoint: this.#endpoint, cancelled: false, timer: undefined,
+      harness, controller: new AbortController(),
       ended: new Promise<void>(resolvePromise => {end = resolvePromise;})};
     this.#running.set(running.operationId, running);
-    queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds).finally(() => {
+    queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds, adapter).finally(() => {
       if (this.#running.get(running.operationId) === running) this.#running.delete(running.operationId);
       end();
       if (running.limitsChanged === true) void this.#refresh();
@@ -488,7 +560,11 @@ export class CodingWorker {
   /** Reports a run's progress on the endpoint that started it, and nowhere once that endpoint is gone. */
   async #progress(running: Running, data: CodingProgress): Promise<void> {
     if (running.endpoint === undefined || running.endpoint !== this.#endpoint) {this.log(`coding-worker dropped ${data.status} for ${data.operationId}: its endpoint is gone`); return;}
-    try {await running.endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed', dataschema: PROGRESS_SCHEMA, data});}
+    const attributed = this.#adapterProtocol;
+    if (data.status !== 'started') await running.sessionReport;
+    const payload = attributed ? {...data, harness: running.harness, ...(running.sessionId === undefined ? {} : {sessionId: running.sessionId})} : data;
+    try {await running.endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed',
+      dataschema: attributed ? 'https://bunny.invalid/events/coding-progress/2.2' : PROGRESS_SCHEMA, data: payload});}
     catch {this.log(`coding-worker could not report ${data.status} for ${data.operationId}`);}
   }
   /** Runs one repository's git setup after any other run's on the same repository has finished its own. */
@@ -501,7 +577,24 @@ export class CodingWorker {
     try {await previous; return await step();}
     finally {done(); if (this.#gitSetup.get(path) === chained) this.#gitSetup.delete(path);}
   }
-  async #run(running: Running, repository: {name: string; path: string}, taskId: string, brief: string, bounds: CodingBounds): Promise<void> {
+  #session(running: Running, value: unknown): Promise<void> | undefined {
+    const id = nativeSessionId(value);
+    if (id === undefined || running.sessionId !== undefined) return;
+    running.sessionId = id;
+    if (this.#adapterProtocol) running.sessionReport = this.#progress(running, {operationId: running.operationId, status: 'started'});
+    return running.sessionReport;
+  }
+  async #gitFacts(worktree: string, base: string | null): Promise<{head: string | null; changedFiles: string[]}> {
+    let head: string | null = null, changedFiles: string[] = [];
+    try {
+      head = await this.#git(worktree, ['rev-parse', 'HEAD']); if (!SHA.test(head)) head = null;
+      const status = await this.#git(worktree, ['status', '--porcelain', '--untracked-files=all'], {trim: false});
+      changedFiles = status.split('\n').map(line => line.trimEnd()).filter(Boolean).map(line => line.slice(3).trim()).filter(Boolean);
+      if (base !== null && head !== null && head !== base) changedFiles = [...new Set([...(await this.#git(worktree, ['diff', '--name-only', `${base}..${head}`])).split('\n').filter(Boolean), ...changedFiles])];
+    } catch {this.log('coding-worker: git facts unavailable after the run');}
+    return {head, changedFiles};
+  }
+  async #run(running: Running, repository: {name: string; path: string}, taskId: string, brief: string, bounds: CodingBounds, adapter: CodingAdapter): Promise<void> {
     await this.#progress(running, {operationId: running.operationId, status: 'started'});
     let worktree: string, base: string | null = null;
     try {
@@ -519,71 +612,99 @@ export class CodingWorker {
       await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'worktree', result: assembleResult(repository.name, base, null, [], '', 'worktree').result}); return;
     }
     if (running.cancelled) {await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}); return;}
-    // The run loads the worktree's project settings, whose `env` and credential helpers could undo the harness
-    // environment. They are read as data before the tool starts; one that would is refused, and nothing is spent.
+    await this.#runAdapter(running, adapter, repository.name, worktree, base, brief, bounds);
+  }
+
+  async #runClaude(input: AdapterRun): Promise<AdapterEvidence> {
+    const {worktree, bounds, signal} = input;
+    // Check the only project settings the child loads before admitting a run.
     const {refusal: settings, fingerprint: settingsBefore} = await readProjectSettings(worktree);
-    if (settings !== undefined) {
-      await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'refused',
-        result: refusedResult(assembleResult(repository.name, base, base, [], '', 'refused').result, `The run was refused before the tool started: ${settings}. Workers use only the subscription sign-in.`)});
-      return;
+    if (settings !== undefined) return {reason: 'refused', summary: `The run was refused before the tool started: ${settings}. Workers use only the subscription sign-in.`};
+    if (await this.#harness.subscriptionRefused?.() === true) {
+      return {reason: 'refused', summary: 'Claude Code is unavailable or reports a sign-in other than the Claude subscription.'};
     }
+    if (signal.aborted) return {reason: 'cancelled'};
     const {claude} = this.configuration;
     // The brief travels on stdin, never as an argument. The private turn cap can only lower the dispatch's. Only the
     // repository's own settings load, no MCP server, and the deny list applies whatever any setting allows.
     // The output is a stream of events (stream-json needs --verbose with --print), read as it arrives, so a usage limit
     // the tool reports mid-run is seen even when the run ends without a result.
-    const args = ['--print', '--output-format', 'stream-json', '--verbose', '--json-schema', JSON.stringify(RESULT_SCHEMA), '--permission-mode', claude.permissionMode,
+    const args = ['--print', '--output-format', 'stream-json', '--verbose', '--json-schema', JSON.stringify(CLAUDE_RESULT_SCHEMA), '--permission-mode', claude.permissionMode,
       '--max-turns', String(Math.min(claude.maxTurns ?? bounds.maxTurns, bounds.maxTurns)), '--max-budget-usd', String(bounds.budgetUsd),
       ...(claude.allowedTools.length === 0 ? [] : ['--allowedTools', ...claude.allowedTools]), '--disallowedTools', ...DENIED_TOOLS, '--strict-mcp-config', '--setting-sources', 'project',
       '--settings', JSON.stringify({env: Object.fromEntries(BLANKED_SWITCHES.map(name => [name, '']))}),
       ...(claude.model === undefined ? [] : ['--model', claude.model]),
       '--append-system-prompt', 'You are a delegated coding worker in a fresh worktree. Make only the change the brief asks for, run the checks the repository documents for it, never push, open a PR, change settings or leave the worktree, and end with the structured result: outcome, summary, checks, findings, limitations. If the brief leaves a choice open that you cannot settle from the repository, do not guess: end with outcome waiting-for-owner and put your one question first in findings.'];
-    let timedOut = false;
-    const started = Date.now();
     const stream = new ClaudeStream();
-    // The first event names the credential the tool will use: anything but the subscription stops the run there, and so
-    // does work arriving before any readable source (fail closed).
+    let child: ChildProcess | undefined;
+    let killTimer: NodeJS.Timeout | undefined;
     let keyRefused: string | undefined;
+    const stop = () => {
+      if (child === undefined || killTimer !== undefined) return;
+      child.kill('SIGTERM');
+      killTimer = setTimeout(() => {child?.kill('SIGKILL');}, 10_000);
+      killTimer.unref();
+    };
     const watch = (line: string): void => {
       stream.push(line);
       const refusal = stream.credentialRefusal;
-      if (keyRefused === undefined && refusal !== undefined) {keyRefused = refusal; running.child?.kill('SIGTERM'); setTimeout(() => {running.child?.kill('SIGKILL');}, 10_000).unref();}
+      if (keyRefused === undefined && refusal !== undefined) {keyRefused = refusal; stop();}
+      const id = stream.sessionId;
+      if (keyRefused === undefined && stream.apiKeySource === 'none' && id !== undefined) void input.session(id);
     };
-    const finished = await this.#harness.start(args, worktree, brief, child => {
-      running.child = child;
-      // A run stopped after its last check and before the tool started is stopped as soon as the tool exists.
-      if (running.cancelled) {child.kill('SIGTERM'); setTimeout(() => {child.kill('SIGKILL');}, 10_000).unref(); return;}
-      running.timer = setTimeout(() => {timedOut = true; child.kill('SIGTERM'); setTimeout(() => {child.kill('SIGKILL');}, 10_000).unref();}, bounds.wallClockMs);
-    }, watch);
-    if (running.timer !== undefined) {clearTimeout(running.timer); running.timer = undefined;}
+    signal.addEventListener('abort', stop, {once: true});
+    let finished: Awaited<ReturnType<Harness['start']>>;
+    try {
+      finished = await this.#harness.start(args, worktree, input.brief, process => {
+        child = process;
+        if (signal.aborted) stop();
+      }, watch);
+    } finally {
+      signal.removeEventListener('abort', stop);
+      if (killTimer !== undefined) clearTimeout(killTimer);
+    }
+    child = undefined;
     if (finished.stdout !== undefined) for (const line of finished.stdout.split('\n')) watch(line);
     const windows = stream.windows;
-    if (windows.length > 0) {this.#limits = {windows, atMs: this.#now()}; running.limitsChanged = true;}
-    let head: string | null = null, changedFiles: string[] = [];
-    try {
-      head = await this.#git(worktree, ['rev-parse', 'HEAD']); if (!SHA.test(head)) head = null;
-      // Porcelain lines are two status letters, a space and the path; the first line's leading space is part of the status, so the output is not trimmed.
-      const status = await this.#git(worktree, ['status', '--porcelain', '--untracked-files=all'], {trim: false});
-      changedFiles = status.split('\n').map(line => line.trimEnd()).filter(Boolean).map(line => line.slice(3).trim()).filter(Boolean);
-      if (base !== null && head !== null && head !== base) changedFiles = [...new Set([...(await this.#git(worktree, ['diff', '--name-only', `${base}..${head}`])).split('\n').filter(Boolean), ...changedFiles])];
-    } catch {this.log('coding-worker: git facts unavailable after the run');}
+    if (keyRefused !== undefined) return {reason: 'refused', windows,
+      summary: `The run was stopped at its ${stream.apiKeySource === undefined ? 'first work event' : 'first event'}: ${keyRefused}, and workers use only the subscription sign-in.`};
     const settingsChanged = (await readProjectSettings(worktree)).fingerprint !== settingsBefore;
-    const assemble = (output: string | ClaudeStream, given?: CodingProgressReason) => assembleResult(repository.name, base, head, changedFiles, output, given, settingsChanged);
-    if (running.cancelled) {await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: assemble(stream, 'cancelled').result}); return;}
-    if (keyRefused !== undefined) {
-      await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'refused', result: refusedResult(assemble(stream, 'refused').result,
-        `The run was stopped at its ${stream.apiKeySource === undefined ? 'first work event' : 'first event'}: ${keyRefused}, and workers use only the subscription sign-in.`)});
-      return;
+    const assembled = assembleResult('', null, null, [], finished.truncated && stream.result === undefined ? '' : stream,
+      finished.truncated && stream.result === undefined ? 'invalid-output' : undefined, settingsChanged);
+    const {result} = assembled;
+    const sessionId = stream.apiKeySource === 'none' ? stream.sessionId : undefined;
+    const reason = assembled.reason ?? (stream.providers.some(provider => provider !== 'firstParty') ? 'refused' : finished.code === 0 ? undefined : 'exit');
+    return {structured: result, windows, usage: result.usage,
+      ...(reason === undefined ? {} : {reason}), ...(sessionId === undefined ? {} : {sessionId}),
+      ...(result.limit === undefined ? {} : {limit: result.limit})};
+  }
+  async #runAdapter(running: Running, adapter: CodingAdapter, repository: string, worktree: string, base: string | null, brief: string, bounds: CodingBounds): Promise<void> {
+    let timedOut = false, evidence: AdapterEvidence;
+    const started = this.#now();
+    running.timer = setTimeout(() => {timedOut = true; running.controller.abort();}, bounds.wallClockMs);
+    try {
+      evidence = await adapter.run({worktree, brief, bounds, signal: running.controller.signal,
+        session: id => this.#session(running, id)});
+    } catch {evidence = {reason: 'lost', uncertain: true};}
+    finally {clearTimeout(running.timer); running.timer = undefined;}
+    const endingSession = nativeSessionId(evidence.sessionId);
+    if (running.sessionId === undefined && endingSession !== undefined) running.sessionId = endingSession;
+    const health = this.#adapterHealth.get(adapter.id);
+    if (health !== undefined && evidence.windows !== undefined && evidence.windows.length > 0) {
+      this.#adapterHealth.set(adapter.id, {...health, limits: evidence.windows, limitsObservedAtMs: this.#now()});
+      running.limitsChanged = true;
     }
-    if (timedOut) {await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'timeout', result: assemble(stream, 'timeout').result}); return;}
-    // A skipped oversized event matters only when it was the final result.
-    if (finished.truncated && stream.result === undefined) {await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'invalid-output', result: assemble('', 'invalid-output').result}); return;}
-    const assembled = assemble(stream);
-    if (assembled.result.usage !== null && assembled.result.usage.durationMs === null) assembled.result.usage.durationMs = Date.now() - started;
-    // A usage limit keeps its own outcome and the limit the tool reported; every other failure is failed, as before.
-    if (assembled.reason === 'usage-limit') {await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: 'usage-limit', result: assembled.result}); return;}
-    if (finished.code !== 0 || assembled.reason !== undefined) {await this.#progress(running, {operationId: running.operationId, status: 'failed', reason: assembled.reason ?? 'exit', result: {...assembled.result, outcome: Outcome.failed}}); return;}
-    await this.#progress(running, {operationId: running.operationId, status: 'completed', result: assembled.result});
+    const {head, changedFiles} = await this.#gitFacts(worktree, base);
+    if (adapter.id === CLAUDE && changedFiles.some(touchesSettingsDirectory) &&
+      !structuredReport(evidence.structured).limitations.some(text => text.includes('project settings file'))) {
+      evidence.limitations = ['The run created or changed files under .claude/, the project settings directory, which the settings check before the start did not see.'];
+    }
+    const reason = running.cancelled ? 'cancelled' : timedOut ? 'timeout' : evidence.reason;
+    const result = assembleAdapterResult(repository, base, head, changedFiles, evidence, reason, running.sessionId, this.#now() - started);
+    if (reason === undefined) {await this.#progress(running, {operationId: running.operationId, status: 'completed', result}); return;}
+    const status = running.cancelled ? 'cancelled' : evidence.uncertain === true && !timedOut ? 'uncertain' : 'failed';
+    await this.#progress(running, {operationId: running.operationId, status, reason, result});
+
   }
 }
 

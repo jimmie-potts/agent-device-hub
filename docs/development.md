@@ -3503,6 +3503,12 @@ credential and drives a proposal, approval, background job receipt and linked
 result on the Conversation page. Installing the worker on the Mac is the [worker guide](coding-worker.md);
 source evidence establishes no installed run.
 
+Subscription worker adapters use the existing runtime unit, event contract
+and Companions checks. After the root build, run the coding worker process,
+stream and adapter test entries against their scripted commands. The event
+suite covers the added family versions and older layouts. The worker boundary
+tests use disposable repositories and synthetic accounts.
+
 Background coding jobs (#2109) use the same suites. `coding-slots.test.js`
 holds a worker open while Conversation answers another question and accepts
 another delegation. It exercises out-of-order result delivery, chat replacement,
