@@ -1235,6 +1235,18 @@ identity. A waiting observation refreshes only the waiting deadline.
 harness deadline. A terminal observation can report `spawn` as the reason
 this attempt failed. Earlier wire versions retain their original layouts.
 
+### Coding harness continuation
+
+An explicit continuation uses `assistant-control/2.3` with action
+`continue-coding-job`, the stable job ID, the previous operation ID and the
+other harness. The tracked dispatch and work request carry the previous
+operation and opaque stopped-writer proof in `coding-dispatch/2.2`,
+`coding-run/2.3` and `coding-work/2.3`. The proof originates in a terminal
+`coding-progress/2.4` observation with known Git revisions and changed files.
+The worker keeps the worktree path and content fingerprint locally. Earlier
+versions retain their layouts.
+
+
 ### Music lighting sessions (`music-lighting-*/2.0`)
 
 `registerMusicLightingFamilies` registers four families, all at 2.0, for the live Music lighting trial (#1272, #722, policy in #40). The browser-safe `v2/music-lighting-data` export owns their types and reason lists.

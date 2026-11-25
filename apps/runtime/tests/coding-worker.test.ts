@@ -599,6 +599,7 @@ for (const scenario of ['continue', 'changed', 'uncertain', 'restart'] as const)
       return;
     }
     assert.deepEqual(edge.respond(next(proof)), {status: 'accepted'});
+    assert.ok('error' in edge.respond(next(proof, 'simultaneous')));
     await until(() => edge.progress.some(entry => entry.operationId === 'continuation' && entry.status !== 'started'));
     const completed = edge.progress.find(entry => entry.operationId === 'continuation' && entry.status !== 'started');
     assert.ok('error' in edge.respond(next(proof, 'repeated')));

@@ -97,6 +97,10 @@ function checkProgress(message: Message): string | undefined {
   if (data.status === 'message-observed' || data.status === 'attempt-context') return undefined;
   if (data.status === 'completed' && data.result.summary.trim() === '') return 'payload summary must not be blank';
   const result = data.status === 'started' ? undefined : data.result ?? undefined;
+  if (data.status !== 'started' && data.handoffToken !== undefined && (data.status === 'uncertain' ||
+    result === undefined || result.base === null || result.head === null || result.changedFiles.length === 0)) {
+    return 'payload handoff proof requires known terminal worktree evidence';
+  }
   if (result !== undefined && (result.outcome === 'usage-limit') !== (result.limit !== undefined)) return 'payload limit goes with the usage-limit outcome only';
   if (data.status === 'completed' && result?.outcome === 'usage-limit') return 'payload a usage-limit result ends failed with reason usage-limit';
   if (data.status !== 'started' && data.status !== 'completed' && data.reason === 'usage-limit' && result?.outcome !== 'usage-limit') return 'payload reason usage-limit needs the usage-limit result';

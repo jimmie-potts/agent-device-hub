@@ -243,6 +243,10 @@ export class CodingStore {
       return {operationId: row.operation_id, taskId: row.task_id, endpointId: row.endpoint_id, traceparent: row.traceparent, started: row.started === 1, status: row.status as CodingResponsibility['status']};
     });
   }
+  terminalStatus(operationId: string): 'completed' | 'failed' | 'cancelled' | 'uncertain' | undefined {
+    const status = this.database.prepare('SELECT status FROM companion_coding WHERE operation_id=?').get(operationId)?.status;
+    return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'uncertain' ? status : undefined;
+  }
   uncertain(): CodingResponsibility | undefined {return this.records('uncertain').at(-1);}
   /** Whether this operation was accepted as a run, whatever became of it. */
   accepted(operationId: string): boolean {return this.database.prepare('SELECT 1 FROM companion_coding WHERE operation_id=?').get(operationId) !== undefined;}

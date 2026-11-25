@@ -1634,7 +1634,7 @@ export class AssistantEngine {
       const code = answer.error.error.code;
       return {text: proposal.family === 'mode-set' && code === 'revision-conflict'
         ? 'refused: revision-conflict: the Hub mode changed after the request was resolved. No change was sent.'
-        : `refused: ${code}`, units: 0};
+        : `refused: ${code}${proposal.family === 'coding-dispatch' && answer.error.error.detail !== undefined ? ` — ${answer.error.error.detail}` : ''}`, units: 0};
     };
     let result: string, delegation: Question | undefined, job: CodingJob | undefined;
     const startedAtMs = this.context.clock.now();
@@ -1757,7 +1757,12 @@ export class AssistantEngine {
         const text = waits ? waitingText(delegation.text) : delegation.text;
         if (waits && current.question?.kind === 'delegation') current.question.text = text;
         this.store.message(current, delegation.id, 'assistant', text, this.context.clock.now()); handedOff = true;
-      } else if (current.question?.kind === 'delegation') current.question = question;
+      } else {
+        if (question.codingChoice !== undefined && result.startsWith('refused: ')) {
+          this.store.message(current, `${id}-choice-refused`, 'tool', result, this.context.clock.now());
+        }
+        if (current.question?.kind === 'delegation') current.question = question;
+      }
     });
     // An accepted coding hand-off, and any other accepted command, which changes state, ask the title model to check the
     // conversation's title (Hub #2025, #2075), so an issue named only in a brief can lead it. The receipt is a tool result

@@ -14,7 +14,7 @@ import {promisify} from 'node:util';
 import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingAttemptContext, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingContinuation, type CodingEndpointControl, type CodingHarnessReadiness, type CodingProgress, type CodingProgressReason,
+import {CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingAttemptContext, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingProgress, type CodingProgressReason,
   type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
@@ -107,6 +107,10 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
 }
 
 /** One run in one of the worker's slots, with the companion that asked and the endpoint that started it. */
+type WriterHandoff = {
+  operationId: string; endpoint: RemoteEndpoint; repository: string; worktree: string;
+  base: string; head: string; harness: string; fingerprint: string;
+};
 type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; model?: string; modelReport?: Promise<void>; steer: AdapterSteer | undefined; controller: AbortController};
 export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true; writerStopped?: boolean};
@@ -339,7 +343,7 @@ export class CodingWorker {
   readonly #connect: typeof connectRemote;
   readonly #now: () => number;
   readonly #git: GitRunner;
-  readonly #handoffs = new Map<string, {operationId: string; endpoint: RemoteEndpoint; repository: string; worktree: string; base: string; head: string; harness: string; fingerprint: string}>();
+  readonly #handoffs = new Map<string, WriterHandoff>();
   readonly #timer: ProbeTimer;
   /** What the declaration carries: the latest readiness probe and the limit windows the latest run reported. */
   #readiness: CodingReadiness | undefined;
@@ -479,7 +483,7 @@ export class CodingWorker {
     // A registration that fails runs the closed handler before there is an endpoint to compare.
     let opened: RemoteEndpoint | undefined;
     const endpoint = await participant.openEndpoint<CodingWork>({family: 'coding-work', respond: command => this.#work(command), onClosed: () => {
-      if (this.#endpoint === opened) this.#endpoint = undefined;
+      if (this.#endpoint === opened) {this.#endpoint = undefined; this.#handoffs.clear();}
       this.log('coding-worker endpoint closed; the running tasks, if any, are lost to the core and will be stopped');
       // The core gives these runs up as uncertain. Each is stopped and keeps its slot, where a cancel or stop() still
       // reaches it, until it ends; its report goes nowhere, since the endpoint that started it is gone.
@@ -493,7 +497,7 @@ export class CodingWorker {
       answer = await endpoint.request('coding-endpoint', draft, {timeoutMs: 5000, requestId});
     } catch {answer = {status: 'uncertain', requestId, error: errorBody('uncertain-result')};}
     if (answer.status !== 'accepted') {
-      if (this.#endpoint === endpoint) this.#endpoint = undefined;
+      if (this.#endpoint === endpoint) {this.#endpoint = undefined; this.#handoffs.clear();}
       await endpoint.close().catch(() => {});
       const {code, traceId} = answer.error.error;
       throw new Error(`coding-worker-enable-${answer.status === 'rejected' ? 'refused' : 'uncertain'}: ${code}${traceId === undefined ? '' : ` trace ${traceId}`} request ${answer.requestId}`);
@@ -534,19 +538,21 @@ export class CodingWorker {
     if (this.configuration.uncapped !== true && data.companion !== undefined && [...this.#running.values()].some(running => running.companion === data.companion)) return errorBody('capacity', {detail: 'that companion\'s slot is busy'});
     const repository = this.configuration.repositories.find(entry => entry.name === data.repository);
     if (repository === undefined) return errorBody('invalid-request', {detail: 'the repository is not on the worker\'s allowlist'});
+    let proof: WriterHandoff | undefined;
     if (data.continuation !== undefined) {
-      const proof = this.#handoffs.get(data.continuation.token);
+      proof = this.#handoffs.get(data.continuation.token);
       if (proof === undefined || proof.operationId !== data.continuation.fromOperationId || proof.endpoint !== this.#endpoint ||
         proof.repository !== repository.name || proof.harness === harness || this.configuration.uncapped !== true) {
         return errorBody('invalid-state', {detail: 'The verified handoff is no longer available.'});
       }
+      this.#handoffs.delete(data.continuation.token);
     }
     let end = (): void => {};
     const running: Running = {operationId: data.operationId, companion: data.companion, endpoint: this.#endpoint, cancelled: false, timer: undefined,
       harness, steer: undefined, controller: new AbortController(),
       ended: new Promise<void>(resolvePromise => {end = resolvePromise;})};
     this.#running.set(running.operationId, running);
-    queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds, adapter, data.continuation).catch(async () => {
+    queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds, adapter, proof).catch(async () => {
       if (running.timer !== undefined) clearTimeout(running.timer);
       await this.#progress(running, running.cancelled ? {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}
         : {operationId: running.operationId, status: 'failed', reason: 'exit', result: null});
@@ -637,9 +643,9 @@ export class CodingWorker {
     } catch {this.log('coding-worker: git facts unavailable after the run');}
     return {head, changedFiles};
   }
-  async #run(running: Running, repository: {name: string; path: string}, taskId: string, brief: string, bounds: CodingBounds, adapter: CodingAdapter, continuation?: CodingContinuation): Promise<void> {
-    if (continuation !== undefined) {
-      await this.#continue(running, repository.name, brief, bounds, adapter, continuation);
+  async #run(running: Running, repository: {name: string; path: string}, taskId: string, brief: string, bounds: CodingBounds, adapter: CodingAdapter, proof?: WriterHandoff): Promise<void> {
+    if (proof !== undefined) {
+      await this.#continue(running, repository.name, brief, bounds, adapter, proof);
       return;
     }
     const uncapped = this.configuration.uncapped === true;
@@ -699,14 +705,11 @@ export class CodingWorker {
   }
 
   async #continue(running: Running, repository: string, brief: string, bounds: CodingBounds, adapter: CodingAdapter,
-    continuation: CodingContinuation): Promise<void> {
+    proof: WriterHandoff): Promise<void> {
     const started = this.#now();
-    const proof = this.#handoffs.get(continuation.token);
-    if (proof !== undefined) this.#handoffs.delete(continuation.token);
     await this.#progress(running, {operationId: running.operationId, status: 'started', setup: 'running'});
-    const current = proof === undefined ? undefined : await worktreeFingerprint(proof.worktree, args => this.#git(proof.worktree, args, {trim: false, timeoutMs: 15_000}));
-    const valid = proof !== undefined && proof.operationId === continuation.fromOperationId && proof.endpoint === running.endpoint &&
-      proof.harness !== adapter.id && proof.repository === repository && current?.head === proof.head && current.digest === proof.fingerprint;
+    const current = await worktreeFingerprint(proof.worktree, args => this.#git(proof.worktree, args, {trim: false, timeoutMs: 15_000}));
+    const valid = current?.head === proof.head && current.digest === proof.fingerprint;
     if (!valid || running.cancelled || this.#now() - started >= CODING_SETUP_WORK_MS) {
       await this.#progress(running, running.cancelled ? {operationId: running.operationId, status: 'cancelled', reason: 'cancelled'}
         : {operationId: running.operationId, status: 'failed', reason: 'worktree', result: null});
@@ -828,10 +831,6 @@ export class CodingWorker {
       const fingerprint = await worktreeFingerprint(worktree, args => this.#git(worktree, args, {trim: false, timeoutMs: 15_000}));
       if (fingerprint?.head === head && this.#endpoint === endpoint) {
         handoffToken = randomUUID();
-        if (this.#handoffs.size >= 128) {
-          const first = this.#handoffs.keys().next().value;
-          if (first !== undefined) this.#handoffs.delete(first);
-        }
         this.#handoffs.set(handoffToken, {operationId: running.operationId, endpoint, repository, worktree, harness: adapter.id, base, head, fingerprint: fingerprint.digest});
       }
     }

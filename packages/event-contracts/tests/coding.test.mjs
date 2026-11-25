@@ -231,5 +231,8 @@ test('a continuation carries only a prior attempt and an opaque stopped-writer p
   const work = {...family('coding-work').data, companion: 'bunny', harness: 'codex', continuation};
   valid(at('coding-work', '2.3', work));
   invalid(at('coding-work', '2.3', {...work, continuation: {...continuation, path: '/private/worktree'}}));
-  valid(at('coding-progress', '2.4', {operationId: 'partially-done', status: 'cancelled', reason: 'cancelled', handoffToken: token, result: result()}));
+  const cancelled = {operationId: 'partially-done', status: 'cancelled', reason: 'cancelled', handoffToken: token, result: result()};
+  valid(at('coding-progress', '2.4', cancelled));
+  invalid(at('coding-progress', '2.4', {...cancelled, status: 'uncertain', reason: 'lost'}));
+  invalid(at('coding-progress', '2.4', {...cancelled, result: {...cancelled.result, head: null}}));
 });

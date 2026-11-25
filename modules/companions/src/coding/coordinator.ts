@@ -197,9 +197,8 @@ export class CodingCoordinator {
       });
     if (saved.length === 0) {
       const active = this.#active.get(job.operationId);
-      const terminal = this.#store.resultSaved(job.operationId);
-      attempts.push({operationId: job.operationId, harness: codingHarness(active?.harness) ? active.harness : null,
-        sessionId: active?.sessionId ?? null, status: active?.phase ?? (terminal ? 'uncertain' : 'queued'),
+      attempts.push({operationId: job.operationId, harness: codingHarness(active?.harness) ? active.harness : null, sessionId: active?.sessionId ?? null,
+        status: active?.phase ?? this.#store.terminalStatus(job.operationId) ?? (this.#store.resultSaved(job.operationId) ? 'uncertain' : 'queued'),
         selectionReason: 'Legacy worker selection.', result: null});
     }
     return {version: 1, jobId, choice: saved[0]?.choice ?? 'auto', activeOperationId: this.#store.resultSaved(current) ? null : current,
@@ -450,9 +449,10 @@ export class CodingCoordinator {
       const stopped = !uncertain && (code === 'invalid-state' || disconnectedBeforeStart) && this.#store.stopRequested(operationId);
       const text = describeResult(uncertain ? 'uncertain' : stopped ? 'cancelled' : 'failed', undefined,
         uncertain ? 'lost' : stopped ? 'stopped before worker start' : disconnectedBeforeStart ? DISCONNECTED_BEFORE_START : `refused: ${code}`);
+      const refusalDetail = !uncertain && !stopped && !disconnectedBeforeStart && answer?.status === Outcome.rejected ? answer.error.error.detail : undefined;
       this.#store.unwait(operationId);
       this.#store.observeAttempt(operationId, uncertain ? 'uncertain' : stopped ? 'cancelled' : 'failed');
-      if (job !== undefined || !this.#cancelled.has(record.taskId)) this.#store.update({...record, kind: 'result', text, startup,
+      if (job !== undefined || !this.#cancelled.has(record.taskId)) this.#store.update({...record, kind: 'result', text: refusalDetail === undefined ? text : `${text} ${refusalDetail}`, startup,
         ...(job === undefined ? {legacyEvidence: uncertain ? 'the coding worker outcome is unknown' : disconnectedBeforeStart ? DISCONNECTED_BEFORE_START : 'the coding hand-off was refused'} : {})});
       return true;
     }), async ended => {
@@ -707,6 +707,7 @@ export class CodingCoordinator {
       const waiting = this.#store.waitingFor(data.requestId);
       approvedCompanion = waiting?.companion;
       const attempt = this.#store.attempt(data.requestId);
+      if (data.continuation !== undefined && attempt === undefined) return errorBody('invalid-state', {detail: 'the continuation has no durable approval'});
       if (attempt !== undefined && ((attempt.harness ?? undefined) !== data.harness ||
         attempt.continuation?.fromOperationId !== data.continuation?.fromOperationId ||
         attempt.continuation?.token !== data.continuation?.token)) return errorBody('revision-conflict', {detail: 'the dispatch does not match the approved attempt'});
