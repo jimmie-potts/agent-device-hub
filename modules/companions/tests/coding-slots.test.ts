@@ -601,6 +601,7 @@ void test('an earlier saved delegation interrupt and unsent hand-off survive the
   await w.restart();
   assert.equal(w.starts().length, 0);
   assert.equal(w.task('bunny')?.status, 'waiting');
+  assert.deepEqual(w.coding().waiting, [{operationId, taskId, companion: 'bunny'}]);
   const db = w.database();
   let sentAttempts = 0, resultAttempts = 0, markAttempts = 0;
   db.function('fail_legacy_sent', () => {sentAttempts += 1; return sentAttempts === 1 ? 1 : 0;});
@@ -1095,6 +1096,32 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   });
   assert.equal((await w.continueJob(jobId, operationId, destination)).status, 'rejected');
   await w.progress({operationId: resumed.operationId, status: 'started', setup: 'ready', harness: destination, sessionId: resumedSession}, '2.3');
+  const scope = (query: ShareQuery) => query.destination === 'private-conversation' &&
+    query.source === 'coding' && query.field === 'details' && query.record === jobId;
+  const db = w.database();
+  const removeAttempt = () =>
+    assert.equal(db.prepare('DELETE FROM companion_coding_attempts WHERE operation_id=?').run(resumed.operationId).changes, 1);
+  const assertHiddenRun = () => {
+    const state = w.coding();
+    assert.deepEqual(state.runs, []);
+    assert.equal(state.active, null);
+    assert.equal(state.counts?.runs, 0);
+    assert.ok(!JSON.stringify(state).includes(resumedSession));
+  };
+  await settle(() => w.coding().runs?.some(run => run.sessionId === resumedSession) === true);
+  revoked.push(scope);
+  assertHiddenRun();
+  db.exec('SAVEPOINT missing_attempt');
+  try {
+    removeAttempt();
+    assertHiddenRun();
+  } finally {
+    db.exec('ROLLBACK TO missing_attempt; RELEASE missing_attempt');
+  }
+  assertHiddenRun();
+  revoked.pop();
+  assert.equal(w.coding().runs?.[0]?.sessionId, resumedSession);
+
   const deniesAttempt = (query: ShareQuery) => query.source === 'coding' && query.field === 'details' && query.record === resumed.operationId;
   revoked.push(query => deniesAttempt(query) && query.purpose === 'title');
   await w.progress({operationId: resumed.operationId, status: 'completed', harness: destination,
@@ -1188,6 +1215,19 @@ void test(`an owner-approved Auto job runs on ${origin} and explicitly continues
   await promptAfterRestart(resultText, originalText, 'the continuation update disappeared');
   share.revokesFields = false;
   assert.doesNotMatch(JSON.stringify(await w.messages('bunny', conversation)), missingSource);
+
+  // An unsent wait survives restart even when its saved attempt is unavailable.
+  const restartedDb = w.database();
+  new CodingStore(restartedDb).wait({operationId: resumed.operationId, taskId: initial.taskId, companion: 'bunny',
+    repository: initial.repository, brief, traceparent: w.starts()[1]?.traceparent ?? assert.fail('second dispatch trace')});
+  assert.equal(restartedDb.prepare('DELETE FROM companion_coding_attempts WHERE operation_id=?').run(resumed.operationId).changes, 1);
+  revoked.push(scope);
+  await w.restart();
+  assert.ok(w.database().prepare('SELECT 1 FROM companion_coding_waiting WHERE operation_id=?').get(resumed.operationId));
+  const state = w.coding();
+  assert.deepEqual(state.waiting, []);
+  assert.equal(state.counts?.waiting ?? 0, 0);
+  assert.ok(!JSON.stringify(state).includes(resumed.operationId));
 });
 
 
