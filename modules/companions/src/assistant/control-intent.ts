@@ -97,6 +97,10 @@ export function missingCatalogDetail(family: CatalogFamily, instruction: string)
 
 type Setting = {subject?: string; recipients?: readonly string[]};
 const optionalArticle = (value: string) => value.replace(/^(?:the|my) /u, '');
+const unaddressedText = (value: string): string => value.trim().replace(
+  /^(?:(?:please|could you|would you|can you|will you|(?:hey )?(?:bunny|b[. ]u[. ]n[. ]n[. ]y[.]?|reachy|microduck))[, ]+)*/iu, '',
+);
+
 const matchNumber = (expression: RegExp, input: string, requested: unknown): Setting | undefined => {
   const match = expression.exec(input);
   return match?.[1] !== undefined && match[2] !== undefined && Number(match[2]) === requested ? {subject: optionalArticle(match[1])} : undefined;
@@ -160,7 +164,7 @@ function setting(instruction: string, answer: string, rawInstruction: string, ra
       if (request?.[1] === undefined || request[2] === undefined || typeof data.artworkId !== 'string' ||
         (data.coversStatus === false) !== requestedKeep) return undefined;
       const show = knownArtwork ? /\band\s+((?:show|display|put)\s+.+)$/iu.exec(rawInstruction)?.[1] ?? rawInstruction : rawInstruction;
-      const rawArtwork = /^(?:(?:please|could you|would you|can you|will you|(?:hey )?(?:bunny|b[. ]u[. ]n[. ]n[. ]y[.]?|reachy|microduck))[, ]+)*(?:show|display|put)\s+(?:(?:the|my)\s+)?([a-z0-9_.-]+)\s+(?:on|in)\s/iu.exec(show.trim())?.[1];
+      const rawArtwork = /^(?:show|display|put)\s+(?:(?:the|my)\s+)?([a-z0-9_.-]+)\s+(?:on|in)\s/iu.exec(unaddressedText(show))?.[1];
       if (rawArtwork !== data.artworkId &&
         !(knownArtwork && /^(?:it|(?:this|that) (?:artwork|animation|image|picture))$/u.test(request[1]))) return undefined;
       const recipients = request[2].split(' and ').map(optionalArticle);
@@ -224,10 +228,11 @@ function setting(instruction: string, answer: string, rawInstruction: string, ra
         ? {subject: optionalArticle(notice[4])} : undefined;
     }
     case 'art-catalog-edit': {
-      const art = /^(favorite|unfavorite|delete) (?:the )?(?:saved )?artwork (.+)$/u.exec(instruction);
-      if (art?.[2] === undefined || typeof data.artworkId !== 'string' || normalizedControlText(data.artworkId) !== art[2]) return undefined;
-      if (art[1] === 'delete') return isDeepStrictEqual(data, {action: 'delete', artworkId: data.artworkId}) ? {} : undefined;
-      return isDeepStrictEqual(data, {action: 'favorite', artworkId: data.artworkId, favorite: art[1] === 'favorite'}) ? {} : undefined;
+      const art = /^(favorite|unfavorite|delete) (?:the )?(?:saved )?artwork ([a-z0-9_.-]+)$/iu.exec(unaddressedText(rawInstruction));
+      if (art?.[2] === undefined || art[2] !== data.artworkId) return undefined;
+      const action = art[1]?.toLowerCase();
+      if (action === 'delete') return isDeepStrictEqual(data, {action, artworkId: art[2]}) ? {} : undefined;
+      return isDeepStrictEqual(data, {action: 'favorite', artworkId: art[2], favorite: action === 'favorite'}) ? {} : undefined;
     }
     case 'playback-control': {
       const request = /^(play|stop|pause|resume|next|previous) (?:the )?(?:playback on )?(.+)$/u.exec(instruction);
@@ -237,6 +242,15 @@ function setting(instruction: string, answer: string, rawInstruction: string, ra
       const start = /^(?:start|play) (?:the )?light show (.+?) version (\d+) on (.+)$/u.exec(input);
       if (start?.[3] !== undefined && typeof data.showId === 'string' && normalizedControlText(data.showId) === start[1]) {
         return matchesEdit(start[3], {action: 'start-show', showId: data.showId, version: Number(start[2]), positionMs: 0, startDelayMs: 0});
+      }
+      const seekText = unaddressedText(raw);
+      const seek = /^(?:seek|jump) (?:the )?light show on (?<target>.+?) to (?<amount>\d+(?:\.\d{1,3})?) (?<unit>milliseconds?|seconds?)$/iu.exec(seekText)?.groups
+        ?? /^(?:seek|jump) (?:the )?light show to (?<amount>\d+(?:\.\d{1,3})?) (?<unit>milliseconds?|seconds?) on (?<target>.+)$/iu.exec(seekText)?.groups;
+      if (seek?.target !== undefined && seek.unit !== undefined) {
+        const amount = Number(seek.amount);
+        const positionMs = seek.unit.toLowerCase().startsWith('second') ? Math.round(amount * 1000) : amount;
+        return Number.isSafeInteger(positionMs) && data.action === 'seek-show' && positionMs === data.positionMs
+          ? {subject: optionalArticle(normalizedControlText(seek.target))} : undefined;
       }
       const request = /^(stop|pause|resume) (?:the )?light show on (.+)$/u.exec(instruction);
       const verb = request?.[1];

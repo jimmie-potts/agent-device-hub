@@ -334,6 +334,31 @@ void test('showing saved art binds status visibility and the whole display set',
   assert.equal(authorizesControl(opaque, prompt.replace('kite', 'kite_blue'), '', [['pixoo'], ['tidbyt']], ''), false);
 });
 
+void test('art catalog changes bind the exact opaque ID and requested edit', () => {
+  const artworkId = 'Kite-Blue';
+  const deleteArt = {family: 'catalog-action', command: 'art-catalog-edit', target: 'art',
+    binding: {kind: 'fixed', owner: 'bunny/modules/art', target: 'art'}, data: {action: 'delete', artworkId}} as const;
+  assert.equal(authorizesControl(deleteArt, 'Bunny, delete saved artwork Kite-Blue', '', [], ''), true);
+  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork Kite_Blue', '', [], ''), false);
+  assert.equal(authorizesControl(deleteArt, 'Delete saved artwork kite-blue', '', [], ''), false);
+  assert.equal(authorizesControl(deleteArt, 'Favorite saved artwork Kite-Blue', '', [], ''), false);
+  const favorite = {...deleteArt, data: {action: 'favorite', artworkId, favorite: false}};
+  assert.equal(authorizesControl(favorite, 'Unfavorite artwork Kite-Blue', '', [], ''), true);
+  assert.equal(authorizesControl(favorite, 'Favorite artwork Kite-Blue', '', [], ''), false);
+});
+
+void test('a seek binds the light, position and direction in an ordinary request', () => {
+  const seek = {family: 'catalog-action', command: 'music-lighting-control', target: 'wall',
+    binding: {kind: 'record', owner: 'bunny/core', target: 'wall', revision: 1},
+    data: {action: 'seek-show', generation: 'current-light-show', positionMs: 1500}} as const;
+  const wall = [['wall', 'Studio Wall']];
+  assert.equal(authorizesControl(seek, 'Seek the light show on the Studio Wall to 1.5 seconds', '', wall, ''), true);
+  assert.equal(authorizesControl(seek, 'Jump the light show to 1500 milliseconds on the Studio Wall', '', wall, ''), true);
+  assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 milliseconds on the Studio Wall', '', wall, ''), false);
+  assert.equal(authorizesControl(seek, 'Seek the light show to 1.5 seconds on the Studio Ceiling', '', wall, ''), false);
+  assert.equal(authorizesControl(seek, 'Jump the light show to -1.5 seconds on the Studio Wall', '', wall, ''), false);
+});
+
 void test('an explicit Wemo group binds every target once', async context => {
   const plugs = ['desk-plug', 'shelf-plug'].map(id => ({...light(id), kind: 'wemo' as const}));
   const requests: AssistantDispatch[] = [];
@@ -884,6 +909,35 @@ void test('Conversation pages through large show catalogs and can read a saved t
   };
   await read(0, 'Synthetic immutable version 8');
   await read(40, 'Synthetic immutable version 48');
+});
+
+void test('ordinary light-show seek dispatches once with the active generation and exact position', async context => {
+  const requests: AssistantDispatch[] = [];
+  const provider = counted(request => request.transcript.some(item => item.role === 'tool') ? reply('Finished.') : call('control_music_lighting_control', {
+    owner: 'bunny/core', target: 'wall', arguments: '{"action":"seek-show","positionMs":1500,"generation":"model-supplied-generation"}',
+  }));
+  const w = await world(context, {provider, tools: ['control_music_lighting_control'], dispatch: data => {
+    requests.push(data);
+    return Promise.resolve(accepted(data.requestId));
+  }});
+  await w.core.serveSync(['music-lighting-state'], () => ({revision: 7, states: [{
+    type: 'org.bunny.music-lighting.updated', subject: 'wall', dataschema: 'https://bunny.invalid/events/music-lighting-state/2.0',
+    data: {id: 'wall', revision: 7, session: {status: 'active', generation: 'actual-active-generation', operationId: 'previous-start',
+      startedAtMs: 1000, show: {showId: 'show-synthetic', version: 1, positionMs: 100, missedCues: 0}}, last: null},
+  }]}));
+  await control(w.core, w.module(), 'enable');
+  await input(w.core, w.module(), 'Seek the light show on wall to 2 seconds');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(requests.length, 0);
+  await input(w.core, w.module(), 'Seek the light show on wall to 1.5 seconds');
+  await until(() => requests.length === 1);
+  w.advance(1100);
+  await until(() => status(w) === 'succeeded');
+  const dispatched = requests[0];
+  assert.ok(dispatched?.family === 'catalog-action');
+  assert.equal(dispatched.target, 'wall');
+  assert.deepEqual(dispatched.data, {action: 'seek-show', positionMs: 1500, generation: 'actual-active-generation'});
+  assert.deepEqual(dispatched.binding, {kind: 'record', owner: 'bunny/core', target: 'wall', revision: 7});
 });
 
 void test('a lost saved-show playback answer stays uncertain and never sends a second request', async context => {
