@@ -2,7 +2,7 @@ import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
 import type {BoundControl} from './control-intent.js';
 import type {CodingChoice} from '../coding/routing.js';
-import type {MessageCodingInput, StopCodingInput} from './history-contract.js';
+import type {MessageCodingInput, OpenNativeClientInput, StopCodingInput} from './history-contract.js';
 import type {Confirmation} from './confirmation.js';
 import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
 import {Messages} from '../knowledge/messages.js';
@@ -67,7 +67,7 @@ export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'qu
   taskId?: string; questionId?: string; queuedId?: string; harness?: CodingChoice};
 /** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
 export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
-export type Stage = {ref: string; requestId: string; input: StagedInput | StopCodingInput | MessageCodingInput; expires: number};
+export type Stage = {ref: string; requestId: string; input: StagedInput | StopCodingInput | MessageCodingInput | OpenNativeClientInput; expires: number};
 export type ConversationPage = {version: 1; conversationId: string | null; messages: ConversationMessage[]; currentTask: {taskId: string; question: Question | null} | null; next: number | null};
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = TranscriptItem & {effect: string};

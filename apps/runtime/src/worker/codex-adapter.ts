@@ -126,7 +126,7 @@ async function checkPrivateEntries(directory: string): Promise<void> {
   }
 }
 
-async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise<string> {
+export async function workerHome(home: string, environment: NodeJS.ProcessEnv): Promise<string> {
   const path = await checkStateDirectory(home);
   const userHomes = await Promise.all([userInfo().homedir, environment.HOME]
     .flatMap(value => value === undefined || value === '' ? [] : [canonical(resolve(value))]));
@@ -292,6 +292,32 @@ export const openCodex: CodexTransport = ({executable, args, cwd, env, signal, e
     },
   };
 };
+
+/** No turn is submitted. The exact saved thread must accept the successor and the same provider boundary. */
+export async function verifyCodexNativeResume(executable: string, cwd: string, original: string, home: string, profile: string,
+  threadId: string, env: Record<string, string>): Promise<boolean> {
+  const signal = AbortSignal.timeout(5000);
+  let wire: Wire | undefined;
+  let checked: boolean;
+  try {
+    wire = openCodex({executable, args: ['app-server', '--listen', 'stdio://', ...codexArguments(cwd, profile, home, original)],
+      cwd: home, env, signal, event: () => {}, closed: () => {}});
+    await initialize(wire);
+    if (!await isolatedSettings(wire, cwd, home) ||
+      codexSignIn(await wire.request('account/read', {refreshToken: false})).signedIn !== 'yes') return false;
+    const result = record(await wire.request('thread/resume', {threadId, cwd, runtimeWorkspaceRoots: [cwd], permissions: profile,
+      modelProvider: 'openai', approvalPolicy: 'never', excludeTurns: true}));
+    const thread = record(result.thread), roots = result.runtimeWorkspaceRoots, sandbox = record(result.sandbox), writable = sandbox.writableRoots;
+    checked = thread.id === threadId && thread.cwd === cwd && result.cwd === cwd && result.modelProvider === 'openai' &&
+      result.approvalPolicy === 'never' && record(result.activePermissionProfile).id === profile &&
+      // A named profile with an explicit denial can omit its workspace from the legacy writableRoots projection.
+      sandbox.type === 'workspaceWrite' && sandbox.networkAccess === false && Array.isArray(writable) &&
+      writable.every(root => root === cwd) && Array.isArray(roots) && roots.length === 1 && roots[0] === cwd &&
+      codexSignIn(await wire.request('account/read', {refreshToken: false})).signedIn === 'yes';
+  } catch {return false;}
+  finally {wire?.close();}
+  return checked && await wire?.writerStopped?.() === true;
+}
 
 const initialize = async (wire: Wire) => {
   await wire.request('initialize', {clientInfo: {name: 'bunny-worker', title: 'B.U.N.N.Y. worker', version: '1.0'}, capabilities: {experimentalApi: true, explicitGatewayOauth: true}});

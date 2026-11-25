@@ -18,10 +18,11 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
   }});
   const context = await browser.newContext();
   const worker = await connectRemote({url: world.url, source: 'bunny/parts/coding-worker', token: world.codingToken});
-  const commands: CodingWork[] = [];
+  const commands: CodingWork[] = [], prepared: Extract<CodingWork, {action: 'prepare-native-client'}>[] = [];
   let acceptMessage = (): void => {};
   const pendingMessage = new Promise<void>(resolve => {acceptMessage = resolve;});
   const endpoint = await worker.openEndpoint<CodingWork>({family: 'coding-work', respond: async command => {
+    if (command.data.action === 'prepare-native-client') {prepared.push(command.data); return {status: 'accepted'};}
     commands.push(command.data);
     if (command.data.action === 'message') await pendingMessage;
     return {status: 'accepted'};
@@ -114,6 +115,16 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     assert.deepEqual(commands.slice(3).map(command => [command.action, command.operationId]), [['cancel', first.operationId]]);
     await progress({operationId: first.operationId, status: 'cancelled', reason: 'cancelled', result: null, harness: 'claude-code'}, '2.3');
     await card(first).getByText(/ · cancelled$/).waitFor();
+    await progress({operationId: first.operationId, status: 'native-client', clients: ['terminal', 'claude-desktop'], state: 'available', observedAtMs: Date.now()}, '2.6');
+    await card(first).getByText('Native clients', {exact: true}).click();
+    await card(second).getByText('Native clients', {exact: true}).click();
+    const native = 'Continue saved session in terminal';
+    assert.equal(await card(second).getByRole('button', {name: native}).count(), 0);
+    await card(first).getByRole('button', {name: 'Hand off saved session to Claude Desktop'}).click();
+    await waitFor(() => commands.length === 5);
+    assert.deepEqual(commands.slice(4).map(command => [command.action, command.operationId]), [['open-claude-desktop', first.operationId]]);
+    await progress({operationId: first.operationId, status: 'native-client', clients: ['terminal', 'claude-desktop'], state: 'desktop', observedAtMs: Date.now()}, '2.6');
+    await card(first).getByText('Claude Desktop, activity unobserved', {exact: true}).waitFor();
     await page.reload();
     await card(first).getByText(/ · cancelled$/).waitFor();
     await card(first).getByText('Attempts and results', {exact: true}).click();
@@ -127,12 +138,12 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await conversation.getByText(/Earlier conversation, read only/).waitFor();
     await conversation.getByRole('button', {name: 'Back to current conversation'}).click();
     await conversation.getByRole('button', {name: 'Approve proposal', exact: true}).waitFor();
-    assert.equal(commands.length, 4, 'pending approval stayed in Conversation');
+    assert.equal(commands.length, 5, 'pending approval stayed in Conversation');
     await page.goto(`${world.url}/#/module/companions/jobs`);
     await card(first).getByText('Attempts and results', {exact: true}).click();
     assert.equal(await card(first).getByRole('button', {name: /^Continue with/}).count(), 0);
     await card(second).getByRole('button', {name: /Stop coding job/}).click();
-    await waitFor(() => commands.length === 5);
+    await waitFor(() => commands.length === 6);
     const handoffToken = randomUUID();
     const revision = 'a'.repeat(40);
     await progress({operationId: second.operationId, status: 'cancelled', reason: 'cancelled', harness: 'codex',
@@ -140,15 +151,19 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
         base: revision, head: revision, changedFiles: ['fixture.ts'], checks: [], findings: [], limitations: [],
         summary: 'Synthetic partial work.', sessionId: 'fixture-beta-session', usage: null}}, '2.4');
     await card(second).getByText('Attempts and results', {exact: true}).click();
+    await progress({operationId: second.operationId, status: 'native-client', clients: ['terminal'], state: 'available', observedAtMs: Date.now()}, '2.6');
+    await card(second).getByText('Native clients', {exact: true}).click();
+    await card(second).getByRole('button', {name: native}).waitFor();
     await card(second).getByRole('button', {name: 'Continue with Claude Code', exact: true}).press('Enter');
-    await waitFor(() => commands.length === 6);
-    const continuation = commands[5];
+    await waitFor(() => commands.length === 7);
+    const continuation = commands[6];
     assert.ok(continuation?.action === 'start' && continuation.harness === 'claude-code');
     assert.deepEqual(continuation.continuation, {fromOperationId: second.operationId, token: handoffToken});
     assert.notEqual(continuation.operationId, second.operationId);
     await card(second).locator('dd').filter({hasText: continuation.operationId}).waitFor();
     await card(second).locator('code').filter({hasText: second.operationId}).waitFor();
     assert.equal(await card(second).getByRole('button', {name: /^Continue with/}).count(), 0);
+    assert.equal(await card(second).getByRole('button', {name: native}).count(), 0);
     const nativeSession = 'fixture-continued-native';
     await progress({operationId: continuation.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: nativeSession});
     await progress({operationId: continuation.operationId, status: 'completed', harness: 'claude-code', sessionId: nativeSession,
@@ -161,6 +176,23 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     await card(second).locator('dd').filter({hasText: nativeSession}).waitFor();
     await card(second).locator('dd').filter({hasText: 'claude-code'}).waitFor();
 
-
+    const successor = continuation.operationId;
+    await progress({operationId: successor, status: 'native-client', clients: ['terminal'], state: 'available', observedAtMs: Date.now()}, '2.6');
+    const nativeDetails = card(second).locator('details').filter({has: page.getByText('Native clients', {exact: true})});
+    if (!await nativeDetails.evaluate(element => element.hasAttribute('open'))) await card(second).getByText('Native clients', {exact: true}).click();
+    await card(second).getByRole('button', {name: native}).click();
+    await waitFor(() => commands.length === 8);
+    const nativeLaunch = commands[7];
+    assert.ok(nativeLaunch?.action === 'open-native-terminal');
+    assert.equal(nativeLaunch.operationId, successor);
+    assert.deepEqual(prepared.at(-1), {requestId: nativeLaunch.intentId, operationId: successor, action: 'prepare-native-client', client: 'terminal'});
+    await progress({operationId: successor, status: 'native-client', clients: ['terminal'], state: 'terminal-pending', observedAtMs: Date.now()}, '2.6');
+    await card(second).getByText('Reserved for terminal, launch unconfirmed', {exact: true}).waitFor();
+    assert.equal(await card(second).getByText('Native terminal', {exact: true}).count(), 0);
+    await progress({operationId: successor, status: 'native-client', clients: ['terminal'], state: 'terminal', observedAtMs: Date.now()}, '2.6');
+    await card(second).getByText('Native terminal', {exact: true}).waitFor();
+    await progress({operationId: successor, status: 'native-client', clients: ['terminal'], state: 'terminal-closed', observedAtMs: Date.now()}, '2.6');
+    await card(second).getByText('Terminal exited, writer release unverified', {exact: true}).waitFor();
+    assert.equal(await card(second).getByRole('button', {name: native}).count(), 0);
   } finally {acceptMessage(); await worker.close(); await context.close(); await world.close();}
 }

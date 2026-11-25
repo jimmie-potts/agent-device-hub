@@ -67,3 +67,5 @@ export function readHistoryCursor(token: string, profile: AssistantProfile): Cur
 export type StopCodingInput = {action: 'stop-coding-job'; jobId: string; operationId: string};
 
 export type MessageCodingInput = {action: 'message-coding-job'; jobId: string; operationId: string; text: string};
+
+export type OpenNativeClientInput = {jobId: string; operationId: string} & ({action: 'open-native-terminal'} | {action: 'open-claude-desktop'});

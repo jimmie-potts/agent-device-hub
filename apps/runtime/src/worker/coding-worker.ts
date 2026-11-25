@@ -7,21 +7,22 @@ import {checkoutIdentity, copyWorktree, protectedCheckout, sameCheckout, signalW
 import {spawn, type ChildProcess} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
-import {mkdir, mkdtemp, readFile, realpath, rmdir, stat} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, realpath, rm, rmdir, stat} from 'node:fs/promises';
 import {basename, dirname, isAbsolute, join, resolve} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
 import {promisify} from 'node:util';
 import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {continuationChecks, CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingAttemptContext, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingProgress, type CodingProgressReason,
+import {continuationChecks, CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingAttemptContext, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingNativeClient, type CodingNativeClientKind, type CodingProgress, type CodingProgressReason,
   type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
 import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, configurableVariable, harnessEnvironment, keySourceName, parseAuthStatus, parseVersion, settingsRefusal, type HarnessReadiness} from './claude-stream.js';
 
 import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type AdapterSteer, type CodingAdapter} from './adapter.js';
-import {codexAdapter, type CodexConfiguration} from './codex-adapter.js';
+import {codexAdapter, codexArguments, codexEnvironment, verifyCodexNativeResume, verifyCodexWriterBoundary, workerHome, type CodexConfiguration} from './codex-adapter.js';
+import {NATIVE_UUID, NativeClients, nativeTerminal, type NativeTerminalPlan} from './native-clients.js';
 import {claudeWriterArguments, MAC_WRITER_SANDBOX, verifyClaudeWriterBoundary} from './claude-writer.js';
 
 const run = promisify(execFile);
@@ -66,14 +67,31 @@ export type WorkerConfiguration = {
   claude: {executable: string; model?: string; permissionMode: string; allowedTools: readonly string[]; maxTurns?: number; environment?: readonly string[]};
   codex?: CodexConfiguration;
   adapterProtocol?: true;
+  nativeClients?: {socket: string; harnesses: readonly ('claude-code' | 'codex')[]; claudeDesktop?: true};
 };
+function supportsClaudeDesktop(version: string | null | undefined): boolean {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/u.exec(version ?? '');
+  if (match === null) return false;
+  const major = Number(match[1]), minor = Number(match[2]), patch = Number(match[3]);
+  return major === 2 && (minor > 1 || minor === 1 && patch >= 285);
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 /** Reads and checks the worker's private configuration file. Throws `coding-worker-config` with a fixed reason; never quotes the file. */
 export function parseConfiguration(value: unknown): WorkerConfiguration {
   const bad = (reason: string): never => {throw new Error(`coding-worker-config: ${reason}`);};
   if (!isRecord(value) || (value.schema !== WORKER_SCHEMA && value.schema !== 'coding-worker/1.0' && value.schema !== 'coding-worker/1.1')) return bad('not a coding-worker/1.0, 1.1 or 1.2 document');
-  if (Object.keys(value).some(key => !['schema', 'edge', 'tokenFile', 'repositories', 'claude', ...(value.schema !== 'coding-worker/1.0' ? ['codex'] : [])].includes(key))) return bad('unknown member');
-  const {edge, tokenFile, repositories, claude, codex} = value;
+  if (Object.keys(value).some(key => !['schema', 'edge', 'tokenFile', 'repositories', 'claude', ...(value.schema !== 'coding-worker/1.0' ? ['codex'] : []), ...(value.schema === WORKER_SCHEMA ? ['nativeClients'] : [])].includes(key))) return bad('unknown member');
+  const {edge, tokenFile, repositories, claude, codex, nativeClients} = value;
+  let nativeConfig: WorkerConfiguration['nativeClients'];
+  if (nativeClients !== undefined) {
+    if (!isRecord(nativeClients) || Object.keys(nativeClients).some(key => !['socket', 'harnesses', 'claudeDesktop'].includes(key)) ||
+      typeof nativeClients.socket !== 'string' || !isAbsolute(nativeClients.socket) || !Array.isArray(nativeClients.harnesses) ||
+      (nativeClients.harnesses.length === 0 && nativeClients.claudeDesktop !== true) ||
+      (nativeClients.claudeDesktop !== undefined && nativeClients.claudeDesktop !== true) || new Set(nativeClients.harnesses).size !== nativeClients.harnesses.length ||
+      !nativeClients.harnesses.every(harness => harness === 'claude-code' || harness === 'codex')) return bad('nativeClients needs an absolute private socket and selected harnesses');
+    nativeConfig = {socket: nativeClients.socket, harnesses: nativeClients.harnesses, ...(nativeClients.claudeDesktop === true ? {claudeDesktop: true} : {})};
+  }
   let url: URL;
   try {url = new URL(String(edge));} catch {return bad('edge is not a URL');}
   if (!['http:', 'https:'].includes(url.protocol) || url.pathname !== '/' || url.search !== '' || url.hash !== '' || url.username !== '') return bad('edge must be an origin');
@@ -103,7 +121,7 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
     if (codex.model !== undefined && (typeof codex.model !== 'string' || !/^[a-z0-9.-]{1,64}$/.test(codex.model))) return bad('codex.model is not a model name');
     codexConfig = {executable: codex.executable, home: codex.home, ...(codex.model === undefined ? {} : {model: codex.model})};
   }
-  return {edge: url.origin, tokenFile, repositories: list, ...(value.schema === WORKER_SCHEMA ? {uncapped: true} : {}), ...(value.schema !== 'coding-worker/1.0' ? {adapterProtocol: true} : {}), ...(codexConfig === undefined ? {} : {codex: codexConfig}), claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
+  return {edge: url.origin, tokenFile, repositories: list, ...(nativeConfig === undefined ? {} : {nativeClients: nativeConfig}), ...(value.schema === WORKER_SCHEMA ? {uncapped: true} : {}), ...(value.schema !== 'coding-worker/1.0' ? {adapterProtocol: true} : {}), ...(codexConfig === undefined ? {} : {codex: codexConfig}), claude: {executable: claude.executable, ...(claude.model === undefined ? {} : {model: claude.model}), permissionMode, allowedTools: allowedTools as string[],
     ...(claude.maxTurns === undefined ? {} : {maxTurns: Number(claude.maxTurns)}), ...(environment === undefined ? {} : {environment: environment as string[]})}};
 }
 
@@ -111,6 +129,7 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
 type WriterHandoff = {
   operationId: string; endpoint: RemoteEndpoint; repository: string; worktree: WorktreeProof; successor: 'claude-code' | 'codex';
   base: string; writerHome?: string; protectedRoot: ProtectedCheckout; checks: ReturnType<typeof continuationChecks>;
+  crossHarness: boolean;
 };
 type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; model?: string; modelReport?: Promise<void>; steer: AdapterSteer | undefined; controller: AbortController};
@@ -355,6 +374,7 @@ export class CodingWorker {
   readonly #now: () => number;
   readonly #git: GitRunner;
   readonly #handoffs = new Map<string, WriterHandoff>();
+  readonly #native: NativeClients | undefined;
   readonly #timer: ProbeTimer;
   /** What the declaration carries: the latest readiness probe and the limit windows the latest run reported. */
   #readiness: CodingReadiness | undefined;
@@ -385,6 +405,7 @@ export class CodingWorker {
     this.#now = now;
     this.#git = runGit;
     this.#timer = timer;
+    this.#native = configuration.nativeClients === undefined ? undefined : new NativeClients(configuration.nativeClients.socket);
   }
   /**
    * Waits until every stopped run has ended, or for `STOPPED_RUN_MS`, whichever comes first: a tool whose output a
@@ -455,7 +476,12 @@ export class CodingWorker {
         // During the first declaration, start() alone decides: a reconnect then must not send a second enable.
         if (diagnostic.event === 'remote.reconnected' && this.#declared && !this.#stopping) void this.#redeclare();
       }});
-    try {await this.#declare(); this.#declared = true;} catch (error) {
+    try {
+      await this.#native?.start().catch(() => this.log('coding-worker: native terminal access unavailable'));
+      await this.#declare();
+      this.#declared = true;
+    } catch (error) {
+      this.#native?.stop();
       this.#stopping = true;
       this.#stopAll();
       await this.#participant.close().catch(() => {});
@@ -517,6 +543,7 @@ export class CodingWorker {
   }
   async stop(): Promise<void> {
     this.#stopping = true;
+    this.#native?.stop();
     this.#stopAll();
     try {await this.#endpoint?.request('coding-endpoint', {type: 'org.bunny.coding.endpoint.requested', dataschema: ENDPOINT_SCHEMA,
       data: {requestId: randomUUID(), action: 'disable'}}, {timeoutMs: 5000});} catch { /* the gateway reports the lost endpoint either way */ }
@@ -526,6 +553,7 @@ export class CodingWorker {
     await this.#participant?.close();
   }
   #releaseHandoffs(): void {
+    this.#native?.clear();
     for (const proof of this.#handoffs.values()) void rmdir(proof.protectedRoot.path).catch(() => {});
     this.#handoffs.clear();
   }
@@ -538,6 +566,14 @@ export class CodingWorker {
   #work(command: Command<CodingWork>): Reply | Promise<Reply> {
     if (command.source !== 'bunny/modules/companions') return errorBody('forbidden');
     const data = command.data;
+    if (data.action === 'prepare-native-client' || data.action === 'open-native-terminal' || data.action === 'open-claude-desktop') {
+      if (this.#running.has(data.operationId)) return errorBody('invalid-state');
+      const endpoint = this.#endpoint;
+      const fresh = () => endpoint !== undefined && this.#endpoint === endpoint && Date.parse(command.expiresat ?? '') > this.#now();
+      const native = data.action === 'prepare-native-client' ? this.#native?.prepare(data.operationId, data.client, data.requestId, fresh)
+        : this.#native?.launch(data.operationId, data.action === 'open-claude-desktop' ? 'claude-desktop' : 'terminal', data.intentId, fresh);
+      return native?.catch(() => errorBody('unavailable')) ?? errorBody('unsupported-capability');
+    }
     if (data.action === 'message') return this.#message(data);
     if (data.action === 'cancel') {
       const running = this.#running.get(data.operationId);
@@ -556,10 +592,12 @@ export class CodingWorker {
     let proof: WriterHandoff | undefined;
     if (data.continuation !== undefined) {
       proof = this.#handoffs.get(data.continuation.token);
-      if (proof === undefined || proof.operationId !== data.continuation.fromOperationId || proof.endpoint !== this.#endpoint ||
+      if (proof?.crossHarness !== true || proof.operationId !== data.continuation.fromOperationId || proof.endpoint !== this.#endpoint ||
         proof.repository !== repository.name || harness !== proof.successor || this.configuration.uncapped !== true) {
         return errorBody('invalid-state', {detail: 'The verified handoff is no longer available.'});
       }
+      if (this.#native?.writerMayBePresent(proof.operationId) === true) return errorBody('invalid-state');
+      this.#native?.retire(proof.operationId);
       this.#handoffs.delete(data.continuation.token);
     }
     let end = (): void => {};
@@ -819,6 +857,70 @@ export class CodingWorker {
       ...(reason === undefined ? {} : {reason}), ...(sessionId === undefined ? {} : {sessionId}),
       ...(result.limit === undefined ? {} : {limit: result.limit})};
   }
+  async #offerNative(running: Running, adapter: CodingAdapter, worktree: string, evidence: AdapterEvidence, handoffToken?: string): Promise<void> {
+    const {endpoint, operationId, sessionId} = running;
+    const native = this.#native, qualified = this.configuration.nativeClients;
+    if (native === undefined || this.configuration.uncapped !== true || endpoint === undefined || endpoint !== this.#endpoint || sessionId === undefined ||
+      !NATIVE_UUID.test(sessionId) || evidence.sessionId !== sessionId || evidence.uncertain === true ||
+      evidence.reason === 'refused' || evidence.reason === 'lost' || (adapter.id !== CLAUDE && adapter.id !== 'codex')) return;
+    const proof = handoffToken === undefined ? undefined : this.#handoffs.get(handoffToken);
+    const clients: CodingNativeClientKind[] = [];
+    if (qualified?.harnesses.includes(adapter.id) === true && (adapter.id === 'codex'
+      ? proof?.writerHome !== undefined && this.#adapterHealth.get('codex')?.version === '0.163.0'
+      : evidence.originalCheckoutReleased === true)) clients.push('terminal');
+    if (adapter.id === CLAUDE && evidence.originalCheckoutReleased === true && qualified?.claudeDesktop === true &&
+      process.platform === 'darwin' && supportsClaudeDesktop(this.#adapterHealth.get(CLAUDE)?.version)) clients.push('claude-desktop');
+    if (clients.length === 0) return;
+    const identity = (cwd: string) => checkoutIdentity(cwd, (path, args) => this.#git(path, args, {trim: false, timeoutMs: 15_000}));
+    const original = await identity(worktree).catch(() => undefined);
+    if (original === undefined || endpoint !== this.#endpoint ||
+      (adapter.id === 'codex' && (proof === undefined || !sameCheckout(original, proof.worktree.identity)))) return;
+    const build = async (client: CodingNativeClientKind): Promise<NativeTerminalPlan | undefined> => {
+      const current = await identity(worktree).catch(() => undefined);
+      if (current === undefined || !sameCheckout(original, current) || endpoint !== this.#endpoint) return undefined;
+      const readiness = await adapter.readiness();
+      if (readiness.signedIn !== 'yes') return undefined;
+      const codex = this.configuration.codex;
+      if (adapter.id === 'codex') {
+        if (codex === undefined || proof?.writerHome === undefined || readiness.version !== '0.163.0' ||
+          handoffToken === undefined || this.#handoffs.get(handoffToken) !== proof) return undefined;
+        const home = await workerHome(codex.home, process.env);
+        if (home !== proof.writerHome) return undefined;
+        const git = (path: string, args: string[]) => this.#git(path, args, {trim: false, timeoutMs: 15_000});
+        const successor = join(proof.protectedRoot.path, `bunny-native-${randomUUID()}`);
+        const target = await copyWorktree(proof.worktree, successor, proof.protectedRoot, home, proof.base, git);
+        if (target === undefined) return undefined;
+        const cwd = target.identity.root, profile = `bunny-native-${randomUUID()}`, env = codexEnvironment(process.env, home);
+        if (!await verifyClaudeWriterBoundary(cwd, original.root) ||
+          !await verifyCodexWriterBoundary(codex.executable, cwd, home, original.root, profile, env) ||
+          !await verifyCodexNativeResume(codex.executable, cwd, original.root, home, profile, sessionId, env)) {
+          await rm(cwd, {recursive: true, force: true}).catch(() => {});
+          return undefined;
+        }
+        const args = ['resume', '--no-daemon', '--cd', cwd, ...codexArguments(cwd, profile, home, original.root), sessionId];
+        return {executable: MAC_WRITER_SANDBOX, cwd, env, args: claudeWriterArguments(original.root, codex.executable, args, [proof.worktree.identity.common])};
+      }
+      const {claude} = this.configuration;
+      if (process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined || await projectSettingsRefusal(original.root) !== undefined) return undefined;
+      const env = harnessEnvironment(process.env);
+      if (client === 'claude-desktop') {
+        if (!supportsClaudeDesktop(readiness.version)) return undefined;
+        return {executable: claude.executable, cwd: original.root, args: ['--desktop', '--resume', sessionId], env};
+      }
+      return {executable: claude.executable, cwd: original.root, env, args: ['--resume', sessionId, '--restricted', '--permission-mode', claude.permissionMode,
+        ...(claude.allowedTools.length === 0 ? [] : ['--allowedTools', ...claude.allowedTools]), '--disallowedTools', ...DENIED_TOOLS,
+        '--strict-mcp-config', '--settings', JSON.stringify({env: Object.fromEntries(BLANKED_SWITCHES.map(name => [name, '']))})]};
+    };
+    // The advertised terminal uses an exact ID in the worker's verified local profile.
+    if (adapter.id === CLAUDE && process.env.CLAUDE_CODE_OAUTH_TOKEN !== undefined) return;
+    await native.offer(operationId, `${adapter.id}:${sessionId}`, clients, build, async state => {
+      if (endpoint !== this.#endpoint) return;
+      const data: CodingNativeClient = {operationId, status: 'native-client', clients, state, observedAtMs: this.#now()};
+      try {await endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed',
+        dataschema: 'https://bunny.invalid/events/coding-progress/2.6', data});}
+      catch {this.log('coding-worker: native client evidence could not be delivered');}
+    });
+  }
   async #runAdapter(running: Running, adapter: CodingAdapter, repository: string, worktree: string, base: string | null, brief: string, bounds: CodingBounds): Promise<void> {
     let timedOut = false, evidence: AdapterEvidence;
     const started = this.#now();
@@ -858,19 +960,22 @@ export class CodingWorker {
     const reason = timedOut ? 'timeout' : running.cancelled ? evidence.uncertain === true ? 'lost' : 'cancelled' :
       evidence.reason ?? (evidence.uncertain === true ? 'lost' : undefined);
     const result = assembleAdapterResult(repository, base, head, changedFiles, evidence, reason, running.sessionId, this.#now() - started);
-    let handoffToken: string | undefined;
+    let proofToken: string | undefined;
     const endpoint = running.endpoint;
+    const crossHarness = changedFiles.length > 0 && (reason !== undefined || result.outcome !== 'tested-candidate');
+    const nativeCodex = adapter.id === 'codex' && this.configuration.nativeClients?.harnesses.includes('codex') === true &&
+      this.#adapterHealth.get('codex')?.version === '0.163.0' && evidence.writerFence?.home !== undefined &&
+      endingSession !== undefined && running.sessionId === endingSession && NATIVE_UUID.test(endingSession);
     if (successor !== undefined && sourceIdentity !== undefined && protectedRoot !== undefined && evidence.writerFence?.root === protectedRoot.path &&
       evidence.writerStopped === true && evidence.uncertain !== true && endpoint !== undefined &&
-      base !== null && head !== null && changedFiles.length > 0 && reason !== 'refused' &&
-      (reason !== undefined || result.outcome !== 'tested-candidate')) {
+      base !== null && head !== null && reason !== 'refused' && (crossHarness || nativeCodex)) {
       const fingerprint = await worktreeFingerprint(worktree, (cwd, args) => this.#git(cwd, args, {trim: false, timeoutMs: 15_000}));
       const reserved = await protectedCheckout(protectedRoot.path).catch(() => undefined);
       if (fingerprint?.head === head && sameCheckout(fingerprint.identity, sourceIdentity) &&
         reserved?.identity === protectedRoot.identity && this.#endpoint === endpoint) {
-        handoffToken = randomUUID();
+        proofToken = randomUUID();
         const {home} = evidence.writerFence;
-        this.#handoffs.set(handoffToken, {operationId: running.operationId, endpoint, repository, successor, worktree: fingerprint, base,
+        this.#handoffs.set(proofToken, {operationId: running.operationId, endpoint, repository, successor, worktree: fingerprint, base, crossHarness,
           ...(home === undefined ? {} : {writerHome: home}), protectedRoot, checks: continuationChecks(result.checks)});
       } else if (this.#endpoint === endpoint) {
         result.limitations = [
@@ -879,8 +984,9 @@ export class CodingWorker {
         ];
       }
     }
-    if (handoffToken === undefined && protectedRoot !== undefined) await rmdir(protectedRoot.path).catch(() => {});
-    const handoff = handoffToken === undefined ? {} : {handoffToken};
+    if (proofToken === undefined && protectedRoot !== undefined) await rmdir(protectedRoot.path).catch(() => {});
+    const handoff = proofToken === undefined || !crossHarness ? {} : {handoffToken: proofToken};
+    await this.#offerNative(running, adapter, worktree, evidence, proofToken);
     if (reason === undefined) {await this.#progress(running, {operationId: running.operationId, status: 'completed', result, ...handoff}); return;}
     const status = evidence.uncertain === true && !timedOut ? 'uncertain' : running.cancelled ? 'cancelled' : 'failed';
     await this.#progress(running, {operationId: running.operationId, status, reason, result, ...handoff});
@@ -889,11 +995,17 @@ export class CodingWorker {
 }
 
 /** Reads the private configuration and token files and runs the worker until the process is signalled. */
-export async function main(argv: readonly string[], log: (line: string) => void): Promise<void> {
-  const [configPath] = argv;
+export async function main(argv: readonly string[], log: (line: string) => void, foreground = false): Promise<void> {
+  const [first, second, attempt] = argv;
+  const configPath = first === 'native' ? second : first;
   if (configPath === undefined || !isAbsolute(configPath)) throw new Error('usage: coding-worker.mjs /absolute/private/coding-worker.json');
   const raw = await readPrivateJson(configPath, MAX_CONFIG_BYTES);
   const configuration = parseConfiguration(raw);
+  if (first === 'native') {
+    if (attempt === undefined || configuration.nativeClients === undefined) throw new Error('coding-worker-native: terminal access is not configured or an attempt is missing');
+    await nativeTerminal(configuration.nativeClients.socket, attempt, foreground, log);
+    return;
+  }
   const token = (await readPrivateFile(configuration.tokenFile, 1024)).toString('utf8').replace(/[\r\n]+$/, '');
   if (!TOKEN.test(token)) throw new Error('coding-worker-token: the token file does not hold one bearer token');
   const worker = new CodingWorker(configuration, token, undefined, log);

@@ -8,12 +8,15 @@ const execute = promisify(execFile);
 export const MAC_WRITER_SANDBOX = '/usr/bin/sandbox-exec';
 
 /** Apply the fence to the CLI and its descendants, including commands that leave its process group. */
-export function claudeWriterArguments(protectedRoot: string, executable: string, args: string[]): string[] {
-  const ancestors = [];
-  for (let parent = dirname(protectedRoot); dirname(parent) !== parent; parent = dirname(parent)) ancestors.push(parent);
-  const filters = ancestors.map((_, index) => `(literal (param "ancestor${index}"))`).join(' ');
-  const policy = `(version 1) (allow default) (deny file-write* (subpath (param "successor"))) (deny file-write-unlink ${filters})`;
-  return ['-D', `successor=${protectedRoot}`, ...ancestors.flatMap((path, index) => ['-D', `ancestor${index}=${path}`]), '-p', policy, executable, ...args];
+export function claudeWriterArguments(protectedRoot: string, executable: string, args: string[], additionalRoots: readonly string[] = []): string[] {
+  const roots = [protectedRoot, ...additionalRoots], parameters = roots.map((root, index) => [index === 0 ? 'successor' : `protected${index}`, root] as const);
+  const ancestors = new Set<string>();
+  for (const root of roots) for (let parent = dirname(root); dirname(parent) !== parent; parent = dirname(parent)) ancestors.add(parent);
+  const filters = [...ancestors].map((_, index) => `(literal (param "ancestor${index}"))`).join(' ');
+  const exclusions = parameters.map(([key]) => `(subpath (param "${key}"))`).join(' ');
+  const policy = `(version 1) (allow default) (deny file-write* ${exclusions}) (deny file-write-unlink ${filters})`;
+  return [...parameters.flatMap(([key, path]) => ['-D', `${key}=${path}`]),
+    ...[...ancestors].flatMap((path, index) => ['-D', `ancestor${index}=${path}`]), '-p', policy, executable, ...args];
 }
 
 /** Prove local writes still work and the kernel excludes writes through the target path and aliases. */

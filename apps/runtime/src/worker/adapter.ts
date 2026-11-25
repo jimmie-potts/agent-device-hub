@@ -29,6 +29,8 @@ export type AdapterEvidence = {
   reason?: CodingProgressReason;
   uncertain?: boolean;
   writerStopped?: true;
+  /** Positive release of every writer to the original checkout, including processes beyond the runner's process group. */
+  originalCheckoutReleased?: true;
   writerFence?: {root: string; home?: string};
   summary?: string;
   limitations?: string[];

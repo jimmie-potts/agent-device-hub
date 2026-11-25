@@ -76,6 +76,7 @@ export type AssistantOptions = {
   codingJobRead?: CodingCoordinator['jobRead'];
   stopCodingJob?: CodingCoordinator['prepareStop'];
   messageCodingJob?: CodingCoordinator['prepareMessage'];
+  openNativeClient?: CodingCoordinator['prepareNativeClient'];
   continueCodingJob?: CodingCoordinator['prepareContinuation'];
   /**
    * Whether the module already sent a hand-off that answered `waiting` (Hub #2028), so a hand-off sent before its waiting
@@ -841,7 +842,7 @@ export class AssistantEngine {
       // New conversation (Hub #2029) names its profile and the revision the page read, and nothing else. It runs no work,
       // so it is admitted while conversation is off, as a rename is.
       const fresh = object(value) && value.action === 'new-conversation';
-      const jobAction = object(value) && (value.action === 'stop-coding-job' || value.action === 'message-coding-job');
+      const jobAction = object(value) && (value.action === 'stop-coding-job' || value.action === 'message-coding-job' || value.action === 'open-native-terminal' || value.action === 'open-claude-desktop');
       if (jobAction) {
         const messaging = value.action === 'message-coding-job';
         const keys = messaging ? ['action', 'jobId', 'operationId', 'text'] : ['action', 'jobId', 'operationId'];
@@ -884,6 +885,13 @@ export class AssistantEngine {
       if (staged.requestId !== command.data.requestId) fail('invalid-request');
       if (staged.expires <= this.context.clock.now()) fail('expired');
       const input = staged.input, now = this.context.clock.now();
+      if (input.action === 'open-native-terminal' || input.action === 'open-claude-desktop') {
+        const action = this.options.openNativeClient?.({...input, requestId: command.data.requestId}, command) ?? fail('unavailable');
+        if ('code' in action) fail(action.code);
+        jobCommitted = action.committed;
+        this.store.discard(staged.ref);
+        return undefined;
+      }
       if (input.action === 'message-coding-job') {
         const message = this.options.messageCodingJob?.({...input, requestId: command.data.requestId}, command) ?? fail('unavailable');
         if ('code' in message) fail(message.code);

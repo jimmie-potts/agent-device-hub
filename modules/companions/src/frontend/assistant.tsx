@@ -11,7 +11,7 @@ import {ConversationVoice, stopSpeakingButton} from './conversation-voice.js';
 
 import type {ConversationListEntry, SavedQuestion} from '../assistant/history-contract.js';
 import {loadEarlierConversationHistory, readConversationList, refreshConversationHistory, type ConversationHistory} from './conversation-history.js';
-import {CodingJobs, ConversationCodingJob, continueCodingJob, explicitJobInstruction, messageCodingJob, readJobTargets, stopCodingJob, useCodingState} from './coding-jobs.js';
+import {CodingJobs, ConversationCodingJob, continueCodingJob, explicitJobInstruction, messageCodingJob, openNativeClient, readJobTargets, stopCodingJob, useCodingState} from './coding-jobs.js';
 import {ConversationDetails, useDetailsOverlay, type ConversationTitle} from './conversation-details.js';
 import {spendNotice, useSpend} from './conversation-spend.js';
 import {ArtworkAttachment, useConversationArt} from './conversation-art.js';
@@ -559,6 +559,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
                 <p className="conversation-message-text" dir="auto">{message.text}</p>
                 {jobReceipt && <ConversationCodingJob jobId={message.id} revision={coding?.revision}
                   read={readCodingJobs} locked={locked} stop={stopJob} continueJob={continueJob} operations={context.operations}
+                  openNative={input => {openNativeClient(command, input);}}
                   message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}/>}
                 {message.attachment !== undefined && <ArtworkAttachment key={message.attachment.requestId} context={context}
                   connected={connected} allowShow={live && state?.enabled === true && state.tools.includes('control_art_show')} attachment={message.attachment}
@@ -603,6 +604,7 @@ export function AssistantPage({context}: {context: FrontendContext}): React.JSX.
           codingJobs={<><a href="#/module/companions/jobs">Open Jobs</a>
             {coding?.counts !== undefined && detailsOpen && <CodingJobs revision={coding.revision}
               read={readCodingJobs} stop={stopJob} continueJob={continueJob} locked={locked} operations={context.operations}
+              openNative={input => {openNativeClient(command, input);}}
               message={(job, text, requestId) => {messageCodingJob(command, job, text, requestId);}}/>}</>}
           stopSpeaking={stopInDrawer ? stopSpeaking : null} Facts={Facts} profile={profile} profileName={profiles[profile].name} state={state} task={task}
           coding={connected ? coding : undefined} live={live} spend={spend}
