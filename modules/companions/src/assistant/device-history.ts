@@ -85,7 +85,7 @@ function matchesBoundQuery(input: Record<string, unknown>, requested: DeviceHist
     (useBoundInterval || confirmsYesterday || confirmsExact);
 }
 
-function sameQuery(a: DeviceHistoryQuery, b: DeviceHistoryQuery): boolean {
+export function sameHistoryQuery(a: DeviceHistoryQuery, b: DeviceHistoryQuery): boolean {
   return a.source === b.source && a.target === b.target && a.fromAtMs === b.fromAtMs && a.toAtMs === b.toAtMs;
 }
 
@@ -100,7 +100,7 @@ export class DeviceHistoryPages {
     const snapshot = this.provider()?.(query);
     if (snapshot === undefined) return 'refused: unavailable';
     if ('error' in snapshot) return `refused: ${snapshot.error.code}`;
-    if (!sameQuery(snapshot.query, query)) return 'refused: invalid-state';
+    if (!sameHistoryQuery(snapshot.query, query)) return 'refused: invalid-state';
     const interval = {fromAtMs: query.fromAtMs, toAtMs: query.toAtMs};
     const change = snapshot.lastChange;
     return JSON.stringify({interval, complete: snapshot.complete, ...(kind === 'durations'
@@ -130,11 +130,11 @@ export class DeviceHistoryPages {
     for (const [id, page] of this.#cursors) if (page.expires <= scope.now) this.#cursors.delete(id);
     const saved = cursor === '' ? undefined : this.#cursors.get(cursor);
     if (cursor !== '' && (saved === undefined || saved.taskId !== scope.taskId || saved.destination !== scope.destination ||
-      saved.requestId !== scope.bound?.requestId || !sameQuery(saved.snapshot.query, query))) return 'refused: revision-conflict; start a fresh history read.';
+      saved.requestId !== scope.bound?.requestId || !sameHistoryQuery(saved.snapshot.query, query))) return 'refused: revision-conflict; start a fresh history read.';
     const snapshot = saved?.snapshot ?? this.provider()?.(query);
     if (snapshot === undefined) return 'refused: unavailable';
     if ('error' in snapshot) return `refused: ${snapshot.error.code}`;
-    if (scope.bound !== undefined && !sameQuery(snapshot.query, query)) return 'refused: invalid-state';
+    if (scope.bound !== undefined && !sameHistoryQuery(snapshot.query, query)) return 'refused: invalid-state';
     const offset = saved?.offset ?? 0;
     const rows = snapshot.evidence.slice(offset, offset + ROWS_PER_PAGE);
     const nextOffset = offset + rows.length;

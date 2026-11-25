@@ -3078,3 +3078,45 @@ void test('Claude uses only the owner-bound history tool and two pages from the 
   assert.match(JSON.stringify(turns.at(-1)?.transcript), /refused: forbidden/u);
   assert.equal(reads, 1);
 });
+
+void test('Claude keeps the history scope when registry labels change after model admission', async context => {
+  const entered = deferred<void>(), release = deferred<TurnReply>();
+  const source = 'bunny/modules/lifx';
+  const turns: TurnInput[] = [];
+  let target = 'desk';
+  const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: request => {
+    turns.push(request);
+    if (turns.length > 1) return Promise.resolve(reply('No scoped history available.'));
+    entered.resolve();
+    return release.promise;
+  }};
+  const w = await world(context, {provider, tools: ['read_device_history'], timeZone: 'UTC',
+    devices: owner => owner === source ? [light(target, 'Desk Lamp')] : [],
+    deviceHistory: query => assert.fail(`unexpected read of ${query.target}`),
+  }, undefined, Date.parse('2026-11-02T01:00:00Z'));
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'How long was Desk Lamp on yesterday?')).status, 'accepted');
+  await entered.promise;
+  target = 'replacement';
+  release.resolve(call('read_device_history', {source: '', target: '', period: '', fromAtMs: 0, toAtMs: 0, cursor: ''}));
+  await until(() => status(w) === 'succeeded');
+  assert.match(JSON.stringify(turns.at(-1)?.transcript), /refused: forbidden/u);
+});
+
+void test('Claude keeps a named history question private when the history tool is disabled', async context => {
+  const turns: TurnInput[] = [];
+  const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: request => {
+    turns.push(request);
+    return Promise.resolve(reply('No history tool available.'));
+  }};
+  const w = await world(context, {provider, tools: ['read_devices']});
+  await control(w.core, w.module(), 'enable');
+  assert.equal((await input(w.core, w.module(), 'PRIVATE_UNRELATED_PREVIOUS_REQUEST')).status, 'accepted');
+  await until(() => status(w) === 'succeeded');
+  const previous = task(w)?.taskId;
+  assert.equal((await input(w.core, w.module(), 'How long was Desk Lamp on yesterday?')).status, 'accepted');
+  await until(() => task(w)?.taskId !== previous && status(w) === 'succeeded');
+  assert.ok(turns[0]?.tools.some(tool => tool.name === 'read_devices'));
+  assert.deepEqual(turns[1]?.tools, []);
+  assert.doesNotMatch(JSON.stringify(turns[1]), /PRIVATE_UNRELATED_PREVIOUS_REQUEST/u);
+});
