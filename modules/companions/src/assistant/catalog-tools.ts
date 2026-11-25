@@ -38,7 +38,7 @@ const draft = text('The exact draft ID from the authoring or preview tool.');
 const draftRevision = integer('The exact revision from the latest draft preview.');
 const actions = Object.keys(assistantRoutes).filter(catalogFamily).filter(family => family !== 'nanoleaf-show-save' && family !== 'art-request');
 export const catalogTools = [
-  define(READ_DEVICES, 'read', 'Find configured devices and observe their status and permitted commands. Use empty target to list. Return the exact owner and target to use for a control.', {
+  define(READ_DEVICES, 'read', 'Find configured devices and observe their status and permitted commands. A named Wemo plug includes its Hub maximum-on timer status and time remaining. Use empty target to list. Return the exact owner and target to use for a control.', {
     target: text('Device name or ID, or empty to list.'), owner: text('Exact owner such as bunny/modules/pixoo, or auto to search installed owners.'),
   }),
   define(READ_PLAYBACK, 'read', 'Read presented playback, current controls and observation time.', {}),

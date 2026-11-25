@@ -241,6 +241,13 @@ neither installed-client usefulness nor physical acceptance.
 
 ## Conversation and assistant tasks
 
+A named Wemo read in Conversation includes the plug's maximum-on settings and
+the core's current limit status. A running limit includes the observed run
+start, shutoff deadline and time remaining as of the read. Observation,
+start and deadline times include the runtime's local clock alongside the ISO
+instant. A missing or recovering core copy leaves the limit unknown. The Hub
+must be running and the plug reachable for enforcement.
+
 The **Conversation** page (`assistant`) is B.U.N.N.Y.'s text conversation beside
 Reachy (Hub #46). B.U.N.N.Y., Reachy and MicroDuck all talk to the provider and
 model the private section selects (Hub #2026), each with its own curated persona,

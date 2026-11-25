@@ -46,7 +46,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     input: {type: 'object', properties: {device: deviceName, on: {type: 'boolean', description: 'True to turn on, false to turn off.'}}, required: ['device', 'on'], additionalProperties: false}},
   {name: SET_LIFX_BRIGHTNESS, effect: 'command', description: 'Set the exact LIFX brightness the owner requests, from 0 to 100 percent.',
     input: {type: 'object', properties: {device: deviceName, percent: {type: 'integer', description: 'Brightness as a whole percentage from 0 to 100.'}}, required: ['device', 'percent'], additionalProperties: false}},
-  {name: READ_WEMO, effect: 'read', description: 'Read Wemo plug power observations and availability. Use an empty device name to list plugs.',
+  {name: READ_WEMO, effect: 'read', description: 'Read Wemo plug power, availability and the Hub maximum-on timer status, shutoff deadline and time remaining. Use an empty device name to list plugs.',
     input: {type: 'object', properties: {device: plugName}, required: ['device'], additionalProperties: false}},
   {name: SET_WEMO_POWER, effect: 'command', description: 'Switch the requested Wemo plug on or off. For an explicit request for all Wemo plugs, use all wemo plugs as the device. The plug hold and maximum-on policy apply.',
     input: {type: 'object', properties: {device: plugName, on: {type: 'boolean', description: 'True to turn on, false to turn off.'}}, required: ['device', 'on'], additionalProperties: false}},
