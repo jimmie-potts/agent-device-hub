@@ -694,7 +694,7 @@ export class AssistantEngine {
     if (question !== undefined && this.store.meta().enabled && !this.#unrecovered.has(conversationId)) {
       this.#localJobStatus(head.profile, head.text, question, head.supervisor);
       this.store.queue.remove(head.id);
-      return this.#dispatch(conversationId, refuse);
+      return this.#dispatch(conversationId);
     }
     const refusal = this.#startRefusal(head.profile, conversationId, head.supervisor);
     if (refusal !== undefined) {

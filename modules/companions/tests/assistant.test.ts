@@ -1730,6 +1730,22 @@ void test('a refusal is offered to speech, a result over the spoken bound stays 
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
 });
 
+void test('resuming a local job status request commits its reply before a later paid queue refusal', async context => {
+  const provider: ModelProvider = {name: 'anthropic', model: 'claude-sonnet-5-5', turn: () => assert.fail('The held paid message cannot run')};
+  const w = await world(context, {provider, monthlyLimitMicros: 1});
+  await control(w.core, w.module(), 'enable');
+  const conversation = w.store().ensureConversation('bunny');
+  w.store().queue.setHold(conversation, {reason: 'restart', code: null, detail: null});
+  for (const text of ['What is the status of coding job synthetic-step-1-job?', 'Ordinary paid question.']) {
+    assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {action: 'queue'})).status, 'accepted');
+  }
+  const resumed = await control(w.core, w.module(), 'resume-queue', undefined, randomUUID(), {profile: 'bunny'});
+  assert.equal(resumed.status, 'accepted');
+  assert.match((await page(w, 'bunny', 'recent')).messages.at(-1)?.text ?? '', /no readable coding job/iu);
+  assert.deepEqual(w.store().queue.messages(conversation).map(message => message.text), ['Ordinary paid question.']);
+  assert.equal(w.store().queue.hold(conversation)?.code, 'capacity');
+});
+
 void test('a private job status reply follows current access and never becomes provider input', async context => {
   let revoked = false;
   let deniedAttempt: string | undefined;
