@@ -9,6 +9,7 @@ import {Preferences, PREFERENCE_UPLOAD_BYTES, preferenceStateDraft} from './pref
 import {assistantStateDraft, AssistantEngine, type AssistantOptions} from './assistant/engine.js';
 import {AnthropicProvider, DEFAULT_MODEL, EFFORTS, type Effort, type Transport} from './assistant/anthropic.js';
 import {AnthropicTitleProvider, DEFAULT_TITLE_MODEL} from './assistant/titles.js';
+import {canRevokeFields, parseSharingGrants, sharing, type SharingGrant} from './assistant/sharing.js';
 import {deviceToolOwner, allowlistable} from './assistant/tools.js';
 import {LIMITS} from './assistant/store.js';
 import {SPEND_LIMITS} from './assistant/limits.js';
@@ -43,7 +44,7 @@ export const API_KEY_SECRET = 'anthropic-api-key';
  * tool names, prices and local monthly spend guard; a hosted provider needs its key file under `secrets`. The one provider and model serve every profile,
  * B.U.N.N.Y., Reachy and MicroDuck (Hub #2026). An empty section keeps every default and makes no network call.
  */
-export type CompanionsConfig = {readonly assistant: {readonly provider: 'synthetic'; readonly tools: readonly string[]}
+export type CompanionsConfig = {readonly sharing?: readonly SharingGrant[]; readonly assistant: {readonly provider: 'synthetic'; readonly tools: readonly string[]}
   | {readonly provider: 'anthropic'; readonly model: string; readonly effort: Effort; readonly titleModel: string; readonly tools: readonly string[]; readonly prices: PriceTable;
     readonly monthlyLimitMicros: number}};
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -82,7 +83,10 @@ function monthlyLimitOf(value: unknown): number | string {
   return Math.round(value * 1_000_000);
 }
 export function configureCompanions(section: unknown): Configured<CompanionsConfig> | ErrorBody {
-  if (!isObject(section) || !only(section, ['assistant', 'secrets'])) return refuse('the companions section has only assistant and secrets');
+  if (!isObject(section) || !only(section, ['assistant', 'secrets', 'sharing'])) return refuse('the companions section has only assistant, secrets and sharing');
+  const grants = parseSharingGrants(section.sharing);
+  if (grants === undefined) return refuse('sharing must list valid field grants');
+  const configuredSharing = grants.length === 0 ? {} : {sharing: grants};
   const assistant = section.assistant === undefined ? {} : section.assistant;
   if (!isObject(assistant) || !only(assistant, ['provider', 'model', 'effort', 'titleModel', 'tools', 'prices', 'monthlyLimit'])) return refuse('assistant has only provider, model, effort, titleModel, tools, prices and monthlyLimit');
   const provider = assistant.provider ?? 'synthetic';
@@ -93,7 +97,7 @@ export function configureCompanions(section: unknown): Configured<CompanionsConf
     if (assistant.model !== undefined || assistant.effort !== undefined || assistant.titleModel !== undefined || assistant.prices !== undefined || assistant.monthlyLimit !== undefined) {
       return refuse('the synthetic provider takes no model, effort, title model, prices or monthly limit');
     }
-    return {config: {assistant: {provider, tools: [...tools]}}};
+    return {config: {...configuredSharing, assistant: {provider, tools: [...tools]}}};
   }
   const model = assistant.model ?? DEFAULT_MODEL, effort = assistant.effort ?? 'medium', titleModel = assistant.titleModel ?? DEFAULT_TITLE_MODEL;
   if (typeof model !== 'string' || !MODEL.test(model)) return refuse('assistant.model is a model identifier of at most 128 lowercase letters, digits, dots and hyphens');
@@ -104,7 +108,7 @@ export function configureCompanions(section: unknown): Configured<CompanionsConf
   const monthlyLimitMicros = monthlyLimitOf(assistant.monthlyLimit);
   if (typeof monthlyLimitMicros === 'string') return refuse(monthlyLimitMicros);
   if (!isObject(section.secrets) || !Object.hasOwn(section.secrets, API_KEY_SECRET)) return refuse(`a hosted provider names its API key file as secrets.${API_KEY_SECRET}`);
-  return {config: {assistant: {provider, model, effort: effort as Effort, titleModel, tools: [...tools], prices, monthlyLimitMicros}}};
+  return {config: {...configuredSharing, assistant: {provider, model, effort: effort as Effort, titleModel, tools: [...tools], prices, monthlyLimitMicros}}};
 }
 /** What a test or the runtime gives the module: the engine's seams and, for a hosted provider, the transport behind its fetch. */
 export type CompanionsOptions = AssistantOptions & {readonly transport?: Transport};
@@ -167,9 +171,15 @@ class Companions {
     this.#qualification = readSpeechQualification(context.files());
     const database = context.database();
     this.#store = new CompanionStore(database);
-    this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator});
+    const configured = context.config as CompanionsConfig | undefined;
+    const share = this.options.share ?? sharing(configured?.sharing);
+    this.#outbox = new Outbox({sdk: context.sdk, database, clock: context.clock, log: context.log, trace: context.trace, validator: this.#validator,
+      statePublication: {discard: (message, key) => key === 'bunny.state.assistant-state.assistant' &&
+        canRevokeFields(share) && this.assistant?.matchesPublicState(message.data) !== true},
+    });
     this.speech = new SpeechCoordinator(context, this.#outbox, source => {
-      return source.kind === 'card' ? speechRefusal(source.card, this.#policy(source.card.opportunity)) === undefined : replyRefusal(this.#replyPolicy()) === undefined;
+      return source.kind === 'card' ? speechRefusal(source.card, this.#policy(source.card.opportunity)) === undefined
+        : replyRefusal(this.#replyPolicy()) === undefined && this.assistant?.canSpeak(source.reply.taskId, source.reply.messageId) === true;
     }, () => this.#qualification !== undefined);
     await this.speech.start();
     // The preference store opens first so the engine can read the owner's active entries at each model call (Hub #507).
@@ -183,6 +193,7 @@ class Companions {
     // A waiting hand-off is sent only while its task still waits on it, so a cancel that the coordinator missed, as during
     // a stop, still sends nothing.
     const coding = new CodingCoordinator(context, this.#outbox, (taskId, text, parent, evidence, startup) => this.assistant?.deliver(taskId, text, parent, evidence, startup) ?? Promise.resolve(), {
+      mayShare: (taskId, repository) => this.assistant?.canShareCodingBrief(taskId, repository) === true,
       jobQueued: (job, add, parent) => this.assistant?.codingJobQueued(job, add, parent),
       jobUpdate: (job, kind, text, parent, startup) => this.assistant?.codingJobUpdate(job, kind, text, parent, startup) ?? Promise.resolve(),
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
@@ -195,7 +206,7 @@ class Companions {
     this.coding = coding;
     // An approved hand-off goes to the core now when its companion's slot is free, or waits for it (Hub #2028).
     const delegate: AssistantOptions['delegate'] = this.options.delegate ?? ((data, parent) => coding.handOff(data, parent));
-    this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context),
+    this.assistant = new AssistantEngine(context, this.#outbox, {...await this.#assistantOptions(context), share,
       retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries,
       // The owner's knowledge notes reach a companion's context only once the owner turns them on for it (Hub #2029).
       knowledge: () => this.knowledge?.store.active().entries ?? [], speak,
@@ -268,9 +279,17 @@ class Companions {
         copy.start();
       }
     }
-    const dispatch = options.dispatch ?? ((data: AssistantDispatch, parent: TraceContext) => context.sdk.request('bunny.cmd.assistant-dispatch.assistant',
-      {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.family === 'mode-set' ? '2.0' : data.family === 'catalog-action' ? '2.3' : 'owner' in data ? '2.2' : '2.1'}`, data},
-      {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent}));
+    const dispatch = options.dispatch ?? ((data: AssistantDispatch, parent: TraceContext) => {
+      const request = {timeoutMs: LIMITS.toolMs - 1000, requestId: data.requestId, parent};
+      if (data.family === 'catalog-action' && data.command === 'inbox-handle') {
+        return context.sdk.request(`bunny.cmd.inbox-handle.${data.target}`, {
+          type: 'org.bunny.inbox.handle.requested', subject: data.target, dataschema: 'https://bunny.invalid/events/inbox-handle/2.0',
+          data: {...data.data, expectedRevision: data.binding.kind === 'record' ? data.binding.revision : undefined},
+        }, request);
+      }
+      return context.sdk.request('bunny.cmd.assistant-dispatch.assistant',
+        {type: 'org.bunny.assistant.dispatch.requested', subject: 'assistant', dataschema: `https://bunny.invalid/events/assistant-dispatch/${data.family === 'mode-set' ? '2.0' : data.family === 'catalog-action' ? '2.3' : 'owner' in data ? '2.2' : '2.1'}`, data}, request);
+    });
     const prices = options.prices ?? (assistant?.provider === 'anthropic' ? assistant.prices : undefined);
     const monthlyLimitMicros = options.monthlyLimitMicros ?? (assistant?.provider === 'anthropic' ? assistant.monthlyLimitMicros : undefined);
     return {...(provider === undefined ? {} : {provider}), ...(prices === undefined ? {} : {prices}), ...(monthlyLimitMicros === undefined ? {} : {monthlyLimitMicros}), ...(options.timeZone === undefined ? {} : {timeZone: options.timeZone}),

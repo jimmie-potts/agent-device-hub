@@ -60,6 +60,7 @@ export function requesterRefusal(family: string, requestedBy: string, dataschema
   if (family === 'art-request' && dataschema === CONVERSATION_ART_SCHEMA) {
     return requestedBy === 'bunny/modules/companions' ? undefined : errorBody('forbidden', {detail: 'Conversation artwork requires the companions owner'});
   }
+  if (family === 'art-catalog-edit' && requestedBy === 'bunny/modules/companions') return undefined;
   if (family.startsWith('music-capture-') && family !== 'music-capture-control') return errorBody('forbidden', {detail: 'capture endpoint work belongs to the capture owner'});
   if (family.startsWith('music-lighting-') && family !== 'music-lighting-control' && (family !== 'music-lighting-work' || requestedBy !== CORE_SOURCE)) {
     return errorBody('forbidden', {detail: 'music lighting work is dispatched only by the core\'s session owner'});

@@ -18,6 +18,7 @@ import {ModuleHarness} from '@jimmie-potts/sdk/testing';
 import {CodingStore} from '../src/coding/store.js';
 import {createCompanionsModule, type CompanionsOptions} from '../src/module.js';
 import type {ModelProvider, TurnReply} from '../src/assistant/provider.js';
+import {sharing, type ShareQuery} from '../src/assistant/sharing.js';
 
 const PROFILES = ['bunny', 'reachy', 'microduck'] as const;
 const ENDPOINT = 'worker-endpoint-1';
@@ -299,6 +300,40 @@ void test('Conversation answers a Hub question and takes another job while a wor
   assert.equal(w.starts().filter(command => command.data.operationId === first.operationId).length, 1);
 });
 
+
+void test('background coding checks queued grants again and filters retained job results after revocation', {timeout: 30_000}, async context => {
+  const permitted = sharing();
+  let blockBrief = false, hiddenResult: string | undefined;
+  const share = Object.assign((query: ShareQuery) => permitted(query) &&
+    !(blockBrief && query.destination === 'coding-worker' && query.source === 'coding' && query.field === 'brief') &&
+    !(hiddenResult !== undefined && query.destination === 'private-conversation' && query.source === 'coding' &&
+      query.field === 'details' && query.record === hiddenResult),
+  {revokesFields: true, allowsDerived: (query: ShareQuery) => permitted.allowsDerived?.(query) !== false});
+  const w = await world(context, {share});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable()).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic first job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1);
+  const first = w.starts()[0]?.data;
+  assert.ok(first?.action === 'start');
+  await w.progress({operationId: first.operationId, status: 'started'});
+  await settle(() => w.task('bunny')?.status === 'succeeded');
+  assert.equal((await w.send('bunny', 'Synthetic queued job')).status, 'accepted');
+  await w.approved('bunny');
+  await settle(() => w.task('bunny')?.status === 'succeeded' && w.coding().waiting?.length === 1);
+  blockBrief = true;
+  await w.progress({operationId: first.operationId, status: 'completed', result: result('Synthetic retained outcome.')});
+  const messages = await w.waitMessages('bunny', /Synthetic retained outcome/);
+  assert.ok(messages.some(message => message.id === `${first.operationId}-job-result`));
+  await w.waitMessages('bunny', /refused: forbidden/);
+  assert.equal(w.starts().length, 1, 'revocation prevents a second worker dispatch');
+  hiddenResult = first.operationId;
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), /Synthetic retained outcome/);
+  await w.restart();
+  assert.doesNotMatch(JSON.stringify(await w.messages('bunny')), /Synthetic retained outcome/);
+  assert.equal(w.starts().length, 1);
+});
 
 void test('a named stop with no worker confirmation leaves a sibling running', {timeout: 30_000}, async context => {
   const w = await world(context);

@@ -262,7 +262,7 @@ void test('each spoken reply names its own conversation\'s line', async context 
   assert.equal(offers[2]?.line, w.task('reachy')?.conversationId, 'a Read aloud replay waits in its own conversation\'s line');
 });
 
-void test('approvals from two conversations reach the single writer in arrival order, each with its own guard', async context => {
+void test('direct requests from two conversations reach the single writer in arrival order, each with its own guard', async context => {
   // A fake single writer for the Hub mode: it applies commands in the order they arrive and refuses a stale revision.
   let revision = 3; const applied: string[] = [];
   const providers = three(), w = await world(context, {...withProviders(providers), tools: ['set_mode'], core: () => ({sessions: [], mode: {id: 'hub', revision, mode: 'work', selectedAtMs: 0}, synced: true}),
@@ -273,19 +273,15 @@ void test('approvals from two conversations reach the single writer in arrival o
       return Promise.resolve({status: 'accepted', requestId: data.requestId, reply: {} as never});
     }});
   await w.control('enable');
-  await w.send('bunny', 'Synthetic bunny mode request'); await w.send('reachy', 'Synthetic reachy mode request');
+  await w.send('bunny', 'Set the Hub mode to quiet'); await w.send('reachy', 'Set the Hub mode to free');
   await settle(() => providers.bunny.pending.length === 1 && providers.reachy.pending.length === 1);
-  providers.bunny.next().resolve({text: null, calls: [{id: 'call-bunny-mode', name: 'set_mode', input: {mode: 'quiet'}}], stop: 'tool', units: 10});
   providers.reachy.next().resolve({text: null, calls: [{id: 'call-reachy-mode', name: 'set_mode', input: {mode: 'free'}}], stop: 'tool', units: 10});
-  await settle(() => w.task('bunny')?.status === 'waiting' && w.task('reachy')?.status === 'waiting');
-  // Reachy's approval arrives first, then B.U.N.N.Y.'s, which was bound to the same revision and is now stale.
-  assert.equal((await w.send('reachy', 'approve', true)).status, 'accepted');
   await settle(() => applied.length === 1 && providers.reachy.pending.length === 1);
-  assert.equal((await w.send('bunny', 'approve', true)).status, 'accepted');
+  providers.bunny.next().resolve({text: null, calls: [{id: 'call-bunny-mode', name: 'set_mode', input: {mode: 'quiet'}}], stop: 'tool', units: 10});
   await settle(() => providers.bunny.pending.length === 1);
   assert.deepEqual(applied, ['free'], 'the writer applied only the first arrival');
   const bunnyResult = providers.bunny.pending[0]?.input.transcript.at(-1), reachyResult = providers.reachy.pending[0]?.input.transcript.at(-1);
-  assert.ok(bunnyResult?.role === 'tool' && /refused: revision-conflict: the Hub mode changed since this was proposed/.test(bunnyResult.result), JSON.stringify(bunnyResult));
+  assert.ok(bunnyResult?.role === 'tool' && /refused: revision-conflict: the Hub mode changed after the request was resolved/.test(bunnyResult.result), JSON.stringify(bunnyResult));
   assert.ok(reachyResult?.role === 'tool' && reachyResult.result.startsWith('accepted: '), JSON.stringify(reachyResult));
   providers.bunny.next().resolve(reply('Synthetic bunny mode not changed'));
   providers.reachy.next().resolve(reply('Synthetic reachy mode changed'));

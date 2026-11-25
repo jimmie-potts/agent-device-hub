@@ -1,14 +1,15 @@
 // The tools a turn may call (Hub #46): the built-in owner question, the two first permitted tools and the synthetic
 // read fixture. The private section's allowlist selects the permitted ones; the engine checks membership again when a
 // call executes, so a changed section cannot widen an effect.
-import {ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER, type AssistantDeviceOwner, type AssistantProfile} from '@jimmie-potts/event-contracts/v2/assistant';
+import {ASSISTANT_LIGHT_OWNER, ASSISTANT_WEMO_OWNER, type AssistantDeviceOwner} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {ModeState} from '@jimmie-potts/event-contracts/v2/families';
 import type {SessionView} from '@jimmie-potts/event-contracts/v2/session-view';
 import {NATIVE_SOURCE} from '@jimmie-potts/event-contracts/v2/sources';
+import type {FieldAccess} from './sharing.js';
 import {catalogTools} from './catalog-tools.js';
 import {textBytes, TOOL_NAME, type ToolDefinition} from './provider.js';
-import {offeredTo, READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
-export {offeredTo, profileTools, READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
+import {READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
+export {READ_LIFX, READ_WEMO, SET_LIFX_BRIGHTNESS, SET_LIFX_POWER, SET_WEMO_POWER} from './tool-scope.js';
 
 export const ASK_OWNER = 'ask_owner';
 export const READ_SESSIONS = 'read_sessions';
@@ -37,17 +38,17 @@ export const TOOLS: readonly ToolDefinition[] = [
     input: {type: 'object', properties: {text: {type: 'string', description: 'The question, one or two sentences.'}}, required: ['text'], additionalProperties: false}},
   {name: READ_SESSIONS, effect: 'read', description: 'Read what the coding agents are doing: each known session with its provider, label, shared status, work confirmation and attention. Reads need no approval.',
     input: {type: 'object', properties: {}, required: [], additionalProperties: false}},
-  {name: SET_MODE, effect: 'command', description: 'Propose setting the Hub mode to work, free or quiet. The owner must approve the proposal before it is applied; report the result the tool returns, never assume it was applied.',
+  {name: SET_MODE, effect: 'command', description: 'Set the Hub mode to work, free or quiet when the owner explicitly requests that mode. Report what the tool confirms.',
     input: {type: 'object', properties: {mode: {type: 'string', description: 'The requested Hub mode.', enum: MODES}}, required: ['mode'], additionalProperties: false}},
   {name: READ_LIFX, effect: 'read', description: 'Read LIFX observed status and available controls. Use an empty device name to list lights.',
     input: {type: 'object', properties: {device: deviceName}, required: ['device'], additionalProperties: false}},
-  {name: SET_LIFX_POWER, effect: 'command', description: 'Propose switching a LIFX light on or off. Requires owner approval.',
+  {name: SET_LIFX_POWER, effect: 'command', description: 'Switch a LIFX light on or off when the owner explicitly requests the setting.',
     input: {type: 'object', properties: {device: deviceName, on: {type: 'boolean', description: 'True to turn on, false to turn off.'}}, required: ['device', 'on'], additionalProperties: false}},
-  {name: SET_LIFX_BRIGHTNESS, effect: 'command', description: 'Propose setting a LIFX light to a specific brightness from 0 to 100 percent. Requires owner approval.',
+  {name: SET_LIFX_BRIGHTNESS, effect: 'command', description: 'Set the exact LIFX brightness the owner requests, from 0 to 100 percent.',
     input: {type: 'object', properties: {device: deviceName, percent: {type: 'integer', description: 'Brightness as a whole percentage from 0 to 100.'}}, required: ['device', 'percent'], additionalProperties: false}},
   {name: READ_WEMO, effect: 'read', description: 'Read Wemo plug power, availability and the Hub maximum-on timer status, shutoff deadline and time remaining. Use an empty device name to list plugs.',
     input: {type: 'object', properties: {device: plugName}, required: ['device'], additionalProperties: false}},
-  {name: SET_WEMO_POWER, effect: 'command', description: 'Propose switching one Wemo plug on or off. Requires owner approval and respects the plug hold and maximum-on policy.',
+  {name: SET_WEMO_POWER, effect: 'command', description: 'Switch the requested Wemo plug on or off. For an explicit request for all Wemo plugs, use all wemo plugs as the device. The plug hold and maximum-on policy apply.',
     input: {type: 'object', properties: {device: plugName, on: {type: 'boolean', description: 'True to turn on, false to turn off.'}}, required: ['device', 'on'], additionalProperties: false}},
   ...catalogTools,
   {name: READ_FIXTURE, effect: 'read', description: 'Read the immutable synthetic fixture. Only the synthetic provider sees this tool.',
@@ -56,9 +57,9 @@ export const TOOLS: readonly ToolDefinition[] = [
     input: {type: 'object', properties: {repository: {type: 'string', description: 'The repository name from the worker\'s allowlist, such as agent-device-hub.'},
       brief: {type: 'string', description: 'What to change and how to verify it, in a few sentences.'}}, required: ['repository', 'brief'], additionalProperties: false}},
 ];
-/** The permitted tool definitions for one turn of `profile`: the built-in question plus the allowlisted names it is offered, in catalog order. */
-export function permittedTools(allowed: readonly string[], synthetic: boolean, profile: AssistantProfile = 'bunny'): ToolDefinition[] {
-  return TOOLS.filter(tool => tool.name === ASK_OWNER || (tool.name === READ_FIXTURE ? synthetic : allowed.includes(tool.name) && offeredTo(tool.name, profile)));
+/** The permitted tool definitions for one turn: the built-in question plus the configured allowlist, in catalog order. */
+export function permittedTools(allowed: readonly string[], synthetic: boolean): ToolDefinition[] {
+  return TOOLS.filter(tool => tool.name === ASK_OWNER || (tool.name === READ_FIXTURE ? synthetic : allowed.includes(tool.name)));
 }
 /** Whether `name` is a tool name the private section may list: a permitted tool other than the built-in question and the synthetic fixture. */
 export const allowlistable = (name: unknown): name is string => typeof name === 'string' && TOOL_NAME.test(name) && TOOLS.some(tool => tool.name === name && tool.name !== ASK_OWNER && tool.name !== READ_FIXTURE);
@@ -78,16 +79,18 @@ const age = (record: SessionView, now: number): string => {
  * prompt, a transcript or a path. Each session reports the hub's shared status class and detail, its work state and
  * confirmation, and its attention (Hub #1865). An unsynced copy says so instead of pretending the list is current.
  */
-export function summarizeSessions(copy: CoreCopy, now: number): string {
+export function summarizeSessions(copy: CoreCopy, now: number, access: FieldAccess = () => true): string {
   if (!copy.synced) return 'The session list is not synced with the core right now; what the agents are doing is unknown.';
   // Coding agent sessions only: the assistant's own tasks are not listed, so a task never describes itself (Hub #505).
-  const records = copy.sessions.filter(record => record.identity.provider !== NATIVE_SOURCE.provider).sort((a, b) => b.lastEvidenceAtMs - a.lastEvidenceAtMs);
+  const records = copy.sessions.filter(record => record.identity.provider !== NATIVE_SOURCE.provider && access('sessions', 'index', record.id)).sort((a, b) => b.lastEvidenceAtMs - a.lastEvidenceAtMs);
   if (records.length === 0) return 'No coding agent session is known to the core right now.';
   const lines = records.slice(0, MAX_SESSIONS).map(record => {
+    const display = access('sessions', 'label', record.id) ? label(record) : 'Coding session';
+    if (!access('sessions', 'status', record.id)) return `- ${display}`;
     const attention = record.attention.items.map(item => item.kind);
     const status = `${record.status.class} (${record.status.detail}); work ${record.work.state}, ${record.work.confidence}`;
     const waiting = attention.length === 0 ? '' : `; waiting for ${attention.join(', ')}`;
-    return `- ${label(record)} (${record.identity.provider}, ${record.identity.client}): ${status}${waiting}; last evidence ${age(record, now)}`;
+    return `- ${display} (${record.identity.provider}, ${record.identity.client}): ${status}${waiting}; last evidence ${age(record, now)}`;
   });
   if (records.length > MAX_SESSIONS) lines.push(`- ${String(records.length - MAX_SESSIONS)} more session(s) not listed`);
   let text = `${String(records.length)} coding agent session(s):\n${lines.join('\n')}`;

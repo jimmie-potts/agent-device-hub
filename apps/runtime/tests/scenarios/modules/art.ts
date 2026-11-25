@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import sharp from 'sharp';
 import {artShowSurfaces, localGifReference} from '@jimmie-potts/event-contracts/v2/art-show';
-import {assistantInput, catalogFinished, catalogInput, enableAssistant} from './companions.js';
+import {catalogControlInput, catalogFinished, catalogInput, enableAssistant} from './companions.js';
 import type {AssistantState} from '@jimmie-potts/event-contracts/v2/assistant';
 import type {ArtJobSummary, ArtState, ArtRecord, ArtworkSummary} from '@jimmie-potts/event-contracts/v2/art-state';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
@@ -181,11 +181,8 @@ export const scenarios: readonly Scenario[] = [{
     }),
     act('enable Conversation', h => enableAssistant(h, 'art-conversation-enable')),
     expect('Conversation is enabled', h => assistantState(h)?.enabled === true || 'assistant disabled'),
-    act('propose showing the saved artwork on both displays and the browser', h => catalogInput(h, 'art-conversation-propose', 'control_art_show', {
-      owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: created(h, 'art-show-seed'), targets: ['pixoo', 'tidbyt', 'ui']}),
-    })),
-    expect('the proposal waits with no moment operation', h => assistantState(h)?.tasks[0]?.status === 'waiting' && moments(h).length === 0 || 'art was presented before approval'),
-    act('approve the exact art show', h => assistantInput(h, 'art-conversation-approve', true, 'approve')),
+    act('request the saved artwork on both displays and the browser', h => catalogControlInput(h, 'art-conversation-show', 'art-show', 'hub',
+      {artworkId: created(h, 'art-show-seed'), targets: ['desk-display', 'shelf-display', 'browser']})),
     expect('each display gets its own preparation and moment operation', h => {
       const tracked = h.reader.states<OperationRecord>('operation', 'bunny/core').map(message => message.data);
       return tracked.filter(record => record.family === 'art-auto' && record.target === 'art' && record.result === 'succeeded').length >= 2
@@ -217,9 +214,8 @@ export const scenarios: readonly Scenario[] = [{
         wanted.includes('shelf-display') && wanted.includes('browser') || 'per-display evidence missing';
     })),
     expect('the effects read settles before the next request', h => catalogFinished(h) || 'read is still active'),
-    act('propose a second show with one unavailable target', h => catalogInput(h, 'art-conversation-partial', 'control_art_show', {
-      owner: 'bunny/core', target: 'hub', arguments: JSON.stringify({artworkId: created(h, 'art-show-seed'), targets: ['browser', 'unconfigured-display']}),
-    })),
+    act('request a second show with one unavailable target', h => catalogControlInput(h, 'art-conversation-partial', 'art-show', 'hub',
+      {artworkId: created(h, 'art-show-seed'), targets: ['browser', 'unconfigured-display']})),
     expect('Conversation asks which configured display the owner meant', answers({
       as: 'operator', method: 'GET', path: '/modules/companions/content/conversation?profile=bunny&view=recent',
     }, answer => JSON.stringify(bodyOf(answer)).includes('No configured art display matches') || 'clarification missing')),
