@@ -1386,8 +1386,11 @@ for (const originalGrant of ['granted', 'revoked'] as const) {
       result: {...result('Private synthetic source result.'), changedFiles: ['fixture.txt']}}, '2.4');
     await w.waitMessages('bunny', /Private synthetic source result/u);
     if (originalGrant === 'revoked') revokedRequest = `${taskId}-prompt`;
-    assert.equal((await w.continueJob(jobId, operationId, 'codex')).status, 'accepted');
+    const detail = await w.jobDetail(jobId);
+    const continuation = await w.continueJob(jobId, operationId, 'codex');
     if (originalGrant === 'granted') {
+      assert.equal(detail.continuation?.harness, 'codex');
+      assert.equal(continuation.status, 'accepted');
       await settle(() => w.starts().length === 2);
       const resumed = w.starts()[1]?.data;
       assert.ok(resumed?.action === 'start' && resumed.harness === 'codex');
@@ -1395,7 +1398,9 @@ for (const originalGrant of ['granted', 'revoked'] as const) {
       await w.progress({operationId: resumed.operationId, status: 'completed', harness: 'codex', result: result('Private synthetic continuation result.')}, '2.3');
       await w.waitMessages('bunny', /Private synthetic continuation result/u);
     } else {
-      await w.waitMessages('bunny', /refused: forbidden/u);
+      assert.equal(detail.continuation, null);
+      assert.equal(continuation.status === 'rejected' && continuation.error.error.code, 'forbidden');
+      assert.equal((await w.jobDetail(jobId)).attempts.length, 1);
       assert.equal(w.starts().length, 1);
       assert.equal(w.dispatched.length, 1);
     }
