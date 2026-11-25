@@ -40,7 +40,8 @@ function assertStrictOutputSchema(value: unknown): void {
 }
 
 type Scenario = {
-  effectiveConfig?: object; auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; badPermissions?: boolean; changeAuth?: boolean;
+  effectiveConfig?: object; auth?: unknown; laterAuth?: unknown; requireId?: boolean; malformed?: boolean; changeAuth?: boolean;
+  rootReport?: {writableRoots?: unknown; runtimeWorkspaceRoots?: unknown};
   quotaResponse?: object; quotaReplies?: readonly (object | Promise<unknown> | Error)[]; quotaEvent?: 'initialize' | 'second-account' | 'pending-turn';
   steerable?: boolean;
   terminal?: 'usageLimitExceeded' | 'rateLimitExceeded' | 'serverOverloaded' | 'lost';
@@ -97,8 +98,10 @@ function fixture(scenario: Scenario = {}, home = profileHome, environment: NodeJ
             const sent = params as {cwd: string; permissions: string; runtimeWorkspaceRoots: string[]};
             assert.notEqual(sent.cwd, home);
             assert.deepEqual(sent.runtimeWorkspaceRoots, [sent.cwd]);
+            const roots = scenario.rootReport ?? {writableRoots: [sent.cwd], runtimeWorkspaceRoots: [sent.cwd]};
             return Promise.resolve({cwd: sent.cwd, thread: {id: threadId}, modelProvider: 'openai', approvalPolicy: 'never',
-              activePermissionProfile: {id: sent.permissions}, sandbox: {type: 'workspaceWrite', networkAccess: false, writableRoots: [sent.cwd]}, runtimeWorkspaceRoots: scenario.badPermissions === true ? [sent.cwd, '/other-checkout'] : [sent.cwd]});
+              activePermissionProfile: {id: sent.permissions}, sandbox: {type: 'workspaceWrite', networkAccess: false, writableRoots: roots.writableRoots},
+              runtimeWorkspaceRoots: roots.runtimeWorkspaceRoots});
           }
           case 'turn/start': {
             starts += 1;
@@ -167,6 +170,27 @@ void test('Codex sends one bounded model turn after confirmed worktree scope and
   assert.equal(evidence.sessionId, threadId);
   assert.deepEqual(evidence.structured, report);
   assert.equal(evidence.usage?.costUsd, null);
+});
+
+void test('Codex starts with an empty legacy writable list only for the exact effective worktree', async t => {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-roots-')));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  const accepted = fixture({rootReport: {writableRoots: [], runtimeWorkspaceRoots: [cwd]}});
+  assert.equal((await accepted.run(cwd)).sessionId, threadId);
+  assert.equal(accepted.starts(), 1);
+
+  const foreign = '/other-checkout';
+  for (const rootReport of [
+    {runtimeWorkspaceRoots: [cwd]},
+    ...[null, cwd, [foreign], [cwd, foreign], [cwd, cwd]].map(writableRoots => ({writableRoots, runtimeWorkspaceRoots: [cwd]})),
+    {writableRoots: []},
+    ...[null, cwd, [], [foreign], [cwd, foreign], [cwd, cwd]].map(runtimeWorkspaceRoots => ({writableRoots: [], runtimeWorkspaceRoots})),
+  ]) {
+    const refused = fixture({rootReport});
+    assert.equal((await refused.run(cwd)).reason, 'refused', JSON.stringify(rootReport));
+    assert.deepEqual(refused.sessions, []);
+    assert.equal(refused.starts(), 0);
+  }
 });
 
 void test('Codex steering stays on its current native turn and correlates only the submitted message ID', {timeout: 10_000}, async t => {
@@ -264,7 +288,7 @@ void test('Codex refuses signed-out, API key, unknown credentials and broadened 
     {auth: {requiresOpenaiAuth: false, account: account.account}},
     {auth: {...account, account: {...account.account, planType: 'business'}}},
     {auth: {...account, workspaceRouting: {backendOrigin: 'https://synthetic.invalid'}}},
-    {badPermissions: true},
+    {rootReport: {writableRoots: [cwd], runtimeWorkspaceRoots: [cwd, '/other-checkout']}},
     {laterAuth: {requiresOpenaiAuth: true, account: {type: 'apiKey'}}},
   ]) {
     const {run, starts} = fixture(scenario);
