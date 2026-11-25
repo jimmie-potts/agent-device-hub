@@ -1,5 +1,6 @@
-import React, {useCallback, useEffect, useId, useLayoutEffect, useRef, useState} from 'react';
+import React, {useEffect, useId, useRef, useState} from 'react';
 import type {FrontendContext, FrontendApi} from '@jimmie-potts/sdk/frontend';
+import {useCanvasBitmaps} from './bitmaps.js';
 import {PreviewFrame, previewOf} from './preview.js';
 
 export type PickerMedia = {renditionId: string; name: string; frameCount: number; compatible?: boolean};
@@ -24,27 +25,8 @@ export function AnimatedMedia({api, renditionId, label, active, animate = true}:
   const [reduced, setReduced] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [bitmap, setBitmap] = useState<ImageBitmap>(), [frame, setFrame] = useState(0);
   const [status, setStatus] = useState('still');
-  // The tile owns every bitmap it decoded and has not closed. A frame leaves the cache when it is evicted or its cache
-  // ends with a change of rendition, activity, visibility or animation; it is closed then unless it is the bitmap on the
-  // canvas. That one is closed only once the next bitmap replaces it, or when the tile unmounts, so a frame whose state
-  // update commits together with the cache's end is never closed before the canvas draws it (Hub #2133). `shown` is set
-  // in a layout effect, which runs before the passive cleanup that ends the cache in the same commit.
-  const owned = useRef(new Set<ImageBitmap>()), uncached = useRef(new Set<ImageBitmap>()), shown = useRef<ImageBitmap | undefined>(undefined);
-  const release = useCallback((image: ImageBitmap): void => {
-    uncached.current.delete(image); if (owned.current.delete(image)) image.close();
-  }, []);
-  const uncache = useCallback((image: ImageBitmap): void => {
-    if (image === shown.current) uncached.current.add(image); else release(image);
-  }, [release]);
-  useEffect(() => {
-    const bitmaps = owned.current, left = uncached.current;
-    return () => { for (const image of bitmaps) image.close(); bitmaps.clear(); left.clear(); };
-  }, []);
-  useLayoutEffect(() => {
-    shown.current = bitmap;
-    const left = uncached.current;
-    return () => { if (bitmap !== undefined && left.has(bitmap)) release(bitmap); };
-  }, [bitmap, release]);
+  // Frames are kept while cached; the one on the canvas outlives the cache until it is replaced (Hub #2133).
+  const {keep, drop} = useCanvasBitmaps(bitmap);
   useEffect(() => {
     const media = matchMedia('(prefers-reduced-motion: reduce)');
     const motion = (): void => { setReduced(media.matches); };
@@ -60,7 +42,7 @@ export function AnimatedMedia({api, renditionId, label, active, animate = true}:
     const frames = new Map<number, ImageBitmap>();
     setBitmap(undefined); setFrame(0); setStatus('still');
     if (!active || !visible || !foreground) return;
-    const closeFrames = (): void => { for (const image of frames.values()) uncache(image); frames.clear(); };
+    const closeFrames = (): void => { for (const image of frames.values()) drop(image); frames.clear(); };
     void (async () => {
       setStatus('loading');
       const preview = previewOf(await api.read(`/modules/pixoo/content/preview.${renditionId}`), renditionId);
@@ -73,13 +55,11 @@ export function AnimatedMedia({api, renditionId, label, active, animate = true}:
           if (disposed) return;
           image = await createImageBitmap(blob);
           if (disposed) { image.close(); return; }
-          owned.current.add(image);
+          keep(image);
           // A tile keeps at most 128 KiB of decoded RGBA pixels, independent of the animation length.
           if (frames.size >= 8) {
             const oldest = frames.keys().next().value;
-            const evicted = oldest === undefined ? undefined : frames.get(oldest);
-            if (oldest !== undefined) frames.delete(oldest);
-            if (evicted !== undefined) uncache(evicted);
+            if (oldest !== undefined) { const evicted = frames.get(oldest); frames.delete(oldest); if (evicted !== undefined) drop(evicted); }
           }
           frames.set(index, image);
         }
@@ -94,7 +74,7 @@ export function AnimatedMedia({api, renditionId, label, active, animate = true}:
       if (!disposed) { setStatus('unavailable'); closeFrames(); setBitmap(undefined); }
     }
     return () => { disposed = true; window.clearTimeout(timer); closeFrames(); };
-  }, [api, renditionId, active, visible, foreground, playing, uncache]);
+  }, [api, renditionId, active, visible, foreground, playing, keep, drop]);
   return <div ref={ref} className="pixoo-thumbnail" data-preview-state={status} data-preview-frame={frame}>
     <PreviewFrame bitmap={bitmap} label={label}/>
     {status === 'unavailable' && <span className="hint">Preview unavailable</span>}
