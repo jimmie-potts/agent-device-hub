@@ -3,6 +3,7 @@ import React, {useEffect, useId, useRef, useState} from 'react';
 import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {FrontendCommand, FrontendContext} from '@jimmie-potts/sdk/frontend';
 import type {PlaylistChangeRequest, PlaylistRecord, Policy} from '../module/schemas.js';
+import {useCanvasBitmaps} from './bitmaps.js';
 import {Preview, PreviewFrame} from './preview.js';
 
 type Change = PlaylistChangeRequest['change'];
@@ -84,7 +85,8 @@ function MediaPicker({context, disabled, add}: {context: FrontendContext; disabl
   </fieldset>;
 }
 
-function PlaylistItem({context, item, index, length, disabled, edit, move, remove}: {
+/** Exported for its bitmap-lifetime check (Hub #2133). */
+export function PlaylistItem({context, item, index, length, disabled, edit, move, remove}: {
   context: FrontendContext; item: Item; index: number; length: number; disabled: boolean;
   edit: (playback: Policy) => void; move: (delta: number) => void; remove: () => void;
 }): React.JSX.Element {
@@ -92,6 +94,8 @@ function PlaylistItem({context, item, index, length, disabled, edit, move, remov
   const [animated, setAnimated] = useState(false);
   const [unavailable, setUnavailable] = useState<string>();
   const id = useId();
+  // The thumbnail is kept for its rendition; on the canvas it outlives that until it is replaced (Hub #2133).
+  const {keep, drop} = useCanvasBitmaps(preview);
   useEffect(() => {
     let disposed = false;
     let bitmap: ImageBitmap | undefined;
@@ -102,10 +106,10 @@ function PlaylistItem({context, item, index, length, disabled, edit, move, remov
         || (value.frameCount as number) < 1) throw new Error('invalid preview');
       const loaded = await createImageBitmap(image);
       if (disposed) loaded.close();
-      else { bitmap = loaded; setPreview(loaded); setAnimated((value.frameCount as number) > 1); }
+      else { bitmap = loaded; keep(loaded); setPreview(loaded); setAnimated((value.frameCount as number) > 1); }
     }).catch((error: unknown) => { if (!disposed) setUnavailable(codeOf(error)); });
-    return () => { disposed = true; bitmap?.close(); };
-  }, [context.api, item.renditionId]);
+    return () => { disposed = true; if (bitmap !== undefined) drop(bitmap); };
+  }, [context.api, item.renditionId, keep, drop]);
   const plays = item.playback.mode === 'plays';
   const value = item.playback.mode === 'plays' ? item.playback.totalPlays : item.playback.durationMs / 1000;
   return <li aria-label={`Item ${index + 1}`}>

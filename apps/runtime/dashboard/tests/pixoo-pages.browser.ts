@@ -64,3 +64,5 @@ try {
 await import('./pixoo-cards.browser.ts');
 
 await import('./pixoo-command-lock.browser.ts');
+
+await import('./pixoo-card-reread.browser.ts');
