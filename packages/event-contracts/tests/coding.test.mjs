@@ -219,3 +219,20 @@ test('a tracked run can carry the selected uncapped connection without changing 
   invalid(at('coding-run', '2.1', {...data, selectionId}));
   invalid(at('coding-dispatch', '2.1', {...data, selectionId}));
 });
+
+
+test('a continuation carries only a prior attempt and an opaque stopped-writer proof', () => {
+  const token = '01234567-89ab-4cde-8fab-0123456789ab';
+  const continuation = {fromOperationId: 'partially-done', token};
+  const dispatch = {...family('coding-dispatch').data, harness: 'codex', continuation};
+  valid(at('coding-dispatch', '2.2', dispatch));
+  invalid(at('coding-dispatch', '2.1', dispatch));
+  valid(at('coding-run', '2.3', {...dispatch, selectionId: token}));
+  const work = {...family('coding-work').data, companion: 'bunny', harness: 'codex', continuation};
+  valid(at('coding-work', '2.3', work));
+  invalid(at('coding-work', '2.3', {...work, continuation: {...continuation, path: '/private/worktree'}}));
+  const cancelled = {operationId: 'partially-done', status: 'cancelled', reason: 'cancelled', handoffToken: token, result: result()};
+  valid(at('coding-progress', '2.4', cancelled));
+  invalid(at('coding-progress', '2.4', {...cancelled, status: 'uncertain', reason: 'lost'}));
+  invalid(at('coding-progress', '2.4', {...cancelled, result: {...cancelled.result, head: null}}));
+});

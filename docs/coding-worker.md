@@ -39,6 +39,32 @@ limits only when the harness supplies that evidence.
 Open **Details**, then **Coding jobs**, to find active jobs and stop a named
 attempt. **Next jobs** reads later jobs without affecting admission.
 
+## Harness choice and continuation
+
+For a new coding job, Auto prefers Claude Code when its subscription is
+eligible and selects Codex if Claude Code has a confirmed quota rejection or
+unavailable subscription. The job shows the selection reason. A named choice
+uses only that subscription. An unknown quota remains unknown. The Hub can
+resolve Auto again while a job is still local and queued. After dispatch,
+slowdown or uncertainty stays with the selected attempt.
+
+A partially completed attempt can continue on the other harness on a Mac
+when the first process group has stopped and its native sandbox denies writes
+to the successor path. Claude Code uses a macOS process sandbox inherited by
+its subprocesses. Codex uses its verified native permissions profile. The
+worker checks the boundary offline, then creates a
+distinct checkout and Git store at the accepted revision. It verifies the
+source directory, Git directory, staged index and tracked file contents.
+A staged new source file can travel with the partial work. Git-visible
+unstaged new files, symlinks and aliased files block continuation. Ignored
+build artifacts stay with the previous attempt.
+
+Each attempt keeps its own native session, outcome and checks. The worker
+pairs the exact approved brief with bounded Git and check facts at launch.
+Continuation is unavailable when the worker cannot verify the source sandbox.
+Losing the connection, restarting the worker or changing the source checkout
+invalidates the old proof.
+
 ## Claude Code delegation
 
 For each run the worker creates `.local/worktrees/bunny-<task>-<random>` under the

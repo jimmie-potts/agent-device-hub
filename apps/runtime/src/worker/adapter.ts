@@ -28,12 +28,15 @@ export type AdapterEvidence = {
   limit?: CodingLimit;
   reason?: CodingProgressReason;
   uncertain?: boolean;
+  writerStopped?: true;
+  writerFence?: {root: string; home?: string};
   summary?: string;
   limitations?: string[];
 };
 
 export type AdapterRun = {
   worktree: string;
+  continuationRoot?: string;
   brief: string;
   bounds: CodingBounds;
   signal: AbortSignal;

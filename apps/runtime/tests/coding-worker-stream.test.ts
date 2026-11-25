@@ -311,7 +311,7 @@ void test('with API keys in the worker\'s environment the real harness and its r
   const harness = claudeHarness(executable, environment, {environment: ['FIXTURE_DIR']});
   const names: string[] = [];
   const finished = await harness.start(['--print'], tmpdir(), 'brief', () => {}, line => {names.push(line);});
-  assert.deepEqual(finished, {code: 0, signal: null, truncated: false});
+  assert.deepEqual(finished, {code: 0, signal: null, truncated: false, writerStopped: true});
   assert.ok(names.includes('FIXTURE_DIR') && names.includes('PATH') && names.includes('CLAUDE_CODE_OAUTH_TOKEN'), names.join(','));
   assert.ok(!names.includes('NOT_LISTED'), 'an unlisted variable reached the harness');
   for (const stripped of STRIPPED) assert.ok(!names.includes(stripped), `${stripped} reached the harness`);

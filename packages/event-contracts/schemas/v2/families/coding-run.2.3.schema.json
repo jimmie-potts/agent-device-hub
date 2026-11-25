@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/coding-run/2.3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "endpointId",
+    "taskId",
+    "repository",
+    "brief",
+    "bounds",
+    "selectionId",
+    "harness",
+    "continuation"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.1#/properties/requestId"
+    },
+    "endpointId": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.1#/properties/endpointId"
+    },
+    "taskId": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.1#/properties/taskId"
+    },
+    "repository": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.1#/properties/repository"
+    },
+    "brief": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.1#/properties/brief"
+    },
+    "bounds": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.1#/properties/bounds"
+    },
+    "harness": {
+      "$ref": "https://bunny.invalid/events/coding-run/2.1#/properties/harness"
+    },
+    "selectionId": {
+      "$ref": "https://bunny.invalid/events/coding-state/2.4#/properties/selectionId"
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fromOperationId",
+        "token"
+      ],
+      "properties": {
+        "fromOperationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$"
+        }
+      }
+    }
+  }
+}

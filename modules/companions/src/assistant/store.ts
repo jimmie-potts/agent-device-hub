@@ -1,3 +1,4 @@
+import type {CodingChoice} from '../coding/routing.js';
 import type {SupervisorIdentity} from './provider.js';
 import type {DisclosedField} from './sharing.js';
 import type {BoundControl} from './control-intent.js';
@@ -29,7 +30,7 @@ export const RESPONSES_GRAPH_VERSION = 'responses-1';
 export const PREVIOUS_GRAPH_VERSION = 'conversation-1';
 import {LIMITS} from './limits.js';
 export {LIMITS} from './limits.js';
-export type Question = SavedQuestion & {call: string};
+export type Question = SavedQuestion & {call: string; codingChoice?: CodingChoice};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   control?: BoundControl;
   supervisor?: SupervisorIdentity;
@@ -63,7 +64,7 @@ export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; 
  * Decline with message for an approval.
  */
 export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'queue' | 'edit-queued' | 'steer'; profile: AssistantProfile; text: string; expectedRevision: number; provider?: SupervisorIdentity['provider'];
-  taskId?: string; questionId?: string; queuedId?: string};
+  taskId?: string; questionId?: string; queuedId?: string; harness?: CodingChoice};
 /** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
 export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
 export type Stage = {ref: string; requestId: string; input: StagedInput | StopCodingInput; expires: number};
@@ -71,8 +72,9 @@ export type ConversationPage = {version: 1; conversationId: string | null; messa
 /** The transcript item appended for a call, found again by its effect id so a re-run node appends it once. */
 export type Appended = TranscriptItem & {effect: string};
 type RecordRow = {record: string};
+export type MessageSource = Pick<ConversationMessage, 'id' | 'role' | 'taskId'> & {follows?: string | null};
 type MessageVisibility = {
-  shows(message: Pick<ConversationMessage, 'id' | 'role' | 'taskId'>): boolean;
+  shows(message: MessageSource): boolean;
   attachment(requestId: string): boolean;
   task(taskId: string): boolean;
 };
@@ -268,7 +270,7 @@ export class AssistantStore {
    * A tool result names its tool from its task's saved transcript when that still holds it; an artwork attachment keeps
    * its request identity.
    */
-  recentContext(profile: AssistantProfile, conversationId: string, through: number, permits?: (message: {id: string; role: ConversationMessage['role']; taskId: string}) => boolean, latestOwnerOnly = false): {messages: RecentMessage[]; total: number} {
+  recentContext(profile: AssistantProfile, conversationId: string, through: number, permits?: (message: MessageSource) => boolean, latestOwnerOnly = false): {messages: RecentMessage[]; total: number} {
     const bound = this.messages.conversation(conversationId)?.profile === profile ? 1 : 0;
     const filter = `msg.conversation_id=? AND msg.seq<=?
       AND (CASE WHEN msg.record IS NULL THEN msg.role='tool' ELSE json_extract(msg.record,'$.speakerId')=?
@@ -286,8 +288,8 @@ export class AssistantStore {
       rows = (this.database.prepare(`${messagesWithAttachments} WHERE ${filter} ORDER BY msg.seq DESC LIMIT ?`).all(...params, limit) as MessageRow[]).reverse();
     } else {
       const selected = latestOwnerOnly ? "AND msg.role='owner' ORDER BY msg.seq DESC LIMIT 1" : 'ORDER BY msg.seq DESC';
-      const eligible = (this.database.prepare(`SELECT msg.id, msg.role, msg.task_id AS taskId FROM assistant_messages msg WHERE ${filter} ${selected}`)
-        .all(...params) as {id: string; role: ConversationMessage['role']; taskId: string}[]).filter(permits);
+      const eligible = (this.database.prepare(`SELECT msg.id, msg.role, msg.task_id AS taskId, msg.follows FROM assistant_messages msg WHERE ${filter} ${selected}`)
+        .all(...params) as MessageSource[]).filter(permits);
       total = eligible.length;
       const ids = eligible.slice(0, limit).map(row => row.id);
       rows = (this.database.prepare(`${messagesWithAttachments} WHERE msg.id IN (${ids.map(() => '?').join(',')}) ORDER BY msg.seq`).all(...ids) as MessageRow[]);
@@ -324,14 +326,14 @@ export class AssistantStore {
    */
   conversations(profile: AssistantProfile, after?: {last: number; row: number}, visibility?: {
     conversation(id: string): boolean;
-    message(message: {id: string; role: ConversationMessage['role']; taskId: string}): boolean;
+    message(message: MessageSource): boolean;
   }): {conversations: ConversationSummary[]; older: string | null} {
     const current = this.conversation(profile) ?? null;
     if (visibility !== undefined) {
       const conversations = (this.database.prepare("SELECT rowid AS row,id FROM companion_conversations WHERE json_extract(record,'$.profile')=?")
         .all(profile) as {row: number; id: string}[]).filter(({id}) => visibility.conversation(id)).map(({id, row}) => {
-        const messages = (this.database.prepare('SELECT id,role,task_id AS taskId,at_ms AS atMs FROM assistant_messages WHERE conversation_id=? ORDER BY at_ms')
-          .all(id) as {id: string; role: ConversationMessage['role']; taskId: string; atMs: number}[]).filter(message => visibility.message(message));
+        const messages = (this.database.prepare('SELECT id,role,task_id AS taskId,at_ms AS atMs,follows FROM assistant_messages WHERE conversation_id=? ORDER BY at_ms')
+          .all(id) as (MessageSource & {atMs: number})[]).filter(message => visibility.message(message));
         const lastAtMs = messages.at(-1)?.atMs ?? null;
         return {row, last: lastAtMs ?? -1, summary: {conversationId: id, current: id === current, messages: messages.length,
           firstAtMs: messages[0]?.atMs ?? null, lastAtMs}};
@@ -388,15 +390,20 @@ export class AssistantStore {
    * A failed turn's closing reply (Hub #2042) is the engine's own status text about the turn, not what the conversation is
    * about, so it is left out and can never become a title.
    */
-  titleMessages(conversationId: string, limit = 8, permits?: (message: {id: string; role: 'owner' | 'assistant'; text: string; taskId: string}) => boolean): {role: 'owner' | 'assistant'; text: string}[] {
-    const query = "SELECT id,role,text,task_id AS taskId FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' AND id NOT LIKE task_id || '-step-%-job-%' ORDER BY seq DESC";
+  titleMessages(conversationId: string, limit = 8, permits?: (message: MessageSource) => boolean): {role: 'owner' | 'assistant'; text: string}[] {
+    const query = "SELECT id,role,text,task_id AS taskId,follows FROM assistant_messages WHERE conversation_id=? AND role IN ('owner','assistant') AND id NOT LIKE task_id || '-closing-%' AND id NOT LIKE task_id || '-step-%-job-%' AND (follows IS NULL OR follows NOT LIKE task_id || '-step-%-job') ORDER BY seq DESC";
     const rows = (permits === undefined ? this.database.prepare(query + ' LIMIT ?').all(conversationId, limit)
-      : this.database.prepare(query).all(conversationId)) as {id: string; role: 'owner' | 'assistant'; text: string; taskId: string}[];
+      : this.database.prepare(query).all(conversationId)) as (MessageSource & {role: 'owner' | 'assistant'; text: string})[];
     return (permits === undefined ? rows : rows.filter(permits).slice(0, limit)).reverse().map(({role, text}) => ({role, text}));
   }
+  messageSource(id: string): MessageSource | undefined {
+    return this.database.prepare('SELECT id,role,task_id AS taskId,follows FROM assistant_messages WHERE id=?')
+      .get(id) as MessageSource | undefined;
+  }
   /** One saved message of the task, by its id, for the owner to hear again (Hub #500). */
-  savedMessage(taskId: string, id: string): Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined {
-    return this.database.prepare('SELECT id,role,text FROM assistant_messages WHERE id=? AND task_id=?').get(id, taskId) as Pick<ConversationMessage, 'id' | 'role' | 'text'> | undefined;
+  savedMessage(taskId: string, id: string): (Pick<ConversationMessage, 'id' | 'role' | 'text'> & {follows: string | null}) | undefined {
+    return this.database.prepare('SELECT id,role,text,follows FROM assistant_messages WHERE id=? AND task_id=?').get(id, taskId) as
+      (Pick<ConversationMessage, 'id' | 'role' | 'text'> & {follows: string | null}) | undefined;
   }
   call(id: string): Call | undefined {return parsed<Call>(this.database.prepare('SELECT record FROM assistant_calls WHERE id=?').get(id) as RecordRow | undefined);}
   ownsAction(conversationId: string, requestId: string): boolean {
@@ -471,15 +478,14 @@ export class AssistantStore {
     size: number, visibility?: MessageVisibility): MessageRow[] {
     const filter = `WHERE conversation_id=? AND ${condition}`;
     if (visibility === undefined) return this.database.prepare(`${messagesWithAttachments} ${filter} ORDER BY seq ${order} LIMIT ?`).all(conversationId, position, size) as MessageRow[];
-    const candidates = this.database.prepare(`SELECT id,role,task_id AS taskId FROM assistant_messages ${filter} ORDER BY seq ${order}`)
-      .all(conversationId, position) as Pick<ConversationMessage, 'id' | 'role' | 'taskId'>[];
+    const candidates = this.database.prepare(`SELECT id,role,task_id AS taskId,follows FROM assistant_messages ${filter} ORDER BY seq ${order}`)
+      .all(conversationId, position) as MessageSource[];
     const ids = candidates.filter(message => visibility.shows(message)).slice(0, size).map(message => message.id);
     return this.database.prepare(`${messagesWithAttachments} WHERE msg.id IN (${ids.map(() => '?').join(',')}) ORDER BY seq ${order}`).all(...ids) as MessageRow[];
   }
   #visibleMessage(row: MessageRow, visibility?: MessageVisibility): ConversationMessage {
     if (visibility === undefined) return messageOf(row);
-    const followed = row.follows === null ? undefined : this.database.prepare('SELECT id,role,task_id AS taskId FROM assistant_messages WHERE id=?')
-      .get(row.follows) as Pick<ConversationMessage, 'id' | 'role' | 'taskId'> | undefined;
+    const followed = row.follows === null ? undefined : this.messageSource(row.follows);
     const follows = followed !== undefined && visibility.shows(followed) ? row.follows : null;
     const visible = row.artRequestId !== null && !visibility.attachment(row.artRequestId)
       ? {...row, artRequestId: null, artDescription: null} : row;

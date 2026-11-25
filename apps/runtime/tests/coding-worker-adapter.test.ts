@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, realpath, rm, symlink, writeFile} from 'node:fs/promises';
+import {execFile} from 'node:child_process';
+import {access, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {after, test} from 'node:test';
-import {codexAdapter, codexEnvironment, type CodexTransport} from '../src/worker/codex-adapter.js';
+import {promisify} from 'node:util';
+import {codexAdapter, codexArguments, codexEnvironment, verifyCodexWriterBoundary, type CodexTransport} from '../src/worker/codex-adapter.js';
+import {claudeWriterArguments, MAC_WRITER_SANDBOX} from '../src/worker/claude-writer.js';
+import {claudeHarness} from '../src/worker/coding-worker.js';
 
 const profileHome = await realpath(await mkdtemp(join(tmpdir(), 'bunny-codex-profile-')));
 after(() => rm(profileHome, {recursive: true, force: true}));
@@ -342,4 +346,74 @@ lines.on('line', line => {
 `, {mode: 0o700});
   const adapter = codexAdapter({executable, home: profileHome}, {});
   assert.deepEqual(await adapter.readiness(), {installed: 'yes', signedIn: 'no', version: '0.163.0', plan: null});
+});
+
+
+for (const harness of ['claude', 'codex'] as const) void test(`the Darwin ${harness} writer sandbox confines a detached watcher to its original checkout`, {skip: process.platform !== 'darwin'}, async t => {
+  const executable = `/opt/homebrew/bin/${harness}`;
+  if (!(await access(executable).then(() => true, () => false))) {t.skip(`standalone ${harness} CLI unavailable`); return;}
+  const root = await realpath(await mkdtemp(join(tmpdir(), `bunny-${harness}-writer-`)));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const original = join(root, 'original'), successor = join(root, 'successor'), home = join(root, 'profile');
+  const environment = {HOME: home, CODEX_HOME: home, PATH: '/usr/bin:/bin'};
+  const profile = 'bunny-source-test';
+  await Promise.all([original, successor, home].map(path => mkdir(path, {mode: 0o700})));
+  const target = join(successor, 'tracked.txt'), targetIndex = join(successor, '.git', 'index');
+  if (harness === 'codex') {
+    assert.equal(await verifyCodexWriterBoundary(executable, original, home, successor, profile, environment), true);
+    assert.equal((await codexAdapter({executable, home}, {environment: {PATH: '/usr/bin:/bin'}}).readiness()).signedIn, 'no');
+  }
+  await mkdir(join(successor, '.git'));
+  await Promise.all([writeFile(target, 'trusted code'), writeFile(targetIndex, 'trusted index'), symlink(target, join(original, 'target-alias'))]);
+  const source = join(original, 'detached-writer.c'), fixture = join(original, 'detached-writer');
+  await writeFile(source, String.raw`
+    #include <fcntl.h>
+    #include <stdio.h>
+    #include <unistd.h>
+    static int try_write(const char *path) {
+      int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+      if (fd < 0) return 0;
+      write(fd, "changed", 7);
+      close(fd);
+      return 1;
+    }
+    int main(int argc, char **argv) {
+      if (argc != 3) return 2;
+      pid_t child = fork();
+      if (child != 0) return child < 0 ? 3 : 0;
+      if (setsid() < 0) _exit(4);
+      close(0); close(1); close(2);
+      usleep(150000);
+      int own = try_write("old-write");
+      int target = try_write(argv[1]);
+      int index = try_write(argv[2]);
+      int alias = try_write("target-alias");
+      int linked = link(argv[1], "target-hardlink") == 0;
+      int fd = open("report.json", O_WRONLY | O_CREAT | O_EXCL, 0600);
+      if (fd < 0) _exit(5);
+      dprintf(fd, "[%d,%d,%d,%d,%d]", own,target,index,alias,linked);
+      close(fd);
+      _exit(0);
+    }
+  `);
+  const exec = promisify(execFile);
+  await exec('/usr/bin/clang', [source, '-o', fixture], {timeout: 10000});
+  if (harness === 'codex') {
+    await exec(executable, ['sandbox', '-C', original, '-P', profile, ...codexArguments(original, profile, home, successor),
+      '--', fixture, target, targetIndex], {cwd: original, env: environment, timeout: 5000});
+  } else {
+    const version = await exec(MAC_WRITER_SANDBOX, claudeWriterArguments(successor, executable, ['--version']),
+      {cwd: original, env: environment, timeout: 5000});
+    assert.match(version.stdout, /Claude Code/);
+    const stopped = await claudeHarness(fixture, environment).start([target, targetIndex], original, '', () => {}, undefined,
+      {root: successor, signal: new AbortController().signal});
+    assert.equal(stopped.fencedRoot, successor);
+    assert.equal(stopped.writerStopped, true);
+  }
+  await t.waitFor(async () => {
+    const result = JSON.parse(await readFile(join(original, 'report.json'), 'utf8')) as number[];
+    assert.deepEqual(result, [1, 0, 0, 0, 0]);
+  });
+  assert.equal(await readFile(target, 'utf8'), 'trusted code');
+  assert.equal(await readFile(targetIndex, 'utf8'), 'trusted index');
 });

@@ -370,12 +370,17 @@ export type TitleDependencies = {
   /** The metadata observation that carries a title to the conversation's session now. */
   metadata: (conversationId: string, title: Title, observedAtMs: number) => {key: string; draft: object};
 };
+type TitleTrigger = {label: string; allowed: () => boolean};
 type ScopedTitle = {provider: TitleProvider; pricing: PriceSchedule; messages: () => TitleMessage[]};
-type TitleCheck = {events: readonly string[]; scoped?: ScopedTitle};
+type TitleCheck = {events: readonly TitleTrigger[]; scoped?: ScopedTitle};
 type InFlight = {controller: AbortController; pending: Map<'ordinary' | 'scoped', TitleCheck>; work: Promise<void>};
 const persona = (profile: AssistantProfile): string => PROFILES.find(value => value.id === profile)?.name ?? profile;
 /** The labels with one more, each once, oldest first, keeping the latest `TITLE_EVENTS`. */
-const merged = (labels: readonly string[], label: string): string[] => labels.includes(label) ? [...labels] : [...labels, label].slice(-TITLE_EVENTS);
+function merged(triggers: readonly TitleTrigger[], next: TitleTrigger): TitleTrigger[] {
+  const same = triggers.find(trigger => trigger.label === next.label);
+  if (same === undefined) return [...triggers, next].slice(-TITLE_EVENTS);
+  return triggers.map(trigger => trigger === same ? next : trigger);
+}
 
 /** The conversation titles of one companions activation. Every write runs inside the caller's or its own outbox transaction. */
 export class ConversationTitles {
@@ -457,12 +462,12 @@ export class ConversationTitles {
    * Resolves once the conversation has no check left to run. Every failure is absorbed: a check never fails, delays or
    * rolls back a task.
    */
-  check(conversationId: string, profile: AssistantProfile, event: TitleEvent, scoped?: ScopedTitle): Promise<void> {
-    if (this.#stopping || (scoped?.provider ?? this.deps.provider(profile)) === undefined) return Promise.resolve();
-    const label = eventLabel(event), running = this.#inFlight.get(conversationId);
-    const check: TitleCheck = {events: [label], ...(scoped === undefined ? {} : {scoped})};
+  check(conversationId: string, profile: AssistantProfile, event: TitleEvent, scoped?: ScopedTitle, allowed = () => true): Promise<void> {
+    if (this.#stopping || (scoped?.provider ?? this.deps.provider(profile)) === undefined || !allowed()) return Promise.resolve();
+    const trigger = {label: eventLabel(event), allowed}, running = this.#inFlight.get(conversationId);
+    const check: TitleCheck = {events: [trigger], ...(scoped === undefined ? {} : {scoped})};
     if (running !== undefined) {
-      if (scoped === undefined) running.pending.set('ordinary', {events: merged(running.pending.get('ordinary')?.events ?? [], label)});
+      if (scoped === undefined) running.pending.set('ordinary', {events: merged(running.pending.get('ordinary')?.events ?? [], trigger)});
       else running.pending.set('scoped', check);
       return running.work;
     }
@@ -496,15 +501,20 @@ export class ConversationTitles {
    * title that is valid, and still wanted because no rename or newer check landed meanwhile, is stored as generated and
    * announced in the same transaction, replacing a generated or an owner's title.
    */
-  async #ask(conversationId: string, profile: AssistantProfile, controller: AbortController, events: readonly string[], scoped?: ScopedTitle): Promise<void> {
+  async #ask(conversationId: string, profile: AssistantProfile, controller: AbortController, triggers: readonly TitleTrigger[], scoped?: ScopedTitle): Promise<void> {
     const provider = scoped?.provider ?? this.deps.provider(profile);
     if (provider === undefined) return;
     const messagesForCall = () => scoped === undefined ? this.deps.messages(conversationId) : scoped.messages();
     const previousTitle = (title: StoredTitle | null) => scoped !== undefined ? null : this.deps.previousTitle === undefined ? title : this.deps.previousTitle(conversationId, profile, title);
+    const allowedTriggers = () => triggers.filter(trigger => trigger.allowed());
+    let admittedTriggers: TitleTrigger[] = [];
     let call: TitleCall | undefined, prompt: string | undefined, said: TitleMessage[] = [], priorTitle: StoredTitle | null = null;
     await this.deps.outbox.transaction(() => {
       const record = this.record(conversationId) ?? this.#fresh();
       if (controller.signal.aborted || scoped !== undefined && record.title !== null) return;
+      admittedTriggers = allowedTriggers();
+      if (admittedTriggers.length === 0) return;
+      const events = admittedTriggers.map(trigger => trigger.label);
       const messages = messagesForCall();
       priorTitle = record.title;
       prompt = titlePrompt(messages, previousTitle(priorTitle), events);
@@ -533,7 +543,7 @@ export class ConversationTitles {
     let reply: TitleReply | undefined, fault: unknown;
     const cancel = this.deps.after(TITLE_DEADLINE_MS, () => {controller.abort();});
     try {
-      const current = titlePrompt(messagesForCall(), previousTitle(priorTitle), events);
+      const current = titlePrompt(messagesForCall(), previousTitle(priorTitle), allowedTriggers().map(trigger => trigger.label));
       if (current !== prompt) throw new ProviderFault('forbidden');
       const aborted = new Promise<never>((_resolve, reject) => {
         if (controller.signal.aborted) reject(new ProviderFault('cancelled', true));
@@ -560,7 +570,7 @@ export class ConversationTitles {
       // reaches no log, trace, diagnostic or published record (ADR 0011 allows private retention).
       saved.answer = reply.text === null ? null : within(reply.text, TITLE_ANSWER_BYTES, false);
       const record = this.record(conversationId) ?? this.#fresh();
-      if (record.generation !== saved.generation) saved.outcome = 'dropped';
+      if (record.generation !== saved.generation || admittedTriggers.some(trigger => !trigger.allowed())) saved.outcome = 'dropped';
       else if (keeps(reply.text)) saved.outcome = 'kept';
       else {
         const title = generatedTitle(reply.text, said);

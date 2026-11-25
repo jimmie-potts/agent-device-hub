@@ -1,3 +1,4 @@
+import {checkoutIdentity, copyWorktree, protectedCheckout, sameCheckout, signalWriter, worktreeFingerprint, writerGone, type ProtectedCheckout, type WorktreeProof} from './writer-proof.js';
 // The host-local coding worker (Hub #502): one Node process on the owner's computer, started after sign-in, that holds
 // the `coding-worker` credential, opens its one endpoint on the core's gateway and runs Claude Code headless in a fresh
 // worktree of an allowlisted repository when the companions module hands it owner-approved work. It reports progress
@@ -6,14 +7,14 @@
 import {spawn, type ChildProcess} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
-import {mkdir, readFile, realpath, stat} from 'node:fs/promises';
-import {isAbsolute, join, resolve} from 'node:path';
+import {mkdir, mkdtemp, readFile, realpath, rmdir, stat} from 'node:fs/promises';
+import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
 import {promisify} from 'node:util';
 import {SdkError, connectRemote, type RemoteEndpoint, type RemoteParticipant, type RequestResult} from '@jimmie-potts/sdk/remote';
 import {Outcome, type Command, type Reply} from '@jimmie-potts/sdk';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
-import {CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingProgress, type CodingProgressReason,
+import {continuationChecks, CODING_SETUP_HEARTBEAT_MS, CODING_SETUP_WORK_MS, CODING_WORKER_SLOTS, CODING_WORKER_SOURCE, type CodingBounds, type CodingCheck, type CodingCompanion, type CodingEndpointControl, type CodingHarnessReadiness, type CodingProgress, type CodingProgressReason,
   type CodingReadiness, type CodingResult, type CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {readPrivateJson} from '../hook/producer.js';
 import {readPrivateFile} from '../state.js';
@@ -21,6 +22,7 @@ import {BLANKED_SWITCHES, ClaudeStream, UNKNOWN_READINESS, claudeAuthRefused, co
 
 import {CLAUDE_RESULT_SCHEMA, nativeSessionId, type AdapterEvidence, type AdapterRun, type CodingAdapter} from './adapter.js';
 import {codexAdapter, type CodexConfiguration} from './codex-adapter.js';
+import {claudeWriterArguments, MAC_WRITER_SANDBOX, verifyClaudeWriterBoundary} from './claude-writer.js';
 
 const run = promisify(execFile);
 const CLAUDE = 'claude-code';
@@ -106,9 +108,13 @@ export function parseConfiguration(value: unknown): WorkerConfiguration {
 }
 
 /** One run in one of the worker's slots, with the companion that asked and the endpoint that started it. */
+type WriterHandoff = {
+  operationId: string; endpoint: RemoteEndpoint; repository: string; worktree: WorktreeProof; successor: 'claude-code' | 'codex';
+  base: string; writerHome?: string; protectedRoot: ProtectedCheckout; checks: ReturnType<typeof continuationChecks>;
+};
 type Running = {operationId: string; companion: CodingCompanion | undefined; endpoint: RemoteEndpoint | undefined; cancelled: boolean;
   timer: ReturnType<typeof setTimeout> | undefined; limitsChanged?: boolean; ended: Promise<void>; harness: string; sessionId?: string; sessionReport?: Promise<void>; controller: AbortController};
-export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true};
+export type HarnessRun = {code: number | null; signal: string | null; stdout?: string; truncated: boolean; spawnFailed?: true; writerStopped?: boolean; fencedRoot?: string};
 export type Harness = {
   /**
    * Runs the headless harness in `cwd` with the brief on its standard input and resolves with its exit code; the worker
@@ -116,7 +122,8 @@ export type Harness = {
    * read as an option and it never shows in the process list. Each output line goes to `onLine` as it arrives; output
    * returned as `stdout` instead is read after the run, line by line, the same way.
    */
-  start(args: string[], cwd: string, input: string, onChild: (child: ChildProcess) => void, onLine?: (line: string) => void): Promise<HarnessRun>;
+  start(args: string[], cwd: string, input: string, onChild: (child: ChildProcess) => void, onLine?: (line: string) => void,
+    continuation?: {root: string; signal: AbortSignal}): Promise<HarnessRun>;
   /** Reports the tool's version and sign-in without starting a task or a session; absent means all unknown. */
   readiness?(): Promise<HarnessReadiness>;
   subscriptionRefused?(): Promise<boolean>;
@@ -173,17 +180,26 @@ export type HarnessOptions = {
  * use the same environment.
  */
 export const claudeHarness = (executable: string, environment: NodeJS.ProcessEnv = process.env, options: HarnessOptions = {}): Harness => ({
-  start: (args, cwd, input, onChild, onLine) => new Promise(resolvePromise => {
-    const child = spawn(executable, args, {cwd, stdio: ['pipe', 'pipe', 'ignore'], env: harnessEnvironment(environment, options.environment)});
-    onChild(child);
-    child.stdin?.on('error', () => {});
-    child.stdin?.end(input);
-    const decoder = new StringDecoder('utf8');
-    const lines = lineSplitter(line => {onLine?.(line);});
-    child.stdout?.on('data', (chunk: Buffer) => {lines.write(decoder.write(chunk));});
-    child.on('error', () => {resolvePromise({code: null, signal: null, truncated: lines.truncated, spawnFailed: true});});
-    child.on('close', (code, signal) => {lines.end(decoder.end()); resolvePromise({code, signal, truncated: lines.truncated});});
-  }),
+  async start(args, cwd, input, onChild, onLine, continuation) {
+    const fencedRoot = continuation !== undefined && await verifyClaudeWriterBoundary(cwd, continuation.root) ? continuation.root : undefined;
+    if (continuation?.signal.aborted === true) return {code: null, signal: null, truncated: false};
+    const launch = fencedRoot === undefined ? executable : MAC_WRITER_SANDBOX;
+    const launchArgs = fencedRoot === undefined ? args : claudeWriterArguments(fencedRoot, executable, args);
+    return new Promise(resolvePromise => {
+      const child = spawn(launch, launchArgs, {cwd, detached: true, stdio: ['pipe', 'pipe', 'ignore'], env: harnessEnvironment(environment, options.environment)});
+      onChild(child);
+      child.stdin?.on('error', () => {});
+      child.stdin?.end(input);
+      const decoder = new StringDecoder('utf8');
+      const lines = lineSplitter(line => {onLine?.(line);});
+      child.stdout?.on('data', (chunk: Buffer) => {lines.write(decoder.write(chunk));});
+      child.on('error', () => {resolvePromise({code: null, signal: null, truncated: lines.truncated, spawnFailed: true});});
+      child.on('close', (code, signal) => {
+        lines.end(decoder.end());
+        resolvePromise({code, signal, truncated: lines.truncated, writerStopped: writerGone(child.pid), ...(fencedRoot === undefined ? {} : {fencedRoot})});
+      });
+    });
+  },
   subscriptionRefused: async () => {
     const result = await probe(executable, ['auth', 'status', '--json'], harnessEnvironment(environment, options.environment),
       options.probeCwd, options.probeMs ?? PROBE_MS, options.probeTimer ?? realTimer);
@@ -338,6 +354,7 @@ export class CodingWorker {
   readonly #connect: typeof connectRemote;
   readonly #now: () => number;
   readonly #git: GitRunner;
+  readonly #handoffs = new Map<string, WriterHandoff>();
   readonly #timer: ProbeTimer;
   /** What the declaration carries: the latest readiness probe and the limit windows the latest run reported. */
   #readiness: CodingReadiness | undefined;
@@ -477,7 +494,7 @@ export class CodingWorker {
     // A registration that fails runs the closed handler before there is an endpoint to compare.
     let opened: RemoteEndpoint | undefined;
     const endpoint = await participant.openEndpoint<CodingWork>({family: 'coding-work', respond: command => this.#work(command), onClosed: () => {
-      if (this.#endpoint === opened) this.#endpoint = undefined;
+      if (this.#endpoint === opened) {this.#endpoint = undefined; this.#releaseHandoffs();}
       this.log('coding-worker endpoint closed; the running tasks, if any, are lost to the core and will be stopped');
       // The core gives these runs up as uncertain. Each is stopped and keeps its slot, where a cancel or stop() still
       // reaches it, until it ends; its report goes nowhere, since the endpoint that started it is gone.
@@ -491,7 +508,7 @@ export class CodingWorker {
       answer = await endpoint.request('coding-endpoint', draft, {timeoutMs: 5000, requestId});
     } catch {answer = {status: 'uncertain', requestId, error: errorBody('uncertain-result')};}
     if (answer.status !== 'accepted') {
-      if (this.#endpoint === endpoint) this.#endpoint = undefined;
+      if (this.#endpoint === endpoint) {this.#endpoint = undefined; this.#releaseHandoffs();}
       await endpoint.close().catch(() => {});
       const {code, traceId} = answer.error.error;
       throw new Error(`coding-worker-enable-${answer.status === 'rejected' ? 'refused' : 'uncertain'}: ${code}${traceId === undefined ? '' : ` trace ${traceId}`} request ${answer.requestId}`);
@@ -507,6 +524,10 @@ export class CodingWorker {
     // The stopped runs finish their own git steps before the process lets go, within the same bound.
     await this.#stoppedRunsEnded();
     await this.#participant?.close();
+  }
+  #releaseHandoffs(): void {
+    for (const proof of this.#handoffs.values()) void rmdir(proof.protectedRoot.path).catch(() => {});
+    this.#handoffs.clear();
   }
   #stopAll(): void {for (const running of this.#running.values()) this.#stopRun(running);}
   #stopRun(running: Running): void {
@@ -531,12 +552,21 @@ export class CodingWorker {
     if (this.configuration.uncapped !== true && data.companion !== undefined && [...this.#running.values()].some(running => running.companion === data.companion)) return errorBody('capacity', {detail: 'that companion\'s slot is busy'});
     const repository = this.configuration.repositories.find(entry => entry.name === data.repository);
     if (repository === undefined) return errorBody('invalid-request', {detail: 'the repository is not on the worker\'s allowlist'});
+    let proof: WriterHandoff | undefined;
+    if (data.continuation !== undefined) {
+      proof = this.#handoffs.get(data.continuation.token);
+      if (proof === undefined || proof.operationId !== data.continuation.fromOperationId || proof.endpoint !== this.#endpoint ||
+        proof.repository !== repository.name || harness !== proof.successor || this.configuration.uncapped !== true) {
+        return errorBody('invalid-state', {detail: 'The verified handoff is no longer available.'});
+      }
+      this.#handoffs.delete(data.continuation.token);
+    }
     let end = (): void => {};
     const running: Running = {operationId: data.operationId, companion: data.companion, endpoint: this.#endpoint, cancelled: false, timer: undefined,
       harness, controller: new AbortController(),
       ended: new Promise<void>(resolvePromise => {end = resolvePromise;})};
     this.#running.set(running.operationId, running);
-    queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds, adapter).catch(async () => {
+    queueMicrotask(() => {void this.#run(running, repository, data.taskId, data.brief, data.bounds, adapter, proof).catch(async () => {
       if (running.timer !== undefined) clearTimeout(running.timer);
       await this.#progress(running, running.cancelled ? {operationId: running.operationId, status: 'cancelled', reason: 'cancelled', result: null}
         : {operationId: running.operationId, status: 'failed', reason: 'exit', result: null});
@@ -571,7 +601,8 @@ export class CodingWorker {
     if (data.status !== 'started') await running.sessionReport;
     const payload = attributed ? {...data, harness: running.harness, ...(running.sessionId === undefined ? {} : {sessionId: running.sessionId})} : data;
     try {await running.endpoint.publish('coding-progress', {kind: 'occurrence', type: 'org.bunny.coding.progress.observed',
-      dataschema: uncapped ? 'https://bunny.invalid/events/coding-progress/2.3' : attributed ? 'https://bunny.invalid/events/coding-progress/2.2' : PROGRESS_SCHEMA, data: payload});}
+      dataschema: data.status !== 'started' && data.handoffToken !== undefined ? 'https://bunny.invalid/events/coding-progress/2.4' :
+        uncapped ? 'https://bunny.invalid/events/coding-progress/2.3' : attributed ? 'https://bunny.invalid/events/coding-progress/2.2' : PROGRESS_SCHEMA, data: payload});}
     catch {this.log(`coding-worker could not report ${data.status} for ${data.operationId}`);}
   }
   /** Runs one repository's git setup after any other run's on the same repository has finished its own. */
@@ -601,7 +632,11 @@ export class CodingWorker {
     } catch {this.log('coding-worker: git facts unavailable after the run');}
     return {head, changedFiles};
   }
-  async #run(running: Running, repository: {name: string; path: string}, taskId: string, brief: string, bounds: CodingBounds, adapter: CodingAdapter): Promise<void> {
+  async #run(running: Running, repository: {name: string; path: string}, taskId: string, brief: string, bounds: CodingBounds, adapter: CodingAdapter, proof?: WriterHandoff): Promise<void> {
+    if (proof !== undefined) {
+      await this.#continue(running, repository.name, brief, bounds, adapter, proof);
+      return;
+    }
     const uncapped = this.configuration.uncapped === true;
     const waiting: CodingProgress = {operationId: running.operationId, status: 'started', ...(uncapped ? {setup: 'waiting'} : {})};
     await this.#progress(running, waiting);
@@ -657,6 +692,37 @@ export class CodingWorker {
     await this.#runAdapter(running, adapter, repository.name, worktree, base, brief, bounds);
   }
 
+  async #continue(running: Running, repository: string, brief: string, bounds: CodingBounds, adapter: CodingAdapter,
+    proof: WriterHandoff): Promise<void> {
+    const started = this.#now();
+    await this.#progress(running, {operationId: running.operationId, status: 'started', setup: 'running'});
+    const successor = join(proof.protectedRoot.path, 'checkout');
+    const worktree = await copyWorktree(proof.worktree, successor, proof.protectedRoot, proof.writerHome, proof.base,
+      (cwd, args) => this.#git(cwd, args, {trim: false, timeoutMs: 15_000}));
+    if (worktree === undefined || running.cancelled || this.#now() - started >= CODING_SETUP_WORK_MS) {
+      await this.#progress(running, running.cancelled ? {operationId: running.operationId, status: 'cancelled', reason: 'cancelled'}
+        : {operationId: running.operationId, status: 'failed', reason: 'worktree',
+          result: {...assembleResult(repository, proof.base, proof.worktree.head, [], '', 'worktree').result,
+            summary: 'The accepted revision, checkout identity and partial files could not be verified for a separate continuation.'}});
+      return;
+    }
+    await this.#progress(running, {operationId: running.operationId, status: 'started', setup: 'ready'});
+    if (running.cancelled) {
+      await this.#progress(running, {operationId: running.operationId, status: 'cancelled', reason: 'cancelled'});
+      return;
+    }
+    const current = await worktreeFingerprint(worktree.identity.root, (cwd, args) => this.#git(cwd, args, {trim: false, timeoutMs: 15_000}));
+    if (current === undefined || current.digest !== worktree.digest || !sameCheckout(current.identity, worktree.identity) ||
+      running.cancelled || this.#now() - started >= CODING_SETUP_WORK_MS) {
+      await this.#progress(running, running.cancelled ? {operationId: running.operationId, status: 'cancelled', reason: 'cancelled'}
+        : {operationId: running.operationId, status: 'failed', reason: 'worktree'});
+      return;
+    }
+    const metadata = JSON.stringify({head: proof.worktree.head, checks: proof.checks});
+    await this.#runAdapter(running, adapter, repository, worktree.identity.root, proof.base,
+      `Continue the approved brief below in the assigned checkout. The previous attempt’s recorded Git and check facts are ${metadata}.\n\n${brief}`, bounds);
+  }
+
   async #runClaude(input: AdapterRun): Promise<AdapterEvidence> {
     const {worktree, bounds, signal} = input;
     // Check the only project settings the child loads before admitting a run.
@@ -676,15 +742,15 @@ export class CodingWorker {
       ...(claude.allowedTools.length === 0 ? [] : ['--allowedTools', ...claude.allowedTools]), '--disallowedTools', ...DENIED_TOOLS, '--strict-mcp-config', '--setting-sources', 'project',
       '--settings', JSON.stringify({env: Object.fromEntries(BLANKED_SWITCHES.map(name => [name, '']))}),
       ...(claude.model === undefined ? [] : ['--model', claude.model]),
-      '--append-system-prompt', 'You are a delegated coding worker in a fresh worktree. Make only the change the brief asks for, run the checks the repository documents for it, never push, open a PR, change settings or leave the worktree, and end with the structured result: outcome, summary, checks, findings, limitations. If the brief leaves a choice open that you cannot settle from the repository, do not guess: end with outcome waiting-for-owner and put your one question first in findings.'];
+      '--append-system-prompt', 'You are a delegated coding worker in the assigned worktree. Make only the change the brief asks for, run the checks the repository documents for it, never push, open a PR, change settings or leave the worktree, and end with the structured result: outcome, summary, checks, findings, limitations. If the brief leaves a choice open that you cannot settle from the repository, do not guess: end with outcome waiting-for-owner and put your one question first in findings.'];
     const stream = new ClaudeStream();
     let child: ChildProcess | undefined;
     let killTimer: NodeJS.Timeout | undefined;
     let keyRefused: string | undefined;
     const stop = () => {
       if (child === undefined || killTimer !== undefined) return;
-      child.kill('SIGTERM');
-      killTimer = setTimeout(() => {child?.kill('SIGKILL');}, 10_000);
+      signalWriter(child, 'SIGTERM');
+      killTimer = setTimeout(() => {if (child !== undefined) signalWriter(child, 'SIGKILL');}, 10_000);
       killTimer.unref();
     };
     const watch = (line: string): void => {
@@ -700,7 +766,7 @@ export class CodingWorker {
       finished = await this.#harness.start(args, worktree, input.brief, process => {
         child = process;
         if (signal.aborted) stop();
-      }, watch);
+      }, watch, input.continuationRoot === undefined ? undefined : {root: input.continuationRoot, signal});
     } finally {
       signal.removeEventListener('abort', stop);
       if (killTimer !== undefined) clearTimeout(killTimer);
@@ -718,15 +784,24 @@ export class CodingWorker {
     const sessionId = stream.apiKeySource === 'none' ? stream.sessionId : undefined;
     const reason = assembled.reason ?? (stream.providers.some(provider => provider !== 'firstParty') ? 'refused' : finished.code === 0 ? undefined : 'exit');
     return {structured: result, windows, usage: result.usage,
+      ...(finished.writerStopped === true ? {writerStopped: true} : finished.writerStopped === false ? {uncertain: true} : {}),
+      ...(finished.fencedRoot === undefined || sessionId === undefined ? {} : {writerFence: {root: finished.fencedRoot}}),
       ...(reason === undefined ? {} : {reason}), ...(sessionId === undefined ? {} : {sessionId}),
       ...(result.limit === undefined ? {} : {limit: result.limit})};
   }
   async #runAdapter(running: Running, adapter: CodingAdapter, repository: string, worktree: string, base: string | null, brief: string, bounds: CodingBounds): Promise<void> {
     let timedOut = false, evidence: AdapterEvidence;
     const started = this.#now();
+    const successor = adapter.id === CLAUDE ? 'codex' : adapter.id === 'codex' ? CLAUDE : undefined;
+    const protectedRoot = this.configuration.uncapped === true && successor !== undefined && this.#adapters.has(successor)
+      ? await realpath(dirname(worktree)).then(parent => mkdtemp(join(parent, '.bunny-continuation-'))).then(protectedCheckout).catch(() => undefined)
+      : undefined;
+    const sourceIdentity = protectedRoot === undefined ? undefined : await checkoutIdentity(worktree,
+      (cwd, args) => this.#git(cwd, args, {trim: false, timeoutMs: 15_000})).catch(() => undefined);
     running.timer = setTimeout(() => {timedOut = true; running.controller.abort();}, bounds.wallClockMs);
     try {
       evidence = await adapter.run({worktree, brief, bounds, signal: running.controller.signal,
+        ...(protectedRoot === undefined || sourceIdentity === undefined ? {} : {continuationRoot: protectedRoot.path}),
         session: id => this.#session(running, id)});
     } catch {evidence = {reason: 'lost', uncertain: true};}
     finally {clearTimeout(running.timer); running.timer = undefined;}
@@ -742,11 +817,35 @@ export class CodingWorker {
       !structuredReport(evidence.structured).limitations.some(text => text.includes('project settings file'))) {
       evidence.limitations = ['The run created or changed files under .claude/, the project settings directory, which the settings check before the start did not see.'];
     }
-    const reason = running.cancelled ? 'cancelled' : timedOut ? 'timeout' : evidence.reason;
+    const reason = timedOut ? 'timeout' : running.cancelled ? evidence.uncertain === true ? 'lost' : 'cancelled' :
+      evidence.reason ?? (evidence.uncertain === true ? 'lost' : undefined);
     const result = assembleAdapterResult(repository, base, head, changedFiles, evidence, reason, running.sessionId, this.#now() - started);
-    if (reason === undefined) {await this.#progress(running, {operationId: running.operationId, status: 'completed', result}); return;}
-    const status = running.cancelled ? 'cancelled' : evidence.uncertain === true && !timedOut ? 'uncertain' : 'failed';
-    await this.#progress(running, {operationId: running.operationId, status, reason, result});
+    let handoffToken: string | undefined;
+    const endpoint = running.endpoint;
+    if (successor !== undefined && sourceIdentity !== undefined && protectedRoot !== undefined && evidence.writerFence?.root === protectedRoot.path &&
+      evidence.writerStopped === true && evidence.uncertain !== true && endpoint !== undefined &&
+      base !== null && head !== null && changedFiles.length > 0 && reason !== 'refused' &&
+      (reason !== undefined || result.outcome !== 'tested-candidate')) {
+      const fingerprint = await worktreeFingerprint(worktree, (cwd, args) => this.#git(cwd, args, {trim: false, timeoutMs: 15_000}));
+      const reserved = await protectedCheckout(protectedRoot.path).catch(() => undefined);
+      if (fingerprint?.head === head && sameCheckout(fingerprint.identity, sourceIdentity) &&
+        reserved?.identity === protectedRoot.identity && this.#endpoint === endpoint) {
+        handoffToken = randomUUID();
+        const {home} = evidence.writerFence;
+        this.#handoffs.set(handoffToken, {operationId: running.operationId, endpoint, repository, successor, worktree: fingerprint, base,
+          ...(home === undefined ? {} : {writerHome: home}), protectedRoot, checks: continuationChecks(result.checks)});
+      } else if (this.#endpoint === endpoint) {
+        result.limitations = [
+          'A continuation could not verify this checkout and its Git index. New files must be staged; untracked files and ignored build artifacts are never moved.',
+          ...result.limitations.slice(0, 15),
+        ];
+      }
+    }
+    if (handoffToken === undefined && protectedRoot !== undefined) await rmdir(protectedRoot.path).catch(() => {});
+    const handoff = handoffToken === undefined ? {} : {handoffToken};
+    if (reason === undefined) {await this.#progress(running, {operationId: running.operationId, status: 'completed', result, ...handoff}); return;}
+    const status = evidence.uncertain === true && !timedOut ? 'uncertain' : running.cancelled ? 'cancelled' : 'failed';
+    await this.#progress(running, {operationId: running.operationId, status, reason, result, ...handoff});
 
   }
 }

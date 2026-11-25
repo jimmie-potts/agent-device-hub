@@ -3527,6 +3527,17 @@ delivery leaves one conversation result and sends no new worker command. The
 browser journeys verify the job reference and its
 linked result through the real gateway with a disposable worker.
 
+Harness routing and continuation (#2112) use the same checks. The Companions
+suite drives staged Auto and pinned approvals, durable attempt readback and
+the explicit continuation command. Worker tests stop a synthetic partial
+writer, compare the successor's contents and independent Git directory, and
+refuse changes to files, directory identity, Git identity or writer evidence.
+They cover both directions, the full-size approved brief and staged new files.
+On a Mac with the standalone CLIs, offline native sandbox tests exercise a
+detached source watcher for each direction. The Codex test uses a signed-out
+disposable profile. The Claude Code test checks the installed version with an
+empty temporary home and exercises the worker's launch path with a fake CLI.
+
 Uncapped coding jobs (#2110) use the same runtime, Companions, event contract
 and browser checks. The coding-slots suites exercise same-companion starts,
 setup deadlines and a named stop past the first job page. Loss and disable

@@ -179,6 +179,16 @@ class Companions {
   inspect(): CompanionState | undefined {return this.#store?.read().state;}
   pending(): number {return this.#pending.size + (this.#active === undefined ? 0 : 1);}
   codingJobs(ref: string, request?: ModuleContentRequest): ModuleContent | ErrorBody | undefined {
+    if (ref === 'coding-job') {
+      const query = request?.query ?? {};
+      if (request?.signal.aborted === true || Object.keys(query).length !== 1 || query.jobId === undefined ||
+        !/^[A-Za-z0-9._:-]{1,132}$/u.test(query.jobId)) return errorBody('invalid-request');
+      try {
+        if (this.coding === undefined) return errorBody('unavailable');
+        const detail = this.coding.jobDetail(query.jobId);
+        return detail === undefined ? errorBody('not-found') : {type: 'application/json', bytes: Buffer.from(JSON.stringify(detail))};
+      } catch {return errorBody('unavailable');}
+    }
     if (ref !== 'coding-jobs') return undefined;
     const query = request?.query ?? {};
     if (request?.signal.aborted === true || Object.keys(query).some(key => key !== 'after') ||
@@ -225,6 +235,7 @@ class Companions {
       jobQueued: (job, add, parent) => this.assistant?.codingJobQueued(job, add, parent),
       jobUpdate: (job, kind, text, parent, startup) => this.assistant?.codingJobUpdate(job, kind, text, parent, startup) ?? Promise.resolve(),
       companionOf: taskId => this.assistant?.store.task(taskId)?.profile,
+      jobVisible: (job, companion) => this.assistant?.canReadCodingJob(companion, job) === true,
       awaits: taskId => {
         const task = this.assistant?.store.task(taskId);
         return task !== undefined && !['succeeded', 'failed', 'cancelled'].includes(task.status) && task.question?.kind === 'delegation' && task.question.answer === null;
@@ -239,7 +250,7 @@ class Companions {
       retainedArtwork: (id, timeoutMs) => (this.retainedArtwork ?? this.options.retainedArtwork)?.(id, timeoutMs) ?? Promise.resolve(undefined), preferences: () => preferences.store.active().entries,
       // The owner's knowledge notes reach a companion's context only once the owner turns them on for it (Hub #2029).
       knowledge: () => this.knowledge?.store.active().entries ?? [], speak,
-      coding: this.options.coding ?? (() => coding.endpoint()), delegate, backgroundCoding: this.options.delegate === undefined, codingJob: requestId => coding.jobForAttempt(requestId), stopCodingJob: (jobId, operationId) => coding.prepareStop(jobId, operationId), handedOff: this.options.handedOff ?? (requestId => coding.accepted(requestId)), onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
+      coding: this.options.coding ?? (() => coding.endpoint()), delegate, backgroundCoding: this.options.delegate === undefined, codingJob: requestId => coding.jobForAttempt(requestId), codingJobRead: (...args) => coding.jobRead(...args), stopCodingJob: (jobId, operationId) => coding.prepareStop(jobId, operationId), continueCodingJob: (data, parent) => coding.prepareContinuation(data, parent), handedOff: this.options.handedOff ?? (requestId => coding.accepted(requestId)), onCancelled: this.options.onCancelled ?? (taskId => {coding.cancel(taskId);})});
     await this.assistant.start();
     await coding.start();
     await this.preferences.start();
