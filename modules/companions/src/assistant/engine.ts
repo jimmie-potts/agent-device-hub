@@ -130,6 +130,9 @@ function conversationMessageId(taskId: string, item: TurnInput['transcript'][num
   return item.role === 'owner' ? `${taskId}-prompt` : undefined;
 }
 
+const privateJobMessage = ({id, taskId}: MessageSource): boolean =>
+  id === `${taskId}-private-status` || id === `${taskId}-private-question`;
+
 const MAX_DISCLOSED_FIELDS = 512;
 type DisclosureLedger = {fields: DisclosedField[]; incompleteDisclosures?: true};
 function recordDisclosures(access: FieldAccess, ledger: DisclosureLedger): FieldAccess {
@@ -899,7 +902,7 @@ export class AssistantEngine {
     this.store.save(task);
   }
   #privateJobText(profile: AssistantProfile, conversationId: string | undefined, message: MessageSource): string | undefined {
-    if (message.id !== `${message.taskId}-private-status` && message.id !== `${message.taskId}-private-question`) return undefined;
+    if (!privateJobMessage(message)) return undefined;
     const task = this.store.task(message.taskId), receipt = task?.localJobStatus, saved = receipt?.visible;
     if (task?.profile !== profile || task.conversationId !== conversationId || receipt === undefined ||
         !this.#publicRead(profile).task(conversationId, task.id)) return undefined;
@@ -1417,7 +1420,7 @@ export class AssistantEngine {
         if (id !== undefined && allowsExcerpt(id)) recent = [{id, role: 'owner', text: preceding.text}];
       } else if (task.contextThrough !== undefined) {
         recent = this.store.recentContext(task.profile, task.conversationId, task.contextThrough,
-          message => message.role === 'owner' && allowsExcerpt(message.id), true).messages;
+          message => message.role === 'owner' && !privateJobMessage(message) && allowsExcerpt(message.id), true).messages;
       }
     }
     const subjectForRead = purpose === 'supervisor' ? deviceRequestSubject(request) : undefined;
@@ -1559,7 +1562,7 @@ export class AssistantEngine {
     const fields: FieldAccess = (source, field, record) => providerFields(source, field, record) && recipient?.(source, field, record) !== false;
     const modelFields: FieldAccess = (source, field, record) => toolFields(source, field, record) && recipient?.(source, field, record) !== false;
     const permits = (message: MessageSource, prompt: FieldAccess, model: FieldAccess): boolean =>
-      prompt('conversation', 'text', message.id) &&
+      !privateJobMessage(message) && prompt('conversation', 'text', message.id) &&
       (message.role === 'owner' || this.store.task(message.taskId)?.supervisor?.provider !== 'openai' &&
         model('conversation', 'text', message.id) && this.#jobMessageAllowed(message, model) && this.#replayable(message.taskId, model)) &&
       (message.role !== 'tool' || prompt('conversation', 'details', message.id));

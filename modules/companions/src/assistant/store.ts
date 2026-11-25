@@ -280,7 +280,6 @@ export class AssistantStore {
         OR EXISTS (SELECT 1 FROM json_each(msg.record,'$.recipientIds') WHERE value=?)
         OR (json_type(msg.record,'$.recipientIds')='null' AND ?=1) END)
       AND COALESCE(json_extract(msg.record,'$.provenance.imported'),0)=0
-      AND msg.id NOT IN (msg.task_id || '-private-question', msg.task_id || '-private-status')
       AND NOT (msg.role='tool' AND EXISTS (SELECT 1 FROM companion_removals removed
         WHERE removed.id=msg.task_id || '-prompt' OR (removed.id LIKE msg.task_id || '-q%' AND removed.id LIKE '%-answer')))`;
     const params = [conversationId, through, profile, profile, bound];

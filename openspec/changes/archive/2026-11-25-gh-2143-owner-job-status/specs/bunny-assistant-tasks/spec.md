@@ -18,3 +18,4 @@ Conversation SHALL answer an owner’s status question about one full coding job
 - **AND** a foreign, unknown or inaccessible job reveals no job facts
 - **AND** a changed attempt cannot be presented as the attempt that supplied the saved status
 - **AND** later provider and title prompts receive no job facts from the private question or answer
+- **AND** a request for the last owner message cannot substitute an older message for that private question

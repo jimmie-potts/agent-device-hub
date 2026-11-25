@@ -148,6 +148,12 @@ void test('owner input, not a model suggestion or status question, authorizes on
   }
   await input(w.core, w.module(), 'Is Studio Plug on?');
   await until(() => status(w) === 'succeeded');
+  await input(w.core, w.module(), 'What is the status of coding job synthetic-step-1-job?');
+  await input(w.core, w.module(), 'Could you turn it off?');
+  await until(() => status(w) === 'succeeded');
+  assert.equal(requests.length, 0, 'a private question separates the pronoun from the earlier device');
+  await input(w.core, w.module(), 'Is Studio Plug on?');
+  await until(() => status(w) === 'succeeded');
   await input(w.core, w.module(), 'Could you turn it off?');
   await until(() => requests.length === 1);
   w.advance(1100);
@@ -1728,6 +1734,43 @@ void test('a refusal is offered to speech, a result over the spoken bound stays 
   await input(w.core, w.module(), 'Synthetic long answer'); await until(() => status(w) === 'succeeded');
   assert.equal(offers.length, 1, 'a result over 512 characters is not offered');
   assert.equal(JSON.stringify(w.host().logs).includes('PRIVATE-SYNTHETIC'), false);
+});
+
+void test('Responses never substitutes an older owner excerpt for the latest private job question', async context => {
+  const bodies: string[] = [];
+  const allow = sharing();
+  let denied: string | undefined;
+  const provider = new OpenAIProvider({key: 'fake', model: OPENAI_MODEL, effort: 'low', transport: (_url, init) => {
+    bodies.push(init.body);
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output: [{type: 'message', role: 'assistant',
+      content: [{type: 'output_text', text: 'Fixture answer.', annotations: []}]}], usage: {input_tokens: 10, output_tokens: 3}})));
+  }});
+  const w = await world(context, {provider, share: query => allow(query) && !(denied !== undefined && query.record === denied &&
+    query.destination === 'openai-supervisor' && query.field === 'excerpt')});
+  await control(w.core, w.module(), 'enable');
+  const ask = async (text: string, profile = 'bunny') => {
+    const latest = () => w.module().inspectAssistant()?.tasks.find(row => row.profile === profile);
+    const previous = latest()?.taskId;
+    assert.equal((await input(w.core, w.module(), text, false, randomUUID(), {profile})).status, 'accepted');
+    await until(() => latest()?.taskId !== previous && latest()?.status === 'succeeded');
+    return latest()?.taskId ?? assert.fail('missing turn');
+  };
+  const earlier = 'Synthetic earlier owner statement.';
+  await ask(earlier);
+  await ask('Repeat my last message.');
+  assert.ok(bodies.at(-1)?.includes(earlier), 'an authorized actual latest owner message may be quoted');
+  await ask('Synthetic statement private to Reachy.', 'reachy');
+  const deniedTask = await ask('Synthetic newly revoked owner statement.');
+  denied = deniedTask + '-prompt';
+  await ask('Repeat my last message.');
+  assert.doesNotMatch(bodies.at(-1) ?? '', /newly revoked|earlier owner statement|private to Reachy/u);
+  denied = undefined;
+  await ask(earlier);
+  const sent = bodies.length;
+  await ask('What is the status of coding job synthetic-step-1-job?');
+  assert.equal(bodies.length, sent);
+  await ask('Repeat my last message.');
+  assert.doesNotMatch(bodies.at(-1) ?? '', /earlier owner statement|private to Reachy|step-1-job|Private owner question/u);
 });
 
 void test('resuming a local job status request commits its reply before a later paid queue refusal', async context => {
