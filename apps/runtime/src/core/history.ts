@@ -312,14 +312,25 @@ export class History {
     }
     const upper = Math.min(boundary, lo + tail);
     const lower = Math.max(0, upper - maxScan);
-    const candidates = this.#database.prepare(`SELECT seq, at_ms AS atMs, revision, kind, source, message_id AS messageId,
+    const select = `SELECT seq, at_ms AS atMs, revision, kind, source, message_id AS messageId,
       type, subject, request_id AS requestId, CASE WHEN length(CAST(record AS BLOB)) <= 16384 THEN record END AS record
-      FROM core_history WHERE seq > ? AND seq <= ? AND subject = ?
-        AND ((source = ? AND type IN ('org.bunny.device.updated', 'org.bunny.device.removed')) OR (kind = 'operation' AND type = 'power-set'))
-      ORDER BY seq DESC LIMIT ?`).all(lower, upper, query.target, query.source, maxRows + 1) as (Omit<HistoryRow, 'record'> & {record: string | null})[];
-    const rows = candidates.slice(0, maxRows).reverse().flatMap(row => row.record === null ? [] :
-      [{...row, record: JSON.parse(row.record) as Record<string, unknown>}]);
-    const complete = lower === 0 && upper === boundary && candidates.length <= maxRows && candidates.every(row => row.record !== null);
+      FROM core_history WHERE seq > ? AND seq <= ? AND subject = ?`;
+    const device = "source = ? AND type IN ('org.bunny.device.updated', 'org.bunny.device.removed')";
+    const eligible = `((${device}) OR (kind = 'operation' AND type = 'power-set'))`;
+    const params = [lower, upper, query.target, query.source];
+    type Candidate = Omit<HistoryRow, 'record'> & {record: string | null};
+    const prior = this.#database.prepare(`${select} AND ${eligible} AND at_ms < ? ORDER BY seq DESC LIMIT 17`)
+      .all(...params, query.fromAtMs) as Candidate[];
+    const within = this.#database.prepare(`${select} AND ${eligible} AND at_ms >= ? AND at_ms < ? ORDER BY seq LIMIT ?`)
+      .all(...params, query.fromAtMs, query.toAtMs, maxRows + 1) as Candidate[];
+    const closing = within.length > maxRows ? undefined : this.#database.prepare(`${select} AND ${device} AND at_ms >= ? ORDER BY seq LIMIT 1`)
+      .get(...params, query.toAtMs) as Candidate | undefined;
+    const candidates = [...prior.slice(0, 16), ...within.slice(0, maxRows), ...(closing === undefined ? [] : [closing])]
+      .sort((left, right) => left.seq - right.seq);
+    const rows = candidates.map(row => ({...row, record: row.record === null ? {family: 'device', gapMs: 0} :
+      JSON.parse(row.record) as Record<string, unknown>}));
+    const complete = lower === 0 && upper === boundary && prior.length <= 16 && within.length <= maxRows &&
+      candidates.every(row => row.record !== null);
     return projectDeviceHistory(query, boundary, rows, this.open(rows), complete);
   }
 

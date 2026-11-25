@@ -27,9 +27,9 @@ void test('history pages freeze their evidence and recheck scope and grants on e
   const scope = {taskId: 'task-a', destination: 'synthetic', now: 100, timeZone: 'UTC'};
   const input = {source: 'bunny/modules/wemo', target: 'fixture', period: '', fromAtMs: 0, toAtMs: 100, cursor: ''};
   const allow = () => true;
-  const first = JSON.parse(pages.read(input, scope, allow)) as {next: string; evidence: {seq: number}[]; boundary: number};
-  let cursor = first.next;
-  assert.ok(cursor);
+  const first = JSON.parse(pages.read(input, scope, allow)) as {next: string | null; evidence: {seq: number}[]; boundary: number};
+  assert.ok(first.next !== null && first.next !== '');
+  let cursor: string | null = first.next;
   assert.match(JSON.stringify(first), /private-operation/);
   assert.doesNotMatch(pages.read(input, scope, source => source !== 'operations'), /private-operation/);
   const seen = first.evidence.map(point => point.seq);
@@ -38,7 +38,7 @@ void test('history pages freeze their evidence and recheck scope and grants on e
   assert.match(pages.read({...input, toAtMs: 90, cursor}, scope, allow), /revision-conflict/);
   assert.match(pages.read({...input, cursor}, scope, () => false), /forbidden/);
   assert.match(new DeviceHistoryPages(() => undefined).read({...input, cursor}, scope, allow), /start a fresh history read/);
-  while (cursor) {
+  while (cursor !== null) {
     const page = JSON.parse(pages.read({...input, cursor}, scope, allow)) as typeof first;
     assert.equal(page.boundary, first.boundary);
     seen.push(...page.evidence.map(point => point.seq));

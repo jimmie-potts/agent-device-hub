@@ -72,3 +72,28 @@ void test('an open span is captured even when its confirmation does not advance 
     assert.equal(fresh.evidence[0]?.confirmedThroughMs, 180);
   } finally {database.close();}
 });
+
+void test('post-window rows cannot displace requested evidence and oversized rows break duration coverage', () => {
+  const database = new DatabaseSync(':memory:');
+  try {
+    const source = 'bunny/modules/wemo', target = 'fixture-plug';
+    const query: DeviceHistoryQuery = {source, target, fromAtMs: 105, toAtMs: 250};
+    const history = new History(database);
+    const insert = database.prepare(`INSERT INTO core_history
+      (at_ms, revision, kind, source, type, subject, record, origin, origin_seq)
+      VALUES (?, ?, 'change', ?, 'org.bunny.device.updated', ?, ?, ?, ?)`);
+    let seq = 0;
+    const row = (atMs: number, on: boolean, extra: object = {}) =>
+      insert.run(atMs, ++seq, source, target, JSON.stringify({family: 'device', id: target, revision: seq,
+        changed: {observed: {status: 'known', observedAtMs: atMs, power: {status: 'known', value: on}}}, ...extra}), history.origin, seq);
+    row(100, true);
+    row(125, true, {oversized: 'x'.repeat(20_000)});
+    row(200, false, {span: {lastConfirmedAtMs: 190}});
+    row(260, false, {span: {lastConfirmedAtMs: 230}});
+    for (let index = 0; index < 900; index += 1) row(261 + index, false);
+    const result = history.devicePower(query);
+    assert.deepEqual(result.evidence.map(point => [point.atMs, point.power]), [[125, 'unknown'], [200, 'off']]);
+    assert.deepEqual(result.durations, {on: 0, off: 30, unknown: 115});
+    assert.equal(result.complete, false);
+  } finally {database.close();}
+});

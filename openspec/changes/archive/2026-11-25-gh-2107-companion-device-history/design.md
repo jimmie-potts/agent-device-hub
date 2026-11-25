@@ -9,8 +9,8 @@ The bounded reader uses the existing sequence primary key. #1760 retains ownersh
 A disposable in-memory SQLite fixture held 350,000 synthetic rows, with an
 864-byte representative unrelated row and a matching observation every 400
 rows. A past-day query returned 216 matching observations. Across 15 warm
-reads on the Mac, median latency was 16.1 ms and the slowest read was 18.1 ms.
-Process RSS was approximately 1.06 MiB higher after the reads. This compares
+reads on the Mac, median latency was 36.7 ms and the slowest read was 42.4 ms.
+Process RSS was approximately 0.92 MiB higher after the reads. This compares
 resident memory before and after the read loop. The projection adds no
 index, migration or writer call. The established writer inserts the same
 records with or without a reader.
