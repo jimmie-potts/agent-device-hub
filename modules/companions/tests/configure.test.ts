@@ -423,7 +423,7 @@ void test('each configured supervisor starts and admits work independently of th
     const text = openai ? body.input?.[0]?.content ?? '' : body.messages?.[0]?.content[0]?.text ?? '';
     sent.push({provider: openai ? 'openai' : 'anthropic', text});
     assert.equal(openai ? init.headers.authorization : init.headers['x-api-key'], openai ? 'Bearer fake-openai' : 'fake-anthropic');
-    const asks = body.tools?.length && text.includes('Wait for my answer');
+    const asks = (body.tools?.length ?? 0) > 0 && text.includes('Wait for my answer');
     const response = openai
       ? {status: 'completed', output: asks
         ? [{type: 'function_call', id: 'fc_ask', call_id: 'call_ask', name: 'ask_owner', arguments: '{"text":"Which option?"}'}]
