@@ -97,7 +97,7 @@ void test('release source comparison binds exact inventories and refuses unbound
     await writeFile(file, original);
   });
 
-  await t.test('a changed producer, outbox, controller, lockfile or registry generator refuses despite resealed artifacts', async () => {
+  await t.test('a changed producer, outbox, module package, lockfile or registry generator refuses despite resealed artifacts', async () => {
     const target = releases.target;
     assert.ok(target);
     for (const path of ['apps/runtime/src/state.ts', 'packages/sdk/src/outbox.ts', 'modules/lifx/package.json',

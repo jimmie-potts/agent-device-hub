@@ -3,6 +3,7 @@
 // is the proof: each copied declaration equals the Hub's text apart from the listed rewrites, which the runtime's
 // strict lint profile requires and which keep behavior for every argument. The fixture run is a spot check.
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -75,7 +76,10 @@ void test('the runtime and Hub file helpers agree on the same fixtures', async t
   const outcome = async (name: string, args: unknown[]): Promise<unknown> => {
     const call = (module: Record<string, unknown>) => (module[name] as (...values: unknown[]) => unknown)(...args);
     const settle = async (module: Record<string, unknown>) => {
-      try { return {value: await call(module)}; } catch (error) { return {error: String(error)}; }
+      // A buffer is compared by length and digest: the assertion's diff of two large buffers, or of one against an error,
+      // costs gigabytes and hides the failure.
+      try { const value = await call(module); return {value: Buffer.isBuffer(value) ? {bytes: value.length, sha256: createHash('sha256').update(value).digest('hex')} : value}; }
+      catch (error) { return {error: String(error)}; }
     };
     const [left, right] = [await settle(runtime), await settle(hub)];
     assert.deepEqual(left, right, `${name}(${JSON.stringify(args)})`);
