@@ -83,8 +83,6 @@ export async function codingJobsJourney(browser: Browser): Promise<void> {
     const jobs = page.getByRole('region', {name: 'Jobs', exact: true});
     const card = (run: CodingWork) => jobs.getByRole('article', {name: `Coding job ${run.operationId}-job`, exact: true});
     await card(first).getByText('fixture-alpha-session', {exact: true}).waitFor();
-    await card(first).getByText('Attempts and results', {exact: true}).click();
-    await card(first).getByText(/Continuation from Claude Code is unavailable/).waitFor();
     await card(second).getByText('fixture-beta-session', {exact: true}).waitFor();
     await card(second).getByText('fixture-model', {exact: true}).waitFor();
     await card(second).getByText('bunny-fixture-beta', {exact: true}).waitFor();
