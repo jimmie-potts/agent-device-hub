@@ -8,10 +8,11 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {test, type TestContext} from 'node:test';
 import type {AssistantProfile, AssistantTaskSummary} from '@jimmie-potts/event-contracts/v2/assistant';
+import type {DeviceRecord} from '@jimmie-potts/event-contracts/v2/devices';
 import type {CodingHarnessReadiness, CodingResult, CodingWork} from '@jimmie-potts/event-contracts/v2/coding';
 import {errorBody} from '@jimmie-potts/event-contracts/v2';
 import {InProcessBus, type Command, type RequestResult} from '@jimmie-potts/sdk';
@@ -233,38 +234,42 @@ void test('an uncapped worker starts more jobs from one companion than a page ca
 function seedReadyJobs(database: DatabaseSync, operations: string[]): void {
   const jobs = new CodingStore(database), tasks = new AssistantStore(database);
   for (const operationId of operations) {
+    const taskId = operationId.slice(0, -'-step-1'.length);
     const task = tasks.newTask('bunny', 'Synthetic restored request.', {provider: 'synthetic', model: 'synthetic', variant: ''});
-    task.status = 'succeeded';
-    tasks.save(task);
-    const taskId = task.id, repository = 'agent-device-hub', brief = 'Synthetic restored brief.';
+    tasks.save({...task, id: taskId, status: 'succeeded'});
+    const repository = 'agent-device-hub', brief = 'Synthetic restored brief.';
+    const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
+    tasks.saveCall({version: 1, id: operationId, taskId, runId: 'synthetic-run', ordinal: 1, kind: 'tool', status: 'succeeded',
+      result: 'Synthetic queued job.', units: 0, reservedUnits: 0, reservedMs: 0, elapsedMs: 0, traceparent,
+      action: {questionId: `${taskId}-q0`, description: 'Synthetic coding approval.'},
+      codingApproval: {destination: 'coding-worker', repository, briefDigest: createHash('sha256').update(JSON.stringify(brief)).digest('hex')}});
     jobs.create({jobId: `${operationId}-job`, operationId, taskId, repository, brief, conversationId: task.conversationId});
-    jobs.wait({operationId, taskId, companion: 'bunny', repository, brief,
-      traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
+    jobs.wait({operationId, taskId, companion: 'bunny', repository, brief, traceparent});
   }
 }
 
 void test('an unpinned restored coding row does not block a verified sibling', {timeout: 30_000}, async context => {
   const w = await world(context);
-  const db = w.database(), operations = ['old-unpinned', 'restored-pinned'];
+  const db = w.database(), operations = ['old-unpinned-step-1', 'restored-pinned-step-1'];
   seedReadyJobs(db, operations);
-  const old = new CodingStore(db).job('old-unpinned') ?? assert.fail('old approved job');
+  const old = new CodingStore(db).job('old-unpinned-step-1') ?? assert.fail('old approved job');
   const store = new AssistantStore(db);
   const task = store.task(old.taskId) ?? assert.fail('old task');
   delete task.supervisor;
   store.save(task);
   await w.restart();
   assert.equal((await w.enable('uncapped')).status, 'accepted');
-  const saved = await w.waitMessages('bunny', /original supervisor could not be verified/);
-  assert.ok(saved.some(message => message.id === 'old-unpinned-job-result' && message.text.includes('Create a new job')));
+  const saved = await w.waitMessages('bunny', /original supervisor or coding approval could not be verified/);
+  assert.ok(saved.some(message => message.id === 'old-unpinned-step-1-job-result' && message.text.includes('Create a new job')));
   assert.doesNotMatch(JSON.stringify(saved), /refused: forbidden/);
   await settle(() => w.starts().length === 1);
-  assert.deepEqual(w.dispatched, ['restored-pinned']);
+  assert.deepEqual(w.dispatched, ['restored-pinned-step-1']);
 });
 
 void test('a restored uncapped backlog paces the serial worker acknowledgement without holding active runs', {timeout: 30_000}, async context => {
   const w = await world(context);
   assert.equal((await w.control('enable')).status, 'accepted');
-  const restored = Array.from({length: 35}, (_, index) => `restored-${String(index)}`);
+  const restored = Array.from({length: 35}, (_, index) => `restored-${String(index)}-step-1`);
   seedReadyJobs(w.database(), restored);
   await w.restart();
   w.serializeStarts();
@@ -302,45 +307,45 @@ for (const failFirstWrite of [false, true]) {
     if (failFirstWrite) {
       db.function('fail_stale_dispatch_result', () => {attempts += 1; return attempts === 1 ? 1 : 0;});
       db.exec(`CREATE TEMP TRIGGER fail_stale_dispatch_result BEFORE INSERT ON companion_coding_job_updates
-        WHEN NEW.operation_id='stale-dispatch' AND NEW.kind='result' AND fail_stale_dispatch_result()=1
+        WHEN NEW.operation_id='stale-dispatch-step-1' AND NEW.kind='result' AND fail_stale_dispatch_result()=1
         BEGIN SELECT RAISE(ABORT,'synthetic disconnect result failure'); END`);
     }
-    seedReadyJobs(db, ['stale-dispatch', 'unassigned-dispatch']);
+    seedReadyJobs(db, ['stale-dispatch-step-1', 'unassigned-dispatch-step-1']);
     const release = w.holdDispatch();
     context.after(release);
     try {
       assert.equal((await w.enable('uncapped')).status, 'accepted');
       await settle(() => w.dispatched.length === 1);
       await w.lose();
-      await settle(() => failFirstWrite ? attempts === 1 : store.resultSaved('stale-dispatch'));
+      await settle(() => failFirstWrite ? attempts === 1 : store.resultSaved('stale-dispatch-step-1'));
       assert.equal((await w.enable('uncapped')).status, 'accepted');
       release();
-      await settle(() => w.forwarded.has('stale-dispatch') && w.starts().length === 1);
-      assert.equal(w.forwarded.get('stale-dispatch'), 'rejected');
+      await settle(() => w.forwarded.has('stale-dispatch-step-1') && w.starts().length === 1);
+      assert.equal(w.forwarded.get('stale-dispatch-step-1'), 'rejected');
       if (failFirstWrite) {
-        assert.equal(store.resultSaved('stale-dispatch'), false);
+        assert.equal(store.resultSaved('stale-dispatch-step-1'), false);
         w.advance(1000);
-        await settle(() => store.resultSaved('stale-dispatch'));
+        await settle(() => store.resultSaved('stale-dispatch-step-1'));
       }
-      const row = db.prepare("SELECT text FROM companion_coding_job_updates WHERE operation_id=? AND kind='result'").get('stale-dispatch');
+      const row = db.prepare("SELECT text FROM companion_coding_job_updates WHERE operation_id=? AND kind='result'").get('stale-dispatch-step-1');
       assert.match(String(row?.text ?? ''), /worker became unavailable before start was sent/);
-      assert.deepEqual(w.dispatched, ['stale-dispatch', 'unassigned-dispatch']);
-      assert.deepEqual(w.starts().map(message => message.data.operationId), ['unassigned-dispatch']);
+      assert.deepEqual(w.dispatched, ['stale-dispatch-step-1', 'unassigned-dispatch-step-1']);
+      assert.deepEqual(w.starts().map(message => message.data.operationId), ['unassigned-dispatch-step-1']);
     } finally {release();}
   });
 }
 
 void test('a disconnected delivery settles uncertain while its late reply leaves the next delivery held', {timeout: 30_000}, async context => {
   const w = await world(context);
-  const operations = ['lost-delivery', 'next-delivery', 'last-delivery'];
+  const operations = ['lost-delivery-step-1', 'next-delivery-step-1', 'last-delivery-step-1'];
   const store = new CodingStore(w.database());
   seedReadyJobs(w.database(), operations);
   w.serializeStarts();
   assert.equal((await w.enable('uncapped')).status, 'accepted');
   await settle(() => w.starts().length === 1);
   await w.lose();
-  await settle(() => store.resultSaved('lost-delivery'));
-  assert.equal(store.records('uncertain')[0]?.operationId, 'lost-delivery');
+  await settle(() => store.resultSaved('lost-delivery-step-1'));
+  assert.equal(store.records('uncertain')[0]?.operationId, 'lost-delivery-step-1');
   assert.equal((await w.enable('uncapped')).status, 'accepted');
   await settle(() => w.dispatched.length === 2);
   w.acknowledgeStart();
@@ -561,7 +566,7 @@ void test('an earlier saved delegation interrupt and unsent hand-off survive the
   await settle(() => w.task('bunny')?.status === 'waiting' && w.task('bunny')?.questionId?.includes('-delegation-') === true);
   const taskId = w.task('bunny')?.taskId ?? assert.fail('legacy task');
   assert.ok(operationId !== undefined);
-  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic earlier approved brief.',
+  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic bunny brief.',
     traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
   delete options.delegate;
   await w.restart();
@@ -711,7 +716,7 @@ void test('a legacy accepted hand-off is delivered before a fast terminal result
   await settle(() => w.task('bunny')?.status === 'waiting' && w.task('bunny')?.questionId?.includes('-delegation-') === true);
   assert.ok(operationId !== undefined);
   const taskId = w.task('bunny')?.taskId ?? assert.fail('legacy task');
-  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic earlier approved brief.',
+  new CodingStore(w.database()).wait({operationId, taskId, companion: 'bunny', repository: 'agent-device-hub', brief: 'Synthetic bunny brief.',
     traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01'});
   delete options.delegate;
   await w.restart();
@@ -957,7 +962,7 @@ void test('an uncapped attempt uses observed setup deadlines without timing out 
   await w.waitMessages('reachy', /Synthetic ready sibling result/);
 });
 
-for (const restoredGrant of ['granted', 'worker denied', 'source denied'] as const) {
+for (const restoredGrant of ['granted', 'worker denied', 'source denied', 'approval missing', 'approval mismatched'] as const) {
 void test(`a restored Responses coding job with sharing ${restoredGrant} keeps its supervisor pin without a model turn`, {timeout: 30_000}, async context => {
   let denied: 'worker denied' | 'source denied' | undefined;
   const ordinary = sharing();
@@ -987,7 +992,14 @@ void test(`a restored Responses coding job with sharing ${restoredGrant} keeps i
   const waiting = w.coding().waiting?.at(0) ?? assert.fail('expected waiting approved job');
   assert.equal(openAIRequests.length, 2);
   assert.equal(new AssistantStore(w.database()).task(waiting.taskId)?.supervisor?.provider, 'openai');
-  if (restoredGrant !== 'granted') denied = restoredGrant;
+  if (restoredGrant === 'worker denied' || restoredGrant === 'source denied') denied = restoredGrant;
+  if (restoredGrant === 'approval missing' || restoredGrant === 'approval mismatched') {
+    const store = new AssistantStore(w.database());
+    const approval = store.call(waiting.operationId) ?? assert.fail('saved approval call');
+    if (restoredGrant === 'approval missing') delete approval.codingApproval;
+    else approval.ordinal += 1;
+    store.saveCall(approval);
+  }
   options.provider = {name: 'synthetic', model: 'synthetic', turn: () => assert.fail('recovery does not switch supervisors')};
   await w.restart();
   assert.equal(new AssistantStore(w.database()).task(waiting.taskId)?.supervisor?.provider, 'openai');
@@ -999,10 +1011,87 @@ void test(`a restored Responses coding job with sharing ${restoredGrant} keeps i
     assert.equal(continued.taskId, waiting.taskId);
     assert.equal(continued.operationId, waiting.operationId);
   } else {
-    await w.waitMessages('bunny', /refused: forbidden/);
-    assert.equal(w.dispatched.length, 1, 'the restored grant is rechecked before dispatch');
+    if (restoredGrant === 'approval missing' || restoredGrant === 'approval mismatched') {
+      const messages = await w.waitMessages('bunny', /The original supervisor or coding approval could not be verified/);
+      assert.ok(messages.some(message => message.text === 'Delegate a second synthetic coding task.'));
+    } else await w.waitMessages('bunny', /refused: forbidden/);
+    assert.equal(w.dispatched.length, 1, 'the saved approval and grants are rechecked before dispatch');
     assert.equal(w.starts().length, 1);
   }
   assert.equal(openAIRequests.length, 2, 'recovery did not rerun the original supervisor');
 });
 }
+
+for (const revoked of ['model input', 'derived input', 'private read'] as const) {
+  void test(`a recovered job refuses a revoked ${revoked} grant for its model-disclosed repository`, {timeout: 30_000}, async context => {
+    let revoke = false;
+    const ordinary = sharing();
+    const sameRepository = (query: ShareQuery) => query.source === 'coding' && query.field === 'repository' && query.record === 'agent-device-hub';
+    const share = Object.assign((query: ShareQuery) => ordinary(query) && !(revoke && sameRepository(query) &&
+      (revoked === 'model input' && query.destination === 'synthetic' && query.purpose === 'prompt' ||
+       revoked === 'private read' && query.destination === 'private-conversation' && query.purpose === 'read')),
+    {revokesFields: true, allowsDerived: (query: ShareQuery) => !(revoke && revoked === 'derived input' && sameRepository(query))});
+    const w = await world(context, {share});
+    assert.equal((await w.control('enable')).status, 'accepted');
+    assert.equal((await w.enable()).status, 'accepted');
+    for (const request of ['first', 'second']) {
+      assert.equal((await w.send('bunny', `Delegate the ${request} synthetic coding task.`)).status, 'accepted');
+      await w.approved('bunny');
+      await settle(() => w.task('bunny')?.status === 'succeeded');
+    }
+    const waiting = w.coding().waiting?.at(0) ?? assert.fail('expected waiting approved job');
+    const store = new AssistantStore(w.database());
+    const model = store.calls(waiting.taskId).find(call => call.kind === 'model') ?? assert.fail('saved model call');
+    const approval = store.call(waiting.operationId) ?? assert.fail('saved approval call');
+    assert.equal(approval.kind, 'tool');
+    assert.notEqual(model.id, approval.id);
+    assert.ok(model.disclosures?.some(field => field.source === 'coding' && field.field === 'repository' && field.record === 'agent-device-hub'),
+      'the earlier job receipt disclosed the repository to the supervisor');
+    revoke = true;
+    await w.restart();
+    assert.equal((await w.enable('uncapped')).status, 'accepted');
+    await settle(() => w.starts().length > 1 || w.coding().waiting?.length !== 1);
+    assert.equal(w.dispatched.length, 1, 'revoked model data must not reach the dispatcher');
+    assert.equal(w.starts().length, 1, 'the recovered worker command must not start');
+  });
+}
+
+void test('local clarification choices do not become prior supervisor disclosures on an approved Responses hand-off', {timeout: 30_000}, async context => {
+  const bodies: string[] = [];
+  const replies = [
+    {name: 'set_wemo_power', args: {device: 'Fixture plug', on: false}},
+    {name: 'delegate_coding', args: {repository: 'agent-device-hub', brief: 'Add a synthetic fixture.'}},
+  ];
+  const provider = new OpenAIProvider({model: OPENAI_MODEL, effort: 'medium', key: 'synthetic', transport: (_url, init) => {
+    bodies.push(init.body);
+    const reply = replies.shift();
+    const output = reply === undefined
+      ? [{type: 'message', role: 'assistant', content: [{type: 'output_text', text: 'Finished.'}]}]
+      : [{type: 'function_call', id: `fc_${bodies.length}`, call_id: `call_${bodies.length}`, name: reply.name, arguments: JSON.stringify(reply.args)}];
+    return Promise.resolve(new Response(JSON.stringify({status: 'completed', output, usage: {input_tokens: 20, output_tokens: 8}})));
+  }});
+  const ids = ['fixture-plug-one', 'fixture-plug-two'];
+  const unknown = {status: 'unknown'} as const;
+  const plugs = ids.map((id): DeviceRecord => ({id, label: 'Fixture plug', kind: 'wemo', revision: 1, configurationRevision: 1,
+    generation: {epoch: 'fixture-epoch', sequence: 0}, availability: 'available',
+    capabilities: {power: {supported: true}, brightness: {supported: false}, modes: {supported: false}, media: {supported: false},
+      moments: {supported: false}, preview: {supported: false}, scenes: {supported: false}, zones: {supported: false}},
+    desired: {power: unknown, brightness: unknown, mode: unknown}, observed: unknown, pending: 0, pendingKinds: [],
+    lastOutcome: unknown, lastTransmission: unknown, externalControl: unknown}));
+  const w = await world(context, {provider, tools: ['set_wemo_power', 'delegate_coding'],
+    devices: owner => owner === 'bunny/modules/wemo' ? plugs : []});
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable('uncapped')).status, 'accepted');
+  assert.equal((await w.send('bunny', 'List all Wemo plugs.')).status, 'accepted');
+  const store = new AssistantStore(w.database());
+  const id = w.task('bunny')?.taskId ?? assert.fail('saved task');
+  await settle(() => store.task(id)?.question?.kind === 'clarification');
+  assert.deepEqual(store.task(id)?.clarificationDevices, ids);
+  assert.equal((await w.send('bunny', 'Instead, delegate a synthetic coding fixture.', true)).status, 'accepted');
+  await settle(() => store.task(id)?.question?.kind === 'approval');
+  await w.approved('bunny');
+  await settle(() => w.starts().length === 1 && w.task('bunny')?.status === 'succeeded');
+  assert.equal(bodies.length, 2);
+  for (const body of bodies) for (const device of ids) assert.ok(!body.includes(device));
+  assert.ok(store.calls(id).filter(call => call.kind === 'model').every(call => call.disclosures?.every(field => field.source !== 'devices') === true));
+});

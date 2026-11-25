@@ -1085,6 +1085,21 @@ For [Hub #2108](https://github.com/jimmie-potts/agent-device-hub/issues/2108), e
 - **WHEN** the companion starts or receives an approval or queue-resume request
 - **THEN** the earlier task stays readable and its queued work stays held, without applying the approval or sending work to the currently configured supervisor
 
+#### Scenario: Revalidate a saved coding hand-off
+
+- **GIVEN** an approved coding hand-off waits across a restart and an earlier supervisor input names the same repository
+- **WHEN** dispatch rechecks the saved approval and sharing grants
+- **THEN** only the approval bound to that operation, repository and brief uses the worker-only grant
+- **AND** earlier call disclosures require the original supervisor, private read and derived-input grants
+- **AND** an unverifiable approval stays readable with a refusal before dispatch
+- **AND** a verified hand-off with current grants can start without another supervisor call
+
+#### Scenario: A title trigger waits during another supervisor’s check
+
+- **WHEN** a title trigger arrives while the other supervisor’s title check is running
+- **THEN** its follow-up uses its own provider and permitted inputs
+- **AND** a queued Responses title check sends no request if the conversation already has a title
+
 #### Scenario: A paid Responses call loses its answer
 
 - **GIVEN** a shared ledger with reservations from both hosted supervisors and their title calls

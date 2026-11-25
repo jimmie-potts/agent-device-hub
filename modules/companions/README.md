@@ -605,11 +605,16 @@ which carries the monthly spend limit ([Spend limits](#spend-limits)).
   provider leaves the task readable and paused. An earlier task with no
   saved supervisor stays paused, and its unpinned queued work stays held.
   Cancel the paused task and withdraw any unpinned messages to start a new
-  conversation. If a recovered coding job has no verifiable original
-  supervisor, the job stays readable and receives a receipt explaining that it
-  did not start. Create a new job to authorize it. A recovered job with a saved
-  supervisor uses that supervisor's grants even when its credential is
-  unavailable. Worker results remain in the private conversation.
+  conversation. A recovered coding job requires the saved supervisor and the
+  approval for its exact operation, repository and brief. The approval uses
+  the worker grant. Earlier call disclosures must still pass the original
+  supervisor, private read and derived-input grants. If the approval or
+  supervisor cannot be verified, the job stays readable with a receipt
+  explaining that it did not start. Create a new job to authorize it. A
+  verified job can start without the supervisor credential or a model call.
+  Worker results remain in the private conversation. Pending title checks use
+  their own provider and permitted inputs. A pending Responses check skips a
+  conversation that already has a title.
 - Responses calls use Standard service and a 30-minute prompt cache. The
   published `gpt-6.2-sol` rates on 2026-11-24 are $2 per million input tokens,
   $2.50 for cache writes, $0.10 for cache reads and $10 for output, which
