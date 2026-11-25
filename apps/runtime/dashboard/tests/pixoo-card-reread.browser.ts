@@ -14,9 +14,10 @@ const world = await startWorld({pixooPages: true});
 const browser = await chromium.launch({headless: true});
 const results: Record<string, boolean | string> = {};
 let evidence = (): Promise<string> => Promise.resolve('none');
+const consoleErrors: string[] = [], stacks: string[] = [];
 try {
   const context = await browser.newContext({viewport: {width: 1280, height: 1000}, reducedMotion: 'reduce'});
-  const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); });
+  const errors: string[] = []; context.on('weberror', error => { errors.push(error.error().name); stacks.push(`${error.error().message} ${(error.error().stack ?? '').split('\n').slice(0, 8).join(' | ')}`); }); context.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text().slice(0, 200)); });
   const page = await context.newPage(); page.setDefaultTimeout(10_000);
   // Every command request the page makes, with its body: the card's presses and this journey's own setup requests.
   const bodies: {path: string; data: Record<string, unknown>}[] = [];
@@ -28,9 +29,9 @@ try {
   // On a miss, what the page showed: the route, the feed, each Home Pixoo placement, each Pixoo card with its shape,
   // state line, result line and buttons, the reads held or answered, and the device and display records the runtime holds.
   let reads = 0;
-  evidence = async (): Promise<string> => JSON.stringify({heldReads: held.length, reads, hold, failReads, page: await page.evaluate(async id => {
+  evidence = async (): Promise<string> => JSON.stringify({heldReads: held.length, reads, hold, failReads, errors, stacks, consoleErrors: consoleErrors.slice(-10), page: await page.evaluate(async id => {
     const snapshot = async (family: string): Promise<unknown> => ((await (await fetch(`/api/v2/snapshot?families=${family}&owner=bunny/modules/pixoo`)).json()) as {records: Record<string, {id: string}[]>}).records[family]?.find(value => value.id === id);
-    return {hash: location.hash, feed: document.querySelector('main#main')?.getAttribute('data-feed') ?? null,
+    return {hash: location.hash, feed: document.querySelector('main#main')?.getAttribute('data-feed') ?? null, body: document.body.innerText.slice(0, 300),
       // A Home placement without a Pixoo card in it shows here by its text, such as the card's loading line.
       home: [...document.querySelectorAll('[data-home-card^="device:bunny/modules/pixoo:"]')].map(node => ({shape: node.getAttribute('data-home-shape'),
         packed: node.closest('.home-layout-grid')?.getAttribute('data-packed') ?? null, text: node.textContent.slice(0, 200)})),
