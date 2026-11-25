@@ -1,6 +1,7 @@
 // The shared spend ledger (Hub #2024, #2047): it paces the assistant's paid model calls across all profiles at $20 a
-// day, by the runtime host's local day, and keeps a local estimate of the month with a $150 guard. Anthropic enforces the
-// real monthly ceiling: a dedicated Console workspace's spend limit, whose refusal the provider adapter maps. Each paid
+// day, by the runtime host's local day, and keeps a local estimate of the month with a guard: $150 unless the section's
+// `assistant.monthlyLimit` sets the owner's Console limit (Hub #2102). Anthropic enforces the real monthly ceiling: a
+// dedicated Console workspace's spend limit, whose refusal the provider adapter maps. Each paid
 // call reserves its most expensive possible cost before it is sent, in the same transaction as the call's receipt;
 // reported usage replaces the reservation, and a call whose usage is never reported keeps counting its reservation, never
 // zero. Prices come from the private section, else the dated built-in table, else the dearest known rate. A call counts on
@@ -61,7 +62,9 @@ const AFTER = {day: 'A new message can start after midnight, the runtime host\'s
 export class SpendLedger {
   /** The dearest known rate for each price class, across the configured and built-in tables: an unknown model's prices. */
   readonly #dearest: ModelPrices;
-  constructor(readonly database: DatabaseSync, readonly prices: PriceTable, readonly now: () => number, readonly timeZone: string = hostTimeZone()) {
+  /** `monthMicros` is the local monthly guard in millionths of a dollar: the section's `assistant.monthlyLimit`, else $150 (Hub #2102). */
+  constructor(readonly database: DatabaseSync, readonly prices: PriceTable, readonly now: () => number, readonly timeZone: string = hostTimeZone(),
+    readonly monthMicros: number = SPEND_LIMITS.monthMicros) {
     database.exec(`CREATE TABLE IF NOT EXISTS assistant_spend (id TEXT PRIMARY KEY, purpose TEXT NOT NULL, owner TEXT NOT NULL, model TEXT NOT NULL,
       day TEXT NOT NULL, month TEXT NOT NULL, at_ms INTEGER NOT NULL, reserved_micros INTEGER NOT NULL, cost_micros INTEGER, usage TEXT) STRICT;
       CREATE INDEX IF NOT EXISTS assistant_spend_day ON assistant_spend(day);
@@ -76,7 +79,7 @@ export class SpendLedger {
   }
   totals(): SpendTotals {
     const day = localDay(this.now(), this.timeZone);
-    return {version: 1, day: this.#sum('day', day, SPEND_LIMITS.dayMicros), month: this.#sum('month', day.slice(0, 7), SPEND_LIMITS.monthMicros)};
+    return {version: 1, day: this.#sum('day', day, SPEND_LIMITS.dayMicros), month: this.#sum('month', day.slice(0, 7), this.monthMicros)};
   }
   /**
    * The limit that refuses a new paid turn now, as the message naming it, or undefined. With a model, the turn is also

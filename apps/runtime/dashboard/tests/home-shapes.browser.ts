@@ -101,9 +101,19 @@ async function shot(page: Page, name: string): Promise<void> {
   await mkdir(receipts, {recursive: true});
   // Clear focus and keep the skip link (shown only while focused) out of the picture.
   await page.evaluate(() => {if (document.activeElement instanceof HTMLElement) document.activeElement.blur();document.querySelector<HTMLElement>('.skip')?.style.setProperty('display', 'none');});await settle(page);
-  const box = await page.locator('.home-layout').boundingBox();if (box === null) throw new Error('home-box');
-  // Focus is cleared above; the skip link is also kept out of the picture in case a browser left it shown.
-  await page.screenshot({path: join(receipts, `${name}.png`), fullPage: true, clip: {x: 0, y: Math.max(0, box.y - 8), width: page.viewportSize()?.width ?? 1440, height: Math.min(box.height + 16, 3_990)}});
+  // A full-page picture of a page taller than the window is captured beyond the viewport, and Chromium reports a 1x1
+  // window meanwhile: the grid measures no width and unpacks, and a card that redraws in another face loses what was
+  // open in it, such as the Pixoo options menu (#1826). The window first grows, in height only, to the page, so the
+  // picture fits it; the grid measures only its width, so nothing repacks. The window and its scroll position are
+  // restored afterwards.
+  const viewport = page.viewportSize();if (viewport === null) throw new Error('home-viewport');
+  const {height, x, y} = await page.evaluate(() => ({height: document.documentElement.scrollHeight, x: scrollX, y: scrollY}));
+  try {
+    if (height > viewport.height) {await page.setViewportSize({width: viewport.width, height});await settle(page);}
+    const box = await page.locator('.home-layout').boundingBox();if (box === null) throw new Error('home-box');
+    // Focus is cleared above; the skip link is also kept out of the picture in case a browser left it shown.
+    await page.screenshot({path: join(receipts, `${name}.png`), fullPage: true, clip: {x: 0, y: Math.max(0, box.y - 8), width: viewport.width, height: Math.min(box.height + 16, 3_990)}});
+  } finally {if (height > viewport.height) {await page.setViewportSize(viewport);await page.evaluate(({x, y}) => {scrollTo(x, y);}, {x, y});}}
   await page.evaluate(() => {document.querySelector<HTMLElement>('.skip')?.style.removeProperty('display');});
 }
 async function save(page: Page, desktop: HomePlacement[], phone: HomePlacement[] = desktop): Promise<void> {
