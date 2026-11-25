@@ -5,7 +5,7 @@
 //
 // The record is formed here and delivered nowhere: the page has no diagnostic route to the runtime yet (the diagnostic
 // contract's browser relay is not adopted), so the records stay in this page's memory, in a bounded log that a later
-// relay can read. Delivery is a named follow-up (follow-up issue to be filed by the coordinator), and so is registering
+// relay can read. Delivery is a named follow-up (#2159), and so is registering
 // the event and `bunny.card` in the diagnostic catalog, which the contract requires before a record is exported.
 import {errorType, recordLog, type LogEvent, type LogFields, type Logger} from '@jimmie-potts/sdk/remote';
 

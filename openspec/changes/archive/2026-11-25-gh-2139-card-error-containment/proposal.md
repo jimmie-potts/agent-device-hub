@@ -7,7 +7,7 @@
 ## What changes
 
 - One boundary wraps each Home card, each device card on a component page, the module page on its route, the Settings, Companions, Habitat, Timeline, Automation and Connections pages, the device directory, the rail's conversations and the art backdrop source. A failed card or page says that it failed and offers one Retry that draws it again; it shows no stale content and no control, and sends nothing. A part that draws nothing shows nothing when it fails.
-- Each failure forms one record through the SDK's `recordLog` as `dashboard.card.failed`, at the code table's ERROR level, with the part's identity and the error's type. The record stays in a bounded in-page log and is delivered nowhere yet, because the browser has no diagnostic route to the runtime; delivery is a follow-up (follow-up issue to be filed by the coordinator).
+- Each failure forms one record through the SDK's `recordLog` as `dashboard.card.failed`, at the code table's ERROR level, with the part's identity and the error's type. The record stays in a bounded in-page log and is delivered nowhere yet, because the browser has no diagnostic route to the runtime; delivery is a follow-up (#2159).
 - The browser journeys' harness fails a health check on a part in the failed state that the journey did not expect, and fails the run at the world's close on a part that failed after the journey's last check, naming it.
 
 ## Capabilities

@@ -1308,7 +1308,7 @@ Not contained, so these still unmount the whole page:
 - an error thrown from an effect's cleanup as its part leaves the page, for
   example a Home card's cleanup when the owner leaves Home: React passes it to
   the nearest boundary that stays mounted, and the part's own boundary leaves
-  with it.
+  with it (#2160).
 
 Errors in event handlers and async work never reach a boundary and, as before,
 leave the page mounted.
@@ -1320,7 +1320,7 @@ and delivered nowhere yet: the page has no diagnostic route to the runtime, so i
 stays in a bounded in-page log of 64 records and is lost with the page. Its
 delivery through a browser relay, with the event and `bunny.card` registered in
 the diagnostic catalog as the contract requires before a record is exported, is
-a follow-up (follow-up issue to be filed by the coordinator). The page also
+a follow-up (#2159). The page also
 passes the error to the browser's `reportError`, so an owner's browser shows it
 only on its console; a browser without `reportError` is not told, and the failed
 part and its record stay as they are.
