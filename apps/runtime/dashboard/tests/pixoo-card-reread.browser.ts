@@ -81,8 +81,7 @@ try {
   const card = page.getByRole('article', {name: 'Pixoo display', exact: true});
   const screenOn = card.getByRole('button', {name: 'Screen on', exact: true});
   await screenOn.waitFor(); await expect.poll(() => held.length).toBeGreaterThan(0);
-  assert.equal(await screenOn.isDisabled(), true, 'the first load disables the controls');
-  assert.equal(await card.getByRole('button', {name: 'Screen off', exact: true}).isDisabled(), true);
+  for (const control of [screenOn, card.getByRole('button', {name: 'Screen off', exact: true})]) await refused(control, 'the first load disables the controls');
   results['first-load'] = true;
   await release();
   await expect(screenOn).toBeEnabled();
@@ -193,7 +192,7 @@ try {
   failReads = true;
   await displayChange();
   await card.getByRole('alert').filter({hasText: 'Player unavailable.'}).waitFor();
-  assert.equal(await screenOn.isDisabled(), true, 'a failed read disables the controls');
+  for (const control of [screenOn, card.getByRole('button', {name: 'Screen off', exact: true})]) await refused(control, 'a failed read disables the controls');
   assert.equal(await toggle.count() + await next.count() + await previous.count(), 0, 'no playback control without content');
   failReads = false;
   await card.getByRole('button', {name: 'Refresh player', exact: true}).click();
@@ -208,8 +207,8 @@ try {
     const replacement = page.waitForRequest(request => new URL(request.url()).pathname === '/api/sdk/v1/sync');
     world.dropDashboardStreams(); await replacement;
     await card.getByText('Pixoo records are stale.', {exact: true}).waitFor();
-    for (const control of [screenOn, card.getByRole('button', {name: 'Screen off', exact: true})]) assert.equal(await control.isDisabled(), true, 'stale records disable the controls');
-    assert.equal(await toggle.count() === 0 || await toggle.isDisabled(), true);
+    for (const control of [screenOn, card.getByRole('button', {name: 'Screen off', exact: true})]) await refused(control, 'stale records disable the controls');
+    if (await toggle.count() > 0) await refused(toggle, 'stale records disable the playback controls');
   } finally { releaseSync(); await page.unroute('**/api/sdk/v1/sync'); }
   await feed(page, 'connected'); await expect(resume).toBeEnabled(); await expect(screenOn).toBeEnabled();
   results['stale-records'] = true;
@@ -293,6 +292,21 @@ try {
   results['compact-face'] = true;
   await release();
   await expect(compactResume).toBeEnabled();
+
+  // An unavailable Pixoo, outside any re-read: the simulated panel goes offline and a screen change from another
+  // surface finds it unreachable. Every control is disabled, its line says why, and a press sends nothing.
+  world.pixooMode('offline');
+  await setup('power-set', {on: true});
+  await expect.poll(async () => page.evaluate(async id => {
+    const data = await (await fetch('/api/v2/snapshot?families=device&owner=bunny/modules/pixoo')).json() as {records: {device: {id: string; availability: string}[]}};
+    return data.records.device.find(value => value.id === id)?.availability;
+  }, deviceId), {timeout: 15_000}).toBe('unavailable');
+  const compactLine = compact.locator('.pixoo-compact-result');
+  await expect(compactLine).toHaveText('Pixoo is unavailable.');
+  assert.equal(held.length, 0, 'no read is outstanding');
+  for (const control of [compact.getByRole('button', {name: 'Screen on', exact: true}), compact.getByRole('button', {name: 'Screen off', exact: true}),
+    compact.getByRole('button', {name: 'Next', exact: true}), compact.getByRole('button', {name: 'Previous', exact: true}), compactResume]) await refused(control, 'an unavailable Pixoo disables the controls');
+  results['unavailable'] = true;
 
   assert.deepEqual(errors, []);
   await context.close();
