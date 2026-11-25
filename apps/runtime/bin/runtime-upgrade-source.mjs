@@ -1,7 +1,7 @@
 // Pure source evidence adapter: no release code, installer or service is run.
 import {lstat} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
-import {canonical, digest, fullRevision, hashRegular, inventory, readRegular, sha256} from '../../hub/dist/install/files.js';
+import {canonical, digest, fullRevision, hashRegular, inventory, readRegular, sha256} from '../dist/src/upgrade-files.js';
 import {checkStateDirectory, readPrivateFile} from '../dist/src/state.js';
 const maximum = 256 * 1024;
 
@@ -54,6 +54,8 @@ const operatorFiles = new Set([
   'apps/runtime/src/upgrade-lock.ts', 'apps/runtime/src/upgrade-owner.ts', 'apps/runtime/src/upgrade-paths.ts',
   'apps/runtime/src/upgrade-hooks.ts',
   'apps/runtime/src/upgrade-preflight.ts',
+  // #839: the upgrade tools' own copies of the retained Hub installer helpers, which were never format inputs.
+  'apps/runtime/src/upgrade-files.ts', 'apps/runtime/src/upgrade-stage.ts',
 ]);
 const rootInputs = new Set(['.nvmrc', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json', 'tsconfig.strict.json']);
 const required = ['.nvmrc', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.strict.json',
@@ -62,8 +64,9 @@ const required = ['.nvmrc', 'package.json', 'package-lock.json', 'tsconfig.json'
   'apps/runtime/build/registry.ts', 'apps/runtime/dashboard/build.mjs', 'packages/sdk/src/database.ts', 'packages/sdk/src/outbox.ts',
   'packages/agent-state/package.json', 'packages/contracts/package.json', 'packages/event-contracts/package.json',
   ...['playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'bb8'].map(name => `modules/${name}/package.json`),
-  'apps/bb8-windows/package.json', 'apps/bb8-windows/src/receipts.ts', 'apps/bb8-windows/src/process.ts',
-  'controllers/lifx/package.json', 'controllers/tidbyt/package.json'];
+  // #839 retires the legacy controllers, so they are no longer anchors. A release that still holds them keeps them
+  // as format inputs through selected(); modules/lifx and modules/tidbyt are the current device anchors.
+  'apps/bb8-windows/package.json', 'apps/bb8-windows/src/receipts.ts', 'apps/bb8-windows/src/process.ts'];
 const closed = (value, keys) => value !== null && typeof value === 'object' && !Array.isArray(value)
   && canonical(Object.keys(value).sort()) === canonical([...keys].sort());
 const text = value => typeof value === 'string' && value.length > 0 && value.length <= 4096 && !/[\r\n\0]/.test(value);

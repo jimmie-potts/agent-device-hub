@@ -16,14 +16,15 @@ const anchors = ['.nvmrc', 'package.json', 'package-lock.json', 'tsconfig.json',
   'apps/runtime/build/registry.ts', 'apps/runtime/dashboard/build.mjs', 'packages/sdk/src/database.ts', 'packages/sdk/src/outbox.ts',
   'packages/agent-state/package.json', 'packages/contracts/package.json', 'packages/event-contracts/package.json',
   ...['playback', 'nanoleaf', 'pixoo', 'tidbyt', 'lifx', 'bb8'].map(name => `modules/${name}/package.json`),
-  'apps/bb8-windows/package.json', 'apps/bb8-windows/src/receipts.ts', 'apps/bb8-windows/src/process.ts',
-  'controllers/lifx/package.json', 'controllers/tidbyt/package.json'];
+  'apps/bb8-windows/package.json', 'apps/bb8-windows/src/receipts.ts', 'apps/bb8-windows/src/process.ts'];
+// Releases built before #839 retires the legacy controllers still carry them; they stay bound format inputs.
+const legacyControllers = ['controllers/lifx/package.json', 'controllers/tidbyt/package.json'];
 
 void test('ONN production stores, configuration and native reader remain bound format inputs while legacy absence is supported', async () => {
   const onn = ['apps/runtime/src/core/power-schedules.ts', 'apps/runtime/src/core/automation-store.ts', 'modules/onn/package.json', 'modules/onn/src/module.ts', 'modules/onn/src/store.ts',
     'modules/onn/src/history.ts', 'modules/onn/src/configuration.ts', 'modules/onn/src/reader-artifact.ts',
     'modules/onn/native/release.json', 'modules/onn/native/src/OnnMetadataReader.java', 'modules/onn/native/artifact/reader.dex'];
-  for (const paths of [anchors, [...anchors, ...onn]]) {
+  for (const paths of [anchors, [...anchors, ...onn], [...anchors, ...legacyControllers]]) {
     const entries = paths.map(path => ({path, kind: 'file', sha256: hash(path)}));
     const result = await run(process.execPath, ['--input-type=module', '-e',
       'import {runtimeFormatInputs} from "./apps/runtime/bin/runtime-upgrade-source.mjs";process.stdout.write(JSON.stringify(runtimeFormatInputs(JSON.parse(process.argv[1])).map(row=>row.path)))',
@@ -46,7 +47,7 @@ void test('release source comparison binds exact inventories and refuses unbound
     const paths = releases[name];
     assert.ok(paths);
     const result = await run(process.execPath, ['--input-type=module', '-e',
-      'import {inventory} from "./apps/hub/dist/install/files.js";process.stdout.write(JSON.stringify((await inventory(process.argv[1])).entries.filter(e=>e.path!=="manifest.json")))', paths.directory], {cwd: process.cwd()});
+      'import {inventory} from "./apps/runtime/dist/src/upgrade-files.js";process.stdout.write(JSON.stringify((await inventory(process.argv[1])).entries.filter(e=>e.path!=="manifest.json")))', paths.directory], {cwd: process.cwd()});
     const entries: unknown = JSON.parse(result.stdout);
     const manifest = JSON.stringify({artifact: '@jimmie-potts/runtime', sourceRevision: revisions[name], version: '0.1.0', inventory: entries});
     await writeFile(join(paths.directory, 'manifest.json'), manifest, {mode: 0o600});
@@ -96,10 +97,10 @@ void test('release source comparison binds exact inventories and refuses unbound
     await writeFile(file, original);
   });
 
-  await t.test('a changed producer, outbox, controller, lockfile or registry generator refuses despite resealed artifacts', async () => {
+  await t.test('a changed producer, outbox, module package, lockfile or registry generator refuses despite resealed artifacts', async () => {
     const target = releases.target;
     assert.ok(target);
-    for (const path of ['apps/runtime/src/state.ts', 'packages/sdk/src/outbox.ts', 'controllers/lifx/package.json',
+    for (const path of ['apps/runtime/src/state.ts', 'packages/sdk/src/outbox.ts', 'modules/lifx/package.json',
       'package-lock.json', 'apps/runtime/build/registry.ts']) {
       const file = join(target.directory, path);
       const original = await readFile(file);
@@ -143,7 +144,9 @@ void test('release source comparison binds exact inventories and refuses unbound
   await t.test('a named operator-only helper does not alter the format inventory', async () => {
     const target = releases.target;
     assert.ok(target);
-    await writeFile(join(target.directory, 'apps/runtime/src/upgrade-owner.ts'), 'synthetic operator-only change', {mode: 0o600});
+    for (const path of ['apps/runtime/src/upgrade-owner.ts', 'apps/runtime/src/upgrade-files.ts', 'apps/runtime/src/upgrade-stage.ts']) {
+      await writeFile(join(target.directory, path), 'synthetic operator-only change', {mode: 0o600});
+    }
     await seal('target');
     await run(process.execPath, [helper, 'verify-formats', request]);
   });

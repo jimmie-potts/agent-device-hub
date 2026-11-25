@@ -108,7 +108,7 @@ void test('explicit inspected resolution settles an interrupted receipt while re
   // Canonical hashing sorts keys; use the production pure helper to seal this
   // synthetic plan. This fixture claims no installed observation or acceptance.
   const seal = await run(process.execPath, ['--input-type=module', '-e',
-    'import {canonical,sha256} from "./apps/hub/dist/install/files.js";const body=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify({...body,planSha256:sha256(canonical(body))}));', JSON.stringify(planBody)]);
+    'import {canonical,sha256} from "./apps/runtime/dist/src/upgrade-files.js";const body=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify({...body,planSha256:sha256(canonical(body))}));', JSON.stringify(planBody)]);
   const sealed = JSON.parse(seal.stdout) as {planSha256: string};
   const input = join(provenance, 'final-input.json');
   const original: Record<string, unknown> = {...intent(), outcome: 'interrupted', failure: {phase: 'recovery', code: 'inspection-required', evidence: 'synthetic-interruption'},

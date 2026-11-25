@@ -3,7 +3,7 @@ import {constants} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {lstat, open, opendir, readlink, realpath} from 'node:fs/promises';
 import {dirname, isAbsolute, join, posix, resolve} from 'node:path';
-import {canonical, digest, hashRegular, readRegular, safeRelative, sha256} from '../../hub/dist/install/files.js';
+import {canonical, digest, hashRegular, readRegular, safeRelative, sha256} from '../dist/src/upgrade-files.js';
 import {readPrivateFile} from '../dist/src/state.js';
 const refuse = () => {throw new Error('runtime-upgrade-baseline-refused');};
 const closed = (value, keys) => value !== null && typeof value === 'object' && !Array.isArray(value)
