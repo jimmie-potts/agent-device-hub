@@ -99,6 +99,7 @@ it('the core reads the current worker on late attach and resyncs before forwardi
     starts.push({...(data.selectionId === undefined ? {} : {selectionId: data.selectionId}), version: action.draft.dataschema});
     return Promise.resolve({status: 'accepted'});
   }} as unknown as CoreHandle);
+  part.followCodingSelection(sdk);
   const send = (requestId: string) => owner.request<CodingDispatch>('bunny.cmd.coding-dispatch.assistant',
     {type: 'org.bunny.coding.dispatch.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-dispatch/2.1',
       data: {requestId, endpointId: 'shared-endpoint', taskId: 'task-codex', repository: 'agent-device-hub',

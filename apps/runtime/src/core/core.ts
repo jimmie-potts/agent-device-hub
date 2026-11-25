@@ -198,6 +198,7 @@ export interface CoreModule extends BunnyModule {
   setMusicCaptureRetirement(retire: () => void): void;
   /** Host admission names the machine IDs available to the history alarm before start. */
   setHistoryDevices?(devices: readonly HistoryDevice[]): void;
+  followCodingSelection(): void;
   /**
    * Retained history's filtered read, and the rules this core's history keeps by (#1772): each family's bookkeeping
    * members and the polled families, as the core was built with them, so an entry point's tests can show which (#1795).
@@ -300,6 +301,7 @@ export function createCoreModule(options: CoreOptions = {}): CoreModule {
     operatorActions: {dispatch: action => core?.dispatchOperator(action) ?? Promise.resolve(errorBody('unavailable', {detail: 'the core has not started'}))},
     setAutomationRedactions: registry => { redactions = registry; },
     setHistoryDevices: devices => { historyDevices = devices; },
+    followCodingSelection: () => core?.followCodingSelection(),
     setAutomationDevices:devices=>{
       if(core===undefined) throw new Error('core-not-started');
       return core.setAutomationDevices(devices);
@@ -822,6 +824,7 @@ class Core {
   }
 
   /** Assigns qualified mode participants once, without sending a command. */
+  followCodingSelection(): void {this.#companions.followCodingSelection(this.#sdk);}
   setModeParticipants(participants: readonly ModeParticipant[]): void {
     this.#mode.setParticipants(participants);
     this.#automation.setParticipants(participants);

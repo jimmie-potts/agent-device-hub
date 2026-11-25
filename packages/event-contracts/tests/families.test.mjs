@@ -84,6 +84,9 @@ test('each family has one kind and one type, and its schema is built from the sh
       || (['coding-endpoint', 'coding-state'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.4`)
       || (family === 'coding-progress' && dataschema === 'https://bunny.invalid/events/coding-progress/2.3')
       || (family === 'coding-run' && dataschema === 'https://bunny.invalid/events/coding-run/2.2')
+      || (['assistant-control', 'coding-run', 'coding-work'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.3`)
+      || (family === 'coding-dispatch' && dataschema === 'https://bunny.invalid/events/coding-dispatch/2.2')
+      || (family === 'coding-progress' && dataschema === 'https://bunny.invalid/events/coding-progress/2.4')
       // The conversation message queue (Hub #2030).
       || (['assistant-control', 'assistant-state'].includes(family) && dataschema === `https://bunny.invalid/events/${family}/2.2`)
       // Returned steers past the queue's limit (Hub #2031).

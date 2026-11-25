@@ -38,6 +38,7 @@ export type AssistantInput = {requestId: string; inputRef: string};
  */
 export type AssistantControl = {requestId: string; expectedRevision: number; action: 'enable' | 'disable' | 'resume' | 'cancel' | 'speak' | 'rename' | 'withdraw' | 'reorder' | 'resume-queue';
   taskId?: string; messageId?: string; profile?: AssistantProfile; title?: string; queuedId?: string; beforeId?: string | null};
+export type ContinueCodingControl = {requestId: string; action: 'continue-coding-job'; jobId: string; operationId: string; harness: 'claude-code' | 'codex'};
 /**
  * `org.bunny.assistant.dispatch.requested`: the companions module asks the core to send one approved, allowlisted command
  * through its tracked dispatcher. Version 2.0 carries Hub mode. Version 2.1 carries guarded LIFX commands. Version 2.2 binds Wemo power to its owner.
@@ -56,6 +57,7 @@ export const assistantFamilies = [
   defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested'),
   defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested', undefined, '2.1'),
   defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested', undefined, '2.2'),
+  defineFamily('assistant-control', 'command', 'org.bunny.assistant.control.requested', undefined, '2.3'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.1'),
   defineFamily('assistant-dispatch', 'command', 'org.bunny.assistant.dispatch.requested', message => message.subject === 'assistant' ? undefined : 'envelope /subject must be assistant', '2.2'),

@@ -975,6 +975,7 @@ export class Gateway {
       family === 'music-capture-control' && data.action === 'start' && data.input === 'microphone' ? '2.1' :
       // A conversation rename is the one action of assistant-control/2.1 (Hub #2025), and the message queue's withdraw,
       // reorder and resume-queue are those of 2.2 (Hub #2030); the others keep 2.0.
+      family === 'assistant-control' && data.action === 'continue-coding-job' ? '2.3' :
       family === 'assistant-control' && data.action === 'rename' ? '2.1' :
       family === 'assistant-control' && typeof data.action === 'string' && ['withdraw', 'reorder', 'resume-queue'].includes(data.action) ? '2.2' : '2.0';
     const dataschema = `${SCHEMA_BASE}${family}/${version}`;

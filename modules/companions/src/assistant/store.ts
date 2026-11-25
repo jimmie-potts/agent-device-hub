@@ -1,3 +1,4 @@
+import type {CodingChoice} from '../coding/routing.js';
 import type {MessageCodingInput, StopCodingInput} from './history-contract.js';
 import type {Confirmation} from './confirmation.js';
 import type {ActionEvidence, ApprovedAction} from './closing-reply.js';
@@ -25,7 +26,7 @@ export const GRAPH_VERSION = 'conversation-2';
 export const PREVIOUS_GRAPH_VERSION = 'conversation-1';
 import {LIMITS} from './limits.js';
 export {LIMITS} from './limits.js';
-export type Question = SavedQuestion & {call: string};
+export type Question = SavedQuestion & {call: string; codingChoice?: CodingChoice};
 export type Task = {version: 1; graphVersion: string; tracksApprovals?: true; id: string; conversationId: string; profile: AssistantProfile; prompt: string;
   status: AssistantStatus; runId: string | null; generation: number; question: Question | null; code: ErrorCode | null;
   modelCalls: number; toolCalls: number; questions: number; activeMs: number; reservedUnits: number; nextOrdinal: number;
@@ -54,7 +55,7 @@ export type Run = {version: 1; id: string; taskId: string; startedAtMs: number; 
  * Decline with message for an approval.
  */
 export type StagedInput = {action: 'start' | 'answer' | 'new-conversation' | 'queue' | 'edit-queued' | 'steer'; profile: AssistantProfile; text: string; expectedRevision: number;
-  taskId?: string; questionId?: string; queuedId?: string};
+  taskId?: string; questionId?: string; queuedId?: string; harness?: CodingChoice};
 /** One of a profile's conversations as the page lists it (Hub #2029); `current` marks the one new messages go to. */
 export type ConversationSummary = {conversationId: string; current: boolean; messages: number; firstAtMs: number | null; lastAtMs: number | null};
 export type Stage = {ref: string; requestId: string; input: StagedInput | StopCodingInput | MessageCodingInput; expires: number};

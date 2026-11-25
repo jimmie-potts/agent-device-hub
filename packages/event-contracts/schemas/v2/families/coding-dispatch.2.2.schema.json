@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bunny.invalid/events/coding-dispatch/2.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "endpointId",
+    "taskId",
+    "repository",
+    "brief",
+    "bounds",
+    "harness",
+    "continuation"
+  ],
+  "properties": {
+    "requestId": {
+      "$ref": "https://bunny.invalid/events/coding-dispatch/2.0#/properties/requestId"
+    },
+    "endpointId": {
+      "$ref": "https://bunny.invalid/events/coding-dispatch/2.0#/properties/endpointId"
+    },
+    "taskId": {
+      "$ref": "https://bunny.invalid/events/coding-dispatch/2.0#/properties/taskId"
+    },
+    "repository": {
+      "$ref": "https://bunny.invalid/events/coding-dispatch/2.0#/properties/repository"
+    },
+    "brief": {
+      "$ref": "https://bunny.invalid/events/coding-dispatch/2.0#/properties/brief"
+    },
+    "bounds": {
+      "$ref": "https://bunny.invalid/events/coding-dispatch/2.0#/properties/bounds"
+    },
+    "harness": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fromOperationId",
+        "token"
+      ],
+      "properties": {
+        "fromOperationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "token": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$"
+        }
+      }
+    }
+  }
+}

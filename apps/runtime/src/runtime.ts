@@ -354,6 +354,7 @@ export async function startRuntime(options: RuntimeOptions): Promise<Runtime> {
   const wispr = modules.find(isWisprModule);
   const hosted = host.modules();
   if (hosted.some(module => module.name === 'core' && module.admitted && module.state === 'running')) {
+    if (host.bus.syncOwners('coding-state').includes('bunny/modules/companions')) core?.followCodingSelection();
     core?.setModeParticipants(modeParticipants(hosted));
     await core?.setAutomationDevices(automationDevices(hosted,host.bus.syncOwners('device')));
     bindHostedArtCatalog(core, modules, host, scheduler);

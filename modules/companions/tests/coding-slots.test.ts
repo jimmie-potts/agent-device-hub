@@ -1,3 +1,5 @@
+import type {CodingDispatch} from '@jimmie-potts/event-contracts/v2/coding';
+import type {CodingJobDetail} from '../src/coding/job-page.js';
 // Coding-worker slots through the companions module (Hub #2028): one slot per companion, a proposal bound to the
 // worker's connection, and an approved hand-off that waits for a busy slot and is sent once when it frees. Each
 // profile has one conversation until New conversation (#2029), so a companion's own second hand-off cannot arise here
@@ -49,7 +51,7 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     heldDispatch = new Promise(resolve => {release = resolve;});
     return release;
   };
-  await core.respond<{requestId: string}>('bunny.cmd.coding-dispatch.assistant', async command => {
+  await core.respond<CodingDispatch>('bunny.cmd.coding-dispatch.assistant', async command => {
     dispatched.push(command.data.requestId);
     if (heldDispatch !== undefined) {
       const held = heldDispatch;
@@ -57,7 +59,10 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
       await held;
     }
     if (refusesDispatch) return errorBody('unavailable');
-    const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant', dataschema: 'https://bunny.invalid/events/coding-run/2.0', data: command.data},
+    const selectionId = command.data.harness === undefined ? undefined : module.inspectCoding()?.selectionId;
+    const version = command.data.continuation !== undefined ? '2.3' : selectionId !== undefined ? '2.2' : command.data.harness === undefined ? '2.0' : '2.1';
+    const answer = await core.request('bunny.cmd.coding-run.assistant', {type: 'org.bunny.coding.run.requested', subject: 'assistant',
+      dataschema: `https://bunny.invalid/events/coding-run/${version}`, data: {...command.data, ...(selectionId === undefined ? {} : {selectionId})}},
       {timeoutMs: 5000, requestId: command.data.requestId, parent: command});
     forwarded.set(command.data.requestId, answer.status);
     return answer.status === 'accepted' ? {status: 'accepted'} : answer.error;
@@ -92,11 +97,11 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     return core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-control/2.0', data: {requestId, action, expectedRevision: state().revision, ...extra}}, {requestId, timeoutMs: 5000});
   };
-  const send = async (profile: AssistantProfile, text: string, answer = false): Promise<RequestResult> => {
+  const send = async (profile: AssistantProfile, text: string, answer = false, harness?: 'auto' | 'claude-code' | 'codex'): Promise<RequestResult> => {
     const requestId = randomUUID(), current = task(profile);
     const staged = await module.manifest.upload?.stage({target: 'assistant', name: 'input.json', requestId, signal: new AbortController().signal,
       bytes: Buffer.from(JSON.stringify({action: answer ? 'answer' : 'start', profile, expectedRevision: state().revision, text,
-        ...(answer ? {taskId: current?.taskId, questionId: current?.questionId} : {})}))});
+        ...(answer ? {taskId: current?.taskId, questionId: current?.questionId, ...(harness === undefined ? {} : {harness})} : {})}))});
     assert.ok(staged !== undefined && !('error' in staged), JSON.stringify(staged));
     return core.request('bunny.cmd.assistant-input.assistant', {type: 'org.bunny.assistant.input.requested', subject: 'assistant',
       dataschema: 'https://bunny.invalid/events/assistant-input/2.0', data: {requestId, ...staged.data}}, {requestId, timeoutMs: 5000});
@@ -135,9 +140,9 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     dataschema: `https://bunny.invalid/events/coding-progress/${version}`, data});
   const starts = () => work.filter(command => command.data.action === 'start');
   /** A profile's task asks, waits at its approval and is approved. */
-  const approved = async (profile: AssistantProfile): Promise<void> => {
+  const approved = async (profile: AssistantProfile, harness?: 'auto' | 'claude-code' | 'codex'): Promise<void> => {
     await settle(() => task(profile)?.status === 'waiting' && task(profile)?.questionId !== null && task(profile)?.hasAnswer === false, `${profile} waits for approval`);
-    assert.equal((await send(profile, 'approve', true)).status, 'accepted');
+    assert.equal((await send(profile, 'approve', true, harness)).status, 'accepted');
   };
   const waitMessages = async (profile: AssistantProfile, pattern: RegExp, conversationId?: string): Promise<SavedMessage[]> => {
     for (let i = 0; i < 500; i += 1) {
@@ -147,7 +152,15 @@ async function world(context: TestContext, options: CompanionsOptions = {}) {
     }
     return assert.fail(`Missing message ${String(pattern)}`);
   };
-  return {forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
+  const continueJob = (jobId: string, operationId: string, harness: 'claude-code' | 'codex', requestId = randomUUID()) =>
+    core.request('bunny.cmd.assistant-control.assistant', {type: 'org.bunny.assistant.control.requested', subject: 'assistant',
+      dataschema: 'https://bunny.invalid/events/assistant-control/2.3', data: {requestId, action: 'continue-coding-job', jobId, operationId, harness}}, {requestId, timeoutMs: 5000});
+  const jobDetail = async (jobId: string) => {
+    const reply = await module.manifest.content?.('coding-job', {query: {jobId}, signal: new AbortController().signal});
+    assert.ok(reply !== undefined && !('error' in reply));
+    return JSON.parse(Buffer.from(reply.bytes).toString()) as CodingJobDetail;
+  };
+  return {continueJob, jobDetail, forwarded, module: () => module, serializeStarts: () => {serialStarts = true;}, acknowledgeStart: () => {
     const release = releaseStart ?? assert.fail('serial responder has a delivered start to acknowledge');
     releaseStart = undefined; release();
   }, database: () => host.moduleDatabase() ?? assert.fail('open database'), refuseStop: () => {refusesStop = true;}, refuseDispatch: () => {refusesDispatch = true;}, task, control, send, stop, holdDispatch, newConversation, messages, waitMessages, enable, lose, progress, starts, work, dispatched, approved, coding: () => module.inspectCoding() ?? assert.fail('coding state'),
@@ -863,4 +876,55 @@ void test('an uncapped attempt uses observed setup deadlines without timing out 
   assert.equal(w.coding().runs?.find(run => run.operationId === ready)?.setup, 'ready');
   await w.progress({operationId: ready, status: 'completed', result: result('Synthetic ready sibling result.')}, '2.3');
   await w.waitMessages('reachy', /Synthetic ready sibling result/);
+});
+
+
+void test('an owner-approved Auto job routes from exhausted Claude to Codex and explicitly continues on the same job', {timeout: 30_000}, async context => {
+  const w = await world(context);
+  const claude: CodingHarnessReadiness = {harness: 'claude-code', installed: 'yes', signedIn: 'yes', plan: 'max', version: '2.0',
+    limits: null, limitsObservedAtMs: null, checkedAtMs: 1, capabilities: {steering: 'unsupported', resume: 'unsupported', review: true}};
+  const codex: CodingHarnessReadiness = {...claude, harness: 'codex', plan: 'plus'};
+  const exhausted: CodingHarnessReadiness = {...claude, limits: [{window: 'primary', status: 'rejected', resetsAtMs: null, utilization: null}]};
+  assert.equal((await w.control('enable')).status, 'accepted');
+  assert.equal((await w.enable('uncapped', [exhausted, codex])).status, 'accepted');
+  assert.equal((await w.send('bunny', 'Synthetic partially edited coding task')).status, 'accepted');
+  await w.approved('bunny', 'auto');
+  await settle(() => w.starts().length === 1);
+  const initial = w.starts()[0]?.data;
+  assert.ok(initial?.action === 'start' && initial.harness === 'codex');
+  const {operationId} = initial, jobId = `${operationId}-job`;
+  assert.match((await w.jobDetail(jobId)).attempts[0]?.selectionReason ?? '', /Claude Code quota exhausted \(reset unknown\)/);
+  assert.equal((await w.continueJob(jobId, operationId, 'claude-code')).status, 'rejected');
+  await w.progress({operationId, status: 'started', setup: 'ready', harness: 'codex', sessionId: 'native-codex'}, '2.3');
+  await settle(() => w.coding().runs?.some(run => run.sessionId === 'native-codex') === true);
+  assert.equal((await w.stop(jobId, operationId)).status, 'accepted');
+  const head = 'a'.repeat(40);
+  const stopped = {...result('Synthetic partial work.'), head, changedFiles: ['partial.txt'], checks: [{name: 'git diff', status: 'passed'}]};
+  const handoffToken = randomUUID();
+  await w.progress({operationId, status: 'cancelled', reason: 'cancelled', harness: 'codex', sessionId: 'native-codex', result: stopped, handoffToken}, '2.4');
+  await w.waitMessages('bunny', /Synthetic partial work/);
+  assert.equal((await w.enable('uncapped', [claude, codex])).status, 'accepted');
+  assert.deepEqual((await w.jobDetail(jobId)).continuation, {fromOperationId: operationId, harness: 'claude-code', head, changedFiles: ['partial.txt']});
+  const requestId = randomUUID();
+  assert.equal((await w.continueJob(jobId, operationId, 'claude-code', requestId)).status, 'accepted');
+  assert.equal((await w.continueJob(jobId, operationId, 'claude-code', requestId)).status, 'accepted');
+  await settle(() => w.starts().length === 2);
+  const resumed = w.starts()[1]?.data;
+  assert.ok(resumed?.action === 'start' && resumed.harness === 'claude-code');
+  assert.deepEqual(resumed.continuation, {fromOperationId: operationId, token: handoffToken});
+  assert.match(resumed.brief, /git diff \(passed\)/);
+  assert.doesNotMatch(resumed.brief, /native-codex|Synthetic partial work/);
+  assert.equal((await w.jobDetail(jobId)).activeOperationId, resumed.operationId);
+  assert.equal((await w.continueJob(jobId, operationId, 'claude-code')).status, 'rejected');
+  await w.progress({operationId: resumed.operationId, status: 'started', setup: 'ready', harness: 'claude-code', sessionId: 'native-claude'}, '2.3');
+  await w.progress({operationId: resumed.operationId, status: 'completed', harness: 'claude-code',
+    result: {...result('Synthetic continued work.'), head, changedFiles: ['partial.txt'], checks: [{name: 'unit test', status: 'passed'}]}}, '2.3');
+  await w.waitMessages('bunny', /Synthetic continued work/);
+  const detail = await w.jobDetail(jobId);
+  assert.equal(detail.activeOperationId, null);
+  assert.deepEqual(detail.attempts.map(attempt => [attempt.operationId, attempt.harness, attempt.sessionId, attempt.status, attempt.result?.checks[0]?.name]), [
+    [operationId, 'codex', 'native-codex', 'cancelled', 'git diff'],
+    [resumed.operationId, 'claude-code', 'native-claude', 'completed', 'unit test'],
+  ]);
+  assert.doesNotMatch(JSON.stringify(detail), new RegExp(handoffToken));
 });

@@ -28,6 +28,7 @@ export type AdapterEvidence = {
   limit?: CodingLimit;
   reason?: CodingProgressReason;
   uncertain?: boolean;
+  writerStopped?: true;
   summary?: string;
   limitations?: string[];
 };
