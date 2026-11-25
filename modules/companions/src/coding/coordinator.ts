@@ -605,6 +605,7 @@ export class CodingCoordinator {
       const waiting = this.#store.waitingFor(data.requestId);
       approvedCompanion = waiting?.companion;
       const attempt = this.#store.attempt(data.requestId);
+      if (data.continuation !== undefined && attempt === undefined) return errorBody('invalid-state', {detail: 'the continuation has no durable approval'});
       if (attempt !== undefined && ((attempt.harness ?? undefined) !== data.harness ||
         attempt.continuation?.fromOperationId !== data.continuation?.fromOperationId ||
         attempt.continuation?.token !== data.continuation?.token)) return errorBody('revision-conflict', {detail: 'the dispatch does not match the approved attempt'});
