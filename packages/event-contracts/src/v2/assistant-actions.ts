@@ -107,11 +107,11 @@ export type DeviceHistorySource = typeof DEVICE_HISTORY_SOURCES[number];
 export type DeviceHistoryQuery = {source: DeviceHistorySource; target: string; fromAtMs: number; toAtMs: number};
 export type DevicePower = 'on' | 'off' | 'unknown';
 export type DeviceHistoryEvidence = {seq: number; messageId: string | null; atMs: number; power: DevicePower;
-  kind: 'observation' | 'gap' | 'removal'; confirmedThroughMs: number};
+  kind: 'observation' | 'continuation' | 'gap' | 'removal'; confirmedThroughMs: number};
 export type DeviceHistorySnapshot = {schema: typeof DEVICE_HISTORY_VERSION; query: DeviceHistoryQuery; boundary: number;
   complete: boolean; evidence: DeviceHistoryEvidence[]; durations: Record<DevicePower, number>;
   lastChange: {atMs: number; from: 'on' | 'off'; to: 'on' | 'off'; seq: number} | null;
-  causes: {requestId: string; observationSeq: number; outcomeSeq: number; sentSeq: number}[]};
+  links: {requestId: string; sentSeq: number; transmissionOutcomeSeq: number; transmittedAtMs: number; observationSeq: number}[]};
 export function deviceHistoryQuery(value: Record<string, unknown>): DeviceHistoryQuery | undefined {
   const {source, target, fromAtMs, toAtMs} = value;
   const owner = DEVICE_HISTORY_SOURCES.find(candidate => candidate === source);

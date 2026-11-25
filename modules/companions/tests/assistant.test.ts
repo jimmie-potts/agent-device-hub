@@ -429,7 +429,7 @@ void test('Conversation discovers an allowed device and answers a held-out power
     deviceHistory: query => {
       reads += 1;
       return {schema: DEVICE_HISTORY_VERSION, query, boundary: 15, complete: true,
-        durations: {on: 60, off: 10, unknown: 30}, lastChange: null, causes: [],
+        durations: {on: 60, off: 10, unknown: 30}, lastChange: null, links: [],
         evidence: Array.from({length: 16}, (_, seq) => ({seq, messageId: null, atMs: 1000 + seq, confirmedThroughMs: 1001 + seq,
           kind: 'observation', power: 'on'}))};
     },

@@ -19,7 +19,7 @@ void test('history pages freeze their evidence and recheck scope and grants on e
     reads += 1;
     const snapshot: DeviceHistorySnapshot = {schema: DEVICE_HISTORY_VERSION, query, boundary: reads,
       complete: true, durations: {on: 50, off: 25, unknown: 25}, lastChange: null,
-      causes: [{requestId: 'private-operation', observationSeq: 0, outcomeSeq: 1, sentSeq: 0}],
+      links: [{requestId: 'private-operation', observationSeq: 0, transmissionOutcomeSeq: 1, transmittedAtMs: 0, sentSeq: 0}],
       evidence: Array.from({length: 30}, (_, seq) => ({seq, messageId: null, atMs: seq, confirmedThroughMs: seq + 1,
         kind: 'observation', power: 'on'}))};
     return snapshot;

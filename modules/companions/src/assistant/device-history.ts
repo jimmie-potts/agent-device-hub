@@ -39,7 +39,7 @@ export function deviceHistoryGuide(tools: ReadonlySet<string>): string {
     ] : []),
     ...(tools.has('read_device_history') ? [
       `read_device_history reads observed power for exact device IDs from ${DEVICE_HISTORY_SOURCES.join(' and ')}. Choose local yesterday or an explicit half-open millisecond interval.`,
-      'Durations report supported on, off and unknown milliseconds. Only linked sends, observed outcomes and matching request-tagged observations support an explanation. Acceptance is evidence of the request.',
+      'Durations report supported on, off and unknown milliseconds. A link names the tracked request, successful transmission and matching later observation separately. It does not establish exclusive cause. Acceptance is evidence of the request only.',
       'Use the supplied cursor with the same query to read more evidence. An expired cursor requires a fresh read. If complete is false, say the bounded search may omit older evidence.',
     ] : []),
   ].join(' ');
@@ -75,13 +75,13 @@ export class DeviceHistoryPages {
         expires: saved?.expires ?? scope.now + CURSOR_MS});
     }
     const evidence = rows;
-    const causes = snapshot.causes.filter(cause => rows.some(row => row.seq === cause.observationSeq) &&
+    const links = snapshot.links.filter(cause => rows.some(row => row.seq === cause.observationSeq) &&
       access('operations', 'index', cause.requestId) && access('operations', 'details', cause.requestId));
     const describe = localInstant(scope.timeZone);
     const localRange = {from: describe(query.fromAtMs), to: describe(query.toAtMs)};
     const lastChange = snapshot.lastChange === null ? null : {...snapshot.lastChange, localTime: describe(snapshot.lastChange.atMs)};
     const page = JSON.stringify({schema: snapshot.schema, query, boundary: snapshot.boundary, complete: snapshot.complete,
-      timeZone: scope.timeZone, localRange, durations: snapshot.durations, lastChange, evidence, causes, next, capped: next === null && nextOffset < snapshot.evidence.length});
+      timeZone: scope.timeZone, localRange, durations: snapshot.durations, lastChange, evidence, links, next, capped: next === null && nextOffset < snapshot.evidence.length});
     if (Buffer.byteLength(page) <= LIMITS.toolBytes) return page;
     if (next !== null) this.#cursors.delete(next);
     return 'refused: too-large; narrow the history interval.';

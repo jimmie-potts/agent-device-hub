@@ -36,9 +36,9 @@ export function devicePowerHistoryTool(read: (query: DeviceHistoryQuery) => Devi
     input: {type: 'object', additionalProperties: false, required: ['source', 'target', 'fromAtMs', 'toAtMs'],
       properties: {source: {enum: [...DEVICE_HISTORY_SOURCES]}, target: {type: 'string'},
         fromAtMs: {type: 'integer'}, toAtMs: {type: 'integer'}}},
-    output: {type: 'object', required: ['schema', 'query', 'boundary', 'complete', 'evidence', 'durations', 'lastChange', 'causes'],
+    output: {type: 'object', required: ['schema', 'query', 'boundary', 'complete', 'evidence', 'durations', 'lastChange', 'links'],
       properties: {schema: {type: 'string'}, query: {type: 'object'}, boundary: {type: 'integer'}, complete: {type: 'boolean'},
-        evidence: {type: 'array'}, durations: {type: 'object'}, lastChange: {}, causes: {type: 'array'}}},
+        evidence: {type: 'array'}, durations: {type: 'object'}, lastChange: {}, links: {type: 'array'}}},
     read: input => {
       if (Object.keys(input).length !== 4) return errorBody('invalid-request');
       const query = deviceHistoryQuery(input);
