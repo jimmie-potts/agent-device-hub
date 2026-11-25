@@ -701,7 +701,7 @@ export class AssistantEngine {
       return undefined;
     }
     const pin = head.supervisor ?? fail('unavailable');
-    const task = this.store.newTask(head.profile, head.text, pin);
+    const task = this.store.newTask(head.profile, head.text, pin, head.updatedAtMs);
     this.store.message(task, `${task.id}-prompt`, 'owner', head.text, this.context.clock.now());
     this.#activate(task, {traceparent: head.traceparent}, true);
     this.store.save(task);
@@ -1385,7 +1385,7 @@ export class AssistantEngine {
       [device.id, deviceLabel(device)].some(value => normalizedControlText(value) === subject);
     const historyRequest = purpose === 'supervisor' ? this.store.messages.get(requestId) : undefined;
     const history = historyRequest?.speakerId === 'owner' && historyRequest.conversationId === task.conversationId
-      ? requestedHistory(request, historyRequest.createdAtMs, this.#historyTimeZone) : undefined;
+      ? requestedHistory(request, latest?.submittedAtMs ?? historyRequest.createdAtMs, this.#historyTimeZone) : undefined;
     const historyMatches = history === undefined ? [] : configured.filter(({device}) => named(history.subject, device));
     const historyTarget = historyMatches.length === 1 ? historyMatches[0] : undefined;
     let historySummary: DeviceHistorySummary | undefined;
@@ -1755,7 +1755,7 @@ export class AssistantEngine {
   #drain(task: Task): void {
     for (const steer of this.store.queue.steers(task.id)) {
       const effect = `steer-${steer.id}`;
-      const item: Appended = {role: 'owner', text: steer.text, effect};
+      const item: Appended = {role: 'owner', text: steer.text, effect, submittedAtMs: steer.savedAtMs};
       if (!task.transcript.some(existing => 'effect' in existing && existing.effect === effect)) task.transcript.push(item);
       this.store.message(task, steerMessageId(task.id, steer.id), 'owner', steer.text, this.context.clock.now());
       this.store.queue.delivered(steer.id);
@@ -1924,7 +1924,7 @@ export class AssistantEngine {
           const requestId = owner === undefined ? `${task.id}-prompt` : conversationMessageId(task.id, owner);
           const request = requestId === undefined ? undefined : this.store.messages.get(requestId);
           text = this.#history.read(call.input, {taskId: task.id, destination: provider.name, now,
-            requestedAtMs: request?.createdAtMs ?? now, timeZone: this.#historyTimeZone}, access);
+            requestedAtMs: owner?.submittedAtMs ?? request?.createdAtMs ?? now, timeZone: this.#historyTimeZone}, access);
         } else {
           text = this.#history.summary(call.input, scope.fields('conversation', 'request', scope.requestId) ? scope.historySummary : undefined, access);
         }
