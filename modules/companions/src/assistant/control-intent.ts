@@ -159,7 +159,8 @@ function setting(instruction: string, answer: string, rawInstruction: string, ra
       const request = /^(?:show|display|put) (.+?) (?:on|in) (.+)$/u.exec(instruction.replace(keepStatus, ''));
       if (request?.[1] === undefined || request[2] === undefined || typeof data.artworkId !== 'string' ||
         (data.coversStatus === false) !== requestedKeep) return undefined;
-      const rawArtwork = /(?:^|\s)(?:show|display|put)\s+(?:(?:the|my)\s+)?([a-z0-9_.-]+)\s+(?:on|in)\s/iu.exec(rawInstruction)?.[1];
+      const show = knownArtwork ? /\band\s+((?:show|display|put)\s+.+)$/iu.exec(rawInstruction)?.[1] ?? rawInstruction : rawInstruction;
+      const rawArtwork = /^(?:(?:please|could you|would you|can you|will you|(?:hey )?(?:bunny|b[. ]u[. ]n[. ]n[. ]y[.]?|reachy|microduck))[, ]+)*(?:show|display|put)\s+(?:(?:the|my)\s+)?([a-z0-9_.-]+)\s+(?:on|in)\s/iu.exec(show.trim())?.[1];
       if (rawArtwork !== data.artworkId &&
         !(knownArtwork && /^(?:it|(?:this|that) (?:artwork|animation|image|picture))$/u.test(request[1]))) return undefined;
       const recipients = request[2].split(' and ').map(optionalArticle);
